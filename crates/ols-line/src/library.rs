@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn typed_example_resolves_and_solves() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-        let line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let line = Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap();
         let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
         let resolved = line
             .resolve(&structures, &InsulatorLibrary::default())
@@ -765,8 +765,8 @@ mod tests {
         let mut structures = StructureLibrary::default();
         structures
             .insert(
-                Path::new("w.olss"),
-                StructureType::parse(Path::new("w.olss"), text).unwrap(),
+                Path::new("w.ohls"),
+                StructureType::parse(Path::new("w.ohls"), text).unwrap(),
             )
             .unwrap();
         let mut line = crate::tests::example();
@@ -784,7 +784,7 @@ mod tests {
             .resolve(&structures, &InsulatorLibrary::default())
             .unwrap();
         assert_eq!(resolved.structures[1].string("S1").unwrap().wind_area, 0.35);
-        assert!(StructureType::parse(Path::new("w.olss"), &text.replace("0.35", "-1")).is_err());
+        assert!(StructureType::parse(Path::new("w.ohls"), &text.replace("0.35", "-1")).is_err());
     }
 
     /// A string's limits (not checked): a type's string's own and those
@@ -794,17 +794,17 @@ mod tests {
     /// stored line keeps only what it gives, through the line file.
     #[test]
     fn string_limits_come_from_the_string_or_its_insulator() {
-        let olsi = "format = \"ols-insulator\"\nversion = 2\nid = \"I-lim\"\nname = \"i\"\n\
+        let olsi = "format = \"ohl-insulator\"\nversion = 2\nid = \"I-lim\"\nname = \"i\"\n\
             kind = \"suspension\"\nlength = \"4 m\"\nmax_load = \"120 kN\"\n\
             max_swing = \"60 deg\"\nmax_swing_along = \"20 deg\"\n";
         let mut insulators = InsulatorLibrary::default();
         insulators
             .insert(
-                Path::new("i.olsi"),
-                InsulatorAssembly::parse(Path::new("i.olsi"), olsi).unwrap(),
+                Path::new("i.ohli"),
+                InsulatorAssembly::parse(Path::new("i.ohli"), olsi).unwrap(),
             )
             .unwrap();
-        let text = "format = \"ols-structure\"\nversion = 4\nid = \"L\"\nname = \"l\"\n\
+        let text = "format = \"ohl-structure\"\nversion = 4\nid = \"L\"\nname = \"l\"\n\
             kind = \"lattice\"\n\
             [[point]]\nlabel = \"A1\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
             [[point]]\nlabel = \"A2\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
@@ -816,8 +816,8 @@ mod tests {
         let mut structures = StructureLibrary::default();
         structures
             .insert(
-                Path::new("l.olss"),
-                StructureType::parse(Path::new("l.olss"), text).unwrap(),
+                Path::new("l.ohls"),
+                StructureType::parse(Path::new("l.ohls"), text).unwrap(),
             )
             .unwrap();
         let mut line = crate::tests::example();
@@ -874,7 +874,7 @@ mod tests {
             "unknown key"
         );
         assert!(
-            StructureType::parse(Path::new("l.olss"), &text.replace("45 deg", "190 deg")).is_err()
+            StructureType::parse(Path::new("l.ohls"), &text.replace("45 deg", "190 deg")).is_err()
         );
     }
 
@@ -883,7 +883,7 @@ mod tests {
     #[test]
     fn the_height_adjustment_raises_the_type() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-        let mut line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let mut line = Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap();
         let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
         let none = InsulatorLibrary::default();
         let before = line.resolve(&structures, &none).unwrap();
@@ -912,7 +912,7 @@ mod tests {
     #[test]
     fn omitted_strings_of_a_type_are_left_out() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-        let mut line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let mut line = Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap();
         line.sections.retain(|s| s.id != "S3");
         line.jumpers.clear();
         line.structures[2].omit_sets.push(2);
@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn free_strain_strings_with_a_ball_at_the_clamp() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-        let line = Line::load(&root.join("synthetic-line-typed.ols.json")).unwrap();
+        let line = Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap();
         let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
         let mut resolved = line
             .resolve(&structures, &InsulatorLibrary::default())

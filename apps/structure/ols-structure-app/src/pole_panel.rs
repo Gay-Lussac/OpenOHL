@@ -5,7 +5,7 @@
 //! The Pole panels: in Pole (Body menu) the pole's outside lines (its
 //! outline by height, round or polygonal; drawn in 3D as a wireframe),
 //! in Pole design (Design menu) what the pole check needs (material,
-//! wall or a hollow section of the section library, strength). A `.olsp` pole
+//! wall or a hollow section of the section library, strength). A `.ohlp` pole
 //! named by the file is brought into it in one step. Every change is one
 //! edit of the file (one undo step; a value dragged is one step).
 
@@ -65,13 +65,13 @@ fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
     }
 }
 
-/// The `.olsp` file a `pole = "…"` names, next to the structure file: by
+/// The `.ohlp` file a `pole = "…"` names, next to the structure file: by
 /// file name, else the one with that id.
 pub(crate) fn pole_file(dir: &Path, name: &str) -> Option<PathBuf> {
-    if name.ends_with(".olsp") {
+    if ols_core::files::has_extension(Path::new(name), "ohlp") {
         return Some(dir.join(name));
     }
-    ols_core::files::files_with_extension(dir, "olsp")
+    ols_core::files::files_with_extension(dir, "ohlp")
         .into_iter()
         .find(|p| {
             std::fs::read_to_string(p)
@@ -85,7 +85,7 @@ pub(crate) fn pole_file(dir: &Path, name: &str) -> Option<PathBuf> {
 
 impl StructureApp {
     /// Body › Pole: shape, embedment, the outline rows, + Height; a named
-    /// `.olsp` brought in.
+    /// `.ohlp` brought in.
     pub(crate) fn pole_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
         let Some(f) = &mut self.file else {
             return;
@@ -110,7 +110,7 @@ impl StructureApp {
                     .clicked()
                 {
                     let read = pole_file(&dir, name)
-                        .ok_or_else(|| format!("no .olsp file \"{name}\" in {}", dir.display()))
+                        .ok_or_else(|| format!("no .ohlp file \"{name}\" in {}", dir.display()))
                         .and_then(|p| {
                             std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))
                         });
@@ -373,7 +373,7 @@ impl StructureApp {
                     })
                     .response
                     .on_disabled_hover_text(
-                        "No hollow section of the pole's shape in a section library (.olssec) \
+                        "No hollow section of the pole's shape in a section library (.ohlsec) \
                          next to the file: type the wall",
                     );
             });

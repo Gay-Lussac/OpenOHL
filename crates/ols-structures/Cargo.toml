@@ -1,6 +1,6 @@
 [package]
 name = "ols-structures"
-description = "OpenOHL structure type library (.olss) and insulator assembly library (.olsi)"
+description = "OpenOHL structure type library (.ohls) and insulator assembly library (.ohli)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

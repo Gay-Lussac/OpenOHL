@@ -28,7 +28,7 @@ fn rect_of(app: &crate::app::StructureApp, panel: Panel) -> eframe::egui::Rect {
 /// view on the right (about 45 / 55).
 #[test]
 fn the_3d_view_is_on_the_right_by_default() {
-    let path = copy_of("type-02.olss", "layout-default");
+    let path = copy_of("type-02.ohls", "layout-default");
     let mut h = harness(&path);
     // A picture of it, when asked for (OLS_STRUCTURE_SCREENSHOT=file.png).
     if let Some(png) = std::env::var_os("OLS_STRUCTURE_SCREENSHOT") {
@@ -61,7 +61,7 @@ fn the_3d_view_is_on_the_right_by_default() {
 /// menu stays open while ticking.
 #[test]
 fn view_shows_and_hides_a_panel() {
-    let path = copy_of("type-01.olss", "layout-view");
+    let path = copy_of("type-01.ohls", "layout-view");
     let mut h = harness(&path);
     h.get_by_label("View").click();
     h.run();
@@ -90,7 +90,7 @@ fn view_shows_and_hides_a_panel() {
 /// A menu's action does its work and brings its panel to the front.
 #[test]
 fn a_menu_action_focuses_its_panel() {
-    let path = copy_of("type-02.olss", "layout-action");
+    let path = copy_of("type-02.ohls", "layout-action");
     let mut h = harness(&path);
     assert_eq!(h.state_mut().focused(), Some(Panel::Supports));
     let joints = h.state().file.as_ref().unwrap().structure().nodes.len();
@@ -110,7 +110,7 @@ fn a_menu_action_focuses_its_panel() {
 /// A header link to a closed panel opens it, in front.
 #[test]
 fn a_header_link_opens_a_closed_panel() {
-    let path = copy_of("type-01.olss", "layout-link");
+    let path = copy_of("type-01.ohls", "layout-link");
     let mut h = harness(&path);
     close_panel(&mut h.state_mut().dock, Panel::Members);
     h.run();
@@ -165,7 +165,7 @@ fn the_arrangement_is_kept_between_runs() {
 /// shows: every tab title is in sight (no tab bar scrolled).
 #[test]
 fn every_default_tab_title_shows() {
-    let path = copy_of("type-02.olss", "layout-tabs");
+    let path = copy_of("type-02.ohls", "layout-tabs");
     let mut h = harness(&path);
     h.run_steps(2);
     let app = h.state();

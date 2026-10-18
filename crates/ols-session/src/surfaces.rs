@@ -237,7 +237,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ols-surfaces-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("p.ols");
+        let path = dir.join("p.ohl");
         let s = Session::open(&path).unwrap();
         s.set_user("ann", "ann", Role::Admin).unwrap();
         s.set_user("ann", "vic", Role::Viewer).unwrap();

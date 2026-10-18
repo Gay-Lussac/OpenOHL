@@ -705,7 +705,7 @@ impl Calculation for ThermalSteady {
     fn description(&self) -> &'static str {
         "Steady-state thermal rating (inputs: method, diameter, ac_resistance [{temperature, \
          resistance}], optional kind (cable kind, default acsr: scales a single resistance), \
-         emissivity, absorptivity, optional roughness, ambient = one .olsta case, \
+         emissivity, absorptivity, optional roughness, ambient = one .ohlta case, \
          and max_temperature or current A; outputs: current_a, temperature_c, heat terms W/m, \
          solar_altitude_deg, solar_azimuth_deg)"
     }
@@ -749,7 +749,7 @@ impl Calculation for ThermalSteady {
         let ambient = inputs
             .get("ambient")
             .and_then(|v| v.as_table())
-            .ok_or("input \"ambient\" must be a table (one .olsta case)")?;
+            .ok_or("input \"ambient\" must be a table (one .ohlta case)")?;
         let mut file = toml::Table::new();
         file.insert(
             "case".into(),
@@ -787,7 +787,7 @@ impl Calculation for ThermalSteady {
     }
 }
 
-/// `structures.fe`: a structure model (`.olsfe` text) under its own loads.
+/// `structures.fe`: a structure model (`.ohlfe` text) under its own loads.
 struct StructureFe;
 
 impl Calculation for StructureFe {
@@ -796,7 +796,7 @@ impl Calculation for StructureFe {
     }
 
     fn description(&self) -> &'static str {
-        "Structure model under its own loads (inputs: model = .olsfe text, optional \
+        "Structure model under its own loads (inputs: model = .ohlfe text, optional \
          self_weight factor); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
          r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
          members: 1 slack, 0 taut), iterations, passes (solves of the tension-only members' \
@@ -967,7 +967,7 @@ impl Calculation for StructurePole {
     }
 
     fn description(&self) -> &'static str {
-        "Pole check (inputs: pole = .olsp text, load_point_{x,y,z}, load_{x,y,z}, wind_pressure, \
+        "Pole check (inputs: pole = .ohlp text, load_point_{x,y,z}, load_{x,y,z}, wind_pressure, \
          optional p_delta); outputs ground_moment_nm, wind_moment_nm, ground_capacity_nm, \
          ground_usage, usage, amplification"
     }

@@ -25,7 +25,7 @@ pub struct ImportDialog {
     pub crs: String,
     /// Chunk size of a new cloud, m.
     pub chunk: f64,
-    /// Class scheme (`.olsc`) stored with a new cloud.
+    /// Class scheme (`.ohlc`) stored with a new cloud.
     pub scheme: Option<PathBuf>,
     /// Why it cannot start.
     pub error: Option<String>,
@@ -41,7 +41,7 @@ pub struct ExportDialog {
     pub around_line: bool,
     /// Margin around the line, m.
     pub margin: f64,
-    /// Write the class scheme next to it (`.olsc`).
+    /// Write the class scheme next to it (`.ohlc`).
     pub scheme: bool,
     /// Why it cannot start.
     pub error: Option<String>,
@@ -135,8 +135,8 @@ impl Job {
 fn project_of(model: &Model) -> Result<(PathBuf, Vec<String>), String> {
     model.can_edit()?;
     let file = model.sources.file.clone();
-    if file.extension().is_none_or(|e| e != "ols") {
-        return Err("point clouds are imported into a project (.ols)".into());
+    if !ols_core::files::is_project_file(&file) {
+        return Err("point clouds are imported into a project (.ohl)".into());
     }
     let clouds = ols_pointcloud::Store::open(&file)
         .and_then(|s| s.clouds())
@@ -228,14 +228,14 @@ impl ImportDialog {
                         ui.add(egui::DragValue::new(&mut self.chunk).range(8.0..=1024.0))
                             .on_hover_text("64 m: four chunks per 256 m tile of the grid");
                         ui.end_row();
-                        ui.label("Class scheme (.olsc)");
+                        ui.label("Class scheme (.ohlc)");
                         ui.horizontal(|ui| {
                             ui.label(self.scheme.as_ref().map_or("ASPRS (default)".into(), |p| {
                                 p.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned())
                             }));
                             if ui.small_button("Choose…").clicked() {
                                 self.scheme = rfd::FileDialog::new()
-                                    .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
+                                    .add_filter("Class scheme", &ols_core::files::open_extensions(ols_lidar::classes::CLASS_FILE_EXTENSION))
                                     .pick_file();
                             }
                         });
@@ -380,7 +380,7 @@ impl ExportDialog {
                     ui.label("beyond its structures");
                 });
                 ui.separator();
-                ui.checkbox(&mut self.scheme, "the class scheme next to it (.olsc)");
+                ui.checkbox(&mut self.scheme, "the class scheme next to it (.ohlc)");
                 ui.label(
                     egui::RichText::new(
                         "LAS 1.4, point format 6 (classes 0–255); .laz compressed. Coordinates on \

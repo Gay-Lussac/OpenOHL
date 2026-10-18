@@ -4,7 +4,7 @@
 
 //! The structure screen of the line application (the Edit tool on a
 //! structure, Strings and points… in Properties): a structure type
-//! (`.olss`) in its own axes (x right of the line, y ahead, z up, 0;0 at
+//! (`.ohls`) in its own axes (x right of the line, y ahead, z up, 0;0 at
 //! the centre) — the tables on the left, its 3D view on the right (the
 //! divider dragged, its place kept for the session). Only the basics are
 //! edited here: the attachment points, the strings (insulators) and the
@@ -51,7 +51,7 @@ pub enum Sheet {
 /// What the workspace asks of the application.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {
-    /// Save an insulator assembly (`.olsi` text) into the insulator library.
+    /// Save an insulator assembly (`.ohli` text) into the insulator library.
     SaveInsulator {
         /// Its id.
         id: String,
@@ -153,7 +153,7 @@ impl Workspace {
         if text == self.read_from && self.shown.is_some() {
             return;
         }
-        if let Ok(t) = StructureType::parse(std::path::Path::new("type.olss"), &text) {
+        if let Ok(t) = StructureType::parse(std::path::Path::new("type.ohls"), &text) {
             self.shown = Some(t);
         }
         self.read_from = text;
@@ -1414,7 +1414,7 @@ node = "N3"
 "#;
 
     fn read(doc: &DocumentMut) -> StructureType {
-        StructureType::parse(std::path::Path::new("p.olss"), &doc.to_string()).unwrap()
+        StructureType::parse(std::path::Path::new("p.ohls"), &doc.to_string()).unwrap()
     }
 
     /// The screen's edits are those of the structure application, on the

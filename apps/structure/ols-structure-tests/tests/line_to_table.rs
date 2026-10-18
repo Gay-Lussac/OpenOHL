@@ -24,23 +24,23 @@ fn ex() -> PathBuf {
 }
 
 fn type_02() -> StructureType {
-    let path = ex().join("Structures/type-02.olss");
+    let path = ex().join("Structures/type-02.ohls");
     StructureType::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap()
 }
 
 /// The typed example line's structure loads in its three load cases.
 fn solved() -> (Line, Vec<CaseLoads>) {
     let types = StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
-    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
         .unwrap()
         .resolve(&types, &ols_structures::InsulatorLibrary::default())
         .unwrap();
     line.creep_stretch.creep_case = Some("everyday".into());
     let library = ols_cables::Library::load(&ex().join("../../libraries/cables")).unwrap();
-    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.olswc"))
+    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.ohlwc"))
         .unwrap()
         .cases;
-    let cases = LoadCases::load(&ex().join("load-cases.olslc")).unwrap();
+    let cases = LoadCases::load(&ex().join("load-cases.ohllc")).unwrap();
     let loads = ols_loads::structure_loads(
         &line,
         &library,
@@ -167,7 +167,7 @@ fn the_table_loads_the_model_as_the_line_run_does() {
     let structure = type_02();
     let recipes = StructureLoadCases::from_structure(&structure).unwrap();
     let table = evaluate(&recipes, &structure, &values);
-    let model = Model::load(&ex().join("Structures/type-02.olss")).unwrap();
+    let model = Model::load(&ex().join("Structures/type-02.ohls")).unwrap();
     let budget = ols_structures_fe::default_budget();
 
     let wind = recipes.iter().find(|c| c.name == "wind").unwrap();
@@ -229,7 +229,7 @@ fn the_table_loads_the_model_as_the_line_run_does() {
 fn the_cases_of_the_table_are_solved_through_the_link() {
     let (line, loads) = solved();
     let values = line_values(&loads, &line, "T2");
-    let path = ex().join("Structures/type-02.olss");
+    let path = ex().join("Structures/type-02.ohls");
     let text = std::fs::read_to_string(&path).unwrap();
     let structure = type_02();
     let recipes = StructureLoadCases::from_structure(&structure).unwrap();

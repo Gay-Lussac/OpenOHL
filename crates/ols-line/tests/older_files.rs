@@ -14,7 +14,7 @@ fn version_2_examples_read_as_the_current_ones() {
     for f in ["synthetic-line", "synthetic-line-typed", "crossing-line"] {
         let old = ols_line::Line::load(&here.join(format!("tests/data/{f}-v2.ols.json"))).unwrap();
         let new =
-            ols_line::Line::load(&here.join(format!("../../examples/synthetic-line/{f}.ols.json")))
+            ols_line::Line::load(&here.join(format!("../../examples/synthetic-line/{f}.ohl.json")))
                 .unwrap();
         assert_eq!(new.version, ols_line::LINE_FILE_VERSION, "{f}");
         assert_eq!(old, new, "{f}");

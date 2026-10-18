@@ -24,7 +24,7 @@ fn example(name: &str) -> PathBuf {
 
 /// A rule file with a vertical rule to class 5 (and the ground), in the
 /// maximum temperature case only, solved by finite elements.
-const RULES: &str = r#"format = "ols-clearance-rules"
+const RULES: &str = r#"format = "ohl-clearance-rules"
 version = 1
 name = "Zone test"
 
@@ -67,9 +67,9 @@ fn setup(tag: &str) -> Setup {
     let dir = std::env::temp_dir().join(format!("ols-zones-{tag}-{}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
-    let line = ols_line::Line::load(&example("synthetic-line.ols.json")).unwrap();
+    let line = ols_line::Line::load(&example("synthetic-line.ohl.json")).unwrap();
     let library = ols_cables::Library::load(&root().join("libraries/cables")).unwrap();
-    let hot = WeatherCases::load(&example("weather-cases.olswc"))
+    let hot = WeatherCases::load(&example("weather-cases.ohlwc"))
         .unwrap()
         .cases
         .into_iter()
@@ -87,7 +87,7 @@ fn setup(tag: &str) -> Setup {
         return_number: 1,
         number_of_returns: 1,
     };
-    let file = dir.join("scan.ols");
+    let file = dir.join("scan.ohl");
     ols_pointcloud::Store::open(&file)
         .unwrap()
         .import_points(
@@ -120,12 +120,12 @@ fn text(p: &Path) -> String {
 #[test]
 fn zones_by_a_rule_file_with_its_check() {
     let s = setup("check");
-    let rules = s.dir.join("zone.olsr");
+    let rules = s.dir.join("zone.ohlr");
     std::fs::write(&rules, RULES).unwrap();
     let csv = s.dir.join("out.csv");
     let (line, weather, survey) = (
-        example("synthetic-line.ols.json"),
-        example("weather-cases.olswc"),
+        example("synthetic-line.ohl.json"),
+        example("weather-cases.ohlwc"),
         example("synthetic-survey.csv"),
     );
     let out = ols(&[
@@ -220,14 +220,14 @@ fn zones_by_a_rule_file_with_its_check() {
 fn exit_codes() {
     let s = setup("exit");
     let (line, weather) = (
-        example("synthetic-line.ols.json"),
-        example("weather-cases.olswc"),
+        example("synthetic-line.ohl.json"),
+        example("weather-cases.ohlwc"),
     );
     // Trees only, 1 m: kept.
-    let kept = s.dir.join("kept.olsr");
+    let kept = s.dir.join("kept.ohlr");
     std::fs::write(
         &kept,
-        "format = \"ols-clearance-rules\"\nversion = 1\n\n[[rule]]\nname = \"Trees\"\n\
+        "format = \"ohl-clearance-rules\"\nversion = 1\n\n[[rule]]\nname = \"Trees\"\n\
          target = \"points\"\nclasses = [5]\nvertical = \"1 m\"\nvertical_band = \"2 m\"\n\
          cases = [\"max temperature\"]\n\n[wind]\nsteps = false\n",
     )
@@ -257,10 +257,10 @@ fn exit_codes() {
     );
 
     // Vertical and radial: refused without --measure.
-    let both = s.dir.join("both.olsr");
+    let both = s.dir.join("both.ohlr");
     std::fs::write(
         &both,
-        "format = \"ols-clearance-rules\"\nversion = 1\n\n[[rule]]\nname = \"Trees\"\n\
+        "format = \"ohl-clearance-rules\"\nversion = 1\n\n[[rule]]\nname = \"Trees\"\n\
          target = \"points\"\nclasses = [5]\nvertical = \"5 m\"\nradial = \"4 m\"\n\
          cases = [\"max temperature\"]\n\n[wind]\nsteps = false\n",
     )

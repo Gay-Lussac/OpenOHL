@@ -9,7 +9,7 @@
 //! then the recipes evaluated — with values typed over it kept as
 //! overrides. The line's cases can be stored in the structure file as
 //! cases of given values (the file then needs no line). Recipes are
-//! imported and exported as `.olsslc` or CSV, the table as CSV. The loads
+//! imported and exported as `.ohlslc` or CSV, the table as CSV. The loads
 //! of the case shown are drawn as arrows in the view. A status block at
 //! the top of the panels (and of Line values) says what the line gave, or
 //! why not, and which cases are incomplete (a section or jumper at the
@@ -584,7 +584,7 @@ impl StructureApp {
             if ui
                 .button("Import recipes…")
                 .on_hover_text(
-                    "Load cases from a structure load-case file (.olsslc) or CSV: a case with \
+                    "Load cases from a structure load-case file (.ohlslc) or CSV: a case with \
                      the name of one here replaces it, the others are added",
                 )
                 .clicked()
@@ -593,7 +593,7 @@ impl StructureApp {
             }
             if ui
                 .button("Export recipes…")
-                .on_hover_text("The load cases as a structure load-case file (.olsslc) or CSV")
+                .on_hover_text("The load cases as a structure load-case file (.ohlslc) or CSV")
                 .clicked()
             {
                 export = true;
@@ -1034,7 +1034,7 @@ impl StructureApp {
     }
 }
 
-/// Takes the recipes of a `.olsslc` (or CSV) file into the structure: one
+/// Takes the recipes of a `.ohlslc` (or CSV) file into the structure: one
 /// undo step. How many cases were added and replaced.
 pub fn import_recipes(f: &mut StructureFile, path: &Path) -> Result<(usize, usize), String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -1054,7 +1054,7 @@ pub fn import_recipes(f: &mut StructureFile, path: &Path) -> Result<(usize, usiz
     })
 }
 
-/// Writes the recipes as a `.olsslc` file, or CSV (by the extension).
+/// Writes the recipes as a `.ohlslc` file, or CSV (by the extension).
 pub fn export_recipes(f: &StructureFile, path: &Path) -> Result<(), String> {
     let t = f.structure();
     let cases = StructureLoadCases::from_structure(t)
@@ -1439,7 +1439,7 @@ impl StructureApp {
             return;
         };
         if let Some(p) = rfd::FileDialog::new()
-            .add_filter("Structure load cases", &["olsslc", "csv"])
+            .add_filter("Structure load cases", &["ohlslc", "olsslc", "csv"])
             .pick_file()
         {
             self.message = Some(match import_recipes(f, &p) {
@@ -1458,9 +1458,9 @@ impl StructureApp {
             return;
         };
         if let Some(p) = rfd::FileDialog::new()
-            .add_filter("Structure load cases", &["olsslc"])
+            .add_filter("Structure load cases", &["ohlslc"])
             .add_filter("CSV", &["csv"])
-            .set_file_name(format!("{}.olsslc", f.structure().id))
+            .set_file_name(format!("{}.ohlslc", f.structure().id))
             .save_file()
         {
             self.message = Some(match export_recipes(f, &p) {

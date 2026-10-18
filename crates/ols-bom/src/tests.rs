@@ -18,14 +18,14 @@ fn library() -> ols_cables::Library {
 }
 
 fn typed_line() -> Line {
-    let line = Line::load(&ex().join("synthetic-line-typed.ols.json")).unwrap();
+    let line = Line::load(&ex().join("synthetic-line-typed.ohl.json")).unwrap();
     let types = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
     line.resolve(&types, &ols_structures::InsulatorLibrary::default())
         .unwrap()
 }
 
 fn cost() -> CostData {
-    CostData::load(&ex().join("unit-costs.olscost")).unwrap()
+    CostData::load(&ex().join("unit-costs.ohlcost")).unwrap()
 }
 
 /// Counts of the synthetic typed line, by hand from the line file: 7

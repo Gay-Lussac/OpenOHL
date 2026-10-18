@@ -342,7 +342,7 @@ pub trait LodReader: Send {
 }
 
 /// Opens the cloud of `spec` for reading by node: a COPC file, or a
-/// project file's cloud (`FILE.ols`, `FILE.ols#name`).
+/// project file's cloud (`FILE.ohl`, `FILE.ohl#name`).
 ///
 /// Cost: a COPC file's hierarchy, or one query over a stored cloud's
 /// block index (~0.4 s per 10⁵ blocks — 10⁹ points are some 10⁵).

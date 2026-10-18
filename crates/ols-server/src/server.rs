@@ -217,7 +217,7 @@ impl Authority {
         let events = self.events.subscribe();
         let (copy, size) = if copy {
             let copy = self.copies.join(format!(
-                "{}-{}.ols",
+                "{}-{}.ohl",
                 user.replace(['/', '\\'], "_"),
                 random_code(6)
             ));

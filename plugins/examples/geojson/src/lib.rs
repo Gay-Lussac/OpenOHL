@@ -39,7 +39,7 @@ fn option<'a>(options: &'a [(String, String)], key: &str) -> Option<&'a str> {
 
 fn export(model: &str, options: &[(String, String)]) -> Result<Vec<u8>, String> {
     let model: Value = serde_json::from_str(model).map_err(|e| format!("model: {e}"))?;
-    if model["format"] != "ols-export-model" || model["version"] != 1 {
+    if model["format"] != "ohl-export-model" || model["version"] != 1 {
         return Err("expects ols-export-model version 1".into());
     }
     let mut features = Vec::new();
@@ -89,7 +89,7 @@ fn import(data: &[u8], options: &[(String, String)]) -> Result<String, String> {
     let mut line = match option(options, "into") {
         Some(text) => serde_json::from_str(text).map_err(|e| format!("into: {e}"))?,
         None => json!({
-            "format": "ols-line",
+            "format": "ohl-line",
             "version": 1,
             "name": doc["name"].as_str().unwrap_or("imported from GeoJSON"),
             "crs": doc["crs"]["properties"]["name"].as_str().unwrap_or(""),

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 fn example() -> Line {
     Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .unwrap()
 }
@@ -22,7 +22,7 @@ fn example() -> Line {
 fn project(name: &str) -> (PathBuf, Session) {
     let dir = std::env::temp_dir().join(format!("ols-lines-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let mut s = Session::open(&path).unwrap();
     s.import(&example(), "ana").unwrap();
@@ -427,7 +427,7 @@ fn crafted_library_names_are_not_restored() {
     {
         let db = rusqlite::Connection::open(&path).unwrap();
         db.execute(
-            "INSERT INTO model_object (line, kind, id, ord, version, json) VALUES ('main', 'library', 'cables/../escaped.olsw', 0, 1, '{\"id\":\"cables/../escaped.olsw\",\"kind\":\"cables\",\"name\":\"../escaped.olsw\",\"text\":\"x\"}')",
+            "INSERT INTO model_object (line, kind, id, ord, version, json) VALUES ('main', 'library', 'cables/../escaped.ohlw', 0, 1, '{\"id\":\"cables/../escaped.ohlw\",\"kind\":\"cables\",\"name\":\"../escaped.ohlw\",\"text\":\"x\"}')",
             [],
         )
         .unwrap();
@@ -444,16 +444,16 @@ fn crafted_library_names_are_not_restored() {
 #[test]
 fn library_files_are_each_lines() {
     let (_path, mut s) = project("line-libraries");
-    s.put_library_file("ana", "cables", "a.olsw", "x = 1")
+    s.put_library_file("ana", "cables", "a.ohlw", "x = 1")
         .unwrap();
     s.create_line("ana", "phase 1", "main").unwrap();
     s.select_line("phase 1").unwrap();
     assert_eq!(s.library_files("cables").unwrap().len(), 1);
-    s.put_library_file("ana", "cables", "a.olsw", "x = 2")
+    s.put_library_file("ana", "cables", "a.ohlw", "x = 2")
         .unwrap();
     s.select_line("main").unwrap();
     assert_eq!(
         s.library_files("cables").unwrap(),
-        vec![("a.olsw".to_owned(), "x = 1".to_owned())]
+        vec![("a.ohlw".to_owned(), "x = 1".to_owned())]
     );
 }

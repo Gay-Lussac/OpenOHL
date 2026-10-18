@@ -181,7 +181,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
 impl VersionsWindow {
     fn ui(&mut self, ui: &mut egui::Ui, r: &Ready, ops: &mut Vec<(String, Op)>) {
         let Some(s) = session(&r.model) else {
-            ui.label("Version control needs a project file (.ols).");
+            ui.label("Version control needs a project file (.ohl).");
             return;
         };
         let key = (r.model.line_version, s.last_seq().unwrap_or(0), self.serial);

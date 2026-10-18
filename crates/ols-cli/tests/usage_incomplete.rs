@@ -21,11 +21,11 @@ fn usage_csv_marks_the_structures_of_a_section_not_solved() {
     let dir = std::env::temp_dir().join(format!("ols-usage-incomplete-{}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
-    let mut line = ols_line::Line::load(&example("synthetic-line-typed.ols.json")).unwrap();
+    let mut line = ols_line::Line::load(&example("synthetic-line-typed.ohl.json")).unwrap();
     for s in line.sections.iter_mut().filter(|s| s.id == "S3") {
         s.cable = "no-such-cable".into();
     }
-    let file = dir.join("broken.ols.json");
+    let file = dir.join("broken.ohl.json");
     std::fs::write(&file, line.to_json()).unwrap();
     let csv = dir.join("usage.csv");
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
@@ -34,9 +34,9 @@ fn usage_csv_marks_the_structures_of_a_section_not_solved() {
         .arg("--structures")
         .arg(example("Structures"))
         .arg("--weather")
-        .arg(example("weather-cases.olswc"))
+        .arg(example("weather-cases.ohlwc"))
         .arg("--load-cases")
-        .arg(example("load-cases.olslc"))
+        .arg(example("load-cases.ohllc"))
         .arg("--usage-csv")
         .arg(&csv)
         .output()

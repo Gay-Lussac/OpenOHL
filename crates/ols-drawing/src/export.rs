@@ -33,7 +33,7 @@ pub enum Format {
     Png,
     /// The profile's numbers as CSV.
     Csv,
-    /// The profile's numbers as OLS profile XML.
+    /// The profile's numbers as OHL profile XML.
     Xml,
 }
 
@@ -68,7 +68,7 @@ impl Format {
             Self::Pdf => "PDF, a page per sheet",
             Self::Png => "PNG images of the sheets",
             Self::Csv => "profile numbers (CSV)",
-            Self::Xml => "profile numbers (OLS profile XML)",
+            Self::Xml => "profile numbers (OHL profile XML)",
         }
     }
 

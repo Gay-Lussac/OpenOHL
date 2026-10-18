@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A pole described in the structure file checked as its `.olsp`; poles
+//! A pole described in the structure file checked as its `.ohlp`; poles
 //! by height and polygonal; the model of a structure standing on an
 //! extension (its piece, its supports, a leg lowered).
 
@@ -21,11 +21,11 @@ fn example(name: &str) -> std::path::PathBuf {
 }
 
 /// The example steel pole written in the structure file (`[pole]`, the
-/// outline from the feet to 27 m) is the `.olsp` pole: the same values,
+/// outline from the feet to 27 m) is the `.ohlp` pole: the same values,
 /// the same check, to the last digit, with wind and P-Delta.
 #[test]
 fn inline_pole_checks_as_its_olsp() {
-    let olsp = Pole::load(&example("steel-pole-30m.olsp")).unwrap();
+    let olsp = Pole::load(&example("steel-pole-30m.ohlp")).unwrap();
     let text = "id = \"type-05\"\nname = \"pole\"\nkind = \"pole\"\nversion = 3\n\
          [[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"26 m\"]\n\
          [pole]\nembedment = \"3 m\"\nmaterial = \"steel\"\nwall = \"8 mm\"\n\
@@ -35,7 +35,7 @@ fn inline_pole_checks_as_its_olsp() {
          [[pole.capacity]]\nheight = \"0 m\"\nmoment = \"900 kN m\"\n\
          [[pole.capacity]]\nheight = \"13 m\"\nmoment = \"450 kN m\"\n\
          [[pole.capacity]]\nheight = \"27 m\"\nmoment = \"120 kN m\"\n";
-    let t = StructureType::parse(Path::new("type-05.olss"), text).unwrap();
+    let t = StructureType::parse(Path::new("type-05.ohls"), text).unwrap();
     let inline = structure_pole(&t, Path::new("."), &SectionLibrary::default())
         .unwrap()
         .unwrap();
@@ -59,7 +59,7 @@ fn inline_pole_checks_as_its_olsp() {
     }
     // Named by id next to the structure, or by file name: the same pole.
     let named = StructureType::parse(
-        Path::new("t.olss"),
+        Path::new("t.ohls"),
         "id = \"t\"\nname = \"t\"\nkind = \"pole\"\npole = \"steel-pole-30m\"\n",
     )
     .unwrap();
@@ -69,8 +69,8 @@ fn inline_pole_checks_as_its_olsp() {
         Ok(olsp.clone())
     );
     let by_file = StructureType::parse(
-        Path::new("t.olss"),
-        "id = \"t\"\nname = \"t\"\nkind = \"pole\"\npole = \"steel-pole-30m.olsp\"\n",
+        Path::new("t.ohls"),
+        "id = \"t\"\nname = \"t\"\nkind = \"pole\"\npole = \"steel-pole-30m.ohlp\"\n",
     )
     .unwrap();
     assert_eq!(
@@ -79,22 +79,22 @@ fn inline_pole_checks_as_its_olsp() {
     );
     // Not complete: said why.
     let outline_only = text.replace("material = \"steel\"\n", "");
-    let t = StructureType::parse(Path::new("t.olss"), &outline_only).unwrap();
+    let t = StructureType::parse(Path::new("t.ohls"), &outline_only).unwrap();
     let e = structure_pole(&t, Path::new("."), &SectionLibrary::default())
         .unwrap()
         .unwrap_err();
     assert!(e.contains("no material"), "{e}");
 }
 
-/// `wall = "solid"` is the solid pole a `.olsp` without a wall always was:
-/// the same pole and the same check to the last digit, in a `.olsp` file
+/// `wall = "solid"` is the solid pole a `.ohlp` without a wall always was:
+/// the same pole and the same check to the last digit, in a `.ohlp` file
 /// and in `[pole]`; solid wins over a section's wall (its material still
 /// gives the elasticity and density).
 #[test]
 fn a_solid_wall_checks_as_no_wall() {
     let olsp = |wall: &str| {
         Pole::parse(&format!(
-            "format = \"ols-pole\"\nversion = 1\nid = \"w\"\nmaterial = \"wood\"\n\
+            "format = \"ohl-pole\"\nversion = 1\nid = \"w\"\nmaterial = \"wood\"\n\
              length = \"14 m\"\nembedment = \"2 m\"\ntop_diameter = \"190 mm\"\n\
              ground_diameter = \"290 mm\"\nfibre_stress = \"55 MPa\"\n\
              elasticity = \"11 GPa\"\ndensity = \"650 kg/m3\"\n{wall}"
@@ -116,7 +116,7 @@ fn a_solid_wall_checks_as_no_wall() {
              [[pole.outline]]\nz = \"12 m\"\ndiameter = \"190 mm\"\n"
         )
     };
-    let t = StructureType::parse(Path::new("w.olss"), &structure("")).unwrap();
+    let t = StructureType::parse(Path::new("w.ohls"), &structure("")).unwrap();
     let inline = structure_pole(&t, Path::new("."), &SectionLibrary::default())
         .unwrap()
         .unwrap();
@@ -150,7 +150,7 @@ fn a_solid_wall_checks_as_no_wall() {
     .unwrap();
     let text = structure("section = \"C\"\n")
         .replace("elasticity = \"11 GPa\"\ndensity = \"650 kg/m3\"\n", "");
-    let t = StructureType::parse(Path::new("w.olss"), &text).unwrap();
+    let t = StructureType::parse(Path::new("w.ohls"), &text).unwrap();
     let p = structure_pole(&t, Path::new("."), &lib).unwrap().unwrap();
     assert_eq!((p.wall, p.elasticity, p.density), (None, Some(12e9), 700.0));
 }
@@ -178,7 +178,7 @@ fn poles_by_height_and_polygonal() {
              [[pole.outline]]\nz = \"20 m\"\ndiameter = \"200 mm\"\n"
         )
     };
-    let t = StructureType::parse(Path::new("p.olss"), &text("P12")).unwrap();
+    let t = StructureType::parse(Path::new("p.ohls"), &text("P12")).unwrap();
     let p = structure_pole(&t, Path::new("."), &lib).unwrap().unwrap();
     assert_eq!(p.sides, Some(12));
     assert_eq!(
@@ -203,7 +203,7 @@ fn poles_by_height_and_polygonal() {
         s.iy
     );
     // A section of another shape is refused.
-    let t = StructureType::parse(Path::new("p.olss"), &text("P8")).unwrap();
+    let t = StructureType::parse(Path::new("p.ohls"), &text("P8")).unwrap();
     let e = structure_pole(&t, Path::new("."), &lib)
         .unwrap()
         .unwrap_err();
@@ -211,7 +211,7 @@ fn poles_by_height_and_polygonal() {
         e.contains("not a hollow section of the pole's shape"),
         "{e}"
     );
-    let t = StructureType::parse(Path::new("p.olss"), &text("P99")).unwrap();
+    let t = StructureType::parse(Path::new("p.ohls"), &text("P99")).unwrap();
     assert!(structure_pole(&t, Path::new("."), &lib).unwrap().is_err());
 }
 
@@ -457,7 +457,7 @@ fn a_leg_extension_lowers_its_support() {
 fn extensions_of_model_files_are_refused() {
     let dir = std::env::temp_dir().join(format!("ols-fe-ext-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("t.olss");
+    let path = dir.join("t.ohls");
     std::fs::write(&path, TOWER).unwrap();
     let lib = SectionLibrary::default();
     assert_eq!(
@@ -467,7 +467,7 @@ fn extensions_of_model_files_are_refused() {
             .len(),
         9
     );
-    let e = Model::load_extended(&example("type-02-model.olsfe"), &lib, Some("+2")).unwrap_err();
+    let e = Model::load_extended(&example("type-02-model.ohlfe"), &lib, Some("+2")).unwrap_err();
     assert!(e.contains("no extension"), "{e}");
     std::fs::remove_dir_all(&dir).ok();
 }

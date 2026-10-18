@@ -1,7 +1,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Writes synthetic-survey.csv: invented ground for synthetic-line.ols.json.
+"""Writes synthetic-survey.csv: invented ground for synthetic-line.ohl.json.
 
 Smooth ground through the structure bases (Gaussian radial basis
 interpolation), an 8 m hill under span T2-T3 of the main route (so a hot
@@ -17,7 +17,7 @@ import math
 from pathlib import Path
 
 HERE = Path(__file__).parent
-line = json.loads((HERE / "synthetic-line.ols.json").read_text())
+line = json.loads((HERE / "synthetic-line.ohl.json").read_text())
 bases = [s["position"] for s in line["structures"]]
 
 # Gaussian RBF through the bases around their mean height.

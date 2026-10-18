@@ -370,7 +370,7 @@ mod tests {
     fn example() -> (Line, Library, Terrain) {
         let ex = root().join("examples/synthetic-line");
         (
-            Line::load(&ex.join("synthetic-line.ols.json")).unwrap(),
+            Line::load(&ex.join("synthetic-line.ohl.json")).unwrap(),
             Library::load(&root().join("libraries/cables")).unwrap(),
             Terrain::load(&ex.join("synthetic-survey.csv")).unwrap(),
         )

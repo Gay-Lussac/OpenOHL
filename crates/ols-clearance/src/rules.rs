@@ -2,11 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Clearance rules (`*.olsr`): what to check against, and the required
+//! Clearance rules (`*.ohlr`): what to check against, and the required
 //! vertical and/or radial distances (DESIGN_GOALS §13).
 //!
 //! ```toml
-//! format = "ols-clearance-rules"
+//! format = "ohl-clearance-rules"
 //! version = 1
 //! name = "Example rules"
 //!
@@ -109,9 +109,9 @@ use ols_line::electrical::Potential;
 use serde::Deserialize;
 
 /// File extension of rule sets.
-pub const RULE_FILE_EXTENSION: &str = "olsr";
+pub const RULE_FILE_EXTENSION: &str = "ohlr";
 /// Format identifier.
-pub const RULE_FILE_FORMAT: &str = "ols-clearance-rules";
+pub const RULE_FILE_FORMAT: &str = "ohl-clearance-rules";
 /// Newest format version read.
 pub const RULE_FILE_VERSION: u32 = 1;
 
@@ -1220,7 +1220,7 @@ mod tests {
     /// margin, vertical band and wind step where the file gives none.
     #[test]
     fn project_defaults_fill_what_a_rule_file_leaves_out() {
-        let text = "format = \"ols-clearance-rules\"\nversion = 1\nname = \"x\"\n\
+        let text = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n\
                     [wind]\nsteps = true\n\
                     [[rule]]\nname = \"trees\"\ntarget = \"points\"\nclasses = [5]\nvertical = \"5 m\"\n";
         let program = RuleSet::parse(text).unwrap();
@@ -1241,7 +1241,7 @@ mod tests {
     #[test]
     fn parses_all_targets() {
         let text = r#"
-            format = "ols-clearance-rules"
+            format = "ohl-clearance-rules"
             name = "test"
             [[rule]]
             name = "g"

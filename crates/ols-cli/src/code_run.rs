@@ -32,7 +32,7 @@ pub enum CodeCommand {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Generate weather cases (.olswc) and load cases (.olslc) from a
+    /// Generate weather cases (.ohlwc) and load cases (.ohllc) from a
     /// parameter file; prints the plugin's notes.
     Generate {
         /// Design-code plugin directory.

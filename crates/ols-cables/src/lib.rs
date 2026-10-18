@@ -620,14 +620,14 @@ impl fmt::Display for CableError {
 
 impl std::error::Error for CableError {}
 
-/// File extension of OpenOHL wire libraries (`*.olsw`, "OLS wire").
+/// File extension of OpenOHL wire libraries (`*.ohlw`, "OHL wire").
 ///
 /// The content is TOML. A dedicated extension (rather than reusing another
 /// program's, e.g. another line design program's cable files) avoids confusing different formats.
-pub const WIRE_FILE_EXTENSION: &str = "olsw";
+pub const WIRE_FILE_EXTENSION: &str = "ohlw";
 
 /// Value of the optional `format` header of wire libraries.
-pub const WIRE_FILE_FORMAT: &str = "ols-wire";
+pub const WIRE_FILE_FORMAT: &str = "ohl-wire";
 
 /// Latest wire library format version.
 pub const WIRE_FILE_VERSION: u32 = 1;
@@ -635,7 +635,7 @@ pub const WIRE_FILE_VERSION: u32 = 1;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LibraryFile {
-    /// `"ols-wire"` (optional header identifying the file).
+    /// `"ohl-wire"` (optional header identifying the file).
     #[serde(default)]
     format: Option<String>,
     /// Format version (optional; 1).
@@ -677,7 +677,7 @@ impl Library {
         Ok(())
     }
 
-    /// Loads a wire library file, or every `*.olsw` file of a directory.
+    /// Loads a wire library file, or every `*.ohlw` file of a directory.
     pub fn load(path: &Path) -> Result<Self, CableError> {
         if path.is_dir() {
             return Self::load_dir(path);
@@ -691,19 +691,15 @@ impl Library {
         Ok(library)
     }
 
-    /// Loads every `*.olsw` wire library in a directory (not recursive), in
+    /// Loads every `*.ohlw` wire library in a directory (not recursive), in
     /// name order.
     pub fn load_dir(dir: &Path) -> Result<Self, CableError> {
         let io_error = |path: &Path, e: std::io::Error| CableError::Library {
             path: path.to_owned(),
             message: e.to_string(),
         };
-        let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map_err(|e| io_error(dir, e))?
-            .filter_map(|entry| entry.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|ext| ext == WIRE_FILE_EXTENSION))
-            .collect();
-        paths.sort();
+        std::fs::read_dir(dir).map_err(|e| io_error(dir, e))?;
+        let paths = ols_core::files::files_with_extension(dir, WIRE_FILE_EXTENSION);
         let mut library = Self::default();
         for path in paths {
             let text = std::fs::read_to_string(&path).map_err(|e| io_error(&path, e))?;
@@ -910,7 +906,7 @@ mod tests {
             )
         };
         let mut lib = Library::default();
-        lib.add_toml(Path::new("t.olsw"), &text("solar_absorptivity = 0.5"))
+        lib.add_toml(Path::new("t.ohlw"), &text("solar_absorptivity = 0.5"))
             .unwrap();
         let e = lib.get("aaac-551").unwrap().electrical.clone().unwrap();
         let at = |c: f64| {
@@ -929,7 +925,7 @@ mod tests {
         for bad in ["solar_absorptivity = 1.5", "resistivity = 3"] {
             assert!(
                 Library::default()
-                    .add_toml(Path::new("t.olsw"), &text(bad))
+                    .add_toml(Path::new("t.ohlw"), &text(bad))
                     .is_err(),
                 "{bad}"
             );
@@ -938,7 +934,7 @@ mod tests {
         let big = text("").replace("11.779 mm", "11.779 m");
         assert!(
             Library::default()
-                .add_toml(Path::new("t.olsw"), &big)
+                .add_toml(Path::new("t.ohlw"), &big)
                 .is_err()
         );
     }
@@ -1019,10 +1015,10 @@ mod tests {
     fn template_and_documented_example_load() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let template =
-            std::fs::read_to_string(root.join("libraries/cables/TEMPLATE.olsw.example")).unwrap();
+            std::fs::read_to_string(root.join("libraries/cables/TEMPLATE.ohlw.example")).unwrap();
         let mut library = Library::default();
         library
-            .add_toml(Path::new("TEMPLATE.olsw.example"), &template)
+            .add_toml(Path::new("TEMPLATE.ohlw.example"), &template)
             .unwrap();
         let cable = library.get("acsr-example-26-7").unwrap();
         assert!(cable.outer.stress_strain.is_some());
@@ -1033,34 +1029,34 @@ mod tests {
         let code = &block[block.find("```toml\n").unwrap() + 8..];
         let code = &code[..code.find("```").unwrap()];
         Library::default()
-            .add_toml(Path::new("doc.olsw"), code)
+            .add_toml(Path::new("doc.ohlw"), code)
             .unwrap();
     }
 
     #[test]
     fn rejects_bad_ids_and_formats() {
         let ok = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables/acsr-examples.olsw"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables/acsr-examples.ohlw"),
         )
         .unwrap();
         let bad_id = ok.replace("id = \"acsr-drake-26-7\"", "id = \"acsr drake\"");
         assert!(
             Library::default()
-                .add_toml(Path::new("a.olsw"), &bad_id)
+                .add_toml(Path::new("a.ohlw"), &bad_id)
                 .unwrap_err()
                 .to_string()
                 .contains("letters, digits")
         );
-        let bad_format = ok.replace("format = \"ols-wire\"", "format = \"something-else\"");
+        let bad_format = ok.replace("format = \"ohl-wire\"", "format = \"something-else\"");
         assert!(
             Library::default()
-                .add_toml(Path::new("b.olsw"), &bad_format)
+                .add_toml(Path::new("b.ohlw"), &bad_format)
                 .is_err()
         );
         let future = ok.replace("version = 1", "version = 99");
         assert!(
             Library::default()
-                .add_toml(Path::new("c.olsw"), &future)
+                .add_toml(Path::new("c.ohlw"), &future)
                 .unwrap_err()
                 .to_string()
                 .contains("newer")

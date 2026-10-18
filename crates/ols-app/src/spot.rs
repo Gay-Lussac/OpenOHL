@@ -111,7 +111,7 @@ impl SpotWindow {
             return;
         };
         let Some(cost_path) = self.cost_path.clone() else {
-            self.result = fail("choose a cost file (.olscost) first");
+            self.result = fail("choose a cost file (.ohlcost) first");
             return;
         };
         let line = model.line.clone();
@@ -260,7 +260,12 @@ impl SpotWindow {
                     ui.strong(name);
                     if ui.button("Choose…").clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter("Unit costs", &[ols_bom::cost::COST_FILE_EXTENSION])
+                            .add_filter(
+                                "Unit costs",
+                                &ols_core::files::open_extensions(
+                                    ols_bom::cost::COST_FILE_EXTENSION,
+                                ),
+                            )
                             .pick_file()
                     {
                         self.cost_path = Some(p);
@@ -282,12 +287,12 @@ impl SpotWindow {
             let ready = matches!(&self.result, Some(Ok(_)));
             if ui
                 .add_enabled(ready, egui::Button::new("Save as line file…"))
-                .on_hover_text("The proposal as a new line (.ols.json), to open or import")
+                .on_hover_text("The proposal as a new line (.ohl.json), to open or import")
                 .clicked()
                 && let Some(Ok((_, _, line))) = &self.result
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Line", &["json"])
-                    .set_file_name("spotted.ols.json")
+                    .set_file_name("spotted.ohl.json")
                     .save_file()
             {
                 self.status = match std::fs::write(&path, line.to_json()) {

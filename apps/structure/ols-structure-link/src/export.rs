@@ -259,7 +259,7 @@ pub fn export_structure(
     table: Option<&LoadTable>,
     recipes: &[LoadCaseRecipe],
 ) -> Result<ExportStructure, String> {
-    let structure = StructureType::parse(std::path::Path::new("structure.olss"), text)
+    let structure = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let model = Model::from_structure_type_with(text, library)?;
     if model.members.is_empty() {

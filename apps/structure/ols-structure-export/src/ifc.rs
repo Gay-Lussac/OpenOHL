@@ -517,7 +517,7 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
                     .collect();
                 f.add(
                     "IFCPROFILEPROPERTIES",
-                    &format!("'OLS_Section',$,({}),{p}", props.join(",")),
+                    &format!("'OHL_Section',$,({}),{p}", props.join(",")),
                 );
                 let mp = f.add(
                     "IFCMATERIALPROFILE",
@@ -878,7 +878,7 @@ fn member(
         oh,
         &format!("member:{}", m.id),
         std::slice::from_ref(&e),
-        "OLS_Member",
+        "OHL_Member",
         &[
             ("Section", label(&section.id)),
             ("Kind", label(m.kind.as_str())),

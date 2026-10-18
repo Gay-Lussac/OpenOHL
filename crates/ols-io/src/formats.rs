@@ -11,7 +11,7 @@
 //! | `kml`            | export    | structures and wires in WGS84 (Google Earth) |
 //! | `kmz`            | export    | the same, zipped                           |
 //! | `spans-csv`      | export    | spans of every case: tensions, sag ([`crate::tables`]) |
-//! | `ols-xml`        | both      | the whole line as OLS XML ([`crate::olsxml`]; import also reads LandXML) |
+//! | `ohl-xml`        | both      | the whole line as OHL XML ([`crate::olsxml`]; import also reads LandXML) |
 //! | `landxml`        | export    | routes as alignments, structures as CgPoints ([`crate::landxml`]) |
 //! | `geojson`        | export    | structures, routes, wires per case ([`crate::gis`]) |
 //! | `structures-geojson` | import | structures from points along a route   |

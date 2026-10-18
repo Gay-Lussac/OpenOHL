@@ -61,7 +61,10 @@ impl StructureApp {
             ui.horizontal(|ui| {
                 if ui.button("Choose library…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Section library", &["olssec"])
+                        .add_filter(
+                            "Section library",
+                            &ols_core::files::open_extensions("ohlsec"),
+                        )
                         .pick_file()
                 {
                     self.export.sections = Some(p);
@@ -182,7 +185,7 @@ mod tests {
     #[test]
     fn every_format_from_the_window() {
         let file = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../examples/synthetic-line/Structures/type-02.olss");
+            .join("../../../examples/synthetic-line/Structures/type-02.ohls");
         let mut app = StructureApp::new(None);
         app.open(&file);
         assert!(app.file.is_some(), "{:?}", app.open_error);

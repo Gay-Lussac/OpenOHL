@@ -7,9 +7,9 @@
 //! alias that runs this program).
 //!
 //! ```bash
-//! ohl-design examples/synthetic-line/synthetic-line.ols.json \
+//! ohl-design examples/synthetic-line/synthetic-line.ohl.json \
 //!     --terrain examples/synthetic-line/synthetic-survey.csv \
-//!     --weather examples/synthetic-line/weather-cases.olswc
+//!     --weather examples/synthetic-line/weather-cases.ohlwc
 //! ```
 
 use std::path::PathBuf;
@@ -105,10 +105,10 @@ mod ux_tests;
 #[derive(Parser)]
 #[command(name = "ohl-design", version = crate::structure_app::VERSION)]
 struct Args {
-    /// Line file (.ols.json) or project file (.ols); none: the start page
+    /// Line file (.ohl.json) or project file (.ohl); none: the start page
     /// (File › New project, Open).
     file: Option<PathBuf>,
-    /// Wire library (file or directory); default: *.olsw next to the file,
+    /// Wire library (file or directory); default: *.ohlw next to the file,
     /// else libraries/cables.
     #[arg(long)]
     library: Option<PathBuf>,
@@ -118,13 +118,13 @@ struct Args {
     /// Insulator library directory.
     #[arg(long)]
     insulators: Option<PathBuf>,
-    /// Weather case file (.olswc); default: still air at 15 °C.
+    /// Weather case file (.ohlwc); default: still air at 15 °C.
     #[arg(long)]
     weather: Option<PathBuf>,
     /// Survey points for the ground (CSV / XYZ).
     #[arg(long)]
     terrain: Option<PathBuf>,
-    /// Point cloud in a project file (FILE.ols or FILE.ols#name) or a COPC
+    /// Point cloud in a project file (FILE.ohl or FILE.ohl#name) or a COPC
     /// file (FILE.copc.laz); default:
     /// the project's own.
     #[arg(long)]
@@ -138,15 +138,15 @@ struct Args {
     /// User editing the project (default: the login name).
     #[arg(long)]
     user: Option<String>,
-    /// Clearance rules (.olsr) for the Clearances tab; default: the only
-    /// .olsr next to the file.
+    /// Clearance rules (.ohlr) for the Clearances tab; default: the only
+    /// .ohlr next to the file.
     #[arg(long)]
     rules: Option<PathBuf>,
-    /// Load cases (.olslc) for the structure loads; default: the
-    /// project's own, else the first .olslc next to the file.
+    /// Load cases (.ohllc) for the structure loads; default: the
+    /// project's own, else the first .ohllc next to the file.
     #[arg(long)]
     load_cases: Option<PathBuf>,
-    /// LiDAR class scheme (.olsc: class names, roles, display colours)
+    /// LiDAR class scheme (.ohlc: class names, roles, display colours)
     /// used instead of the point cloud's own.
     #[arg(long)]
     class_scheme: Option<PathBuf>,

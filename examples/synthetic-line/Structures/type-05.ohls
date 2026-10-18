@@ -1,0 +1,38 @@
+# Derived from the geometry of an existing line — check and complete.
+format = "ohl-structure"
+version = 2
+id = "type-05"
+name = "type-05 (1 structures, e.g. T6)"
+kind = "other"
+source = "derived from: T6"
+# Pole check: the invented steel pole of steel-pole-30m.ohlp.
+pole = "steel-pole-30m"
+
+[[point]]
+label = "A1"
+point = ["0.000 m", "0.000 m", "26.000 m"]
+
+[[wire]]
+label = "W1"
+set = 1
+
+[[string]]
+label = "S1"
+top = "A1"
+wire = "W1"
+length = "3.500 m"
+weight = "900.0 N"
+
+# Capacity (invented values for the example): allowable spans by line
+# angle (Method 1) and allowable loads per attachment (Method 2).
+
+[[capacity.spans]]
+angle = "0 deg"
+wind_span = "350 m"
+weight_span = "500 m"
+
+[[capacity.attachment]]
+point = "A1"
+vertical = "8 kN"
+transverse = "8 kN"
+longitudinal = "5 kN"

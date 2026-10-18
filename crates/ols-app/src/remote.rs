@@ -416,7 +416,7 @@ pub fn joined_file(dir: &Path, invitation: &Invitation, user: &str) -> PathBuf {
             .collect()
     };
     dir.join(format!(
-        "{}-{}.ols",
+        "{}-{}.ohl",
         clean(&invitation.address),
         clean(user)
     ))

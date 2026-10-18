@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Pylon templates (`*.olspt`, one per file): the face of a pylon (2D,
+//! Pylon templates (`*.ohlpt`, one per file): the face of a pylon (2D,
 //! across and up in its local axes) as a few named dimensions, from which
 //! a structure type of level 1 (points, strings, wire points with their
 //! sets) is built — for suspension or for strain. The library of templates
@@ -22,7 +22,7 @@
 //! parameters' names, `+ - * /` and parentheses.
 //!
 //! ```toml
-//! format = "ols-pylon-template"
+//! format = "ohl-pylon-template"
 //! version = 1
 //! id = "delta-1c"
 //! name = "Delta, one circuit"
@@ -66,9 +66,9 @@ use crate::LibraryItem;
 use crate::structures::StructureKind;
 
 /// File extension of pylon templates.
-pub const TEMPLATE_FILE_EXTENSION: &str = "olspt";
+pub const TEMPLATE_FILE_EXTENSION: &str = "ohlpt";
 /// `format` of a pylon template.
-pub const TEMPLATE_FILE_FORMAT: &str = "ols-pylon-template";
+pub const TEMPLATE_FILE_FORMAT: &str = "ohl-pylon-template";
 /// Newest format version read.
 pub const TEMPLATE_FILE_VERSION: u32 = 1;
 
@@ -182,7 +182,7 @@ fn default_ahead() -> u32 {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PylonTemplate {
-    /// `"ols-pylon-template"` (optional header).
+    /// `"ohl-pylon-template"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -468,7 +468,7 @@ impl PylonTemplate {
         }
         let n = |v: f64| format!("\"{} m\"", round(v));
         let mut t = String::new();
-        let _ = writeln!(t, "format = \"ols-structure\"");
+        let _ = writeln!(t, "format = \"ohl-structure\"");
         let _ = writeln!(t, "version = 2");
         let _ = writeln!(t, "id = {}", quote(id));
         let _ = writeln!(t, "name = {}", quote(name));

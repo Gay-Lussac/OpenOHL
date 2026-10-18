@@ -390,7 +390,7 @@ fn infeasible_and_invalid_problems_say_why() {
 fn spots_the_synthetic_main_route() {
     use std::path::Path;
     let ex = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-    let line = ols_line::Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap();
+    let line = ols_line::Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
     let terrain = ols_terrain::Terrain::load(&ex.join("synthetic-survey.csv")).unwrap();
     let types = ols_structures::StructureLibrary::load_dir(&ex.join("Structures")).unwrap();
     let insulators = ols_structures::InsulatorLibrary::default();
@@ -398,7 +398,7 @@ fn spots_the_synthetic_main_route() {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
     )
     .unwrap();
-    let cost = ols_bom::CostData::load(&ex.join("unit-costs.olscost")).unwrap();
+    let cost = ols_bom::CostData::load(&ex.join("unit-costs.ohlcost")).unwrap();
     let options = route::RouteOptions {
         route: "main".into(),
         cable: "acsr-drake-26-7".into(),

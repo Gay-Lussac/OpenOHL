@@ -13,11 +13,11 @@ use ols_structures::StructureType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// `format` of a structure load-case file.
-pub const STRUCTURE_LOAD_CASE_FILE_FORMAT: &str = "ols-structure-load-cases";
+pub const STRUCTURE_LOAD_CASE_FILE_FORMAT: &str = "ohl-structure-load-cases";
 /// Newest format version read.
 pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 1;
 /// File extension of structure load-case files.
-pub const STRUCTURE_LOAD_CASE_FILE_EXTENSION: &str = "olsslc";
+pub const STRUCTURE_LOAD_CASE_FILE_EXTENSION: &str = "ohlslc";
 /// The case today's `[[load]]` (nodal forces) is read as.
 pub const MODEL_CASE: &str = "model";
 
@@ -517,12 +517,12 @@ pub(crate) fn check_cases(cases: &[LoadCaseRecipe]) -> Result<(), String> {
     Ok(())
 }
 
-/// A structure load-case file (`.olsslc`): the recipes on their own, for
+/// A structure load-case file (`.ohlslc`): the recipes on their own, for
 /// export and import.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureLoadCases {
-    /// `"ols-structure-load-cases"` (optional).
+    /// `"ohl-structure-load-cases"` (optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// Format version (optional).

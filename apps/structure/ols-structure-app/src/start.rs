@@ -5,7 +5,7 @@
 //! The start page (OHL-Structure started without a file): **Open a
 //! structure…**, the files opened recently (kept in the window's storage)
 //! and **New structure…** — an empty level 1 structure (a stick figure
-//! with one point), or one built from a pylon template (`.olspt`, the
+//! with one point), or one built from a pylon template (`.ohlpt`, the
 //! line application's templates: `ols_structures::templates`), written
 //! where chosen and opened.
 
@@ -83,7 +83,7 @@ pub struct NewStructure {
 impl Default for NewStructure {
     fn default() -> Self {
         let dir = ols_core::files::shipped_library("pylon-templates");
-        let templates = ols_core::files::files_with_extension(&dir, "olspt")
+        let templates = ols_core::files::files_with_extension(&dir, "ohlpt")
             .into_iter()
             .filter_map(|p| {
                 let text = std::fs::read_to_string(&p).ok()?;
@@ -106,7 +106,7 @@ impl Default for NewStructure {
 pub fn minimal(id: &str, name: &str) -> String {
     format!(
         "# A new structure (OHL-Structure): add points and insulators (Geometry), then its \
-         body (Body).\nformat = \"ols-structure\"\nversion = 2\nid = {id:?}\nname = {name:?}\n\
+         body (Body).\nformat = \"ohl-structure\"\nversion = 2\nid = {id:?}\nname = {name:?}\n\
          kind = \"other\"\n\n[[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n"
     )
 }
@@ -163,13 +163,13 @@ impl StructureApp {
             // The OpenOHL mark above the name.
             ui.add(crate::icons::mark(ui.ctx(), 64.0));
             ui.heading("OHL-Structure");
-            ui.label("A structure file (.olss): its points and insulators, its body, its design.");
+            ui.label("A structure file (.ohls): its points and insulators, its body, its design.");
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 ui.add_space((ui.available_width() - 320.0).max(0.0) / 2.0);
                 if ui.button("Open a structure…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Structure", &["olss"])
+                        .add_filter("Structure", &ols_core::files::open_extensions("ohls"))
                         .pick_file()
                 {
                     open = Some(p);
@@ -268,9 +268,9 @@ impl StructureApp {
                         chosen = Some(Source::Template(p.clone(), Role::Suspension));
                     }
                 }
-                if ui.button("Another template file (.olspt)…").clicked()
+                if ui.button("Another template file (.ohlpt)…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Pylon template", &["olspt"])
+                        .add_filter("Pylon template", &ols_core::files::open_extensions("ohlpt"))
                         .pick_file()
                 {
                     chosen = Some(Source::Template(p, Role::Suspension));
@@ -311,10 +311,10 @@ impl StructureApp {
                         Err(e) => n.error = Some(e),
                         Ok(_) => {
                             create_at = rfd::FileDialog::new()
-                                .add_filter("Structure", &["olss"])
-                                .set_file_name(format!("{}.olss", n.id.trim()))
+                                .add_filter("Structure", &["ohls"])
+                                .set_file_name(format!("{}.ohls", n.id.trim()))
                                 .save_file()
-                                .map(|p| p.with_extension("olss"));
+                                .map(|p| p.with_extension("ohls"));
                         }
                     }
                 }
@@ -351,12 +351,12 @@ mod tests {
     fn recent_files() {
         let mut r = Recent::default();
         for k in 0..12 {
-            r.add(Path::new(&format!("/nowhere/s{k}.olss")));
+            r.add(Path::new(&format!("/nowhere/s{k}.ohls")));
         }
-        r.add(Path::new("/nowhere/s5.olss"));
+        r.add(Path::new("/nowhere/s5.ohls"));
         assert_eq!(r.files.len(), RECENT_MAX);
-        assert_eq!(r.files[0], PathBuf::from("/nowhere/s5.olss"));
-        assert_eq!(r.files.iter().filter(|f| f.ends_with("s5.olss")).count(), 1);
+        assert_eq!(r.files[0], PathBuf::from("/nowhere/s5.ohls"));
+        assert_eq!(r.files.iter().filter(|f| f.ends_with("s5.ohls")).count(), 1);
     }
 
     /// An empty structure and one of each shipped template read (level 1);
@@ -367,18 +367,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let mut n = NewStructure::default();
         assert!(!n.templates.is_empty(), "the shipped templates");
-        create(&dir.join("e.olss"), &n).unwrap();
+        create(&dir.join("e.ohls"), &n).unwrap();
         assert!(
-            create(&dir.join("e.olss"), &n)
+            create(&dir.join("e.ohls"), &n)
                 .unwrap_err()
                 .contains("exists")
         );
-        let f = ols_structure_edit::StructureFile::open(&dir.join("e.olss")).unwrap();
+        let f = ols_structure_edit::StructureFile::open(&dir.join("e.ohls")).unwrap();
         assert_eq!(f.structure().detail().level(), 1);
         for (k, (p, _, _)) in n.templates.clone().iter().enumerate() {
             n.source = Source::Template(p.clone(), Role::Suspension);
             n.id = format!("t{k}");
-            create(&dir.join(format!("t{k}.olss")), &n).unwrap();
+            create(&dir.join(format!("t{k}.ohls")), &n).unwrap();
         }
         n.id = "a b".into();
         assert!(text_of(&n).unwrap_err().contains("letters"));

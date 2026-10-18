@@ -625,7 +625,7 @@ mod tests {
         photo().save(&png).unwrap();
         // 0.5 m pixels, upper-left pixel centred at (1000.25, 2999.75).
         std::fs::write(dir.join("photo.pgw"), "0.5\n0\n0\n-0.5\n1000.25\n2999.75\n").unwrap();
-        let mut store = Store::open(&dir.join("p.ols")).unwrap();
+        let mut store = Store::open(&dir.join("p.ohl")).unwrap();
         let mut steps = 0;
         let info = store
             .import_image(
@@ -689,7 +689,7 @@ mod tests {
         let png = dir.join("wide.png");
         RgbImage::new(MAX_IMAGE_SIDE + 1, 1).save(&png).unwrap();
         std::fs::write(dir.join("wide.pgw"), "0.5\n0\n0\n-0.5\n0\n0\n").unwrap();
-        let mut store = Store::open(&dir.join("p.ols")).unwrap();
+        let mut store = Store::open(&dir.join("p.ohl")).unwrap();
         let e = store
             .import_image("Ortho", "wide", &png, "", "", None, &Budget::new(), |_| {})
             .unwrap_err();
@@ -731,7 +731,7 @@ mod tests {
             (g.x0, g.y0, g.px, g.py),
             (2_600_000.0, 1_200_000.0, 0.25, 0.25)
         );
-        let mut store = Store::open(&dir.join("p.ols")).unwrap();
+        let mut store = Store::open(&dir.join("p.ohl")).unwrap();
         let info = store
             .import_image("O", "g", &path, "", "", None, &Budget::new(), |_| {})
             .unwrap();
@@ -750,7 +750,7 @@ mod tests {
             "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nParcels\n10\n0\n20\n0\n11\n10\n21\n0\n0\nENDSEC\n0\nEOF\n",
         )
         .unwrap();
-        let store = Store::open(&dir.join("p.ols")).unwrap();
+        let store = Store::open(&dir.join("p.ohl")).unwrap();
         let (info, d) = store
             .import_dxf("cadastre", &dxf_path, "EPSG:2056")
             .unwrap();

@@ -17,7 +17,7 @@
 //!
 //! Each rule ([`ZoneRule`]) gives the wires' voltage (or any), the weather
 //! cases, the distance to keep and the targets: LiDAR classes, the ground
-//! surface. A window's rules are kept as a rule file (`.olsr`,
+//! surface. A window's rules are kept as a rule file (`.ohlr`,
 //! [`to_rule_set`], [`from_rule_set`]): one `[[rule]]` per row and target,
 //! read by `ohl line --rules` too.
 //!
@@ -882,7 +882,7 @@ mod tests {
     fn example() -> (Line, ols_cables::Library) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let line =
-            Line::load(&root.join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
         (line, library)
     }
@@ -1391,7 +1391,7 @@ mod tests {
     fn rule_files_round_trip() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let set =
-            RuleSet::load(&root.join("examples/synthetic-line/clearance-rules.olsr")).unwrap();
+            RuleSet::load(&root.join("examples/synthetic-line/clearance-rules.ohlr")).unwrap();
         assert_eq!(RuleSet::parse(&set.to_toml()).unwrap(), set);
         let text = r#"
             [[rule]]

@@ -39,13 +39,13 @@ fn started(app: impl FnOnce(&mut StructureApp) + 'static) -> Harness<'static, St
 /// and is then the first recent file.
 #[test]
 fn the_start_page_opens_and_creates_a_structure() {
-    let path = copy_of("type-01.olss", "start");
+    let path = copy_of("type-01.ohls", "start");
     let dir = path.parent().unwrap().to_path_buf();
     let p = path.clone();
     let mut h = started(move |a| a.recent.add(&p));
     h.get_by_label("Open a structure…");
     // A recent file opens with a click.
-    h.get_by_label("type-01.olss").click();
+    h.get_by_label("type-01.ohls").click();
     h.run();
     assert!(h.state().file.is_some());
     // Back on the start page: New structure… asks its id, name, source.
@@ -56,7 +56,7 @@ fn the_start_page_opens_and_creates_a_structure() {
     h.get_by_label("New structure");
     h.get_by_label("Empty: one point (level 1), to build from");
     // Created where chosen (the dialog's answer given here).
-    let new = dir.join("tower-a.olss");
+    let new = dir.join("tower-a.ohls");
     {
         let a = h.state_mut();
         let mut n = a.new_structure.take().unwrap();
@@ -79,7 +79,7 @@ fn the_start_page_opens_and_creates_a_structure() {
 /// the sections it uses.
 #[test]
 fn libraries_are_imported_listed_and_exported() {
-    let path = copy_of("type-01.olss", "libs");
+    let path = copy_of("type-01.ohls", "libs");
     let dir = path.parent().unwrap().to_path_buf();
     // A member naming a library section, one naming none, an insulator.
     let text = std::fs::read_to_string(&path).unwrap().replacen(
@@ -99,7 +99,7 @@ fn libraries_are_imported_listed_and_exported() {
     h.get_by_label("The structure names, but no library has:");
     h.get_by_label_contains("EA-61x7, NO-SUCH");
     // Imported (the file dialog's answer given here): read again.
-    let lib = root().join("libraries/sections/example-sections.olssec");
+    let lib = root().join("libraries/sections/example-sections.ohlsec");
     h.state_mut()
         .import_library(LibKind::Sections, &lib)
         .unwrap();
@@ -107,10 +107,10 @@ fn libraries_are_imported_listed_and_exported() {
         .import_library(LibKind::Insulators, &root().join("libraries/insulators"))
         .unwrap();
     h.run();
-    assert!(dir.join("Sections/example-sections.olssec").is_file());
+    assert!(dir.join("Sections/example-sections.ohlsec").is_file());
     assert!(h.state().loads.sections.section("EA-61x7").is_some());
-    h.get_by_label("example-sections.olssec");
-    h.get_by_label("example-suspension-i.olsi");
+    h.get_by_label("example-sections.ohlsec");
+    h.get_by_label("example-suspension-i.ohli");
     h.get_by_label_contains("section(s) in no library: NO-SUCH");
     assert!(
         h.state_mut()
@@ -119,10 +119,10 @@ fn libraries_are_imported_listed_and_exported() {
             .has(LibKind::Sections, "EA-61x7")
     );
     // A file that does not read: in a window, nothing imported.
-    let typo = dir.join("typo.olssec");
+    let typo = dir.join("typo.ohlsec");
     std::fs::write(
         &typo,
-        "format = \"ols-sections\"\nversion = 1\nnmae = \"x\"\n",
+        "format = \"ohl-sections\"\nversion = 1\nnmae = \"x\"\n",
     )
     .unwrap();
     assert!(
@@ -138,10 +138,10 @@ fn libraries_are_imported_listed_and_exported() {
     h.state_mut()
         .export_libraries(crate::libraries::Which::Used, &out)
         .unwrap();
-    let s = std::fs::read_to_string(out.join("sections/example-sections.olssec")).unwrap();
+    let s = std::fs::read_to_string(out.join("sections/example-sections.ohlsec")).unwrap();
     assert!(s.contains("EA-61x7") && !s.contains("UA-83x52x6"), "{s}");
-    assert!(out.join("structures/type-01.olss").is_file());
-    assert!(out.join("insulators/example-suspension-i.olsi").is_file());
+    assert!(out.join("structures/type-01.ohls").is_file());
+    assert!(out.join("insulators/example-suspension-i.ohli").is_file());
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -171,7 +171,7 @@ fn plugins_are_managed_with_shared_settings() {
     }
     .save(&ols_plugins::PluginSettings::path(&user))
     .unwrap();
-    let path = copy_of("type-01.olss", "plugins");
+    let path = copy_of("type-01.ohls", "plugins");
     let (u, p) = (user.clone(), path.clone());
     let mut h = started(move |a| {
         a.plugins = crate::plugins_ui::PluginsState::load(Some(u));

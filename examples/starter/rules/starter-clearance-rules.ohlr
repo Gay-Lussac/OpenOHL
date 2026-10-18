@@ -1,0 +1,24 @@
+# Starter template: clearance rules for learning (INVENTED distances, not
+# a design code). Set the distances of the regulation you work to before
+# relying on a check. Targets: ground, points (LiDAR classes), same_line
+# (other wires of this line), other_lines.
+format = "ohl-clearance-rules"
+version = 1
+name = "Starter rules (invented)"
+
+[[rule]]
+name = "Ground"
+target = "ground"
+vertical = "7 m"
+radial = "6.5 m"
+
+[[rule]]
+name = "Ground at maximum temperature"
+target = "ground"
+vertical = "7.5 m"
+cases = ["max temperature"]
+
+[[rule]]
+name = "Phase to phase"
+target = "same_line"
+radial = "2 m"

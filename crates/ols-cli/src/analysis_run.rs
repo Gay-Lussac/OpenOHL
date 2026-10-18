@@ -26,17 +26,17 @@ use ols_weather::{WeatherCase, WeatherCases};
 /// The line and where its libraries are.
 #[derive(Args)]
 pub struct ModelArgs {
-    /// Line file (.ols.json) or project file (.ols).
+    /// Line file (.ohl.json) or project file (.ohl).
     pub file: PathBuf,
-    /// Wire library: .olsw file or directory (default: the shipped
+    /// Wire library: .ohlw file or directory (default: the shipped
     /// libraries/cables).
     #[arg(long)]
     pub library: Option<PathBuf>,
-    /// Structure type directory (.olss) for typed structures (default: the
+    /// Structure type directory (.ohls) for typed structures (default: the
     /// `Structures` folder next to the line).
     #[arg(long)]
     pub structures: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi).
+    /// Insulator assembly library directory (.ohli).
     #[arg(long)]
     pub insulators: Option<PathBuf>,
 }
@@ -44,7 +44,7 @@ pub struct ModelArgs {
 /// Weather cases from a file.
 #[derive(Args)]
 pub struct CaseArgs {
-    /// Weather case file (.olswc).
+    /// Weather case file (.ohlwc).
     #[arg(long)]
     pub weather: PathBuf,
     /// Weather case to run, by name (`*` and `?` wildcards; repeatable).
@@ -58,13 +58,13 @@ pub struct CaseArgs {
 /// Points: a project's point cloud or LAS/LAZ tiles.
 #[derive(Args)]
 pub struct PointArgs {
-    /// Point cloud in a project file (`FILE.ols` or `FILE.ols#name`).
+    /// Point cloud in a project file (`FILE.ohl` or `FILE.ohl#name`).
     #[arg(long, conflicts_with = "lidar")]
     pub pointcloud: Option<String>,
     /// LAS/LAZ file or directory of tiles.
     #[arg(long)]
     pub lidar: Option<PathBuf>,
-    /// Class scheme (.olsc); default: the cloud's own, else ASPRS LAS 1.4.
+    /// Class scheme (.ohlc); default: the cloud's own, else ASPRS LAS 1.4.
     #[arg(long)]
     pub lidar_classes: Option<PathBuf>,
 }
@@ -72,14 +72,14 @@ pub struct PointArgs {
 /// `ohl clearance …`.
 #[derive(Subcommand)]
 pub enum ClearanceCommand {
-    /// Galloping ellipses of the wires of each span (parameters: .olsg
+    /// Galloping ellipses of the wires of each span (parameters: .ohlg
     /// file) and their clearances to each other.
     Galloping {
         #[command(flatten)]
         model: ModelArgs,
         #[command(flatten)]
         cases: CaseArgs,
-        /// Galloping parameters (.olsg).
+        /// Galloping parameters (.ohlg).
         #[arg(long)]
         params: PathBuf,
         /// Write every pair and method as CSV.
@@ -111,9 +111,9 @@ pub enum ClearanceCommand {
 /// `ohl lidar classify`.
 #[derive(Args)]
 pub struct ClassifyArgs {
-    /// Points: LAS/LAZ file or directory, or `FILE.ols#cloud`.
+    /// Points: LAS/LAZ file or directory, or `FILE.ohl#cloud`.
     pub input: String,
-    /// Output: a .las/.laz file, or `FILE.ols#cloud` (a new cloud).
+    /// Output: a .las/.laz file, or `FILE.ohl#cloud` (a new cloud).
     #[arg(long)]
     pub out: String,
     /// Only points within --corridor of this line's routes.
@@ -526,7 +526,7 @@ pub fn classify(a: ClassifyArgs) -> Result<(), String> {
             too_many = true;
         }
     };
-    let is_cloud = a.input.contains('#') || a.input.ends_with(".ols");
+    let is_cloud = a.input.contains('#') || ols_core::files::is_project_file(Path::new(&a.input));
     let (crs, scheme_text) = if is_cloud {
         let (file, name) = ols_lidar::cloud_spec(&a.input);
         let src = ols_pointcloud::CloudSource::open(file, name).map_err(|e| e.to_string())?;
@@ -600,7 +600,7 @@ pub fn classify(a: ClassifyArgs) -> Result<(), String> {
         println!("written to {}", a.out);
     } else {
         let (file, name) = ols_lidar::cloud_spec(&a.out);
-        let name = name.ok_or("write the output as FILE.ols#cloud-name (or a .las/.laz file)")?;
+        let name = name.ok_or("write the output as FILE.ohl#cloud-name (or a .las/.laz file)")?;
         let mut store = ols_pointcloud::Store::open(file).map_err(|e| e.to_string())?;
         if store
             .clouds()

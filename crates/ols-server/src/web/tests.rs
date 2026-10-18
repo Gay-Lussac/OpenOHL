@@ -310,14 +310,14 @@ fn scene_edits_and_escapes() {
     assert!(super::changes_scene(
         &Op::DeleteLibrary {
             kind: "cables".into(),
-            name: "a.olsw".into()
+            name: "a.ohlw".into()
         },
         "phase 1"
     ));
     assert!(!super::changes_scene(
         &Op::DeleteLibrary {
             kind: "weather".into(),
-            name: "a.olswc".into()
+            name: "a.ohlwc".into()
         },
         "main"
     ));

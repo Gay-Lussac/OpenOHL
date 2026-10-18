@@ -333,7 +333,7 @@ impl Reproject {
     }
 }
 
-/// The new project's file: `<name> <EPSG code>.ols` next to `file`.
+/// The new project's file: `<name> <EPSG code>.ohl` next to `file`.
 pub fn default_path(file: &Path, spec: &str) -> PathBuf {
     let stem = file
         .file_stem()
@@ -346,7 +346,7 @@ pub fn default_path(file: &Path, spec: &str) -> PathBuf {
         .take(4)
         .collect::<Vec<_>>()
         .join(" ");
-    file.with_file_name(format!("{stem} {tag}.ols"))
+    file.with_file_name(format!("{stem} {tag}.ohl"))
 }
 
 /// The coordinate system windows and the reprojection running.
@@ -537,7 +537,10 @@ impl Windows {
                         );
                         if ui.button("Choose…").clicked()
                             && let Some(p) = rfd::FileDialog::new()
-                                .add_filter("OpenOHL project", &["ols"])
+                                .add_filter(
+                                    "OpenOHL project",
+                                    &[ols_core::files::PROJECT_EXTENSION],
+                                )
                                 .set_file_name(
                                     Path::new(&rp.path)
                                         .file_name()
@@ -547,7 +550,10 @@ impl Windows {
                                 )
                                 .save_file()
                         {
-                            rp.path = p.with_extension("ols").display().to_string();
+                            rp.path = p
+                                .with_extension(ols_core::files::PROJECT_EXTENSION)
+                                .display()
+                                .to_string();
                         }
                     });
                     ui.label(
@@ -607,8 +613,8 @@ fn check(model: &Model, to: &str, path: &Path) -> Result<(Crs, Crs, PathBuf), St
         .require(&e.user, ols_session::Role::Admin)
         .map_err(|_| "only an admin of the project can reproject it".to_owned())?;
     let file = &model.sources.file;
-    if file.extension().is_none_or(|x| x != "ols") {
-        return Err("a project (.ols) is reprojected; a line file with ohl crs line".into());
+    if !ols_core::files::is_project_file(file) {
+        return Err("a project (.ohl) is reprojected; a line file with ohl crs line".into());
     }
     let from = Crs::parse(&model.line.crs)
         .map_err(|e| format!("the project's coordinate system: {e} — define it first"))?;
@@ -626,7 +632,7 @@ fn check(model: &Model, to: &str, path: &Path) -> Result<(Crs, Crs, PathBuf), St
     if path.as_os_str().is_empty() {
         return Err("give the new project file".into());
     }
-    let path = path.with_extension("ols");
+    let path = path.with_extension(ols_core::files::PROJECT_EXTENSION);
     if path.exists() {
         return Err(format!(
             "{} exists already: choose another name (a project is never replaced)",

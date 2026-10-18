@@ -25,11 +25,11 @@ use serde_json::Value;
 use crate::{Command, Kind, Session, SessionError, refused};
 
 /// File format id of an exported report.
-pub const REPORT_FILE_FORMAT: &str = "ols-check-report";
+pub const REPORT_FILE_FORMAT: &str = "ohl-check-report";
 /// Newest version read.
 pub const REPORT_FILE_VERSION: u32 = 1;
 /// File extension of an exported report.
-pub const REPORT_FILE_EXTENSION: &str = "olscr";
+pub const REPORT_FILE_EXTENSION: &str = "ohlcr";
 
 /// Where a report is at.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,7 +188,7 @@ pub struct CheckReport {
 impl CheckReport {
     /// Reads an exported report.
     pub fn parse(text: &str) -> Result<Self, String> {
-        let r: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let mut r: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
         ols_core::files::check_header(
             Some(&r.format),
             Some(r.version),
@@ -196,6 +196,8 @@ impl CheckReport {
             REPORT_FILE_VERSION,
             "check report",
         )?;
+        // Read with the id of before 2026-10-18 too; kept with the current.
+        r.format = REPORT_FILE_FORMAT.into();
         if r.id.trim().is_empty() {
             return Err("a check report needs a name".into());
         }
@@ -305,12 +307,12 @@ mod tests {
     fn project(name: &str) -> (PathBuf, Session) {
         let dir = std::env::temp_dir().join(format!("ols-reports-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("p.ols");
+        let path = dir.join("p.ohl");
         std::fs::remove_file(&path).ok();
         let mut s = Session::open(&path).unwrap();
         let line = ols_line::Line::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+                .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
         )
         .unwrap();
         s.import(&line, "ana").unwrap();

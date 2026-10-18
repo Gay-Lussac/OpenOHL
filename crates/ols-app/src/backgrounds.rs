@@ -68,7 +68,7 @@ pub fn drawing_key(name: &str) -> String {
 
 /// Reads the backgrounds of project `file`; what went wrong goes to `log`.
 pub fn load(file: &Path, log: &mut Vec<String>) -> Loaded {
-    if file.extension().is_none_or(|e| e != "ols") || !file.exists() {
+    if !ols_core::files::is_project_file(file) || !file.exists() {
         return Loaded::default();
     }
     let store = match ols_background::Store::open(file) {
@@ -512,8 +512,8 @@ pub struct Windows {
 fn project(model: &Model) -> Result<PathBuf, String> {
     model.can_edit()?;
     let file = model.sources.file.clone();
-    if file.extension().is_none_or(|e| e != "ols") {
-        return Err("backgrounds are kept in a project (.ols)".into());
+    if !ols_core::files::is_project_file(&file) {
+        return Err("backgrounds are kept in a project (.ohl)".into());
     }
     Ok(file)
 }

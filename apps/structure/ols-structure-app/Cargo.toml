@@ -1,6 +1,6 @@
 [package]
 name = "ols-structure-app"
-description = "OHL-Structure, the structure application of OpenOHL: a structure file (.olss) in its own window, from level 1 to level 3"
+description = "OHL-Structure, the structure application of OpenOHL: a structure file (.ohls) in its own window, from level 1 to level 3"
 default-run = "ohl-structure"
 version.workspace = true
 edition.workspace = true

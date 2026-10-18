@@ -255,7 +255,7 @@ fn tension_members_in_files() {
                 [[node]]\nid = \"B\"\npoint = [0, 0, 5]\n\
                 [[member]]\nid = \"t\"\nnodes = [\"A\", \"B\"]\nsection = \"a\"\nkind = \"tension\"\n";
     let m = Model::parse(&format!(
-        "format = \"ols-structure-model\"\nversion = 2\n{body}"
+        "format = \"ohl-structure-model\"\nversion = 2\n{body}"
     ))
     .unwrap();
     assert_eq!(m.members[0].kind, MemberKind::Tension);
@@ -268,7 +268,7 @@ fn tension_members_in_files() {
     let e = Model::parse(&format!("{body}pretension = \"1 kN\"\n")).unwrap_err();
     assert!(e.contains("only cables take a pretension"), "{e}");
     let newer = format!(
-        "format = \"ols-structure-model\"\nversion = {}\n{body}",
+        "format = \"ohl-structure-model\"\nversion = {}\n{body}",
         crate::model::MODEL_FILE_VERSION + 1
     );
     assert!(Model::parse(&newer).unwrap_err().contains("newer"));

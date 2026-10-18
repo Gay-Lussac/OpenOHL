@@ -1,0 +1,1204 @@
+# OpenOHL structure model (.ohlfe): the finite-element model of the
+# synthetic type-02 pylon on its own, as a type names it with
+# `model = "type-02-model.ohlfe"` (type-02.ohls holds the same tables
+# itself, a full design). Invented values, NOT a real design.
+format = "ohl-structure-model"
+version = 1
+name = "type-02 pylon (synthetic example)"
+
+[analysis]
+nonlinear = true
+self_weight = true
+
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+
+[[section]]
+id = "leg"
+material = "steel"
+area = "1500 mm2"
+i_min = "80 cm4"
+
+[[section]]
+id = "brace"
+material = "steel"
+area = "600 mm2"
+i_min = "25 cm4"
+
+[[section]]
+id = "arm"
+material = "steel"
+area = "1000 mm2"
+i_min = "40 cm4"
+
+[[node]]
+id = "L0A"
+point = ["-2.500 m", "-2.500 m", "0.000 m"]
+support = "pinned"
+
+[[node]]
+id = "L0B"
+point = ["2.500 m", "-2.500 m", "0.000 m"]
+support = "pinned"
+
+[[node]]
+id = "L0C"
+point = ["2.500 m", "2.500 m", "0.000 m"]
+support = "pinned"
+
+[[node]]
+id = "L0D"
+point = ["-2.500 m", "2.500 m", "0.000 m"]
+support = "pinned"
+
+[[node]]
+id = "L1A"
+point = ["-2.330 m", "-2.330 m", "3.000 m"]
+
+[[node]]
+id = "L1B"
+point = ["2.330 m", "-2.330 m", "3.000 m"]
+
+[[node]]
+id = "L1C"
+point = ["2.330 m", "2.330 m", "3.000 m"]
+
+[[node]]
+id = "L1D"
+point = ["-2.330 m", "2.330 m", "3.000 m"]
+
+[[node]]
+id = "L2A"
+point = ["-2.160 m", "-2.160 m", "6.000 m"]
+
+[[node]]
+id = "L2B"
+point = ["2.160 m", "-2.160 m", "6.000 m"]
+
+[[node]]
+id = "L2C"
+point = ["2.160 m", "2.160 m", "6.000 m"]
+
+[[node]]
+id = "L2D"
+point = ["-2.160 m", "2.160 m", "6.000 m"]
+
+[[node]]
+id = "L3A"
+point = ["-1.990 m", "-1.990 m", "9.000 m"]
+
+[[node]]
+id = "L3B"
+point = ["1.990 m", "-1.990 m", "9.000 m"]
+
+[[node]]
+id = "L3C"
+point = ["1.990 m", "1.990 m", "9.000 m"]
+
+[[node]]
+id = "L3D"
+point = ["-1.990 m", "1.990 m", "9.000 m"]
+
+[[node]]
+id = "L4A"
+point = ["-1.820 m", "-1.820 m", "12.000 m"]
+
+[[node]]
+id = "L4B"
+point = ["1.820 m", "-1.820 m", "12.000 m"]
+
+[[node]]
+id = "L4C"
+point = ["1.820 m", "1.820 m", "12.000 m"]
+
+[[node]]
+id = "L4D"
+point = ["-1.820 m", "1.820 m", "12.000 m"]
+
+[[node]]
+id = "L5A"
+point = ["-1.650 m", "-1.650 m", "15.000 m"]
+
+[[node]]
+id = "L5B"
+point = ["1.650 m", "-1.650 m", "15.000 m"]
+
+[[node]]
+id = "L5C"
+point = ["1.650 m", "1.650 m", "15.000 m"]
+
+[[node]]
+id = "L5D"
+point = ["-1.650 m", "1.650 m", "15.000 m"]
+
+[[node]]
+id = "L6A"
+point = ["-1.480 m", "-1.480 m", "18.000 m"]
+
+[[node]]
+id = "L6B"
+point = ["1.480 m", "-1.480 m", "18.000 m"]
+
+[[node]]
+id = "L6C"
+point = ["1.480 m", "1.480 m", "18.000 m"]
+
+[[node]]
+id = "L6D"
+point = ["-1.480 m", "1.480 m", "18.000 m"]
+
+[[node]]
+id = "L7A"
+point = ["-1.310 m", "-1.310 m", "21.000 m"]
+
+[[node]]
+id = "L7B"
+point = ["1.310 m", "-1.310 m", "21.000 m"]
+
+[[node]]
+id = "L7C"
+point = ["1.310 m", "1.310 m", "21.000 m"]
+
+[[node]]
+id = "L7D"
+point = ["-1.310 m", "1.310 m", "21.000 m"]
+
+[[node]]
+id = "L8A"
+point = ["-1.140 m", "-1.140 m", "24.000 m"]
+
+[[node]]
+id = "L8B"
+point = ["1.140 m", "-1.140 m", "24.000 m"]
+
+[[node]]
+id = "L8C"
+point = ["1.140 m", "1.140 m", "24.000 m"]
+
+[[node]]
+id = "L8D"
+point = ["-1.140 m", "1.140 m", "24.000 m"]
+
+[[node]]
+id = "L9A"
+point = ["-0.970 m", "-0.970 m", "27.000 m"]
+
+[[node]]
+id = "L9B"
+point = ["0.970 m", "-0.970 m", "27.000 m"]
+
+[[node]]
+id = "L9C"
+point = ["0.970 m", "0.970 m", "27.000 m"]
+
+[[node]]
+id = "L9D"
+point = ["-0.970 m", "0.970 m", "27.000 m"]
+
+[[node]]
+id = "L10A"
+point = ["-0.800 m", "-0.800 m", "30.000 m"]
+
+[[node]]
+id = "L10B"
+point = ["0.800 m", "-0.800 m", "30.000 m"]
+
+[[node]]
+id = "L10C"
+point = ["0.800 m", "0.800 m", "30.000 m"]
+
+[[node]]
+id = "L10D"
+point = ["-0.800 m", "0.800 m", "30.000 m"]
+
+[[node]]
+id = "A1"
+point = ["6 m", "0 m", "30 m"]
+
+[[node]]
+id = "A2"
+point = ["-6 m", "0 m", "30 m"]
+
+[[member]]
+id = "m1"
+nodes = ["L0A", "L1A"]
+section = "leg"
+
+[[member]]
+id = "m2"
+nodes = ["L0B", "L1B"]
+section = "leg"
+
+[[member]]
+id = "m3"
+nodes = ["L0C", "L1C"]
+section = "leg"
+
+[[member]]
+id = "m4"
+nodes = ["L0D", "L1D"]
+section = "leg"
+
+[[member]]
+id = "m5"
+nodes = ["L0A", "L1B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m6"
+nodes = ["L0B", "L1A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m7"
+nodes = ["L0B", "L1C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m8"
+nodes = ["L0C", "L1B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m9"
+nodes = ["L0C", "L1D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m10"
+nodes = ["L0D", "L1C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m11"
+nodes = ["L0D", "L1A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m12"
+nodes = ["L0A", "L1D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m13"
+nodes = ["L1A", "L1B"]
+section = "brace"
+
+[[member]]
+id = "m14"
+nodes = ["L1B", "L1C"]
+section = "brace"
+
+[[member]]
+id = "m15"
+nodes = ["L1C", "L1D"]
+section = "brace"
+
+[[member]]
+id = "m16"
+nodes = ["L1D", "L1A"]
+section = "brace"
+
+[[member]]
+id = "m17"
+nodes = ["L1A", "L1C"]
+section = "brace"
+
+[[member]]
+id = "m18"
+nodes = ["L1A", "L2A"]
+section = "leg"
+
+[[member]]
+id = "m19"
+nodes = ["L1B", "L2B"]
+section = "leg"
+
+[[member]]
+id = "m20"
+nodes = ["L1C", "L2C"]
+section = "leg"
+
+[[member]]
+id = "m21"
+nodes = ["L1D", "L2D"]
+section = "leg"
+
+[[member]]
+id = "m22"
+nodes = ["L1A", "L2B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m23"
+nodes = ["L1B", "L2A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m24"
+nodes = ["L1B", "L2C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m25"
+nodes = ["L1C", "L2B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m26"
+nodes = ["L1C", "L2D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m27"
+nodes = ["L1D", "L2C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m28"
+nodes = ["L1D", "L2A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m29"
+nodes = ["L1A", "L2D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m30"
+nodes = ["L2A", "L2B"]
+section = "brace"
+
+[[member]]
+id = "m31"
+nodes = ["L2B", "L2C"]
+section = "brace"
+
+[[member]]
+id = "m32"
+nodes = ["L2C", "L2D"]
+section = "brace"
+
+[[member]]
+id = "m33"
+nodes = ["L2D", "L2A"]
+section = "brace"
+
+[[member]]
+id = "m34"
+nodes = ["L2A", "L2C"]
+section = "brace"
+
+[[member]]
+id = "m35"
+nodes = ["L2A", "L3A"]
+section = "leg"
+
+[[member]]
+id = "m36"
+nodes = ["L2B", "L3B"]
+section = "leg"
+
+[[member]]
+id = "m37"
+nodes = ["L2C", "L3C"]
+section = "leg"
+
+[[member]]
+id = "m38"
+nodes = ["L2D", "L3D"]
+section = "leg"
+
+[[member]]
+id = "m39"
+nodes = ["L2A", "L3B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m40"
+nodes = ["L2B", "L3A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m41"
+nodes = ["L2B", "L3C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m42"
+nodes = ["L2C", "L3B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m43"
+nodes = ["L2C", "L3D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m44"
+nodes = ["L2D", "L3C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m45"
+nodes = ["L2D", "L3A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m46"
+nodes = ["L2A", "L3D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m47"
+nodes = ["L3A", "L3B"]
+section = "brace"
+
+[[member]]
+id = "m48"
+nodes = ["L3B", "L3C"]
+section = "brace"
+
+[[member]]
+id = "m49"
+nodes = ["L3C", "L3D"]
+section = "brace"
+
+[[member]]
+id = "m50"
+nodes = ["L3D", "L3A"]
+section = "brace"
+
+[[member]]
+id = "m51"
+nodes = ["L3A", "L3C"]
+section = "brace"
+
+[[member]]
+id = "m52"
+nodes = ["L3A", "L4A"]
+section = "leg"
+
+[[member]]
+id = "m53"
+nodes = ["L3B", "L4B"]
+section = "leg"
+
+[[member]]
+id = "m54"
+nodes = ["L3C", "L4C"]
+section = "leg"
+
+[[member]]
+id = "m55"
+nodes = ["L3D", "L4D"]
+section = "leg"
+
+[[member]]
+id = "m56"
+nodes = ["L3A", "L4B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m57"
+nodes = ["L3B", "L4A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m58"
+nodes = ["L3B", "L4C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m59"
+nodes = ["L3C", "L4B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m60"
+nodes = ["L3C", "L4D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m61"
+nodes = ["L3D", "L4C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m62"
+nodes = ["L3D", "L4A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m63"
+nodes = ["L3A", "L4D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m64"
+nodes = ["L4A", "L4B"]
+section = "brace"
+
+[[member]]
+id = "m65"
+nodes = ["L4B", "L4C"]
+section = "brace"
+
+[[member]]
+id = "m66"
+nodes = ["L4C", "L4D"]
+section = "brace"
+
+[[member]]
+id = "m67"
+nodes = ["L4D", "L4A"]
+section = "brace"
+
+[[member]]
+id = "m68"
+nodes = ["L4A", "L4C"]
+section = "brace"
+
+[[member]]
+id = "m69"
+nodes = ["L4A", "L5A"]
+section = "leg"
+
+[[member]]
+id = "m70"
+nodes = ["L4B", "L5B"]
+section = "leg"
+
+[[member]]
+id = "m71"
+nodes = ["L4C", "L5C"]
+section = "leg"
+
+[[member]]
+id = "m72"
+nodes = ["L4D", "L5D"]
+section = "leg"
+
+[[member]]
+id = "m73"
+nodes = ["L4A", "L5B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m74"
+nodes = ["L4B", "L5A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m75"
+nodes = ["L4B", "L5C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m76"
+nodes = ["L4C", "L5B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m77"
+nodes = ["L4C", "L5D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m78"
+nodes = ["L4D", "L5C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m79"
+nodes = ["L4D", "L5A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m80"
+nodes = ["L4A", "L5D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m81"
+nodes = ["L5A", "L5B"]
+section = "brace"
+
+[[member]]
+id = "m82"
+nodes = ["L5B", "L5C"]
+section = "brace"
+
+[[member]]
+id = "m83"
+nodes = ["L5C", "L5D"]
+section = "brace"
+
+[[member]]
+id = "m84"
+nodes = ["L5D", "L5A"]
+section = "brace"
+
+[[member]]
+id = "m85"
+nodes = ["L5A", "L5C"]
+section = "brace"
+
+[[member]]
+id = "m86"
+nodes = ["L5A", "L6A"]
+section = "leg"
+
+[[member]]
+id = "m87"
+nodes = ["L5B", "L6B"]
+section = "leg"
+
+[[member]]
+id = "m88"
+nodes = ["L5C", "L6C"]
+section = "leg"
+
+[[member]]
+id = "m89"
+nodes = ["L5D", "L6D"]
+section = "leg"
+
+[[member]]
+id = "m90"
+nodes = ["L5A", "L6B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m91"
+nodes = ["L5B", "L6A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m92"
+nodes = ["L5B", "L6C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m93"
+nodes = ["L5C", "L6B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m94"
+nodes = ["L5C", "L6D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m95"
+nodes = ["L5D", "L6C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m96"
+nodes = ["L5D", "L6A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m97"
+nodes = ["L5A", "L6D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m98"
+nodes = ["L6A", "L6B"]
+section = "brace"
+
+[[member]]
+id = "m99"
+nodes = ["L6B", "L6C"]
+section = "brace"
+
+[[member]]
+id = "m100"
+nodes = ["L6C", "L6D"]
+section = "brace"
+
+[[member]]
+id = "m101"
+nodes = ["L6D", "L6A"]
+section = "brace"
+
+[[member]]
+id = "m102"
+nodes = ["L6A", "L6C"]
+section = "brace"
+
+[[member]]
+id = "m103"
+nodes = ["L6A", "L7A"]
+section = "leg"
+
+[[member]]
+id = "m104"
+nodes = ["L6B", "L7B"]
+section = "leg"
+
+[[member]]
+id = "m105"
+nodes = ["L6C", "L7C"]
+section = "leg"
+
+[[member]]
+id = "m106"
+nodes = ["L6D", "L7D"]
+section = "leg"
+
+[[member]]
+id = "m107"
+nodes = ["L6A", "L7B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m108"
+nodes = ["L6B", "L7A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m109"
+nodes = ["L6B", "L7C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m110"
+nodes = ["L6C", "L7B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m111"
+nodes = ["L6C", "L7D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m112"
+nodes = ["L6D", "L7C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m113"
+nodes = ["L6D", "L7A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m114"
+nodes = ["L6A", "L7D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m115"
+nodes = ["L7A", "L7B"]
+section = "brace"
+
+[[member]]
+id = "m116"
+nodes = ["L7B", "L7C"]
+section = "brace"
+
+[[member]]
+id = "m117"
+nodes = ["L7C", "L7D"]
+section = "brace"
+
+[[member]]
+id = "m118"
+nodes = ["L7D", "L7A"]
+section = "brace"
+
+[[member]]
+id = "m119"
+nodes = ["L7A", "L7C"]
+section = "brace"
+
+[[member]]
+id = "m120"
+nodes = ["L7A", "L8A"]
+section = "leg"
+
+[[member]]
+id = "m121"
+nodes = ["L7B", "L8B"]
+section = "leg"
+
+[[member]]
+id = "m122"
+nodes = ["L7C", "L8C"]
+section = "leg"
+
+[[member]]
+id = "m123"
+nodes = ["L7D", "L8D"]
+section = "leg"
+
+[[member]]
+id = "m124"
+nodes = ["L7A", "L8B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m125"
+nodes = ["L7B", "L8A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m126"
+nodes = ["L7B", "L8C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m127"
+nodes = ["L7C", "L8B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m128"
+nodes = ["L7C", "L8D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m129"
+nodes = ["L7D", "L8C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m130"
+nodes = ["L7D", "L8A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m131"
+nodes = ["L7A", "L8D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m132"
+nodes = ["L8A", "L8B"]
+section = "brace"
+
+[[member]]
+id = "m133"
+nodes = ["L8B", "L8C"]
+section = "brace"
+
+[[member]]
+id = "m134"
+nodes = ["L8C", "L8D"]
+section = "brace"
+
+[[member]]
+id = "m135"
+nodes = ["L8D", "L8A"]
+section = "brace"
+
+[[member]]
+id = "m136"
+nodes = ["L8A", "L8C"]
+section = "brace"
+
+[[member]]
+id = "m137"
+nodes = ["L8A", "L9A"]
+section = "leg"
+
+[[member]]
+id = "m138"
+nodes = ["L8B", "L9B"]
+section = "leg"
+
+[[member]]
+id = "m139"
+nodes = ["L8C", "L9C"]
+section = "leg"
+
+[[member]]
+id = "m140"
+nodes = ["L8D", "L9D"]
+section = "leg"
+
+[[member]]
+id = "m141"
+nodes = ["L8A", "L9B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m142"
+nodes = ["L8B", "L9A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m143"
+nodes = ["L8B", "L9C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m144"
+nodes = ["L8C", "L9B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m145"
+nodes = ["L8C", "L9D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m146"
+nodes = ["L8D", "L9C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m147"
+nodes = ["L8D", "L9A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m148"
+nodes = ["L8A", "L9D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m149"
+nodes = ["L9A", "L9B"]
+section = "brace"
+
+[[member]]
+id = "m150"
+nodes = ["L9B", "L9C"]
+section = "brace"
+
+[[member]]
+id = "m151"
+nodes = ["L9C", "L9D"]
+section = "brace"
+
+[[member]]
+id = "m152"
+nodes = ["L9D", "L9A"]
+section = "brace"
+
+[[member]]
+id = "m153"
+nodes = ["L9A", "L9C"]
+section = "brace"
+
+[[member]]
+id = "m154"
+nodes = ["L9A", "L10A"]
+section = "leg"
+
+[[member]]
+id = "m155"
+nodes = ["L9B", "L10B"]
+section = "leg"
+
+[[member]]
+id = "m156"
+nodes = ["L9C", "L10C"]
+section = "leg"
+
+[[member]]
+id = "m157"
+nodes = ["L9D", "L10D"]
+section = "leg"
+
+[[member]]
+id = "m158"
+nodes = ["L9A", "L10B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m159"
+nodes = ["L9B", "L10A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m160"
+nodes = ["L9B", "L10C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m161"
+nodes = ["L9C", "L10B"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m162"
+nodes = ["L9C", "L10D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m163"
+nodes = ["L9D", "L10C"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m164"
+nodes = ["L9D", "L10A"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m165"
+nodes = ["L9A", "L10D"]
+section = "brace"
+k = 0.5
+
+[[member]]
+id = "m166"
+nodes = ["L10A", "L10B"]
+section = "brace"
+
+[[member]]
+id = "m167"
+nodes = ["L10B", "L10C"]
+section = "brace"
+
+[[member]]
+id = "m168"
+nodes = ["L10C", "L10D"]
+section = "brace"
+
+[[member]]
+id = "m169"
+nodes = ["L10D", "L10A"]
+section = "brace"
+
+[[member]]
+id = "m170"
+nodes = ["L10A", "L10C"]
+section = "brace"
+
+[[member]]
+id = "m171"
+nodes = ["A1", "L10B"]
+section = "arm"
+
+[[member]]
+id = "m172"
+nodes = ["A1", "L10C"]
+section = "arm"
+
+[[member]]
+id = "m173"
+nodes = ["A1", "L9B"]
+section = "arm"
+
+[[member]]
+id = "m174"
+nodes = ["A1", "L9C"]
+section = "arm"
+
+[[member]]
+id = "m175"
+nodes = ["A2", "L10A"]
+section = "arm"
+
+[[member]]
+id = "m176"
+nodes = ["A2", "L10D"]
+section = "arm"
+
+[[member]]
+id = "m177"
+nodes = ["A2", "L9A"]
+section = "arm"
+
+[[member]]
+id = "m178"
+nodes = ["A2", "L9D"]
+section = "arm"
+
+# The model's own load case (ohl structures fe without --loads): wires
+# and wind at both attachments, structure axes (z up), invented values.
+[[load]]
+node = "A1"
+force = ["4 kN", "0 kN", "-9 kN"]
+
+[[load]]
+node = "A2"
+force = ["4 kN", "0 kN", "-9 kN"]

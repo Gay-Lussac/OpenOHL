@@ -56,9 +56,9 @@ pub struct SourceStructure {
 /// Result of a derivation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Derived {
-    /// Structure types as `.olss` file contents, by id.
+    /// Structure types as `.ohls` file contents, by id.
     pub structure_types: BTreeMap<String, String>,
-    /// Insulator assemblies as `.olsi` file contents, by id.
+    /// Insulator assemblies as `.ohli` file contents, by id.
     pub insulators: BTreeMap<String, String>,
     /// For each source structure (same order): its type id.
     pub assignments: Vec<String>,
@@ -209,7 +209,7 @@ pub fn derive(structures: &[SourceStructure], inline: bool) -> Derived {
         );
         let _ = writeln!(
             out,
-            "format = \"ols-structure\"\nversion = 1\nid = \"{}\"",
+            "format = \"ohl-structure\"\nversion = 1\nid = \"{}\"",
             layout.id
         );
         let _ = writeln!(
@@ -289,7 +289,7 @@ pub fn derive(structures: &[SourceStructure], inline: bool) -> Derived {
 fn assembly_toml(id: &str, kind: &str, length: f64, weight: f64) -> String {
     format!(
         "# Derived from a line's geometry (weight from the line when it was given) — check stiffness and wind area.\n\
-         format = \"ols-insulator\"\nversion = 1\nid = \"{id}\"\nname = \"{kind} {length:.3} m (derived)\"\n\
+         format = \"ohl-insulator\"\nversion = 1\nid = \"{id}\"\nname = \"{kind} {length:.3} m (derived)\"\n\
          kind = \"{kind}\"\nlength = \"{length:.3} m\"\nweight = \"{weight:.1} N\"\n"
     )
 }

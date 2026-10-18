@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Insulator assembly library (`*.olsi`, one assembly per file).
+//! Insulator assembly library (`*.ohli`, one assembly per file).
 //!
 //! Basic kinds (DESIGN_GOALS §11):
 //!
@@ -16,7 +16,7 @@
 //! this as a graph of nodes and elements (DESIGN_GOALS §6).
 //!
 //! ```toml
-//! format = "ols-insulator"
+//! format = "ohl-insulator"
 //! version = 1
 //! id = "I-380-double"
 //! name = "380 kV double I-string"
@@ -38,9 +38,9 @@ use ols_core::units::{Angle, Area, Force, Length};
 use serde::Deserialize;
 
 /// File extension of insulator assemblies.
-pub const INSULATOR_FILE_EXTENSION: &str = "olsi";
+pub const INSULATOR_FILE_EXTENSION: &str = "ohli";
 /// Format identifier.
-pub const INSULATOR_FILE_FORMAT: &str = "ols-insulator";
+pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
 /// Newest format version read: 2 adds the optional limits
 /// (`max_load`, `max_swing`, `max_swing_across`, `max_swing_along`,
 /// [`InsulatorLimits`]); version 1 files read as before.
@@ -70,7 +70,7 @@ pub enum AssemblyKind {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InsulatorAssembly {
-    /// `"ols-insulator"` (optional header).
+    /// `"ohl-insulator"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -240,7 +240,7 @@ impl InsulatorAssembly {
         }
     }
 
-    /// The assembly as an `.olsi` file (what [`Library::load_dir`] reads
+    /// The assembly as an `.ohli` file (what [`Library::load_dir`] reads
     /// back), values in SI units; version 1 unless it gives limits.
     ///
     /// [`Library::load_dir`]: crate::Library::load_dir
@@ -353,7 +353,7 @@ mod tests {
     use std::path::Path;
 
     fn parse(text: &str) -> Result<InsulatorAssembly, LibraryError> {
-        InsulatorAssembly::parse(Path::new("t.olsi"), text)
+        InsulatorAssembly::parse(Path::new("t.ohli"), text)
     }
 
     #[test]
@@ -420,7 +420,7 @@ mod tests {
         ] {
             assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
         }
-        let e = parse(&format!("format = \"ols-insulator\"\nversion = 3\n{base}")).unwrap_err();
+        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 3\n{base}")).unwrap_err();
         assert!(e.to_string().contains("newer"), "{e}");
     }
 

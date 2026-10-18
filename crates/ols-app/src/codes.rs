@@ -162,13 +162,13 @@ pub fn targets(r: &Ready, base: &str) -> (PathBuf, PathBuf) {
         }
     };
     (
-        weather.join(format!("{base}.olswc")),
-        loads.join(format!("{base}.olslc")),
+        weather.join(format!("{base}.ohlwc")),
+        loads.join(format!("{base}.ohllc")),
     )
 }
 
-/// Writes generated cases as `base`.olswc / .olslc (see [`targets`]),
-/// and the clearance presets as `<plugin>-<name>`.olsr / .olswc (the
+/// Writes generated cases as `base`.ohlwc / .ohllc (see [`targets`]),
+/// and the clearance presets as `<plugin>-<name>`.ohlr / .ohlwc (the
 /// project's rule files and weather case files, else next to the line
 /// file); keeps them in the project and uses the cases for the model (the
 /// libraries read again, the cases solved). Returns what was done.
@@ -334,9 +334,9 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plug
                 ui.add(egui::TextEdit::singleline(&mut w.file_name).desired_width(160.0));
                 ui.label(
                     egui::RichText::new(if in_project {
-                        ".olswc / .olslc, in the project's libraries (a file of that name is replaced)"
+                        ".ohlwc / .ohllc, in the project's libraries (a file of that name is replaced)"
                     } else {
-                        ".olswc / .olslc, next to the line file (a file of that name is replaced)"
+                        ".ohlwc / .ohllc, next to the line file (a file of that name is replaced)"
                     })
                     .small()
                     .weak(),

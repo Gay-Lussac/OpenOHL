@@ -4,7 +4,7 @@
 
 //! Point clouds stored in the project file (ADR-0007).
 //!
-//! A [`Store`] is the project's SQLite file (`.ols`, ADR-0004); each named
+//! A [`Store`] is the project's SQLite file (`.ohl`, ADR-0004); each named
 //! point cloud in it is held as **blocks** — one per square chunk of the
 //! plan and per class — so a query for a few classes in a corridor reads
 //! only those blocks. Coordinates are integers of the cloud's scale (1 mm
@@ -117,7 +117,7 @@ pub struct CloudInfo {
     pub scale: f64,
     /// Chunk size, m.
     pub chunk_size: f64,
-    /// Class scheme (`.olsc` text), if given at import.
+    /// Class scheme (`.ohlc` text), if given at import.
     pub class_scheme: Option<String>,
     /// Number of points.
     pub points: u64,
@@ -153,7 +153,7 @@ pub struct TileCounts {
 pub trait PointSource {
     /// Description for reports.
     fn describe(&self) -> String;
-    /// The class scheme of the points (`.olsc` text), if known.
+    /// The class scheme of the points (`.ohlc` text), if known.
     fn class_scheme(&self) -> Option<String>;
     /// Calls `visit(x, y, z, class)` for the points inside `area` (all
     /// without one) of the `classes` (all without them).
@@ -233,7 +233,7 @@ impl Every {
 }
 
 /// Opens the point cloud of `spec`: a COPC file (`FILE.copc.laz`), or a
-/// project file's cloud (`FILE.ols` or `FILE.ols#name`).
+/// project file's cloud (`FILE.ohl` or `FILE.ohl#name`).
 pub fn open_source(spec: &str) -> Result<Box<dyn PointSource + Send>, String> {
     let (file, name) = ols_lidar::cloud_spec(spec);
     if copc::is_copc(file) {

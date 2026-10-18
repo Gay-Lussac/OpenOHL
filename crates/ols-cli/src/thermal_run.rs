@@ -30,14 +30,14 @@ pub enum ThermalCommand {
 /// Arguments of `ohl thermal ampacity`.
 #[derive(Args)]
 pub struct AmpacityArgs {
-    /// Wire library: .olsw file or directory (default: the shipped
+    /// Wire library: .ohlw file or directory (default: the shipped
     /// libraries/cables).
     #[arg(long)]
     library: Option<PathBuf>,
     /// Cable id.
     #[arg(long)]
     cable: String,
-    /// Ambient cases (.olsta).
+    /// Ambient cases (.ohlta).
     #[arg(long)]
     ambient: PathBuf,
     /// Ambient case to run, by name (`*` `?` wildcards; repeatable;
@@ -64,7 +64,7 @@ pub struct AmpacityArgs {
     /// 10 s).
     #[arg(long)]
     time_step: Option<f64>,
-    /// Default values (.olsdef, Criteria › Default values exported):
+    /// Default values (.ohldef, Criteria › Default values exported):
     /// emissivity, absorptivity, roughness, albedo and time step where the
     /// cable or the case gives none (default: the program's).
     #[arg(long)]
@@ -84,7 +84,7 @@ pub struct AmpacityArgs {
 /// Arguments of `ohl thermal clearance-limit`.
 #[derive(Args)]
 pub struct LimitArgs {
-    /// Line file (.ols.json) or project file (.ols).
+    /// Line file (.ohl.json) or project file (.ohl).
     file: PathBuf,
     /// Wire library (default: the shipped libraries/cables).
     #[arg(long)]
@@ -96,14 +96,14 @@ pub struct LimitArgs {
     /// Insulator library directory (default: libraries/insulators).
     #[arg(long)]
     insulators: Option<PathBuf>,
-    /// Weather case file (.olswc): the base case (--case) whose temperature
+    /// Weather case file (.ohlwc): the base case (--case) whose temperature
     /// is varied; default still air without ice.
     #[arg(long)]
     weather: Option<PathBuf>,
     /// The base weather case, by name.
     #[arg(long, requires = "weather")]
     case: Option<String>,
-    /// Ambient cases (.olsta) for the ampacities at the limits.
+    /// Ambient cases (.ohlta) for the ampacities at the limits.
     #[arg(long)]
     ambient: Option<PathBuf>,
     /// Ambient case, by name (repeatable; default: all).
@@ -112,7 +112,7 @@ pub struct LimitArgs {
     /// Method: ieee738, cigre601 or cigre207.
     #[arg(long, default_value = "ieee738")]
     method: String,
-    /// Clearance rules (.olsr): their ground and point rules are checked.
+    /// Clearance rules (.ohlr): their ground and point rules are checked.
     #[arg(long)]
     rules: Option<PathBuf>,
     /// Required vertical ground clearance, m (adds a ground rule).
@@ -124,10 +124,10 @@ pub struct LimitArgs {
     /// LiDAR tiles (LAS/LAZ file or directory).
     #[arg(long, conflicts_with = "terrain")]
     lidar: Option<PathBuf>,
-    /// Point cloud stored in a project file (`FILE.ols` or `FILE.ols#name`).
+    /// Point cloud stored in a project file (`FILE.ohl` or `FILE.ohl#name`).
     #[arg(long, conflicts_with_all = ["terrain", "lidar"])]
     pointcloud: Option<String>,
-    /// Class scheme (.olsc) of the LiDAR; default ASPRS LAS 1.4.
+    /// Class scheme (.ohlc) of the LiDAR; default ASPRS LAS 1.4.
     #[arg(long)]
     lidar_classes: Option<PathBuf>,
     /// Role of the classes that make the ground surface.
@@ -532,13 +532,13 @@ mod tests {
         let out =
             std::env::temp_dir().join(format!("ols-thermal-limit-{}.csv", std::process::id()));
         clearance_limit(&LimitArgs {
-            file: ex.join("synthetic-line.ols.json"),
+            file: ex.join("synthetic-line.ohl.json"),
             library: Some(root().join("libraries/cables")),
             structures: None,
             insulators: Some(root().join("libraries/insulators")),
-            weather: Some(ex.join("weather-cases.olswc")),
+            weather: Some(ex.join("weather-cases.ohlwc")),
             case: Some("max temperature".into()),
-            ambient: Some(ex.join("thermal-ambient.olsta")),
+            ambient: Some(ex.join("thermal-ambient.ohlta")),
             ambient_case: vec!["winter night".into()],
             method: "cigre601".into(),
             rules: None,
@@ -581,7 +581,7 @@ mod tests {
         let args = |max_temp, current, from_current| AmpacityArgs {
             library: Some(root().join("libraries/cables")),
             cable: "acsr-drake-26-7".into(),
-            ambient: ex.join("thermal-ambient.olsta"),
+            ambient: ex.join("thermal-ambient.ohlta"),
             case: Vec::new(),
             method: "ieee738".into(),
             max_temp,

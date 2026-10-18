@@ -498,7 +498,7 @@ pub struct App {
     pub recent: crate::files::Recent,
     /// What this user shows of each project (remembered locally).
     pub view_prefs: crate::model::ViewPrefsStore,
-    /// The LiDAR class scheme (.olsc) used for every project (remembered).
+    /// The LiDAR class scheme (.ohlc) used for every project (remembered).
     pub default_class_scheme: Option<PathBuf>,
     /// The plugin manager, and the formats of File › Import / Export.
     pub plugins: crate::plugins::Plugins,
@@ -622,11 +622,10 @@ impl App {
             self.recent.add(&sources.file);
         }
         // A structure type: its editor, on its own.
-        if sources
-            .file
-            .extension()
-            .is_some_and(|e| e == ols_structures::structures::STRUCTURE_FILE_EXTENSION)
-        {
+        if ols_core::files::has_extension(
+            &sources.file,
+            ols_structures::structures::STRUCTURE_FILE_EXTENSION,
+        ) {
             self.state = match crate::structure_desk::StructureDesk::open(&sources.file) {
                 Ok(d) => State::Structure(Box::new(d)),
                 Err(e) => State::Failed(e),
@@ -3248,8 +3247,8 @@ impl Ready {
             None => {
                 let dir = self.project_types_dir();
                 std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-                let p = dir.join(format!("{id}.olss"));
-                if p.exists() {
+                let p = dir.join(format!("{id}.ohls"));
+                if ols_core::files::exists_by_either_name(&p) {
                     return Err(format!("{} exists already", p.display()));
                 }
                 p
@@ -3282,8 +3281,8 @@ impl Ready {
             return Err(format!("there is a structure type {type_id} already"));
         }
         let dir = self.project_types_dir();
-        let path = dir.join(format!("{type_id}.olss"));
-        if path.exists() {
+        let path = dir.join(format!("{type_id}.ohls"));
+        if ols_core::files::exists_by_either_name(&path) {
             return Err(format!("{} exists already", path.display()));
         }
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -4682,7 +4681,7 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
             .button("Class colours…")
             .on_hover_text(
                 "The display colour of the points by class number, from a class scheme file \
-                 (.olsc)",
+                 (.ohlc)",
             )
             .clicked()
         {
@@ -5066,7 +5065,7 @@ fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
                     ))
                     .clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Default values", &[ext])
+                        .add_filter("Default values", &ols_core::files::open_extensions(ext))
                         .pick_file()
                 {
                     message = Some(
@@ -6519,13 +6518,13 @@ pub const CLEARANCES_ABOUT: &str = "To the ground and LiDAR points: rules typed 
      wire clearances.";
 
 /// Checks › Wire clearances › Add a rule file: a clearance rule file
-/// (.olsr) chosen on the computer, kept in the project (next to a line
+/// (.ohlr) chosen on the computer, kept in the project (next to a line
 /// file) and chosen on the Clearances page.
 fn add_rule_file(r: &mut Ready) {
     let Some(from) = rfd::FileDialog::new()
         .add_filter(
             "Clearance rules",
-            &[ols_clearance::rules::RULE_FILE_EXTENSION],
+            &ols_core::files::open_extensions(ols_clearance::rules::RULE_FILE_EXTENSION),
         )
         .pick_file()
     else {
@@ -6580,13 +6579,13 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         ui.label(egui::RichText::new("No clearance rule file in the project yet.").strong());
         ui.label(
             "The clearances between the wires of this line, to other project lines and with \
-             exclusion zones are checked by the rules of a clearance rule file (.olsr): add \
+             exclusion zones are checked by the rules of a clearance rule file (.ohlr): add \
              one, then Check wire clearances (Checks menu or the quick bar).",
         );
         if ui
             .button("Add a rule file…")
             .on_hover_text(
-                "A clearance rule file (.olsr) kept in the project; examples/starter/rules has \
+                "A clearance rule file (.ohlr) kept in the project; examples/starter/rules has \
                  one with invented values to learn with",
             )
             .clicked()
@@ -7341,7 +7340,7 @@ fn menus(
             ui.label(
                 egui::RichText::new(
                     "Between the wires of this line, to other project lines, with exclusion \
-                     zones: the rules of a rule file (.olsr), in the weather case shown; \
+                     zones: the rules of a rule file (.ohlr), in the weather case shown; \
                      results on the Clearances page",
                 )
                 .small()
@@ -7368,7 +7367,7 @@ fn menus(
             }
             if ui
                 .button("Add a rule file…")
-                .on_hover_text("A clearance rule file (.olsr) kept in the project")
+                .on_hover_text("A clearance rule file (.ohlr) kept in the project")
                 .clicked()
             {
                 ui.close();
@@ -7397,7 +7396,7 @@ fn menus(
         if ui
             .button("Galloping ellipses…")
             .on_hover_text(
-                "Ellipses of the wires of each span by a galloping parameter file (.olsg)",
+                "Ellipses of the wires of each span by a galloping parameter file (.ohlg)",
             )
             .clicked()
         {

@@ -1038,7 +1038,7 @@ mod tests {
 
     fn delta() -> PylonTemplate {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../libraries/pylon-templates/delta-1c.olspt");
+            .join("../../libraries/pylon-templates/delta-1c.ohlpt");
         PylonTemplate::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap()
     }
 

@@ -59,7 +59,7 @@ pub(crate) fn menu(h: &mut Harness<'static, StructureApp>, top: &str, entry: &st
 /// Save writes it to the file.
 #[test]
 fn a_structure_is_edited_undone_and_saved() {
-    let path = copy_of("type-02.olss", "edit");
+    let path = copy_of("type-02.ohls", "edit");
     let mut h = harness(&path);
     h.get_by_label("Level 3 — full design");
     assert_eq!(h.state().area, Area::Design);
@@ -101,7 +101,7 @@ fn a_structure_is_edited_undone_and_saved() {
 /// clicked brings the Members panel to the front.
 #[test]
 fn the_header_names_what_the_next_level_lacks() {
-    let path = copy_of("type-01.olss", "level");
+    let path = copy_of("type-01.ohls", "level");
     let mut h = harness(&path);
     h.get_by_label("Level 1 — stick figure");
     h.get_by_label("for level 2:");
@@ -121,7 +121,7 @@ fn the_header_names_what_the_next_level_lacks() {
 /// the changes.
 #[test]
 fn closing_with_changes_asks_first() {
-    let path = copy_of("type-01.olss", "close");
+    let path = copy_of("type-01.ohls", "close");
     let mut h = harness(&path);
     h.get_by_label("+ Point").click();
     h.run();

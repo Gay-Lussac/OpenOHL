@@ -133,7 +133,7 @@ mod tests {
                 .join(format!("{template}.{}", PylonTemplate::EXTENSION));
             let t = PylonTemplate::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
             let text = t.build(&t.defaults(role), role, id, name).unwrap();
-            let file = starter().join("structures").join(format!("{id}.olss"));
+            let file = starter().join("structures").join(format!("{id}.ohls"));
             if std::env::var_os("OLS_WRITE_STARTER").is_some() {
                 std::fs::write(&file, &text).unwrap();
             }
@@ -172,8 +172,8 @@ mod tests {
             std::fs::write(d.join(name), text).unwrap();
         }
         ols_cables::Library::load_dir(&dir.join("cables")).unwrap();
-        ols_weather::WeatherCases::load(&dir.join("weather/starter-weather-cases.olswc")).unwrap();
-        ols_clearance::RuleSet::load(&dir.join("rules/starter-clearance-rules.olsr")).unwrap();
+        ols_weather::WeatherCases::load(&dir.join("weather/starter-weather-cases.ohlwc")).unwrap();
+        ols_clearance::RuleSet::load(&dir.join("rules/starter-clearance-rules.ohlr")).unwrap();
         for (kind, name, text) in files.iter().filter(|(k, _, _)| k == "structures") {
             ols_structures::StructureType::parse(Path::new(name), text)
                 .unwrap_or_else(|e| panic!("{kind}/{name}: {e}"));

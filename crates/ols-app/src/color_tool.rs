@@ -7,10 +7,10 @@
 //! with the old and the new colour side by side. Below, the user's palette:
 //! named colours with what each is used for, picked with a click; colours
 //! are added, edited, moved and deleted there, and the palette is exported
-//! and imported as a small file (`.olscolors`, TOML):
+//! and imported as a small file (`.ohlcolors`, TOML):
 //!
 //! ```toml
-//! format = "ols-colors"
+//! format = "ohl-colors"
 //! version = 1
 //!
 //! [[color]]
@@ -29,11 +29,11 @@ use eframe::egui;
 use ols_core::text::{format_rgb, parse_rgb};
 
 /// The file format of an exported palette.
-pub const PALETTE_FILE_FORMAT: &str = "ols-colors";
+pub const PALETTE_FILE_FORMAT: &str = "ohl-colors";
 /// Its version.
 pub const PALETTE_FILE_VERSION: i64 = 1;
 /// Its file extension.
-pub const PALETTE_FILE_EXTENSION: &str = "olscolors";
+pub const PALETTE_FILE_EXTENSION: &str = "ohlcolors";
 
 /// A colour of the palette.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,7 +104,7 @@ impl Default for Palette {
 }
 
 impl Palette {
-    /// The palette as a file (`.olscolors`).
+    /// The palette as a file (`.ohlcolors`).
     pub fn to_toml(&self) -> String {
         let mut doc = toml_edit::DocumentMut::new();
         doc["format"] = toml_edit::value(PALETTE_FILE_FORMAT);
@@ -904,7 +904,7 @@ impl ColorTool {
         ui.horizontal(|ui| {
             if ui
                 .button("Export…")
-                .on_hover_text("Write the palette to a file (.olscolors) to share")
+                .on_hover_text("Write the palette to a file (.ohlcolors) to share")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter("Colour palette", &[PALETTE_FILE_EXTENSION])
@@ -918,10 +918,13 @@ impl ColorTool {
             }
             if ui
                 .button("Import…")
-                .on_hover_text("Read a palette file (.olscolors): replace yours or add to it")
+                .on_hover_text("Read a palette file (.ohlcolors): replace yours or add to it")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Colour palette", &[PALETTE_FILE_EXTENSION])
+                    .add_filter(
+                        "Colour palette",
+                        &ols_core::files::open_extensions(PALETTE_FILE_EXTENSION),
+                    )
                     .pick_file()
             {
                 self.import_file(&p);

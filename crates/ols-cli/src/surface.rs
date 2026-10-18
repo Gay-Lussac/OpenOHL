@@ -14,7 +14,7 @@ use ols_session::Session;
 pub enum SurfaceCommand {
     /// The surfaces of a project.
     List {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         project: PathBuf,
     },
     /// Read a file's surfaces into a project (LandXML, OBJ, survey points
@@ -22,7 +22,7 @@ pub enum SurfaceCommand {
     Import {
         /// File to read.
         file: PathBuf,
-        /// Project file (.ols).
+        /// Project file (.ohl).
         #[arg(long)]
         into: PathBuf,
         /// User (a designer of the project).
@@ -47,7 +47,7 @@ pub enum SurfaceCommand {
     },
     /// Write a surface as LandXML (.xml) or OBJ (.obj).
     Export {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         project: PathBuf,
         /// Surface name.
         name: String,
@@ -56,7 +56,7 @@ pub enum SurfaceCommand {
     },
     /// Rename a surface.
     Rename {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         project: PathBuf,
         /// Surface name.
         name: String,
@@ -68,7 +68,7 @@ pub enum SurfaceCommand {
     },
     /// Remove a surface from the project.
     Delete {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         project: PathBuf,
         /// Surface name.
         name: String,

@@ -4,8 +4,8 @@
 
 //! The structure checks by analysis ([`ols_structures_fe`]): a structure
 //! type's finite-element model (its members, when they are a full design,
-//! or a separate `model = "….olsfe"`) and its pole (`pole = "id"`, a
-//! `.olsp` file next to the type, or the type's own `[pole]` table, read
+//! or a separate `model = "….ohlfe"`) and its pole (`pole = "id"`, a
+//! `.ohlp` file next to the type, or the type's own `[pole]` table, read
 //! by [`ols_structures_fe::pole::structure_pole`]), loaded once per usage
 //! run and solved with each load case's factored attachment loads. A
 //! placed structure standing on an extension with a body or leg

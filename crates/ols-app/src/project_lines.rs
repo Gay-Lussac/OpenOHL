@@ -174,7 +174,7 @@ fn show(r: &mut Ready, name: &str, on: bool) {
 pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
     let Some(current) = r.model.session().map(|s| s.current_line().to_owned()) else {
         ui.label(
-            egui::RichText::new("Project lines are kept in a project (.ols): open one").small(),
+            egui::RichText::new("Project lines are kept in a project (.ohl): open one").small(),
         );
         return;
     };

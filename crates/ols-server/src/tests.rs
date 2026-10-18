@@ -22,10 +22,10 @@ pub(crate) fn temp(name: &str) -> PathBuf {
 pub(crate) fn project(dir: &Path) -> PathBuf {
     let line = ols_line::Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     let mut s = Session::open(&path).unwrap();
     s.import(&line, "alice").unwrap();
     s.set_user("alice", "bob", Role::Designer).unwrap();
@@ -51,7 +51,7 @@ pub(crate) struct Client {
 
 impl Client {
     pub(crate) fn join(inv: &Invitation, user: &str, dir: &Path) -> Result<Self, String> {
-        let file = dir.join(format!("{user}.ols"));
+        let file = dir.join(format!("{user}.ohl"));
         let mut seen = 0;
         let joined = join(inv, user, &file, &mut |p| seen = p.received)?;
         assert_eq!(seen, std::fs::metadata(&file).unwrap().len());
@@ -388,7 +388,7 @@ fn replicas_follow_version_control() {
     let dir = temp("versions");
     let path = project(&dir);
     let mut server = Session::open(&path).unwrap();
-    let copy = dir.join("replica.ols");
+    let copy = dir.join("replica.ohl");
     server.copy_to(&copy).unwrap();
     let mut replica = Session::open(&copy).unwrap();
     let id = server.line().structures[5].id.clone();

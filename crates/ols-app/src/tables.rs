@@ -4215,7 +4215,7 @@ pub fn weather_path(model: &Model) -> Option<PathBuf> {
 }
 
 /// The name of a project's first weather case file.
-pub const NEW_WEATHER_FILE: &str = "weather-cases.olswc";
+pub const NEW_WEATHER_FILE: &str = "weather-cases.ohlwc";
 
 fn weather_file(
     model: &Model,
@@ -6197,6 +6197,23 @@ fn load_type_from_cells(c: &Cells, id: &str) -> Result<ols_line::ObjectType, Str
     })
 }
 
+/// The name of the project's library file of its own load types: the one
+/// it holds (`project.olsload` in projects of before 2026-10-18), else
+/// `project.ohlload`.
+fn project_load_types_file(model: &Model) -> String {
+    model
+        .editing
+        .as_ref()
+        .ok()
+        .and_then(|e| {
+            e.session
+                .library_files(crate::model::Model::OBJECT_LIBRARY_KIND)
+                .ok()
+        })
+        .and_then(|files| files.into_iter().next().map(|(name, _)| name))
+        .unwrap_or_else(|| format!("project.{}", ols_line::objects::OBJECT_FILE_EXTENSION))
+}
+
 /// The load types table's changes: the project's own types written to
 /// its library file (a template changed becomes the project's of its id;
 /// a project's type deleted brings its template back, if any).
@@ -6250,7 +6267,7 @@ fn load_type_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
     Ok(Changes {
         project_library: Some((
             crate::model::Model::OBJECT_LIBRARY_KIND.to_owned(),
-            "project.olsload".to_owned(),
+            project_load_types_file(model),
             own.to_text(),
         )),
         ..Changes::default()

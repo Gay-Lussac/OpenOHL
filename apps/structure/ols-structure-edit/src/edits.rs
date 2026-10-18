@@ -849,7 +849,7 @@ pub fn set_string(
     Ok(())
 }
 
-/// Insulator `label` as an assembly of the insulator library (`.olsi`
+/// Insulator `label` as an assembly of the insulator library (`.ohli`
 /// text, id `id`): its length, weight, wind area, strain or suspension (a
 /// leg of a V: a V-string assembly).
 pub fn assembly_text(
@@ -902,7 +902,7 @@ pub fn assembly_text(
         .or(a.map(InsulatorAssembly::limits).unwrap_or_default());
     let mut text = String::new();
     text.push_str(&format!(
-        "format = \"ols-insulator\"\nversion = {}\n",
+        "format = \"ohl-insulator\"\nversion = {}\n",
         if limits.is_empty() { 1 } else { 2 }
     ));
     text.push_str(&format!("id = {}\n", toml_edit::value(id)));
@@ -932,7 +932,7 @@ pub fn assembly_text(
     }
     text.push_str(&limits.to_toml());
     <InsulatorAssembly as ols_structures::LibraryItem>::parse(
-        std::path::Path::new("new.olsi"),
+        std::path::Path::new("new.ohli"),
         &text,
     )
     .map_err(|e| e.message)?;

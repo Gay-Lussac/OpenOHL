@@ -11,16 +11,16 @@ fn ex() -> PathBuf {
 }
 
 fn setup() -> (Line, ols_cables::Library, Vec<WeatherCase>, LoadCases) {
-    let mut line = Line::load(&ex().join("synthetic-line.ols.json")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line.ohl.json")).unwrap();
     line.creep_stretch.creep_case = Some("everyday".into());
     let library = ols_cables::Library::load(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
     )
     .unwrap();
-    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.olswc"))
+    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.ohlwc"))
         .unwrap()
         .cases;
-    let cases = LoadCases::load(&ex().join("load-cases.olslc")).unwrap();
+    let cases = LoadCases::load(&ex().join("load-cases.ohllc")).unwrap();
     (line, library, weather, cases)
 }
 
@@ -136,7 +136,7 @@ fn an_unknown_weather_case_is_said() {
 
 /// The typed example line, every type given `capacity`.
 fn typed(capacity: ols_structures::Capacity) -> (Line, ols_structures::StructureLibrary) {
-    let line = Line::load(&ex().join("synthetic-line-typed.ols.json")).unwrap();
+    let line = Line::load(&ex().join("synthetic-line-typed.ohl.json")).unwrap();
     let loaded = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
     let mut types = ols_structures::StructureLibrary::default();
     for t in loaded.iter() {
@@ -160,7 +160,7 @@ fn typed(capacity: ols_structures::Capacity) -> (Line, ols_structures::Structure
             .unwrap_or_default();
         t.capacity = Some(c);
         types
-            .insert(&PathBuf::from(format!("{}.olss", t.id)), t)
+            .insert(&PathBuf::from(format!("{}.ohls", t.id)), t)
             .unwrap();
     }
     let mut line = line
@@ -319,7 +319,7 @@ fn wind_on_the_structures() {
             t.clone()
         };
         with_wind
-            .insert(&PathBuf::from(format!("{}.olss", t.id)), t)
+            .insert(&PathBuf::from(format!("{}.ohls", t.id)), t)
             .unwrap();
     }
     types = with_wind;
@@ -372,7 +372,7 @@ fn wind_on_the_structures() {
 #[test]
 fn structure_analysis_on_the_example_line() {
     let types = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
-    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
         .unwrap()
         .resolve(&types, &ols_structures::InsulatorLibrary::default())
         .unwrap();
@@ -445,7 +445,7 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
     )
     .unwrap();
     let types = ols_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
-    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
         .unwrap()
         .resolve(&types, &ols_structures::InsulatorLibrary::default())
         .unwrap();
@@ -564,7 +564,7 @@ fn dead_end_line() -> Line {
         )
     };
     let json = format!(
-        r#"{{"format": "ols-line", "version": 1, "name": "dead-end test", "crs": "local",
+        r#"{{"format": "ohl-line", "version": 1, "name": "dead-end test", "crs": "local",
             "structures": [{}, {}, {}, {}],
             "sections": [{}, {}],
             "jumpers": [{{"id": "J3", "cable": "acsr-drake-26-7", "from": {}, "to": {},
@@ -731,7 +731,7 @@ fn structure_analysis_with_an_extension_body() {
         piece.push_str(&member(format!("P{k}"), feet[j].0, "brace"));
         piece.push_str(&member(format!("P{j}"), feet[k].0, "brace"));
     }
-    let path = dir.join("type-02.olss");
+    let path = dir.join("type-02.ohls");
     let text = std::fs::read_to_string(&path).unwrap();
     std::fs::write(&path, format!("{text}{piece}")).unwrap();
     let types = ols_structures::StructureLibrary::load_dir(&dir).unwrap();
@@ -745,7 +745,7 @@ fn structure_analysis_with_an_extension_body() {
     let (n0, m0) = size(None).unwrap();
     assert_eq!(size(Some("+2")), Some((n0 + 4, m0 + 12)));
     assert_eq!(size(Some("+1")), None);
-    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json")).unwrap();
     for s in line.structures.iter_mut().filter(|s| s.id == "T2") {
         s.extension = Some("+2".into());
     }

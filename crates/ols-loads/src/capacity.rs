@@ -26,7 +26,7 @@
 //!   strength factor; per direction, or added up with a linear
 //!   interaction. Usage: the largest over the attachments.
 //! - **Finite elements** (`fe`): the type's structure model (its members
-//!   when it is a full design, or `model = "….olsfe"`) solved with the factored attachment loads (and its
+//!   when it is a full design, or `model = "….ohlfe"`) solved with the factored attachment loads (and its
 //!   members' weight times the vertical factor, and the wind on members
 //!   whose section comes from the section library); usage: the member
 //!   using most of its capacity times the strength factor

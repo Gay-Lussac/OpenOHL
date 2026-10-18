@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Checks › Thermal rating: per section and ambient case (`.olsta`), the
+//! Checks › Thermal rating: per section and ambient case (`.ohlta`), the
 //! ampacity at a maximum conductor temperature (computed as the window is
 //! drawn: microseconds each); on demand, the clearance-limited temperature
 //! of every section ([`ols_thermal::limit`]) — solved again at other
@@ -78,7 +78,7 @@ impl Default for ThermalWindow {
 }
 
 impl ThermalWindow {
-    /// Opens the window; the first time with the project's `.olsta` file
+    /// Opens the window; the first time with the project's `.ohlta` file
     /// (next to a line file), if there is one.
     pub fn show(&mut self, model: &Model) {
         self.open = true;
@@ -268,12 +268,14 @@ pub fn window(
                 ui.label(egui::RichText::new(name).strong());
                 if ui
                     .button("Choose…")
-                    .on_hover_text("An ambient case file (.olsta): air, wind, sun")
+                    .on_hover_text("An ambient case file (.ohlta): air, wind, sun")
                     .clicked()
                     && let Some(p) = rfd::FileDialog::new()
                         .add_filter(
                             "Thermal ambient cases",
-                            &[ols_thermal::ambient::AMBIENT_FILE_EXTENSION],
+                            &ols_core::files::open_extensions(
+                                ols_thermal::ambient::AMBIENT_FILE_EXTENSION,
+                            ),
                         )
                         .pick_file()
                 {
@@ -304,7 +306,7 @@ pub fn window(
                 }
                 None => {
                     ui.label(
-                        egui::RichText::new("Choose an ambient case file (.olsta).")
+                        egui::RichText::new("Choose an ambient case file (.ohlta).")
                             .small()
                             .weak(),
                     );

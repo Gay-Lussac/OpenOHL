@@ -36,9 +36,9 @@ impl Guest for Bundle {
 
     fn formats() -> Vec<Format> {
         vec![Format {
-            id: "ols-bundle".into(),
+            id: "ohl-bundle".into(),
             description: "JSON bundle: a line and its library files".into(),
-            extension: "olsb".into(),
+            extension: "ohlb".into(),
             direction: Direction::Importer,
         }]
     }
@@ -48,7 +48,7 @@ impl Guest for Bundle {
         data: Vec<u8>,
         options: Vec<(String, String)>,
     ) -> Result<Project, String> {
-        if format != "ols-bundle" {
+        if format != "ohl-bundle" {
             return Err(format!("unknown format {format}"));
         }
         let mut v: Value = serde_json::from_slice(&data).map_err(|e| format!("bundle: {e}"))?;

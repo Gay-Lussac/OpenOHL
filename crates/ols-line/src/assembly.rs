@@ -112,7 +112,7 @@ pub struct InsulatorString {
     /// the line, 90 to the right, 180 back, 270 to the left).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub direction_deg: f64,
-    /// Insulator assembly id from the insulator library (`.olsi`).
+    /// Insulator assembly id from the insulator library (`.ohli`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub insulator: Option<String>,
     /// Weight, N, half at each end.

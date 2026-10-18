@@ -62,9 +62,9 @@ enum Command {
         #[arg(long)]
         csv: Option<PathBuf>,
     },
-    /// Solve a line model (.ols.json) in 3D for one weather state.
+    /// Solve a line model (.ohl.json) in 3D for one weather state.
     Line(Box<LineArgs>),
-    /// Bill of materials of a line, priced with a cost file (.olscost).
+    /// Bill of materials of a line, priced with a cost file (.ohlcost).
     Bom(Box<cost_run::BomArgs>),
     /// Optimum structure spotting along a route: the least-cost structures
     /// (types, extensions, positions) keeping the ground clearance.
@@ -94,7 +94,7 @@ enum Command {
         #[command(subcommand)]
         command: LidarCommand,
     },
-    /// Project file (.ols): import/export, commands, undo, log, users,
+    /// Project file (.ohl): import/export, commands, undo, log, users,
     /// revisions, branches, merges, reviews.
     Project {
         #[command(subcommand)]
@@ -116,7 +116,7 @@ enum Command {
         #[arg(long)]
         plugin: Vec<PathBuf>,
     },
-    /// Read a file into a line file (.ols.json).
+    /// Read a file into a line file (.ohl.json).
     Import {
         /// File to read.
         file: PathBuf,
@@ -163,7 +163,7 @@ enum Command {
     /// invitation to give them; runs until stopped (Ctrl+C: every edit is
     /// already in the project file).
     Serve {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         project: PathBuf,
         /// Address and port to listen on (UDP: QUIC).
         #[arg(long, default_value = "0.0.0.0:4433")]
@@ -199,24 +199,24 @@ enum Command {
 /// Arguments of `ohl line`.
 #[derive(clap::Args, Clone)]
 struct LineArgs {
-    /// Line file (.ols.json) or project file (.ols).
+    /// Line file (.ohl.json) or project file (.ohl).
     file: PathBuf,
-    /// Wire library: .olsw file or directory (default: a project's own,
+    /// Wire library: .ohlw file or directory (default: a project's own,
     /// else the shipped libraries/cables, in the current folder or next to
     /// the program).
     #[arg(long)]
     library: Option<PathBuf>,
-    /// Structure type directory (.olss pylon files), for typed structures
+    /// Structure type directory (.ohls pylon files), for typed structures
     /// (default: a project's own, else the `Structures` folder next to the
     /// line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
-    /// Section library (.olssec file or folder) the structure models'
+    /// Section library (.ohlsec file or folder) the structure models'
     /// members refer to (default: a project's own, else the `Sections`
     /// folder next to the line or project file, if there is one).
     #[arg(long)]
     sections: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi) (default: a project's
+    /// Insulator assembly library directory (.ohli) (default: a project's
     /// own, else the shipped libraries/insulators).
     #[arg(long)]
     insulators: Option<PathBuf>,
@@ -240,7 +240,7 @@ struct LineArgs {
     /// iced diameter for the wind, none = bare diameter).
     #[arg(long)]
     ice_density: Option<f64>,
-    /// Weather case file (.olswc; for a project, also the name of one of
+    /// Weather case file (.ohlwc; for a project, also the name of one of
     /// its own): solve and check its cases (all, or those chosen with
     /// --case / --tag) instead of the single case of --temperature,
     /// --wind-pressure and the ice options.
@@ -261,7 +261,7 @@ struct LineArgs {
     /// Write one row per span (tensions, sag, mid and low points) as CSV.
     #[arg(long)]
     spans_csv: Option<PathBuf>,
-    /// Load cases (.olslc; for a project, also the name of one of its
+    /// Load cases (.ohllc; for a project, also the name of one of its
     /// own): the loads on the structures in each (their weather cases from
     /// --weather).
     #[arg(long, requires = "weather")]
@@ -285,13 +285,13 @@ struct LineArgs {
     /// the classes with the ground role, inside a corridor along the spans.
     #[arg(long, conflicts_with = "terrain")]
     lidar: Option<PathBuf>,
-    /// Point cloud stored in a project file (`FILE.ols`, or `FILE.ols#name`
+    /// Point cloud stored in a project file (`FILE.ohl`, or `FILE.ohl#name`
     /// when it holds several), or a COPC file (`FILE.copc.laz`): only the
     /// blocks or octree nodes of the corridor are read, much faster than
     /// reading tiles.
     #[arg(long, conflicts_with_all = ["terrain", "lidar"])]
     pointcloud: Option<String>,
-    /// Class scheme (.olsc) of the LiDAR; default ASPRS LAS 1.4.
+    /// Class scheme (.ohlc) of the LiDAR; default ASPRS LAS 1.4.
     #[arg(long)]
     lidar_classes: Option<PathBuf>,
     /// Role of the classes that make the ground surface.
@@ -312,12 +312,12 @@ struct LineArgs {
     /// --rules).
     #[arg(long)]
     clearance: Option<f64>,
-    /// Clearance rules (.olsr; for a project, also the name of one of its
+    /// Clearance rules (.ohlr; for a project, also the name of one of its
     /// own): vertical and radial clearances to the ground, LiDAR classes,
     /// other lines and wires of this line.
     #[arg(long)]
     rules: Option<PathBuf>,
-    /// Another line (.ols.json) for wire-to-wire clearances (repeatable);
+    /// Another line (.ohl.json) for wire-to-wire clearances (repeatable);
     /// solved in the same weather with the same libraries.
     #[arg(long)]
     other_line: Vec<PathBuf>,
@@ -461,11 +461,11 @@ enum Units {
 
 #[derive(Subcommand)]
 enum StructuresCommand {
-    /// Derive draft structure types (.olss) and insulator assemblies (.olsi)
+    /// Derive draft structure types (.ohls) and insulator assemblies (.ohli)
     /// from a line's attachment geometry, plus a copy of the line that
     /// references them; reports how closely the types reproduce the line.
     Derive {
-        /// Line file (.ols.json).
+        /// Line file (.ohl.json).
         file: PathBuf,
         /// Output directory (created): structures/, insulators/, typed line;
         /// with --inline-strings: the project folder, pylon files go to its
@@ -477,12 +477,12 @@ enum StructuresCommand {
         #[arg(long)]
         inline_strings: bool,
     },
-    /// Finite-element analysis of a structure model (a full-design .olss,
-    /// or an .olsfe): member
+    /// Finite-element analysis of a structure model (a full-design .ohls,
+    /// or an .ohlfe): member
     /// forces and usage under the loads of one structure (a CSV of `ohl
     /// line --loads-csv`) or the model's own loads.
     Fe(structure_fe::FeArgs),
-    /// Pole check (.olsp, or the type's own [pole]): bending moment along
+    /// Pole check (.ohlp, or the type's own [pole]): bending moment along
     /// the pole from the loads at a structure type's attachments, wind,
     /// P-Delta.
     Pole(structure_fe::PoleArgs),
@@ -498,7 +498,7 @@ enum LidarCommand {
         /// Count points per class.
         #[arg(long)]
         classes: bool,
-        /// Class scheme (.olsc) naming the classes; default ASPRS LAS 1.4.
+        /// Class scheme (.ohlc) naming the classes; default ASPRS LAS 1.4.
         #[arg(long)]
         scheme: Option<PathBuf>,
     },
@@ -542,7 +542,7 @@ enum CrsCommand {
     },
     /// Move a whole line into another projected coordinate system.
     Line {
-        /// Line file (.ols.json).
+        /// Line file (.ohl.json).
         file: PathBuf,
         /// Its coordinate system (default: the line's `crs`).
         #[arg(long)]
@@ -563,13 +563,13 @@ enum PointcloudCommand {
     Import {
         /// LAS / LAZ / COPC file or directory of tiles.
         tiles: PathBuf,
-        /// Project file (.ols).
+        /// Project file (.ohl).
         #[arg(long)]
         into: PathBuf,
         /// Name of the point cloud in the project.
         #[arg(long, default_value = "lidar")]
         name: String,
-        /// Class scheme (.olsc) stored with the cloud.
+        /// Class scheme (.ohlc) stored with the cloud.
         #[arg(long)]
         classes: Option<PathBuf>,
         /// Coordinate system (informative), e.g. EPSG:2056.
@@ -583,7 +583,7 @@ enum PointcloudCommand {
     /// extension; `.copc.laz`: COPC): LAS 1.4, point format 6, with its
     /// class scheme next to it.
     Export {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         file: PathBuf,
         /// LAS / LAZ / COPC (`.copc.laz`) file to write.
         #[arg(long)]
@@ -601,14 +601,14 @@ enum PointcloudCommand {
     /// Point clouds of a project file and their points per class; or a
     /// COPC file's octree (nodes and points per level).
     Info {
-        /// Project file (.ols) or COPC file.
+        /// Project file (.ohl) or COPC file.
         file: PathBuf,
     },
     /// Build the levels of detail of a project's point clouds where they
     /// are missing (files from before they were stored: the views then
     /// read less to draw far away).
     Octree {
-        /// Project file (.ols).
+        /// Project file (.ohl).
         file: PathBuf,
         /// Point cloud (default: all).
         #[arg(long)]
@@ -1910,7 +1910,7 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
         let mut structures = StructureLibrary::default();
         let mut insulators = InsulatorLibrary::default();
         for (id, text) in &derived.structure_types {
-            let path = sdir.join(format!("{id}.olss"));
+            let path = sdir.join(format!("{id}.ohls"));
             std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
             structures
                 .insert(
@@ -1920,7 +1920,7 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
                 .map_err(|e| e.to_string())?;
         }
         for (id, text) in &derived.insulators {
-            let path = idir.join(format!("{id}.olsi"));
+            let path = idir.join(format!("{id}.ohli"));
             std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
             insulators
                 .insert(
@@ -1932,8 +1932,8 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
         let stem = file
             .file_name()
             .and_then(|n| n.to_str())
-            .map_or("line", |n| n.trim_end_matches(".ols.json"));
-        let typed_path = out.join(format!("{stem}-typed.ols.json"));
+            .map_or("line", |n| ols_core::files::line_file_stem(n).unwrap_or(n));
+        let typed_path = out.join(format!("{stem}-typed.ohl.json"));
         std::fs::write(&typed_path, typed.to_json())
             .map_err(|e| format!("{}: {e}", typed_path.display()))?;
         // Self-check: resolve the typed line and compare with the original.

@@ -2,13 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols-structure-export` — a level 3 structure file (`.olss`) as IFC,
+//! `ols-structure-export` — a level 3 structure file (`.ohls`) as IFC,
 //! SAF or CSV tables.
 //!
 //! ```bash
-//! ols-structure-export examples/synthetic-line/Structures/type-02.olss \
+//! ols-structure-export examples/synthetic-line/Structures/type-02.ohls \
 //!     --format saf -o type-02.xlsx
-//! ols-structure-export tower.olss --format ifc --sections libraries/sections \
+//! ols-structure-export tower.ohls --format ifc --sections libraries/sections \
 //!     --loads tower-loads.csv -o tower.ifc
 //! ```
 //!
@@ -28,14 +28,14 @@ use ols_structure_loads::LoadTable;
 #[derive(Parser)]
 #[command(name = "ols-structure-export", version)]
 struct Args {
-    /// Structure file (.olss).
+    /// Structure file (.ohls).
     file: PathBuf,
     /// ifc (IFC4: analysis model and members), ifc-members (IFC4, members
     /// only), ifc2x3 (members for Tekla Structures), saf (xlsx), csv
     /// (tables in a folder).
     #[arg(long)]
     format: String,
-    /// Section library files (.olssec) or folders; the first one giving
+    /// Section library files (.ohlsec) or folders; the first one giving
     /// an id wins. Members' sections are looked up here first, then in
     /// the file's [[section]] tables.
     #[arg(long, num_args = 1..)]

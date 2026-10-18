@@ -7,7 +7,7 @@
 //! A **load case** ([`LoadCase`]) is a weather case, a wire condition
 //! (initial, after creep, after load, max sag) and load factors on the
 //! vertical, transverse and longitudinal loads (and a strength factor for
-//! the capacity checks). Load cases are data (`.olslc` files): a design
+//! the capacity checks). Load cases are data (`.ohllc` files): a design
 //! code's combinations and partial factors are written there — by a code
 //! plugin or by hand from the standard (OpenOHL ships no code tables).
 //!
@@ -23,7 +23,7 @@
 //! ([`capacity::StructureUsage::status`]).
 //!
 //! ```toml
-//! format = "ols-load-cases"
+//! format = "ohl-load-cases"
 //! version = 1
 //!
 //! [[case]]
@@ -49,11 +49,11 @@ use ols_weather::WeatherCase;
 use serde::Deserialize;
 
 /// `format` of a load case file.
-pub const LOAD_CASE_FILE_FORMAT: &str = "ols-load-cases";
+pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
 /// Newest format version read.
 pub const LOAD_CASE_FILE_VERSION: u32 = 1;
 /// File extension of load case files.
-pub const LOAD_CASE_FILE_EXTENSION: &str = "olslc";
+pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
 fn one() -> f64 {
     1.0
@@ -139,7 +139,7 @@ impl LoadCase {
     /// weather cases sent to the structures, Criteria › Weather cases for
     /// structures): named `weather: <name>`, the wires as strung
     /// (initial), every factor 1 (strength too), tagged
-    /// [`WEATHER_CASE_TAG`]. Load cases (`.olslc`) add factors and
+    /// [`WEATHER_CASE_TAG`]. Load cases (`.ohllc`) add factors and
     /// combinations on top.
     pub fn from_weather(weather: &str) -> Self {
         Self {
@@ -177,11 +177,11 @@ impl LoadCase {
     }
 }
 
-/// A load case file (`.olslc`).
+/// A load case file (`.ohllc`).
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoadCases {
-    /// `"ols-load-cases"` (optional).
+    /// `"ohl-load-cases"` (optional).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).

@@ -4,7 +4,7 @@
 
 //! Checks › (the plugin's submenu, LeV/OLEI) › Distance between conductors: the still-air distance
 //! between the conductors of each span by a phase distance code
-//! (`.olspd`, [`ols_clearance::phase_distance`]), in the weather cases
+//! (`.ohlpd`, [`ols_clearance::phase_distance`]), in the weather cases
 //! ticked (each on its own), for the circuits ticked; the insulation
 //! levels from the Electrical circuits table (the LeV plugin's column).
 //! Computed on demand in the background; worst pairs first; a click
@@ -32,8 +32,8 @@ use crate::model::Model;
 use crate::selection::Selection;
 
 /// The extension of a phase distance values file when the check gives
-/// none (the LeV plugin's `.olspd`).
-const PHASE_DISTANCE_FILE_EXTENSION: &str = "olspd";
+/// none (the LeV plugin's `.ohlpd`).
+const PHASE_DISTANCE_FILE_EXTENSION: &str = "ohlpd";
 
 /// A worst station within this of a conductor's clamp is marked "at a
 /// clamp" (f about 0), m.
@@ -1379,7 +1379,7 @@ impl PhaseDistanceWindow {
                 .on_hover_text("Another values file instead of the values used")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Values", &[ext.as_str()])
+                    .add_filter("Values", &ols_core::files::open_extensions(&ext))
                     .pick_file()
             {
                 self.file = Some(p);

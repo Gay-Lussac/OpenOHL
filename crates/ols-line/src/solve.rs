@@ -4143,7 +4143,7 @@ mod tests {
     /// The synthetic non-linear test cable (invented curves, with creep).
     fn with_nonlinear(mut lib: ols_cables::Library) -> ols_cables::Library {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../ols-sagtension/tests/data/synthetic-cable.olsw");
+            .join("../ols-sagtension/tests/data/synthetic-cable.ohlw");
         lib.add_toml(&path, &std::fs::read_to_string(&path).unwrap())
             .unwrap();
         lib

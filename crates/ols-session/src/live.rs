@@ -142,11 +142,11 @@ mod tests {
     fn every_edit_re_solves_only_what_it_touched() {
         let dir = std::env::temp_dir().join(format!("ols-live-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("p.ols");
+        let path = dir.join("p.ohl");
         std::fs::remove_file(&path).ok();
         let line = Line::load(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+                .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
         )
         .unwrap();
         let mut session = Session::open(&path).unwrap();

@@ -373,7 +373,7 @@ pub fn set_load_field(
     Ok(())
 }
 
-/// Takes the cases of a structure load-case file's text (`.olsslc`, or
+/// Takes the cases of a structure load-case file's text (`.ohlslc`, or
 /// any text with `[[load_case]]` tables): a case with the name of one in
 /// the file replaces it there, the others are added at the end. How many
 /// were added and replaced.
@@ -571,7 +571,7 @@ set = 1
     }
 
     fn reads(doc: &DocumentMut) -> StructureType {
-        StructureType::parse(Path::new("p.olss"), &doc.to_string()).unwrap()
+        StructureType::parse(Path::new("p.ohls"), &doc.to_string()).unwrap()
     }
 
     #[test]
@@ -666,7 +666,7 @@ set = 1
     #[test]
     fn cases_imported_replace_or_add() {
         let mut d = doc();
-        let text = r#"format = "ols-structure-load-cases"
+        let text = r#"format = "ohl-structure-load-cases"
 version = 1
 
 [[load_case]]

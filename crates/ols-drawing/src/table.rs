@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The profile as numbers: CSV and the OLS profile XML.
+//! The profile as numbers: CSV and the OHL profile XML.
 
 use std::fmt::Write as _;
 
@@ -75,7 +75,7 @@ pub fn profile_csv(d: &RouteDrawing, o: &Options) -> String {
     out
 }
 
-/// The profile as OLS profile XML (`<olsProfile version="1">`; see the
+/// The profile as OHL profile XML (`<ohlProfile version="1">`; see the
 /// user guide, Drawings): ground runs, side ground, clearance line,
 /// structures with attachments, wires and markers, within the options'
 /// station range.
@@ -85,7 +85,7 @@ pub fn profile_xml(d: &RouteDrawing, o: &Options) -> String {
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     let _ = writeln!(
         out,
-        r#"<olsProfile version="1" route="{}" name="{}" length="{:.3}" from="{from:.3}" to="{to:.3}" units="m">"#,
+        r#"<ohlProfile version="1" route="{}" name="{}" length="{:.3}" from="{from:.3}" to="{to:.3}" units="m">"#,
         escape(&d.route),
         escape(&d.name),
         d.length,
@@ -173,7 +173,7 @@ pub fn profile_xml(d: &RouteDrawing, o: &Options) -> String {
             p[2]
         );
     }
-    out.push_str("</olsProfile>\n");
+    out.push_str("</ohlProfile>\n");
     out
 }
 
@@ -219,7 +219,7 @@ mod tests {
         assert!(all.lines().count() > csv.lines().count());
 
         let xml = profile_xml(&d, &ranged);
-        assert!(xml.starts_with("<?xml") && xml.trim_end().ends_with("</olsProfile>"));
+        assert!(xml.starts_with("<?xml") && xml.trim_end().ends_with("</ohlProfile>"));
         assert!(xml.contains(r#"from="200.000" to="700.000""#));
         assert_eq!(xml.matches("<structure ").count(), 2);
         assert!(xml.contains(r#"<ground offset="-10">"#));

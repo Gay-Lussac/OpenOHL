@@ -2,11 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Ambient cases for thermal ratings: `.olsta` files ("OLS thermal
+//! Ambient cases for thermal ratings: `.ohlta` files ("OHL thermal
 //! ambient"), TOML with units in the values.
 //!
 //! ```toml
-//! format = "ols-thermal-ambient"
+//! format = "ohl-thermal-ambient"
 //! version = 1
 //! name = "Summer"
 //!
@@ -38,12 +38,12 @@ use serde::Deserialize;
 
 use crate::solar::{self, Atmosphere};
 
-/// Value of the `format` header of `.olsta` files.
-pub const AMBIENT_FILE_FORMAT: &str = "ols-thermal-ambient";
-/// Latest `.olsta` format version.
+/// Value of the `format` header of `.ohlta` files.
+pub const AMBIENT_FILE_FORMAT: &str = "ohl-thermal-ambient";
+/// Latest `.ohlta` format version.
 pub const AMBIENT_FILE_VERSION: u32 = 1;
 /// File extension of ambient case files.
-pub const AMBIENT_FILE_EXTENSION: &str = "olsta";
+pub const AMBIENT_FILE_EXTENSION: &str = "ohlta";
 /// Ground albedo (CIGRE) when a case gives none.
 pub const DEFAULT_ALBEDO: f64 = ols_line::Defaults::PROGRAM.thermal_albedo;
 
@@ -316,7 +316,7 @@ impl CaseFile {
     }
 }
 
-/// The ambient cases of a `.olsta` file.
+/// The ambient cases of a `.ohlta` file.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AmbientCases {
     /// Name of the set.
@@ -384,7 +384,7 @@ mod tests {
     use super::*;
 
     const EXAMPLE: &str = r#"
-        format = "ols-thermal-ambient"
+        format = "ohl-thermal-ambient"
         version = 1
         name = "t"
 
@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn example_file_loads() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/thermal-ambient.olsta");
+            .join("../../examples/synthetic-line/thermal-ambient.ohlta");
         let set = AmbientCases::load(&path).unwrap();
         assert!(set.cases.len() >= 2);
         // The example of docs/user-guide/thermal.md.

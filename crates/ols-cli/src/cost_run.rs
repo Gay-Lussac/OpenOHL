@@ -13,21 +13,21 @@ use ols_core::files::shipped_library;
 /// Arguments of `ohl bom`.
 #[derive(clap::Args)]
 pub struct BomArgs {
-    /// Line file (.ols.json) or project file (.ols).
+    /// Line file (.ohl.json) or project file (.ohl).
     file: PathBuf,
-    /// Wire library: .olsw file or directory (default: the shipped
+    /// Wire library: .ohlw file or directory (default: the shipped
     /// libraries/cables).
     #[arg(long)]
     library: Option<PathBuf>,
-    /// Structure type directory (.olss) (default: the `Structures` folder
+    /// Structure type directory (.ohls) (default: the `Structures` folder
     /// next to the line).
     #[arg(long)]
     structures: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi) (default: the shipped
+    /// Insulator assembly library directory (.ohli) (default: the shipped
     /// libraries/insulators).
     #[arg(long)]
     insulators: Option<PathBuf>,
-    /// Unit costs (.olscost): price the bill of materials.
+    /// Unit costs (.ohlcost): price the bill of materials.
     #[arg(long)]
     cost: Option<PathBuf>,
     /// Write the bill (and prices) as CSV.
@@ -41,7 +41,7 @@ pub struct BomArgs {
 /// Arguments of `ohl spot`.
 #[derive(clap::Args)]
 pub struct SpotArgs {
-    /// Line file (.ols.json) or project file (.ols) with the route.
+    /// Line file (.ohl.json) or project file (.ohl) with the route.
     file: PathBuf,
     /// Route id (see ohl line --stations); default: the first route.
     #[arg(long)]
@@ -49,17 +49,17 @@ pub struct SpotArgs {
     /// Survey points (CSV / XYZ) for the ground surface.
     #[arg(long)]
     terrain: PathBuf,
-    /// Structure type directory (.olss): the candidates are the types (and
+    /// Structure type directory (.ohls): the candidates are the types (and
     /// extensions) the cost file prices.
     #[arg(long)]
     types: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi).
+    /// Insulator assembly library directory (.ohli).
     #[arg(long)]
     insulators: Option<PathBuf>,
-    /// Wire library: .olsw file or directory.
+    /// Wire library: .ohlw file or directory.
     #[arg(long)]
     library: Option<PathBuf>,
-    /// Unit costs (.olscost).
+    /// Unit costs (.ohlcost).
     #[arg(long)]
     cost: PathBuf,
     /// Cable id of the wire whose clearance is kept.
@@ -95,7 +95,7 @@ pub struct SpotArgs {
     /// Stop after this many seconds.
     #[arg(long, default_value_t = 300)]
     seconds: u64,
-    /// Write the spotted line (.ols.json).
+    /// Write the spotted line (.ohl.json).
     #[arg(long)]
     out: Option<PathBuf>,
 }

@@ -1,0 +1,67 @@
+# ───────────────────────────────────────────────────────────────────────────
+# OpenOHL wire library — fill-in template
+#
+# Copy to <name>.ohlw (e.g. my-conductors.ohlw), fill in, delete what you do
+# not need. Full reference: docs/user-guide/wire-library.md
+#
+# Quantities are TEXT WITH A UNIT, e.g. "28.14 mm", "1.094 lbm/ft", "55 GPa".
+# A bare number is read as SI (m, N, Pa, kg/m, K) — meant for tools.
+# Lines starting with # are comments.
+# ───────────────────────────────────────────────────────────────────────────
+
+format = "ohl-wire"      # optional header identifying the file
+version = 1              # optional; format version
+
+[[cable]]                                   # one [[cable]] block per conductor
+id = "acsr-example-26-7"                    # REQUIRED unique id (letters, digits, - _)
+name = "Example 795 kcmil 26/7 ACSR"        # REQUIRED display name
+kind = "acsr"                               # REQUIRED: acsr acss aac aaac acar accc opgw adss steel other
+source = "Manufacturer X data sheet, rev. 2024-03"   # where the data comes from (required for shipped libraries)
+diameter = "28.14 mm"                       # REQUIRED overall diameter
+mass_per_length = "1.628 kg/m"              # REQUIRED mass (NOT weight): kg/m or lbm/ft
+rated_tensile_strength = "138.8 kN"         # REQUIRED RTS / RBS / UTS
+
+# Outer component (the whole cable for homogeneous conductors: AAC, AAAC, …)
+[cable.outer]
+area = "402.8 mm²"                          # REQUIRED area of this component only
+modulus = "55 GPa"                          # REQUIRED final (elastic) modulus
+thermal_expansion = 23.0e-6                 # REQUIRED, plain number in 1/K
+strands = 26                                # optional: number of wires (jumpers' slipped bending stiffness)
+
+# Optional non-linear behaviour of the outer component.
+# Stress = a0 + a1·ε + a2·ε² + … (any number of coefficients, ≥ 2).
+[cable.outer.stress_strain]
+strain = "percent"                          # "percent" (default) or "unit": unit of ε in the polynomials
+stress_unit = "MPa"                         # REQUIRED unit of the coefficients' stress: Pa kPa MPa GPa psi ksi …
+basis = "component"                         # "component" (default) or "total": area the stress refers to
+initial = [0.0, 250.0, -110.0, 40.0, -8.0]  # REQUIRED initial (virgin loading) curve a0, a1, a2, …
+creep = [0.0, 160.0, -60.0, 15.0, -2.0]     # optional creep curve (e.g. 10-year); omit for no creep
+final_modulus = 550.0                       # REQUIRED with curves: unloading slope, stress_unit per strain unit
+max_compression = 0.0                       # optional: largest compressive stress carried (0 = none; omit = unlimited)
+max_strain = 0.9                            # optional: curves valid up to this strain (strain units); default 1 %
+reference_temperature = "20 °C"             # optional: temperature of the curve tests; default 20 °C
+
+# Core component — delete this whole block for homogeneous conductors.
+[cable.core]
+area = "65.6 mm²"
+modulus = "190 GPa"
+thermal_expansion = 11.5e-6
+strands = 7
+
+[cable.core.stress_strain]                  # optional, same fields as above
+stress_unit = "MPa"
+initial = [0.0, 1800.0, -120.0, 30.0, -5.0]
+final_modulus = 1900.0
+
+# Electrical and thermal data — optional; delete the block if not needed.
+# The voltage and phases belong to the line (its electrical systems), not
+# to the cable.
+[cable.electrical]
+ac_resistance = [                           # one or more; linear between them
+    { temperature = "20 °C", resistance = "0.0718 Ω/km" },
+    { temperature = "75 °C", resistance = "0.0870 Ω/km" },
+]
+dc_resistance = { temperature = "20 °C", resistance = "0.0700 Ω/km" }
+geometric_mean_radius = "11.4 mm"           # for inductance
+emissivity = 0.5                            # 0–1, thermal rating
+solar_absorptivity = 0.5                    # 0–1, thermal rating

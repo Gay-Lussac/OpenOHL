@@ -35,10 +35,10 @@ fn rings(h: &egui_kittest::Harness<'static, crate::app::StructureApp>) -> Vec<(f
 
 #[test]
 fn a_pole_outline_is_edited() {
-    let path = copy_of("type-05.olss", "pole-ui");
-    copy_of("steel-pole-30m.olsp", "pole-ui");
+    let path = copy_of("type-05.ohls", "pole-ui");
+    copy_of("steel-pole-30m.ohlp", "pole-ui");
     let mut h = harness(&path);
-    // The named .olsp: level 3.
+    // The named .ohlp: level 3.
     h.get_by_label("Level 3 — full design");
     menu(&mut h, "Body", "Pole…");
     assert_eq!(h.state_mut().focused(), Some(Panel::Pole));
@@ -77,7 +77,7 @@ fn a_pole_outline_is_edited() {
 
 #[test]
 fn an_extension_gets_its_piece_and_a_leg() {
-    let path = copy_of("type-02.olss", "ext-ui");
+    let path = copy_of("type-02.ohls", "ext-ui");
     let mut h = harness(&path);
     menu(&mut h, "Body", "Extensions…");
     assert_eq!(h.state_mut().focused(), Some(Panel::Extensions));

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The editing of a structure file (`.olss`), without a window: every
+//! The editing of a structure file (`.ohls`), without a window: every
 //! edit of the structure application (and of the line application's
 //! pylon workspace) as a function on the file's text ([`toml_edit`], so
 //! comments and layout are kept), a file with an undo and redo of whole

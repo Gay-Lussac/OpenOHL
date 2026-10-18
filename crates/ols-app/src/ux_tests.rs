@@ -99,7 +99,7 @@ fn a_starter_project_has_the_libraries_and_nothing_else() {
         assert_eq!(kept, wanted, "{kind}");
     }
     drop(session);
-    assert!(dir.join("Pylon templates/delta-1c.olspt").is_file());
+    assert!(dir.join("Pylon templates/delta-1c.ohlpt").is_file());
     assert!(dir.join(crate::starter::SURVEY).is_file());
     // Opened: the libraries are read; the line still needs its route.
     let m = load(&path);

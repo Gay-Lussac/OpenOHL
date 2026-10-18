@@ -493,7 +493,7 @@ pub(crate) mod tests {
 
     pub(crate) fn solved() -> (Line, Vec<SectionShape>, Vec<JumperShape>, Terrain) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-        let line = Line::load(&root.join("synthetic-line.ols.json")).unwrap();
+        let line = Line::load(&root.join("synthetic-line.ohl.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("../../libraries/cables")).unwrap();
         let case = WeatherCase::still("t", Temperature::from_celsius(15.0));
         let shapes: Vec<_> = ols_line::solve::solve_line(&line, &library, &case)

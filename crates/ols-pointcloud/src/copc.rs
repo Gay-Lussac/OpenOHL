@@ -494,7 +494,7 @@ impl CopcFile {
 pub struct CopcSource {
     /// The file.
     pub file: CopcFile,
-    /// Class scheme (`.olsc` text): the file of that name next to it.
+    /// Class scheme (`.ohlc` text): the file of that name next to it.
     pub scheme: Option<String>,
 }
 
@@ -510,9 +510,9 @@ pub(crate) fn wanted_classes(classes: Option<&[u8]>) -> [bool; 256] {
 }
 
 impl CopcSource {
-    /// Opens a COPC file, with the class scheme of the `.olsc` file of its
-    /// name next to it (`survey.copc.laz` → `survey.copc.olsc` or
-    /// `survey.olsc`), if any.
+    /// Opens a COPC file, with the class scheme of the `.ohlc` file of its
+    /// name next to it (`survey.copc.laz` → `survey.copc.ohlc` or
+    /// `survey.ohlc`), if any.
     pub fn open(path: &Path) -> Result<Self, String> {
         let file = CopcFile::open(path)?;
         let olsc = [

@@ -20,20 +20,20 @@ use ols_weather::{WeatherCase, WeatherCases};
 /// Where the model comes from.
 #[derive(Debug, Clone, Default)]
 pub struct Sources {
-    /// Line file (`.ols.json`) or project (`.ols`).
+    /// Line file (`.ohl.json`) or project (`.ohl`).
     pub file: PathBuf,
-    /// Wire library (file or directory); default: `*.olsw` next to the
+    /// Wire library (file or directory); default: `*.ohlw` next to the
     /// file, else `libraries/cables`.
     pub library: Option<PathBuf>,
     /// Pylon files; default: `Structures/` next to the file.
     pub structures: Option<PathBuf>,
     /// Insulator library.
     pub insulators: Option<PathBuf>,
-    /// Weather case file (`.olswc`); default: one case at 15 °C.
+    /// Weather case file (`.ohlwc`); default: one case at 15 °C.
     pub weather: Option<PathBuf>,
     /// Survey points for the ground (CSV/XYZ).
     pub terrain: Option<PathBuf>,
-    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`) or a
+    /// Point cloud: a project file (`FILE.ohl` or `FILE.ohl#name`) or a
     /// COPC file (`FILE.copc.laz`);
     /// default: the project's own, if it has one.
     pub pointcloud: Option<String>,
@@ -43,14 +43,14 @@ pub struct Sources {
     pub corridor: f64,
     /// User editing the project (default: the login name).
     pub user: Option<String>,
-    /// Clearance rules (`.olsr`).
+    /// Clearance rules (`.ohlr`).
     pub rules: Option<PathBuf>,
-    /// Load cases (`.olslc`) for the structure loads; default: the
-    /// project's own, else the first `.olslc` next to the file.
+    /// Load cases (`.ohllc`) for the structure loads; default: the
+    /// project's own, else the first `.ohllc` next to the file.
     pub load_cases: Option<PathBuf>,
     /// What this user showed of the file last time ([`ViewPrefs`]).
     pub view: Option<ViewPrefs>,
-    /// Class scheme (`.olsc`: names, roles, colours) used instead of the
+    /// Class scheme (`.ohlc`: names, roles, colours) used instead of the
     /// point cloud's own (this user's choice).
     pub class_scheme: Option<PathBuf>,
 }
@@ -456,7 +456,7 @@ pub struct Model {
     pub check_surface: Option<String>,
     /// That surface, read.
     pub check_ground: Option<std::sync::Arc<Terrain>>,
-    /// The point cloud read (`FILE.ols` or `FILE.ols#name`).
+    /// The point cloud read (`FILE.ohl` or `FILE.ohl#name`).
     pub cloud: Option<String>,
     /// Orthophotos and drawings of the project (Terrain › Backgrounds).
     pub backgrounds: crate::backgrounds::Loaded,
@@ -550,23 +550,21 @@ pub struct Model {
     pub check_problems: Vec<String>,
 }
 
-/// The wire library: given, else the `*.olsw` files next to the model,
+/// The wire library: given, else the `*.ohlw` files next to the model,
 /// else `libraries/cables`.
 pub fn library_path(s: &Sources) -> PathBuf {
     if let Some(p) = &s.library {
         return p.clone();
     }
     let dir = dir_of(&s.file);
-    let has_olsw = std::fs::read_dir(&dir).is_ok_and(|mut it| {
+    let has_wires = std::fs::read_dir(&dir).is_ok_and(|mut it| {
         it.any(|e| {
             e.is_ok_and(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|x| x == ols_cables::WIRE_FILE_EXTENSION)
+                ols_core::files::has_extension(&e.path(), ols_cables::WIRE_FILE_EXTENSION)
             })
         })
     });
-    if has_olsw {
+    if has_wires {
         dir
     } else {
         shipped_library("cables")
@@ -579,7 +577,7 @@ fn load_line(
     path: &Path,
     line: Option<&str>,
 ) -> Result<(Line, Option<ols_session::Session>), String> {
-    if path.extension().is_some_and(|e| e == "ols") {
+    if ols_core::files::is_project_file(path) {
         let mut s = ols_session::Session::open(path).map_err(|e| e.to_string())?;
         if let Some(l) = line.filter(|l| s.is_line(l)) {
             s.select_line(l).map_err(|e| e.to_string())?;
@@ -600,7 +598,7 @@ fn editing(
 ) -> (Result<Editing, String>, Option<ols_session::Session>) {
     let Some(session) = session else {
         return (
-            Err("a line file: open a project (.ols) to edit (ohl project import)".into()),
+            Err("a line file: open a project (.ohl) to edit (ohl project import)".into()),
             None,
         );
     };
@@ -1103,7 +1101,7 @@ impl Model {
         files_with_extension(&dir, ext)
     }
 
-    /// The section library (`.olssec`) the structure models refer to: the
+    /// The section library (`.ohlsec`) the structure models refer to: the
     /// project's working copies, else ([`sections_dir`]) the files next to
     /// the model; empty when there are none.
     pub fn section_library(&self) -> Result<ols_sections::SectionLibrary, String> {
@@ -1393,7 +1391,7 @@ impl Model {
     }
 
     /// Kind of the project's library files of point and spread load
-    /// types (`.olsload`).
+    /// types (`.ohlload`).
     pub const OBJECT_LIBRARY_KIND: &'static str = "objects";
 
     /// The point and spread load types to choose from: the shipped
@@ -1972,7 +1970,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     }
     // Point cloud: given, else the project's own.
     let cloud = sources.pointcloud.clone().or_else(|| {
-        let is_project = sources.file.extension().is_some_and(|e| e == "ols");
+        let is_project = ols_core::files::is_project_file(&sources.file);
         let has = is_project
             && ols_pointcloud::Store::open(&sources.file)
                 .and_then(|s| s.clouds())

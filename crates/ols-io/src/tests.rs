@@ -21,7 +21,7 @@ pub(crate) fn root() -> &'static Path {
 /// 1 200 000), solved at 15 °C.
 pub(crate) fn model() -> ExportModel {
     let mut line =
-        Line::load(&root().join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+        Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
     line.transform_coordinates(|pts| {
         for p in pts {
             p[0] += 2_600_000.0;
@@ -59,7 +59,7 @@ fn registry_lists_and_finds_formats() {
             "kml",
             "kmz",
             "spans-csv",
-            "ols-xml",
+            "ohl-xml",
             "landxml",
             "geojson",
             "shapefile",
@@ -73,12 +73,12 @@ fn registry_lists_and_finds_formats() {
         im,
         [
             "structures-csv",
-            "ols-xml",
+            "ohl-xml",
             "structures-geojson",
             "structures-shp"
         ]
     );
-    assert_eq!(r.exporter("xml").unwrap().id(), "ols-xml");
+    assert_eq!(r.exporter("xml").unwrap().id(), "ohl-xml");
     assert_eq!(r.importer("shp").unwrap().id(), "structures-shp");
     assert_eq!(r.exporter("KMZ").unwrap().id(), "kmz");
     // By extension: the first exporter for it.
@@ -90,7 +90,7 @@ fn registry_lists_and_finds_formats() {
 fn model_json_has_every_wire_and_the_line() {
     let m = model();
     let v: serde_json::Value = serde_json::from_str(&m.to_json()).unwrap();
-    assert_eq!(v["format"], "ols-export-model");
+    assert_eq!(v["format"], "ohl-export-model");
     assert_eq!(v["version"], 1);
     assert_eq!(v["crs"], "EPSG:2056");
     let spans: usize = m.line.sections.iter().map(|s| s.points.len() - 1).sum();
@@ -117,7 +117,7 @@ fn model_json_has_every_wire_and_the_line() {
 #[test]
 fn model_json_has_the_strings_and_their_limits() {
     let mut line =
-        Line::load(&root().join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+        Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
     let t2 = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
     let label = t2.strings[0].label.clone();
     t2.strings[0].max_load = Some(120_000.0);
@@ -422,7 +422,7 @@ fn surfaces_are_stored_under_free_names() {
         ols_terrain::formats::write_landxml(&[("a", &t), ("b", &t)]),
     )
     .unwrap();
-    let s = ols_session::Session::open(&dir.join("p.ols")).unwrap();
+    let s = ols_session::Session::open(&dir.join("p.ohl")).unwrap();
     s.set_user("ann", "ann", ols_session::Role::Admin).unwrap();
     let mut r = Registry::with_builtin();
     let o = Options::new();
@@ -498,18 +498,18 @@ fn project_plugin_reads_a_bundle() {
     }
     let ex = root().join("examples/synthetic-line");
     let line: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(ex.join("synthetic-line.ols.json")).unwrap())
+        serde_json::from_str(&std::fs::read_to_string(ex.join("synthetic-line.ohl.json")).unwrap())
             .unwrap();
     let cables =
-        std::fs::read_to_string(root().join("libraries/cables/acsr-examples.olsw")).unwrap();
+        std::fs::read_to_string(root().join("libraries/cables/acsr-examples.ohlw")).unwrap();
     let bundle = serde_json::json!({
         "line": line,
-        "libraries": [{"kind": "cables", "name": "acsr-examples.olsw", "text": cables}],
+        "libraries": [{"kind": "cables", "name": "acsr-examples.ohlw", "text": cables}],
     });
     let host = ols_plugins::WasmHost::new().unwrap();
     let mut r = Registry::with_builtin();
     assert_eq!(r.add_plugin(&host, &dir).unwrap(), "project-bundle");
-    let i = r.project_importer("olsb").unwrap();
+    let i = r.project_importer("ohlb").unwrap();
     assert_eq!(i.origin(), "plugin project-bundle");
     let mut options = Options::new();
     options.insert("name".into(), "Bundled".into());
@@ -528,7 +528,7 @@ fn project_plugin_reads_a_bundle() {
     assert_eq!(n, p.line.sections.len() - before);
     assert!(p.line.sections.iter().all(|s| s.stringing.clipped()));
     assert!(
-        r.project_importer("olsb")
+        r.project_importer("ohlb")
             .unwrap()
             .import(b"{}", &Options::new())
             .unwrap_err()

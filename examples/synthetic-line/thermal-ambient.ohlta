@@ -1,0 +1,35 @@
+# Example ambient cases for thermal ratings of the synthetic line
+# (invented values, not a design code). Units go with the values.
+# ohl thermal ampacity --cable acsr-drake-26-7 --ambient thermal-ambient.ohlta --max-temp 80
+format = "ohl-thermal-ambient"
+version = 1
+name = "Synthetic example ambient cases"
+
+[[case]]
+name = "summer noon"
+description = "hot, sunny, light wind across the line"
+air_temperature = "35 °C"
+wind_speed = "0.6 m/s"
+wind_angle = "90 °"
+elevation = "500 m"
+latitude = "47 °"
+date = "2023-07-15"
+time = "13:00"            # local solar time
+line_azimuth = "90 °"     # the line runs east-west
+atmosphere = "clear"
+
+[[case]]
+name = "summer still air"
+description = "low wind along the line, full sun across it"
+air_temperature = "35 °C"
+wind_speed = "0.2 m/s"
+wind_angle = "20 °"
+elevation = "500 m"
+solar_flux = "1000 W/m²"
+
+[[case]]
+name = "winter night"
+air_temperature = "5 °C"
+wind_speed = "1 m/s"
+elevation = "500 m"
+solar_flux = "0 W/m²"

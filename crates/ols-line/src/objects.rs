@@ -6,7 +6,7 @@
 //! jumper ([`crate::SpanPoint`], [`crate::JumperPoint`]) — one object per
 //! point — and what lies along a stretch between two points
 //! ([`SpreadObject`]). Their types come from a library of point and
-//! spread loads ([`ObjectLibrary`], `.olsload`): templates for the most
+//! spread loads ([`ObjectLibrary`], `.ohlload`): templates for the most
 //! used, each object keeping its own values (taken from its type when
 //! chosen, as strings keep their insulator's).
 //!
@@ -660,13 +660,13 @@ impl ObjectType {
 }
 
 /// File format id of a library of point and spread loads.
-pub const OBJECT_FILE_FORMAT: &str = "ols-point-spread-loads";
+pub const OBJECT_FILE_FORMAT: &str = "ohl-point-spread-loads";
 /// Newest version read.
 pub const OBJECT_FILE_VERSION: u32 = 1;
 /// File extension.
-pub const OBJECT_FILE_EXTENSION: &str = "olsload";
+pub const OBJECT_FILE_EXTENSION: &str = "ohlload";
 
-/// A library of point and spread load types (`.olsload`).
+/// A library of point and spread load types (`.ohlload`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObjectLibrary {
@@ -687,7 +687,7 @@ pub struct ObjectLibrary {
 impl ObjectLibrary {
     /// Parses and checks a library file.
     pub fn parse(text: &str) -> Result<Self, String> {
-        let lib: ObjectLibrary = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut lib: ObjectLibrary = toml::from_str(text).map_err(|e| e.to_string())?;
         ols_core::files::check_header(
             lib.format.as_deref(),
             lib.version,
@@ -696,6 +696,10 @@ impl ObjectLibrary {
             "point and spread loads",
         )?;
         lib.validate()?;
+        // The id of before 2026-10-18 is read; the current one is kept.
+        if lib.format.is_some() {
+            lib.format = Some(OBJECT_FILE_FORMAT.into());
+        }
         Ok(lib)
     }
 
@@ -742,9 +746,9 @@ impl ObjectLibrary {
         Ok(())
     }
 
-    /// The shipped templates (`libraries/objects/templates.olsload`).
+    /// The shipped templates (`libraries/objects/templates.ohlload`).
     pub fn templates() -> Self {
-        Self::parse(include_str!("../../../libraries/objects/templates.olsload"))
+        Self::parse(include_str!("../../../libraries/objects/templates.ohlload"))
             .expect("the shipped templates read")
     }
 }
@@ -852,7 +856,7 @@ mod legacy_tests {
     fn older_point_and_spread_loads_are_read_into_points_and_objects() {
         let example = Line::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+                .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
         )
         .unwrap();
         let mut old = serde_json::to_value(&example.sections[0]).unwrap();
@@ -921,7 +925,7 @@ mod legacy_tests {
     /// type may not.
     #[test]
     fn a_spread_type_may_be_per_subconductor() {
-        let head = "format = \"ols-point-spread-loads\"\nversion = 1\n[[type]]\nid = \"x\"\nname = \"x\"\n";
+        let head = "format = \"ohl-point-spread-loads\"\nversion = 1\n[[type]]\nid = \"x\"\nname = \"x\"\n";
         let lib = super::ObjectLibrary::parse(&format!(
             "{head}kind = \"spread\"\nload = 3.0\nper_subconductor = true"
         ))
@@ -939,7 +943,7 @@ mod legacy_tests {
     fn library_values_take_units() {
         let lib = super::ObjectLibrary::parse(
             r#"
-format = "ols-point-spread-loads"
+format = "ohl-point-spread-loads"
 version = 1
 [[type]]
 id = "ball"

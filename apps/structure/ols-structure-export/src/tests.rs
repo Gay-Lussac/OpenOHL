@@ -17,16 +17,16 @@ fn root() -> PathBuf {
 }
 
 fn type_02() -> String {
-    std::fs::read_to_string(root().join("examples/synthetic-line/Structures/type-02.olss")).unwrap()
+    std::fs::read_to_string(root().join("examples/synthetic-line/Structures/type-02.ohls")).unwrap()
 }
 
 fn example_library() -> SectionLibrary {
-    SectionLibrary::load(&root().join("libraries/sections/example-sections.olssec")).unwrap()
+    SectionLibrary::load(&root().join("libraries/sections/example-sections.ohlsec")).unwrap()
 }
 
 /// A small invented frame using every shape of the example library.
 const SHAPES: &str = r#"
-format = "ols-structure"
+format = "ohl-structure"
 version = 2
 id = "shapes"
 name = "Every profile (invented)"

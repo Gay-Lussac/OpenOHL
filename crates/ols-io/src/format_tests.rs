@@ -43,7 +43,7 @@ fn unzip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
 /// The example line with every optional part of the model filled in.
 fn rich_line() -> Line {
     let mut line =
-        Line::load(&root().join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+        Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
     let s = &mut line.structures[1];
     s.structure_type = Some("tangent & <co>".into());
     s.extension = Some("+3".into());
@@ -341,9 +341,9 @@ fn rich_line() -> Line {
 fn ols_xml_round_trips_every_line() {
     let ex = root().join("examples/synthetic-line");
     let lines = [
-        Line::load(&ex.join("synthetic-line.ols.json")).unwrap(),
-        Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap(),
-        Line::load(&ex.join("crossing-line.ols.json")).unwrap(),
+        Line::load(&ex.join("synthetic-line.ohl.json")).unwrap(),
+        Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap(),
+        Line::load(&ex.join("crossing-line.ohl.json")).unwrap(),
         rich_line(),
     ];
     for line in lines {
@@ -375,7 +375,7 @@ fn ols_xml_round_trips_every_line() {
     }
     // The export writes the model's line.
     let m = model();
-    let bytes = export("ols-xml", &m, &Options::new());
+    let bytes = export("ohl-xml", &m, &Options::new());
     assert_eq!(
         olsxml::from_xml(std::str::from_utf8(&bytes).unwrap()).unwrap(),
         m.line
@@ -387,6 +387,29 @@ fn ols_xml_round_trips_every_line() {
     );
 }
 
+/// An OLS XML document of before 2026-10-18 (its namespace, format
+/// `ols-line`) reads as the same line, which is written as OHL XML; the
+/// importer is found by its former id too.
+#[test]
+fn ols_xml_of_before_reads() {
+    let m = model();
+    let now = String::from_utf8(export("ohl-xml", &m, &Options::new())).unwrap();
+    let before = now
+        .replace(olsxml::NAMESPACE, olsxml::LEGACY_NAMESPACE)
+        .replace("format=\"ohl-line\"", "format=\"ols-line\"");
+    assert_ne!(before, now);
+    let line = olsxml::from_xml(&before).unwrap();
+    assert_eq!(line, m.line);
+    assert_eq!(line.format, "ohl-line");
+    assert_eq!(olsxml::to_xml(&line), now);
+    let imported = Registry::with_builtin()
+        .importer("ols-xml")
+        .unwrap()
+        .import(before.as_bytes(), None, &Options::new())
+        .unwrap();
+    assert_eq!(imported, m.line);
+}
+
 #[test]
 fn ols_xml_refuses_what_it_does_not_know() {
     let ok = "<line name=\"x\"/>";
@@ -395,7 +418,7 @@ fn ols_xml_refuses_what_it_does_not_know() {
         ("<line name=\"x\" colour=\"red\"/>", "unknown attribute"),
         ("<line name=\"x\"><tower/></line>", "unknown element"),
         ("<line/>", "\"name\" missing"),
-        ("<lines name=\"x\"/>", "not an OLS XML line"),
+        ("<lines name=\"x\"/>", "not an OHL XML line"),
         (
             "<line name=\"x\"><structure id=\"a\" x=\"1\" y=\"one\" z=\"0\"/></line>",
             "not a number",
@@ -409,7 +432,7 @@ fn ols_xml_refuses_what_it_does_not_know() {
 /// The XSD names every element the writer uses.
 #[test]
 fn xsd_lists_every_element_written() {
-    let xsd = std::fs::read_to_string(root().join("docs/schema/ols-line.xsd")).unwrap();
+    let xsd = std::fs::read_to_string(root().join("docs/schema/ohl-line.xsd")).unwrap();
     let schema = xml::parse(&xsd).unwrap();
     let mut declared = Vec::new();
     schema.descendants("element", &mut declared);
@@ -498,7 +521,7 @@ fn landxml_has_alignments_and_points_and_reads_back() {
     let (_, tail) = rest.split_once("</CgPoints>").unwrap();
     let only = format!("{head}{tail}");
     let updated = Registry::with_builtin()
-        .importer("ols-xml")
+        .importer("ohl-xml")
         .unwrap()
         .import(only.as_bytes(), Some(&m.line), &Options::new())
         .unwrap();
@@ -904,7 +927,7 @@ fn neutral_files_go_into_a_project_as_one_command() {
         ]
     });
     std::fs::write(&points, doc.to_string()).unwrap();
-    let project = dir.join("p.ols");
+    let project = dir.join("p.ohl");
     let mut r = Registry::with_builtin();
     let o = opts(&[("type", "tangent")]);
     let (applied, line) =

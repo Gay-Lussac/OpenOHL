@@ -2,17 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Structure type library (`*.olss`) and insulator assembly library
-//! (`*.olsi`): one item per file, TOML with units, loaded from directories
+//! Structure type library (`*.ohls`) and insulator assembly library
+//! (`*.ohli`): one item per file, TOML with units, loaded from directories
 //! (DESIGN_GOALS §10–11).
 //!
 //! - [`structures`]: structure types in local axes, placement into a line.
 //! - [`insulators`]: suspension, V-string and strain assemblies.
 //! - [`derive`](mod@derive): draft libraries derived from the attachment geometry of an
 //!   existing line.
-//! - [`templates`]: pylon templates (`*.olspt`), the face of a pylon as a
+//! - [`templates`]: pylon templates (`*.ohlpt`), the face of a pylon as a
 //!   few dimensions, building structure types of level 1.
-//! - [`pole`]: the pole of a pole structure, named (`.olsp`) or described
+//! - [`pole`]: the pole of a pole structure, named (`.ohlp`) or described
 //!   in the structure file (`[pole]`, levels 1 to 3).
 //! - [`extensions`]: height extensions, their bodies and leg extensions.
 
@@ -128,12 +128,8 @@ impl<T: LibraryItem> Library<T> {
             path: path.to_owned(),
             message: e.to_string(),
         };
-        let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map_err(|e| io(dir, e))?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x == T::EXTENSION))
-            .collect();
-        paths.sort();
+        std::fs::read_dir(dir).map_err(|e| io(dir, e))?;
+        let paths = ols_core::files::files_with_extension(dir, T::EXTENSION);
         for path in paths {
             let text = std::fs::read_to_string(&path).map_err(|e| io(&path, e))?;
             library.insert(&path, T::parse(&path, &text)?)?;

@@ -1,6 +1,6 @@
 [package]
 name = "ols-io"
-description = "OpenOHL import/export: format interface, registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, XLSX), plugin formats"
+description = "OpenOHL import/export: format interface, registry, built-in formats (CSV, KML/KMZ, OHL XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, XLSX), plugin formats"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

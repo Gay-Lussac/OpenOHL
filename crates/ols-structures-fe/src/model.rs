@@ -2,11 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Structure models (`*.olsfe`, TOML): nodes, members, sections and
+//! Structure models (`*.ohlfe`, TOML): nodes, members, sections and
 //! materials, read into a [`Model`] in SI units with indices resolved.
 //!
 //! ```toml
-//! format = "ols-structure-model"
+//! format = "ohl-structure-model"
 //! version = 1
 //! name = "Example tower (invented)"
 //!
@@ -83,12 +83,12 @@ use serde::Deserialize;
 use crate::units::Moment;
 
 /// `format` of a structure model file.
-pub const MODEL_FILE_FORMAT: &str = "ols-structure-model";
+pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
 /// Newest format version read. Version 2 adds the member kind `tension`
 /// (a truss in tension only); version 1 files read as before.
 pub const MODEL_FILE_VERSION: u32 = 2;
 /// File extension of structure models.
-pub const MODEL_FILE_EXTENSION: &str = "olsfe";
+pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
 const G: f64 = ols_core::units::STANDARD_GRAVITY;
 
@@ -857,7 +857,7 @@ impl Model {
         Ok(model)
     }
 
-    /// The model of a structure type file (`.olss`) that holds its
+    /// The model of a structure type file (`.ohls`) that holds its
     /// members: its `[[node]]`, `[[member]]`, `[[section]]`,
     /// `[[material]]`, `[[load]]` and `[analysis]` tables. A `[[point]]` on
     /// a joint (`node = "…"`) makes that joint carry the point's loads; one
@@ -886,7 +886,7 @@ impl Model {
         let mut file: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
         if let Some(name) = extension {
             use ols_structures::LibraryItem;
-            let t = ols_structures::StructureType::parse(Path::new("structure.olss"), text)
+            let t = ols_structures::StructureType::parse(Path::new("structure.ohls"), text)
                 .map_err(|e| e.message)?;
             let e = t
                 .extension(name)
@@ -977,7 +977,7 @@ impl Model {
         Ok(out)
     }
 
-    /// Reads a model file (`.olsfe`), or a structure type file (`.olss`)
+    /// Reads a model file (`.ohlfe`), or a structure type file (`.ohls`)
     /// holding its members.
     pub fn load(path: &Path) -> Result<Self, String> {
         Self::load_with(path, &SectionLibrary::default())
@@ -997,10 +997,7 @@ impl Model {
         extension: Option<&str>,
     ) -> Result<Self, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if path
-            .extension()
-            .is_some_and(|e| e == STRUCTURE_FILE_EXTENSION)
-        {
+        if ols_core::files::has_extension(path, STRUCTURE_FILE_EXTENSION) {
             Self::from_structure_type_extended(&text, library, extension)
         } else if let Some(e) = extension {
             Err(format!("a model file has no extension \"{e}\""))
