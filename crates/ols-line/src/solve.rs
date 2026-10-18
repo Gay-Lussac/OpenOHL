@@ -445,7 +445,8 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     .expect("the holder's string");
                 st.insulator.is_none() && !st.strain && st.weight == 0.0
             };
-            // A shared assembly's loads go with the first section through it.
+            // A shared assembly's loads go with the first section through it
+            // (solved together, with the one solving it: `Coupling::solvers`).
             let reports = !shares || {
                 let sets: Vec<u32> = component
                     .wires
@@ -473,19 +474,24 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
         .collect()
 }
 
-/// The holders as coupled: where the section solves a shared assembly,
-/// other sections' clamps in it freed and pulled as `coupling.pulls` gives
-/// (the whole bundle's pull of those wires on their clamp; without one,
-/// held where given); where another section solves it, the clamp held
-/// where `coupling.held` puts it.
+/// The holders as coupled: where the section solves a shared assembly
+/// (`coupling.solvers` says which does, else the first through it), other
+/// sections' clamps in it freed and pulled as `coupling.pulls` gives (the
+/// whole bundle's pull of those wires on their clamp; without one, held
+/// where given); where another section solves it, the clamp held where
+/// `coupling.held` puts it.
 fn pulled(layout: &[Holder], section: &Section, coupling: &Coupling) -> Vec<Holder> {
     let bundle = f64::from(section.bundle.max(1));
     layout
         .iter()
         .zip(&section.points)
         .map(|(h, point)| {
+            let reports = match coupling.solvers.get(point) {
+                Some(id) if h.shared => *id == section.id,
+                _ => h.reports,
+            };
             if h.shared
-                && !h.reports
+                && !reports
                 && let Some(at) = coupling.held.get(point)
             {
                 return Holder {
@@ -512,9 +518,15 @@ fn pulled(layout: &[Holder], section: &Section, coupling: &Coupling) -> Vec<Hold
                 })
                 .collect();
             if freed.is_empty() {
-                return h.clone();
+                return Holder {
+                    reports,
+                    ..h.clone()
+                };
             }
-            let mut out = h.clone();
+            let mut out = Holder {
+                reports,
+                ..h.clone()
+            };
             out.fixed.clear();
             let mut map_fixed = Vec::new();
             for (i, f) in h.fixed.iter().enumerate() {
@@ -553,6 +565,10 @@ pub struct Coupling {
     /// Where this section's clamps are held, by section point: on the
     /// assemblies another section solves.
     pub held: std::collections::BTreeMap<crate::SectionPoint, Point>,
+    /// The section solving each shared assembly (its id), by the section
+    /// points on it; an assembly not listed: the first section through it
+    /// in the line's order.
+    pub solvers: std::collections::BTreeMap<crate::SectionPoint, String>,
     /// The jumpers' load on clamps in the weather case, by section point
     /// (the whole bundle's, N, a force; [`crate::jumper::end_loads`], as
     /// the line's [`crate::JumperLoads`] says). None: from the jumpers,
@@ -2988,17 +3004,23 @@ pub fn solve_spacer_group(
 }
 
 /// Solves a group of sections sharing assemblies together (Dirichlet–
-/// Neumann): the first section through a shared assembly solves it, the
-/// other sections' wires pulling on their clamps in it; the others hold
-/// their clamp where that solution puts it, which gives their pull for
-/// the next pass — half way from the last one (the pulls overshoot
-/// otherwise). Until the pulls change less than 0.1 N (or 1e-6 of
-/// themselves). `results` holds the sections' solutions, solved alone,
-/// and gets the coupled ones; a section that fails keeps its error, the
-/// others then stay as solved alone. Not settling in
-/// [`COUPLING_PASSES`] passes is an error for the group.
+/// Neumann): one section through a shared assembly solves it, the other
+/// sections' wires pulling on their clamps in it; the others hold their
+/// clamp where that solution puts it, which gives their pull for the next
+/// pass. The stiffest section solves it (`coupling_solvers`): a section
+/// held there that pulls much harder for a small move of its clamp than
+/// the solving one holds it back (a short taut span against a long
+/// section on one swinging string) would make the pulls overshoot in turn.
+/// The pulls are relaxed by Aitken's factor from the last two passes
+/// (`relaxed`), half way at first. Until the held clamps' pulls change
+/// less than 0.1 N (or 1e-6 of themselves). `results` holds the sections'
+/// solutions, solved alone, and gets the coupled ones; a section that fails
+/// keeps its error, the others then stay as solved alone. Not settling in
+/// [`COUPLING_PASSES`] passes is an error for the group, naming the pull
+/// still changing.
 ///
-/// Expected cost: a few solves of each section of the group.
+/// Expected cost: a few solves of each section of the group (5–15 passes
+/// on the existing lines' TAKs).
 pub fn solve_coupled(
     line: &Line,
     library: &ols_cables::Library,
@@ -3009,6 +3031,7 @@ pub fn solve_coupled(
     jumpers: &JumperLoadMap,
 ) {
     type Points = std::collections::BTreeMap<crate::SectionPoint, Point>;
+    let solvers = coupling_solvers(line, library, case, group, results);
     let pulls_of = |results: &[Result<SectionShape, LineError>]| -> Option<Points> {
         let mut pulls = Points::new();
         for &k in group {
@@ -3019,7 +3042,8 @@ pub fn solve_coupled(
         }
         Some(pulls)
     };
-    // Where the solved assemblies put the clamps of the group's points.
+    // Where the solved assemblies put the clamps of the group's points
+    // (from the section solving each).
     let held_of = |results: &[Result<SectionShape, LineError>]| -> Points {
         let mut held = Points::new();
         for &k in group {
@@ -3032,7 +3056,10 @@ pub fn solve_coupled(
                     if let Some(set) = s.wire(label).and_then(|w| w.set)
                         && set != p.set
                     {
-                        held.insert(crate::SectionPoint::new(p.structure.clone(), set), *at);
+                        let q = crate::SectionPoint::new(p.structure.clone(), set);
+                        if solvers.get(&q).is_none_or(|id| *id == line.sections[k].id) {
+                            held.insert(q, *at);
+                        }
                     }
                 }
             }
@@ -3042,12 +3069,15 @@ pub fn solve_coupled(
     let Some(mut pulls) = pulls_of(results) else {
         return;
     };
+    let mut last: Option<(Vec<Vector3<f64>>, f64)> = None;
+    let mut still = String::new();
     for _ in 0..COUPLING_PASSES {
         for &k in group {
             let section = &line.sections[k];
             let coupling = Coupling {
                 pulls: pulls.clone(),
                 held: held_of(results),
+                solvers: solvers.clone(),
                 jumpers: Some(jumpers.clone()),
                 ..Coupling::default()
             };
@@ -3058,28 +3088,151 @@ pub fn solve_coupled(
         let Some(next) = pulls_of(results) else {
             return;
         };
-        let change = next
-            .iter()
-            .map(|(p, f)| {
-                let old = pulls.get(p).copied().unwrap_or([0.0; 3]);
-                (v(*f) - v(old)).norm() / (0.1 + 1e-6 * v(*f).norm())
-            })
-            .fold(0.0, f64::max);
+        // The pulls another section's solution takes: those on the clamps
+        // held there (the others are only results).
+        let held = held_of(results);
+        let mut keys = Vec::new();
+        let mut r = Vec::new();
+        let (mut change, mut worst) = (0.0_f64, None);
+        for (p, f) in &next {
+            if !held.contains_key(p) {
+                pulls.insert(p.clone(), *f);
+                continue;
+            }
+            let d = v(*f) - v(pulls.get(p).copied().unwrap_or(*f));
+            let c = d.norm() / (0.1 + 1e-6 * v(*f).norm());
+            if c > change {
+                (change, worst) = (c, Some((p, d.norm())));
+            }
+            keys.push(p.clone());
+            r.push(d);
+        }
         if change < 1.0 {
             return;
         }
-        for (p, f) in next {
-            let old = pulls.get(&p).copied().unwrap_or(f);
-            pulls.insert(p, [0, 1, 2].map(|c| 0.5 * (old[c] + f[c])));
+        if let Some((p, d)) = worst {
+            still = format!(
+                " (the pull on a clamp of set {} at {} still changing by {d:.0} N)",
+                p.set, p.structure
+            );
+        }
+        let omega = relaxed(&mut last, r.clone());
+        for (point, d) in keys.into_iter().zip(r) {
+            let f = v(pulls.get(&point).copied().unwrap_or([0.0; 3])) + d * omega;
+            pulls.insert(point, p(f));
         }
     }
     for &k in group {
         results[k] = Err(LineError::Invalid(format!(
             "section {}: the sections sharing its strings did not settle together in \
-             {COUPLING_PASSES} passes",
+             {COUPLING_PASSES} passes{still}",
             line.sections[k].id
         )));
     }
+}
+
+/// Aitken's relaxation factor for a fixed-point pass with residual `r`
+/// (the pass's result less what it took), from the last pass's residual
+/// and factor in `last` (updated): ½ at first, then between 0.02 and 1.
+fn relaxed(last: &mut Option<(Vec<Vector3<f64>>, f64)>, r: Vec<Vector3<f64>>) -> f64 {
+    let mut omega = 0.5;
+    if let Some((prev, w)) = last.as_ref() {
+        omega = *w;
+        if prev.len() == r.len() {
+            let dr: Vec<Vector3<f64>> = r.iter().zip(prev).map(|(a, b)| a - b).collect();
+            let den: f64 = dr.iter().map(Vector3::norm_squared).sum();
+            if den > 0.0 {
+                let num: f64 = prev.iter().zip(&dr).map(|(a, b)| a.dot(b)).sum();
+                omega = (-w * num / den).clamp(0.02, 1.0);
+            }
+        }
+    }
+    *last = Some((r, omega));
+    omega
+}
+
+/// The section solving each assembly shared in `group` (its id), by the
+/// section points on it: the stiffest along the line at its end there, of
+/// those solved alone in `results` — the least compliance
+/// \\( \sum_i L_i / EA + w^2 L_i^3 / (12 H_i^3) \\) over its spans (span
+/// lengths \\( L_i \\), horizontal tensions \\( H_i \\), the case's load per
+/// metre \\( w \\): the ruling span's), the first in the line's order of
+/// equals. An assembly with a section not solved alone keeps the first
+/// section through it.
+fn coupling_solvers(
+    line: &Line,
+    library: &ols_cables::Library,
+    case: &WeatherCase,
+    group: &[usize],
+    results: &[Result<SectionShape, LineError>],
+) -> std::collections::BTreeMap<crate::SectionPoint, String> {
+    let compliance = |k: usize| -> Option<f64> {
+        let shape = results[k].as_ref().ok()?;
+        let cable = cable_of(library, &line.sections[k]).ok()?;
+        let ea = cable.axial_stiffness().si();
+        let w = load_magnitude(case, cable);
+        let c: f64 = shape
+            .spans
+            .iter()
+            .filter_map(|s| {
+                let (a, b) = (s.points.first()?, s.points.last()?);
+                let l = (v(*b) - v(*a)).xy().norm();
+                let h = s.horizontal_tension.max(1.0);
+                Some(l / ea + w * w * l.powi(3) / (12.0 * h.powi(3)))
+            })
+            .sum();
+        c.is_finite().then_some(c)
+    };
+    let mut out = std::collections::BTreeMap::new();
+    // The group's points by assembly: (structure, its sets).
+    let mut assemblies: std::collections::BTreeMap<(&str, Vec<u32>), Vec<usize>> =
+        Default::default();
+    for &k in group {
+        for p in &line.sections[k].points {
+            let Some(s) = line.structure(&p.structure) else {
+                continue;
+            };
+            let Some(w) = s.wire_at_set(p.set) else {
+                continue;
+            };
+            let mut sets: Vec<u32> = s
+                .component(&w.label)
+                .wires
+                .iter()
+                .filter_map(|&i| s.wires[i].set)
+                .collect();
+            sets.sort_unstable();
+            sets.dedup();
+            if sets.len() > 1 {
+                let e = assemblies.entry((p.structure.as_str(), sets)).or_default();
+                if !e.contains(&k) {
+                    e.push(k);
+                }
+            }
+        }
+    }
+    for ((structure, sets), sections) in assemblies {
+        let mut through: Vec<usize> = sections;
+        through.sort_unstable();
+        let mut best: Option<(usize, f64)> = None;
+        for &k in &through {
+            let Some(c) = compliance(k) else {
+                best = None;
+                break;
+            };
+            if best.is_none_or(|(_, b)| c < b) {
+                best = Some((k, c));
+            }
+        }
+        let Some((k, _)) = best else { continue };
+        for set in sets {
+            out.insert(
+                crate::SectionPoint::new(structure.to_owned(), set),
+                line.sections[k].id.clone(),
+            );
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -3647,6 +3800,87 @@ mod tests {
         // The structure's loads: once, by X.
         assert!(!together[0].attachment_loads[1].is_empty());
         assert!(together[1].attachment_loads[0].is_empty());
+    }
+
+    /// A TAK between a long section (four 400 m spans on suspension
+    /// strings) and a short taut span (80 m), strung 5 kN harder: the
+    /// short span pulls ~80 times harder for a move of its end than the
+    /// long one and the TAK's string hold it back. Held where the long
+    /// section put the TAK, its pull overshot in turn (the passes never
+    /// settled, as on the second existing line); the short span solves the
+    /// TAK, the long one holds its end there.
+    #[test]
+    fn a_tak_between_a_long_section_and_a_short_taut_span_settles() {
+        let cable = crate::tests::example().sections[0].cable.clone();
+        let suspension = |id: &str, x: f64| {
+            format!(
+                r#"{{"id": "{id}", "position": [{x}, 0, 0],
+                    "points": [{{"label": "P", "position": [{x}, 0, 45]}}],
+                    "wires": [{{"label": "W", "position": [{x}, 0, 42], "set": 1}}],
+                    "strings": [{{"label": "s", "top": "P", "wire": "W", "weight": 300}}]}}"#
+            )
+        };
+        let text = format!(
+            r#"{{
+            "name": "tak", "structures": [
+              {{"id": "A", "position": [0, 0, 0], "wires": [{{"label": "W", "position": [0, 0, 42], "set": 1}}]}},
+              {s1}, {s2}, {s3},
+              {{"id": "B", "position": [1600, 0, 0],
+                "points": [{{"label": "K", "position": [1600, 0, 45]}}],
+                "wires": [
+                  {{"label": "N", "position": [1600, 0, 42]}},
+                  {{"label": "EB", "position": [1599.7, 0, 42], "set": 1}},
+                  {{"label": "EF", "position": [1600.3, 0, 42], "set": 2}}],
+                "strings": [
+                  {{"label": "k", "top": "K", "wire": "N", "weight": 820}},
+                  {{"label": "b", "top": "N", "wire": "EB"}},
+                  {{"label": "f", "top": "N", "wire": "EF"}}]}},
+              {{"id": "C", "position": [1680, 0, 0], "wires": [{{"label": "W", "position": [1680, 0, 42], "set": 1}}]}}],
+            "sections": [
+              {{"id": "X", "cable": "{cable}", "points": [{{"structure": "A", "set": 1}}, {{"structure": "S1", "set": 1}},
+                {{"structure": "S2", "set": 1}}, {{"structure": "S3", "set": 1}}, {{"structure": "B", "set": 1}}],
+                "stringing": {{"kind": "tension", "horizontal_tension": 20000, "temperature": 15}}}},
+              {{"id": "Y", "cable": "{cable}", "points": [{{"structure": "B", "set": 2}}, {{"structure": "C", "set": 1}}],
+                "stringing": {{"kind": "tension", "horizontal_tension": 25000, "temperature": 15}}}}]
+            }}"#,
+            s1 = suspension("S1", 400.0),
+            s2 = suspension("S2", 800.0),
+            s3 = suspension("S3", 1200.0),
+        );
+        let line = Line::from_json(&text).unwrap();
+        assert_eq!(coupled_groups(&line), vec![vec![0, 1]]);
+        let lib = library();
+        for t in [-20.0, 15.0, 60.0] {
+            let case = WeatherCase::still("t", Temperature::from_celsius(t));
+            let together: Vec<SectionShape> = solve_line(&line, &lib, &case)
+                .into_iter()
+                .map(|r| r.unwrap_or_else(|e| panic!("{t} °C: {e}")))
+                .collect();
+            // Y, the stiffer, solves the TAK and reports its loads; X holds
+            // its end where Y puts it (as Y's last pass but one put it:
+            // within what X's pull changed by then, 0.1 N).
+            let end_of_x = together[1].strings[0]
+                .iter()
+                .find(|s| s.label == "b")
+                .map(|s| v(s.bottom))
+                .expect("Y solves the TAK");
+            assert!((end_of_x - v(together[0].clamps[4])).norm() < 1e-4);
+            assert!(together[0].attachment_loads[4].is_empty());
+            assert!(!together[1].attachment_loads[0].is_empty());
+            // In balance: Y's model pulls X's end as hard as X's wires do.
+            let pull_x = v(together[0].pulls[4]);
+            let b = together[1].strings[0]
+                .iter()
+                .find(|s| s.label == "b")
+                .unwrap();
+            let along_b = (v(b.bottom) - v(b.top)).normalize();
+            assert!(
+                (pull_x.dot(&along_b) - b.force).abs() < 1e-3 * b.force + 1.0,
+                "{t} °C: {} vs {}",
+                pull_x.dot(&along_b),
+                b.force
+            );
+        }
     }
 
     #[test]

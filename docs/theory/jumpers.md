@@ -53,8 +53,9 @@ The model is an **inextensible elastic rod**:
   - **Start:** the hinged catenary under the same load.
   - **If that doesn't converge:** \\( EI \\) is brought in in steps (0, 5 %, 20 %, 50 %, 100 %), each step starting from the last.
   - **With a support string:** the string is first left out, then shortened to its length in steps.
+  - **If neither converges: through springs** (below, [A jumper locked on its way to its strings](#a-jumper-locked-on-its-way-to-its-strings)).
 - **Tolerance.** Moments to \\( 10^{-9} \\) of the load and bending scale; closure gap to \\( 10^{-10} \\) of the length. The solve runs in coordinates relative to \\( A \\): in project coordinates (~10⁶ m) rounding would swamp these tolerances.
-- **Exit clauses.** 150 iterations and 60 s per solve. The error states the residual as a multiple of the tolerance.
+- **Exit clauses.** 150 iterations and 60 s per solve (400 through springs). The error says in words what is wrong where it can (a jumper too short for its strings), else states the residual as a multiple of the tolerance.
 - **Stretch.** The cable's stretch is left out, because it is ~10⁻⁶ at a jumper's tension.
 
 ## Support clamps: a rod with rigid pieces
@@ -76,6 +77,7 @@ A jumper with support clamps is always solved as the rod above, also with \\( EI
 - **Strings.** Each string is a rigid, tension-only distance constraint from its fixed top (a structure point) to the clamp's middle: an I is a pendulum, a V two such constraints. A string is **slack** while the clamp is nearer its top than its length, or while its force would push. The solve keeps an **active set**: all strings are first left out; a string whose point then hangs beyond its length goes taut and is shortened to its length in steps (as a single support string is); a taut string whose force would push is let go; this repeats until no string changes. A V leg on the lee side of a strong wind goes slack this way. A string with a `compression` (it may push) is taut from the start and never let go: it holds the clamp at its length whichever way, its force negative when it pushes.
 - **Loads on a clamp.** Half of each string's weight, half of the wind on each string (the weather case's pressure × the string's `wind_area`, horizontal across the line from the case's wind side, as on the line's suspension strings), and the wire point's own `weight` (a counterweight), shared by the subconductors. The clamp itself takes no wind (it is small).
 - **Forces.** A string's tension is \\( T = -2 \mu L \\) from its multiplier \\( \mu \\) (constraint \\( |p - t|^2 = L^2 \\)); 0 when slack. The Jacobian of the system, with the strings' rows and columns, is checked against finite differences in the tests.
+- **A string that may push** holds its point on a sphere about its top; a V of two such legs, on a circle about the line through their tops. When the tops are one above the other the V swings like a gate about them, and the circle lies across: which way it swings depends on where the jumper is pulled from (see below).
 - **Limits.** A clamp's strings hang from structure points: a string below another string (a V with a string below, a TAK) does not hold a clamp yet. The strings' pull on the structure goes into the structure loads, at their tops; the jumper's pull on the sections does not (sections are solved first).
 
 **Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the cable between two limits:
@@ -183,13 +185,29 @@ An edit re-solves its own sections. A jumper is solved again only if one of thes
   - **Cold, on a nearly straight jumper.** A jumper with little slack loses it from both sides when it is cold. Its length shrinks with the temperature, and the dead-end clamps move apart as the colder, tighter sections pull their strain strings straighter. For example, a 4.2 m jumper given a 10 cm sag at 15 °C is only \\( \approx 8s^2/3c = 6 \\) mm longer than its chord. At −20 °C it is 3 mm shorter, and its clamps are a few millimetres further apart, so it is taut.
 
   A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a cable with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
+
+## A jumper locked on its way to its strings
+
+The strings are pulled to their lengths in steps from where the jumper hangs without them, all together, each step an equilibrium. That is a path: winching the strings in from a jumper blown away from them. On it a stretch between two held points can come straight before every string reaches its length — the solve then stops with "no step lowers the residual" or does not converge, its forces growing without bound — although a shape holding every string exists, reached from elsewhere. On the first existing line, a jumper with two I strings and, near its far end, a V that may push with its tops one above the other (a gate) did so in the wind from one side: pulled up by the second I string, the V swung the wrong way and the stretch to it came straight; the shape holding everything has the V swung far the other way. Its energy minimum is the same from every start (checked apart, with a general constrained optimiser), so the solution is unique; only the path was wrong. The tests rebuild it with an invented jumper of the same kind.
+
+Where the steps and the steps in \\( EI \\) both fail, the jumper is solved **through springs** (`Rod::solve_through_springs`):
+
+1. its strings become springs of stiffness \\( k \\) (energy \\( k g^2 / 8L^2 \\) for \\( g = |p - t|^2 - L^2 \\), about \\( k\delta^2/2 \\) for a stretch \\( \delta \\); a tension-only string only while stretched), from soft to stiff: \\( k = 10^{-2} \dots 10^{3} \\) times the loads per metre (the rod's load times its length plus the loads at points), each solve starting from the last, each only roughly (to \\( 10^4 \\) times the tolerance: a start). A soft spring lets the jumper find where every string can hold it, swinging the V whichever way lowers the energy; the Jacobian with the springs is checked against finite differences in the tests;
+2. then the strings rigid again from there: those stretched are taut at once (they are within millimetres of their lengths), and the active set as above;
+3. **too short:** if that fails too, the springs stiffer still (\\( 10^4, 10^5, 10^6 \\)); a held point still more than 1 mm from where its strings hold it (the least move putting its stretched strings back on their lengths, to first order) says that the jumper cannot reach: *"too short to reach where its strings hold it: they hold the point 2.50 m along it about 10 mm beyond its reach (strings that may push)"* (a test's). On the first existing line, the wind of an extreme case swung a jumper's end clamps apart by a few millimetres more than its two Vs that may push let it reach.
+
+Newton solves on this path that stall or run out of steps within \\( 10^3 \\) times the tolerance (\\( 10^{-6} \\) of the loads' moments: micrometres) are taken as converged: next to a string just taut, carrying next to nothing, the iteration creeps there (100–150× on the first existing line). The first two attempts (the steps, the steps in \\( EI \\)) are unchanged, so a jumper that solved before keeps its shape.
+
+On the first existing line (99 weather cases, the wind from both sides): before, one jumper with a V that may push failed in most cases with the wind from one side, another (an I string) in a few cases; now all solve but one jumper in one extreme case, a few millimetres too short for its two Vs that may push, said so. Every jumper that solved before has the same shape.
+
 ## When a jumper fails
 
 - **A section at an end not solved.** The jumper's ends are the solved clamps of the sections through them. When one of those sections fails in a weather case, the jumper fails too and names it, rather than hanging between the attachments' data points.
 - **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
 - **A support string out of reach.** A string's top is farther from either end than the jumper's length to its clamp plus the string's length.
+- **Too short for its strings.** No shape holds every string, although each alone could reach (through springs, above): said so, with about how far beyond the jumper's reach its strings hold which point.
 - **Strings that do not settle.** Strings going taut and slack in turn 8 times. Not met in testing.
-- **No convergence.** The message names the residual. This is rare since the solve runs in coordinates relative to the first end.
+- **No convergence.** Not by the steps, nor the steps in \\( EI \\), nor through springs: the message says so and names each one's residual. This is rare since the solve runs in coordinates relative to the first end.
 - **Sag cannot be reached.** The sag asked for is less than the taut jumper's, or would need more than 20× the chord length.
 
 ## Expected ranges
@@ -215,6 +233,7 @@ Computation (release build; times for one core — jumpers are independent, so a
 | Rod solve (5–30 iterations) | 0.25–1.5 ms; ~0.75 ms on average | 150 iterations, 60 s |
 | Rod solve with a support string | a few times the above | string steps no smaller than 1/64 of the way |
 | Rod solve with support clamps (I or V) | 2–5 ms for a 10.8 m jumper (sections included) | the same per solve; 8 rounds of strings going taut or slack |
+| Through springs (only where the above fail) | 7–10 rough Newton solves more: 20–150 ms for a 17 m jumper | 400 iterations, 60 s per solve |
 | Cut from a sag, hinged | ~50 µs | 200 iterations; 20× chord |
 | Cut from a sag, clamped | 5–15 ms (end sections plus 5–15 rod solves) | 40 iterations; 20× chord |
 | A weather case, 433 clamped jumpers | ~0.3 s on one core, divided by the number of cores | — |
