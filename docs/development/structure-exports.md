@@ -1,7 +1,7 @@
 # Structure exports: IFC, SAF, CSV
 
-Status: **built, pre-alpha, in active development** (first written 2026-10-17; no export has been imported into RFEM, Tekla or SCIA yet), phase 7 of [Building structures](structure-building.md)
-(decision 12: export to IFC, Tekla and RFEM; other tower programs later). Crate
+Status: **built, in active development (not approved yet)**; pre-alpha (first written 2026-10-17; no export has been imported into another program yet), phase 7 of [Building structures](structure-building.md)
+(decision 12: export to IFC and to analysis and steel-detailing programs; other tower programs later). Crate
 `apps/structure/ohl-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).
 
@@ -11,30 +11,31 @@ or the file's own `[[section]]` tables), materials, supports, member kinds
 and load cases (a [load table](../user-guide/structure-load-cases.md)).
 Only open, documented formats are written; no proprietary binary format.
 
-## What each target program imports (research, 2026-10-17)
+## What the target programs import (research, 2026-10-17)
 
-Public documentation only; the pages read are listed under
-[Sources](#sources).
+Public documentation only (the programs' own help pages, not named
+here); the format pages read are listed under [Sources](#sources).
 
 | Program | Format it imports for an analysis model | What it makes of it |
 |---|---|---|
-| **Dlubal RFEM 6** (and RSTAB 9) | **SAF** (import and export) [D2] | the analysis model: nodes, members, cross-sections, materials, supports, load cases and loads |
-| | **IFC** 2x3, 4.0, 4.3 [D1] | with a **Structural Analysis View** the analytical elements (nodes, members, surfaces) are created directly; materials and cross-sections mapped through conversion tables. Other views (Reference, Coordination) are shown in the IFC viewer and native members can be derived from them |
-| **Tekla Structures** | **IFC** as a reference model, converted into native parts by *IFC object conversion* [T1] | IfcBeam, IfcColumn, **IfcMember**… with parametric I, L, U, C, T, Z, rectangle and circular profiles, or an arbitrary polygon profile. The conversion needs **IFC2x3 Coordination View 2.0**: *"The IFC4.0, IFC4.1, and any newer IFC4 formats are not supported in the IFC object conversion."* An IFC4 file is shown as a reference model only |
-| **Tekla Structural Designer** | none of the open formats: its help lists imports from Revit, Westok Cellbeam and FBEAM only, IFC as export only [T2] | — (no import path; go through Tekla Structures or RFEM) |
-| SCIA, Graphisoft, Allplan, AxisVM, SOFiSTiK, RISA, FRILO… | SAF [S1] | (not targets of this work; listed by saf.guide as SAF supporters) |
+| **An analysis program** (finite elements) | **SAF** (import and export) | the analysis model: nodes, members, cross-sections, materials, supports, load cases and loads |
+| | **IFC** 2x3, 4.0, 4.3 | with a **Structural Analysis View** the analytical elements (nodes, members, surfaces) are created directly; materials and cross-sections mapped through conversion tables. Other views (Reference, Coordination) are shown in the IFC viewer and native members can be derived from them |
+| **A steel-detailing program** | **IFC** as a reference model, converted into native parts by its IFC object conversion | IfcBeam, IfcColumn, **IfcMember**… with parametric I, L, U, C, T, Z, rectangle and circular profiles, or an arbitrary polygon profile. The conversion needs **IFC2x3 Coordination View 2.0**: its help says IFC4 and newer are not supported in the conversion. An IFC4 file is shown as a reference model only |
+| **A structural design program** of the same vendor | none of the open formats: its help lists imports from other vendors' programs only, IFC as export only | — (no import path; go through the detailing or the analysis program) |
+| Other analysis and BIM programs | SAF [S1] | (not targets of this work; listed by saf.guide as SAF supporters) |
 
-SAF is not listed for Tekla in saf.guide's "Who supports SAF?" (last
-updated August 2022, which lists Dlubal with SAF **1.0.5**) [S1].
+SAF is not listed for the steel-detailing program in saf.guide's "Who
+supports SAF?" (last updated August 2022, which lists the analysis
+program with SAF **1.0.5**) [S1].
 
 ## Formats chosen
 
 | Format | For | Holds |
 |---|---|---|
-| **IFC4** (ADD2 TC1), header `ViewDefinition [StructuralAnalysisView]` | RFEM 6 (analysis model with load cases), BIM viewers | members as `IfcMember` with profile solids **and** the structural analysis model with load cases, in one file |
+| **IFC4** (ADD2 TC1), header `ViewDefinition [StructuralAnalysisView]` | analysis programs (analysis model with load cases), BIM viewers | members as `IfcMember` with profile solids **and** the structural analysis model with load cases, in one file |
 | **IFC4**, members only, `ViewDefinition [ReferenceView_V1.2]` | BIM viewers, coordination | the members with profile solids, materials |
-| **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **Tekla Structures** (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written) |
-| **SAF** 2.2.0 (xlsx) | RFEM 6, SCIA and other SAF programs | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
+| **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **steel-detailing programs** that convert IFC2x3 only (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written) |
+| **SAF** 2.2.0 (xlsx) | analysis programs that read SAF | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
 | **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv` |
 
 All are written from plain data (`ohl_structure_link::ExportStructure`,
@@ -96,16 +97,16 @@ instead.
 | load along a member (a point) | `IfcStructuralPointAction` with its own placement and vertex, connected to the curve member |
 | uniform load on a member | `IfcStructuralCurveAction` (`.CONST.`, `.TRUE_LENGTH.`) with `IfcStructuralLoadLinearForce` |
 
-### IFC2x3 (Tekla Structures)
+### IFC2x3 (steel detailing)
 
 The members only, as above, with the differences of the older schema:
 an owner history on every object, the members in a building storey
 (site, building, storey), profile `Position` always given, fillet radii
 left out when 0 (they must be positive there), `IfcMaterial` by name
 associated with the members, no `IfcProfileDef` by name (a section
-without geometry gives an axis only). Tekla's conversion maps profile
-and material **names** to its catalogues (missing ones are asked for in
-its *Missing Mapping* dialog [T1]): the profile name written is the
+without geometry gives an axis only). A detailing program's conversion
+maps profile and material **names** to its catalogues (missing ones are
+asked for): the profile name written is the
 section's id.
 
 ### SAF (2.2.0)
@@ -168,8 +169,8 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - **Unequal angles** keep h along the section's z and b along y. IFC's
   convention puts the longer leg along the profile's y; an angle whose b
   is longer than h is written as it is (the attributes allow it).
-- **IFC2x3** carries no analysis model and no material values (Tekla
-  maps names).
+- **IFC2x3** carries no analysis model and no material values (the
+  detailing program maps names).
 - Coordinates are the structure's own axes; a placed structure's
   position and orientation in the line are not written.
 
@@ -182,15 +183,15 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   TC1 EXPRESS schemas, unique GlobalIds, the expected counts for
   `examples/synthetic-line/Structures/type-02.ohls`, the profile mapping
   per shape, the SAF sheets and columns read back, and that two exports
-  are identical. An import into RFEM 6 and Tekla Structures is still to
-  be tried by someone with licences.
+  are identical. An import into an analysis program and a
+  steel-detailing program is still to be tried by someone with licences.
 - **SAF version**: written as 2.2.0 (the sheets used are unchanged since
   1.0.5 except two optional columns of `StructuralCurveAction` added in
-  2.0.0 [S5]); Dlubal was listed with 1.0.5 in 2022 [S1].
+  2.0.0 [S5]); the analysis program was listed with 1.0.5 in 2022 [S1].
 - **SAF parametric shapes**: the parameter letters are from the annex
   [S3]; their drawings were not read (images). `t` = flange and `s` =
   web thickness for `I rolled` and `Channel`, `s` = wall for `Tube`, are
-  read from the letters (SCIA's naming); an import should confirm them.
+  read from the letters (one SAF program's naming); an import should confirm them.
 - **Project / Model sheets**: SAF says their properties are "oriented in
   columns not in rows as usual" [S4]; they are written as name–value
   pairs, column A and B.
@@ -200,18 +201,8 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 
 ## Sources
 
-- [D1] Dlubal, "Guideline for Using IFC Format in RFEM 6: Import,
-  Conversion, and Export", knowledge base 001797,
-  <https://www.dlubal.com/en/support-and-learning/support/knowledge-base/001797>
-  (read 2026-10-17).
-- [D2] Dlubal, "Implementation of SAF Format", product feature 002269,
-  <https://www.dlubal.com/en/support-and-learning/support/product-features/002269>.
-- [T1] Trimble, Tekla Structures 2025, "Convert IFC objects into native
-  Tekla Structures objects",
-  <https://support.tekla.com/doc/tekla-structures/2025/int_conversion_management>.
-- [T2] Trimble, Tekla Structural Designer 2026, "Export to and import
-  from other applications",
-  <https://support.tekla.com/doc/tekla-structural-designer/2026/bim_exportimportotherapplications>.
+- The programs' own help pages on IFC import and conversion and on SAF
+  (read 2026-10-17; not listed here, so that no program is named).
 - [S1] SAF, "Who supports SAF?",
   <https://www.saf.guide/en/stable/getting-started/who-supports-saf.html>.
 - [S2] SAF 2.2.0 object pages: StructuralMaterial, StructuralCrossSection,

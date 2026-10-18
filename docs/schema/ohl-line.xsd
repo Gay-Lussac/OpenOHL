@@ -617,8 +617,6 @@
           </xs:complexType>
         </xs:element>
 
-        <!-- An end of an electrical circuit (a conductor path) that is a start;
-             a circuit none of whose ends is listed runs along the line. -->
         <xs:element name="spacer" minOccurs="0" maxOccurs="unbounded">
           <xs:annotation>
             <xs:documentation>An interphase spacer: an insulator between span
@@ -647,6 +645,8 @@
           </xs:complexType>
         </xs:element>
 
+        <!-- An end of an electrical circuit (a conductor path) that is a start;
+             a circuit none of whose ends is listed runs along the line. -->
         <xs:element name="circuit_start" type="ohl:sectionPoint" minOccurs="0" maxOccurs="unbounded"/>
 
         <xs:element name="phase_color" minOccurs="0" maxOccurs="unbounded">
@@ -675,7 +675,7 @@
               values), SI units, only those not the program's: what new
               objects start with and what the calculations take where an
               object, a cable, a case or a rule file gives no value
-              (ols_line::DEFAULT_FIELDS, `section_key`).</xs:documentation>
+              (ohl_line::DEFAULT_FIELDS, `section_key`).</xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:attribute name="spacer_compression" type="xs:double" default="10000"/>
@@ -774,7 +774,7 @@
         </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ohl-line"/>
-      <!-- The line file version (now 5), not the namespace's 1. -->
+      <!-- The line file version (now 6), not the namespace's 1. -->
       <xs:attribute name="version" type="xs:unsignedInt" default="1"/>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="crs" type="xs:string"/>

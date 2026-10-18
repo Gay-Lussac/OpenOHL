@@ -78,7 +78,8 @@
         "area": { "$ref": "#/$defs/area" },
         "modulus": { "$ref": "#/$defs/stress" },
         "thermal_expansion": { "type": "number", "minimum": 0, "maximum": 5e-5 },
-        "stress_strain": { "$ref": "#/$defs/stress_strain" }
+        "stress_strain": { "$ref": "#/$defs/stress_strain" },
+        "strands": { "description": "Number of strands (wires) of this component, e.g. 26 or 7.", "type": "integer", "minimum": 0 }
       }
     },
     "cable": {
@@ -95,7 +96,12 @@
         "rated_tensile_strength": { "$ref": "#/$defs/force" },
         "outer": { "$ref": "#/$defs/component" },
         "core": { "$ref": "#/$defs/component" },
-        "electrical": { "$ref": "#/$defs/electrical" }
+        "electrical": { "$ref": "#/$defs/electrical" },
+        "model": { "enum": ["nonlinear", "linear_creep_tension", "linear_creep_temperature"], "default": "nonlinear" },
+        "creep_temperature_shift": { "description": "Linear models: the permanent stretch due to creep as an equivalent temperature increase, °C.", "type": "number" },
+        "creep_shift_tension": { "$ref": "#/$defs/force" },
+        "bimetallic_behavior": { "enum": ["compression", "bird_cage"] },
+        "max_virtual_compression": { "$ref": "#/$defs/stress" }
       }
     },
     "resistance_per_length": {

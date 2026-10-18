@@ -88,7 +88,7 @@ report.
 ## Speed
 
 On an existing line (930 conductors, 5593 pairs between the same
-structures; 10 468 with nearby pairs within 20 m): about 0.8 s on all
+structures; about 10 500 with nearby pairs within 20 m): about 0.8 s on all
 cores, the closest point searched in boxes of 8 pieces, nearest first;
 the plugin's evaluation costs about as much as the same computation
 built into OpenOHL, plus about 0.3 s to load the plugin once.
