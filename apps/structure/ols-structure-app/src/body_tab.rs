@@ -10,13 +10,14 @@
 use eframe::egui;
 use ols_structure_edit::body::{set_symmetry, symmetry_option};
 use ols_structure_edit::{
-    self as edit, Geometry, Handle, Mirror, groups, set_group, set_group_kind, set_group_section,
+    self as edit, Geometry, Handle, Mirror, groups, set_group, set_group_field, set_group_kind,
+    set_group_section,
 };
 use ols_structures::StructureType;
 
 use crate::app::StructureApp;
 use crate::generators_ui::Form;
-use crate::tables::row;
+use crate::tables::{MEMBER_FIELDS, field_text, member_field, row, text_cell};
 
 /// The Body panels' state between frames.
 #[derive(Default)]
@@ -264,7 +265,14 @@ impl StructureApp {
                 ("members", ""),
                 ("section", "Written on every member of the group"),
                 ("kind", "Written on every member of the group"),
-            ] {
+            ]
+            .into_iter()
+            .chain(
+                GROUP_FIELDS
+                    .iter()
+                    .filter_map(|f| MEMBER_FIELDS.iter().find(|m| m.0 == *f))
+                    .map(|(_, h, tip, _)| (*h, *tip)),
+            ) {
                 ui.strong(h).on_hover_text(tip);
             }
             ui.end_row();
@@ -315,6 +323,40 @@ impl StructureApp {
                         set_group_kind(doc, t, &gr.name, &new_kind)
                     });
                 }
+                let members: Vec<&ols_structures::structures::TypeMember> = t
+                    .members
+                    .iter()
+                    .filter(|m| m.group.as_deref() == Some(gr.name.as_str()))
+                    .collect();
+                for (field, _, tip, hint) in
+                    MEMBER_FIELDS.iter().filter(|m| GROUP_FIELDS.contains(&m.0))
+                {
+                    // The value all its members have; mixed: none shown.
+                    let values: Vec<String> = members
+                        .iter()
+                        .map(|m| field_text(member_field(m, field)))
+                        .collect();
+                    let same = values.iter().all(|v| *v == values[0]);
+                    let current = if same {
+                        values[0].clone()
+                    } else {
+                        String::new()
+                    };
+                    if let Some(typed) = text_cell(
+                        ui,
+                        &mut self.buffers,
+                        format!("group/{}/{field}", gr.name),
+                        &current,
+                        if same { hint } else { "mixed" },
+                        &format!("{tip}; written on every member of the group"),
+                    ) && let Err(e) = f
+                        .edit(&format!("{field} of group {}", gr.name), |doc, t| {
+                            set_group_field(doc, t, &gr.name, field, &typed)
+                        })
+                    {
+                        self.message = Some((e, true));
+                    }
+                }
                 ui.end_row();
             }
         });
@@ -328,6 +370,9 @@ impl StructureApp {
         }
     }
 }
+
+/// The member fields a group sets on all its members (Design › Groups).
+const GROUP_FIELDS: [&str; 3] = ["lk", "capacity_tension", "capacity_compression"];
 
 /// Whether a member of `group` is shown with `filter`.
 fn shown(filter: &Option<String>, group: Option<&str>) -> bool {

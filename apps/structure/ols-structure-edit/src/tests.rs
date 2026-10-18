@@ -377,6 +377,39 @@ fn analysis_settings_are_edited() {
     assert!(set_analysis_field(&mut doc, " ", "1").is_err());
 }
 
+/// A member's analysis fields typed (one member, or every member of a
+/// group), read back by the structure; empty removes them.
+#[test]
+fn member_analysis_fields_are_edited() {
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    set_item_field(&mut doc, "member", "M1", "capacity_tension", "180 kN").unwrap();
+    set_item_field(&mut doc, "member", "M1", "orientation", "x+y-").unwrap();
+    let t = read(&doc);
+    assert_eq!(
+        t.members[0]
+            .capacity_tension
+            .as_ref()
+            .and_then(|v| v.as_str()),
+        Some("180 kN")
+    );
+    assert_eq!(
+        t.members[0].orientation.as_ref().and_then(|v| v.as_str()),
+        Some("x+y-")
+    );
+    let ids: Vec<String> = t.members.iter().map(|m| m.id.clone()).collect();
+    set_group(&mut doc, &t, &ids, Some("legs"));
+    let t = read(&doc);
+    set_group_field(&mut doc, &t, "legs", "lk", "2.5 m").unwrap();
+    let t = read(&doc);
+    assert!(
+        t.members
+            .iter()
+            .all(|m| m.lk.as_ref().and_then(|v| v.as_str()) == Some("2.5 m"))
+    );
+    set_group_field(&mut doc, &t, "legs", "lk", "").unwrap();
+    assert!(read(&doc).members.iter().all(|m| m.lk.is_none()));
+}
+
 /// The file's own fields and the height extensions.
 #[test]
 fn name_height_foot_and_extensions_are_edited() {

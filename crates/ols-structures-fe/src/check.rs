@@ -5,12 +5,15 @@
 //! Member usage: the member forces of a [`Solution`] against the section's
 //! capacity times the load case's strength factor.
 //!
-//! - **Tension**: the section's allowable tension, else area × yield.
-//! - **Compression**: the allowable compression (else area × yield), but
-//!   not above the Euler load π²EI/(kL)² (I: `i_min`, k: the member's
-//!   effective length factor). A simple check — no column curve, no
-//!   imperfections; a design code's buckling curve gives the allowable
-//!   compression to write in the section instead.
+//! - **Tension**: the member's `capacity_tension` when it gives one, else
+//!   the section's allowable tension, else area × yield.
+//! - **Compression**: the member's `capacity_compression` when it gives
+//!   one (it replaces the whole computation, buckling included), else the
+//!   allowable compression (else area × yield), but not above the Euler
+//!   load π²EI/(kL)² (I: `i_min`, kL: the member's `lk`, else its
+//!   effective length factor × its length). A simple check — no column
+//!   curve, no imperfections; a design code's buckling curve gives the
+//!   allowable compression to write in the section or the member instead.
 //! - **Frames**: linear interaction N/N_c + M_y/M_y,c + M_z/M_z,c with the
 //!   largest end moments (the allowable moments, else W × yield).
 //! - **Cables**: tension only.
@@ -34,7 +37,10 @@ pub struct MemberUsage {
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
     let s = &model.sections[m.section];
-    let kl = m.k * model.length(m);
+    let kl = match m.lk {
+        Some(lk) => lk,
+        None => m.k * model.length(m),
+    };
     (s.i_min > 0.0).then(|| std::f64::consts::PI.powi(2) * s.e * s.i_min / (kl * kl))
 }
 
@@ -51,16 +57,28 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
             let kn = |x: f64| x / 1000.0;
             // Axial: (ratio, words).
             let axial: Option<(f64, String)> = if n >= 0.0 {
-                s.tension
-                    .or(s.yield_strength.map(|y| y * s.area))
-                    .map(|cap| {
-                        (
-                            n / (strength * cap),
-                            format!("tension {:.1} kN of {:.1} kN", kn(n), kn(cap)),
-                        )
-                    })
+                match m.capacity_tension {
+                    Some(cap) => Some((
+                        n / (strength * cap),
+                        format!("tension {:.1} kN of {:.1} kN (given)", kn(n), kn(cap)),
+                    )),
+                    None => s
+                        .tension
+                        .or(s.yield_strength.map(|y| y * s.area))
+                        .map(|cap| {
+                            (
+                                n / (strength * cap),
+                                format!("tension {:.1} kN of {:.1} kN", kn(n), kn(cap)),
+                            )
+                        }),
+                }
             } else if m.kind == MemberKind::Cable {
                 Some((0.0, "slack".into()))
+            } else if let Some(cap) = m.capacity_compression {
+                Some((
+                    -n / (strength * cap),
+                    format!("compression {:.1} kN of {:.1} kN (given)", kn(-n), kn(cap)),
+                ))
             } else {
                 let squash = s.compression.or(s.yield_strength.map(|y| y * s.area));
                 let euler = euler_load(model, idx);

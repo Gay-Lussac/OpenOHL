@@ -25,6 +25,94 @@ fn coord(ui: &mut egui::Ui, v: &mut f64) -> egui::Response {
     )
 }
 
+/// A text cell of a table (a value with its unit): kept in `buffers`
+/// under `key` while it is typed in, the text typed when it is left
+/// (Enter, Tab or a click elsewhere) and differs from `current` — to be
+/// written as one edit (one undo step).
+pub(crate) fn text_cell(
+    ui: &mut egui::Ui,
+    buffers: &mut std::collections::HashMap<String, String>,
+    key: String,
+    current: &str,
+    hint: &str,
+    tip: &str,
+) -> Option<String> {
+    let mut text = buffers
+        .get(&key)
+        .cloned()
+        .unwrap_or_else(|| current.to_owned());
+    let r = ui
+        .add(
+            egui::TextEdit::singleline(&mut text)
+                .desired_width(70.0)
+                .hint_text(hint),
+        )
+        .on_hover_text(tip);
+    if r.lost_focus() {
+        buffers.remove(&key);
+        return (text.trim() != current.trim()).then_some(text);
+    }
+    if r.has_focus() {
+        buffers.insert(key, text);
+    } else {
+        buffers.remove(&key);
+    }
+    None
+}
+
+/// The member fields of the finite-element check typed as text in the
+/// Member sections and Groups tables: (field, heading, what it is, hint).
+pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 4] = [
+    (
+        "lk",
+        "lk",
+        "Effective length for buckling, instead of k × length (empty: k × length)",
+        "k × L",
+    ),
+    (
+        "orientation",
+        "legs",
+        "An angle's legs (local y, z) towards two structure directions, e.g. x+y- (empty: \
+         reference and roll)",
+        "x+y-",
+    ),
+    (
+        "capacity_tension",
+        "N tension",
+        "Tension capacity, instead of the section's (empty: the section's)",
+        "section",
+    ),
+    (
+        "capacity_compression",
+        "N compression",
+        "Compression capacity, instead of the section's and the buckling load (empty: computed)",
+        "computed",
+    ),
+];
+
+/// A member's field of [`MEMBER_FIELDS`] as written.
+pub(crate) fn member_field<'a>(
+    m: &'a ols_structures::structures::TypeMember,
+    field: &str,
+) -> Option<&'a toml::Value> {
+    match field {
+        "lk" => m.lk.as_ref(),
+        "orientation" => m.orientation.as_ref(),
+        "capacity_tension" => m.capacity_tension.as_ref(),
+        "capacity_compression" => m.capacity_compression.as_ref(),
+        _ => None,
+    }
+}
+
+/// A member field as text (`"180 kN"`, `1.1`; empty: none).
+pub(crate) fn field_text(v: Option<&toml::Value>) -> String {
+    match v {
+        None => String::new(),
+        Some(toml::Value::String(s)) => s.clone(),
+        Some(v) => v.to_string(),
+    }
+}
+
 /// While the pointer is pressed on `r` its changes are one undo step
 /// (`what`); the step ends when the pointer is let go.
 fn hold(file: &mut StructureFile, r: &egui::Response, what: &str) {
@@ -1257,7 +1345,10 @@ impl StructureApp {
                     "truss (axial only), frame (bending too) or cable (tension only)",
                 ),
                 ("k", "Effective length factor for buckling (none: 1)"),
-            ] {
+            ]
+            .into_iter()
+            .chain(MEMBER_FIELDS.iter().map(|(_, h, tip, _)| (*h, *tip)))
+            {
                 ui.strong(h).on_hover_text(tip);
             }
             ui.end_row();
@@ -1322,6 +1413,21 @@ impl StructureApp {
                         });
                     }
                 });
+                for (field, _, tip, hint) in MEMBER_FIELDS {
+                    let current = field_text(member_field(m, field));
+                    if let Some(typed) = text_cell(
+                        ui,
+                        &mut self.buffers,
+                        format!("member/{}/{field}", m.id),
+                        &current,
+                        hint,
+                        tip,
+                    ) && let Err(e) = f.edit(&format!("{field} of {}", m.id), |doc, _| {
+                        edit::set_item_field(doc, "member", &m.id, field, &typed)
+                    }) {
+                        self.message = Some((e, true));
+                    }
+                }
                 ui.end_row();
             }
         });

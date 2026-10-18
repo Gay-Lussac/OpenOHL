@@ -6,7 +6,7 @@ Implemented in `crates/ols-structures-fe`: a linear-elastic 3D finite-element mo
 
 Nodes are given in the **structure's axes**: x to the right of the line looking ahead, y ahead, z up, origin at the ground centre (the axes of the structure types, `.olss`). Each node has six degrees of freedom \\( (u_x, u_y, u_z, \theta_x, \theta_y, \theta_z) \\); rotations exist only at nodes with a frame member, fixed degrees of freedom are removed, springs add to the diagonal.
 
-Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference direction \\( \mathbf r \\) in the local x–y plane (default: global z, or global x for a vertical member) gives \\( \mathbf z = \mathbf x \times \mathbf r / |\cdot| \\), \\( \mathbf y = \mathbf z \times \mathbf x \\); a roll angle turns y and z about x. \\( I_z \\) is the bending in the local x–y plane, \\( I_y \\) in the x–z plane. The element matrices are transformed with \\( \mathbf T = \operatorname{diag}(\mathbf R, \mathbf R, \mathbf R, \mathbf R) \\), \\( \mathbf K = \mathbf T^T \mathbf k \mathbf T \\).
+Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference direction \\( \mathbf r \\) in the local x–y plane (default: global z, or global x for a vertical member) gives \\( \mathbf z = \mathbf x \times \mathbf r / |\cdot| \\), \\( \mathbf y = \mathbf z \times \mathbf x \\); a roll angle turns y and z about x. \\( I_z \\) is the bending in the local x–y plane, \\( I_y \\) in the x–z plane. An angle's legs given as two structure directions \\( \mathbf a, \mathbf b \\) (`orientation = "x+y-"`) set \\( \mathbf r = \mathbf a \\) when \\( \hat{\mathbf x}\cdot(\mathbf a_\perp \times \mathbf b_\perp) > 0 \\) (\\( \mathbf a_\perp \\): the part normal to the member), so that the section's y leg points to \\( \mathbf a \\) and its z leg to the side of \\( \mathbf b \\); otherwise the pair is the mirror image of a right-handed section: \\( \mathbf r = \mathbf b \\) for a section with equal legs, refused for unequal ones. The element matrices are transformed with \\( \mathbf T = \operatorname{diag}(\mathbf R, \mathbf R, \mathbf R, \mathbf R) \\), \\( \mathbf K = \mathbf T^T \mathbf k \mathbf T \\).
 
 ## Elements
 
@@ -54,8 +54,8 @@ Against the section's capacity times the load case's strength factor \\( \phi \\
 
 | Member | Usage |
 |---|---|
-| Truss in tension | \\( N / (\phi N_t) \\), \\( N_t \\) = the allowable tension, else \\( A f_y \\) |
-| Truss in compression | \\( \lvert N \rvert / (\phi N_c) \\), \\( N_c = \min(\text{allowable or } A f_y,\\; \pi^2 E I_{min} / (kL)^2) \\) |
+| Truss in tension | \\( N / (\phi N_t) \\), \\( N_t \\) = the member's `capacity_tension`, else the allowable tension, else \\( A f_y \\) |
+| Truss in compression | \\( \lvert N \rvert / (\phi N_c) \\), \\( N_c \\) = the member's `capacity_compression`, else \\( \min(\text{allowable or } A f_y,\\; \pi^2 E I_{min} / L_k^2) \\), \\( L_k \\) = the member's `lk`, else \\( kL \\) |
 | Cable | tension as above; a slack cable uses 0 |
 | Frame | \\( \lvert N \rvert/(\phi N_{t,c}) + M_y/(\phi M_{y,c}) + M_z/(\phi M_{z,c}) \\), largest end moments, \\( M_c \\) = allowable, else \\( W f_y \\) |
 
