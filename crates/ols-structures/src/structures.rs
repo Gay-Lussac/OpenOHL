@@ -370,7 +370,8 @@ pub struct TypeNode {
 
 /// A member of the pylon between two joints (levels 2 and 3). Without a
 /// section it is only a stick; the finite-element fields (`kind`,
-/// `reference`, `roll`, `k`, `pretension`) are read by
+/// `reference`, `roll`, `orientation`, `k`, `lk`, `pretension`,
+/// `capacity_tension`, `capacity_compression`) are read by
 /// `ols_structures_fe`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -399,6 +400,19 @@ pub struct TypeMember {
     /// Cable: pretension.
     #[serde(default)]
     pub pretension: Option<toml::Value>,
+    /// An angle's legs (local y, z) towards two structure directions
+    /// (`"x+y-"`), instead of `reference` and `roll`.
+    #[serde(default)]
+    pub orientation: Option<toml::Value>,
+    /// Effective length for buckling instead of k × length.
+    #[serde(default)]
+    pub lk: Option<toml::Value>,
+    /// Tension capacity instead of the section's.
+    #[serde(default)]
+    pub capacity_tension: Option<toml::Value>,
+    /// Compression capacity instead of the section's and the Euler load.
+    #[serde(default)]
+    pub capacity_compression: Option<toml::Value>,
     /// Its member group (`"body-leg"`, `"body-bracing-3"`…): sections set
     /// and results reported per group.
     #[serde(default)]

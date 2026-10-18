@@ -107,6 +107,8 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
 }
 
 #[cfg(test)]
+mod member_tests;
+#[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]
 mod stabilise_tests;

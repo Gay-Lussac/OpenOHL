@@ -48,7 +48,7 @@ pub use generators::{Body, generate};
 pub use geometry::{
     Geometry, Handle, compass_radius, geometry, geometry_with, pick, polar, position,
 };
-pub use groups::{Group, groups, set_group, set_group_kind, set_group_section};
+pub use groups::{Group, groups, set_group, set_group_field, set_group_kind, set_group_section};
 pub use load_cases::{
     CASE_FIELDS, CaseText, GivenCase, LINE_CASE_LOADS, LOAD_FIELDS, add_load, add_load_case,
     load_cases, merge_load_cases, remove_load, remove_load_case, set_load_case_field,

@@ -57,7 +57,11 @@
 //! kind = "truss"            # truss (default) | frame | cable
 //! reference = [0, 0, 1]     # frame: a direction in the local x–y plane
 //! roll = "0 deg"            # frame: turns the local y, z about x
+//! # orientation = "x+y-"    # instead: an angle's legs (local y, z) towards x+, y−
 //! k = 1.0                   # effective length factor (buckling)
+//! # lk = "2.4 m"            # effective length instead of k × length
+//! # capacity_tension = "180 kN"      # instead of the section's capacity
+//! # capacity_compression = "95 kN"   # instead of the section's and Euler's
 //! pretension = "10 kN"      # cable
 //!
 //! [[load]]                  # the model's own load case (optional)
@@ -212,6 +216,14 @@ struct MemberFile {
     k: f64,
     #[serde(default)]
     pretension: Force,
+    #[serde(default)]
+    orientation: Option<String>,
+    #[serde(default)]
+    lk: Option<Length>,
+    #[serde(default)]
+    capacity_tension: Option<Force>,
+    #[serde(default)]
+    capacity_compression: Option<Force>,
 }
 
 #[derive(Deserialize)]
@@ -449,10 +461,20 @@ pub struct Member {
     pub k: f64,
     /// Pretension of a cable, N.
     pub pretension: f64,
+    /// Effective length for buckling, m, instead of k × length (none: k ×
+    /// length).
+    pub lk: Option<f64>,
+    /// Tension capacity, N, instead of the section's (none: the section's
+    /// allowable tension, else area × yield).
+    pub capacity_tension: Option<f64>,
+    /// Compression capacity, N, instead of the section's and the Euler
+    /// load (none: the smaller of those).
+    pub capacity_compression: Option<f64>,
 }
 
 impl Member {
-    /// A member with default orientation, k = 1, no pretension.
+    /// A member with default orientation, k = 1, no pretension, the
+    /// capacities of its section.
     pub fn new(id: &str, kind: MemberKind, i: usize, j: usize, section: usize) -> Self {
         Self {
             id: id.into(),
@@ -464,7 +486,84 @@ impl Member {
             roll: 0.0,
             k: 1.0,
             pretension: 0.0,
+            lk: None,
+            capacity_tension: None,
+            capacity_compression: None,
         }
+    }
+}
+
+/// The reference direction (local y) of a member along the unit vector
+/// `x` whose angle's legs point towards `orientation` (`"x+y-"`: the
+/// first leg — the section's y, its width b — towards the structure's
+/// +x, the second — the section's z, its height h — towards −y; each
+/// taken normal to the member). The axes are right-handed (z = x × y):
+/// when the two directions are the mirror image of that about the
+/// member, the legs are swapped (y towards the second) for a section
+/// whose two legs are alike (`symmetric`: iy = iz and wy = wz), and
+/// refused for one whose legs differ.
+pub fn orientation_reference(
+    orientation: &str,
+    x: [f64; 3],
+    symmetric: bool,
+) -> Result<[f64; 3], String> {
+    let text = orientation.trim();
+    let bad = || {
+        format!(
+            "orientation \"{text}\": two directions of the structure axes, as x+y- (the legs \
+             of the angle towards +x and −y)"
+        )
+    };
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() != 4 {
+        return Err(bad());
+    }
+    let axis = |c: char, s: char| -> Option<[f64; 3]> {
+        let k = ['x', 'y', 'z']
+            .iter()
+            .position(|a| *a == c.to_ascii_lowercase())?;
+        let sign = match s {
+            '+' => 1.0,
+            '-' | '−' => -1.0,
+            _ => return None,
+        };
+        let mut v = [0.0; 3];
+        v[k] = sign;
+        Some(v)
+    };
+    let (Some(a), Some(b)) = (axis(chars[0], chars[1]), axis(chars[2], chars[3])) else {
+        return Err(bad());
+    };
+    let normal = |v: [f64; 3]| {
+        let along = dot(v, x);
+        [
+            v[0] - along * x[0],
+            v[1] - along * x[1],
+            v[2] - along * x[2],
+        ]
+    };
+    let (pa, pb) = (normal(a), normal(b));
+    if norm(pa) < 1e-3 || norm(pb) < 1e-3 {
+        return Err(format!(
+            "orientation \"{text}\": a direction along the member (give two across it)"
+        ));
+    }
+    let turn = dot(x, cross(pa, pb));
+    if turn.abs() < 1e-3 * norm(pa) * norm(pb) {
+        return Err(format!(
+            "orientation \"{text}\": the two directions are parallel across the member"
+        ));
+    }
+    if turn > 0.0 {
+        Ok(a)
+    } else if symmetric {
+        Ok(b)
+    } else {
+        let swapped = format!("{}{}{}{}", chars[2], chars[3], chars[0], chars[1]);
+        Err(format!(
+            "orientation \"{text}\": the mirror image of an angle for this member's direction \
+             (its legs differ): give \"{swapped}\" or turn the member's nodes"
+        ))
     }
 }
 
@@ -663,18 +762,44 @@ impl Model {
                     }
                 }
             }
+            let (i, j) = (node(&m.nodes[0], &what)?, node(&m.nodes[1], &what)?);
+            let section = *section_index
+                .get(&m.section)
+                .ok_or_else(|| format!("{what}: no section {}", m.section))?;
+            let reference = match &m.orientation {
+                None => m.reference,
+                Some(o) => {
+                    if m.reference.is_some() || m.roll.si() != 0.0 {
+                        return Err(format!(
+                            "{what}: orientation, or reference and roll (not both)"
+                        ));
+                    }
+                    let d = sub(nodes[j].point, nodes[i].point);
+                    let l = norm(d);
+                    if l.is_nan() || l <= 1e-9 {
+                        return Err(format!("{what}: zero length"));
+                    }
+                    let s = &sections[section];
+                    let symmetric = s.iy == s.iz && s.wy == s.wz;
+                    Some(
+                        orientation_reference(o, d.map(|c| c / l), symmetric)
+                            .map_err(|e| format!("{what}: {e}"))?,
+                    )
+                }
+            };
             members.push(Member {
                 id: m.id.clone(),
                 kind: m.kind,
-                i: node(&m.nodes[0], &what)?,
-                j: node(&m.nodes[1], &what)?,
-                section: *section_index
-                    .get(&m.section)
-                    .ok_or_else(|| format!("{what}: no section {}", m.section))?,
-                reference: m.reference,
+                i,
+                j,
+                section,
+                reference,
                 roll: m.roll.si(),
                 k: m.k,
                 pretension: m.pretension.si(),
+                lk: m.lk.map(Length::si),
+                capacity_tension: m.capacity_tension.map(Force::si),
+                capacity_compression: m.capacity_compression.map(Force::si),
             });
         }
         let loads = file
@@ -938,6 +1063,18 @@ impl Model {
             if m.kind != MemberKind::Cable && m.pretension != 0.0 {
                 return Err(format!("member {}: only cables take a pretension", m.id));
             }
+            for (what, v) in [
+                ("lk", m.lk),
+                ("capacity_tension", m.capacity_tension),
+                ("capacity_compression", m.capacity_compression),
+            ] {
+                if let Some(v) = v
+                    && !(v.is_finite() && v > 0.0)
+                {
+                    return Err(format!("member {}: {what} must be above 0", m.id));
+                }
+            }
+
             if m.kind == MemberKind::Frame {
                 if !(s.iy > 0.0 && s.iz > 0.0 && s.j > 0.0) {
                     return Err(format!(

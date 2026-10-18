@@ -116,6 +116,26 @@ pub fn set_group_section(
     }
 }
 
+/// Field `field` of every member of `group` as typed (a number,
+/// `true`/`false`, else a text such as `"180 kN"`; empty removes it),
+/// [`crate::edits::set_item_field`].
+pub fn set_group_field(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    group: &str,
+    field: &str,
+    typed: &str,
+) -> Result<(), String> {
+    for m in t
+        .members
+        .iter()
+        .filter(|m| m.group.as_deref() == Some(group))
+    {
+        crate::edits::set_item_field(doc, "member", &m.id, field, typed)?;
+    }
+    Ok(())
+}
+
 /// The kind of every member of `group`.
 pub fn set_group_kind(doc: &mut DocumentMut, t: &StructureType, group: &str, kind: &str) {
     for m in t
