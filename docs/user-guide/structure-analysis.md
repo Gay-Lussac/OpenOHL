@@ -64,7 +64,7 @@ attachment = "A1"         # carries the type's point A1 (version 1: [set, phase]
 id = "leg1"
 nodes = ["B1", "L1A"]
 section = "leg"           # the section library's first, then a [[section]] table
-kind = "truss"            # truss (default) | frame | cable
+kind = "truss"            # truss (default) | frame | cable | tension (version 2)
 k = 1.0                   # effective length factor for buckling
 # lk = "2.4 m"            # or the effective length itself (instead of k × length)
 # capacity_tension = "180 kN"      # the member's capacities, instead of the computed
@@ -97,7 +97,21 @@ the member wind (below). Without a section library (a line file with no
 `Sections/` folder, `ols structures fe` without `--sections`) the tables
 alone are read, as before.
 
-**Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack. Truss-only nodes have no rotations.
+**Members**: trusses take axial force only; frames are 3D beams (six degrees of freedom at their nodes); cables take tension only and may be pretensioned — a cable that would be compressed goes slack (guys); `tension` members are trusses in tension only, without pretension (below). Truss-only nodes have no rotations. A model file with a `tension` member is version 2 (an older program says it is newer).
+
+### Tension-only members
+
+Tower programs model light bracing that buckles at once under compression as **tension-only** ("T-only" in PLS-TOWER): it carries tension and is taken out of the model when it would be compressed. `kind = "tension"` does the same, the way PLS-TOWER does it:
+
+1. the model is solved with every member;
+2. each tension-only member in compression is **left out** (slack: no stiffness, no force), each left-out one that the structure now stretches is **put back**;
+3. solved again, until the set of slack members does not change.
+
+With P-Delta the set is found first order, then the model is solved with P-Delta from that set (each solve converged before the set is updated; the set is checked again after the P-Delta solve). Members left out together can leave a panel free to sway that one of them alone would hold — both diagonals of an X panel shortened by its legs under a heavy vertical load: one of them is stretched as soon as the panel sways. A solve that becomes a mechanism after members were left out is therefore repeated with only the more compressed half of them left out (down to one; when even one member's leaving makes a mechanism, the structure needs it in compression, and the mechanism is reported).
+
+A joint held only by members gone slack — the crossing of an X bracing whose compressed diagonal is slack, a mid-joint of two slack diagonals — has no stiffness of its own in some directions; the joint stabilisation (below) holds them **exactly as for a truss-only joint**, on the model of each solve's active members. Such a joint carries only what is loaded on it in that direction (its self-weight share, as for any stabilised joint; reported in the notes, refused above the same limits). Whether a slack member is stretched again is judged with its joints there placed where the slack members at them are in balance, so the two halves of a slack diagonal through a held crossing shorten alike.
+
+The solve stops — the structure counts as not allowed, with the reason — when the set comes back to one solved before (a cycle: the members going taut and slack in turn are named) or after 100 solves. Results: a slack member has force 0 and uses 0 % (`slack`); the notes say `model: tension-only members: 12 of 140 slack (3 solve(s)): D12, D14, …`. A model without tension-only members is solved exactly as before.
 
 **Joint stabilisation** (`stabilise = true`, the default). Towers drawn as trusses — as PLS-TOWER and most tower programs draw them — have joints that no member stiffens in some direction: a joint whose members all lie in one plane (the joints of a K or diamond bracing in a tower face, a bracing crossing joined at its crossing) is free across that plane; a joint of members on one line is free across the line; a chain of frames on one line, with no other frame and no rotational support at its joints, is free to spin about it. Solved as they are, such models are mechanisms. With stabilisation, when the solve finds a mechanism (or buckling), these directions are found from the geometry and held — exactly when the direction is along x, y or z (that degree of freedom removed, as a support would), else by a spring along it as stiff as the joint's stiffest member — and the model is solved again. A model that solves without it is solved exactly as before, bit for bit: the stabilisation only starts when the first solve fails. The usage notes (and the FE results of the structure application, and `ols structures fe`) then say what was held: `model: stabilised 9 joint direction(s) without stiffness at 9 joint(s): L1 y, R1 y, …; largest force held 0.130 kN at M2 (0.45 % of the reactions)`. A held direction carries only what is loaded along it — the out-of-plane part of the self-weight at a joint of a battered face, say, which the structure then does not carry. When one carries more than 1 % of the loads *and* more than a quarter of its own joint's load (a load across a plane no member holds), the model is refused naming the joints (`mechanism: joint(s) M2 loaded in a direction no member holds …`). What is not one joint's own freedom stays a **mechanism**: a part that can move as a whole (a missing support, a frame of four bars without a diagonal) is reported with the joints that move (`mechanism: node C is free to move in x, with 2 joints: C, D …`). With `stabilise = false` such models fail as mechanisms, as before.
 

@@ -116,7 +116,7 @@ label = "A1"
 node = "T1"                          # at a joint (or member = "arm1", at = 0.5)
 ```
 
-The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-olsfe); a point on a joint carries its loads in the finite-element check.
+The joints and members take the same fields as in a [structure model](structure-analysis.md#structure-models-olsfe); a point on a joint carries its loads in the finite-element check. A member's `kind` is `truss` (default), `frame`, `cable` or — version 5 — `tension`: a truss in tension only, left out of the analysis while it would be compressed (a tower program's "T-only" bracing; [Tension-only members](structure-analysis.md#tension-only-members)). The structure application raises the file to version 5 when a member is made `tension`; an older program then says the file is newer instead of failing on the kind.
 
 Checks that depend on the structure's shape — distances from the wires to the structure body, structure analysis, insulator swing to the structure — behave differently at each level; each such check says in its documentation what it does for levels 1, 2 and 3. The structure's level is shown in its properties.
 

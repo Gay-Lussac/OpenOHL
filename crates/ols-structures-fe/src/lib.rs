@@ -7,12 +7,13 @@
 //!
 //! - [`model`]: structure models (`.olsfe`): nodes in the structure's axes
 //!   (x right of the line, y ahead, z up), truss, frame (3D
-//!   Euler–Bernoulli) and cable (tension only, pretension) members,
-//!   sections and materials, supports and springs; nodes mapped to the
-//!   structure type's attachments.
+//!   Euler–Bernoulli), cable (tension only, pretension) and tension-only
+//!   truss members, sections and materials, supports and springs; nodes
+//!   mapped to the structure type's attachments.
 //! - [`solve`](mod@solve): static solution, first order or P-Delta (Newton
 //!   iterations on Kₑ + K_g with exit clauses), skyline LDLᵀ solver;
-//!   displacements, member end forces, reactions.
+//!   displacements, member end forces, reactions; active-set iterations
+//!   for tension-only members.
 //! - [`stabilise`]: joint stabilisation — the joint directions no member
 //!   stiffens (coplanar or collinear trusses, a frame chain free to spin),
 //!   held when a model would otherwise be a mechanism.
@@ -106,11 +107,53 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
     Some(text)
 }
 
+/// The tension-only members of a solution in words (none: the model has
+/// none): how many of them went slack and how many solves the active-set
+/// iterations took, with the first slack ones named.
+pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
+    if solution.passes == 0 {
+        return None;
+    }
+    let tension: Vec<usize> = (0..model.members.len())
+        .filter(|&k| model.members[k].kind == MemberKind::Tension)
+        .collect();
+    let slack: Vec<&str> = tension
+        .iter()
+        .filter(|&&k| solution.members[k].slack)
+        .map(|&k| model.members[k].id.as_str())
+        .collect();
+    let mut text = format!(
+        "tension-only members: {} of {} slack ({} solve(s))",
+        slack.len(),
+        tension.len(),
+        solution.passes
+    );
+    if !slack.is_empty() {
+        text.push_str(&format!(
+            ": {}{}",
+            slack
+                .iter()
+                .take(NOTE_NAMES)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", "),
+            if slack.len() > NOTE_NAMES {
+                ", …"
+            } else {
+                ""
+            }
+        ));
+    }
+    Some(text)
+}
+
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]
 mod stabilise_tests;
+#[cfg(test)]
+mod tension_tests;
 #[cfg(test)]
 mod tests;

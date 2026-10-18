@@ -312,6 +312,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ols_structures_fe::stabilisation_note(&model, &s) {
             println!("  {note}");
         }
+        if let Some(note) = ols_structures_fe::tension_only_note(&model, &s) {
+            println!("  {note}");
+        }
         let mut sorted: Vec<&ols_structures_fe::MemberUsage> =
             usage.iter().filter(|u| u.usage.is_some()).collect();
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));

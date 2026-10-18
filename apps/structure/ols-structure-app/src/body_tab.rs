@@ -314,8 +314,9 @@ impl StructureApp {
                     .selected_text(&new_kind)
                     .width(70.0)
                     .show_ui(ui, |ui| {
-                        for k in ["truss", "frame", "cable"] {
-                            ui.selectable_value(&mut new_kind, k.to_owned(), k);
+                        for (k, what) in ols_structure_edit::MEMBER_KINDS {
+                            ui.selectable_value(&mut new_kind, k.to_owned(), k)
+                                .on_hover_text(what);
                         }
                     });
                 if new_kind != kind {

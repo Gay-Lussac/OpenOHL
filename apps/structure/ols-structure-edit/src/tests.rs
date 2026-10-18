@@ -234,6 +234,31 @@ fn insulator_fields_are_changed() {
     assert!(change(&mut doc, StringChange::Assembly(Some("nope".into()))).is_err());
 }
 
+/// A member made tension-only: one edit writes the kind and raises the
+/// file to the version that has it; other kinds leave the version as it
+/// is. The tables offer the four kinds.
+#[test]
+fn a_tension_only_member_raises_the_version() {
+    let mut doc: DocumentMut = format!("format = \"ols-structure\"\nversion = 3\n{PYLON}")
+        .parse()
+        .unwrap();
+    set_member_kind(&mut doc, "M1", "frame");
+    assert!(doc.to_string().contains("version = 3"));
+    set_member_kind(&mut doc, "M2", "tension");
+    let text = doc.to_string();
+    assert!(
+        text.contains("version = 5") && text.contains("kind = \"tension\""),
+        "{text}"
+    );
+    assert_eq!(read(&doc).members[1].kind.as_deref(), Some("tension"));
+    // A file without a version stays without (it reads as the newest).
+    let mut plain: DocumentMut = PYLON.parse().unwrap();
+    set_member_kind(&mut plain, "M1", "tension");
+    assert!(!plain.to_string().contains("version"));
+    let names: Vec<&str> = MEMBER_KINDS.iter().map(|k| k.0).collect();
+    assert_eq!(names, ["truss", "frame", "cable", "tension"]);
+}
+
 /// An insulator's limits (kept, not checked): each set and cleared by
 /// its own edit, written with its unit; the file raised to version 4
 /// when one is given; bad values refused (nothing written); saved to

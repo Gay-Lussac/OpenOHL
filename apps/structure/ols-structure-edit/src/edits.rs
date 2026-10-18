@@ -374,10 +374,28 @@ pub fn set_member_section(doc: &mut DocumentMut, id: &str, section: Option<&str>
     }
 }
 
-/// The kind of member `id`: `truss`, `frame` or `cable`.
+/// The kinds of member, with what they are (the member tables' choice).
+pub const MEMBER_KINDS: [(&str, &str); 4] = [
+    ("truss", "axial force only"),
+    ("frame", "bending too"),
+    ("cable", "tension only, may be pretensioned: guys"),
+    (
+        "tension",
+        "a truss in tension only: slack, left out, when compressed (T-only bracing)",
+    ),
+];
+
+/// The structure file version that has the member kind `tension`.
+pub const TENSION_VERSION: i64 = 5;
+
+/// The kind of member `id`: `truss`, `frame`, `cable` or `tension` (the
+/// file raised to [`TENSION_VERSION`]).
 pub fn set_member_kind(doc: &mut DocumentMut, id: &str, kind: &str) {
     if let Some(e) = entry(doc, "member", "id", id) {
         e.insert("kind", toml_edit::value(kind));
+        if kind == "tension" {
+            raise_version(doc, TENSION_VERSION);
+        }
     }
 }
 
