@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The build id `ols-structure --version` prints (`OLS_BUILD_ID`): the
+//! The build id `ohl-structure --version` prints (`OLS_BUILD_ID`): the
 //! line application compares it with its own before it starts this one.
 
 fn main() {

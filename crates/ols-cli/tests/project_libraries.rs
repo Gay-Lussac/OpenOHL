@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols line` and `ols zones` on a project file read the libraries the
+//! `ohl line` and `ohl zones` on a project file read the libraries the
 //! project keeps: a project whose wire library holds a cable the shipped
 //! library does not (an invented id) solves without `--library`; an
 //! explicit `--library` wins.
@@ -80,7 +80,7 @@ fn setup(tag: &str) -> Setup {
 }
 
 fn ols(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ols"))
+    Command::new(env!("CARGO_BIN_EXE_ohl"))
         .current_dir(dir)
         .args(args)
         .output()

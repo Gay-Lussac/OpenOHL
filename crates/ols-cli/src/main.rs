@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols` — OLS CAD command-line interface.
+//! `ohl` — the OpenOHL command-line interface (formerly `ols`, still built
+//! as an alias that runs this program).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,9 +26,9 @@ mod zones_run;
 
 #[derive(Parser)]
 #[command(
-    name = "ols",
+    name = "ohl",
     version,
-    about = "OLS CAD — Open Line System Computer Assisted Design"
+    about = "OpenOHL — open-source overhead line design (OHL-Design, OHL-Structure, ohl)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -70,7 +71,7 @@ enum Command {
     Spot(Box<cost_run::SpotArgs>),
     /// Plan and profile drawings and profile exports of a solved line:
     /// SVG, DXF, PDF, PNG sheets and the profile as CSV or XML, for a
-    /// station range at chosen scales. Takes every option of `ols line`.
+    /// station range at chosen scales. Takes every option of `ohl line`.
     Drawing(Box<DrawingArgs>),
     /// Structure and insulator libraries; structure analysis (finite
     /// elements, poles).
@@ -119,7 +120,7 @@ enum Command {
     Import {
         /// File to read.
         file: PathBuf,
-        /// Format id (default: from the file extension; see ols formats).
+        /// Format id (default: from the file extension; see ohl formats).
         #[arg(long)]
         format: Option<String>,
         /// Line to update (e.g. structure positions into an existing line).
@@ -195,7 +196,7 @@ enum Command {
     },
 }
 
-/// Arguments of `ols line`.
+/// Arguments of `ohl line`.
 #[derive(clap::Args, Clone)]
 struct LineArgs {
     /// Line file (.ols.json) or project file (.ols).
@@ -352,7 +353,7 @@ struct LineArgs {
     #[arg(long)]
     logo: Vec<String>,
     /// Export the solved line (every weather case): FILE (format from the
-    /// extension) or FORMAT=FILE, e.g. kmz=line.kmz (repeatable; see ols
+    /// extension) or FORMAT=FILE, e.g. kmz=line.kmz (repeatable; see ohl
     /// formats).
     #[arg(long)]
     export: Vec<String>,
@@ -364,7 +365,7 @@ struct LineArgs {
     plugin: Vec<PathBuf>,
 }
 
-/// Arguments of `ols drawing`.
+/// Arguments of `ohl drawing`.
 #[derive(clap::Args)]
 struct DrawingArgs {
     #[command(flatten)]
@@ -419,7 +420,7 @@ struct DrawingSpec {
     out: PathBuf,
 }
 
-/// `ols drawing`: solves the line like `ols line`, then writes the
+/// `ohl drawing`: solves the line like `ohl line`, then writes the
 /// drawings asked for.
 fn drawing_command(args: &DrawingArgs) -> ExitCode {
     let formats: Result<Vec<_>, String> = args
@@ -478,7 +479,7 @@ enum StructuresCommand {
     },
     /// Finite-element analysis of a structure model (a full-design .olss,
     /// or an .olsfe): member
-    /// forces and usage under the loads of one structure (a CSV of `ols
+    /// forces and usage under the loads of one structure (a CSV of `ohl
     /// line --loads-csv`) or the model's own loads.
     Fe(structure_fe::FeArgs),
     /// Pole check (.olsp, or the type's own [pole]): bending moment along
@@ -719,7 +720,7 @@ fn main() -> ExitCode {
     }
 }
 
-/// `ols serve`: hosts the project, prints who joins and leaves.
+/// `ohl serve`: hosts the project, prints who joins and leaves.
 #[allow(clippy::too_many_arguments)]
 fn serve(
     project: &std::path::Path,
@@ -1033,7 +1034,7 @@ fn pointcloud(command: PointcloudCommand) -> ExitCode {
                         if lod {
                             "stored"
                         } else {
-                            "missing (`ols pointcloud octree` builds them)"
+                            "missing (`ohl pointcloud octree` builds them)"
                         }
                     );
                     for (class, n) in store.class_counts(&cloud).map_err(|e| e.to_string())? {
@@ -1172,7 +1173,7 @@ fn crs(command: CrsCommand) -> Result<(), String> {
 }
 
 fn print_info() {
-    println!("OLS CAD {}", env!("CARGO_PKG_VERSION"));
+    println!("OpenOHL {} (ohl)", env!("CARGO_PKG_VERSION"));
     println!("core    {}", ols_core::VERSION);
     println!("license MPL-2.0");
 }
@@ -1682,7 +1683,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         }
         let ground = prepared.ground.as_ref();
         // --drawings: SVG and profile CSV of every route, as before;
-        // `ols drawing`: what it asks for.
+        // `ohl drawing`: what it asks for.
         let legacy = drawings.as_ref().map(|dir| DrawingSpec {
             routes: Vec::new(),
             export: ols_drawing::export::Export {

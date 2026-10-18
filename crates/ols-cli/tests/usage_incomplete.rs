@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ols line --usage-csv`: a section that does not solve (its cable not in
+//! `ohl line --usage-csv`: a section that does not solve (its cable not in
 //! the library) leaves its structures' usage incomplete — the CSV's
 //! `incomplete` column says which section and why, the other structures'
 //! rows leave it empty; the run says so (and fails for the section).
@@ -28,7 +28,7 @@ fn usage_csv_marks_the_structures_of_a_section_not_solved() {
     let file = dir.join("broken.ols.json");
     std::fs::write(&file, line.to_json()).unwrap();
     let csv = dir.join("usage.csv");
-    let out = Command::new(env!("CARGO_BIN_EXE_ols"))
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .arg("line")
         .arg(&file)
         .arg("--structures")
