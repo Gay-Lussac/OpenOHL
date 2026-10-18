@@ -236,9 +236,12 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
 /// a ground clearance window's rules.
 pub fn has_rules(r: &Ready) -> bool {
     use ols_clearance::zone::Measure;
+    let set = |w: &crate::clearance_zones::ZoneWindow| {
+        w.rules.iter().any(|x| !crate::clearance_zones::unset(x))
+    };
     !r.clearances.files.is_empty()
-        || !r.vertical_clearances.rules.is_empty()
-        || !r.radial_clearances.rules.is_empty()
+        || set(&r.vertical_clearances)
+        || set(&r.radial_clearances)
         || [Measure::Vertical, Measure::Radial]
             .into_iter()
             .any(|m| crate::clearance_zones::ZoneWindow::project_file(&r.model, m).is_file())

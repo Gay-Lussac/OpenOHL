@@ -32,6 +32,7 @@ mod codes;
 mod color_tool;
 mod controls;
 mod crs;
+mod dockable;
 mod drawings;
 mod edit;
 mod editors;

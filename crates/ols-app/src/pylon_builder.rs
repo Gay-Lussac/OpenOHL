@@ -393,12 +393,16 @@ impl PylonBuilder {
         open: &mut bool,
     ) -> Option<BuilderAction> {
         let mut out = None;
-        egui::Window::new("New pylon from a template")
-            .open(open)
-            .default_width(820.0)
-            .show(ctx, |ui| {
+        crate::dockable::show(
+            ctx,
+            crate::dockable::Panel::PylonBuilder,
+            "New pylon from a template",
+            egui::Window::new("New pylon from a template").default_width(820.0),
+            Some(open),
+            |ui| {
                 out = self.content(ui, model);
-            });
+            },
+        );
         out
     }
 
@@ -891,144 +895,138 @@ impl Placement {
         open: &mut bool,
     ) -> Option<(String, ols_session::Command)> {
         let mut out = None;
-        egui::Window::new("Place on alignment points")
-            .open(open)
-            .default_width(620.0)
-            .show(ctx, |ui| {
-                let types: Vec<String> = model
-                    .types
-                    .as_ref()
-                    .map(|(l, _)| l.iter().map(|t| t.id.clone()).collect())
-                    .unwrap_or_default();
-                egui::Grid::new("place-head").num_columns(2).show(ui, |ui| {
-                    ui.label("alignment");
-                    let before = self.alignment.clone();
-                    egui::ComboBox::from_id_salt("place-alignment")
-                        .selected_text(&self.alignment)
-                        .show_ui(ui, |ui| {
-                            for a in &model.line.alignments {
-                                ui.selectable_value(
-                                    &mut self.alignment,
-                                    a.id.clone(),
-                                    format!("{} (route {})", a.id, a.route),
-                                );
-                            }
-                        });
-                    if self.alignment != before {
-                        self.rows(model);
-                    }
-                    ui.end_row();
-                    ui.label("type");
-                    egui::ComboBox::from_id_salt("place-type")
-                        .selected_text(self.structure_type.as_deref().unwrap_or("—"))
-                        .height(300.0)
-                        .show_ui(ui, |ui| {
-                            for t in &types {
-                                ui.selectable_value(&mut self.structure_type, Some(t.clone()), t);
-                            }
-                        });
-                    ui.end_row();
-                });
-                ui.checkbox(&mut self.on_ground, "base on the ground");
-                ui.label(
-                    egui::RichText::new(
-                        "Each stands on its point, tied to it, turned along the line (the bisector \
+        let window = egui::Window::new("Place on alignment points").default_width(620.0);
+        let panel = crate::dockable::Panel::Placement;
+        crate::dockable::show(ctx, panel, panel.name(), window, Some(open), |ui| {
+            let types: Vec<String> = model
+                .types
+                .as_ref()
+                .map(|(l, _)| l.iter().map(|t| t.id.clone()).collect())
+                .unwrap_or_default();
+            egui::Grid::new("place-head").num_columns(2).show(ui, |ui| {
+                ui.label("alignment");
+                let before = self.alignment.clone();
+                egui::ComboBox::from_id_salt("place-alignment")
+                    .selected_text(&self.alignment)
+                    .show_ui(ui, |ui| {
+                        for a in &model.line.alignments {
+                            ui.selectable_value(
+                                &mut self.alignment,
+                                a.id.clone(),
+                                format!("{} (route {})", a.id, a.route),
+                            );
+                        }
+                    });
+                if self.alignment != before {
+                    self.rows(model);
+                }
+                ui.end_row();
+                ui.label("type");
+                egui::ComboBox::from_id_salt("place-type")
+                    .selected_text(self.structure_type.as_deref().unwrap_or("—"))
+                    .height(300.0)
+                    .show_ui(ui, |ui| {
+                        for t in &types {
+                            ui.selectable_value(&mut self.structure_type, Some(t.clone()), t);
+                        }
+                    });
+                ui.end_row();
+            });
+            ui.checkbox(&mut self.on_ground, "base on the ground");
+            ui.label(
+                egui::RichText::new(
+                    "Each stands on its point, tied to it, turned along the line (the bisector \
                          at an angle); then it stays as placed — Edit › Put it on the line again \
                          turns it again. A row's own type (a strain type at an angle point) \
                          replaces the type above.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                ui.horizontal(|ui| {
-                    if ui.small_button("All").clicked() {
-                        for r in &mut self.rows {
-                            r.on = r.under.is_none();
-                        }
+                )
+                .small()
+                .weak(),
+            );
+            ui.horizontal(|ui| {
+                if ui.small_button("All").clicked() {
+                    for r in &mut self.rows {
+                        r.on = r.under.is_none();
                     }
-                    if ui.small_button("None").clicked() {
-                        for r in &mut self.rows {
-                            r.on = false;
-                        }
-                    }
-                });
-                egui::ScrollArea::vertical()
-                    .max_height(360.0)
-                    .show(ui, |ui| {
-                        egui::Grid::new("place-rows")
-                            .num_columns(4)
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.strong("#");
-                                ui.strong("point");
-                                ui.strong("put");
-                                ui.strong("type");
-                                ui.end_row();
-                                for r in &mut self.rows {
-                                    ui.label((r.index + 1).to_string());
-                                    ui.label(format!(
-                                        "E {:.1}, N {:.1}",
-                                        r.position[0], r.position[1]
-                                    ));
-                                    match &r.under {
-                                        Some(s) => {
-                                            ui.label(
-                                                egui::RichText::new(format!("under {s}")).weak(),
-                                            );
-                                        }
-                                        None => {
-                                            ui.checkbox(&mut r.on, "");
-                                        }
-                                    }
-                                    ui.add_enabled_ui(r.on && r.under.is_none(), |ui| {
-                                        egui::ComboBox::from_id_salt(("place-row-type", r.index))
-                                            .selected_text(
-                                                r.structure_type
-                                                    .as_deref()
-                                                    .unwrap_or("(the type above)"),
-                                            )
-                                            .height(300.0)
-                                            .show_ui(ui, |ui| {
-                                                ui.selectable_value(
-                                                    &mut r.structure_type,
-                                                    None,
-                                                    "(the type above)",
-                                                );
-                                                for t in &types {
-                                                    ui.selectable_value(
-                                                        &mut r.structure_type,
-                                                        Some(t.clone()),
-                                                        t,
-                                                    );
-                                                }
-                                            });
-                                    });
-                                    ui.end_row();
-                                }
-                            });
-                    });
-                if let Some(m) = &self.message {
-                    crate::menu::error_label(ui, egui::RichText::new(m).small());
                 }
-                let n = self
-                    .rows
-                    .iter()
-                    .filter(|r| r.on && r.under.is_none())
-                    .count();
-                if ui
-                    .add_enabled(
-                        model.can_edit().is_ok() && n > 0,
-                        egui::Button::new(format!("Place {n} structure(s)")),
-                    )
-                    .on_hover_text("One command: one undo")
-                    .clicked()
-                {
-                    match self.command(model) {
-                        Ok(c) => out = Some(c),
-                        Err(e) => self.message = Some(e),
+                if ui.small_button("None").clicked() {
+                    for r in &mut self.rows {
+                        r.on = false;
                     }
                 }
             });
+            egui::ScrollArea::vertical()
+                .max_height(360.0)
+                .show(ui, |ui| {
+                    egui::Grid::new("place-rows")
+                        .num_columns(4)
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.strong("#");
+                            ui.strong("point");
+                            ui.strong("put");
+                            ui.strong("type");
+                            ui.end_row();
+                            for r in &mut self.rows {
+                                ui.label((r.index + 1).to_string());
+                                ui.label(format!("E {:.1}, N {:.1}", r.position[0], r.position[1]));
+                                match &r.under {
+                                    Some(s) => {
+                                        ui.label(egui::RichText::new(format!("under {s}")).weak());
+                                    }
+                                    None => {
+                                        ui.checkbox(&mut r.on, "");
+                                    }
+                                }
+                                ui.add_enabled_ui(r.on && r.under.is_none(), |ui| {
+                                    egui::ComboBox::from_id_salt(("place-row-type", r.index))
+                                        .selected_text(
+                                            r.structure_type
+                                                .as_deref()
+                                                .unwrap_or("(the type above)"),
+                                        )
+                                        .height(300.0)
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(
+                                                &mut r.structure_type,
+                                                None,
+                                                "(the type above)",
+                                            );
+                                            for t in &types {
+                                                ui.selectable_value(
+                                                    &mut r.structure_type,
+                                                    Some(t.clone()),
+                                                    t,
+                                                );
+                                            }
+                                        });
+                                });
+                                ui.end_row();
+                            }
+                        });
+                });
+            if let Some(m) = &self.message {
+                crate::menu::error_label(ui, egui::RichText::new(m).small());
+            }
+            let n = self
+                .rows
+                .iter()
+                .filter(|r| r.on && r.under.is_none())
+                .count();
+            if ui
+                .add_enabled(
+                    model.can_edit().is_ok() && n > 0,
+                    egui::Button::new(format!("Place {n} structure(s)")),
+                )
+                .on_hover_text("One command: one undo")
+                .clicked()
+            {
+                match self.command(model) {
+                    Ok(c) => out = Some(c),
+                    Err(e) => self.message = Some(e),
+                }
+            }
+        });
         out
     }
 }

@@ -92,6 +92,43 @@ pub struct ZoneWindow {
     running: Option<Running>,
     /// The last check's report.
     pub report: Option<Result<Report, String>>,
+    /// The "Add a rule" helper's fields.
+    pub draft: ZoneRule,
+}
+
+/// A rule's distance not set yet (the placeholder of a window's first
+/// rule, a row added blank): 0 m, which no regulation asks for.
+pub fn unset(r: &ZoneRule) -> bool {
+    r.distance.is_nan() || r.distance <= 0.0
+}
+
+/// The rule a window starts with when it has none: the ground, every
+/// weather case and voltage, its distance to set (no value is invented).
+pub fn first_rule() -> ZoneRule {
+    ZoneRule {
+        name: "Ground".into(),
+        voltage: None,
+        cases: Vec::new(),
+        distance: 0.0,
+        classes: Vec::new(),
+        ground: true,
+        wires: ols_clearance::Wires::Both,
+        width: None,
+    }
+}
+
+/// Why rule `r` cannot run, if it cannot.
+pub fn not_ready(r: &ZoneRule) -> Option<String> {
+    if unset(r) {
+        Some(format!("\"{}\": set the distance", r.name))
+    } else if !r.ground && r.classes.is_empty() {
+        Some(format!(
+            "\"{}\": choose its targets (the ground or LiDAR classes)",
+            r.name
+        ))
+    } else {
+        None
+    }
 }
 
 impl ZoneWindow {
@@ -110,6 +147,7 @@ impl ZoneWindow {
             confirm: None,
             running: None,
             report: None,
+            draft: first_rule(),
         }
     }
 
@@ -177,6 +215,24 @@ impl ZoneWindow {
                 Err(e) => self.status = Some((e, true)),
             }
         }
+        self.keep_a_rule();
+    }
+
+    /// A window always has a rule: none, the ground's, its distance to
+    /// set.
+    fn keep_a_rule(&mut self) {
+        if self.rules.is_empty() {
+            self.rules.push(first_rule());
+        }
+    }
+
+    /// Why the check cannot run, if it cannot (shown at Run).
+    pub fn why_not_run(&self) -> Option<String> {
+        if self.rules.is_empty() {
+            return Some("no rule: add one first".into());
+        }
+        let why: Vec<String> = self.rules.iter().filter_map(not_ready).collect();
+        (!why.is_empty()).then(|| why.join("; "))
     }
 
     /// Takes the rules of a rule file (replacing those shown).
@@ -195,6 +251,7 @@ impl ZoneWindow {
             &line_voltages(model),
         );
         self.rules = rules;
+        self.keep_a_rule();
         if let Some(w) = width {
             self.zone.width = w;
         }
@@ -213,15 +270,11 @@ impl ZoneWindow {
         self.status = (!notes.is_empty()).then(|| (notes.join("\n"), false));
     }
 
-    /// The rules as a rule file.
+    /// The rules as a rule file (those whose distance is set: a
+    /// placeholder is never written).
     pub fn rule_set(&self) -> RuleSet {
-        zone::to_rule_set(
-            self.title(),
-            &self.zone,
-            &self.wind,
-            &self.check,
-            &self.rules,
-        )
+        let set: Vec<ZoneRule> = self.rules.iter().filter(|r| !unset(r)).cloned().collect();
+        zone::to_rule_set(self.title(), &self.zone, &self.wind, &self.check, &set)
     }
 
     /// The presets of the project: its rule files (but the clearance
@@ -328,8 +381,8 @@ impl ZoneWindow {
             model.cases.iter().map(|c| c.case.clone()).collect();
         let rules = self.rules.clone();
         let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &self.wind);
-        if rules.is_empty() {
-            self.report = Some(Err("no rule: add one first".into()));
+        if let Some(why) = self.why_not_run() {
+            self.report = Some(Err(format!("not run: {why}")));
             return;
         }
         if states.is_empty() {
@@ -412,25 +465,27 @@ impl ZoneWindow {
         let mut open = true;
         let mut run = false;
         let mut preset = None;
-        egui::Window::new(self.title())
-            .open(&mut open)
-            .default_width(820.0)
-            .show(ctx, |ui| {
-                self.help(ui);
-                ui.separator();
-                self.zone_ui(ui);
-                self.wind_ui(ui);
-                self.check_ui(ui, model);
-                ui.separator();
-                if let Some(chosen) = self.rules_ui(ui, model) {
-                    preset = Some(chosen);
-                }
-                ui.separator();
-                run = self.run_ui(ui);
-                if let Some(go) = self.results_ui(ui, model) {
-                    out.go = Some(go);
-                }
-            });
+        let panel = match self.zone.measure {
+            Measure::Vertical => crate::dockable::Panel::VerticalClearances,
+            Measure::Radial => crate::dockable::Panel::RadialClearances,
+        };
+        let window = egui::Window::new(self.title()).default_width(820.0);
+        crate::dockable::show(ctx, panel, self.title(), window, Some(&mut open), |ui| {
+            self.help(ui);
+            ui.separator();
+            self.zone_ui(ui);
+            self.wind_ui(ui);
+            self.check_ui(ui, model);
+            ui.separator();
+            if let Some(chosen) = self.rules_ui(ui, model) {
+                preset = Some(chosen);
+            }
+            ui.separator();
+            run = self.run_ui(ui);
+            if let Some(go) = self.results_ui(ui, model) {
+                out.go = Some(go);
+            }
+        });
         self.open = open;
         if let Some((r, w)) = preset {
             self.load_preset(model, &r, &w, &mut out);
@@ -653,18 +708,21 @@ impl ZoneWindow {
     /// The rules; a preset chosen (rule file, weather case file).
     fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<(PathBuf, PathBuf)> {
         let mut preset = None;
+        self.add_rule_ui(ui, model);
         ui.horizontal(|ui| {
             ui.strong("Rules");
-            if ui.button("Add rule").clicked() {
+            if ui
+                .button("Add rule")
+                .on_hover_text(
+                    "A blank row to fill in the table (its distance and targets to set); \
+                     Add a rule above asks for them first",
+                )
+                .clicked()
+            {
                 self.rules.push(ZoneRule {
                     name: format!("Rule {}", self.rules.len() + 1),
-                    voltage: None,
-                    cases: Vec::new(),
-                    distance: 5.0,
-                    classes: Vec::new(),
                     ground: false,
-                    wires: ols_clearance::Wires::Both,
-                    width: None,
+                    ..first_rule()
                 });
                 self.dirty = true;
             }
@@ -743,14 +801,7 @@ impl ZoneWindow {
             }
         }
         if self.rules.is_empty() {
-            ui.label(
-                egui::RichText::new(
-                    "No rule yet: Add rule, then choose the voltage, the weather cases, the \
-                     distance and the targets.",
-                )
-                .small()
-                .weak(),
-            );
+            // (Never left so: a window always has a rule.)
             return preset;
         }
         let voltages = line_voltages(model);
@@ -758,6 +809,7 @@ impl ZoneWindow {
         let classes = cloud_classes(model, &self.rules);
         let mut remove = None;
         let mut duplicate = None;
+        let n = self.rules.len();
         egui::ScrollArea::vertical()
             .id_salt((self.title(), "rules"))
             .max_height(LIST_HEIGHT)
@@ -796,14 +848,26 @@ impl ZoneWindow {
                                 .changed();
                             self.dirty |= voltage_ui(ui, (self.zone.measure, k), r, &voltages);
                             self.dirty |= cases_ui(ui, (self.zone.measure, k), r, &cases);
-                            self.dirty |= ui
-                                .add(
-                                    egui::DragValue::new(&mut r.distance)
-                                        .speed(0.05)
-                                        .range(0.0..=200.0)
-                                        .max_decimals(3),
-                                )
-                                .changed();
+                            ui.horizontal(|ui| {
+                                self.dirty |= ui
+                                    .add(
+                                        egui::DragValue::new(&mut r.distance)
+                                            .speed(0.05)
+                                            .range(0.0..=200.0)
+                                            .max_decimals(3),
+                                    )
+                                    .on_hover_text(
+                                        "The clearance to keep, m: the value of the regulation \
+                                         you work to",
+                                    )
+                                    .changed();
+                                if unset(r) {
+                                    ui.colored_label(
+                                        ui.visuals().warn_fg_color,
+                                        egui::RichText::new(SET_THE_DISTANCE).small(),
+                                    );
+                                }
+                            });
                             if vertical {
                                 self.dirty |= width_ui(ui, r, self.zone.width);
                             }
@@ -813,7 +877,13 @@ impl ZoneWindow {
                                 if ui.small_button("Duplicate").clicked() {
                                     duplicate = Some(k);
                                 }
-                                if ui.small_button("Remove").clicked() {
+                                if ui
+                                    .add_enabled(n > 1, egui::Button::new("Remove").small())
+                                    .on_disabled_hover_text(
+                                        "The window always has a rule: change this one",
+                                    )
+                                    .clicked()
+                                {
                                     remove = Some(k);
                                 }
                             });
@@ -851,6 +921,86 @@ impl ZoneWindow {
         preset
     }
 
+    /// "Add a rule": plain fields for one rule (what, voltage, distance,
+    /// weather cases) and what they mean; the window's first rule while
+    /// it is a placeholder is replaced by it.
+    fn add_rule_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let first = self.rules.len() == 1 && self.rules[0] == first_rule();
+        let (title, measure) = (self.title(), self.zone.measure);
+        egui::CollapsingHeader::new(egui::RichText::new("Add a rule").strong())
+            .id_salt((title, "add-a-rule"))
+            .default_open(first)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "A rule says how close the wires may come to a target: the ground, or \
+                         LiDAR points of some classes (vegetation, buildings…). Take the \
+                         distance from the regulation you work to — none is given here. The \
+                         voltage and the weather cases narrow where it applies (any voltage, \
+                         every case: everywhere).",
+                    )
+                    .small()
+                    .weak(),
+                );
+                let d = &mut self.draft;
+                let classes = cloud_classes(model, std::slice::from_ref(d));
+                let voltages = line_voltages(model);
+                let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+                egui::Grid::new((title, "add-rule-grid"))
+                    .num_columns(2)
+                    .spacing([10.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(200.0));
+                        ui.end_row();
+                        ui.label("What");
+                        targets_ui(ui, (measure, usize::MAX), d, &classes);
+                        ui.end_row();
+                        ui.label("Voltage");
+                        voltage_ui(ui, (measure, usize::MAX), d, &voltages);
+                        ui.end_row();
+                        ui.label("Distance m");
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut d.distance)
+                                    .speed(0.05)
+                                    .range(0.0..=200.0)
+                                    .max_decimals(3),
+                            );
+                            if unset(d) {
+                                ui.colored_label(
+                                    ui.visuals().warn_fg_color,
+                                    egui::RichText::new(SET_THE_DISTANCE).small(),
+                                );
+                            }
+                        });
+                        ui.end_row();
+                        ui.label("Weather cases");
+                        cases_ui(ui, (measure, usize::MAX), d, &cases);
+                        ui.end_row();
+                    });
+                let why = not_ready(d);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(why.is_none(), egui::Button::new("Add this rule"))
+                        .on_disabled_hover_text(why.clone().unwrap_or_default())
+                        .clicked()
+                    {
+                        let rule = std::mem::replace(d, first_rule());
+                        if first {
+                            self.rules[0] = rule;
+                        } else {
+                            self.rules.push(rule);
+                        }
+                        self.dirty = true;
+                    }
+                    if let Some(w) = why {
+                        ui.label(egui::RichText::new(w).small().weak());
+                    }
+                });
+            });
+    }
+
     /// The Run row; true to start a check.
     fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut run = false;
@@ -870,13 +1020,21 @@ impl ZoneWindow {
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
             }
             None => {
+                let why = self.why_not_run();
                 run = ui
-                    .button("Run")
+                    .add_enabled(why.is_none(), egui::Button::new("Run"))
                     .on_hover_text(
                         "Solve the wind positions of the rules' weather cases and check \
                              every span (in the background)",
                     )
+                    .on_disabled_hover_text(why.clone().unwrap_or_default())
                     .clicked();
+                if let Some(w) = &why {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        egui::RichText::new(format!("Before Run: {w}")).small(),
+                    );
+                }
                 if let Some(Ok(r)) = &self.report {
                     ui.label(
                         egui::RichText::new(format!(
@@ -1058,6 +1216,9 @@ fn run(
         done,
     )
 }
+
+/// The note next to a distance not set yet.
+pub const SET_THE_DISTANCE: &str = "set the distance";
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest
 /// first.

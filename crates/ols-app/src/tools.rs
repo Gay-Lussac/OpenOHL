@@ -92,8 +92,9 @@ impl Tool {
         }
     }
 
-    /// Icon in a slot (glyphs of egui's default fonts).
-    // A text fallback: the slots and menus show the SVG ([`Tool::image`]).
+    /// Icon in a slot as text (glyphs of egui's default fonts, each drawn:
+    /// see `glyph_tests`): a fallback, the slots and menus show the SVG
+    /// (`crate::icons`).
     #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
@@ -106,8 +107,8 @@ impl Tool {
             Tool::AddString => "⛓",
             Tool::StringWire => "≈",
             Tool::AddAlignment => "⛶",
-            Tool::NewAlignment => "↗",
-            Tool::EditAlignment => "↪",
+            Tool::NewAlignment => "📍",
+            Tool::EditAlignment => "✂",
             Tool::AddJumper => "Ψ",
             Tool::OnSpan => "◎",
             Tool::Replace => "⬌",

@@ -101,7 +101,8 @@ fn every_text_character_has_a_glyph() {
                 .map(move |c| (format!("icon of {}", t.name()), c))
         })
         .collect();
-    chars.push(("arrow".into(), crate::menu::ARROW.chars().next().unwrap()));
+    // The arrow of the texts ("from ➡ to").
+    chars.push(("arrow".into(), '➡'));
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     chars.extend(literal_chars(&dir));
     let missing = missing_glyphs(&chars);

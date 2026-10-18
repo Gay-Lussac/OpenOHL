@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT as _, Queryable};
 
 use crate::app::{App, Tab};
 use crate::model::{self, Sources};
@@ -227,4 +227,140 @@ fn help_opens_the_manual_and_about() {
     h.get_by_label("About OHL-Design").click();
     h.run();
     h.get_by_label_contains("Mozilla Public License");
+}
+
+/// A clearance window always has a rule: it starts with the ground's,
+/// its distance to set, and Run refuses until it is set; "Add a rule"
+/// replaces that first rule with the one typed; the last rule is not
+/// removed; the Next steps see the rule.
+#[test]
+fn clearance_windows_start_with_a_rule_to_set() {
+    use crate::clearance_zones::{first_rule, unset};
+    let dir = temp("zones");
+    let path = crate::files::create_project(&dir.join("z"), "Z", "local", "tester").unwrap();
+    let model = load(&path);
+    let mut h = harness(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .vertical_clearances
+        .show(&load(&path));
+    h.run();
+    h.run();
+    {
+        let w = &h.state_mut().ready().unwrap().vertical_clearances;
+        assert_eq!(w.rules, vec![first_rule()]);
+        assert!(w.why_not_run().unwrap().contains("set the distance"));
+    }
+    assert!(h.get_by_label("Run").accesskit_node().is_disabled());
+    h.get_by_label_contains("Before Run:");
+    shot(&mut h, "vertical-clearances-first-rule");
+    // A start refused: no check runs.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let ctx = egui::Context::default();
+        r.vertical_clearances.start(&mut r.model, &ctx);
+        let (report, running) = r.vertical_clearances.result();
+        assert!(!running);
+        assert!(
+            report
+                .unwrap()
+                .as_ref()
+                .unwrap_err()
+                .contains("set the distance")
+        );
+        assert!(!crate::next_steps::has_rules(r));
+    }
+    // Add a rule: the distance typed, the first rule replaced.
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .vertical_clearances
+        .draft
+        .distance = 7.0;
+    h.run();
+    h.get_by_label("Add this rule").click();
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        let w = &r.vertical_clearances;
+        assert_eq!(w.rules.len(), 1);
+        assert!(!unset(&w.rules[0]) && w.rules[0].ground);
+        assert!(w.why_not_run().is_none());
+        assert!(crate::next_steps::has_rules(r));
+    }
+    assert!(!h.get_by_label("Run").accesskit_node().is_disabled());
+}
+
+/// A tool window becomes a panel of the dock ("Dock as a panel"), works
+/// there, and still closes with its tool (its tab with it); it comes up
+/// docked the next time; Float makes it a window again; closing its tab
+/// closes the tool. A page's tab moves with its context menu.
+#[test]
+fn tool_windows_dock_and_still_close_with_their_tool() {
+    use crate::dockable::Panel;
+    let model = crate::tests::synthetic_project("dockable");
+    let mut h = harness(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    let open = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        r.display_window = Some(crate::app::DisplayWindow {
+            ticks: vec![true; r.model.cases.len()],
+            mode: r.model.cases_shown,
+            wind: r.model.wind,
+        });
+        h.run();
+        h.run();
+        h.run();
+    };
+    let docked = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .dock()
+            .find_tab(&Tab::Tool(Panel::DisplayCases))
+            .is_some()
+    };
+    open(&mut h);
+    assert!(!docked(&mut h), "a window first");
+    h.get_by_label("📌 Dock as a panel").click();
+    h.run();
+    h.run();
+    h.run();
+    assert!(docked(&mut h));
+    // Its content is in the panel and works: Cancel closes the tool, the
+    // tab goes with it.
+    h.get_by_label("⬈ Float");
+    shot(&mut h, "display-cases-docked");
+    h.get_by_label("Cancel").click();
+    h.run();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().display_window.is_none());
+    assert!(!docked(&mut h));
+    // Docked again next time; Float: a window again.
+    open(&mut h);
+    assert!(docked(&mut h));
+    h.get_by_label("⬈ Float").click();
+    h.run();
+    h.run();
+    assert!(!docked(&mut h));
+    h.get_by_label("📌 Dock as a panel");
+    // Docked, its tab closed: the tool closes.
+    h.get_by_label("📌 Dock as a panel").click();
+    h.run();
+    h.run();
+    assert!(docked(&mut h));
+    crate::dockable::host(&h.ctx, |x| x.closed.insert(Panel::DisplayCases));
+    h.run();
+    h.run();
+    assert!(h.state_mut().ready().unwrap().display_window.is_none());
+    assert!(!docked(&mut h));
+    // A page moves with its tab's context menu: a table to the left.
+    let t = Tab::Table(crate::tables::TableKind::Structures);
+    crate::app::open_page(h.state_mut().dock(), t);
+    crate::app::move_page(h.state_mut().dock(), t, crate::app::Place::Left);
+    let dock = h.state_mut().dock();
+    assert_eq!(
+        dock.find_tab(&t).unwrap().node_path(),
+        dock.find_tab(&Tab::Model).unwrap().node_path()
+    );
 }

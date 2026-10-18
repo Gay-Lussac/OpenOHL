@@ -704,14 +704,18 @@ pub fn user() -> String {
 
 /// Creates the project file `path` (`.ols`) holding an empty line `name`
 /// in `crs`, `user` its admin; refuses to replace a file. Returns the
-/// path with its extension.
+/// path with its extension. (The window makes it with
+/// [`create_project_from`].)
+#[cfg(test)]
 pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<PathBuf, String> {
     create_project_from(path, name, crs, user, Template::Empty)
 }
 
-/// [`create_project`] with what the project starts with: the starter
-/// template's libraries kept in it (and its pylon templates and survey
-/// points beside it), or nothing.
+/// Creates the project file `path` (`.ols`) holding an empty line `name`
+/// in `crs`, `user` its admin, with what the project starts with: the
+/// starter template's libraries kept in it (and its pylon templates and
+/// survey points beside it), or nothing; refuses to replace a file.
+/// Returns the path with its extension.
 pub fn create_project_from(
     path: &Path,
     name: &str,
