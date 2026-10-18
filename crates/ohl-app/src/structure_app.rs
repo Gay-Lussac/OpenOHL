@@ -1058,8 +1058,8 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         ui.set_max_width(420.0);
         ui.label(
             egui::RichText::new(
-                "What the line sends to the placed structures (Edit… on a placed structure: \
-                 the cases of OHL-Structure). Load cases (Criteria › Load cases library, \
+                "What the line sends to the placed structures (Open in OHL-Structure… on a \
+                 placed structure: the cases there). Load cases (Criteria › Load cases library, \
                  Criteria › Design code) add factors and combinations on top of the weather \
                  cases; a weather case on its own is sent with all factors 1, the wires as \
                  strung.",

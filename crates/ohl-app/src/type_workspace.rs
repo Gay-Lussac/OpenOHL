@@ -582,8 +582,8 @@ impl Workspace {
             self.selected = vec![h.clone()];
             self.message = Some((
                 format!(
-                    "{} sits on {on} of the body: it moves with the body (Edit in the structure \
-                     application…)",
+                    "{} sits on {on} of the body: it moves with the body (Open this type in \
+                     OHL-Structure…)",
                     h.describe()
                 ),
                 true,

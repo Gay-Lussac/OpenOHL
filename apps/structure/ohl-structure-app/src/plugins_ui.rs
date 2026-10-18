@@ -525,8 +525,8 @@ impl StructureApp {
                 std::fs::write(p, t).map_err(|e| format!("{}: {e}", p.display()))?;
             }
             m.push_str(&format!(
-                "; written {} and {} (give them to the line: Criteria › Weather cases, Load \
-                 cases)",
+                "; written {} and {} (give them to the line: Criteria › Weather cases \
+                 library, Load cases library)",
                 weather.display(),
                 cases.display()
             ));

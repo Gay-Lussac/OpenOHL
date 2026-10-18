@@ -2927,7 +2927,7 @@ impl Ready {
         if page.file.as_deref() != Some(path.as_path()) {
             if page.dirty() {
                 self.status = Some((
-                    "the Structure types page has unsaved changes: save or discard them first"
+                    "the Structure library page has unsaved changes: save or discard them first"
                         .into(),
                     true,
                 ));
@@ -6514,7 +6514,7 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
 /// The three ways to check clearances, in words (the Checks menu and the
 /// Clearances page).
 pub const CLEARANCES_ABOUT: &str = "To the ground and LiDAR points: rules typed in the \
-     windows below. Between wires and to other lines: the rules of a rule file, run by Check \
+     windows below. Between the wires of this line: the rules of a rule file, run by Check \
      wire clearances.";
 
 /// Checks › Wire clearances › Add a rule file: a clearance rule file
@@ -6578,9 +6578,9 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     if r.clearances.files.is_empty() {
         ui.label(egui::RichText::new("No clearance rule file in the project yet.").strong());
         ui.label(
-            "The clearances between the wires of this line, to other project lines and with \
-             exclusion zones are checked by the rules of a clearance rule file (.ohlr): add \
-             one, then Check wire clearances (Checks menu or the quick bar).",
+            "The clearances between the wires of this line and to exclusion zones are \
+             checked by the rules of a clearance rule file (.ohlr): add one, then Check wire \
+             clearances (Checks menu or the quick bar). Other lines: `ohl line --other-line`.",
         );
         if ui
             .button("Add a rule file…")
@@ -7339,9 +7339,9 @@ fn menus(
         crate::menu::options_menu(ui, "Wire clearances", |ui| {
             ui.label(
                 egui::RichText::new(
-                    "Between the wires of this line, to other project lines, with exclusion \
-                     zones: the rules of a rule file (.ohlr), in the weather case shown; \
-                     results on the Clearances page",
+                    "Between the wires of this line and to exclusion zones: the rules of a \
+                     rule file (.ohlr), in the weather case shown; results on the Clearances \
+                     page (other lines: `ohl line --other-line`)",
                 )
                 .small()
                 .weak(),

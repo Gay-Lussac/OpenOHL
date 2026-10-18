@@ -284,8 +284,8 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         }
         ui.label(
             egui::RichText::new(
-                "Help › Start from scratch: the tutorial, from the starter template to a strung \
-                 line",
+                "A tutorial from the starter template to a strung line (Help › Start from \
+                 scratch) is planned, not written yet",
             )
             .small()
             .weak(),
@@ -491,7 +491,7 @@ impl Template {
                 "Example libraries with invented values, clearly marked: cables, two \
                  structure types, pylon templates, insulators, weather and load cases, \
                  clearance rules, and survey points of invented ground beside the project. \
-                 No route, alignment, structure or wire: Help › Start from scratch builds them."
+                 No route, alignment, structure or wire: you add them (a tutorial is planned)."
             }
         }
     }

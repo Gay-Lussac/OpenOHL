@@ -280,8 +280,8 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     let next = list.iter().position(|s| !s.done && !s.optional);
     ui.label(
         egui::RichText::new(
-            "What the line still needs, in the order of the work (Help › Start from scratch \
-             walks through it). Each link goes where the step is done.",
+            "What the line still needs, in the order of the work. Each link goes where the \
+             step is done.",
         )
         .small()
         .weak(),
