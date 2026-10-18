@@ -147,6 +147,8 @@ fn reversing_the_load_flips_the_diagonals() {
 #[test]
 fn a_crossing_joint_between_slack_halves_is_held_without_force() {
     let m = panel(MemberKind::Tension, true);
+    // Each diagonal's halves are one tie (AM, MC; BM, MD).
+    assert_eq!(crate::solve::chains(&m), [vec![3, 4], vec![5, 6]]);
     let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
     for id in ["AM", "MC"] {
         assert!(close(axial(&m, &s, id), 1.25 * H), "{id}: {s:?}");
