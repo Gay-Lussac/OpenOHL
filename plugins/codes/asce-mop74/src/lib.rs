@@ -16,10 +16,10 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
+use ohl_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
 
 const NAME: &str = "asce-mop74";
@@ -87,7 +87,7 @@ struct Factors {
 }
 
 fn cases(text: &str) -> Result<Cases, String> {
-    let p: Params = ols_code_common::parse(text)?;
+    let p: Params = ohl_code_common::parse(text)?;
     let w = &p.wind;
     check("wind.speed", w.speed, 0.0, 120.0)?;
     check("wind.air_density_factor", w.air_density_factor, 0.1, 2.0)?;
@@ -205,7 +205,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "ASCE MOP 74: extreme wind and ice with concurrent wind on wires, with load factors",
     cases

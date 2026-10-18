@@ -16,11 +16,11 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::us::{self, KG_M3_PER_LB_FT3, MM_PER_INCH, PA_PER_PSF};
-use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
+use ohl_code_common::us::{self, KG_M3_PER_LB_FT3, MM_PER_INCH, PA_PER_PSF};
+use ohl_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
 
 const NAME: &str = "go95";
@@ -68,7 +68,7 @@ struct Safety {
 }
 
 fn cases(text: &str) -> Result<Cases, String> {
-    let p: Params = ols_code_common::parse(text)?;
+    let p: Params = ohl_code_common::parse(text)?;
     let district = match (&p.project.district, p.project.site_elevation) {
         (Some(name), _) => p
             .district
@@ -151,7 +151,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "CPUC GO 95: Rule 43 loading district by elevation, Rule 44 safety factors",
     cases

@@ -23,10 +23,10 @@ use serde_json::{Value, json};
 
 wit_bindgen::generate!({
     world: "io-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols::plugin::io_types::Direction;
+use ohl::plugin::io_types::Direction;
 
 struct GeoJson;
 
@@ -40,7 +40,7 @@ fn option<'a>(options: &'a [(String, String)], key: &str) -> Option<&'a str> {
 fn export(model: &str, options: &[(String, String)]) -> Result<Vec<u8>, String> {
     let model: Value = serde_json::from_str(model).map_err(|e| format!("model: {e}"))?;
     if model["format"] != "ohl-export-model" || model["version"] != 1 {
-        return Err("expects ols-export-model version 1".into());
+        return Err("expects ohl-export-model version 1".into());
     }
     let mut features = Vec::new();
     for s in model["line"]["structures"].as_array().into_iter().flatten() {

@@ -19,11 +19,11 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::toml;
-use ols_code_common::{
+use ohl_code_common::toml;
+use ohl_code_common::{
     Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check, dynamic_pressure,
 };
 use serde::Deserialize;
@@ -126,7 +126,7 @@ const SECTIONS: [&str; 6] = [
 /// Reads the parameter file, the NNA's tables merged over the general
 /// ones; returns the parameters and the keys the NNA replaced.
 fn read(text: &str) -> Result<(Params, Vec<String>), String> {
-    let mut table = ols_code_common::parse_table(text)?;
+    let mut table = ohl_code_common::parse_table(text)?;
     let mut replaced = Vec::new();
     if let Some(toml::Value::Table(nna)) = table.get_mut("nna") {
         let mut overlay = toml::Table::new();
@@ -135,9 +135,9 @@ fn read(text: &str) -> Result<(Params, Vec<String>), String> {
                 overlay.insert(s.to_owned(), v);
             }
         }
-        replaced = ols_code_common::merge(&mut table, &overlay, "");
+        replaced = ohl_code_common::merge(&mut table, &overlay, "");
     }
-    Ok((ols_code_common::from_table(table)?, replaced))
+    Ok((ohl_code_common::from_table(table)?, replaced))
 }
 
 /// The cases of a parameter file.
@@ -317,7 +317,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "EN 50341-1 general approach + national annex: wind, ice, combined and \
      low-temperature cases with partial factors γ and ψ",

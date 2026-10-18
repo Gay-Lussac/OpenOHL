@@ -17,10 +17,10 @@
 
 wit_bindgen::generate!({
     world: "code-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
+use ohl_code_common::{Cases, Condition, ExtraLoad, ExtraWeather, Load, Weather, check};
 use serde::Deserialize;
 
 const NAME: &str = "csa-c22-3";
@@ -75,7 +75,7 @@ struct Temperatures {
 }
 
 fn cases(text: &str) -> Result<Cases, String> {
-    let p: Params = ols_code_common::parse(text)?;
+    let p: Params = ohl_code_common::parse(text)?;
     let zone = p
         .zone
         .iter()
@@ -153,7 +153,7 @@ fn cases(text: &str) -> Result<Cases, String> {
     Ok(c)
 }
 
-ols_code_common::code_plugin!(
+ohl_code_common::code_plugin!(
     NAME,
     "CSA C22.3 No. 1: loading zone cases with the construction grade's overload factors",
     cases

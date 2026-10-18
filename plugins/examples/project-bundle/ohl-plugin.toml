@@ -1,8 +1,8 @@
 [plugin]
 name = "project-bundle"
-version = "0.1.0"
+version = "0.2.0"
 description = "Example project plugin: a JSON bundle of a line and its library files"
-sdk = "0.2"
+sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/project_bundle.wasm"
 extension-points = ["project"]

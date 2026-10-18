@@ -16,10 +16,10 @@
 
 wit_bindgen::generate!({
     world: "terrain-plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
-use ols::plugin::io_types::Direction;
+use ohl::plugin::io_types::Direction;
 
 struct Grid;
 

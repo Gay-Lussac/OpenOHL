@@ -1,7 +1,7 @@
 [plugin]
 name = "runaway"
-version = "0.1.0"
+version = "0.2.0"
 description = "Test plugin that never returns from span-load"
-sdk = "0.2"
+sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/runaway.wasm"

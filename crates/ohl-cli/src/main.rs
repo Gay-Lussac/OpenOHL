@@ -622,7 +622,7 @@ enum PluginCommand {
     /// format, terrain, project or the minimal one, from its manifest's
     /// extension points) from its directory and print what it reports.
     Info {
-        /// Directory containing `ols-plugin.toml`.
+        /// Directory containing `ohl-plugin.toml`.
         dir: PathBuf,
     },
 }

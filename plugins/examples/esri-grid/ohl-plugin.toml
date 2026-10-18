@@ -1,8 +1,8 @@
 [plugin]
 name = "esri-grid"
-version = "0.1.0"
+version = "0.2.0"
 description = "Example terrain plugin: ESRI ASCII grid (.asc) elevation models as surfaces"
-sdk = "0.2"
+sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/esri_grid.wasm"
 extension-points = ["terrain"]

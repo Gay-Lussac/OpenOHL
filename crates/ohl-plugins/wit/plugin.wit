@@ -3,7 +3,7 @@
 // This is the stable contract between OpenOHL and WebAssembly plugins.
 // Breaking changes require a new major version of the package.
 
-package ols:plugin@0.1.0;
+package ohl:plugin@0.1.0;
 
 /// Types shared by all plugins.
 interface types {

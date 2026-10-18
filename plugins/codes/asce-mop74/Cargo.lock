@@ -10,9 +10,9 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "asce-mop74"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "ols-code-common",
+ "ohl-code-common",
  "serde",
  "wit-bindgen",
 ]
@@ -104,8 +104,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "ols-code-common"
-version = "0.1.0"
+name = "ohl-code-common"
+version = "0.2.0"
 dependencies = [
  "serde",
  "toml",

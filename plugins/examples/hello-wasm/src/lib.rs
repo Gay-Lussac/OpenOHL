@@ -12,7 +12,7 @@
 
 wit_bindgen::generate!({
     world: "plugin",
-    path: "../../../crates/ols-plugins/wit",
+    path: "../../../crates/ohl-plugins/wit",
 });
 
 struct HelloPlugin;

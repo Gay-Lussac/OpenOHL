@@ -1,8 +1,8 @@
 [plugin]
 name = "nesc"
-version = "0.1.0"
+version = "0.2.0"
 description = "NESC (ANSI C2) Rule 250: district, extreme wind and extreme ice cases from your parameter file"
-sdk = "0.2"
+sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/nesc.wasm"
 extension-points = ["design-code"]
