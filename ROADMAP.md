@@ -1,13 +1,173 @@
 # Roadmap
 
-The roadmap is organised in **phases**. Each phase ends with a usable, tested deliverable. Phases map 1:1 to GitHub **milestones**, and each bullet becomes one or more **issues** labelled by module (`module:*`).
+*Step back, 2026-10-18.* This page has two parts. **Part 1** is the
+roadmap to discuss: where things stand, the open points waiting on a
+decision, what is unfinished or approximate, and the proposed stages.
+**Part 2** is the detailed record of what is built, by phase.
+
+**How to comment:** write under the `> **Owner:**` line of any item (one
+per item). Leave the rest as it is; it is rewritten from your comments.
+Items that touch private data (the Swiss plugin, the existing lines) are in
+`local-data/ROADMAP-private.md`, in the same form.
 
 Guiding principles:
-- **Headless engine first, GUI second.** Every calculation must be usable from CLI/scripts and covered by validation cases before it gets a user interface.
-- **Faster and friendlier than existing tools** — native Rust core, GPU rendering, measurable performance targets ([DESIGN_GOALS.md](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/DESIGN_GOALS.md)).
-- **Multi-user from day one** — every edit is a command applied by a session, so collaboration is built in, not bolted on.
+- **Quality first, then speed.** Speed work may only simplify what is
+  drawn, never a computed number.
+- **Headless engine first, GUI second.** Every calculation usable from the
+  command line and covered by validation cases before it gets a user
+  interface.
+- **Plugins stay independent of the core**; limits like string ratings are
+  data that plugins may check.
+- **Multi-user from day one**: every edit is a command applied by a session.
 
 ---
+
+# Part 1 — Roadmap to discuss
+
+## Where it stands
+
+- **Two applications on one engine**: **OHL-Design** (`ohl-design`: the
+  line, sag-tension, clearances, layout, drawings) and **OHL-Structure**
+  (`ohl-structure`: pylons and their loading), with the `ohl` command line.
+  Project renamed OpenOHL (formerly OLS CAD).
+- Phases 0 to 5 of Part 2 are delivered as a base; the structure work
+  (levels 1–3, poles, extensions, generators, loads per placed structure,
+  FE with joint stabilisation and tension-only members, section library,
+  exports) is in place with the limits listed below.
+- 67 validation cases pass; the private Swiss plugin and the importers of
+  another program's files live outside the public code.
+
+### Running now (to finish before anything new)
+- **Start-user improvements** in both apps: the review's quick wins, a
+  "Next steps" checklist, the **starter template project**, clearance
+  windows that always have a rule, tool windows that can dock.
+- **Icons in the apps**: window icons, tool icons in the hotbar, inventory
+  and menus, the logo on the start pages.
+- **Spring reactions**: the reaction at a spring support was reported as
+  about 0; being fixed (results without springs unchanged).
+
+> **Owner:**
+
+## Open points — waiting on a decision
+
+### O1. Tutorial "Start from scratch"
+A tutorial of about 10 short chapters on the starter template: route,
+alignment, first basic structures, strings on the structures, the cable
+file and stringing, jumpers; then results, checks, OHL-Structure, saving.
+Proposed to start once the starter template has landed.
+> **Owner:**
+
+### O2. Rename the project folder on disk
+`…/Claude/OLS CAD` → `…/Claude/OpenOHL`, as the last step when nothing is
+running and the apps are closed (the agents' worktrees and the saved
+session notes follow the path).
+> **Owner:**
+
+### O3. Usability review — items not yet decided
+From the review of 2026-10-18 (quick wins are being done now):
+- **3D and Plan side by side** by default (today Plan is a tab behind 3D).
+- **One name per object** across both apps and the docs (string /
+  insulator / attachment point / structure point …), with a glossary.
+- **"String all sets…"**: one command to string every set along an
+  alignment or from one structure to another (preview, undo).
+- **Option "tools act on left-click"** (today a right-click uses a tool;
+  left-click selects). Default unchanged.
+- **A searchable coordinate-system picker** (EPSG list).
+> **Owner:**
+
+### O4. Code checks of members and joints (e.g. SIA 263)
+A plugin interface for code checks: what the core hands over (member
+forces, buckling lengths, sections, joint details), what comes back
+(usage per member and joint, formulas). To be agreed before it is built.
+> **Owner:**
+
+### O5. Tension-only parts that stay nearly free
+Today: kept active and flagged *approximate* (see U1). Options when this is
+treated: a very low compression stiffness instead of tension-only (your
+idea), a damped or energy-based active-set update, and telling the user
+which part is nearly free.
+> **Owner:**
+
+### O6. Clearances to the structure body (levels 2 and 3)
+None at level 1. The tests for levels 2 and 3 are still to be defined with
+you (what is checked, against which part of the body, in which cases).
+> **Owner:**
+
+### O7. Structure–line interaction, levels 3 and 4
+Level 3: a stiffness matrix at each structure's suspension points from
+level 3 structures. Level 4: structures and line iterated until both
+converge. Order and timing to decide.
+> **Owner:**
+
+### O8. Exports tried in other programs
+IFC4, IFC2x3 and SAF are written from the public specifications but have
+not been imported into the target programs yet. A test file opened by
+someone with those programs would confirm them.
+> **Owner:**
+
+### O9. Design-code loads still to come
+Security / broken-wire and construction loads, and code-specific wind on
+structures, in the design-code plugins.
+> **Owner:**
+
+### O10. A pole with both `solid` and a library section
+Today *solid* wins (the section still gives elasticity and density).
+Alternative: refuse the combination.
+> **Owner:**
+
+### O11. Validation report
+Phase 1 validation against published examples (CIGRE TB 324, textbooks)
+is still open; a full validation report is a goal for 1.0. Needs
+published reference data (no tables typed from memory).
+> **Owner:**
+
+## Unfinished or approximate (known limitations)
+
+- **U1. Tension-only sets that do not settle** are solved with the
+  flipping members kept active; the result is marked *approximate*. Also:
+  with a slightly kinked tie, the one-tie rule can hide compression in one
+  half. *To be treated later; information may be missing at that point.*
+- **U2. Imported lattice towers**: many PLS-TOWER-style models still fail
+  as mechanisms, mostly where a load acts in a direction no member holds;
+  the stabilisation reports them. Needs a look at how such joints are
+  modelled.
+- **U3. Profile sheets**: a sheet break can still fall at a structure that
+  stands off the alignment.
+- **U4. OHL-Structure**: the Results tab solves the structure as written
+  (not on the chosen extension); no pole check in the app; wind bands not
+  raised by an extension; no structure report yet.
+- **U5. Section library**: sections typed in OHL-Structure, shielding and
+  code drag factors still to come.
+- **U6. Body generators**: no redundants, plan bracing, or several points
+  on one crossarm yet.
+- **U7. Structure screen in OHL-Design**: no drag handles for points in the
+  line's 3D view.
+- **U8. Level 2 and 3 members** not yet drawn in 3D of the line nor on the
+  plan and profile sheets.
+
+> **Owner:**
+
+## Proposed stages (to discuss)
+
+1. **Finish and settle** — land the three running pieces; the tutorial
+   (O1); the folder rename (O2); docs checked against the apps.
+2. **Usability, second round** — the items of O3 you choose; screenshots
+   for the docs generated by a test so they stay current.
+3. **Structures checked** — the code-check interface (O4) and a first code;
+   clearances to the body (O6); OHL-Structure's open points (U4–U6).
+4. **Line and structures together** — interaction levels 3 and 4 (O7).
+5. **Towards 1.0** — validation report (O11), stable plugin SDK, plugin
+   registry, translations (Phase 6 in Part 2).
+6. **Further ahead** — OHL-Foundations, then OHL-Substations (end of Part 2).
+
+> **Owner:**
+
+---
+
+# Part 2 — Detailed record
+
+The phases below record what is built. Phases map to GitHub milestones;
+each bullet becomes one or more issues labelled by module (`module:*`).
 
 ## Phase 0 — Foundations
 *Goal: a project people can contribute to.*
@@ -225,3 +385,5 @@ and placed in the line by a position, an angle and a height adjustment.*
 
 1. [ ] **OHL-Foundations** — the foundations of the structures: foundation types per structure (pad and chimney, piles, rock anchors, pole embedment…), their data in their own library files, the loads the structure checks give (level 1 and up) on them, checks by the user's code parameters (uplift, compression, overturning, sliding), bill of materials and costs; the structure's `height_adjust` linked to the foundation's reveal
 2. [ ] **OHL-Substations** — substations, where lines end: gantries, busbars and equipment
+
+> **Owner:**
