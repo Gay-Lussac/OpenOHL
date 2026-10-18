@@ -55,6 +55,19 @@ pub enum Tab {
     CheckLibrary,
     /// What the line still needs, each step a link ([`crate::next_steps`]).
     NextSteps,
+    /// A tool window docked as a panel ([`crate::dockable`]).
+    Tool(crate::dockable::Panel),
+}
+
+/// Where a tab's context menu moves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// With the pages on the left (Model, Clearances, Next steps).
+    Left,
+    /// With Properties, on the right.
+    Right,
+    /// A window of its own (still a page: dragged back in).
+    Window,
 }
 
 impl Tab {
@@ -96,6 +109,7 @@ impl Tab {
             Tab::PhaseDistance => "Distance between conductors",
             Tab::CheckLibrary => "Performed checks",
             Tab::NextSteps => "Next steps",
+            Tab::Tool(p) => p.name(),
         }
     }
 }
@@ -333,6 +347,8 @@ pub struct Ready {
     /// The line had structures when the plan last fitted: the first ones
     /// of an empty line fit it again (the 3D view does the same).
     plan_on_line: bool,
+    /// Pages moved with their tab's context menu, done after the frame.
+    pub dock_moves: Vec<(Tab, Place)>,
 }
 
 impl Ready {
@@ -440,6 +456,7 @@ impl Ready {
             .then(|| ("route 1".to_owned(), String::new())),
             menu_open: false,
             plan_on_line: !model.line.structures.is_empty(),
+            dock_moves: Vec::new(),
             clearances: crate::clearance::Clearances::new(&model, model.sources.rules.as_deref()),
             model,
         }
@@ -1115,6 +1132,8 @@ impl App {
 
 struct Viewer<'a> {
     ready: &'a mut Ready,
+    /// The context (the docked tool panels' shared state).
+    ctx: egui::Context,
     rs: Option<&'a egui_wgpu::RenderState>,
     lod: &'a mut crate::lod::LodSettings,
     /// The colour tool's palette.
@@ -1132,11 +1151,34 @@ impl TabViewer for Viewer<'_> {
             Tab::Table(k) => self.ready.tables.get(k).is_some_and(|p| p.pending() > 0),
             _ => false,
         };
+        if let Tab::Tool(p) = tab {
+            let title = crate::dockable::host(&self.ctx, |h| h.alive.get(p).cloned());
+            return title.unwrap_or_else(|| p.name().to_owned()).into();
+        }
         if dirty {
             format!("{} *", tab.title()).into()
         } else {
             tab.title().into()
         }
+    }
+
+    /// Right-click on a tab: where to put the page.
+    fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Tab, _path: egui_dock::NodePath) {
+        for (place, text) in [
+            (Place::Left, "Dock on the left"),
+            (Place::Right, "Dock on the right (with Properties)"),
+            (Place::Window, "Float in a window of its own"),
+        ] {
+            if ui.button(text).clicked() {
+                self.ready.dock_moves.push((*tab, place));
+                ui.close();
+            }
+        }
+        ui.label(
+            egui::RichText::new("Or drag its tab anywhere: beside, above or below another page.")
+                .small()
+                .weak(),
+        );
     }
 
     fn id(&mut self, tab: &mut Tab) -> egui::Id {
@@ -1152,12 +1194,18 @@ impl TabViewer for Viewer<'_> {
     /// of the tab when scrolled sideways.
     fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
         match tab {
-            Tab::Library(_) => [false, false],
+            // The panel scrolls itself ([`crate::dockable`]).
+            Tab::Library(_) | Tab::Tool(_) => [false, false],
             _ => [true, true],
         }
     }
 
     fn on_close(&mut self, tab: &mut Tab) -> egui_dock::tab_viewer::OnCloseResponse {
+        // A tool's panel closed: the tool closes.
+        if let Tab::Tool(p) = tab {
+            crate::dockable::host(&self.ctx, |h| h.closed.insert(*p));
+            self.ctx.request_repaint();
+        }
         // A library page with unsaved changes stays open.
         if let Tab::Library(k) = tab
             && let Some(p) = self.ready.libraries.get_mut(k)
@@ -1241,6 +1289,10 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::NextSteps => {
                 egui::ScrollArea::vertical().show(ui, |ui| crate::next_steps::ui(ui, r));
+                None
+            }
+            Tab::Tool(p) => {
+                crate::dockable::record(ui, *p);
                 None
             }
             Tab::StructureEditor => {
@@ -5764,7 +5816,9 @@ fn display_window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let (mut apply, mut cancel) = (false, false);
-    tool_window(r, "display-cases", "Display weather cases").show(ctx, |ui| {
+    let window = tool_window(r, "display-cases", "Display weather cases");
+    let panel = crate::dockable::Panel::DisplayCases;
+    let shown = crate::dockable::show(ctx, panel, panel.name(), window, None, |ui| {
         ui.radio_value(
             &mut w.mode,
             CasesShown::AllSections,
@@ -5828,6 +5882,7 @@ fn display_window(ctx: &egui::Context, r: &mut Ready) {
             cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
         });
     });
+    cancel |= shown == crate::dockable::Shown::Closed;
     apply |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
     cancel |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
     if apply {
@@ -5871,25 +5926,38 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
         return;
     };
     let mut outcome = None;
-    tool_window(r, "editor", form.title()).show(ctx, |ui| {
-        let mut extra = crate::editors::FormExtra {
-            rs,
-            preview: &mut r.structure_preview,
-            picker: &mut r.structure_picker,
-            picker_preview: &mut r.picker_preview,
-        };
-        outcome = form.ui(ui, &r.model, r.case, &mut extra);
-        if let Some(mates) = &r.circuit_warned {
-            crate::menu::message(
-                ui,
-                egui::RichText::new(circuit_warning(mates)).small(),
-                Some(ui.visuals().warn_fg_color),
-            );
-        }
-        if let Some((text, true)) = &r.status {
-            crate::menu::error_label(ui, egui::RichText::new(text).small());
-        }
-    });
+    let window = tool_window(r, "editor", form.title());
+    let title = form.title();
+    let shown = crate::dockable::show(
+        ctx,
+        crate::dockable::Panel::Editor,
+        title,
+        window,
+        None,
+        |ui| {
+            let mut extra = crate::editors::FormExtra {
+                rs,
+                preview: &mut r.structure_preview,
+                picker: &mut r.structure_picker,
+                picker_preview: &mut r.picker_preview,
+            };
+            outcome = form.ui(ui, &r.model, r.case, &mut extra);
+            if let Some(mates) = &r.circuit_warned {
+                crate::menu::message(
+                    ui,
+                    egui::RichText::new(circuit_warning(mates)).small(),
+                    Some(ui.visuals().warn_fg_color),
+                );
+            }
+            if let Some((text, true)) = &r.status {
+                crate::menu::error_label(ui, egui::RichText::new(text).small());
+            }
+        },
+    );
+    // Its tab closed (docked): as Cancel.
+    if shown == crate::dockable::Shown::Closed {
+        outcome = Some(Outcome::Cancel);
+    }
     if outcome.is_none() {
         outcome = ctx.input(|i| {
             if i.key_pressed(egui::Key::Escape) {
@@ -6444,16 +6512,107 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     });
 }
 
+/// The three ways to check clearances, in words (the Checks menu and the
+/// Clearances page).
+pub const CLEARANCES_ABOUT: &str = "To the ground and LiDAR points: rules typed in the \
+     windows below. Between wires and to other lines: the rules of a rule file, run by Check \
+     wire clearances.";
+
+/// Checks › Wire clearances › Add a rule file: a clearance rule file
+/// (.olsr) chosen on the computer, kept in the project (next to a line
+/// file) and chosen on the Clearances page.
+fn add_rule_file(r: &mut Ready) {
+    let Some(from) = rfd::FileDialog::new()
+        .add_filter(
+            "Clearance rules",
+            &[ols_clearance::rules::RULE_FILE_EXTENSION],
+        )
+        .pick_file()
+    else {
+        return;
+    };
+    r.status = Some(match keep_rule_file(&mut r.model, &from) {
+        Ok(to) => {
+            r.clearances
+                .refresh(&r.model, r.model.sources.rules.as_deref());
+            if let Some(k) = r
+                .clearances
+                .files
+                .iter()
+                .position(|p| p.file_name() == to.file_name())
+            {
+                r.clearances.choose(k);
+            }
+            r.open_page = Some((Tab::Clearances, None));
+            (
+                format!("rule file {}", crate::menu::file_label(&r.model, &to)),
+                false,
+            )
+        }
+        Err(e) => (e, true),
+    });
+}
+
+/// Copies rule file `from` among the project's rules (its working copy,
+/// kept in the project), else next to the line file; checked first.
+fn keep_rule_file(
+    model: &mut crate::model::Model,
+    from: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    ols_clearance::RuleSet::load(from)?;
+    let name = from.file_name().ok_or("no file name")?;
+    let dir = match (&model.library_dir, &model.editing) {
+        (Some(w), Ok(_)) => w.join("rules"),
+        _ => ols_core::files::dir_of(&model.sources.file),
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let to = dir.join(name);
+    std::fs::copy(from, &to).map_err(|e| format!("{}: {e}", to.display()))?;
+    model.store_libraries()?;
+    Ok(to)
+}
+
 /// The Clearances tab: rule file, the violations of the shown case (click
 /// one to go there).
 fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     r.clearances.set_defaults(&r.model.line.defaults);
-    let c = &mut r.clearances;
-    if c.files.is_empty() {
-        ui.label("No rule file (.olsr) next to the model: write one for the design code you use (see Clearance rules in the user guide), or open one.");
-        ui.label(egui::RichText::new("Start with --rules FILE.olsr.").small());
+    if r.clearances.files.is_empty() {
+        ui.label(egui::RichText::new("No clearance rule file in the project yet.").strong());
+        ui.label(
+            "The clearances between the wires of this line, to other project lines and with \
+             exclusion zones are checked by the rules of a clearance rule file (.olsr): add \
+             one, then Check wire clearances (Checks menu or the quick bar).",
+        );
+        if ui
+            .button("Add a rule file…")
+            .on_hover_text(
+                "A clearance rule file (.olsr) kept in the project; examples/starter/rules has \
+                 one with invented values to learn with",
+            )
+            .clicked()
+        {
+            add_rule_file(r);
+        }
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "To the ground and the LiDAR points: the vertical and radial clearance windows \
+                 (rules typed there, starting with the ground's).",
+            )
+            .small()
+            .weak(),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Vertical clearances…").clicked() {
+                r.vertical_clearances.show(&r.model);
+            }
+            if ui.button("Radial clearances…").clicked() {
+                r.radial_clearances.show(&r.model);
+            }
+        });
         return;
     }
+    let c = &mut r.clearances;
     let name = |p: &std::path::Path| {
         p.file_name()
             .map_or(String::new(), |n| n.to_string_lossy().into_owned())
@@ -6479,7 +6638,10 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     }
     let mut check = false;
     ui.horizontal(|ui| {
-        check = ui.button("Check now").clicked();
+        check = ui
+            .button("Check now")
+            .on_hover_text("Check wire clearances: the rules of this file, the weather case shown")
+            .clicked();
         ui.checkbox(&mut c.auto, "after every edit");
         if c.running() {
             ui.spinner();
@@ -6615,6 +6777,83 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         return;
     }
     dock.push_to_first_leaf(tab);
+}
+
+/// The tab group of the pages on the left (Model…) or on the right
+/// (Properties), if there is one.
+fn page_group(dock: &DockState<Tab>, place: Place) -> Option<egui_dock::NodePath> {
+    let wanted: &[Tab] = match place {
+        Place::Left => &[Tab::Model, Tab::Clearances, Tab::NextSteps],
+        Place::Right => &[Tab::Properties],
+        Place::Window => &[],
+    };
+    wanted
+        .iter()
+        .find_map(|t| dock.find_tab(t))
+        .map(|p| p.node_path())
+}
+
+/// Moves page `tab` to `place` (its tab's context menu).
+pub fn move_page(dock: &mut DockState<Tab>, tab: Tab, place: Place) {
+    let Some(src) = dock.find_tab(&tab) else {
+        return;
+    };
+    match place {
+        Place::Window => {
+            let rect =
+                egui::Rect::from_min_size(egui::pos2(160.0, 120.0), egui::vec2(820.0, 600.0));
+            dock.detach_tab(src, rect);
+        }
+        _ => {
+            let Some(dst) = page_group(dock, place) else {
+                return;
+            };
+            if dst != src.node_path() {
+                dock.move_tab(src, (dst, egui_dock::TabInsert::Append));
+            }
+        }
+    }
+    if let Some(path) = dock.find_tab(&tab) {
+        let _ = dock.set_active_tab(path);
+    }
+}
+
+/// The docked tool panels follow their tools ([`crate::dockable`]): a
+/// panel asked for is docked (on the right, with Properties) or floats
+/// again; one whose tool closed goes with it.
+fn sync_docked(ctx: &egui::Context, dock: &mut DockState<Tab>) {
+    use crate::dockable::Panel;
+    let (alive, docked) = crate::dockable::host(ctx, |h| {
+        for (p, d) in std::mem::take(&mut h.requests) {
+            if d {
+                h.docked.insert(p);
+            } else {
+                h.docked.remove(&p);
+            }
+        }
+        h.closed.retain(|p| h.alive.contains_key(p));
+        (h.alive.clone(), h.docked.clone())
+    });
+    for p in Panel::ALL {
+        let tab = Tab::Tool(p);
+        let want = alive.contains_key(&p) && docked.contains(&p);
+        match (dock.find_tab(&tab), want) {
+            (Some(path), false) => {
+                dock.remove_tab(path);
+            }
+            (None, true) => {
+                match page_group(dock, Place::Right).or_else(|| page_group(dock, Place::Left)) {
+                    Some(node) => {
+                        dock.set_focused_node_and_surface(node);
+                        dock.push_to_focused_leaf(tab);
+                    }
+                    None => dock.push_to_first_leaf(tab),
+                }
+                ctx.request_repaint();
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Closes `tab` if it is open.
@@ -7062,17 +7301,22 @@ fn menus(
         }
         ui.separator();
         ui.label(egui::RichText::new("Clearances").strong());
+        ui.label(egui::RichText::new(CLEARANCES_ABOUT).small().weak());
         ui.menu_button("Ground clearances", |ui| {
             ui.label(
-                egui::RichText::new("From the wires to the ground and the LiDAR points")
-                    .small()
-                    .weak(),
+                egui::RichText::new(
+                    "From the wires to the ground and the LiDAR points: the rules are typed \
+                     in each window (it starts with the ground's) and kept in the project",
+                )
+                .small()
+                .weak(),
             );
             if ui
                 .button("Vertical clearances…")
                 .on_hover_text(
-                    "Targets straight under the wires, within a width on each side; rules by \
-                     voltage, weather case, distance and LiDAR class; the wind stepped",
+                    "Ground and LiDAR points straight under the wires, within a width on \
+                     each side; rules by voltage, weather case, distance and target; the wind \
+                     stepped; results in the window",
                 )
                 .clicked()
             {
@@ -7082,8 +7326,9 @@ fn menus(
             if ui
                 .button("Radial clearances…")
                 .on_hover_text(
-                    "The direct distance from the wires to the targets; rules by voltage, \
-                     weather case, distance and LiDAR class; the wind stepped",
+                    "The direct distance from the wires to the ground and LiDAR points; rules \
+                     by voltage, weather case, distance and target; the wind stepped; results \
+                     in the window",
                 )
                 .clicked()
             {
@@ -7095,8 +7340,9 @@ fn menus(
         crate::menu::options_menu(ui, "Wire clearances", |ui| {
             ui.label(
                 egui::RichText::new(
-                    "Between wires, to other project lines, with exclusion zones: the rules \
-                     of a rule file",
+                    "Between the wires of this line, to other project lines, with exclusion \
+                     zones: the rules of a rule file (.olsr), in the weather case shown; \
+                     results on the Clearances page",
                 )
                 .small()
                 .weak(),
@@ -7119,6 +7365,14 @@ fn menus(
                         c.choose(k);
                     }
                 });
+            }
+            if ui
+                .button("Add a rule file…")
+                .on_hover_text("A clearance rule file (.olsr) kept in the project")
+                .clicked()
+            {
+                ui.close();
+                add_rule_file(r);
             }
             if ui.button("Show results").clicked() {
                 open_page(dock, Tab::Clearances);
@@ -7618,6 +7872,7 @@ impl eframe::App for App {
                     let _t = crate::perf::span("hooks: popups");
                     popups(ui.ctx(), ready);
                 }
+                crate::dockable::begin_frame(ui.ctx());
                 {
                     let _t = crate::perf::span("hooks: tool windows");
                     tool_windows(ui.ctx(), ready, self.render_state.as_ref());
@@ -7689,11 +7944,8 @@ impl eframe::App for App {
                             &mut self.customize,
                             &mut self.about,
                         );
-                    });
-                    ui.horizontal(|ui| {
-                        ui.strong(&ready.model.line.name);
-                        ui.separator();
-                        ui.label(ready.selection.describe());
+                        // The quick bar right of the menus (Undo, Redo,
+                        // Save first), as in OHL-Structure.
                         ui.separator();
                         if let Some(c) = self.quickbar.ui(ui) {
                             commands.push(c);
@@ -7705,6 +7957,11 @@ impl eframe::App for App {
                         {
                             self.customize = true;
                         }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.strong(&ready.model.line.name);
+                        ui.separator();
+                        ui.label(ready.selection.describe());
                     });
                 });
                 drop(bars);
@@ -7852,6 +8109,7 @@ impl eframe::App for App {
                     self.customize = open;
                 }
                 drop(windows);
+                sync_docked(&ctx, &mut self.dock);
                 let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
@@ -7863,6 +8121,7 @@ impl eframe::App for App {
                                 ui,
                                 &mut Viewer {
                                     ready,
+                                    ctx: ctx.clone(),
                                     rs: self.render_state.as_ref(),
                                     lod: &mut self.lod,
                                     palette: &mut self.palette,
@@ -7870,6 +8129,9 @@ impl eframe::App for App {
                                 },
                             );
                     });
+                for (tab, place) in std::mem::take(&mut ready.dock_moves) {
+                    move_page(&mut self.dock, tab, place);
+                }
             }
         }
         if self.about {

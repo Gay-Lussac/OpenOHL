@@ -474,115 +474,114 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
         m.id,
         m.structure.structure_type.as_deref().unwrap_or("no type")
     );
-    egui::Window::new(title)
+    let window = egui::Window::new(title.clone())
         .id(egui::Id::new(("replace-structure", m.id.clone())))
-        .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .default_width(620.0)
-        .show(ctx, |ui| {
-            ui.label(
-                "Which wire point of the new structure each wire point of the old one goes to \
+        .default_width(620.0);
+    let panel = crate::dockable::Panel::Replace;
+    crate::dockable::show(ctx, panel, title, window, Some(&mut open), |ui| {
+        ui.label(
+            "Which wire point of the new structure each wire point of the old one goes to \
                  (what ends there moves with it); none: what ends there is removed.",
-            );
-            if let Some(note) = &m.note {
-                ui.colored_label(ui.visuals().warn_fg_color, note);
-            }
-            ui.separator();
-            egui::Grid::new("replace-mapping")
-                .striped(true)
-                .num_columns(6)
-                .show(ui, |ui| {
-                    for h in ["set", "label", "side", "height", "ends here", "new set"] {
-                        ui.label(egui::RichText::new(h).small().strong());
-                    }
-                    ui.end_row();
-                    for w in &m.old {
-                        ui.label(w.set.to_string());
-                        ui.label(&w.label);
-                        ui.label(w.side.name());
-                        ui.label(format!("{:.2} m", w.height));
-                        ui.label(&w.ends);
-                        let chosen = m.choice.entry(w.set).or_insert(None);
-                        let text = |set: Option<u32>| match set {
-                            None => "none (removed)".to_owned(),
-                            Some(s) => match m.new.iter().find(|n| n.set == s) {
-                                Some(n) => format!(
-                                    "set {s} {} — {}, {:.2} m",
-                                    n.label,
-                                    n.side.name(),
-                                    n.height
-                                ),
-                                None => format!("set {s}"),
-                            },
-                        };
-                        egui::ComboBox::from_id_salt(("replace-set", w.set))
-                            .selected_text(text(*chosen))
-                            .width(230.0)
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(chosen, None, text(None));
-                                for n in &m.new {
-                                    ui.selectable_value(chosen, Some(n.set), text(Some(n.set)));
-                                }
-                            });
-                        ui.end_row();
-                    }
-                });
-            if m.old.is_empty() {
-                ui.label(egui::RichText::new("Nothing ends at this structure.").weak());
-            }
-            ui.separator();
-            let mut ok = false;
-            match &m.impact {
-                Ok(i) if i.has_dependents() => {
-                    ui.label("Removed or dropped with it (drawn red in the 3D view):");
-                    egui::ScrollArea::vertical()
-                        .id_salt("replace-removed")
-                        .max_height(180.0)
-                        .min_scrolled_height(180.0)
-                        .show(ui, |ui| {
-                            for (title, items) in i.groups() {
-                                if items.is_empty() {
-                                    continue;
-                                }
-                                ui.label(
-                                    egui::RichText::new(format!("{title} ({})", items.len()))
-                                        .strong(),
-                                );
-                                for it in items {
-                                    ui.label(egui::RichText::new(format!("  {it}")).small());
-                                }
+        );
+        if let Some(note) = &m.note {
+            ui.colored_label(ui.visuals().warn_fg_color, note);
+        }
+        ui.separator();
+        egui::Grid::new("replace-mapping")
+            .striped(true)
+            .num_columns(6)
+            .show(ui, |ui| {
+                for h in ["set", "label", "side", "height", "ends here", "new set"] {
+                    ui.label(egui::RichText::new(h).small().strong());
+                }
+                ui.end_row();
+                for w in &m.old {
+                    ui.label(w.set.to_string());
+                    ui.label(&w.label);
+                    ui.label(w.side.name());
+                    ui.label(format!("{:.2} m", w.height));
+                    ui.label(&w.ends);
+                    let chosen = m.choice.entry(w.set).or_insert(None);
+                    let text = |set: Option<u32>| match set {
+                        None => "none (removed)".to_owned(),
+                        Some(s) => match m.new.iter().find(|n| n.set == s) {
+                            Some(n) => format!(
+                                "set {s} {} — {}, {:.2} m",
+                                n.label,
+                                n.side.name(),
+                                n.height
+                            ),
+                            None => format!("set {s}"),
+                        },
+                    };
+                    egui::ComboBox::from_id_salt(("replace-set", w.set))
+                        .selected_text(text(*chosen))
+                        .width(230.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(chosen, None, text(None));
+                            for n in &m.new {
+                                ui.selectable_value(chosen, Some(n.set), text(Some(n.set)));
                             }
                         });
-                    ok = true;
-                }
-                Ok(_) => {
-                    ui.label("Nothing is removed.");
-                    ok = true;
-                }
-                Err(e) => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("replace-error")
-                        .max_height(80.0)
-                        .show(ui, |ui| {
-                            ui.colored_label(ui.visuals().error_fg_color, e);
-                        });
-                }
-            }
-            ui.label(
-                egui::RichText::new("It is one log entry: undo brings everything back.")
-                    .small()
-                    .weak(),
-            );
-            ui.horizontal(|ui| {
-                if ui.add_enabled(ok, egui::Button::new("Replace")).clicked() {
-                    step = Step::Apply(rewired_words(m, model), m.command());
-                }
-                if ui.button("Cancel").clicked() {
-                    step = Step::Cancel;
+                    ui.end_row();
                 }
             });
+        if m.old.is_empty() {
+            ui.label(egui::RichText::new("Nothing ends at this structure.").weak());
+        }
+        ui.separator();
+        let mut ok = false;
+        match &m.impact {
+            Ok(i) if i.has_dependents() => {
+                ui.label("Removed or dropped with it (drawn red in the 3D view):");
+                egui::ScrollArea::vertical()
+                    .id_salt("replace-removed")
+                    .max_height(180.0)
+                    .min_scrolled_height(180.0)
+                    .show(ui, |ui| {
+                        for (title, items) in i.groups() {
+                            if items.is_empty() {
+                                continue;
+                            }
+                            ui.label(
+                                egui::RichText::new(format!("{title} ({})", items.len())).strong(),
+                            );
+                            for it in items {
+                                ui.label(egui::RichText::new(format!("  {it}")).small());
+                            }
+                        }
+                    });
+                ok = true;
+            }
+            Ok(_) => {
+                ui.label("Nothing is removed.");
+                ok = true;
+            }
+            Err(e) => {
+                egui::ScrollArea::vertical()
+                    .id_salt("replace-error")
+                    .max_height(80.0)
+                    .show(ui, |ui| {
+                        ui.colored_label(ui.visuals().error_fg_color, e);
+                    });
+            }
+        }
+        ui.label(
+            egui::RichText::new("It is one log entry: undo brings everything back.")
+                .small()
+                .weak(),
+        );
+        ui.horizontal(|ui| {
+            if ui.add_enabled(ok, egui::Button::new("Replace")).clicked() {
+                step = Step::Apply(rewired_words(m, model), m.command());
+            }
+            if ui.button("Cancel").clicked() {
+                step = Step::Cancel;
+            }
         });
+    });
     if !open || ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
         step = Step::Cancel;
     }

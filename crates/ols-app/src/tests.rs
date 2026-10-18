@@ -1205,7 +1205,7 @@ fn the_checks_menu_runs_the_clearance_check() {
     harness.run();
     // The menu's (the quick bar has one too).
     harness
-        .query_all_by_label("Run checks")
+        .query_all_by_label("Check wire clearances")
         .last()
         .unwrap()
         .click();
@@ -1325,7 +1325,10 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             "{:?}",
             w.file
         );
-        assert!(w.rules.is_empty());
+        // It starts with the ground's rule, its distance to set: not run.
+        assert_eq!(w.rules, vec![crate::clearance_zones::first_rule()]);
+        assert!(w.why_not_run().is_some());
+        w.rules.clear();
         // Kept in a scratch folder, not next to the example.
         w.file = Some(dir.join("rules.olsr"));
         w.wind = ols_clearance::WindSteps {
@@ -1394,11 +1397,30 @@ fn the_radial_clearances_window_keeps_its_rules() {
         r.radial_clearances.file = Some(file.clone());
     }
     harness.run();
+    // The ground's rule to start with (its distance to set): the only
+    // rule, not removed.
+    assert_eq!(
+        harness.state_mut().ready().unwrap().radial_clearances.rules,
+        vec![crate::clearance_zones::first_rule()]
+    );
+    {
+        use egui_kittest::kittest::NodeT as _;
+        assert!(
+            harness
+                .get_by_label("Remove")
+                .accesskit_node()
+                .is_disabled()
+        );
+    }
     harness.get_by_label("Add rule").click();
     harness.run();
     harness.run();
     let set = ols_clearance::RuleSet::load(&file).unwrap();
-    assert_eq!(set.rules.len(), 0, "a rule without targets has no rule");
+    assert_eq!(
+        set.rules.len(),
+        0,
+        "a rule without targets or distance is not written"
+    );
     assert_eq!(
         harness
             .state_mut()
@@ -1407,12 +1429,14 @@ fn the_radial_clearances_window_keeps_its_rules() {
             .radial_clearances
             .rules
             .len(),
-        1
+        2
     );
     {
         let w = &mut harness.state_mut().ready().unwrap().radial_clearances;
-        w.rules[0].ground = true;
+        w.rules.truncate(1);
+        w.rules[0].distance = 5.0;
     }
+    harness.run();
     harness.get_by_label("Duplicate").click();
     harness.run();
     harness.run();

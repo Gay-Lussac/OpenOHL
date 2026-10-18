@@ -26,9 +26,6 @@ pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egu
     }
 }
 
-/// The arrow of the texts ("from → to"): one the default fonts draw.
-pub const ARROW: &str = "➡";
-
 /// Longest text shown whole in a window (characters, lines); longer text
 /// scrolls in a box of [`TEXT_BOX_HEIGHT`].
 const LONG_TEXT: (usize, usize) = (300, 4);
@@ -166,9 +163,11 @@ impl Command {
 
     /// The quick bar to start with.
     pub fn default_bar() -> Vec<Command> {
+        // Undo, Redo and Save first, as in OHL-Structure.
         vec![
             Command::Undo,
             Command::Redo,
+            Command::Save,
             Command::FitViews,
             Command::RunChecks,
         ]
@@ -177,7 +176,7 @@ impl Command {
     /// Name on a button and in the menus.
     pub fn name(self) -> String {
         match self {
-            Command::Save => "Save".into(),
+            Command::Save => "Save all".into(),
             Command::Undo => "Undo".into(),
             Command::Redo => "Redo".into(),
             Command::FitViews => "Fit views".into(),
@@ -185,11 +184,27 @@ impl Command {
             Command::DeleteSelected => "Delete selected".into(),
             Command::GoTo => "Go to structure…".into(),
             Command::Inventory => "Tool inventory".into(),
-            Command::RunChecks => "Run checks".into(),
+            Command::RunChecks => "Check wire clearances".into(),
             Command::DisplayCases => "Display weather cases…".into(),
             Command::Library(k) => k.library_name(),
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => t.name().into(),
+        }
+    }
+
+    /// What it does, in the quick bar's hover text (none: its name says).
+    pub fn tip(self) -> Option<&'static str> {
+        match self {
+            Command::RunChecks => Some(
+                "The rules of the clearance rule file (Checks › Wire clearances) in the \
+                 weather case shown; results on the Clearances page. The ground and LiDAR \
+                 points: Checks › Ground clearances",
+            ),
+            Command::FitViews => Some("Show the whole line in the 3D view and the plan"),
+            Command::Save => {
+                Some("The project written through, the library pages with changes saved")
+            }
+            _ => None,
         }
     }
 
@@ -287,9 +302,11 @@ impl QuickBar {
         let mut out = None;
         for c in &self.0 {
             let r = ui.add(c.button(ui));
-            let r = match c.shortcut() {
-                Some(s) => r.on_hover_text(s),
-                None => r,
+            let r = match (c.tip(), c.shortcut()) {
+                (Some(t), Some(s)) => r.on_hover_text(format!("{t} ({s})")),
+                (Some(t), None) => r.on_hover_text(t),
+                (None, Some(s)) => r.on_hover_text(s),
+                (None, None) => r,
             };
             if r.clicked() {
                 out = Some(*c);
