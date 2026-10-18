@@ -755,19 +755,23 @@ pub fn structures_dir(file: &Path, given: Option<&Path>) -> PathBuf {
 
 /// Loads a line from a line or project file ([`load_line`]) with its typed
 /// structures resolved from the structure types of `structures` and the
-/// insulator assemblies of `insulators` (read only when a structure has a
-/// type); the structure types read.
+/// insulator assemblies of `insulators` (the structure types read only when
+/// a structure has a type; the insulators always: they give the strings
+/// without their own their weight, stiffness and wind area, as in the app);
+/// the structure types read.
 pub fn load_resolved(
     file: &Path,
     structures: &Path,
     insulators: &Path,
 ) -> Result<(ols_line::Line, ols_structures::StructureLibrary), String> {
     let line = load_line(file)?;
-    if !line.structures.iter().any(|s| s.structure_type.is_some()) {
-        return Ok((line, ols_structures::StructureLibrary::default()));
-    }
-    let types =
-        ols_structures::StructureLibrary::load_dir(structures).map_err(|e| e.to_string())?;
+    // Resolved also without typed structures, as the app does: the strings'
+    // weights, stiffnesses and wind areas come from their insulators.
+    let types = if line.structures.iter().any(|s| s.structure_type.is_some()) {
+        ols_structures::StructureLibrary::load_dir(structures).map_err(|e| e.to_string())?
+    } else {
+        ols_structures::StructureLibrary::default()
+    };
     let assemblies =
         ols_structures::InsulatorLibrary::load_dir(insulators).map_err(|e| e.to_string())?;
     let line = line
