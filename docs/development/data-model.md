@@ -668,7 +668,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ols-structure"`, 1 to 4 (`STRUCTURE_FILE_VERSION`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ols_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ols-structure"`, 1 to 5 (`STRUCTURE_FILE_VERSION`; 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ols_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name` | string | — | unique id (referred to by `Structure.type`), display name |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |

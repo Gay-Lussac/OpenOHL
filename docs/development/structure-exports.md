@@ -1,6 +1,6 @@
 # Structure exports: IFC, SAF, CSV
 
-Status: **built** (2026-10-17), phase 7 of [Building structures](structure-building.md)
+Status: **built, pre-alpha, in active development** (first written 2026-10-17; no export has been imported into RFEM, Tekla or SCIA yet), phase 7 of [Building structures](structure-building.md)
 (decision 12: export to IFC, Tekla and RFEM; PLS-TOWER later). Crate
 `apps/structure/ols-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).

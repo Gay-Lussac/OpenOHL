@@ -1,6 +1,6 @@
 # Interphase spacers: a string between two conductors in a span (proposal)
 
-Status: **decided, being built.** Done: the data (span points, point
+Status: **decided; built, in active development** (not approved yet). Built: the data (span points, point
 loads by fraction or distance, spread loads, spacers, the project's
 default values with their file), checked (a spacer's sections by finite
 elements only), saved, logged, in OLS XML; spread loads and span points

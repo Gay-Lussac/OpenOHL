@@ -1,19 +1,19 @@
 # Points on the wires and the objects on them (proposal)
 
-Status: **being built.** Phase 1 done: points on spans and jumpers with
+Status: **built, in active development** (not approved yet). Phase 1 built: points on spans and jumpers with
 one object each (bodies by shape, clamps), spread objects between two
 points, the library (`.olsload`) with its templates, older files' point
 and spread loads read into points and objects (same forces), OLS XML and
 the XSD; the solve takes the span points' objects and the spreads.
-Phase 2 done: objects on jumper points load the jumper (the rod model,
+Phase 2 built: objects on jumper points load the jumper (the rod model,
 loads held nowhere), their points reported solved, the clamps carrying
 them (pull, or the estimate shared by position; rigid jumpers by
-position). Phase 3 done: taps (`Jumper::from_tap` / `to_tap`) on span points and
+position). Phase 3 built: taps (`Jumper::from_tap` / `to_tap`) on span points and
 jumper points holding a clamp, hinged ends, jumpers solved level by
 level after what they hang on, the full loop by default and one
 calculation as an option (Criteria › Calculation options), the loads
 keyed by clamp, span point or jumper point, circuits and checks joined at
-taps, deletions and renames following. Phase 4 done (the app): the Add on span tool on spans and jumpers
+taps, deletions and renames following. Phase 4 built (the app): the Add on span tool on spans and jumpers
 (bare points, objects from templates or own values with advanced shape
 settings, spreads, regular spacing); jumper points selectable in every
 case drawn, with properties, drawing by shape, deletion taking what
