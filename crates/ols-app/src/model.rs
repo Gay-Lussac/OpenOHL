@@ -1514,6 +1514,11 @@ impl Model {
     /// Every section in each weather case it is drawn in, in line order
     /// (both wind sides when shown).
     pub fn shapes_shown(&self, case: usize) -> Vec<SectionShape> {
+        self.shapes_shown_ref(case).into_iter().cloned().collect()
+    }
+
+    /// [`Model::shapes_shown`] without copying them (drawn every frame).
+    pub fn shapes_shown_ref(&self, case: usize) -> Vec<&SectionShape> {
         self.line
             .sections
             .iter()
@@ -1522,7 +1527,7 @@ impl Model {
                     .into_iter()
                     .filter_map(|k| self.cases.get(k))
                     .flat_map(|c| c.drawn())
-                    .filter_map(|c| c.shapes.iter().find(|x| x.section == s.id).cloned())
+                    .filter_map(|c| c.shapes.iter().find(|x| x.section == s.id))
                     .collect::<Vec<_>>()
             })
             .collect()

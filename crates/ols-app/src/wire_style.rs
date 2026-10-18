@@ -138,6 +138,11 @@ pub struct StyleCache {
 }
 
 impl StyleCache {
+    /// What the styles were last made from (a hash; none before).
+    pub fn key(&self) -> Option<u64> {
+        self.key
+    }
+
     /// The styles of `line` coloured as `coloring` says.
     pub fn get(&mut self, line: &Line, coloring: Coloring) -> &Styles {
         use std::hash::{Hash, Hasher};

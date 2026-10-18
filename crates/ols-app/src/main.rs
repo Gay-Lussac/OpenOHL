@@ -42,6 +42,7 @@ mod lod;
 mod menu;
 mod model;
 mod octree;
+mod perf;
 mod phase_distance;
 mod placed_editor;
 mod plan;
@@ -74,6 +75,8 @@ mod wire_style;
 mod wirefit;
 mod working_tree;
 
+#[cfg(test)]
+mod bench;
 #[cfg(test)]
 mod tests;
 

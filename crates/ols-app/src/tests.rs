@@ -3672,6 +3672,45 @@ fn a_sized_marker_ball_is_drawn_on_its_wire() {
     assert!(balls(&synthetic_project("no-ball")).is_empty());
 }
 
+/// Levels of detail of the small things on the wires: a body to its shape
+/// close, a dot farther, nothing at level 2; clamps and bare points close
+/// only; line codes' dashes longer farther (fewer of them).
+#[test]
+fn small_things_on_the_wires_are_drawn_close() {
+    let mut m = synthetic_project_with("lod-ball", |l| {
+        l.sections[0].objects_mut().next().unwrap().shape =
+            ols_line::Shape::Sphere { diameter: 0.6 }
+    });
+    let prims = crate::scene::prims(&m, crate::scene::Layer::Wires, 0);
+    let ball = prims.iter().find(|p| p.filled).expect("the ball");
+    assert_eq!(ball.levels, (0, 0));
+    let dot = prims.iter().find(|p| p.dot).expect("its dot");
+    assert_eq!(dot.levels, (1, 1));
+    assert!(
+        dot.points[0]
+            .iter()
+            .zip(ball.points[0])
+            .all(|(a, b)| (a - b).abs() < 1.0)
+    );
+    // Nothing filled or dotted at level 2.
+    assert!(
+        prims
+            .iter()
+            .filter(|p| p.filled || p.dot)
+            .all(|p| p.levels.1 < 2)
+    );
+    // A phase in a line code (S2 by system): fewer, longer dashes farther.
+    m.section_display.coloring = crate::wire_style::Coloring::Systems;
+    let prims = crate::scene::prims(&m, crate::scene::Layer::Wires, 0);
+    let at = |level: usize| {
+        prims
+            .iter()
+            .filter(|p| p.levels == (level, level) && p.thinned)
+            .count()
+    };
+    assert!(at(1) > 2 * at(2) && at(2) > 0, "{} {}", at(1), at(2));
+}
+
 /// The point at a fraction of a span: along its plan chord.
 #[test]
 fn a_fraction_of_a_span_is_along_its_chord() {
@@ -9788,7 +9827,12 @@ fn descriptions_are_typed_and_shown_as_labels() {
         ticks[View::Plan as usize] = true;
     }
     let notes = object_notes(&r.model, 0, View::Plan, None);
-    assert!(notes.iter().all(|n| n.kind == Kind::Object));
+    assert!(
+        notes
+            .iter()
+            .all(|n| n.kind == Kind::Object || n.kind == Kind::Structure)
+    );
+    assert!(notes.iter().any(|n| n.kind == Kind::Structure));
     let texts: Vec<&str> = notes.iter().map(|n| n.text.as_str()).collect();
     assert!(texts.contains(&"T2 — angle tower"), "{texts:?}");
     assert!(texts.contains(&"S1 — glass, 2019"), "{texts:?}");
@@ -11992,11 +12036,24 @@ fn labels_are_one_per_section_and_near_only() {
         model.line.sections.len(),
         "one label per section"
     );
-    // Far from everything: nothing built; near the first structure: some.
+    // Far from everything: only the structures' names (written from
+    // afar); near the first structure: its other labels too.
     let s = model.line.structures[0].position;
     let far = Some(([s[0] + 1e6, s[1], s[2]], 1500.0));
     assert!(notes(&model, 0, View::ThreeD, far).is_empty());
-    assert!(object_notes(&model, 0, View::ThreeD, far).is_empty());
+    let names = object_notes(&model, 0, View::ThreeD, far);
+    assert_eq!(names.len(), model.line.structures.len());
+    assert!(
+        names
+            .iter()
+            .all(|n| n.kind == crate::annotations::Kind::Structure)
+    );
+    model.section_display.point_label[View::ThreeD as usize] = true;
+    assert_eq!(
+        object_notes(&model, 0, View::ThreeD, far).len(),
+        model.line.structures.len(),
+        "points' labels near only"
+    );
     let near = Some((s, 50.0));
     assert!(!object_notes(&model, 0, View::ThreeD, near).is_empty());
     assert_eq!(

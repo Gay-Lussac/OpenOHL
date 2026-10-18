@@ -16,6 +16,17 @@ use ols_render::lod::LodRule;
 
 use crate::scene::Layer;
 
+/// How much longer a line code's dashes are drawn at levels 0, 1 and 2
+/// (phases' line codes, sections not solved): a dash of a metre and a
+/// half is not seen kilometres away, and a long line has thousands of
+/// them per span.
+pub const DASH_SCALE: [f64; 3] = [1.0, 4.0, 16.0];
+
+/// A body on a wire (a marker ball) at level 1: a dot this big, px (its
+/// shape at level 0; clamps, bare points and jumpers' support clamps are
+/// drawn at level 0 only).
+pub const BODY_DOT_PX: f32 = 4.0;
+
 /// The layers drawn in chunks with levels of detail.
 pub const CHUNKED: [Layer; 8] = [
     Layer::Ground,
@@ -72,7 +83,9 @@ impl DetailKind {
         match (self, level) {
             (DetailKind::Spacing, 0) => "every triangle".into(),
             (DetailKind::Percent, 0) => "every point".into(),
-            (DetailKind::PerSpan, 0) => "every point, bundles as subconductors".into(),
+            (DetailKind::PerSpan, 0) => {
+                "every point, bundles as subconductors, clamps and bodies to their shape".into()
+            }
             (DetailKind::Structure, 0) => "lattice, arms and strings".into(),
             (DetailKind::Tolerance, 0) => "every vertex and point".into(),
             (DetailKind::Tolerance, _) => format!(
@@ -80,7 +93,11 @@ impl DetailKind {
             ),
             (DetailKind::Structure, 1) => "mast, arms and strings".into(),
             (DetailKind::Structure, _) => "mast line".into(),
-            (DetailKind::PerSpan, _) => format!("{value:.0} points per span, one line per bundle"),
+            (DetailKind::PerSpan, level) => format!(
+                "{value:.0} points per span, one line per bundle, line codes {}× longer{}",
+                DASH_SCALE[level.min(2)],
+                if level == 1 { ", bodies as dots" } else { "" }
+            ),
             (k, _) => format!("{value} {}", k.unit()),
         }
     }
