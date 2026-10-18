@@ -822,7 +822,7 @@ impl StructureApp {
         };
         if listing.missing.is_empty() {
             ui.colored_label(
-                egui::Color32::LIGHT_GREEN,
+                crate::app::ok_color(ui),
                 "Every library the structure names is there.",
             );
         } else {

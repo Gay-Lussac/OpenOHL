@@ -478,7 +478,7 @@ impl StructureApp {
                 ui.label(egui::RichText::new(p.display().to_string()).weak().small());
             }
             if f.dirty() {
-                ui.colored_label(egui::Color32::YELLOW, "* unsaved");
+                ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
         });
         if let Some(text) = self.loads.placed_title() {
@@ -647,13 +647,24 @@ impl StructureApp {
     }
 }
 
-/// An error in red; long ones scroll in a box of fixed height, so the
-/// window and its buttons stay in reach.
+/// The colour of a good result (nothing wrong): a green readable on the
+/// dark and the light theme (errors and warnings take the theme's own
+/// colours), as in OHL-Design.
+pub(crate) fn ok_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::LIGHT_GREEN
+    } else {
+        egui::Color32::from_rgb(0, 120, 40)
+    }
+}
+
+/// An error in the theme's error colour; long ones scroll in a box of
+/// fixed height, so the window and its buttons stay in reach.
 pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
     let text: egui::RichText = text.into();
     let raw = text.text();
     if raw.len() <= 300 && raw.lines().count() <= 4 {
-        ui.colored_label(egui::Color32::LIGHT_RED, text);
+        ui.colored_label(ui.visuals().error_fg_color, text);
         return;
     }
     let id = egui::Id::new(("error", raw.len(), raw.lines().next().unwrap_or("")));
@@ -662,7 +673,7 @@ pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
             .id_salt(id)
             .max_height(120.0)
             .auto_shrink([false, true])
-            .show(ui, |ui| ui.colored_label(egui::Color32::LIGHT_RED, text));
+            .show(ui, |ui| ui.colored_label(ui.visuals().error_fg_color, text));
     });
 }
 
@@ -739,7 +750,7 @@ impl StructureApp {
             if error {
                 error_label(ui, text);
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, text);
+                ui.colored_label(crate::app::ok_color(ui), text);
             }
         });
     }

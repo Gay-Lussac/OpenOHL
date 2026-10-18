@@ -440,7 +440,7 @@ impl StructureApp {
         let lacks = p.missing_for_design();
         if lacks.is_empty() {
             ui.colored_label(
-                egui::Color32::LIGHT_GREEN,
+                crate::app::ok_color(ui),
                 "The pole check can read the pole (level 3).",
             );
         } else {

@@ -348,7 +348,7 @@ impl StructureApp {
         let stale = self.results.results.is_some() && self.results.ran_on != key;
         if stale {
             ui.colored_label(
-                egui::Color32::from_rgb(255, 170, 60),
+                ui.visuals().warn_fg_color,
                 "The file or the load table changed since: run again for results of them.",
             );
         }
@@ -435,7 +435,7 @@ impl StructureApp {
                                 }
                             },
                             Err(e) => {
-                                ui.colored_label(egui::Color32::LIGHT_RED, e);
+                                ui.colored_label(ui.visuals().error_fg_color, e);
                             }
                         }
                     });
@@ -506,9 +506,9 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
                     ui.strong("equilibrium");
                     ui.colored_label(
                         if ok {
-                            egui::Color32::LIGHT_GREEN
+                            crate::app::ok_color(ui)
                         } else {
-                            egui::Color32::LIGHT_RED
+                            ui.visuals().error_fg_color
                         },
                         format!("out of balance {:.3} N", r.imbalance()),
                     );
@@ -527,7 +527,7 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
                     ui.end_row();
                 });
             for n in &r.notes {
-                ui.colored_label(egui::Color32::from_rgb(255, 170, 60), n);
+                ui.colored_label(ui.visuals().warn_fg_color, n);
             }
             egui::CollapsingHeader::new(format!("Reactions ({})", r.reactions.len()))
                 .id_salt("reactions")
