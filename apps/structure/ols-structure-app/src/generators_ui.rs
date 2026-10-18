@@ -189,7 +189,7 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                         });
                     ui.checkbox(&mut panel.horizontal, "");
                     if ui
-                        .add_enabled(n > 1, egui::Button::new("✕"))
+                        .add_enabled(n > 1, egui::Button::new("×"))
                         .on_hover_text("Remove this panel")
                         .clicked()
                     {

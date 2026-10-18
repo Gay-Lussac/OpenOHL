@@ -29,7 +29,7 @@ use toml_edit::DocumentMut;
 pub use ols_structure_edit::{Geometry, Handle, Removal, geometry};
 
 /// The label of the button opening the structure application.
-pub const EDIT_IN_APP: &str = "Edit in the structure application…";
+pub const EDIT_IN_APP: &str = "Open this type in OHL-Structure…";
 
 /// The 3D view's name (for screen readers and tests).
 pub const VIEW_LABEL: &str = "Pylon in 3D";
@@ -285,7 +285,7 @@ impl Workspace {
                     .on_hover_text(
                         "The body (joints, members, sections, materials, supports, generators, \
                          pole, extensions) and its design (load cases, analysis) are edited \
-                         in the structure application, a window of its own; saved there, the \
+                         in OHL-Structure, a window of its own; saved there, the \
                          line follows",
                     )
                     .clicked()
@@ -311,7 +311,7 @@ impl Workspace {
             if *error {
                 crate::menu::error_label(ui, text);
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, text);
+                ui.colored_label(crate::menu::ok_color(ui), text);
             }
         }
         changed |= self.confirm_ui(ui, doc, &t);

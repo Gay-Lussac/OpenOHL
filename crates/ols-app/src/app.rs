@@ -53,11 +53,14 @@ pub enum Tab {
     PhaseDistance,
     /// Checks › Performed checks.
     CheckLibrary,
+    /// What the line still needs, each step a link ([`crate::next_steps`]).
+    NextSteps,
 }
 
 impl Tab {
     /// The pages of the View menu (library pages: the Libraries menu).
-    pub const VIEWS: [Tab; 8] = [
+    pub const VIEWS: [Tab; 9] = [
+        Tab::NextSteps,
         Tab::View3d,
         Tab::Plan,
         Tab::Profile,
@@ -92,6 +95,7 @@ impl Tab {
             Tab::StructureEditor => "Structure editor",
             Tab::PhaseDistance => "Distance between conductors",
             Tab::CheckLibrary => "Performed checks",
+            Tab::NextSteps => "Next steps",
         }
     }
 }
@@ -326,6 +330,9 @@ pub struct Ready {
     pub menu_open: bool,
     /// Table pages opened.
     pub tables: std::collections::BTreeMap<crate::tables::TableKind, crate::tables::TablePage>,
+    /// The line had structures when the plan last fitted: the first ones
+    /// of an empty line fit it again (the 3D view does the same).
+    plan_on_line: bool,
 }
 
 impl Ready {
@@ -432,6 +439,7 @@ impl Ready {
                 && model.can_edit().is_ok())
             .then(|| ("route 1".to_owned(), String::new())),
             menu_open: false,
+            plan_on_line: !model.line.structures.is_empty(),
             clearances: crate::clearance::Clearances::new(&model, model.sources.rules.as_deref()),
             model,
         }
@@ -505,6 +513,10 @@ pub struct App {
     confirm_discard: Option<crate::files::FileAction>,
     /// The "Customize the quick bar" window is open.
     customize: bool,
+    /// Help › About is open.
+    pub about: bool,
+    /// What the Help menu said without a project (a page not opened).
+    help_status: Option<(String, bool)>,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -516,7 +528,11 @@ pub fn default_dock() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::View3d, Tab::Plan]);
     let tree = dock.main_surface_mut();
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
-    let [centre, _] = tree.split_left(centre, 0.2, vec![Tab::Model, Tab::Clearances]);
+    let [centre, _] = tree.split_left(
+        centre,
+        0.2,
+        vec![Tab::Model, Tab::Clearances, Tab::NextSteps],
+    );
     tree.split_below(centre, 0.66, vec![Tab::Profile]);
     dock
 }
@@ -565,6 +581,8 @@ impl App {
             new_project: None,
             confirm_discard: None,
             customize: false,
+            about: false,
+            help_status: None,
         }
     }
 
@@ -709,7 +727,12 @@ impl App {
         }
         if matches!(
             action,
-            FileAction::Open(_) | FileAction::Close | FileAction::Quit | FileAction::New
+            FileAction::Open(_)
+                | FileAction::Close
+                | FileAction::Quit
+                | FileAction::New
+                | FileAction::NewStarter
+                | FileAction::OpenExample
         ) {
             self.stop_hosting();
         }
@@ -746,6 +769,26 @@ impl App {
                 }
             }
             FileAction::New => self.new_project = Some(Default::default()),
+            FileAction::NewStarter => self.new_project = Some(crate::files::NewProject::starter()),
+            FileAction::OpenExample => {
+                if let Some(dir) = rfd::FileDialog::new()
+                    .set_title("Folder for a copy of the example")
+                    .pick_folder()
+                {
+                    match crate::files::copy_example(&dir) {
+                        Ok(s) => self.start(
+                            Sources {
+                                file: s.file,
+                                terrain: s.terrain,
+                                weather: s.weather,
+                                ..self.template.clone()
+                            },
+                            ctx,
+                        ),
+                        Err(e) => self.state = State::Failed(e),
+                    }
+                }
+            }
             FileAction::Open(path) => {
                 if let Some(file) = path.or_else(crate::files::pick_file) {
                     self.start(
@@ -1011,6 +1054,8 @@ impl App {
             new_project: None,
             confirm_discard: None,
             customize: false,
+            about: false,
+            help_status: None,
         }
     }
 
@@ -1192,6 +1237,10 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Clearances => {
                 clearance_panel(ui, r);
+                None
+            }
+            Tab::NextSteps => {
+                egui::ScrollArea::vertical().show(ui, |ui| crate::next_steps::ui(ui, r));
                 None
             }
             Tab::StructureEditor => {
@@ -2327,6 +2376,19 @@ impl Ready {
     /// status follow.
     fn alignment_drafted(&mut self) {
         self.update_draft();
+        // The first point of an empty line: the views go to it (it would
+        // be out of sight where the empty views look).
+        if self.new_alignment.len() == 1
+            && self.model.line.alignments.is_empty()
+            && self.model.line.structures.is_empty()
+        {
+            let p = self.new_alignment[0].position;
+            if let Some(cam) = self.view3d.camera.as_mut() {
+                cam.target = p;
+                cam.distance = cam.distance.clamp(150.0, 600.0);
+            }
+            self.plan.centre_on(p);
+        }
         let text = if self.reroute {
             format!(
                 "Edit alignment: from {} through {} new point(s) — right-click the next, or another point of the alignment to join it there; Enter at an end: add them there; Backspace: undo a point, Escape: cancel",
@@ -2837,7 +2899,7 @@ impl Ready {
             Err(e) => {
                 log::info!("structure application: {e}");
                 self.structure_apps.reports.push(crate::structure_app::Report {
-                    title: "The structure application was not started".into(),
+                    title: "OHL-Structure was not started".into(),
                     text: format!("{e}: the structure type's file was not read (Structures › Structure library)."),
                     error: true,
                 });
@@ -2874,11 +2936,11 @@ impl Ready {
                 Ok(()) => (
                     match whose {
                         Some(s) => format!(
-                            "structure {id} opened in the structure application with the loads \
+                            "structure {id} opened in OHL-Structure with the loads \
                              of {s}: saved there, the line follows"
                         ),
                         None => format!(
-                            "structure {id} opened in the structure application: saved there, \
+                            "structure {id} opened in OHL-Structure: saved there, \
                              the line follows"
                         ),
                     },
@@ -2948,7 +3010,7 @@ impl Ready {
             if page.dirty() {
                 self.status = Some((
                     format!(
-                        "structure {id} was saved in the structure application; the Structure \
+                        "structure {id} was saved in OHL-Structure; the Structure \
                          types page has changes of its own (Discard to see the saved file)"
                     ),
                     true,
@@ -4392,6 +4454,12 @@ fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
 }
 
 fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgpu::RenderState>) {
+    // The first structures of an empty line: the plan fits them.
+    let on_line = !r.model.line.structures.is_empty();
+    if on_line && !r.plan_on_line {
+        r.plan.refit();
+    }
+    r.plan_on_line = on_line;
     // At the bottom of the 3D view, only while it is shown (and while the
     // inventory arranges it).
     let shown = r.view3d.drawn;
@@ -4850,7 +4918,7 @@ fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
 /// section ends at a jumper.
 const PULL_COST: &str = "measured: about 3× the time of the estimate on a test line (31 \
     sections, 21 at 15 jumpers), about 5× on an existing line where nearly every section ends at \
-    a jumper (554 sections, 518 jumpers, 99 weather cases: 32 s → 158 s, the sections over the \
+    a jumper (554 sections, 518 jumpers, 99 weather cases: 32 s ➡ 158 s, the sections over the \
     cores); sections away from jumpers are not solved again.";
 
 /// Criteria › Default values: what new objects start with, for the
@@ -5573,7 +5641,7 @@ fn survey_window(ctx: &egui::Context, r: &mut Ready) {
                     revert = true;
                 }
                 if pending {
-                    ui.colored_label(egui::Color32::YELLOW, "changes not applied");
+                    ui.colored_label(ui.visuals().warn_fg_color, "changes not applied");
                 }
             });
         });
@@ -5815,7 +5883,7 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
             crate::menu::message(
                 ui,
                 egui::RichText::new(circuit_warning(mates)).small(),
-                Some(egui::Color32::YELLOW),
+                Some(ui.visuals().warn_fg_color),
             );
         }
         if let Some((text, true)) = &r.status {
@@ -6427,7 +6495,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         None => {}
     }
     if c.stale && !c.running() && c.report.is_some() {
-        ui.colored_label(egui::Color32::YELLOW, "out of date: the model changed");
+        ui.colored_label(ui.visuals().warn_fg_color, "out of date: the model changed");
     }
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
@@ -6443,9 +6511,9 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 rep.took
             );
             if n == 0 {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, head);
+                ui.colored_label(crate::menu::ok_color(ui), head);
             } else {
-                ui.colored_label(egui::Color32::from_rgb(255, 120, 100), head);
+                ui.colored_label(ui.visuals().error_fg_color, head);
             }
             for (rule, text) in &rep.rules {
                 ui.label(egui::RichText::new(format!("{rule}: {text}")).small());
@@ -6690,6 +6758,7 @@ fn menus(
     dock: &mut DockState<Tab>,
     out: &mut Vec<crate::menu::Command>,
     customize: &mut bool,
+    about: &mut bool,
 ) {
     use crate::menu::Command;
     let item = |ui: &mut egui::Ui, c: Command, out: &mut Vec<Command>| {
@@ -6981,7 +7050,7 @@ fn menus(
             .button("Compute structure loads")
             .on_hover_text(
                 "The loads on the structures at every attachment, in each load case \
-                 (Criteria › Load cases)",
+                 (Criteria › Load cases library)",
             )
             .clicked()
         {
@@ -7172,17 +7241,27 @@ fn menus(
         }
     });
     ui.menu_button("Help", |ui| {
-        ui.horizontal(|ui| {
-            ui.add(crate::icons::mark(ui.ctx(), 32.0));
-            ui.label(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION")));
-        });
-        ui.label(
-            egui::RichText::new(
-                "The line application of OpenOHL: sag-tension, clearances, line layout",
+        crate::help::manual_entries(ui, &mut r.status);
+        if ui
+            .button(format!("About {}", crate::APP_NAME))
+            .on_hover_text("Its version, what it is, its licence")
+            .clicked()
+        {
+            *about = true;
+            ui.close();
+        }
+        ui.separator();
+        if ui
+            .button("Next steps")
+            .on_hover_text(
+                "What a line still needs, computed from the project: each step a link to \
+                 where it is done",
             )
-            .small()
-            .weak(),
-        );
+            .clicked()
+        {
+            r.open_page = Some((Tab::NextSteps, None));
+            ui.close();
+        }
         ui.menu_button("Controls", |ui| {
             for page in ControlsPage::ALL {
                 if ui
@@ -7346,7 +7425,7 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                     c.case.name,
                     c.failed.len()
                 ))
-                .color(egui::Color32::LIGHT_RED),
+                .color(ui.visuals().error_fg_color),
             )
             .id_salt(("failed", k))
             .default_open(c.failed.len() <= 10)
@@ -7368,11 +7447,17 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
             r.go_to_failure(k, &id);
         }
         ui.separator();
-        ui.label(egui::RichText::new("Loaded").strong());
         ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
-        for l in &r.model.log {
-            ui.label(egui::RichText::new(l).small());
-        }
+        // What was read when the project opened: folded (a long list of
+        // files and libraries).
+        egui::CollapsingHeader::new(format!("Loaded ({} lines)", r.model.log.len()))
+            .id_salt("load-log")
+            .default_open(false)
+            .show(ui, |ui| {
+                for l in &r.model.log {
+                    ui.label(egui::RichText::new(l).small());
+                }
+            });
     });
 }
 
@@ -7445,6 +7530,10 @@ impl eframe::App for App {
                     ready.view3d.controls = self.controls.clone();
                     ready.snaps = self.snaps.clone();
                     ready.hotbar = self.hotbar.clone();
+                    // A line without structures yet: what it needs next.
+                    if ready.model.line.structures.is_empty() {
+                        open_page(&mut self.dock, Tab::NextSteps);
+                    }
                     self.state = State::Ready(Box::new(ready));
                 }
                 Some(Err(e)) => self.state = State::Failed(e),
@@ -7466,6 +7555,21 @@ impl eframe::App for App {
                         &mut self.file_action,
                         |_| {},
                     );
+                    ui.menu_button("Help", |ui| {
+                        crate::help::manual_entries(ui, &mut self.help_status);
+                        if ui.button(format!("About {}", crate::APP_NAME)).clicked() {
+                            self.about = true;
+                            ui.close();
+                        }
+                    });
+                    if let Some((text, error)) = &self.help_status {
+                        let t = egui::RichText::new(text).small();
+                        if *error {
+                            crate::menu::error_label(ui, t);
+                        } else {
+                            ui.label(t.weak());
+                        }
+                    }
                 });
             });
         }
@@ -7583,6 +7687,7 @@ impl eframe::App for App {
                             &mut self.dock,
                             &mut commands,
                             &mut self.customize,
+                            &mut self.about,
                         );
                     });
                     ui.horizontal(|ui| {
@@ -7728,6 +7833,10 @@ impl eframe::App for App {
                         ready.model.sources.file.clone(),
                     )));
                 }
+                if let Some(tab) = crate::menu::take_page_request(&ctx) {
+                    ready.release_mouse = true;
+                    open_page(&mut self.dock, tab);
+                }
                 if let Some((tab, filter)) = ready.open_page.take() {
                     open_page(&mut self.dock, tab);
                     if let (Tab::Table(k), Some(f)) = (tab, filter) {
@@ -7762,6 +7871,16 @@ impl eframe::App for App {
                             );
                     });
             }
+        }
+        if self.about {
+            let mut open = true;
+            egui::Window::new(format!("About {}", crate::APP_NAME))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .default_width(420.0)
+                .show(&ctx, crate::help::about_ui);
+            self.about = open;
         }
         // The File menu's windows and actions.
         self.share_windows(&ctx);

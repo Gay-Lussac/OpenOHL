@@ -37,6 +37,7 @@ mod edit;
 mod editors;
 mod files;
 mod galloping;
+mod help;
 mod icons;
 mod job;
 mod library;
@@ -44,6 +45,7 @@ mod loads;
 mod lod;
 mod menu;
 mod model;
+mod next_steps;
 mod octree;
 mod perf;
 mod phase_distance;
@@ -62,6 +64,7 @@ mod scene;
 mod selection;
 mod span_tool;
 mod spot;
+mod starter;
 mod structure_app;
 mod structure_desk;
 mod structure_picker;
@@ -90,7 +93,11 @@ pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
 #[cfg(test)]
 mod bench;
 #[cfg(test)]
+mod glyph_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ux_tests;
 
 /// OHL-Design, the line application of OpenOHL — view and edit a line
 /// model in 3D, plan and profile.

@@ -472,7 +472,7 @@ pub fn object_notes(
             if tops {
                 out.push(note(
                     [0, 1, 2].map(|k| a[k] + 0.15 * (b[k] - a[k])),
-                    format!("{} top → {}", x.label, x.top),
+                    format!("{} top ➡ {}", x.label, x.top),
                     [150, 230, 150],
                 ));
             }

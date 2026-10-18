@@ -677,7 +677,7 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
     ui.horizontal(|ui| {
         match &r.closed {
             Some(why) => ui.colored_label(
-                egui::Color32::LIGHT_RED,
+                ui.visuals().error_fg_color,
                 format!("disconnected: {why} (read-only)"),
             ),
             None => ui.label(format!(

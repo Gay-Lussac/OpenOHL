@@ -15,6 +15,11 @@ use eframe::egui;
 pub enum FileAction {
     /// The New project window.
     New,
+    /// The New project window, the starter template chosen.
+    NewStarter,
+    /// A copy of the example line (`examples/synthetic-line`) in a folder
+    /// chosen, opened.
+    OpenExample,
     /// Open a file: this one, or one chosen in a file dialog.
     Open(Option<PathBuf>),
     /// Close the file open.
@@ -132,6 +137,14 @@ pub fn file_menu(
             ui.close();
         }
         if ui
+            .button("New project from the starter template…")
+            .on_hover_text(Template::Starter.about())
+            .clicked()
+        {
+            *action = Some(FileAction::NewStarter);
+            ui.close();
+        }
+        if ui
             .add(egui::Button::new("Open…").shortcut_text(cmd("O")))
             .on_hover_text("Open a project (.ols) or a line file (.ols.json)")
             .clicked()
@@ -156,6 +169,14 @@ pub fn file_menu(
                 }
             });
         });
+        if ui
+            .button("Open the example (copy)…")
+            .on_hover_text(EXAMPLE_TIP)
+            .clicked()
+        {
+            *action = Some(FileAction::OpenExample);
+            ui.close();
+        }
         if ui
             .button("New project from another program…")
             .on_hover_text(
@@ -245,7 +266,31 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         ui.heading(crate::APP_NAME);
         ui.label(egui::RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).weak());
         ui.add_space(20.0);
-        if ui.button("New project…").clicked() {
+        ui.label(egui::RichText::new("New to OpenOHL?").strong());
+        if ui
+            .button("New project from the starter template…")
+            .on_hover_text(Template::Starter.about())
+            .clicked()
+        {
+            *action = Some(FileAction::NewStarter);
+        }
+        if ui.button("Open the example (copy)…").on_hover_text(EXAMPLE_TIP).clicked() {
+            *action = Some(FileAction::OpenExample);
+        }
+        ui.label(
+            egui::RichText::new(
+                "Help › Start from scratch: the tutorial, from the starter template to a strung \
+                 line",
+            )
+            .small()
+            .weak(),
+        );
+        ui.add_space(12.0);
+        if ui
+            .button("New project…")
+            .on_hover_text("An empty project, or from the starter template")
+            .clicked()
+        {
             *action = Some(FileAction::New);
         }
         if ui.button("Open…").clicked() {
@@ -318,7 +363,7 @@ impl ImportProjectWindow {
             .show(ctx, |ui| {
                 if formats.is_empty() {
                     ui.colored_label(
-                        egui::Color32::LIGHT_RED,
+                        ui.visuals().error_fg_color,
                         "No project format: install a project plugin (Plugins › Plugin manager).",
                     );
                 }
@@ -410,13 +455,102 @@ impl ImportProjectWindow {
     }
 }
 
+/// What a new project starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Template {
+    /// Nothing: an empty line and empty libraries.
+    #[default]
+    Empty,
+    /// The starter template: example libraries for learning, no line yet
+    /// ([`crate::starter`]).
+    Starter,
+}
+
+impl Template {
+    /// Name in the New project window.
+    pub fn name(self) -> &'static str {
+        match self {
+            Template::Empty => "Empty project",
+            Template::Starter => "Starter template (for learning)",
+        }
+    }
+
+    /// What it holds, under its name.
+    pub fn about(self) -> &'static str {
+        match self {
+            Template::Empty => {
+                "An empty line and empty libraries: add cables, structure types and weather \
+                 cases from the library pages (e.g. Sections › Wires library › Browse…)."
+            }
+            Template::Starter => {
+                "Example libraries with invented values, clearly marked: cables, two \
+                 structure types, pylon templates, insulators, weather and load cases, \
+                 clearance rules, and survey points of invented ground beside the project. \
+                 No route, alignment, structure or wire: Help › Start from scratch builds them."
+            }
+        }
+    }
+}
+
+/// The hover text of "Open the example (copy)".
+pub const EXAMPLE_TIP: &str = "A copy of the example line (examples/synthetic-line: invented \
+     coordinates and values) in a folder you choose, opened with its ground and weather cases: \
+     change it freely, the example itself stays as it is";
+
+/// The example line's folder in the source tree.
+pub const EXAMPLE: &str = "examples/synthetic-line";
+
+/// Copies the example line into a new folder in `into` (named after it,
+/// numbered when taken) and returns what to open: the line file with its
+/// survey points and weather cases.
+pub fn copy_example(into: &Path) -> Result<crate::model::Sources, String> {
+    let from = crate::help::shipped(EXAMPLE)
+        .ok_or_else(|| format!("the example ({EXAMPLE}) is not on this computer"))?;
+    let mut to = into.join("synthetic-line-example");
+    let mut k = 2;
+    while to.exists() {
+        to = into.join(format!("synthetic-line-example-{k}"));
+        k += 1;
+    }
+    copy_dir(&from, &to)?;
+    Ok(crate::model::Sources {
+        file: to.join("synthetic-line.ols.json"),
+        terrain: Some(to.join("synthetic-survey.csv")),
+        weather: Some(to.join("weather-cases.olswc")),
+        ..Default::default()
+    })
+}
+
+/// Copies the folder `from` (its files and folders) to the new folder
+/// `to`.
+fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+    let entries = std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    for e in entries {
+        let e = e.map_err(|e| e.to_string())?;
+        let p = e.path();
+        let target = to.join(e.file_name());
+        if p.is_dir() {
+            copy_dir(&p, &target)?;
+        } else {
+            std::fs::copy(&p, &target).map_err(|e| format!("{}: {e}", target.display()))?;
+        }
+    }
+    Ok(())
+}
+
 /// The New project window's values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct NewProject {
     /// Name of the line.
     pub name: String,
-    /// Coordinate system, e.g. `EPSG:2056`.
-    pub crs: String,
+    /// What the project starts with.
+    pub template: Template,
+    /// Local coordinates (plane, metres, no geographic reference) instead
+    /// of a coordinate system of the list.
+    pub local: bool,
+    /// The coordinate system chosen (searchable EPSG list, proj4, PRJ).
+    pub picker: crate::crs::Picker,
     /// Why the last attempt failed.
     pub error: Option<String>,
 }
@@ -425,13 +559,39 @@ impl Default for NewProject {
     fn default() -> Self {
         Self {
             name: "New line".into(),
-            crs: "EPSG:2056".into(),
+            template: Template::Empty,
+            local: true,
+            picker: crate::crs::Picker::new(""),
             error: None,
         }
     }
 }
 
+/// The coordinate system of a project in local coordinates.
+pub const LOCAL_CRS: &str = "local";
+
+/// Width of the New project window's fields, points.
+const FIELD_WIDTH: f32 = 260.0;
+
 impl NewProject {
+    /// The window for a project from the starter template.
+    pub fn starter() -> Self {
+        Self {
+            name: "My first line".into(),
+            template: Template::Starter,
+            ..Self::default()
+        }
+    }
+
+    /// The coordinate system chosen, as the line keeps it, or why none
+    /// is.
+    pub fn crs(&self) -> Result<String, String> {
+        if self.local {
+            return Ok(LOCAL_CRS.into());
+        }
+        self.picker.crs().map(|c| c.name().to_owned())
+    }
+
     /// The window; `Some(path)` once the project file is created there.
     pub fn ui(&mut self, ctx: &egui::Context, open: &mut bool) -> Option<PathBuf> {
         let mut created = None;
@@ -439,20 +599,72 @@ impl NewProject {
             .open(open)
             .collapsible(false)
             .resizable(false)
+            .default_width(560.0)
             .show(ctx, |ui| {
-                egui::Grid::new("new-project").show(ui, |ui| {
-                    ui.label("Line name");
-                    ui.text_edit_singleline(&mut self.name);
-                    ui.end_row();
-                    ui.label("Coordinate system");
-                    ui.text_edit_singleline(&mut self.crs)
-                        .on_hover_text("e.g. EPSG:2056 (Swiss LV95), EPSG:25832 (UTM 32N)");
-                    ui.end_row();
-                });
+                ui.label(egui::RichText::new("Start from").strong());
+                for t in [Template::Empty, Template::Starter] {
+                    ui.radio_value(&mut self.template, t, t.name());
+                    ui.indent(t.name(), |ui| {
+                        ui.label(egui::RichText::new(t.about()).small().weak());
+                    });
+                }
+                if self.template == Template::Starter && crate::starter::dir().is_none() {
+                    crate::menu::error_label(
+                        ui,
+                        "The starter template (examples/starter) is not on this computer.",
+                    );
+                }
+                ui.separator();
+                egui::Grid::new("new-project")
+                    .num_columns(2)
+                    .spacing([12.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("Line name");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.name).desired_width(FIELD_WIDTH),
+                        );
+                        ui.end_row();
+                        ui.label("Coordinate system");
+                        ui.vertical(|ui| {
+                            ui.radio_value(
+                                &mut self.local,
+                                true,
+                                "Local coordinates (metres, no geographic reference)",
+                            )
+                            .on_hover_text(
+                                "Plane x, y, z in metres: for learning and for lines not tied to \
+                                 a map (set it later: Terrain › Coordinate system › Define)",
+                            );
+                            ui.radio_value(&mut self.local, false, "A coordinate system…")
+                                .on_hover_text(
+                                    "From the EPSG list (search by code or name, e.g. LV95, \
+                                     UTM 32N, 2056), a proj4 string or a .prj file",
+                                );
+                        });
+                        ui.end_row();
+                        ui.label("Units");
+                        ui.label("SI (m, N, °C)");
+                        ui.end_row();
+                    });
+                if !self.local {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        self.picker.ui(ui, "new-project-crs");
+                    });
+                }
+                match self.crs() {
+                    Ok(c) if c == LOCAL_CRS => {
+                        ui.label(egui::RichText::new("Coordinates: local, in metres").small())
+                    }
+                    Ok(c) => ui.label(
+                        egui::RichText::new(format!("Coordinates: {}", ols_crs::describe(&c)))
+                            .small(),
+                    ),
+                    Err(e) => crate::menu::error_label(ui, e),
+                };
                 ui.label(
                     egui::RichText::new(
-                        "The project starts with an empty line; you are its admin. Its \
-                         libraries are taken from the default folders and kept in it.",
+                        "The project file (.ols) keeps the line and its libraries; you are its \
+                         admin.",
                     )
                     .small()
                     .weak(),
@@ -460,13 +672,20 @@ impl NewProject {
                 if let Some(e) = &self.error {
                     crate::menu::error_label(ui, e);
                 }
-                if ui.button("Choose where to save it and create…").clicked()
+                let crs = self.crs();
+                if ui
+                    .add_enabled(
+                        crs.is_ok(),
+                        egui::Button::new("Choose where to save it and create…"),
+                    )
+                    .clicked()
+                    && let Ok(crs) = crs
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("OpenOHL project", &["ols"])
                         .set_file_name(format!("{}.ols", self.name.trim()))
                         .save_file()
                 {
-                    match create_project(&path, &self.name, &self.crs, &user()) {
+                    match create_project_from(&path, &self.name, &crs, &user(), self.template) {
                         Ok(p) => created = Some(p),
                         Err(e) => self.error = Some(e),
                     }
@@ -487,6 +706,19 @@ pub fn user() -> String {
 /// in `crs`, `user` its admin; refuses to replace a file. Returns the
 /// path with its extension.
 pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<PathBuf, String> {
+    create_project_from(path, name, crs, user, Template::Empty)
+}
+
+/// [`create_project`] with what the project starts with: the starter
+/// template's libraries kept in it (and its pylon templates and survey
+/// points beside it), or nothing.
+pub fn create_project_from(
+    path: &Path,
+    name: &str,
+    crs: &str,
+    user: &str,
+    template: Template,
+) -> Result<PathBuf, String> {
     let path = path.with_extension("ols");
     let name = name.trim();
     if name.is_empty() {
@@ -498,6 +730,13 @@ pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<
             path.display()
         ));
     }
+    let starter =
+        match template {
+            Template::Empty => None,
+            Template::Starter => Some(crate::starter::dir().ok_or(
+                "the starter template (examples/starter) is not on this computer".to_owned(),
+            )?),
+        };
     let line: ols_line::Line = serde_json::from_value(serde_json::json!({
         "name": name,
         "crs": crs.trim(),
@@ -507,10 +746,13 @@ pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<
     .map_err(|e| e.to_string())?;
     let mut session = ols_session::Session::open(&path).map_err(|e| e.to_string())?;
     session.import(&line, user).map_err(|e| e.to_string())?;
-    // Libraries of its own, empty: none copied in from around it.
+    // Libraries of its own: none copied in from around it.
     session
         .set_setting(crate::model::OWN_LIBRARIES_SETTING, Some("1"))
         .map_err(|e| e.to_string())?;
+    if let Some(dir) = starter {
+        crate::starter::fill(&mut session, &path, user, &dir)?;
+    }
     session.checkpoint().map_err(|e| e.to_string())?;
     Ok(path)
 }

@@ -106,11 +106,11 @@ impl Tool {
             Tool::AddString => "⛓",
             Tool::StringWire => "≈",
             Tool::AddAlignment => "⛶",
-            Tool::NewAlignment => "⤳",
-            Tool::EditAlignment => "⤲",
+            Tool::NewAlignment => "↗",
+            Tool::EditAlignment => "↪",
             Tool::AddJumper => "Ψ",
-            Tool::OnSpan => "⊙",
-            Tool::Replace => "⇄",
+            Tool::OnSpan => "◎",
+            Tool::Replace => "⬌",
         }
     }
 
@@ -245,28 +245,49 @@ pub struct Hotbar {
 
 impl Default for Hotbar {
     fn default() -> Self {
-        let mut slots = [None; 9];
-        // The first nine; the others wait in the inventory.
-        for (k, t) in Tool::ALL.into_iter().take(9).enumerate() {
-            slots[k] = Some(t);
-        }
+        // The tools of a first line, New alignment among them; the others
+        // (Add alignment point, Edit alignment, Add jumper, Add on span,
+        // Replace structure) wait in the inventory.
+        let slots = Self::DEFAULT.map(Some);
         Self { slots, active: 0 }
     }
 }
 
 impl Hotbar {
+    /// The slots of a new user's hotbar (a saved hotbar is kept as it is).
+    pub const DEFAULT: [Tool; 9] = [
+        Tool::Select,
+        Tool::Move,
+        Tool::Delete,
+        Tool::GoTo,
+        Tool::Edit,
+        Tool::AddStructure,
+        Tool::AddString,
+        Tool::StringWire,
+        Tool::NewAlignment,
+    ];
+
     /// The active tool (Select for an empty slot).
     pub fn tool(&self) -> Tool {
         self.slots[self.active].unwrap_or(Tool::Select)
     }
 
     /// Makes `tool` active: its slot if it has one; otherwise it goes into
-    /// the active slot.
+    /// an empty slot (the active one when it is empty, else the first
+    /// empty one), else into the last slot — never over the first slot
+    /// (Select) nor over the tool the user holds.
     pub fn hold(&mut self, tool: Tool) {
-        match self.slots.iter().position(|s| *s == Some(tool)) {
-            Some(k) => self.active = k,
-            None => self.slots[self.active] = Some(tool),
+        if let Some(k) = self.slots.iter().position(|s| *s == Some(tool)) {
+            self.active = k;
+            return;
         }
+        let k = if self.slots[self.active].is_none() {
+            self.active
+        } else {
+            self.slots.iter().position(Option::is_none).unwrap_or(8)
+        };
+        self.slots[k] = Some(tool);
+        self.active = k;
     }
 
     /// Moves the active slot by `steps` (wrapping).
@@ -530,6 +551,29 @@ mod tests {
         h.hold(Tool::Move);
         assert_eq!((h.active, h.slots[8]), (8, Some(Tool::Move)));
         h.scroll(1);
+        assert_eq!(h.active, 0);
+    }
+
+    /// New alignment is in a new user's hotbar; holding a tool not in the
+    /// bar never takes the first slot (Select) nor the tool held: an empty
+    /// slot, else the last one.
+    #[test]
+    fn hold_never_overwrites_select() {
+        let mut h = Hotbar::default();
+        assert!(h.slots.contains(&Some(Tool::NewAlignment)));
+        assert_eq!(h.slots[0], Some(Tool::Select));
+        // Full bar, Select held: Replace goes into the last slot.
+        h.hold(Tool::Replace);
+        assert_eq!((h.active, h.slots[0]), (8, Some(Tool::Select)));
+        assert_eq!(h.slots[8], Some(Tool::Replace));
+        // An empty slot is used first.
+        h.active = 0;
+        h.slots[5] = None;
+        h.hold(Tool::OnSpan);
+        assert_eq!((h.active, h.slots[5]), (5, Some(Tool::OnSpan)));
+        assert_eq!(h.slots[0], Some(Tool::Select));
+        // Holding a tool already there only moves to its slot.
+        h.hold(Tool::Select);
         assert_eq!(h.active, 0);
     }
 }

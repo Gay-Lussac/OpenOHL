@@ -256,13 +256,10 @@ impl VegetationWindow {
                                             span: w.span,
                                         });
                                     }
+                                    let error = ui.visuals().error_fg_color;
                                     let red = |n: u64| {
                                         let t = egui::RichText::new(n.to_string()).monospace();
-                                        if n > 0 {
-                                            t.color(egui::Color32::LIGHT_RED)
-                                        } else {
-                                            t
-                                        }
+                                        if n > 0 { t.color(error) } else { t }
                                     };
                                     ui.label(red(r.encroaching));
                                     ui.label(red(r.fall_in));

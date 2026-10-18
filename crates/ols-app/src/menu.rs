@@ -26,6 +26,9 @@ pub fn options_menu<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egu
     }
 }
 
+/// The arrow of the texts ("from → to"): one the default fonts draw.
+pub const ARROW: &str = "➡";
+
 /// Longest text shown whole in a window (characters, lines); longer text
 /// scrolls in a box of [`TEXT_BOX_HEIGHT`].
 const LONG_TEXT: (usize, usize) = (300, 4);
@@ -64,9 +67,49 @@ pub fn message(
         .inner
 }
 
-/// An error in a window, in red; long ones scroll ([`message`]).
+/// An error in a window, in the theme's error colour; long ones scroll
+/// ([`message`]).
 pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) -> egui::Response {
-    message(ui, text, Some(egui::Color32::LIGHT_RED))
+    let color = ui.visuals().error_fg_color;
+    message(ui, text, Some(color))
+}
+
+/// The colour of a good result (nothing found, a check passed): a green
+/// readable on the dark and on the light theme (errors and warnings take
+/// the theme's own colours, `error_fg_color` and `warn_fg_color`).
+pub fn ok_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::LIGHT_GREEN
+    } else {
+        egui::Color32::from_rgb(0, 120, 40)
+    }
+}
+
+/// Asks for page `tab` to be shown (from a window or a page that has no
+/// hold of the dock): the application opens it after the frame.
+pub fn request_page(ctx: &egui::Context, tab: crate::app::Tab) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("request-page"), Some(tab)));
+}
+
+/// The page asked for with [`request_page`], if any (taken).
+pub fn take_page_request(ctx: &egui::Context) -> Option<crate::app::Tab> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Option<crate::app::Tab>>(egui::Id::new("request-page"))
+            .flatten()
+    })
+}
+
+/// A file as the user knows it: a library file of the project by its
+/// name, "(in the project)" — not the working copy's temporary path —,
+/// any other by its path.
+pub fn file_label(model: &crate::model::Model, path: &std::path::Path) -> String {
+    let name = path
+        .file_name()
+        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+    match &model.library_dir {
+        Some(w) if path.starts_with(w) => format!("{name} (in the project)"),
+        _ => path.display().to_string(),
+    }
 }
 
 /// A command of the menus and the quick bar.
@@ -276,13 +319,13 @@ impl QuickBar {
                         ui.label(c.name());
                     });
                     if ui
-                        .add_enabled(k > 0, egui::Button::new("▲").small())
+                        .add_enabled(k > 0, egui::Button::new("⏶").small())
                         .clicked()
                     {
                         swap = Some((k, k - 1));
                     }
                     if ui
-                        .add_enabled(k + 1 < n, egui::Button::new("▼").small())
+                        .add_enabled(k + 1 < n, egui::Button::new("⏷").small())
                         .clicked()
                     {
                         swap = Some((k, k + 1));

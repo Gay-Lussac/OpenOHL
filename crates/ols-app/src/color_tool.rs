@@ -757,7 +757,7 @@ impl ColorTool {
                             ui.horizontal(|ui| {
                                 ui.add_space(26.0);
                                 ui.colored_label(
-                                    egui::Color32::YELLOW,
+                                    ui.visuals().warn_fg_color,
                                     format!("Delete \"{}\"?", e.name),
                                 );
                                 if ui.button("Delete").clicked() {
@@ -938,7 +938,7 @@ impl ColorTool {
         if let Some((file, entries)) = &self.import {
             let text = format!("{} colours in {file}:", entries.len());
             ui.horizontal_wrapped(|ui| {
-                ui.colored_label(egui::Color32::YELLOW, text);
+                ui.colored_label(ui.visuals().warn_fg_color, text);
             });
             let mut choice = None;
             ui.horizontal(|ui| {

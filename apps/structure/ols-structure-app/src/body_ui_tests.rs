@@ -30,10 +30,10 @@ fn a_body_is_generated_grouped_and_undone() {
     assert_eq!(t.detail().level(), 2);
     assert!(h.state().body.form.is_none());
     // One undo step.
-    h.get_by_label("⟲ Undo").click();
+    h.get_by_label("Undo").click();
     h.run();
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
-    h.get_by_label("⟳ Redo").click();
+    h.get_by_label("Redo").click();
     h.run();
     // Crossarms to the two points (off any joint): on the face at 22.5 m
     // and 30 m.

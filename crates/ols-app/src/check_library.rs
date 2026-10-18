@@ -166,7 +166,7 @@ impl CheckLibraryWindow {
                 crate::menu::message(
                     ui,
                     format!("A report \"{}\" exists on this line: replace it?", r.id),
-                    Some(egui::Color32::YELLOW),
+                    Some(ui.visuals().warn_fg_color),
                 );
                 if ui.button("Replace").clicked() {
                     out.apply = Some((format!("imported check report {}", r.id), r.put()));
@@ -185,7 +185,7 @@ impl CheckLibraryWindow {
                         "Delete the report \"{id}\"? It takes nothing else with it (undo brings \
                          it back)."
                     ),
-                    Some(egui::Color32::YELLOW),
+                    Some(ui.visuals().warn_fg_color),
                 );
                 if ui.button("Delete").clicked() {
                     out.apply = Some((format!("deleted check report {id}"), reports::delete(&id)));
@@ -200,7 +200,7 @@ impl CheckLibraryWindow {
             if *error {
                 crate::menu::error_label(ui, m);
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, m);
+                ui.colored_label(crate::menu::ok_color(ui), m);
             }
         }
         let needle = self.filter.trim().to_lowercase();
@@ -321,9 +321,9 @@ impl CheckLibraryWindow {
             .find(|s| s.0 == r.id)
             .map_or(("—".into(), false), |s| (s.1.clone(), s.2));
         ui.label(egui::RichText::new(&text).color(if same {
-            egui::Color32::LIGHT_GREEN
+            crate::menu::ok_color(ui)
         } else {
-            egui::Color32::YELLOW
+            ui.visuals().warn_fg_color
         }));
         ui.label(&r.summary);
         // The note (typed in place, kept when the field is left).

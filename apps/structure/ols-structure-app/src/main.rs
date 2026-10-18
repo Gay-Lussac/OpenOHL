@@ -37,6 +37,7 @@ mod body_tab;
 mod export_menu;
 mod extensions_panel;
 mod generators_ui;
+mod help;
 mod icons;
 mod in_line_tab;
 mod layout;
@@ -69,6 +70,8 @@ use eframe::egui;
 
 #[cfg(test)]
 mod body_ui_tests;
+#[cfg(test)]
+mod glyph_tests;
 #[cfg(test)]
 mod layout_tests;
 #[cfg(test)]

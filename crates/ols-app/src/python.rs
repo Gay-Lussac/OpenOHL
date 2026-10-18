@@ -722,7 +722,7 @@ impl Console {
                         Line::Out(t) => (t.trim_end_matches('\n').to_owned(), None),
                         Line::Err(t) => (
                             t.trim_end_matches('\n').to_owned(),
-                            Some(egui::Color32::LIGHT_RED),
+                            Some(ui.visuals().error_fg_color),
                         ),
                     };
                     let mut rt = egui::RichText::new(text).monospace();
@@ -742,7 +742,7 @@ impl Console {
                 .code_editor()
                 .desired_rows(2)
                 .desired_width(f32::INFINITY)
-                .hint_text("Python — Enter runs, Shift+Enter a new line, ↑ ↓ history"),
+                .hint_text("Python — Enter runs, Shift+Enter a new line, ⬆ ⬇ history"),
         );
         if r.has_focus() {
             let (enter, up, down) = ui.input(|i| {

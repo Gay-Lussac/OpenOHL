@@ -84,7 +84,7 @@ fn a_structure_is_edited_undone_and_saved() {
     h.run();
     assert!(!h.state().dirty());
     // Redo, then Save.
-    h.get_by_label("⟳ Redo").click();
+    h.get_by_label("Redo").click();
     h.run();
     assert!(h.state().dirty());
     h.get_by_label("Save").click();

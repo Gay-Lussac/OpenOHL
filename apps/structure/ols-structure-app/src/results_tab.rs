@@ -355,7 +355,7 @@ impl StructureApp {
         let results = match &self.results.results {
             None => {
                 ui.label(
-                    "Run solves the cases of the load table (Load cases tab) on the structure's \
+                    "Run solves the cases of the load table (Load cases › Load table) on the structure's \
                      finite-element model: a value typed there counts, rows without a value are \
                      left out. Each case runs under a time budget; Cancel stops it.",
                 );

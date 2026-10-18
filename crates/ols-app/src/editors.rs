@@ -393,7 +393,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.label("ends");
-            ui.label(format!("{} → {}", j.from, j.to));
+            ui.label(format!("{} ➡ {}", j.from, j.to));
             ui.end_row();
             ui.label("description");
             ui.add(
@@ -412,6 +412,11 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     }
                 });
             ui.end_row();
+            if model.library.is_empty() {
+                ui.label("");
+                empty_wire_library(ui);
+                ui.end_row();
+            }
             ui.label("given by");
             let mut by = if j.rigid {
                 JumperBy::Rigid
@@ -3001,7 +3006,7 @@ fn structure_ui(
     }
     if types.is_empty() && f.new {
         ui.colored_label(
-            egui::Color32::YELLOW,
+            ui.visuals().warn_fg_color,
             "No structure type in the library yet: without a type the structure has no \
              strings, so no wire can hang on it (only strings added by hand). Make a pylon \
              type first.",
@@ -3116,7 +3121,7 @@ fn structure_ui(
                         );
                     } else if found.is_empty() {
                         ui.colored_label(
-                            egui::Color32::YELLOW,
+                            ui.visuals().warn_fg_color,
                             egui::RichText::new(
                                 "on no alignment: tick its route(s) (or put it on an alignment point)",
                             )
@@ -3150,7 +3155,7 @@ fn structure_ui(
                 }
             });
             if let Some(m) = &f.message {
-                ui.colored_label(egui::Color32::YELLOW, egui::RichText::new(m).small());
+                ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(m).small());
             }
             let points = alignment_points(&model.line);
             let mut on = f.on_alignment.is_some();
@@ -3968,7 +3973,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             };
                             let mut edit = egui::TextEdit::singleline(&mut text).desired_width(90.0);
                             if bad.is_some() {
-                                edit = edit.text_color(egui::Color32::LIGHT_RED);
+                                edit = edit.text_color(ui.visuals().error_fg_color);
                             }
                             let r = ui.add(edit);
                             if let Some(why) = bad {
@@ -4194,6 +4199,33 @@ pub fn describe(s: &Stringing) -> String {
     }
 }
 
+/// Where a cable is chosen and the wire library is empty: says so, with a
+/// button to its page (where cable files are imported or added).
+pub fn empty_wire_library(ui: &mut egui::Ui) {
+    ui.vertical(|ui| {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            "The wire library is empty: no cable to choose.",
+        );
+        if ui
+            .button(OPEN_WIRE_LIBRARY)
+            .on_hover_text(
+                "Sections › Wires library: Browse… for a cable file (.olsw), e.g. \
+                 libraries/cables/acsr-examples.olsw (typical example values), or add one",
+            )
+            .clicked()
+        {
+            crate::menu::request_page(
+                ui.ctx(),
+                crate::app::Tab::Library(crate::library::LibraryKind::Cables),
+            );
+        }
+    });
+}
+
+/// The button of [`empty_wire_library`].
+pub const OPEN_WIRE_LIBRARY: &str = "Open the wires library";
+
 fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize) -> bool {
     let line = &model.line;
     egui::Grid::new("section-form")
@@ -4224,6 +4256,11 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
                     }
                 });
             ui.end_row();
+            if model.library.is_empty() {
+                ui.label("");
+                empty_wire_library(ui);
+                ui.end_row();
+            }
             ui.label("circuit");
             ui.add(egui::TextEdit::singleline(&mut f.circuit).desired_width(200.0));
             ui.end_row();
@@ -4395,7 +4432,7 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
         }
     }
     if let Some(n) = &f.note {
-        ui.colored_label(egui::Color32::YELLOW, n);
+        ui.colored_label(ui.visuals().warn_fg_color, n);
     }
     ui.separator();
     ui.label(format!("{} points:", f.points.len()));
@@ -4404,7 +4441,7 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
         .iter()
         .map(|p| format!("{} set {}", p.structure, p.set))
         .collect();
-    ui.label(egui::RichText::new(text.join(" → ")).small());
+    ui.label(egui::RichText::new(text.join(" ➡ ")).small());
     ui.button("Pick points again")
         .on_hover_text("With the String wire tool: right-click the strings in order, Enter")
         .clicked()
@@ -4475,7 +4512,7 @@ fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Model) {
                 ui.add(egui::DragValue::new(order).range(1..=n.max(1)).prefix("#"))
                     .on_hover_text("Its place along this alignment");
                 if ui
-                    .small_button("✕")
+                    .small_button("×")
                     .on_hover_text("Take it off this alignment (it stays)")
                     .clicked()
                 {

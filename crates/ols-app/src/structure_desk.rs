@@ -130,9 +130,7 @@ impl StructureDesk {
             .map_or(String::new(), |s| s.to_string_lossy().into_owned());
         self.page.message = Some(match self.apps.launch(path, &id, None, ahead, None, None) {
             Ok(()) => (
-                format!(
-                    "{id} opened in the structure application: saved there, it is read again here"
-                ),
+                format!("{id} opened in OHL-Structure: saved there, it is read again here"),
                 false,
             ),
             Err(e) => (e, true),
@@ -151,16 +149,13 @@ impl StructureDesk {
                     self.page.message = Some(if self.page.dirty() {
                         (
                             format!(
-                                "{id} was saved in the structure application; this page has changes of its own (Discard to see the saved file)"
+                                "{id} was saved in OHL-Structure; this page has changes of its own (Discard to see the saved file)"
                             ),
                             true,
                         )
                     } else {
                         self.page.open(&path);
-                        (
-                            format!("{id} saved in the structure application: read again"),
-                            false,
-                        )
+                        (format!("{id} saved in OHL-Structure: read again"), false)
                     });
                 }
             }

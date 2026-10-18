@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::model::{self, Sources};
 use crate::selection::Selection;
 
-fn root() -> PathBuf {
+pub(crate) fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
@@ -239,7 +239,7 @@ fn first_person_capture_aim_and_escape() {
         .camera
         .unwrap()
         .yaw;
-    assert!(yaw1 < yaw0, "{yaw0} → {yaw1}");
+    assert!(yaw1 < yaw0, "{yaw0} ➡ {yaw1}");
     // Aim at T3's first point and click anywhere: T3 selected.
     {
         let r = harness.state_mut().ready().unwrap();
@@ -368,7 +368,7 @@ fn ctrl_wheel_sets_the_speed() {
     harness.input_mut().events.push(wheel(true));
     harness.run();
     let s1 = speed(&mut harness);
-    assert!((s1 / s0 - 0.3f64.exp()).abs() < 1e-9, "{s0} → {s1}");
+    assert!((s1 / s0 - 0.3f64.exp()).abs() < 1e-9, "{s0} ➡ {s1}");
 }
 
 #[derive(Default)]
@@ -601,7 +601,7 @@ fn g_goes_to_a_structure() {
 }
 
 /// The example as a project edited by "tester".
-fn synthetic_project(name: &str) -> model::Model {
+pub(crate) fn synthetic_project(name: &str) -> model::Model {
     synthetic_project_with(name, |_| {})
 }
 
@@ -738,7 +738,7 @@ fn command_z_undoes_in_the_window() {
     assert!(r.status.as_ref().unwrap().0.starts_with("undo"));
 }
 
-fn press(h: &mut Harness<'_, App>, key: egui::Key, modifiers: egui::Modifiers) {
+pub(crate) fn press(h: &mut Harness<'_, App>, key: egui::Key, modifiers: egui::Modifiers) {
     for pressed in [true, false] {
         h.input_mut().events.push(egui::Event::Key {
             key,
@@ -9069,7 +9069,9 @@ fn edit_on_a_structure_without_a_file_makes_one_first() {
         r.structure_apps.dry_run = Some(Vec::new());
     }
     harness.run();
-    harness.get_by_label("Edit…").click();
+    harness
+        .get_by_label(crate::properties::OPEN_IN_STRUCTURE_APP)
+        .click();
     harness.run();
     harness.run();
     {
@@ -10028,13 +10030,13 @@ fn descriptions_are_typed_and_shown_as_labels() {
     );
     // The insulator's top on its own tick: apart from the structure point
     // it hangs from (a little down the string).
-    assert!(!texts.iter().any(|t| t.contains(" top → ")), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains(" top ➡ ")), "{texts:?}");
     r.model.section_display.insulator_label[View::Plan as usize] = true;
     let notes = object_notes(&r.model, 0, View::Plan, None);
     let top = &t2.string("S1").unwrap().top;
     let n = notes
         .iter()
-        .find(|n| n.text == format!("S1 top → {top}"))
+        .find(|n| n.text == format!("S1 top ➡ {top}"))
         .expect("the top's label");
     let p = notes
         .iter()
@@ -10258,7 +10260,7 @@ fn swapped_sets_take_their_wires_along() {
         }
         let insulators = ols_structures::InsulatorLibrary::default();
         let (what, command) = p.command(&line, &insulators).unwrap();
-        assert!(what.contains(&format!("{a}→{b}")), "{what}");
+        assert!(what.contains(&format!("{a}➡{b}")), "{what}");
         assert!(
             r.perform(crate::edit::Action::Command { what, command }),
             "{:?}",
