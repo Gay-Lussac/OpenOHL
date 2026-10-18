@@ -1221,6 +1221,30 @@ impl StructureApp {
             return;
         };
         let sections: Vec<String> = edit::item_ids(f.doc(), "section");
+        // The analysis settings ([analysis]) that go with the members.
+        let analysis = t.analysis.clone().unwrap_or_default();
+        ui.horizontal(|ui| {
+            ui.strong("Analysis")
+                .on_hover_text("The finite-element check's settings ([analysis] of the file)");
+            let mut stabilise = analysis
+                .get("stabilise")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true);
+            if ui
+                .checkbox(&mut stabilise, "stabilise joints")
+                .on_hover_text(
+                    "Hold the joint directions no member stiffens (a joint of members in one \
+                     plane, across it; a frame free to spin) when the model would otherwise be \
+                     a mechanism; the results list them",
+                )
+                .changed()
+                && let Err(e) = f.edit("stabilise joints", |doc, _| {
+                    edit::set_analysis_field(doc, "stabilise", if stabilise { "" } else { "false" })
+                })
+            {
+                self.message = Some((e, true));
+            }
+        });
         egui::Grid::new("design").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("member", ""),

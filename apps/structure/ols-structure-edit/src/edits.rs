@@ -1004,7 +1004,13 @@ pub fn set_item_field(
         e.remove(field);
         return Ok(());
     }
-    let value = if let Ok(v) = typed.parse::<i64>() {
+    e.insert(field, typed_value(typed));
+    Ok(())
+}
+
+/// A value as typed: a number, `true`/`false`, else a text (`355 MPa`).
+fn typed_value(typed: &str) -> Item {
+    if let Ok(v) = typed.parse::<i64>() {
         toml_edit::value(v)
     } else if let Ok(v) = typed.parse::<f64>() {
         toml_edit::value(v)
@@ -1012,8 +1018,36 @@ pub fn set_item_field(
         toml_edit::value(v)
     } else {
         toml_edit::value(typed.trim_matches('"'))
-    };
-    e.insert(field, value);
+    }
+}
+
+/// Field `field` of the `[analysis]` table (the finite-element check's
+/// settings: `stabilise`, `dead_load_factor`…), as typed: a number,
+/// `true`/`false`, else a text; empty removes it (and the table when it
+/// is left empty).
+pub fn set_analysis_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Result<(), String> {
+    let field = field.trim();
+    if field.is_empty() {
+        return Err("a field name".into());
+    }
+    let typed = typed.trim();
+    if typed.is_empty() {
+        if let Some(t) = doc.get_mut("analysis").and_then(Item::as_table_mut) {
+            t.remove(field);
+            if t.is_empty() {
+                doc.remove("analysis");
+            }
+        }
+        return Ok(());
+    }
+    if doc.get("analysis").and_then(Item::as_table).is_none() {
+        doc.insert("analysis", Item::Table(Table::new()));
+    }
+    let t = doc
+        .get_mut("analysis")
+        .and_then(Item::as_table_mut)
+        .ok_or("[analysis] is not a table")?;
+    t.insert(field, typed_value(typed));
     Ok(())
 }
 

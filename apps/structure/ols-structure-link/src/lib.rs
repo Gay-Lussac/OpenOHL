@@ -616,6 +616,9 @@ fn analyse_one(
     let (solution, usage) = ols_structures_fe::analyse(model, &loads, case.strength, budget)
         .map_err(|e| format!("did not solve: {e}"))?;
     let took = started.elapsed();
+    if let Some(note) = ols_structures_fe::stabilisation_note(model, &solution) {
+        notes.push(note);
+    }
     let joints = model
         .nodes
         .iter()

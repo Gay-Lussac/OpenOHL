@@ -14,7 +14,9 @@
 //! nonlinear = true          # P-Delta (default); false: first order
 //! self_weight = true        # members' weight (default)
 //! drag = 1.0                # member wind: drag factor on the profiles (default 1)
+//! stabilise = true          # hold joint directions without stiffness (default)
 //!
+
 //! [[material]]
 //! id = "steel"
 //! elasticity = "210 GPa"
@@ -100,6 +102,8 @@ struct AnalysisFile {
     self_weight: bool,
     #[serde(default = "one")]
     drag: f64,
+    #[serde(default = "yes")]
+    stabilise: bool,
 }
 
 impl Default for AnalysisFile {
@@ -108,6 +112,7 @@ impl Default for AnalysisFile {
             nonlinear: true,
             self_weight: true,
             drag: 1.0,
+            stabilise: true,
         }
     }
 }
@@ -495,6 +500,9 @@ pub struct Analysis {
     pub self_weight: bool,
     /// Drag factor of the member wind on the profiles.
     pub drag: f64,
+    /// Joint stabilisation ([`crate::stabilise`]) when the model would
+    /// otherwise be a mechanism.
+    pub stabilise: bool,
 }
 
 impl Default for Analysis {
@@ -503,6 +511,7 @@ impl Default for Analysis {
             nonlinear: true,
             self_weight: true,
             drag: 1.0,
+            stabilise: true,
         }
     }
 }
@@ -686,6 +695,7 @@ impl Model {
                 nonlinear: file.analysis.nonlinear,
                 self_weight: file.analysis.self_weight,
                 drag: file.analysis.drag,
+                stabilise: file.analysis.stabilise,
             },
             nodes,
             sections,

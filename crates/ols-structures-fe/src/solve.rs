@@ -17,9 +17,26 @@ use crate::element::{
 };
 use crate::model::{MemberKind, Model, NodalLoad};
 use crate::skyline::{Pivot, Skyline, reverse_cuthill_mckee};
+use crate::stabilise::{Stabilisation, Stabilised};
 
 /// Names of the degrees of freedom of a node.
 pub const DOF_NAMES: [&str; 6] = ["x", "y", "z", "rx", "ry", "rz"];
+
+/// At most this many joints of a mechanism are named.
+pub const MECHANISM_JOINTS: usize = 12;
+
+/// A stabilisation carrying more than this share of the loads (the larger
+/// of their resultant and the largest load at a joint) and more than
+/// [`HELD_JOINT_SHARE`] of its own joint's load holds a load in a
+/// direction no member holds: a mechanism ([`FeError::Held`]). Otherwise
+/// its force is reported ([`Solution::stabilised`]) — the out-of-plane
+/// part of the self-weight at a joint of a battered tower face, or the
+/// weight at the crossing of a horizontal bracing, for example.
+pub const HELD_SHARE: f64 = 0.01;
+
+/// See [`HELD_SHARE`]: a quarter of the joint's own load (about 14.5°
+/// out of the plane of its members).
+pub const HELD_JOINT_SHARE: f64 = 0.25;
 
 /// Default exit clauses: 200 iterations, 30 s. A first-order solve takes
 /// one or two iterations; P-Delta converges linearly with the ratio of the
@@ -47,6 +64,11 @@ pub struct Options {
     /// Converged when the out-of-balance forces are below this share of
     /// the loads.
     pub tolerance: f64,
+    /// Joint stabilisation ([`crate::stabilise`]): when the stiffness
+    /// matrix is singular (or not positive definite), the joint
+    /// directions without stiffness of their own are held and the solve
+    /// repeated; false: such a model fails as a mechanism.
+    pub stabilise: bool,
 }
 
 impl Default for Options {
@@ -54,6 +76,7 @@ impl Default for Options {
         Self {
             nonlinear: true,
             tolerance: 1e-9,
+            stabilise: true,
         }
     }
 }
@@ -69,6 +92,27 @@ pub enum FeError {
         node: String,
         /// Degree of freedom (x, y, z, rx, ry, rz).
         dof: &'static str,
+        /// The joints that move with it (the part of the structure that
+        /// moves freely, the node included), in the solver's order; at
+        /// most [`MECHANISM_JOINTS`].
+        joints: Vec<String>,
+        /// How many joints move in all.
+        moving: usize,
+    },
+    /// Joints loaded in a direction no member holds: their stabilisation
+    /// ([`crate::stabilise`]) would carry more than [`HELD_SHARE`] of the
+    /// loads and [`HELD_JOINT_SHARE`] of their own joint's load.
+    Held {
+        /// The joints whose stabilisation carries load.
+        joints: Vec<String>,
+        /// The joint whose stabilisation carries most.
+        node: String,
+        /// Its direction in words.
+        dof: String,
+        /// The force (a rotation: moment) it carries, N (N·m).
+        force: f64,
+        /// Its share of the loads.
+        share: f64,
     },
     /// Axial compression beyond the elastic buckling load (the tangent
     /// stiffness has negative eigenvalues).
@@ -91,9 +135,37 @@ impl fmt::Display for FeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FeError::Invalid(m) => write!(f, "{m}"),
-            FeError::Mechanism { node, dof } => write!(
+            FeError::Mechanism {
+                node,
+                dof,
+                joints,
+                moving,
+            } => {
+                write!(f, "mechanism: node {node} is free to move in {dof}")?;
+                if *moving > 1 {
+                    write!(
+                        f,
+                        ", with {moving} joints: {}{}",
+                        joints.join(", "),
+                        if *moving > joints.len() { ", …" } else { "" }
+                    )?;
+                }
+                write!(f, " (add a member, support or spring)")
+            }
+            FeError::Held {
+                joints,
+                node,
+                dof,
+                force,
+                share,
+            } => write!(
                 f,
-                "mechanism: node {node} is free to move in {dof} (add a member, support or spring)"
+                "mechanism: joint(s) {} loaded in a direction no member holds — its \
+                 stabilisation would carry {:.2} kN at {node} ({dof}), {:.1} % of the loads \
+                 (add a member, or move the load to a held joint)",
+                joints.join(", "),
+                force / 1000.0,
+                share * 100.0
             ),
             FeError::Unstable { iteration, modes } => write!(
                 f,
@@ -149,6 +221,9 @@ pub struct Solution {
     pub residual: f64,
     /// Whether P-Delta was included.
     pub nonlinear: bool,
+    /// The joint directions held by the stabilisation, with the force each
+    /// took (empty: the model solved as it is).
+    pub stabilised: Vec<Stabilised>,
 }
 
 /// Per member: what does not change between iterations.
@@ -169,14 +244,43 @@ struct Prepared {
 
 /// Solves `model` under `loads`.
 ///
+/// When the solve fails as a mechanism or as unstable and
+/// `options.stabilise`, the joint directions without stiffness of their
+/// own ([`crate::stabilise`]) are held and the solve repeated; the
+/// solution lists them ([`Solution::stabilised`]). When there are none,
+/// the first error is returned; when the repeated solve fails too, its
+/// error. A model that solves as it is solves exactly as without
+/// stabilisation (the same operations).
+///
 /// Expected cost: a skyline LDLᵀ factorisation per iteration (a
 /// 1000-member lattice tower: a few milliseconds), one or two iterations
-/// first order, a few tens with P-Delta. `budget` bounds the iterations.
+/// first order, a few tens with P-Delta; a stabilised model is solved
+/// twice. `budget` bounds the iterations of each solve.
 pub fn solve(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
+) -> Result<Solution, FeError> {
+    match solve_with(model, loads, options, budget, &[]) {
+        Err(e @ (FeError::Mechanism { .. } | FeError::Unstable { .. })) if options.stabilise => {
+            let held = crate::stabilise::find(model);
+            if held.is_empty() {
+                return Err(e);
+            }
+            solve_with(model, loads, options, budget, &held)
+        }
+        other => other,
+    }
+}
+
+/// Solves `model` under `loads` with the joint directions `held`.
+fn solve_with(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    held: &[Stabilisation],
 ) -> Result<Solution, FeError> {
     model.check().map_err(FeError::Invalid)?;
     let n_nodes = model.nodes.len();
@@ -196,6 +300,13 @@ pub fn solve(
         adjacent[m.j].push(m.i);
     }
     let order = reverse_cuthill_mckee(&adjacent);
+    // Degrees of freedom the stabilisation removes.
+    let mut removed = vec![[false; 6]; n_nodes];
+    for h in held {
+        if let Some(a) = h.axis {
+            removed[h.node][a + if h.rotation { 3 } else { 0 }] = true;
+        }
+    }
     let mut eq = vec![[None; 6]; n_nodes];
     let mut dof_of = Vec::new();
     for &n in &order {
@@ -203,7 +314,7 @@ pub fn solve(
             continue;
         }
         for (d, slot) in eq[n].iter_mut().enumerate() {
-            if !model.nodes[n].fixed[d] && (d < 3 || has_frame[n]) {
+            if !model.nodes[n].fixed[d] && !removed[n][d] && (d < 3 || has_frame[n]) {
                 *slot = Some(dof_of.len());
                 dof_of.push((n, d));
             }
@@ -322,9 +433,9 @@ pub fn solve(
             model,
             &prepared,
             &eq,
-            &axial,
-            &slack,
+            (&axial, &slack),
             options.nonlinear,
+            held,
             &mut k,
         );
         let mut r = f.clone();
@@ -354,13 +465,29 @@ pub fn solve(
         if let Err(stop) = run.step() {
             return Err(FeError::Stopped { stop, residual });
         }
-        let negative = k.factorize().map_err(|Pivot::Zero(q)| {
-            let (n, d) = dof_of[q];
-            FeError::Mechanism {
-                node: model.nodes[n].id.clone(),
-                dof: DOF_NAMES[d],
+        let negative = match k.factorize() {
+            Ok(negative) => negative,
+            Err(Pivot::Zero(q)) => {
+                let (n, d) = dof_of[q];
+                // The part that moves, from the matrix again.
+                assemble(
+                    model,
+                    &prepared,
+                    &eq,
+                    (&axial, &slack),
+                    options.nonlinear,
+                    held,
+                    &mut k,
+                );
+                let (joints, moving) = moving_joints(model, &dof_of, &k.mechanism());
+                return Err(FeError::Mechanism {
+                    node: model.nodes[n].id.clone(),
+                    dof: DOF_NAMES[d],
+                    joints,
+                    moving,
+                });
             }
-        })?;
+        };
         if negative > 0 {
             return Err(FeError::Unstable {
                 iteration: run.iterations(),
@@ -385,7 +512,7 @@ pub fn solve(
         }
         // First order without cables: one solve is exact.
         if !options.nonlinear && !model.members.iter().any(|m| m.kind == MemberKind::Cable) {
-            assemble(model, &prepared, &eq, &axial, &slack, false, &mut k);
+            assemble(model, &prepared, &eq, (&axial, &slack), false, held, &mut k);
             let ku = k.mul(&u);
             residual = f
                 .iter()
@@ -453,6 +580,29 @@ pub fn solve(
             }
         })
         .collect();
+    // What each stabilisation holds: the out-of-balance of its joint along
+    // its direction (its spring's force, or the reaction of the degree of
+    // freedom it removed).
+    let mut held_force = vec![[0.0; 6]; n_nodes];
+    let stabilised: Vec<Stabilised> = held
+        .iter()
+        .map(|h| {
+            let base = if h.rotation { 3 } else { 0 };
+            let force: f64 = (0..3)
+                .map(|c| h.direction[c] * (internal[h.node][base + c] - f_ext[h.node][base + c]))
+                .sum();
+            for c in 0..3 {
+                held_force[h.node][base + c] += force * h.direction[c];
+            }
+            Stabilised {
+                at: h.clone(),
+                force,
+            }
+        })
+        .collect();
+    if !held.is_empty() {
+        check_held(model, &f_ext, &stabilised)?;
+    }
     let reactions = model
         .nodes
         .iter()
@@ -462,6 +612,12 @@ pub fn solve(
             let mut r = [0.0; 6];
             for d in 0..6 {
                 r[d] = internal[n][d] + node.spring[d] * displacements[n][d] - f_ext[n][d];
+            }
+            if !held.is_empty() {
+                // The supports' share only, without the stabilisation's.
+                for d in 0..6 {
+                    r[d] -= held_force[n][d];
+                }
             }
             Reaction {
                 node: n,
@@ -477,7 +633,105 @@ pub fn solve(
         iterations: run.iterations(),
         residual,
         nonlinear: options.nonlinear,
+        stabilised,
     })
+}
+
+/// Refuses a stabilisation that carries load: one whose force is above
+/// [`HELD_SHARE`] of the loads (the larger of their resultant and the
+/// largest load at a joint; a moment over the model's size) and above
+/// [`HELD_JOINT_SHARE`] of its joint's own load — a load in a direction
+/// no member holds, which the structure does not carry.
+fn check_held(model: &Model, f_ext: &[[f64; 6]], held: &[Stabilised]) -> Result<(), FeError> {
+    let mut resultant = [0.0; 3];
+    let mut largest: f64 = 0.0;
+    for f in f_ext {
+        for k in 0..3 {
+            resultant[k] += f[k];
+        }
+        largest = largest.max((f[0] * f[0] + f[1] * f[1] + f[2] * f[2]).sqrt());
+    }
+    let loads = largest.max(
+        (resultant[0] * resultant[0] + resultant[1] * resultant[1] + resultant[2] * resultant[2])
+            .sqrt(),
+    );
+    if loads <= 0.0 {
+        return Ok(());
+    }
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    for n in &model.nodes {
+        for k in 0..3 {
+            low[k] = low[k].min(n.point[k]);
+            high[k] = high[k].max(n.point[k]);
+        }
+    }
+    let size = (0..3)
+        .map(|k| (high[k] - low[k]).powi(2))
+        .sum::<f64>()
+        .sqrt()
+        .max(1.0);
+    let share = |h: &Stabilised| h.force.abs() / (loads * if h.at.rotation { size } else { 1.0 });
+    let own = |h: &Stabilised| {
+        let base = if h.at.rotation { 3 } else { 0 };
+        let f = &f_ext[h.at.node][base..base + 3];
+        (f[0] * f[0] + f[1] * f[1] + f[2] * f[2]).sqrt()
+    };
+    let over: Vec<&Stabilised> = held
+        .iter()
+        .filter(|h| share(h) > HELD_SHARE && h.force.abs() > HELD_JOINT_SHARE * own(h))
+        .collect();
+    let Some(worst) = over
+        .iter()
+        .copied()
+        .max_by(|a, b| share(a).total_cmp(&share(b)))
+    else {
+        return Ok(());
+    };
+    let mut joints: Vec<String> = Vec::new();
+    for h in &over {
+        let id = &model.nodes[h.at.node].id;
+        if !joints.contains(id) {
+            joints.push(id.clone());
+        }
+    }
+    Err(FeError::Held {
+        joints,
+        node: model.nodes[worst.at.node].id.clone(),
+        dof: worst.at.dof_name(),
+        force: worst.force.abs(),
+        share: share(worst),
+    })
+}
+
+/// The joints that move in the mechanism `v` (a vector of the equations,
+/// [`Skyline::mechanism`]): those translating more than 1/1000 of the
+/// largest translation (rotating, when nothing translates), in the
+/// solver's order, named up to [`MECHANISM_JOINTS`]; and how many move.
+fn moving_joints(model: &Model, dof_of: &[(usize, usize)], v: &[f64]) -> (Vec<String>, usize) {
+    let mut size = vec![[0.0f64; 2]; model.nodes.len()];
+    let mut order = Vec::new();
+    for (q, &(n, d)) in dof_of.iter().enumerate() {
+        if v[q] == 0.0 {
+            continue;
+        }
+        if size[n] == [0.0; 2] {
+            order.push(n);
+        }
+        size[n][usize::from(d >= 3)] += v[q] * v[q];
+    }
+    let kind = usize::from(!order.iter().any(|&n| size[n][0] > 0.0));
+    let largest = order.iter().map(|&n| size[n][kind]).fold(0.0, f64::max);
+    let moving: Vec<usize> = order
+        .into_iter()
+        .filter(|&n| largest > 0.0 && size[n][kind] > 1e-6 * largest)
+        .collect();
+    let names = moving
+        .iter()
+        .take(MECHANISM_JOINTS)
+        .map(|&n| model.nodes[n].id.clone())
+        .collect();
+    (names, moving.len())
 }
 
 fn global_translation(d: &[[f64; 6]], n: usize) -> Vector3<f64> {
@@ -500,9 +754,9 @@ fn assemble(
     model: &Model,
     prepared: &[Prepared],
     node_eq: &[[Option<usize>; 6]],
-    axial: &[f64],
-    slack: &[bool],
+    (axial, slack): (&[f64], &[bool]),
     nonlinear: bool,
+    held: &[Stabilisation],
     k: &mut Skyline,
 ) {
     k.clear();
@@ -560,6 +814,21 @@ fn assemble(
                 && let Some(q) = q
             {
                 k.add(*q, *q, *spring);
+            }
+        }
+    }
+    // Stabilisation springs along skew directions: k·n·nᵀ.
+    for h in held.iter().filter(|h| h.axis.is_none()) {
+        let base = if h.rotation { 3 } else { 0 };
+        let eqs = &node_eq[h.node];
+        for a in 0..3 {
+            for b in a..3 {
+                if let (Some(qa), Some(qb)) = (eqs[base + a], eqs[base + b]) {
+                    let v = h.stiffness * h.direction[a] * h.direction[b];
+                    if v != 0.0 {
+                        k.add(qa, qb, v);
+                    }
+                }
             }
         }
     }
