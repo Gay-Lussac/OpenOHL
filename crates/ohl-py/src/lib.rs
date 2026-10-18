@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Python bindings for OpenOHL (`import ols`).
+//! Python bindings for OpenOHL (`import ohl`; this is its compiled part,
+//! `ohl._ohl`, around which `python/ohl` is the package; `import ols`, the
+//! name before 2026-10-18, still works for a while: `python/ols`).
 //!
 //! The Python tier is for scripts, reports, importers/exporters and
 //! automation (ADR-0003). Calculations run in Rust; Python only drives them.
@@ -15,7 +17,7 @@ use pyo3::prelude::*;
 
 /// Converts text such as "1000 ft" of the named quantity kind to the unit `to`.
 ///
-/// >>> ols.convert("length", "1000 ft", "m")
+/// >>> ohl.convert("length", "1000 ft", "m")
 /// 304.8
 #[pyfunction]
 fn convert(quantity: &str, value: &str, to: &str) -> PyResult<f64> {
@@ -28,9 +30,9 @@ fn quantity_kinds() -> Vec<&'static str> {
     ohl_core::units::QUANTITY_KINDS.to_vec()
 }
 
-/// OpenOHL — open-source overhead line design.
+/// OpenOHL — open-source overhead line design (the compiled part of `ohl`).
 #[pymodule]
-fn ols(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _ohl(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(convert, m)?)?;
     m.add_function(wrap_pyfunction!(quantity_kinds, m)?)?;

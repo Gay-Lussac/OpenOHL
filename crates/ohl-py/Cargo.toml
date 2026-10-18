@@ -9,7 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [lib]
-name = "ols"
+name = "_ohl"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -12,7 +12,7 @@ authors.workspace = true
 [[bin]]
 name = "ohl"
 path = "src/main.rs"
-# The `ols` Python module (ohl-py) owns the `ols` docs page.
+# No docs page: the command-line help is its documentation.
 doc = false
 
 # The former name, kept for a transition period: says so and runs the

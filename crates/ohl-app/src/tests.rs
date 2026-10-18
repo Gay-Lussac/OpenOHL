@@ -5068,7 +5068,7 @@ fn the_python_console_drives_the_project() {
     };
     let out = submit(
         &mut harness,
-        "len(ols.line()['structures']), ols.case(), len(ols.results()['sections']) > 0".into(),
+        "len(ohl.line()['structures']), ohl.case(), len(ohl.results()['sections']) > 0".into(),
     );
     let n = harness
         .state_mut()
@@ -5087,9 +5087,9 @@ fn the_python_console_drives_the_project() {
     submit(
         &mut harness,
         format!(
-            "p = [s for s in ols.line()['structures'] if s['id'] == '{id}'][0]['position']\n\
+            "p = [s for s in ohl.line()['structures'] if s['id'] == '{id}'][0]['position']\n\
              p[0] += 3.0\n\
-             ols.apply({{'op': 'move_structure', 'id': '{id}', 'position': p}}, 'moved by a script')"
+             ohl.apply({{'op': 'move_structure', 'id': '{id}', 'position': p}}, 'moved by a script')"
         ),
     );
     {
@@ -5098,7 +5098,7 @@ fn the_python_console_drives_the_project() {
         assert!((s.position[0] - x[0] - 3.0).abs() < 1e-9);
         assert_solved_fully(&r.model);
     }
-    submit(&mut harness, "ols.undo()".into());
+    submit(&mut harness, "ohl.undo()".into());
     {
         let r = harness.state_mut().ready().unwrap();
         let s = r.model.line.structures.iter().find(|s| s.id == id).unwrap();
@@ -5107,7 +5107,7 @@ fn the_python_console_drives_the_project() {
     // Refused: raised in the script.
     let out = submit(
         &mut harness,
-        "ols.apply({'op': 'move_structure', 'id': 'no-such', 'position': [0, 0, 0]})".into(),
+        "ohl.apply({'op': 'move_structure', 'id': 'no-such', 'position': [0, 0, 0]})".into(),
     );
     assert!(
         matches!(&out, Some(Line::Err(t)) if t.contains("no-such")),

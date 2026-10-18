@@ -3,21 +3,22 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The Python console (Plugins › Python console): an embedded interpreter
-//! on its own thread, driving the open project through the `ols` module.
+//! on its own thread, driving the open project through the `ohl` module
+//! (`ols`, its name before 2026-10-18, is the same module).
 //!
 //! Scripts read the line, the weather cases and the solved results, and
 //! edit through session commands — the same validated, logged, undoable
-//! commands as the tools (ADR-0005): every `ols.apply` is one command,
-//! `ols.batch` several as one. A call is answered by the application at
+//! commands as the tools (ADR-0005): every `ohl.apply` is one command,
+//! `ohl.batch` several as one. A call is answered by the application at
 //! its next frame (the model lives there), so a script always sees the
 //! line as it is. Output is shown as it comes; Stop (or the time limit)
 //! interrupts the script.
 //!
 //! ```python
-//! import ols
-//! for s in ols.line()["structures"]:
+//! import ohl
+//! for s in ohl.line()["structures"]:
 //!     print(s["id"], s["position"])
-//! ols.apply({"op": "move_structure", "id": "T2", "position": [10.0, 0.0, 400.0]})
+//! ohl.apply({"op": "move_structure", "id": "T2", "position": [10.0, 0.0, 400.0]})
 //! ```
 
 // Without the "python" feature the console only says so.
@@ -40,7 +41,7 @@ pub enum FromPy {
         /// From stderr.
         err: bool,
     },
-    /// A call of the `ols` module, answered with [`answer`].
+    /// A call of the `ohl` module, answered with [`answer`].
     Call {
         /// Which (`line`, `apply`, …).
         what: String,
@@ -70,7 +71,7 @@ struct Interpreter {
 
 static INTERPRETER: OnceLock<Result<Interpreter, String>> = OnceLock::new();
 
-/// The interpreter side of the channels, used by the `ols` functions.
+/// The interpreter side of the channels, used by the `ohl` functions.
 struct Side {
     to_app: Mutex<Sender<FromPy>>,
     answers: Mutex<Receiver<Result<String, String>>>,
@@ -208,7 +209,7 @@ mod embedded {
         ohl_core::units::QUANTITY_KINDS.to_vec()
     }
 
-    /// The `ols` module's Python part: the calls, the output.
+    /// The `ohl` module's Python part: the calls, the output.
     const BOOT: &str = r#"
 import json as _json, sys as _sys
 
@@ -287,13 +288,16 @@ def _run(src, name, g):
 "#;
 
     fn module(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
-        let m = PyModule::new(py, "ols")?;
+        let m = PyModule::new(py, "ohl")?;
         m.add("__version__", env!("CARGO_PKG_VERSION"))?;
         m.add_function(wrap_pyfunction!(_write, &m)?)?;
         m.add_function(wrap_pyfunction!(_call, &m)?)?;
         m.add_function(wrap_pyfunction!(convert, &m)?)?;
         m.add_function(wrap_pyfunction!(quantity_kinds, &m)?)?;
-        py.import("sys")?.getattr("modules")?.set_item("ols", &m)?;
+        // `ols`: its name before 2026-10-18, the same module.
+        let modules = py.import("sys")?.getattr("modules")?;
+        modules.set_item("ohl", &m)?;
+        modules.set_item("ols", &m)?;
         let code = CString::new(BOOT).expect("no NUL");
         py.run(&code, Some(&m.dict()), None)?;
         Ok(m)
@@ -316,7 +320,8 @@ def _run(src, name, g):
             let globals = PyDict::new(py);
             globals.set_item("__name__", "__console__")?;
             globals.set_item("__builtins__", py.import("builtins")?)?;
-            globals.set_item("ols", m)?;
+            globals.set_item("ols", &m)?;
+            globals.set_item("ohl", m)?;
             Ok(globals.unbind())
         });
         let globals = match started {
@@ -331,7 +336,7 @@ def _run(src, name, g):
         };
         while let Ok(job) = jobs.recv() {
             let result = Python::attach(|py| -> Result<(), String> {
-                let m = py.import("ols").map_err(|e| e.to_string())?;
+                let m = py.import("ohl").map_err(|e| e.to_string())?;
                 let run = m.getattr("_run").map_err(|e| e.to_string())?;
                 let r = match job {
                     Job::Input(code) => run.call1((code, "<console>", globals.bind(py))),
@@ -393,7 +398,7 @@ pub fn answer(result: Result<String, String>) {
     }
 }
 
-/// Answers a call of the `ols` module from the open project (`arg`:
+/// Answers a call of the `ohl` module from the open project (`arg`:
 /// JSON): the line, the weather cases, results, the selection; commands
 /// applied like the tools' (one each, undoable).
 pub fn serve(r: &mut crate::app::Ready, what: &str, arg: &str) -> Result<String, String> {
@@ -651,7 +656,7 @@ impl Console {
             match version() {
                 Ok(v) => ui.label(
                     egui::RichText::new(format!(
-                        "Python {} — import ols: line(), cases(), results(), apply(), batch(), \
+                        "Python {} — import ohl: line(), cases(), results(), apply(), batch(), \
                          undo()",
                         v.split_whitespace().next().unwrap_or("")
                     ))
@@ -804,11 +809,12 @@ mod tests {
         wait(&mut c, &mut calls);
         assert_eq!(c.lines.last(), Some(&Line::Out("42\n".into())));
         assert!(embedded::thread_ident() != 0);
-        // The namespace persists; ols is there.
-        c.submit("print(ols.convert('length', '1000 ft', 'm'), x)".into());
+        // The namespace persists; ohl is there.
+        c.submit("print(ohl.convert('length', '1000 ft', 'm'), x)".into());
         wait(&mut c, &mut calls);
         assert_eq!(c.lines.last(), Some(&Line::Out("304.8 42\n".into())));
-        // A call goes to the application and comes back.
+        // A call goes to the application and comes back (through `ols` too,
+        // the module's name before 2026-10-18).
         c.submit("ols.results('hot')".into());
         wait(&mut c, &mut calls);
         assert_eq!(calls.last().unwrap().0, "results");
