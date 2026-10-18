@@ -205,7 +205,7 @@ pub enum VersionCommand {
         /// Reject review ID.
         #[arg(long, conflicts_with = "merge")]
         reject: Option<i64>,
-        /// Merge approved review ID into the current branch.
+        /// Merge approved review ID into its target project line.
         #[arg(long)]
         merge: Option<i64>,
         /// Note or comment.

@@ -34,12 +34,13 @@
 //! attachments), sections (with stringing and loads) and jumpers, each a
 //! JSON row with a version number, in their order in the line.
 //!
-//! Schema (version 3, tables next to the point clouds of ADR-0007; older
+//! Schema (version 4, tables next to the point clouds of ADR-0007; older
 //! files are migrated when opened — version 2 added the tables of
-//! [`versions`] and [`collab`], version 3 the project lines of [`lines`]):
+//! [`versions`] and [`collab`], version 3 the project lines of [`lines`],
+//! version 4 the library files as objects of each project line):
 //!
 //! ```sql
-//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '3'
+//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '4'
 //! session_user(name PRIMARY KEY, role)
 //! model_object(line, kind, id, ord, version, json, PRIMARY KEY(line, kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
@@ -380,7 +381,7 @@ impl Role {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     /// Create or replace an object (its JSON as in the line file; `meta` is
-    /// `{name, crs, alignment, display}`).
+    /// the line settings: `{name, crs, display, systems, …}`).
     Put {
         /// Kind.
         kind: Kind,
