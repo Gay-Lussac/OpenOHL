@@ -5,6 +5,11 @@ roadmap to discuss: where things stand, the open points waiting on a
 decision, what is unfinished or approximate, and the proposed stages.
 **Part 2** is the detailed record of what is built, by phase.
 
+**What the marks mean:** `[x]` = built and in active development, **not
+yet approved by the owner** (nothing is approved yet); `[ ]` = not built.
+An item the owner approves will be marked **✓ approved** with the date.
+Everything is pre-alpha: results must be verified by a qualified engineer.
+
 **How to comment:** write under the `> **Owner:**` line of any item (one
 per item). Leave the rest as it is; it is rewritten from your comments.
 Items that touch private data (the Swiss plugin, the existing lines) are in
@@ -30,7 +35,7 @@ Guiding principles:
   line, sag-tension, clearances, layout, drawings) and **OHL-Structure**
   (`ohl-structure`: pylons and their loading), with the `ohl` command line.
   Project renamed OpenOHL (formerly OLS CAD).
-- Phases 0 to 5 of Part 2 are delivered as a base; the structure work
+- Phases 0 to 5 of Part 2 are built as a base, all in active development (none approved yet); the structure work
   (levels 1–3, poles, extensions, generators, loads per placed structure,
   FE with joint stabilisation and tension-only members, section library,
   exports) is in place with the limits listed below.
@@ -283,7 +288,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 ## Phase 4 — Loading & structural checks
 *Goal: design-code compliant loading.*
 
-*Status: delivered as a base. Each item says what is simplified or left for later.*
+*Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
 - [x] `ols-loads`: load case framework (weather × load factors × wire condition), `.olslc` files kept in the project, edited in the app
 - [x] Design code plugins: NESC (ANSI C2), CSA C22.3, IEC 60826, EN 50341 (+ national NNAs), ASCE MOP 74, GO 95 — each as a separate plugin (a Swiss LeV plugin exists separately, not part of the public code) *(base: `code-plugin` world, `plugins/codes/*`, `ohl code`, Criteria › Design code; each code's method with every value from the user's parameter file — no code tables shipped; security / broken-wire and construction loads, NESC constant k and code-specific wind on structures still to come)*
@@ -301,7 +306,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 ## Phase 5 — Advanced engineering modules
 *Goal: feature parity with professional workflows.*
 
-*Status: delivered as a base. Each item says what is simplified or left for later.*
+*Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
 - [x] `ols-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.olsfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the tower body only on profiles from the section library (no shielding, one drag factor), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design
 - [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused; true mechanisms are named with the joints that move
