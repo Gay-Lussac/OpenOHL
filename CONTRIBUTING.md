@@ -35,6 +35,7 @@ Every calculation PR must include:
    ```bash
    cargo fmt --all
    cargo clippy --workspace --all-targets -- -D warnings
+   cargo run -p ohl-cli -- validate   # the validation cases in benchmarks/
    ```
 
 4. Optional parts:
