@@ -553,6 +553,99 @@ pub enum StringChange {
     Compression(Option<f64>),
     /// What it is, in words.
     Description(String),
+    /// The tension it is rated for, N (none: not given; its insulator's
+    /// then). Kept, not checked by OLS CAD.
+    MaxLoad(Option<f64>),
+    /// The swing from straight down it may take, any direction, degrees
+    /// (none: not given). Kept, not checked.
+    MaxSwing(Option<f64>),
+    /// The swing across the line it may take, degrees (none: not given).
+    MaxSwingAcross(Option<f64>),
+    /// The swing along the line it may take, degrees (none: not given).
+    MaxSwingAlong(Option<f64>),
+}
+
+/// The structure file version that has a string's limits.
+pub const LIMITS_VERSION: i64 = 4;
+
+/// One of an insulator's limits as an edit field (kept, not checked by
+/// OLS CAD): what the tables of both applications show.
+#[derive(Debug, Clone, Copy)]
+pub struct LimitField {
+    /// Its short name (`load`, `swing`, `across`, `along`).
+    pub name: &'static str,
+    /// The insulator's own value (none: not given).
+    pub own: Option<f64>,
+    /// Its assembly's (taken where it gives none).
+    pub inherited: Option<f64>,
+    /// The value a newly ticked field starts from.
+    pub start: f64,
+    /// An angle, degrees 0–180 (else a force, N).
+    pub angle: bool,
+    /// The change that sets it (none: not given).
+    pub change: fn(Option<f64>) -> StringChange,
+}
+
+/// The four limits of an insulator as edit fields: its own (`own`) and
+/// its assembly's (`from`).
+pub fn limit_fields(
+    own: ols_structures::InsulatorLimits,
+    from: ols_structures::InsulatorLimits,
+) -> [LimitField; 4] {
+    let field = |name, own, inherited, start, angle, change| LimitField {
+        name,
+        own,
+        inherited,
+        start,
+        angle,
+        change,
+    };
+    [
+        field(
+            "load",
+            own.max_load,
+            from.max_load,
+            100_000.0,
+            false,
+            StringChange::MaxLoad,
+        ),
+        field(
+            "swing",
+            own.max_swing_deg,
+            from.max_swing_deg,
+            60.0,
+            true,
+            StringChange::MaxSwing,
+        ),
+        field(
+            "across",
+            own.max_swing_across_deg,
+            from.max_swing_across_deg,
+            60.0,
+            true,
+            StringChange::MaxSwingAcross,
+        ),
+        field(
+            "along",
+            own.max_swing_along_deg,
+            from.max_swing_along_deg,
+            30.0,
+            true,
+            StringChange::MaxSwingAlong,
+        ),
+    ]
+}
+
+/// Raises the file's `version` to `version` (a file without a version
+/// stays without: it reads as the newest).
+pub fn raise_version(doc: &mut DocumentMut, version: i64) {
+    if doc
+        .get("version")
+        .and_then(Item::as_integer)
+        .is_some_and(|v| v < version)
+    {
+        doc["version"] = toml_edit::value(version);
+    }
 }
 
 impl StringChange {
@@ -592,6 +685,20 @@ pub fn set_string(
         .as_deref()
         .is_some_and(|i| insulators.get(i).is_some());
     let moves = change.moves();
+    // A limit given: the file needs the version that has them.
+    let limit_given = matches!(
+        change,
+        StringChange::MaxLoad(Some(_))
+            | StringChange::MaxSwing(Some(_))
+            | StringChange::MaxSwingAcross(Some(_))
+            | StringChange::MaxSwingAlong(Some(_))
+    );
+    let swing_key = match change {
+        StringChange::MaxSwing(_) => Some("max_swing"),
+        StringChange::MaxSwingAcross(_) => Some("max_swing_across"),
+        StringChange::MaxSwingAlong(_) => Some("max_swing_along"),
+        _ => None,
+    };
     let e = entry(doc, "string", "label", label).ok_or_else(|| format!("no insulator {label}"))?;
     match change {
         StringChange::Top(top) => {
@@ -670,6 +777,38 @@ pub fn set_string(
                 e.insert("description", toml_edit::value(d));
             }
         }
+        StringChange::MaxLoad(v) => {
+            if v.is_some_and(|l| !(l.is_finite() && l > 0.0)) {
+                return Err("the maximum load must be > 0".into());
+            }
+            match v {
+                Some(l) => {
+                    e.insert("max_load", toml_edit::value(format!("{l} N")));
+                }
+                None => {
+                    e.remove("max_load");
+                }
+            }
+        }
+        StringChange::MaxSwing(v)
+        | StringChange::MaxSwingAcross(v)
+        | StringChange::MaxSwingAlong(v) => {
+            let key = swing_key.expect("a swing limit");
+            if v.is_some_and(|a| !(0.0..=180.0).contains(&a)) {
+                return Err("a maximum swing must be from 0 to 180°".into());
+            }
+            match v {
+                Some(a) => {
+                    e.insert(key, toml_edit::value(format!("{a} deg")));
+                }
+                None => {
+                    e.remove(key);
+                }
+            }
+        }
+    }
+    if limit_given {
+        raise_version(doc, LIMITS_VERSION);
     }
     if moves {
         // The other insulators to it (a V) without a length (written
@@ -739,8 +878,15 @@ pub fn assembly_text(
         .unwrap_or(0.0)
         * per_leg;
     let stiffness = a.map_or(5e7, |a| a.axial_stiffness.si());
+    // Its limits (its own, else its assembly's): version 2 when given.
+    let limits = x
+        .limits()
+        .or(a.map(InsulatorAssembly::limits).unwrap_or_default());
     let mut text = String::new();
-    text.push_str("format = \"ols-insulator\"\nversion = 1\n");
+    text.push_str(&format!(
+        "format = \"ols-insulator\"\nversion = {}\n",
+        if limits.is_empty() { 1 } else { 2 }
+    ));
     text.push_str(&format!("id = {}\n", toml_edit::value(id)));
     text.push_str(&format!(
         "name = {}\n",
@@ -766,6 +912,7 @@ pub fn assembly_text(
             text.push_str(&format!("half_width = \"{} m\"\n", round3(half)));
         }
     }
+    text.push_str(&limits.to_toml());
     <InsulatorAssembly as ols_structures::LibraryItem>::parse(
         std::path::Path::new("new.olsi"),
         &text,

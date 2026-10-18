@@ -411,6 +411,10 @@ fn write_structure(out: &mut String, s: &Structure) {
             stiffness,
             compression,
             strain,
+            max_load,
+            max_swing_deg,
+            max_swing_across_deg,
+            max_swing_along_deg,
         } = x;
         out.push_str("    <string");
         attr(out, "label", label);
@@ -429,7 +433,14 @@ fn write_structure(out: &mut String, s: &Structure) {
                 attr(out, name, &num(*v));
             }
         }
-        for (name, v) in [("stiffness", stiffness), ("compression", compression)] {
+        for (name, v) in [
+            ("stiffness", stiffness),
+            ("compression", compression),
+            ("max_load", max_load),
+            ("max_swing_deg", max_swing_deg),
+            ("max_swing_across_deg", max_swing_across_deg),
+            ("max_swing_along_deg", max_swing_along_deg),
+        ] {
             if let Some(v) = v {
                 attr(out, name, &num(*v));
             }
@@ -1284,6 +1295,10 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "compression",
                     "strain",
                     "description",
+                    "max_load",
+                    "max_swing_deg",
+                    "max_swing_across_deg",
+                    "max_swing_along_deg",
                 ],
                 &[],
             )?;
@@ -1301,6 +1316,10 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 stiffness: optional(x, "stiffness")?,
                 compression: optional(x, "compression")?,
                 strain: flag(x, "strain")?,
+                max_load: optional(x, "max_load")?,
+                max_swing_deg: optional(x, "max_swing_deg")?,
+                max_swing_across_deg: optional(x, "max_swing_across_deg")?,
+                max_swing_along_deg: optional(x, "max_swing_along_deg")?,
             })
         })
         .collect::<Result<_, String>>()?;

@@ -1,6 +1,6 @@
 {
   "format": "ols-line",
-  "version": 5,
+  "version": 6,
   "name": "Synthetic example line (invented coordinates)",
   "crs": "local (invented)",
   "routes": [

@@ -44,7 +44,9 @@ pub use objects::{
     Axis, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject, TypeKind,
 };
 
-pub use assembly::{AttachmentV1, InsulatorString, StructurePoint, WirePoint};
+pub use assembly::{
+    AttachmentV1, InsulatorString, StringLimits, StructurePoint, Swing, WirePoint, swing,
+};
 pub use route::{
     Alignment, AlignmentPoint, AlignmentView, NEAR_ALIGNMENT, OldPoint, Route, Station,
 };
@@ -59,13 +61,15 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ols-line";
-/// Latest line file version: 5 writes a jumper's tap end as its `from` /
+/// Latest line file version: 6 adds a string's optional limits, not
+/// checked by OLS CAD (`max_load`, `max_swing_deg`,
+/// `max_swing_across_deg`, `max_swing_along_deg`: [`StringLimits`]); 5 writes a jumper's tap end as its `from` /
 /// `to` ([`JumperEnd`]), its supports as points holding a held clamp
 /// ([`objects::Hold`]) and a place with one key ([`SpanPlace`],
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 5;
+pub const LINE_FILE_VERSION: u32 = 6;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
@@ -2788,6 +2792,14 @@ impl Line {
     /// Structure by id.
     pub fn structure(&self, id: &str) -> Option<&Structure> {
         self.structures.iter().find(|s| s.id == id)
+    }
+
+    /// The limits of string `label` of structure `structure` (not checked
+    /// by OLS CAD: for a plugin or a report to compare with the solved
+    /// forces and swings). On a resolved line they include those its
+    /// insulator gives ([`Line::resolve`]); none: no such string.
+    pub fn string_limits(&self, structure: &str, label: &str) -> Option<StringLimits> {
+        Some(self.structure(structure)?.string(label)?.limits())
     }
 
     /// The wire point a section point refers to.

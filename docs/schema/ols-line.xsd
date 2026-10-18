@@ -3,7 +3,7 @@
   OLS XML: the line model of OLS CAD (the content of a line file, .ols.json)
   as XML. See ols-line.md in this folder. The namespace keeps its 1 (the
   schema's own identity); a document's `version` attribute is the line file
-  version (now 5; older documents are read and converted).
+  version (now 6; older documents are read and converted).
 
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -28,6 +28,14 @@
 
   <xs:simpleType name="doubleList">
     <xs:list itemType="xs:double"/>
+  </xs:simpleType>
+
+  <!-- An angle limit, degrees from 0 to 180. -->
+  <xs:simpleType name="degrees180">
+    <xs:restriction base="xs:double">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="180"/>
+    </xs:restriction>
   </xs:simpleType>
 
   <xs:simpleType name="color">
@@ -324,7 +332,13 @@
                     Its wire point is placed from them (where two strings
                     meet at one: where their lengths meet, below their
                     tops). Without a length (files written before): the
-                    distance to its wire point as given.</xs:documentation>
+                    distance to its wire point as given. Version 6: optional
+                    limits OLS CAD does not check (absent: not given; for
+                    plugins and reports) — max_load, the tension it is rated
+                    for, N; max_swing_deg, the swing from straight down in
+                    any direction; max_swing_across_deg / max_swing_along_deg,
+                    projected across / along the line (degrees, 0 to
+                    180).</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
@@ -340,6 +354,10 @@
                   <xs:attribute name="stiffness" type="xs:double"/>
                   <xs:attribute name="compression" type="xs:double"/>
                   <xs:attribute name="strain" type="xs:boolean" default="false"/>
+                  <xs:attribute name="max_load" type="xs:double"/>
+                  <xs:attribute name="max_swing_deg" type="ols:degrees180"/>
+                  <xs:attribute name="max_swing_across_deg" type="ols:degrees180"/>
+                  <xs:attribute name="max_swing_along_deg" type="ols:degrees180"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="attachment" minOccurs="0" maxOccurs="unbounded">

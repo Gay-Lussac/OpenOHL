@@ -9261,6 +9261,100 @@ fn strings_are_picked_along_their_body_and_edited_by_angles() {
     assert_eq!(h.strings.len(), 1);
 }
 
+/// A string's limits (kept, not checked) in the Strings table: typed in,
+/// applied to the stored line, cleared again; a bad one refused; no other
+/// string given any; nothing flagged by them.
+#[test]
+fn string_limits_are_edited_in_the_strings_table() {
+    use crate::tables::TableKind;
+    let k = TableKind::Strings;
+    let model = synthetic_project("string-limits-table");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    for col in ["max load N", "max swing °", "max across °", "max along °"] {
+        let r = harness.state_mut().ready().unwrap();
+        let rows = k.rows(&r.model, r.case);
+        assert!(
+            rows.iter().all(|x| x.cells[k.column(col)].is_empty()),
+            "{col}"
+        );
+    }
+    set_cell(&mut harness, k, "T2\tS1", "max load N", "120000");
+    set_cell(&mut harness, k, "T2\tS1", "max across °", "40.5");
+    apply_table(&mut harness, k, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let stored = r.model.stored_line().unwrap();
+        let l = stored.string_limits("T2", "S1").unwrap();
+        assert_eq!(l.max_load, Some(120_000.0));
+        assert_eq!(l.max_swing_across_deg, Some(40.5));
+        assert_eq!((l.max_swing_deg, l.max_swing_along_deg), (None, None));
+        let given: usize = stored
+            .structures
+            .iter()
+            .flat_map(|s| &s.strings)
+            .filter(|x| !x.limits().is_empty())
+            .count();
+        assert_eq!(given, 1);
+        assert_eq!(r.model.line.string_limits("T2", "S1"), Some(l));
+        let rows = k.rows(&r.model, r.case);
+        let row = rows.iter().find(|x| x.key == "T2\tS1").unwrap();
+        assert_eq!(row.cells[k.column("max load N")], "120000");
+        assert!(!row.defaulted[k.column("max load N")]);
+    }
+    // Out of range: refused, nothing changed.
+    set_cell(&mut harness, k, "T2\tS1", "max swing °", "200");
+    assert!(apply_table(&mut harness, k, false).is_err());
+    harness.state_mut().ready().unwrap().tables.remove(&k);
+    set_cell(&mut harness, k, "T2\tS1", "max load N", "");
+    apply_table(&mut harness, k, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let l = r
+        .model
+        .stored_line()
+        .unwrap()
+        .string_limits("T2", "S1")
+        .unwrap();
+    assert_eq!((l.max_load, l.max_swing_across_deg), (None, Some(40.5)));
+}
+
+/// The string window shows a string's limits (kept, not checked), each
+/// optional; given in the form, applied to the structure's string.
+#[test]
+fn the_string_window_edits_limits() {
+    let model = synthetic();
+    let mut f = crate::editors::StringForm::of_string(&model, "T2", "S1").unwrap();
+    let k = f.strings.iter().position(|x| x.label == "S1").unwrap();
+    assert!(f.strings[k].limits.is_empty());
+    f.strings[k].limits.max_load = Some(90_000.0);
+    f.strings[k].limits.max_swing_deg = Some(50.0);
+    let mut s = model.line.structure("T2").unwrap().clone();
+    f.apply_to(&mut s, None);
+    let l = s.string("S1").unwrap().limits();
+    assert_eq!((l.max_load, l.max_swing_deg), (Some(90_000.0), Some(50.0)));
+    assert_eq!(l.max_swing_across_deg, None);
+    // The other strings: none given.
+    assert!(
+        s.strings
+            .iter()
+            .filter(|x| x.label != "S1")
+            .all(|x| x.limits().is_empty())
+    );
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.editor = Some(crate::editors::Form::String(f));
+    }
+    harness.run();
+    harness.get_by_label("max load");
+    harness.get_by_label("max swing");
+}
+
 /// The string window: where the string hangs (a list of the structure's
 /// points), its wire point by angles and length, the set's dead end, with
 /// short explanations (OLS_RENDER_PNG: an image).

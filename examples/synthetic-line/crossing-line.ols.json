@@ -1,6 +1,6 @@
 {
   "format": "ols-line",
-  "version": 5,
+  "version": 6,
   "name": "Crossing line (invented)",
   "crs": "local (invented)",
   "routes": [

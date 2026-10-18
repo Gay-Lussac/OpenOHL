@@ -261,6 +261,11 @@ impl Line {
                             axial_stiffness: ols_core::units::Force::from_newtons(stiffness),
                             wind_area: ols_core::units::Area::from_square_meters(rx.wind_area),
                             half_width: None,
+                            // The string keeps its own limits.
+                            max_load: None,
+                            max_swing: None,
+                            max_swing_across: None,
+                            max_swing_along: None,
                         });
                         known.insert(key, id.clone());
                         id
@@ -277,8 +282,9 @@ impl Line {
     /// replacing the type's with the same label (a wire point with a set
     /// replacing the type's with that set, with what moves with it), those
     /// in `omit`/`omit_sets` left out — wind areas from the insulator
-    /// library, and strain strings aimed along their conductor; then
-    /// validates it.
+    /// library, weights, stiffnesses and limits (not checked) of strings
+    /// naming an assembly where they give none, and strain strings aimed
+    /// along their conductor; then validates it.
     pub fn resolve(
         &self,
         structures: &StructureLibrary,
@@ -350,6 +356,10 @@ impl Line {
                 stiffness: x.stiffness,
                 strain: x.strain,
                 description: x.description,
+                max_load: x.limits.max_load,
+                max_swing_deg: x.limits.max_swing_deg,
+                max_swing_across_deg: x.limits.max_swing_across_deg,
+                max_swing_along_deg: x.limits.max_swing_along_deg,
                 ..Default::default()
             }));
             // Sets replaced by the structure's own wire points, or left out.
@@ -415,6 +425,14 @@ impl Line {
                 if x.stiffness.is_none() {
                     x.stiffness = Some(i.axial_stiffness.si());
                 }
+                // Its limits (not checked): its own over the assembly's.
+                let l = i.limits();
+                x.set_limits(x.limits().or(crate::StringLimits {
+                    max_load: l.max_load,
+                    max_swing_deg: l.max_swing_deg,
+                    max_swing_across_deg: l.max_swing_across_deg,
+                    max_swing_along_deg: l.max_swing_along_deg,
+                }));
             }
             for x in s.strings.iter_mut().filter(|x| x.wind_area == 0.0) {
                 if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
@@ -767,6 +785,97 @@ mod tests {
             .unwrap();
         assert_eq!(resolved.structures[1].string("S1").unwrap().wind_area, 0.35);
         assert!(StructureType::parse(Path::new("w.olss"), &text.replace("0.35", "-1")).is_err());
+    }
+
+    /// A string's limits (not checked): a type's string's own and those
+    /// of the insulator it names reach the line — its own winning, the
+    /// assembly's filling what it does not give, none given staying none;
+    /// a structure's own string naming the assembly takes them too; the
+    /// stored line keeps only what it gives, through the line file.
+    #[test]
+    fn string_limits_come_from_the_string_or_its_insulator() {
+        let olsi = "format = \"ols-insulator\"\nversion = 2\nid = \"I-lim\"\nname = \"i\"\n\
+            kind = \"suspension\"\nlength = \"4 m\"\nmax_load = \"120 kN\"\n\
+            max_swing = \"60 deg\"\nmax_swing_along = \"20 deg\"\n";
+        let mut insulators = InsulatorLibrary::default();
+        insulators
+            .insert(
+                Path::new("i.olsi"),
+                InsulatorAssembly::parse(Path::new("i.olsi"), olsi).unwrap(),
+            )
+            .unwrap();
+        let text = "format = \"ols-structure\"\nversion = 4\nid = \"L\"\nname = \"l\"\n\
+            kind = \"lattice\"\n\
+            [[point]]\nlabel = \"A1\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+            [[point]]\nlabel = \"A2\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
+            [[wire]]\nlabel = \"W1\"\nset = 1\n\
+            [[wire]]\nlabel = \"W2\"\nset = 2\n\
+            [[string]]\nlabel = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\ninsulator = \"I-lim\"\n\
+            max_swing = \"45 deg\"\nmax_swing_across = \"40 deg\"\n\
+            [[string]]\nlabel = \"S2\"\ntop = \"A2\"\nwire = \"W2\"\nlength = \"4 m\"\n";
+        let mut structures = StructureLibrary::default();
+        structures
+            .insert(
+                Path::new("l.olss"),
+                StructureType::parse(Path::new("l.olss"), text).unwrap(),
+            )
+            .unwrap();
+        let mut line = crate::tests::example();
+        let id = line.structures[1].id.clone();
+        line.structures[1].strings.clear();
+        line.structures[1].points.clear();
+        line.structures[1].wires.clear();
+        line.structures[1].structure_type = Some("L".into());
+        line.sections
+            .retain(|s| s.points.iter().all(|p| p.structure != id));
+        line.jumpers.clear();
+        // Another structure's own string names the assembly, gives a load.
+        let own = line.structures[2].strings[0].label.clone();
+        line.structures[2].strings[0].insulator = Some("I-lim".into());
+        line.structures[2].strings[0].max_load = Some(70_000.0);
+        let resolved = line.resolve(&structures, &insulators).unwrap();
+        let s1 = resolved.string_limits(&id, "S1").unwrap();
+        assert_eq!(
+            s1,
+            crate::StringLimits {
+                max_load: Some(120_000.0),
+                max_swing_deg: Some(45.0),
+                max_swing_across_deg: Some(40.0),
+                max_swing_along_deg: Some(20.0),
+            }
+        );
+        // No insulator, none given: none.
+        assert!(resolved.string_limits(&id, "S2").unwrap().is_empty());
+        let s3 = resolved
+            .string_limits(&line.structures[2].id, &own)
+            .unwrap();
+        assert_eq!(s3.max_load, Some(70_000.0));
+        assert_eq!(s3.max_swing_deg, Some(60.0));
+        assert_eq!(s3.max_swing_across_deg, None);
+        // The stored line: only its own, through the line file.
+        let json = line.to_json();
+        assert_eq!(json.matches("\"max_load\"").count(), 1);
+        assert!(!json.contains("max_swing"));
+        let back = Line::from_json(&json).unwrap();
+        assert_eq!(back, line);
+        assert_eq!(
+            back.structures[2].strings[0].limits().max_load,
+            Some(70_000.0)
+        );
+        // Refused: a load ≤ 0, an angle beyond 180°, an unknown key.
+        let mut bad = line.clone();
+        bad.structures[2].strings[0].max_load = Some(0.0);
+        assert!(bad.validate().is_err());
+        bad.structures[2].strings[0].max_load = None;
+        bad.structures[2].strings[0].max_swing_along_deg = Some(181.0);
+        assert!(bad.validate().is_err());
+        assert!(
+            Line::from_json(&json.replace("\"max_load\"", "\"max_loads\"")).is_err(),
+            "unknown key"
+        );
+        assert!(
+            StructureType::parse(Path::new("l.olss"), &text.replace("45 deg", "190 deg")).is_err()
+        );
     }
 
     /// The height adjustment raises a typed structure: its points, wire

@@ -218,6 +218,8 @@ pub struct StringRow {
     pub strain: bool,
     /// What it is, in words.
     pub description: String,
+    /// Its limits, kept and shown but not checked (empty: not given).
+    pub limits: ols_line::StringLimits,
 }
 
 /// Shapes of the strings of a new wire point.
@@ -1676,6 +1678,7 @@ impl StringForm {
                     wind_area: x.wind_area,
                     stiffness: x.stiffness,
                     strain: x.strain,
+                    limits: own_limits(model, id, x),
                 }
             })
             .collect();
@@ -1979,6 +1982,7 @@ impl StringForm {
                 wind_area: x.wind_area,
                 stiffness: x.stiffness,
                 strain: x.strain,
+                limits: own_limits(model, &self.structure, x),
             });
             self.opened.0.push(x.label.clone());
         }
@@ -2361,6 +2365,10 @@ impl StringForm {
                 wind_area: x.wind_area,
                 stiffness: x.stiffness,
                 strain,
+                max_load: x.limits.max_load,
+                max_swing_deg: x.limits.max_swing_deg,
+                max_swing_across_deg: x.limits.max_swing_across_deg,
+                max_swing_along_deg: x.limits.max_swing_along_deg,
                 // From its wire point as placed here.
                 ..Default::default()
             });
@@ -2854,6 +2862,102 @@ impl Form {
         });
         out
     }
+}
+
+/// String `x`'s own limits (as stored; not those its insulator gives,
+/// which the resolved line has too); a type's string: as resolved.
+fn own_limits(
+    model: &Model,
+    structure: &str,
+    x: &ols_line::InsulatorString,
+) -> ols_line::StringLimits {
+    model
+        .stored_line()
+        .and_then(|l| l.structure(structure))
+        .and_then(|s| s.string(&x.label))
+        .map_or(x.limits(), |o| o.limits())
+}
+
+/// An optional limit: ticked, given (`default` when ticked first);
+/// unticked, not given. `angle`: degrees from 0 to 180, else a force, N.
+/// Whether it changed.
+pub(crate) fn optional_value(
+    ui: &mut egui::Ui,
+    name: &str,
+    v: &mut Option<f64>,
+    default: f64,
+    angle: bool,
+    tip: &str,
+) -> bool {
+    let mut on = v.is_some();
+    let mut changed = ui.checkbox(&mut on, name).on_hover_text(tip).changed();
+    if changed {
+        *v = on.then_some(default);
+    }
+    if let Some(x) = v {
+        let drag = if angle {
+            egui::DragValue::new(x)
+                .range(0.0..=180.0)
+                .speed(0.5)
+                .suffix("°")
+        } else {
+            egui::DragValue::new(x)
+                .range(1.0..=1e9)
+                .speed(100.0)
+                .suffix(" N")
+        };
+        changed |= ui.add(drag.max_decimals(3)).on_hover_text(tip).changed();
+    }
+    changed
+}
+
+/// A string's limits (kept, shown, not checked by OLS CAD): the tension
+/// it is rated for and the swings it may take, each optional. Whether one
+/// changed.
+pub(crate) fn limits_ui(ui: &mut egui::Ui, l: &mut ols_line::StringLimits) -> bool {
+    const NOTE: &str = "Not checked by OLS CAD: kept with the string for a plugin or a report \
+                        that checks it. Unticked: not given (its insulator's, if the library \
+                        entry gives one)";
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label("limits").on_hover_text(NOTE);
+        changed |= optional_value(
+            ui,
+            "max load",
+            &mut l.max_load,
+            100_000.0,
+            false,
+            &format!("The tension it is rated for. {NOTE}"),
+        );
+        changed |= optional_value(
+            ui,
+            "max swing",
+            &mut l.max_swing_deg,
+            60.0,
+            true,
+            &format!("The swing from straight down it may take, any direction. {NOTE}"),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(40.0);
+        changed |= optional_value(
+            ui,
+            "across",
+            &mut l.max_swing_across_deg,
+            60.0,
+            true,
+            &format!("The swing across the line it may take, either side. {NOTE}"),
+        );
+        changed |= optional_value(
+            ui,
+            "along",
+            &mut l.max_swing_along_deg,
+            30.0,
+            true,
+            &format!("The swing along the line it may take, either way. {NOTE}"),
+        );
+    });
+    changed
 }
 
 fn value(ui: &mut egui::Ui, v: &mut f64, speed: f64, suffix: &str) -> egui::Response {
@@ -3745,6 +3849,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             *c = c.max(0.0);
                         }
                     });
+                    limits_ui(ui, &mut x.limits);
                     // A V's leg (strings meeting at one wire point): its
                     // length only; where the legs meet follows from both.
                     let legs = f.strings.iter().filter(|y| y.wire == f.strings[k].wire).count();

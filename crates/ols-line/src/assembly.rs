@@ -30,6 +30,15 @@
 //! - A string carries no compression unless it allows some
 //!   ([`InsulatorString::compression`]): it then acts both ways, and the
 //!   solve flags it when the compression exceeds that limit.
+//! - A string may carry **limits nobody checks here** ([`StringLimits`]:
+//!   the tension it is rated for, `max_load`, and the swing angles it may
+//!   take, `max_swing_deg` from straight down in any direction,
+//!   `max_swing_across_deg` / `max_swing_along_deg` projected across /
+//!   along the line): absent, not given; given, OLS CAD keeps and shows
+//!   them but checks nothing — a plugin or a report compares them with the
+//!   solved forces and angles ([`crate::solve::StringState::limits`],
+//!   [`swing`]). A string naming an insulator of the library takes the
+//!   assembly's limits where it gives none ([`crate::Line::resolve`]).
 //!
 //! Files written before (line file version 1) gave each string as one
 //! attachment (set and phase, insulator point, wire point, V legs); they
@@ -124,6 +133,129 @@ pub struct InsulatorString {
     /// given one from its position.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strain: bool,
+    /// The tension it is rated for, N (not checked by OLS CAD;
+    /// [`StringLimits`]). None: not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_load: Option<f64>,
+    /// The swing it may take from straight down, any direction, degrees
+    /// (not checked; [`StringLimits`]). None: not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_deg: Option<f64>,
+    /// The swing it may take across the line (in the structure's x–z
+    /// plane), degrees, either side (not checked). None: not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_across_deg: Option<f64>,
+    /// The swing it may take along the line (in the structure's y–z
+    /// plane), degrees, either way (not checked). None: not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_along_deg: Option<f64>,
+}
+
+impl InsulatorString {
+    /// Its limits (none given: [`StringLimits::is_empty`]).
+    pub fn limits(&self) -> StringLimits {
+        StringLimits {
+            max_load: self.max_load,
+            max_swing_deg: self.max_swing_deg,
+            max_swing_across_deg: self.max_swing_across_deg,
+            max_swing_along_deg: self.max_swing_along_deg,
+        }
+    }
+
+    /// Sets its limits.
+    pub fn set_limits(&mut self, l: StringLimits) {
+        self.max_load = l.max_load;
+        self.max_swing_deg = l.max_swing_deg;
+        self.max_swing_across_deg = l.max_swing_across_deg;
+        self.max_swing_along_deg = l.max_swing_along_deg;
+    }
+}
+
+/// The limits a string may carry that **OLS CAD does not check** (the
+/// owner's rule: optional, not checked when empty, available to a plugin
+/// or a report that checks them when given). Each absent: not given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StringLimits {
+    /// The tension it is rated for, N (e.g. its specified mechanical
+    /// load; the compression it may take is
+    /// [`InsulatorString::compression`], which the solve does use).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_load: Option<f64>,
+    /// The swing from straight down it may take, in any direction,
+    /// degrees ([`Swing::total_deg`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_deg: Option<f64>,
+    /// The swing across the line it may take, either side, degrees
+    /// ([`Swing::across_deg`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_across_deg: Option<f64>,
+    /// The swing along the line it may take, either way, degrees
+    /// ([`Swing::along_deg`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_swing_along_deg: Option<f64>,
+}
+
+impl StringLimits {
+    /// None given.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// These, where given, else `other`'s (a string's own over its
+    /// insulator's).
+    pub fn or(self, other: StringLimits) -> StringLimits {
+        StringLimits {
+            max_load: self.max_load.or(other.max_load),
+            max_swing_deg: self.max_swing_deg.or(other.max_swing_deg),
+            max_swing_across_deg: self.max_swing_across_deg.or(other.max_swing_across_deg),
+            max_swing_along_deg: self.max_swing_along_deg.or(other.max_swing_along_deg),
+        }
+    }
+
+    /// Checks the values given: a load > 0, angles from 0 to 180°.
+    pub fn check(&self) -> Result<(), String> {
+        if self.max_load.is_some_and(|l| !(l.is_finite() && l > 0.0)) {
+            return Err("the maximum load must be > 0".into());
+        }
+        for (name, a) in [
+            ("maximum swing", self.max_swing_deg),
+            ("maximum swing across", self.max_swing_across_deg),
+            ("maximum swing along", self.max_swing_along_deg),
+        ] {
+            if a.is_some_and(|a| !(0.0..=180.0).contains(&a)) {
+                return Err(format!("the {name} must be from 0 to 180°"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A string's swing as solved, degrees ([`swing`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct Swing {
+    /// From straight down, any direction (0 hanging plumb, 90 level).
+    pub total_deg: f64,
+    /// Across the line: the angle from straight down of its projection on
+    /// the structure's x–z plane, positive to the right (local +x).
+    pub across_deg: f64,
+    /// Along the line: of its projection on the structure's y–z plane,
+    /// positive ahead (local +y).
+    pub along_deg: f64,
+}
+
+/// The swing of a string from `top` to `bottom` on a structure whose local
+/// x (right of the line) points `orientation_deg` CCW from east.
+pub fn swing(orientation_deg: f64, top: Point, bottom: Point) -> Swing {
+    let v = [bottom[0] - top[0], bottom[1] - top[1], bottom[2] - top[2]];
+    let o = orientation_deg.to_radians();
+    let lx = v[0] * o.cos() + v[1] * o.sin();
+    let ly = -v[0] * o.sin() + v[1] * o.cos();
+    Swing {
+        total_deg: string_angles(orientation_deg, v).0,
+        across_deg: lx.atan2(-v[2]).to_degrees(),
+        along_deg: ly.atan2(-v[2]).to_degrees(),
+    }
 }
 
 fn is_zero(x: &f64) -> bool {
@@ -368,6 +500,9 @@ impl Structure {
             }
             if s.compression.is_some_and(|c| !(c.is_finite() && c >= 0.0)) {
                 return bad("the compression it may take must be ≥ 0");
+            }
+            if let Err(m) = s.limits().check() {
+                return bad(&m);
             }
         }
         // Every wire point on strings must reach the structure through them.

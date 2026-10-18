@@ -82,6 +82,12 @@ What hangs on a structure is given explicitly (each point, wire point and string
 | `stiffness` | no | Axial stiffness EA, N (default 5·10⁷ N). |
 | `compression` | no | Compression it may take, N: it then acts both ways (a post, a V leg designed to push), and the solve **flags** it beyond that. Without it: tension only, slack when pushed. |
 | `strain` | no (false) | A strain (dead-end) string, else a suspension string: a set on its wire point is a strain point (the conductor ends there). Solved, it lines up with its conductor by equilibrium. |
+| `max_load` | no | Version 6: the tension it is rated for, N. **Not checked** by OLS CAD (kept for a plugin or a report); absent: not given — its insulator's, if the library entry gives one. |
+| `max_swing_deg` | no | Version 6: the swing from straight down it may take, any direction, degrees (0–180). Not checked; absent: not given (its insulator's). |
+| `max_swing_across_deg` | no | Version 6: the swing across the line it may take, either side, degrees. Not checked; absent: not given (its insulator's). |
+| `max_swing_along_deg` | no | Version 6: the swing along the line it may take, either way, degrees. Not checked; absent: not given (its insulator's). |
+
+The four `max_*` values are a string's **limits** ([String limits](structure-library.md#string-limits-not-checked)): OLS CAD shows and edits them (Strings table, the string window) but checks none — a plugin reads them next to each string's solved force and swing (the export model, [Plugins](../development/plugins.md)). In the app, a limit its insulator gives is shown dimmed in the Strings table and stays the insulator's unless typed over.
 
 **A wire point's position follows from its strings**: its top, plus its length in its direction. Where two strings end at one wire point (a V), it is where their lengths meet — of the circle both reach, the point nearest where the first string's own direction points (a hanging V: the lowest) — and their directions follow. A wire point no string reaches is fixed to the structure, where it is given. So a structure point moved (in structure editing) takes its strings' wire points along, and a string made longer moves its wire point down; the `position` written for a wire point on strings is the result, not an input. There is no "ahead" or "back" for a string: its angles alone give where it points.
 

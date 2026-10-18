@@ -21,7 +21,7 @@ The names are those of the line file:
 ## Elements
 
 ```xml
-<line xmlns="urn:ols-cad:ols-line:1" format="ols-line" version="5" name="…" crs="EPSG:2056">
+<line xmlns="urn:ols-cad:ols-line:1" format="ols-line" version="6" name="…" crs="EPSG:2056">
   <route id="main" name="Main route" description="…"/>
   <alignment id="alignment 1" name="…" route="main">  <!-- one route -->
     <point ref="P1"/> <point ref="P2"/> …       <!-- its points, in order -->
@@ -35,7 +35,9 @@ The names are those of the line file:
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" weight="…" wind_area="…"
-            stiffness="…" compression="…" strain="true"/>  <!-- top: a point or a wire -->
+            stiffness="…" compression="…" strain="true"
+            max_load="120000" max_swing_deg="60"
+            max_swing_across_deg="55" max_swing_along_deg="30"/>  <!-- top: a point or a wire; max_*: limits not checked (version 6) -->
     <omit label="…"/> <omit set="2"/>           <!-- typed: the type's left out -->
     <!-- files of version 1: <attachment set phase …> with <insulator_point>,
          <wire_point>, <leg>; <omit set phase>; section points with a phase -->
