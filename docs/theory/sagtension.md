@@ -37,11 +37,11 @@ OpenOHL combines thermal and elastic strain in two ways, depending on the calcul
 | Multiplicative | \\( L = L_0\\, e^{\alpha\Delta t}\\,(1 + \bar T/EA) \\) | the linear-elastic change of state and tension sections above; the finite-element wire model for cables without stress-strain curves (every *FE* calculation of such a section: the unstressed lengths are scaled by \\( e^{\alpha\Delta t} \\), then stretched elastically); jumpers |
 | Additive | \\( \varepsilon = \varepsilon_{mech}(\bar T) + \alpha\Delta t \\), \\( L = L_0 (1 + \varepsilon) \\) | the non-linear stress-strain model (below) and so every *RS* (ruling-span) calculation of a section, and the *FE* calculation of a cable with curves (each span's length follows the curves, see [Finite-element wire systems](wirefe.md#non-linear-stress-strain-in-the-elements)); each component's mechanical strain is \\( \varepsilon - \alpha_k \Delta t \\) |
 
-**Why two.** The multiplicative form is exact and path independent (see above). The additive form is how published stress-strain curves are defined and used — total strain is mechanical strain plus \\( \alpha\Delta t \\) — and it is what PLS-CADD and the Aluminum Association method use, so the non-linear model keeps it to stay comparable with them.
+**Why two.** The multiplicative form is exact and path independent (see above). The additive form is how published stress-strain curves are defined and used — total strain is mechanical strain plus \\( \alpha\Delta t \\) — and it is what the Aluminum Association method and common line design software use, so the non-linear model keeps it to stay comparable with them.
 
 **How large the difference is.** Expanding both: \\( e^{\alpha\Delta t}(1+\varepsilon_e) - (1 + \alpha\Delta t + \varepsilon_e) \approx (\alpha\Delta t)^2/2 + \alpha\Delta t\\,\varepsilon_e \\). For an ACSR at 80 °C strung at 20 °C (\\( \alpha\Delta t \approx 1.2\times10^{-3} \\)) and an elastic strain of \\( 10^{-3} \\), that is about \\( 2\times10^{-6} \\): 0.6 mm on a 300 m span, a few millimetres of sag. In hot cases the FE and RS results of a section whose cable has no curves therefore differ by up to about 0.1–0.2 % in tension for this reason alone (the validation compares them within 0.2 %). In cold cases \\( \Delta t < 0 \\) and the difference changes sign.
 
-**Choosing.** The FE and RS methods of a section are both available in the Sections table (*Initial/Creep/Load/Max Sag × FE/RS*); the difference above is part of the difference between them, alongside what really differs (strings swinging and unequal span tensions in FE). Unifying the two forms is planned once comparisons with PLS-CADD on real lines say which to keep.
+**Choosing.** The FE and RS methods of a section are both available in the Sections table (*Initial/Creep/Load/Max Sag × FE/RS*); the difference above is part of the difference between them, alongside what really differs (strings swinging and unequal span tensions in FE). Unifying the two forms is planned once comparisons with other programs on real lines say which to keep.
 
 ## Tension sections
 
@@ -95,4 +95,8 @@ The finite-element model follows the same curves: each span's unstressed length 
 
 ## Not yet included
 
-Tension criteria (`ohl sagtension`) still use the linear-elastic cable; time-based creep models; published-case validation of the non-linear method. Results must be verified by a qualified engineer.
+- Tension criteria in `ohl sagtension` still use the linear-elastic cable.
+- Time-based creep models.
+- Validation of the non-linear method against published cases: waits for published reference data (no tables typed from memory); see the roadmap (open point O11).
+
+Results must be verified by a qualified engineer.

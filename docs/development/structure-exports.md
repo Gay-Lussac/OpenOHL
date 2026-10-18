@@ -1,7 +1,7 @@
 # Structure exports: IFC, SAF, CSV
 
 Status: **built, pre-alpha, in active development** (first written 2026-10-17; no export has been imported into RFEM, Tekla or SCIA yet), phase 7 of [Building structures](structure-building.md)
-(decision 12: export to IFC, Tekla and RFEM; PLS-TOWER later). Crate
+(decision 12: export to IFC, Tekla and RFEM; other tower programs later). Crate
 `apps/structure/ols-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).
 
@@ -194,7 +194,7 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - **Project / Model sheets**: SAF says their properties are "oriented in
   columns not in rows as usual" [S4]; they are written as name–value
   pairs, column A and B.
-- **PLS-TOWER** export: later (decision 12).
+- Exports for other tower programs: later (decision 12).
 - A structure whose model is a separate `.olsfe` (`model = "…"`) is not
   exported yet (the export builds the model from the `.olss` itself).
 

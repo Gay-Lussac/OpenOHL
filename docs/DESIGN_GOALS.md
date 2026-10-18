@@ -190,7 +190,7 @@ Each **structure type** (pylon, pole, portal…) is a file of its own (`*.olss`,
 
 ### Simple pylon files
 
-How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder (like PLS-CADD's structure files). Detailed assemblies (`.olsi`, linked strings) stay available when a pylon needs them.
+How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder. Detailed assemblies (`.olsi`, linked strings) stay available when a pylon needs them.
 
 ## 11. Insulator assembly library (`.olsi`)
 

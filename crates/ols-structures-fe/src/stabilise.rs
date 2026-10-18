@@ -4,7 +4,7 @@
 
 //! Joint stabilisation: the directions in which a joint has (nearly) no
 //! stiffness of its own, found from the model's geometry, and held so the
-//! stiffness matrix can be factorised (the way PLS-TOWER stabilises the
+//! stiffness matrix can be factorised (the way tower programs stabilise the
 //! joints of towers drawn as trusses).
 //!
 //! - **Translations** of a joint with no frame member: the directions its

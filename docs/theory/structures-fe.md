@@ -40,7 +40,7 @@ A **mechanism** is reported with the part that moves: after the zero pivot, the 
 
 ## Joint stabilisation
 
-Towers modelled as trusses have joints with no stiffness of their own in some direction; the stiffness matrix is then singular. Following the practice of tower programs (PLS-TOWER stabilises such joints), the solver holds those directions — only when a solve without them fails (a zero pivot, or a negative one: buckling), so that a model that solves as it is is solved by exactly the same operations and its results are unchanged bit for bit. The directions come from the geometry (`ols_structures_fe::stabilise`):
+Towers modelled as trusses have joints with no stiffness of their own in some direction; the stiffness matrix is then singular. Following the practice of tower programs, which stabilise such joints, the solver holds those directions — only when a solve without them fails (a zero pivot, or a negative one: buckling), so that a model that solves as it is is solved by exactly the same operations and its results are unchanged bit for bit. The directions come from the geometry (`ols_structures_fe::stabilise`):
 
 - **Translations** of a joint without a frame member: the eigenvectors of \\( \mathbf S = \sum \mathbf e\mathbf e^T \\) over the unit directions \\( \mathbf e \\) of its truss and cable members and of its supported or sprung axes, with an eigenvalue below \\( 10^{-6} \\) of the largest (\\( \mathbf e^T\mathbf n \\) is the sine of a member's angle to the free plane, so this is about 0.06°): the normal of a plane of coplanar members, the plane normal to collinear ones. The joint's elastic stiffness along such an \\( \mathbf n \\) is \\( \sum \frac{EA}{L} (\mathbf e\cdot\mathbf n)^2 \approx 0 \\).
 - **Rotations** about the common axis \\( \mathbf a \\) of a chain of collinear frame members, when no joint of the chain has a frame in another direction or a rotational support or spring with a component about \\( \mathbf a \\): a rigid rotation of the chain about its axis strains nothing (no twist between the ends, no bending, no translation). One joint of the chain (its first in node order) is held. Joints with truss members only have no rotational degrees of freedom at all.
@@ -51,7 +51,7 @@ What is not a single joint's freedom (a rigid motion of a part of several joints
 
 ## Tension-only members: active-set iterations
 
-Tension-only members make the problem one with inequality constraints (no member force below zero); it is solved as tower programs solve it (PLS-TOWER's "T-only" members), by a sequence of linear (or P-Delta) solves on a changing set of **active** members. With \\( \mathcal S \\) the set of tension-only members left out (slack), starting empty:
+Tension-only members make the problem one with inequality constraints (no member force below zero); it is solved as tower programs solve it (their "tension-only" members), by a sequence of linear (or P-Delta) solves on a changing set of **active** members. With \\( \mathcal S \\) the set of tension-only members left out (slack), starting empty:
 
 1. solve the model without the members of \\( \mathcal S \\) (stabilised as above on that model);
 2. \\( \mathcal S' = \\{ m \notin \mathcal S : N_m < -\varepsilon \\} \cup \\{ m \in \mathcal S : \frac{EA}{L}\\,\delta_m \le \varepsilon \\} \\), with \\( \delta_m \\) the stretch of a left-out member (below) and \\( \varepsilon = 10^{-9} \max |N| \\) of the solve, so that round-off on a member without force does not switch it;

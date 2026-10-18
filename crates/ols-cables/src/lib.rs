@@ -623,7 +623,7 @@ impl std::error::Error for CableError {}
 /// File extension of OpenOHL wire libraries (`*.olsw`, "OLS wire").
 ///
 /// The content is TOML. A dedicated extension (rather than reusing another
-/// program's, e.g. PLS-CADD's `.wir`) avoids confusing different formats.
+/// program's, e.g. another line design program's cable files) avoids confusing different formats.
 pub const WIRE_FILE_EXTENSION: &str = "olsw";
 
 /// Value of the optional `format` header of wire libraries.

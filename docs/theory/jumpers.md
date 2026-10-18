@@ -154,7 +154,7 @@ solved by finite elements only (not the ruling span).
 
 ## Rigid jumpers
 
-A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut. The PLS-CADD jumpers marked rigid are read this way.
+A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut.
 
 ## Cutting a jumper given by its sag
 

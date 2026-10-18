@@ -963,20 +963,20 @@ fn csv_points_with_mapped_columns() {
     assert!(e.contains("x_column"), "{e}");
 }
 
-/// Another program's XML report (here a PLS-CADD one, in Windows-1252) is
+/// Another program's XML report (here one written in Windows-1252) is
 /// read in its encoding and refused with where to open it instead.
 #[test]
 fn other_programs_xml_reports_say_where_they_go() {
     let report = b"<?xml version='1.0' encoding='windows-1252' standalone='yes'?>\r\n\
         <!-- Created by the program (L\xe9on) -->\r\n\
-        <root><creator application='PLS-CADD' version='20'/><project_notes>Gr\xfcn</project_notes></root>";
+        <root><creator application='OtherLineProgram' version='20'/><project_notes>Gr\xfcn</project_notes></root>";
     let e = Registry::with_builtin()
         .importer("xml")
         .unwrap()
         .import(report, None, &Options::new())
         .unwrap_err();
     assert!(
-        e.contains("PLS-CADD") && e.contains("New project from another program"),
+        e.contains("OtherLineProgram") && e.contains("New project from another program"),
         "{e}"
     );
 }

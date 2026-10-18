@@ -82,4 +82,7 @@ On a dead-end span with the wires fixed at the structures, FE and RS then agree 
 
 ## Not yet included
 
-Structure flexibility (the insulator points are fixed; the structures are analysed separately, see [Structure analysis](structures-fe.md)), general linked insulator assemblies (yokes and jumper support strings as one graph), dynamic effects.
+- **Structure flexibility**: the structures' points are fixed in the wire solve; the structures are analysed separately ([Structure analysis](structures-fe.md)). Decided as the structure–line interaction levels: level 3 adds a stiffness at each structure's suspension points (from level 3 structures), level 4 iterates structures and line together — both planned, see the roadmap (open point O7).
+- **Dynamic effects** (galloping is treated by ellipses, see [Galloping](galloping.md)).
+
+Linked insulator assemblies are built: strings hang from structure points or from other strings (a V with a string below it, TAKs coupling two sections), and jumper support clamps hang on a structure's strings.

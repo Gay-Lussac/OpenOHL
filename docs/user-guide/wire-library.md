@@ -167,5 +167,5 @@ solar_absorptivity = 0.5
 | `geometric_mean_radius` | length | For inductance; at most the cable's radius. |
 | `emissivity`, `solar_absorptivity` | number 0–1 | Surface coefficients for [thermal rating](thermal.md) (0.8 when not given). |
 
-PLS-CADD cable files (`.wir`) hold the same data (AC resistances at two temperatures, DC resistance, geometric mean radius, emissivity); a PLS-CADD importer can fill this table.
+Cable files of other line design programs often hold the same data (AC resistances at two temperatures, DC resistance, geometric mean radius, emissivity); no importer for them is built.
 
