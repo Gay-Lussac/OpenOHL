@@ -986,7 +986,7 @@ impl StructureApp {
                                 r.source.as_str()
                             });
                             ui.label(if r.source == Source::Typed {
-                                source.color(egui::Color32::YELLOW)
+                                source.color(ui.visuals().warn_fg_color)
                             } else {
                                 source
                             });
@@ -1000,9 +1000,7 @@ impl StructureApp {
                                 )
                             }));
                             match &r.missing {
-                                Some(m) => {
-                                    ui.colored_label(egui::Color32::from_rgb(255, 170, 60), m)
-                                }
+                                Some(m) => ui.colored_label(ui.visuals().warn_fg_color, m),
                                 None if r.note.starts_with("incomplete:") => {
                                     ui.colored_label(INCOMPLETE, &r.note).on_hover_text(
                                         "A section or jumper at this structure did not solve in \
@@ -1390,7 +1388,7 @@ impl StructureApp {
                 for (text, tone) in lines {
                     let t = egui::RichText::new(text).strong();
                     match tone {
-                        Tone::Warn => ui.colored_label(egui::Color32::from_rgb(255, 170, 60), t),
+                        Tone::Warn => ui.colored_label(ui.visuals().warn_fg_color, t),
                         _ => ui.label(t),
                     };
                 }
@@ -1657,7 +1655,7 @@ impl StructureApp {
                     }
                 } else {
                     ui.colored_label(
-                        egui::Color32::from_rgb(255, 170, 60),
+                        ui.visuals().warn_fg_color,
                         format!(
                             "The file has cases of these names: {}. Replace them?",
                             form.replace.join(", ")
