@@ -147,6 +147,32 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
     Some(text)
 }
 
+/// The tension-only members kept active because the active set did not
+/// settle ([`Solution::kept_active`]) in words (none: it settled, or the
+/// model has none): `tension-only members kept active because the set did
+/// not settle: AC, BD — approximate; to be treated later`.
+pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
+    let kept = &solution.kept_active;
+    if kept.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = kept
+        .iter()
+        .take(NOTE_NAMES)
+        .map(|&k| model.members[k].id.as_str())
+        .collect();
+    Some(format!(
+        "tension-only members kept active because the set did not settle: {}{} — \
+         approximate; to be treated later",
+        names.join(", "),
+        if kept.len() > NOTE_NAMES {
+            format!(", … ({} in all)", kept.len())
+        } else {
+            String::new()
+        }
+    ))
+}
+
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]

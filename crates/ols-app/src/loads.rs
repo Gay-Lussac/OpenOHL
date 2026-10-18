@@ -48,17 +48,21 @@ pub enum UsageMark {
     /// Not checked: a section or jumper at it did not solve (its loads
     /// are incomplete).
     Incomplete,
+    /// Approximate: its finite-element check kept tension-only members
+    /// active because their set did not settle.
+    Approximate,
     /// Nothing to check against (no type, no capacity).
     Unchecked,
 }
 
 impl UsageMark {
     /// Every mark, in the legend's order.
-    pub const ALL: [UsageMark; 5] = [
+    pub const ALL: [UsageMark; 6] = [
         UsageMark::Within,
         UsageMark::Near,
         UsageMark::Over,
         UsageMark::Incomplete,
+        UsageMark::Approximate,
         UsageMark::Unchecked,
     ];
 
@@ -66,6 +70,7 @@ impl UsageMark {
     pub fn of(s: &StructureUsage) -> Self {
         match s.status() {
             UsageStatus::Incomplete => Self::Incomplete,
+            UsageStatus::Approximate => Self::Approximate,
             UsageStatus::NotChecked => Self::Unchecked,
             UsageStatus::Over => Self::Over,
             UsageStatus::Pass => match s.governing() {
@@ -82,6 +87,7 @@ impl UsageMark {
             Self::Near => [255, 170, 60],
             Self::Over => [235, 70, 60],
             Self::Incomplete => [150, 156, 170],
+            Self::Approximate => [175, 120, 220],
             Self::Unchecked => [95, 100, 110],
         }
     }
@@ -93,6 +99,7 @@ impl UsageMark {
             Self::Near => "90 – 100 %",
             Self::Over => "over 100 %",
             Self::Incomplete => "not checked: a wire not solved",
+            Self::Approximate => "approximate (tension-only kept)",
             Self::Unchecked => "no capacity to check",
         }
     }

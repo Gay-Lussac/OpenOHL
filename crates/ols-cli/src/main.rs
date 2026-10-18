@@ -1438,6 +1438,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         g.governs,
                         if s.is_incomplete() {
                             "  (incomplete)"
+                        } else if s.is_approximate() {
+                            "  (approximate)"
                         } else {
                             ""
                         }
@@ -1460,6 +1462,27 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     incomplete.len()
                 );
                 for line in incomplete.iter().take(20) {
+                    println!("  {line}");
+                }
+            }
+            // Structures whose finite-element check kept tension-only
+            // members active (their set did not settle): approximate.
+            let approximate: Vec<String> = usage
+                .iter()
+                .flat_map(|c| {
+                    c.structures
+                        .iter()
+                        .filter(|s| s.is_approximate())
+                        .map(|s| format!("{} in {}", s.structure, c.case))
+                })
+                .collect();
+            if !approximate.is_empty() {
+                println!(
+                    "structure usage approximate (tension-only members kept active, their \
+                     set did not settle; to be treated later), {}:",
+                    approximate.len()
+                );
+                for line in approximate.iter().take(20) {
                     println!("  {line}");
                 }
             }

@@ -622,6 +622,11 @@ fn analyse_one(
     if let Some(note) = ols_structures_fe::tension_only_note(model, &solution) {
         notes.push(note);
     }
+    // Tension-only members kept active (their set did not settle): the
+    // results are approximate; their members' `governs` say so too.
+    if let Some(note) = ols_structures_fe::kept_active_note(model, &solution) {
+        notes.push(note);
+    }
     let joints = model
         .nodes
         .iter()

@@ -126,13 +126,17 @@ pub enum FeError {
     },
     /// The tension-only members do not settle: the active-set iterations
     /// came back to a set they had solved before (a cycle), or took
-    /// [`TENSION_PASSES`] solves.
+    /// [`TENSION_PASSES`] solves. [`solve`] does not give this error: it
+    /// keeps such members active and flags the solution
+    /// ([`Solution::kept_active`]); the iterations alone do.
     Unsettled {
         /// The members going taut and slack in turn (at most
         /// [`MECHANISM_JOINTS`] named).
         members: Vec<String>,
         /// How many flip in all.
         flipping: usize,
+        /// All of them, by index in the model.
+        indices: Vec<usize>,
         /// Solves done.
         passes: u32,
         /// A cycle (else: out of passes).
@@ -193,6 +197,7 @@ impl fmt::Display for FeError {
                 flipping,
                 passes,
                 cycle,
+                ..
             } => write!(
                 f,
                 "tension-only members do not settle: {}{} go taut and slack in turn ({})",
@@ -265,6 +270,16 @@ pub struct Solution {
     /// ([`MemberKind::Tension`]): 0 for a model without any (solved
     /// once, as always); [`Solution::iterations`] are those of the last.
     pub passes: u32,
+    /// The tension-only members kept active, as ordinary truss members,
+    /// because the active-set iterations did not settle (they went taut
+    /// and slack in turn): indices, in member order; empty when the set
+    /// settled. Such a solution is **approximate** — a member kept active
+    /// may be compressed, which it cannot be — and is flagged so in the
+    /// notes ([`crate::kept_active_note`]) and the usage
+    /// ([`crate::check::KEPT_ACTIVE`]). Not settling may mean information
+    /// is missing at that point (a part held only by those members);
+    /// to be treated later (see the theory manual).
+    pub kept_active: Vec<usize>,
 }
 
 /// Per member: what does not change between iterations.
@@ -308,6 +323,14 @@ struct Prepared {
 /// joint held only by members gone slack is held in the directions they
 /// left free. A model without tension-only members is solved once, as
 /// always.
+///
+/// When the set does **not settle** ([`FeError::Unsettled`]: a cycle, or
+/// [`TENSION_PASSES`] solves), the members going taut and slack in turn
+/// are kept active as ordinary truss members and the iterations repeated
+/// on the others — until they settle, or no tension-only member is left
+/// (the model then solved once). The solution names them
+/// ([`Solution::kept_active`]) and is approximate. A model that settles
+/// solves exactly as before.
 pub fn solve(
     model: &Model,
     loads: &Loads,
@@ -323,7 +346,7 @@ pub fn solve(
 /// Solves `model` with the members `inactive` left out (empty: none),
 /// stabilised when it fails as a mechanism or as unstable (see
 /// [`solve`]).
-fn solve_stabilised(
+pub(crate) fn solve_stabilised(
     model: &Model,
     loads: &Loads,
     options: &Options,
@@ -354,23 +377,60 @@ pub const TENSION_TOLERANCE: f64 = 1e-9;
 
 /// [`solve`] of a model with tension-only members: the active-set
 /// iterations.
+///
+/// A set that does not settle: its flipping members kept active (made
+/// trusses in a copy of the model) and the iterations repeated
+/// ([`Solution::kept_active`]); each round makes at least one member a
+/// truss, so the rounds end.
 fn solve_tension_only(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
 ) -> Result<Solution, FeError> {
-    let (mut s, passes) = settle(model, options.nonlinear, |nonlinear, inactive| {
-        let opts = Options {
-            nonlinear,
-            ..*options
-        };
-        let s = solve_stabilised(model, loads, &opts, budget, inactive)?;
-        let (next, shortening) = next_active_set(model, &s, inactive);
-        Ok((s, next, shortening))
-    })?;
-    s.passes = passes;
-    Ok(s)
+    // The model with the members kept active made trusses (none: as it is).
+    let mut kept_model: Option<Model> = None;
+    let mut kept: Vec<usize> = Vec::new();
+    let mut done = 0;
+    loop {
+        let m = kept_model.as_ref().unwrap_or(model);
+        if !m.members.iter().any(|x| x.kind == MemberKind::Tension) {
+            // Every tension-only member kept active: one solve.
+            let mut s = solve_stabilised(m, loads, options, budget, &[])?;
+            s.passes = done + 1;
+            s.kept_active = kept;
+            return Ok(s);
+        }
+        let result = settle(m, options.nonlinear, |nonlinear, inactive| {
+            let opts = Options {
+                nonlinear,
+                ..*options
+            };
+            let s = solve_stabilised(m, loads, &opts, budget, inactive)?;
+            let (next, shortening) = next_active_set(m, &s, inactive);
+            Ok((s, next, shortening))
+        });
+        match result {
+            Ok((mut s, passes)) => {
+                s.passes = done + passes;
+                s.kept_active = kept;
+                return Ok(s);
+            }
+            Err(FeError::Unsettled {
+                indices, passes, ..
+            }) if !indices.is_empty() => {
+                done += passes;
+                let copy = kept_model.get_or_insert_with(|| model.clone());
+                for k in indices {
+                    copy.members[k].kind = MemberKind::Truss;
+                    kept.push(k);
+                }
+                kept.sort_unstable();
+                kept.dedup();
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// The active-set iterations: `step(nonlinear, inactive)` solves the
@@ -391,7 +451,8 @@ fn solve_tension_only(
 /// needs it in compression).
 ///
 /// A set solved before in the same phase (a cycle) or [`TENSION_PASSES`]
-/// solves: [`FeError::Unsettled`]. The last solution and the solves done.
+/// solves: [`FeError::Unsettled`] ([`solve`] then keeps the flipping
+/// members active). The last solution and the solves done.
 pub(crate) fn settle<S>(
     model: &Model,
     nonlinear: bool,
@@ -443,13 +504,17 @@ pub(crate) fn settle<S>(
             if cycle.is_some() || passes >= TENSION_PASSES {
                 // The members that change within the cycle (or in all).
                 let from = &seen[cycle.unwrap_or(0)..];
-                let flipping: Vec<String> = (0..model.members.len())
+                let indices: Vec<usize> = (0..model.members.len())
                     .filter(|&k| from.iter().any(|x| x[k] != inactive[k]))
-                    .map(|k| model.members[k].id.clone())
                     .collect();
                 return Err(FeError::Unsettled {
-                    members: flipping.iter().take(MECHANISM_JOINTS).cloned().collect(),
-                    flipping: flipping.len(),
+                    members: indices
+                        .iter()
+                        .take(MECHANISM_JOINTS)
+                        .map(|&k| model.members[k].id.clone())
+                        .collect(),
+                    flipping: indices.len(),
+                    indices,
                     passes,
                     cycle: cycle.is_some(),
                 });
@@ -480,7 +545,11 @@ pub(crate) fn settle<S>(
 ///
 /// Also per member its shortening strain (its tie's compression over its
 /// EA) when its tie is active and compressed, else 0 ([`settle`]).
-fn next_active_set(model: &Model, s: &Solution, inactive: &[bool]) -> (Vec<bool>, Vec<f64>) {
+pub(crate) fn next_active_set(
+    model: &Model,
+    s: &Solution,
+    inactive: &[bool],
+) -> (Vec<bool>, Vec<f64>) {
     let largest = s.members.iter().map(|f| f.axial.abs()).fold(0.0, f64::max);
     let tolerance = TENSION_TOLERANCE * largest;
     let stretch = slack_stretch(model, s, inactive);
@@ -1057,6 +1126,7 @@ fn solve_with(
         nonlinear: options.nonlinear,
         stabilised,
         passes: 0,
+        kept_active: Vec::new(),
     })
 }
 

@@ -6,13 +6,14 @@
 //! compressed diagonal goes slack (against the hand solution of the
 //! panel with one diagonal), the load reversed, a crossing joint held
 //! only by slack halves, P-Delta, the cycle and pass limits of the
-//! active-set iterations, and models whose tension-only members stay
-//! taut solving exactly as trusses.
+//! active-set iterations, a set that does not settle (its members kept
+//! active, the solution flagged approximate), and models whose
+//! tension-only members stay taut solving exactly as trusses.
 
-use crate::solve::{TENSION_PASSES, settle};
+use crate::solve::{TENSION_PASSES, next_active_set, settle, solve_stabilised};
 use crate::{
     FeError, Loads, Member, MemberKind, Model, NodalLoad, Node, Options, Section, Solution,
-    default_budget, member_usage, solve, tension_only_note,
+    default_budget, kept_active_note, member_usage, solve, tension_only_note,
 };
 
 const E: f64 = 2.1e11;
@@ -294,14 +295,15 @@ fn unsettled_sets_are_refused_naming_the_members() {
         flipping,
         passes,
         cycle,
+        indices,
     } = &e
     else {
         panic!("{e}");
     };
     assert!(*cycle && *passes == 3, "{e}");
     assert_eq!(
-        (members.as_slice(), *flipping),
-        (&["AC".to_owned(), "BD".to_owned()][..], 2)
+        (members.as_slice(), *flipping, indices.as_slice()),
+        (&["AC".to_owned(), "BD".to_owned()][..], 2, &[3, 4][..])
     );
     assert!(
         e.to_string().contains("AC, BD go taut and slack in turn"),
@@ -358,4 +360,101 @@ fn mechanism() -> FeError {
         joints: vec!["M".into()],
         moving: 1,
     }
+}
+
+/// A pair of tension-only diagonals AC and BD of a 4 m × 3 m frame,
+/// each in two halves through a joint M 1 mm off the line of AC (so AM,
+/// MC are still one tie, as are BM, MD), the corners pinned, M held
+/// otherwise only by a weak spring (1 kN/m): with the halves taken out,
+/// M is nearly free. Pulled along the frame, the iterations go round:
+/// the halves of AC taut and slack in turn — the pattern seen on a
+/// tower whose diagonals left a part nearly free.
+fn kinked_joint(kind: MemberKind) -> Model {
+    let mut m = Model {
+        sections: vec![Section::elastic("s", E, 1e-3, 0.0)],
+        ..Model::default()
+    };
+    let mut joint = Node::free("M", [2.0, 0.0, 1.501]);
+    joint.spring = [1e3, 1e3, 1e3, 0.0, 0.0, 0.0];
+    m.nodes = vec![
+        Node::pinned("A", [0.0, 0.0, 0.0]),
+        Node::pinned("B", [4.0, 0.0, 0.0]),
+        Node::pinned("C", [4.0, 0.0, 3.0]),
+        Node::pinned("D", [0.0, 0.0, 3.0]),
+        joint,
+    ];
+    for (id, i) in [("AM", 0), ("MC", 2), ("BM", 1), ("MD", 3)] {
+        m.members.push(Member::new(id, kind, i, 4, 0));
+    }
+    m
+}
+
+fn kinked_loads() -> Vec<NodalLoad> {
+    vec![force(4, [H, 0.0, 0.0])]
+}
+
+/// The set of the kinked joint does not settle: its flipping halves are
+/// kept active as ordinary trusses, the others solved by the active-set
+/// iterations, and the solution flagged — named in the solution, the
+/// note, and what governs their usage. The numbers are those of the
+/// model with those halves made trusses.
+#[test]
+fn an_unsettled_set_keeps_its_members_active_and_flags_the_solution() {
+    let m = kinked_joint(MemberKind::Tension);
+    assert_eq!(crate::solve::chains(&m), [vec![0, 1], vec![2, 3]]);
+    // The iterations alone: a cycle of the halves of AC.
+    let loads = Loads {
+        nodal: kinked_loads(),
+        self_weight: 0.0,
+    };
+    let e = settle(&m, false, |_, inactive| {
+        let s = solve_stabilised(&m, &loads, &first_order(), &default_budget(), inactive)?;
+        let (next, shortening) = next_active_set(&m, &s, inactive);
+        Ok((s, next, shortening))
+    })
+    .unwrap_err();
+    assert!(
+        matches!(&e, FeError::Unsettled { cycle: true, indices, .. } if indices == &[0, 1]),
+        "{e}"
+    );
+    for options in [first_order(), Options::default()] {
+        let s = solved(&m, kinked_loads(), &options);
+        assert_eq!(s.kept_active, [0, 1], "{s:?}");
+        assert!(s.passes > 2);
+        // The same as the halves of AC made trusses.
+        let mut t = m.clone();
+        t.members[0].kind = MemberKind::Truss;
+        t.members[1].kind = MemberKind::Truss;
+        let r = solved(&t, kinked_loads(), &options);
+        assert!(r.kept_active.is_empty());
+        assert_eq!(s.displacements, r.displacements);
+        assert_eq!(s.members, r.members);
+        assert_eq!(s.reactions, r.reactions);
+        // Equilibrium: the supports and the spring (−k·u) take the load.
+        let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+        let spring = -1e3 * s.displacements[4][0];
+        assert!(close(sum + spring, -H), "{sum} {spring}");
+        assert_eq!(
+            kept_active_note(&m, &s).unwrap(),
+            "tension-only members kept active because the set did not settle: AM, MC — \
+             approximate; to be treated later"
+        );
+        let mut steel = m.clone();
+        steel.sections[0].yield_strength = Some(355e6);
+        let u = member_usage(&steel, &s, 1.0);
+        for k in [0, 1] {
+            assert!(
+                u[k].governs.ends_with(crate::check::KEPT_ACTIVE),
+                "{}",
+                u[k].governs
+            );
+        }
+        for k in [2, 3] {
+            assert!(!u[k].governs.contains(crate::check::KEPT_ACTIVE));
+        }
+    }
+    // A model that settles: no member kept active, no note.
+    let p = panel(MemberKind::Tension, false);
+    let s = solved(&p, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    assert!(s.kept_active.is_empty() && kept_active_note(&p, &s).is_none());
 }
