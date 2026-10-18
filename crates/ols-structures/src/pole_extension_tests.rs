@@ -41,10 +41,11 @@ fn pole_levels() {
         p.missing_for_design(),
         [
             "pole: no material",
-            "pole: no strength (fibre stress, moment capacity or a capacity table)"
+            "pole: no strength (fibre stress, moment capacity or a capacity table)",
+            "pole: no wall thickness (its wall, or a section)"
         ]
     );
-    // Steel: its wall too.
+    // Its wall too, whatever the material.
     let steel = parse(&with(
         "material = \"steel\"\nmoment_capacity = \"300 kN m\"\n",
     ))
@@ -57,15 +58,20 @@ fn pole_levels() {
             .and_then(PoleRef::inline)
             .unwrap()
             .missing_for_design(),
-        ["pole: no wall (a steel pole: its wall, or a section)"]
+        ["pole: no wall thickness (its wall, or a section)"]
     );
     let full = parse(&with(
         "material = \"steel\"\nmoment_capacity = \"300 kN m\"\nwall = \"6 mm\"\n",
     ))
     .unwrap();
     assert_eq!(full.detail(), Detail::Design);
-    // A wood pole is solid.
+    // A wood pole needs its wall thickness as well.
     let wood = parse(&with("material = \"wood\"\nfibre_stress = \"50 MPa\"\n")).unwrap();
+    assert_eq!(wood.detail(), Detail::Outline);
+    let wood = parse(&with(
+        "material = \"wood\"\nfibre_stress = \"50 MPa\"\nwall = \"60 mm\"\n",
+    ))
+    .unwrap();
     assert_eq!(wood.detail(), Detail::Design);
     // A section from the library stands for the wall.
     let section = parse(&with(
