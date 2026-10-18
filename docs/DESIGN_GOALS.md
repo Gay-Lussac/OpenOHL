@@ -7,7 +7,7 @@ OpenOHL aims to be **faster and more user-friendly** than existing overhead line
 - The computation core is written in a **compiled, memory-safe language (Rust)** — no interpreted code in hot paths.
 - Python is a **scripting and plugin layer only**, never required for the core to run.
 - The GUI renders on the GPU and never blocks on computation: calculations run on background threads and results stream in.
-- Every performance-sensitive feature ships with a benchmark tracked in CI; regressions fail the build.
+- Every performance-sensitive feature ships with a criterion benchmark (so far: units and the catenary). The CI workflow is started by hand only; a full run compares the benchmarks with the parent commit and fails when one is more than 1.5× slower.
 
 ### Performance targets (initial, to be refined)
 
@@ -30,7 +30,7 @@ Nothing in OpenOHL may run forever or freeze the application. Every function tha
 - These rules are implemented once in `ohl_core::budget` (`Budget`, `CancelToken`, `Stop`), and every engine uses them.
 - **Plugins** run with a time limit per call (default 5 s) and a memory cap (default 256 MiB); a runaway plugin is interrupted and reported (`PluginError::Timeout`) without affecting the rest of the application.
 - **Validation cases** have a time limit (`max_seconds`, default 10 s) and their duration is recorded in the report.
-- **CI jobs** have a `timeout-minutes` limit; benchmarks use fixed measurement times.
+- **CI jobs** (run by hand only) have a `timeout-minutes` limit; benchmarks use fixed measurement times.
 - Budgets are derived from the performance targets above: when a target says "< 10 ms", the default time limit is set with a safety margin (e.g. 10×) so a limit being hit always indicates a real problem to investigate, not normal variation.
 
 ## 2. User-friendliness
@@ -140,7 +140,7 @@ Built on the command log and stable object IDs: revisions, history, diff with en
 
 ## 8. Exports and interoperability
 
-Exports and imports are **plugins** (`ohl.importers` / `ohl.exporters`), so new formats can be added without touching the core. Formats that must eventually be covered:
+Exports and imports are **formats in a registry** (`ohl-io`: built-in importers and exporters, and `io-plugin` WebAssembly plugins), so new formats can be added without touching the core. Formats that must eventually be covered:
 
 | Area | Formats |
 |---|---|

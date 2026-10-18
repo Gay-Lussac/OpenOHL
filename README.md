@@ -10,9 +10,9 @@ An open-source, modular set of desktop applications and engines for designing an
 
 **Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (pylons and their loading) and `ohl` the command line. The project was formerly called "OLS CAD": the old program names `ols-cad`, `ols-structure` and `ols` still work for a while (they say so and run the new ones), and the launchers are now `Start OHL-Design.command` and `Start OHL-Structure.command`. File extensions and format ids changed from ols to ohl on 2026-10-18 (`.ohl`, `.ohls`, `.ohlw`…, `ohl-structure`…); older files still open.
 
-OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open, documented in a theory manual and checked against validation cases.
+OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open and documented in a theory manual; validation cases with reference results check them (69 cases so far).
 
-> **Pre-alpha.** Phases 0 to 3 of the [roadmap](ROADMAP.md) are done, and Phases 4 and 5 are in place as a base. A qualified engineer must check every engineering result.
+> **Pre-alpha.** Phases 0 to 3 of the [roadmap](ROADMAP.md) are built and Phases 4 and 5 are built as a base, all in active development (nothing is approved yet). A qualified engineer must check every engineering result.
 
 ## What it does
 
@@ -79,7 +79,7 @@ Key pages:
 
 ## Workspace layout
 
-One Rust crate per module, in [`crates/`](crates/):
+One Rust crate per module, in [`crates/`](crates/) (the structure application's crates are apart, in [`apps/structure/`](apps/structure/): see [Structure application crates](docs/development/structure-app.md)):
 
 | Crate | What it holds |
 |---|---|
@@ -114,7 +114,7 @@ One Rust crate per module, in [`crates/`](crates/):
 | `ohl-cli` | Command-line tool `ohl` |
 | `ohl-py` | Python bindings (`import ohl`) |
 
-Other folders: [`plugins/`](plugins/) (design codes, examples, tests), [`libraries/`](libraries/) (shipped cable libraries and LiDAR class schemes), [`benchmarks/`](benchmarks/) (validation cases with reference results), [`examples/`](examples/) (synthetic lines and job files), [`docs/`](docs/) (the book).
+Other folders: [`plugins/`](plugins/) (design codes, examples, tests), [`libraries/`](libraries/) (shipped example libraries: cables, insulators, objects, pylon templates, sections; LiDAR class schemes), [`benchmarks/`](benchmarks/) (validation cases with reference results), [`examples/`](examples/) (synthetic lines and job files), [`docs/`](docs/) (the book).
 
 ## Plugins
 
@@ -134,7 +134,7 @@ See also [GOVERNANCE.md](GOVERNANCE.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 ## Roadmap
 
-[ROADMAP.md](ROADMAP.md) lists the phases, what is done and what is next: pylons in three levels of detail, structure–line interaction, foundations, more server and version-control features, and a stable plugin SDK for 1.0.
+[ROADMAP.md](ROADMAP.md) lists the phases, what is built and what is next: pylons in three levels of detail, structure–line interaction, foundations, more server and version-control features, and a stable plugin SDK for 1.0.
 
 ## Licence
 

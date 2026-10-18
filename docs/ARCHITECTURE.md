@@ -81,6 +81,7 @@ other way round, and its tests run on their own.
 | `ohl-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
 | `ohl-structure-tests` | Tests of the application with the core (test-only) |
 | `ohl-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ohl-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
+| `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](development/structure-exports.md)): IFC4, IFC2x3, SAF, CSV tables; the tool `ohl-structure-export` |
 | `ohl-structure-app` | OHL-Structure, the structure application `ohl-structure` (egui): a `.ohls` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
 
 ## Session & collaboration
@@ -117,7 +118,7 @@ Three tiers, same API surface:
 | **WebAssembly** | Third-party calculations, design codes, checks | Near-native speed, any language (Rust, C, C++, Zig…), sandboxed — safe to run on a shared server |
 | **Python** | Scripts, reports, glue, prototyping, I/O formats | Easiest for engineers; not in hot loops |
 
-WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plugin` (file formats, extension point `io`), `terrain-plugin` (`terrain`), `project-plugin` (`project`, projects from other programs) and `code-plugin` (`design-code`). Python plugins are scripts run by the application's console. Each plugin declares the interface version it targets in its manifest; see [Writing plugins](development/plugins.md). Further extension points (cable models, checks, reports, solvers, GUI tools) are planned.
+WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plugin` (file formats, extension point `io`), `terrain-plugin` (`terrain`), `project-plugin` (`project`, projects from other programs), `code-plugin` (`design-code`), `check-plugin` (`check`) and `code-check-plugin` (a design code that also runs checks); the package is `ohl:plugin`, SDK 0.3. Python plugins are scripts run by the application's console. Each plugin declares the interface version it targets in its manifest; see [Writing plugins](development/plugins.md). Further extension points (cable models, reports, solvers, GUI tools) are planned.
 
 ## Tech stack (ADR-0002)
 
@@ -128,5 +129,5 @@ WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plug
 - **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ohl-py`), WASM runtime (`wasmtime`) for plugins.
 - **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
-- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`); pytest for bindings.
+- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 69 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
 - **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).

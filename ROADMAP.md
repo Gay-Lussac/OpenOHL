@@ -188,9 +188,9 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Define the open project file format (ADR-0004)
 - [x] Define the collaboration / session model (ADR-0005)
 - [x] Define the rendering, LOD & streaming strategy (ADR-0006)
-- [x] Cargo workspace layout, CI (clippy, tests, benchmarks) on Linux/macOS/Windows
+- [x] Cargo workspace layout, CI (clippy, tests, validation cases, docs; macOS, Windows and benchmarks in a full run), started by hand only
 - [x] Python bindings skeleton (`ohl-py`, PyO3) and WASM plugin host skeleton
-- [x] Performance benchmark harness (criterion) with regression gate in CI
+- [x] Performance benchmark harness (criterion) with a regression gate in a full CI run (more than 1.5× slower than the parent commit fails)
 - [x] Units system (SI internally, US customary + SI at the I/O boundary)
 - [x] Documentation site skeleton (theory manual + API reference)
 - [x] Validation/benchmark framework (case format + reference results + tolerance reporting)
@@ -271,7 +271,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Project lines: frozen states of the line (as built, as planned) saved in the project, shown next to the working line in 3D and plan, made the working line (one undoable command) *(in the profile and in drawings still open)*
 - [x] Add jumper tool (missing jumpers at a structure, or between two strings); ⌘S / Ctrl+S saves
 - [x] Jumpers held by their clamps: bending stiffness (estimated from the cable or set) and the angle each end leaves its clamp at; solved as an inextensible elastic rod; project lines drawn like the working line (bundles, yokes, strings, jumpers)
-- [x] Jumpers held by support clamps between their ends: each clamp on an I or a V of a structure's strings, free to swing and turn, the jumper straight through it (a rigid piece of the rod, also with EI = 0); tension-only strings (a leg goes slack in the wind); edited in the jumper's window, shown in the tables, properties and 3D view, written to OHL XML; their strings' pull in the structure loads *(strings below other strings, e.g. a V with a string below, not yet)*
+- [x] Jumpers held by support clamps between their ends: each clamp on an I or a V of a structure's strings, free to swing and turn, the jumper straight through it (a rigid piece of the rod, also with EI = 0); tension-only strings (a leg goes slack in the wind); edited in the jumper's window, shown in the tables, properties and 3D view, written to OHL XML; their strings' pull in the structure loads; a clamp may also hang on a string below another string (e.g. a V with a string below, `chained_top`)
 - [x] Strain assemblies always free members (move with the weather, in the calculation); weights of geometry-only strings estimated from their data position in the stringing state
 - [x] Libraries (wires, structure types, insulators, weather cases) kept in the project file; export to files to share or compare; Terrain / Structures / Sections menus; LiDAR classes shown; table defaults shown
 - [x] Section calculations: Initial / Creep / Load / Max Sag × RS / FE (Sections table, section editor); Criteria › Creep-Stretch (weather cases for final after creep and after load); cable models nonlinear, linear with creep ∝ creep-case tension, linear with a temperature increase; bimetallic curves per material in the wire library editor
@@ -281,7 +281,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Python scripting console inside the application: embedded interpreter on its own thread, the `ohl` module reads the line and results and edits through session commands (undoable), Stop and a time limit, plugin scripts
 - [x] Points on the wires and the objects on them (one object per point from an object library: spacers, spreads, …), jumpers from a point or a tap; spacers in the solve
 - [x] View performance: a frame benchmark; what made a long line lag found and fixed
-- [x] **Server mode (alpha)** (`ohl-server`, `ohl serve`, File › Host / Join): host a project, multiple users connect over LAN/Internet (QUIC, TLS pinned by the invitation), live change broadcast to replicas, presence (People page, plan markers), soft locks (Move window), per-user undo, roles & permissions (personal invitations; admins set roles), admin rollback (Edit › History) *(still open: optimistic prediction, chunk-based interest management, a WebSocket fallback for the application, OIDC)*
+- [x] **Server mode (pre-alpha)** (`ohl-server`, `ohl serve`, File › Host / Join): host a project, multiple users connect over LAN/Internet (QUIC, TLS pinned by the invitation), live change broadcast to replicas, presence (People page, plan markers), soft locks (Move window), per-user undo, roles & permissions (personal invitations; admins set roles), admin rollback (Edit › History) *(still open: optimistic prediction, chunk-based interest management, a WebSocket fallback for the application, OIDC)*
 
 **Deliverable:** alpha release of the desktop app, including shared multi-user sessions.
 
@@ -337,7 +337,7 @@ in its own axes (x right of the line, y ahead, z up; 0;0 at the centre)
 and placed in the line by a position, an angle and a height adjustment.*
 
 - [x] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed pylon stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
-- [x] One file per pylon (`.ohls`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable) to the same members; `.ohlfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and material and there are supports); the marker follows
+- [x] One file per pylon (`.ohls`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable / tension) to the same members; `.ohlfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and a joint has a `support`; a structure standing only on springs stays at level 2 today); the marker follows
 - [x] String points as joints or as a fraction along a member, so strings follow the members
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view still to come. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
@@ -355,7 +355,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Weather and load cases at the suspension points from level 1, exported for a structure designed in another program — the load cases and weather cases the line sends to placed structures, as the load table (CSV)
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported
 - [x] **Section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads. Later: typed sections edited in OHL-Structure, shielding and code drag factors)*
-- [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for Tekla, SAF 2.2 (xlsx) for RFEM and others, CSV tables *(not yet: the imports tried in RFEM 6 and Tekla Structures; other tower programs)*
+- [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for steel-detailing programs, SAF 2.2 (xlsx) for analysis programs, CSV tables *(not yet: the imports tried in another program; other tower programs)*
 - [ ] Code checks of members and joints as plugins (e.g. SIA 263), interface agreed with the project owner first
 - [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the pylon, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike *(base: OHL-Structure, with poles in Body › Pole and Design › Pole; still to come: typed sections and materials, checks per level, the use in the line)*
 
@@ -384,7 +384,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 ## Cross-cutting (every phase)
 - Validation cases for every calculation, with references
 - Theory documentation written alongside the code
-- Performance benchmarks against the targets in DESIGN_GOALS.md (large lines: 500+ structures, LiDAR with 10⁹ points); regressions fail CI
+- Performance benchmarks against the targets in DESIGN_GOALS.md (large lines: 500+ structures, LiDAR with 10⁹ points); regressions fail a full CI run
 - UX reviews with practising line engineers
 - Backwards compatibility of the project file format (versioned schema + migrations)
 
