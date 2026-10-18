@@ -31,6 +31,8 @@ pub struct PlanView {
     backgrounds: crate::backgrounds::PlanCache,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
+    /// The alignments drawn.
+    alignments: AlignmentViews,
 }
 
 /// Length of a unit of the phases' line codes on screen, px.
@@ -45,6 +47,19 @@ pub(crate) fn styled_wire(
     arrow: Option<bool>,
     stroke: egui::Stroke,
 ) {
+    let mut out = Vec::new();
+    styled_wire_shapes(&mut out, pts, code, arrow, stroke);
+    painter.extend(out);
+}
+
+/// [`styled_wire`]'s shapes, added to `out`.
+pub(crate) fn styled_wire_shapes(
+    out: &mut Vec<egui::Shape>,
+    pts: &[egui::Pos2],
+    code: &[f64],
+    arrow: Option<bool>,
+    stroke: egui::Stroke,
+) {
     let flat: Vec<[f64; 3]> = pts
         .iter()
         .map(|p| [f64::from(p.x), f64::from(p.y), 0.0])
@@ -54,15 +69,19 @@ pub(crate) fn styled_wire(
             .map(|p| egui::pos2(p[0] as f32, p[1] as f32))
             .collect()
     };
-    for d in crate::wire_style::dashes(&flat, code, DASH_PX) {
-        painter.add(egui::Shape::line(back(&d), stroke));
+    if code.is_empty() {
+        out.push(egui::Shape::line(pts.to_vec(), stroke));
+    } else {
+        for d in crate::wire_style::dashes(&flat, code, DASH_PX) {
+            out.push(egui::Shape::line(back(&d), stroke));
+        }
     }
     if let Some(forward) = arrow
         && let Some(legs) =
             crate::wire_style::chevron(&flat, forward, 9.0, crate::wire_style::across)
     {
         for l in legs {
-            painter.add(egui::Shape::line(
+            out.push(egui::Shape::line(
                 back(&l),
                 egui::Stroke::new(1.5, stroke.color),
             ));
@@ -72,6 +91,103 @@ pub(crate) fn styled_wire(
 
 fn color(c: [u8; 3]) -> egui::Color32 {
     egui::Color32::from_rgb(c[0], c[1], c[2])
+}
+
+/// The line's alignment views ([`ols_line::Line::alignment_views`]: the
+/// structures on each found by distance), kept between frames and made
+/// again when what they come from changes: the alignments, their points,
+/// the structures' ids, positions and routes (a hash of them, much
+/// cheaper than the views).
+#[derive(Debug, Default)]
+pub(crate) struct AlignmentViews {
+    key: Option<u64>,
+    views: Vec<ols_line::route::AlignmentView>,
+}
+
+impl AlignmentViews {
+    /// The views of `line`.
+    pub(crate) fn get(&mut self, line: &ols_line::Line) -> &[ols_line::route::AlignmentView] {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for a in &line.alignments {
+            (&a.id, &a.name, &a.route, &a.points).hash(&mut h);
+        }
+        for p in &line.alignment_points {
+            (&p.id, &p.structure, p.position.map(f64::to_bits)).hash(&mut h);
+        }
+        for s in &line.structures {
+            (&s.id, &s.routes, s.position.map(f64::to_bits)).hash(&mut h);
+        }
+        let key = h.finish();
+        if self.key != Some(key) {
+            self.views = line.alignment_views();
+            self.key = Some(key);
+        }
+        &self.views
+    }
+}
+
+/// What of the plan is in view, in project coordinates (a margin
+/// around the screen), to leave out what is not ([`Cull::sees`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Cull {
+    lo: [f64; 2],
+    hi: [f64; 2],
+}
+
+impl Cull {
+    /// The plan seen in `rect` (centred on `centre`, `scale` px/m), with
+    /// `margin` px around.
+    pub(crate) fn new(rect: egui::Rect, centre: [f64; 2], scale: f64, margin: f32) -> Self {
+        let half = [
+            f64::from(rect.width() / 2.0 + margin) / scale,
+            f64::from(rect.height() / 2.0 + margin) / scale,
+        ];
+        Self {
+            lo: [centre[0] - half[0], centre[1] - half[1]],
+            hi: [centre[0] + half[0], centre[1] + half[1]],
+        }
+    }
+
+    /// Whether any of a polyline may be in view (its extent overlaps).
+    pub(crate) fn sees(&self, points: &[[f64; 3]]) -> bool {
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for p in points {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        lo[0] <= self.hi[0] && hi[0] >= self.lo[0] && lo[1] <= self.hi[1] && hi[1] >= self.lo[1]
+    }
+}
+
+/// A polyline on screen without the points closer than half a pixel to
+/// the last one kept (its ends kept): the same line on screen, without
+/// the points a far view crowds into one pixel.
+pub(crate) fn on_screen(
+    points: &[[f64; 3]],
+    to_screen: impl Fn([f64; 3]) -> egui::Pos2,
+) -> Vec<egui::Pos2> {
+    thin_px(points.iter().map(|p| to_screen(*p)))
+}
+
+/// Screen points without those closer than half a pixel to the last one
+/// kept; the last point kept too.
+pub(crate) fn thin_px(points: impl Iterator<Item = egui::Pos2>) -> Vec<egui::Pos2> {
+    let mut out: Vec<egui::Pos2> = Vec::new();
+    let mut skipped: Option<egui::Pos2> = None;
+    for q in points {
+        match out.last() {
+            Some(last) if last.distance_sq(q) < 0.25 => skipped = Some(q),
+            _ => {
+                out.push(q);
+                skipped = None;
+            }
+        }
+    }
+    out.extend(skipped);
+    out
 }
 
 impl PlanView {
@@ -98,6 +214,19 @@ impl PlanView {
     #[cfg(test)]
     pub fn scale(&self) -> f64 {
         self.scale
+    }
+
+    /// Project coordinates at the centre of the view (benchmark, tests).
+    #[cfg(test)]
+    pub fn centre(&self) -> Option<[f64; 2]> {
+        self.centre
+    }
+
+    /// Looks at `centre` at `scale` px/m (benchmark, tests).
+    #[cfg(test)]
+    pub fn set_view(&mut self, centre: [f64; 2], scale: f64) {
+        self.centre = Some(centre);
+        self.scale = scale;
     }
 
     /// Fits the line again on the next frame.
@@ -245,6 +374,7 @@ impl PlanView {
             }
         }
         let painter = ui.painter_at(rect);
+        let backgrounds = crate::perf::span("plan backgrounds");
         painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
         self.backgrounds.paint(
             ui.ctx(),
@@ -256,8 +386,11 @@ impl PlanView {
             c,
             scale,
         );
+        drop(backgrounds);
+        let wires = crate::perf::span("plan wires");
         let line = &model.line;
-        for r in line.alignment_views() {
+        let cull = Cull::new(rect, c, scale, 20.0);
+        for r in self.alignments.get(line) {
             let pts: Vec<egui::Pos2> = r.centreline(line).into_iter().map(to_screen).collect();
             painter.add(egui::Shape::line(
                 pts,
@@ -283,17 +416,22 @@ impl PlanView {
         {
             // Each section in each of its display cases, coloured and
             // coded as Sections › Display options say.
-            let shapes = model.shapes_shown(case);
+            // (Only what is in view; a far view's points crowded into a
+            // pixel drawn once.)
+            let shapes = model.shapes_shown_ref(case);
             let display = &model.section_display;
             let arrows = display.direction[crate::annotations::View::Plan as usize];
             let styles = self.styles.get(line, display.coloring);
-            for shape in &shapes {
+            for shape in shapes {
                 let style = styles.section(&shape.section);
                 let forward = styles.directions.sections.get(&shape.section).copied();
                 for (k, span) in shape.spans.iter().enumerate() {
+                    if !cull.sees(&span.points) {
+                        continue;
+                    }
                     let selected = matches!(selection, Selection::Span { section, span: n }
                         if *section == shape.section && *n == k);
-                    let pts: Vec<egui::Pos2> = span.points.iter().map(|p| to_screen(*p)).collect();
+                    let pts = on_screen(&span.points, to_screen);
                     let off = scope
                         .as_ref()
                         .is_some_and(|s| !s.sections.contains(&shape.section));
@@ -322,9 +460,12 @@ impl PlanView {
             let mut why: Option<String> = None;
             for (section, k_case, drawn) in model.unsolved_shown(case) {
                 for (k, points) in drawn.spans.iter().enumerate() {
+                    if !cull.sees(points) {
+                        continue;
+                    }
                     let selected = matches!(selection, Selection::Span { section: s, span: n }
                         if *s == section && *n == k);
-                    let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
+                    let pts = on_screen(points, to_screen);
                     // Hovered: a tooltip says why it is not solved.
                     if let Some(h) = hover
                         && why.is_none()
@@ -359,10 +500,13 @@ impl PlanView {
                 response.clone().on_hover_text_at_pointer(text);
             }
         }
+        let styles = self.styles.get(line, model.section_display.coloring);
         for solved in model.cases.get(case).into_iter().flat_map(|c| c.drawn()) {
             for j in &solved.jumpers {
+                if !cull.sees(&j.points) {
+                    continue;
+                }
                 let selected = matches!(selection, Selection::Jumper(id) if *id == j.jumper);
-                let styles = self.styles.get(line, model.section_display.coloring);
                 let style = styles.jumper(&j.jumper);
                 let arrow = styles
                     .directions
@@ -372,7 +516,7 @@ impl PlanView {
                     .filter(|_| {
                         model.section_display.direction[crate::annotations::View::Plan as usize]
                     });
-                let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
+                let pts = on_screen(&j.points, to_screen);
                 let off = scope
                     .as_ref()
                     .is_some_and(|s| !s.jumpers.contains(&j.jumper));
@@ -402,46 +546,102 @@ impl PlanView {
                     if !model.section_cases(&shape.section, case).contains(&k) {
                         continue;
                     }
-                    for span in &shape.spans {
-                        let pts: Vec<egui::Pos2> =
-                            span.points.iter().map(|p| to_screen(*p)).collect();
+                    for span in shape.spans.iter().filter(|s| cull.sees(&s.points)) {
+                        let pts = on_screen(&span.points, to_screen);
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
                     }
                 }
                 if model.shown(case).contains(&k) {
-                    for j in &solved.jumpers {
-                        let pts: Vec<egui::Pos2> = j.points.iter().map(|p| to_screen(*p)).collect();
+                    for j in solved.jumpers.iter().filter(|j| cull.sees(&j.points)) {
+                        let pts = on_screen(&j.points, to_screen);
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, col)));
                     }
                 }
             }
             for st in &other.line.structures {
-                painter.circle_stroke(to_screen(st.position), 4.0, egui::Stroke::new(1.5, col));
+                let p = to_screen(st.position);
+                if rect.expand(10.0).contains(p) {
+                    painter.circle_stroke(p, 4.0, egui::Stroke::new(1.5, col));
+                }
             }
         }
+        drop(wires);
+        let notes = crate::perf::span("plan labels");
         let mut placer = crate::annotations::Placer::default();
-        for note in crate::annotations::notes(model, case, crate::annotations::View::Plan, None) {
-            let [a, b] = note.ends.map(to_screen);
-            if a.distance(b) >= crate::annotations::MIN_SPAN_PX {
-                placer.paint(&painter, to_screen(note.at), &note);
+        // The structures' names first, at every zoom: they take their
+        // place before any other label; where they would overlap, the
+        // first one in line order is written (the selected one always).
+        let plan = crate::annotations::View::Plan as usize;
+        let with_description =
+            model.section_display.structure_label[plan] && model.section_display.descriptions[plan];
+        let name_color = egui::Color32::from_gray(200);
+        let mut names: Vec<(egui::Pos2, std::sync::Arc<egui::Galley>)> = Vec::new();
+        let chosen = match &*selection {
+            Selection::Structure(id) => Some(id.clone()),
+            _ => None,
+        };
+        let is_selected = |s: &ols_line::Structure| chosen.as_ref() == Some(&s.id);
+        for s in line
+            .structures
+            .iter()
+            .filter(|s| is_selected(s))
+            .chain(line.structures.iter().filter(|s| !is_selected(s)))
+        {
+            let p = to_screen(s.position);
+            if !rect.expand(20.0).contains(p) {
+                continue;
             }
+            let text = if with_description && !s.description.trim().is_empty() {
+                format!("{} — {}", s.id, s.description.trim())
+            } else {
+                s.id.clone()
+            };
+            let galley = painter.layout_no_wrap(text, egui::FontId::proportional(11.0), name_color);
+            let at =
+                egui::Align2::LEFT_BOTTOM.anchor_size(p + egui::vec2(6.0, -6.0), galley.size());
+            if is_selected(s) {
+                placer.force(at);
+            } else if !placer.reserve(at) {
+                continue;
+            }
+            names.push((at.min, galley));
         }
-        // Labels of the structures, their points, strings, wire points.
+        // Section labels and sags: of the spans in view, long enough on
+        // the screen (the others are not made).
+        let in_view = Cull::new(rect, c, scale, 60.0);
+        let keep = |pts: &[[f64; 3]], mid: [f64; 3]| {
+            let (Some(a), Some(b)) = (pts.first(), pts.last()) else {
+                return false;
+            };
+            in_view.sees(&[mid])
+                && to_screen(*a).distance(to_screen(*b)) >= crate::annotations::MIN_SPAN_PX
+        };
+        for note in
+            crate::annotations::notes_where(model, case, crate::annotations::View::Plan, keep)
+        {
+            placer.paint(&painter, to_screen(note.at), &note);
+        }
+        // Labels of the structures' points, strings, wire points (their
+        // names are written above).
         for note in
             crate::annotations::object_notes(model, case, crate::annotations::View::Plan, None)
         {
+            if note.kind == crate::annotations::Kind::Structure {
+                continue;
+            }
             let p = to_screen(note.at);
             if rect.contains(p) {
                 placer.paint(&painter, p, &note);
             }
         }
-        let labels = scale > 0.08;
+        drop(notes);
+        let _structures = crate::perf::span("plan structures and rest");
         for s in &line.structures {
             let p = to_screen(s.position);
             if !rect.expand(20.0).contains(p) {
                 continue;
             }
-            let selected = matches!(selection, Selection::Structure(id) if *id == s.id);
+            let selected = is_selected(s);
             let off = scope
                 .as_ref()
                 .is_some_and(|x| !x.structures.contains(&s.id));
@@ -460,15 +660,9 @@ impl PlanView {
                     egui::Color32::from_gray(215)
                 },
             );
-            if labels || selected {
-                painter.text(
-                    p + egui::vec2(6.0, -6.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    &s.id,
-                    egui::FontId::proportional(11.0),
-                    egui::Color32::from_gray(200),
-                );
-            }
+        }
+        for (at, galley) in names {
+            painter.galley(at, galley, name_color);
         }
         for m in &self.marks {
             let p = to_screen(*m);

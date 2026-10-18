@@ -220,6 +220,9 @@ pub struct Prim {
     /// The points are triangles (three by three), drawn filled and lit,
     /// not a polyline: solid bodies (marker balls).
     pub filled: bool,
+    /// A dot `width` px round at its first point, not a polyline (a body
+    /// seen from afar).
+    pub dot: bool,
 }
 
 impl Prim {
@@ -232,6 +235,7 @@ impl Prim {
             levels: (0, 0),
             thinned: false,
             filled: false,
+            dot: false,
         }
     }
 
@@ -413,10 +417,22 @@ pub fn wires(
                 out.push(Prim::new(at, d, color, if bundle { w[0] } else { w[1] }).at(0, 0));
             }
         }
-        for d in crate::wire_style::dashes(points, code, DASH_UNIT) {
-            let mut centre = Prim::new(at, d, color, w[1]).at(1, 2);
+        // Farther, one line per bundle, its line code's dashes longer
+        // ([`crate::lod::DASH_SCALE`]: dashes of a metre and a half are
+        // not seen kilometres away, thousands of them per span are drawn).
+        if code.is_empty() {
+            let mut centre = Prim::new(at, points.to_vec(), color, w[1]).at(1, 2);
             centre.thinned = true;
             out.push(centre);
+        } else {
+            for level in 1..=2 {
+                let unit = DASH_UNIT * crate::lod::DASH_SCALE[level];
+                for d in crate::wire_style::dashes(points, code, unit) {
+                    let mut centre = Prim::new(at, d, color, w[1]).at(level, level);
+                    centre.thinned = true;
+                    out.push(centre);
+                }
+            }
         }
     };
     let arrow =
@@ -453,8 +469,14 @@ pub fn wires(
                 let col = rgba(UNSOLVED_COLOR, alpha);
                 for points in drawn.spans.iter().filter(|p| p.len() > 1) {
                     let at = middle(points);
-                    for d in crate::wire_style::dashes(points, &UNSOLVED_DASHES, DASH_UNIT) {
-                        out.push(Prim::new(at, d, col, 2.0).at(0, 2));
+                    // Its dashes longer farther ([`crate::lod::DASH_SCALE`]).
+                    for level in 0..=2 {
+                        let unit = DASH_UNIT * crate::lod::DASH_SCALE[level];
+                        for d in crate::wire_style::dashes(points, &UNSOLVED_DASHES, unit) {
+                            let mut dash = Prim::new(at, d, col, 2.0).at(level, level);
+                            dash.thinned = level > 0;
+                            out.push(dash);
+                        }
                     }
                 }
             }
@@ -604,7 +626,8 @@ pub fn wires(
                     [0, 1, 2].map(|k| m[k] - d[k] * h),
                     [0, 1, 2].map(|k| m[k] + d[k] * h),
                 ];
-                out.push(Prim::new(m, ends, rgba(steel, alpha), 4.0).at(0, 1));
+                // Some decimetres long: close only (level 0).
+                out.push(Prim::new(m, ends, rgba(steel, alpha), 4.0).at(0, 0));
             }
         }
         // Yokes at the clamps (a bar, a triangle, a polygon), with their
@@ -791,6 +814,10 @@ fn clamp_mesh(
 /// (none without a size), a clamp in steel ([`clamp_mesh`]; `subs`: the
 /// subconductors there, on a bundle), a bare point a small cross marker —
 /// a mark, not a body (`colors`: bare, clamp, body).
+///
+/// Levels of detail: clamps and marks close only (level 0, decimetres:
+/// not seen farther); a body to its shape at level 0, a dot at level 1
+/// ([`crate::lod::BODY_DOT_PX`]: marker balls stay seen from afar).
 fn draw_point(
     out: &mut Vec<Prim>,
     at: [f64; 3],
@@ -800,6 +827,7 @@ fn draw_point(
     colors: [[u8; 3]; 3],
     alpha: u8,
 ) {
+    let mut body = false;
     let (triangles, color) = match object {
         // A bare point: three short strokes (vertical, along, across the
         // wire), drawn as lines.
@@ -818,7 +846,7 @@ fn draw_point(
                         rgba(colors[0], alpha),
                         3.0,
                     )
-                    .at(0, 1),
+                    .at(0, 0),
                 );
             }
             return;
@@ -828,14 +856,22 @@ fn draw_point(
         Some(o) if o.kind == ols_line::ObjectKind::Clamp => {
             (clamp_mesh(o, at, along, subs), colors[1])
         }
-        Some(o) => (body_mesh(&o.shape, at, along), colors[2]),
+        Some(o) => {
+            body = true;
+            (body_mesh(&o.shape, at, along), colors[2])
+        }
     };
     if triangles.is_empty() {
         return;
     }
-    let mut s = Prim::new(at, triangles, rgba(color, alpha), 0.0).at(0, 1);
+    let mut s = Prim::new(at, triangles, rgba(color, alpha), 0.0).at(0, 0);
     s.filled = true;
     out.push(s);
+    if body {
+        let mut d = Prim::new(at, vec![at], rgba(color, alpha), crate::lod::BODY_DOT_PX).at(1, 1);
+        d.dot = true;
+        out.push(d);
+    }
 }
 
 /// The horizontal direction of a polyline's chord (along x without one).
@@ -1199,6 +1235,10 @@ pub fn draw_prims<'a>(
         if p.filled {
             for t in p.points.as_chunks::<3>().0 {
                 s.triangle(*t, [lit(t, p.color); 3]);
+            }
+        } else if p.dot {
+            if let Some(at) = p.points.first() {
+                s.point(*at, p.color, p.width);
             }
         } else if p.thinned && level > 0 {
             s.polyline(&thin(&p.points, per_span), p.color, p.width);

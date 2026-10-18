@@ -1129,6 +1129,15 @@ impl TabViewer for Viewer<'_> {
         let r = &mut *self.ready;
         let before = r.selection.clone();
         let snaps = r.effective_snaps();
+        let _timed = crate::perf::span(match tab {
+            Tab::View3d => "tab 3d",
+            Tab::Plan => "tab plan",
+            Tab::Profile => "tab profile",
+            Tab::Properties => "tab properties",
+            Tab::Model => "tab model",
+            Tab::Clearances => "tab clearances",
+            _ => "tab other",
+        });
         let used = match tab {
             Tab::View3d => r.view3d.ui(
                 ui,
@@ -4302,7 +4311,14 @@ fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
             }
         }
     }
-    let stored = r.model.stored_line().unwrap_or(&r.model.line).clone();
+    // (The line copied only while the window is open: every frame.)
+    let Some(stored) = r
+        .route_choice
+        .is_some()
+        .then(|| r.model.stored_line().unwrap_or(&r.model.line).clone())
+    else {
+        return;
+    };
     if let Some(c) = &mut r.route_choice
         && let Some(action) = c.ui(ctx, &stored)
     {
@@ -7391,6 +7407,7 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let _timed = crate::perf::span("app ui");
         if let State::Loading { rx, progress } = &mut self.state {
             let mut done = None;
             loop {
@@ -7465,17 +7482,32 @@ impl eframe::App for App {
                 desk.ui(ui, self.render_state.as_ref(), &mut self.ahead_alone)
             }
             State::Ready(ready) => {
+                let hooks = crate::perf::span("frame hooks");
                 ready.remote_frame();
-                ready.solving_frame(ui.ctx());
+                {
+                    let _t = crate::perf::span("hooks: solving");
+                    ready.solving_frame(ui.ctx());
+                }
                 ready.structure_apps_frame(ui.ctx());
                 crate::structure_app::report_window(ui.ctx(), &mut ready.structure_apps);
                 history_window(ui.ctx(), ready);
                 crate::versions::window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
-                clearance_frame(ui.ctx(), ready);
-                popups(ui.ctx(), ready);
-                tool_windows(ui.ctx(), ready, self.render_state.as_ref());
+                {
+                    let _t = crate::perf::span("hooks: clearances");
+                    clearance_frame(ui.ctx(), ready);
+                }
+                {
+                    let _t = crate::perf::span("hooks: popups");
+                    popups(ui.ctx(), ready);
+                }
+                {
+                    let _t = crate::perf::span("hooks: tool windows");
+                    tool_windows(ui.ctx(), ready, self.render_state.as_ref());
+                }
+                drop(hooks);
+                let bars = crate::perf::span("status and menus");
                 egui::Panel::bottom("status").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         match ready.model.can_edit() {
@@ -7558,6 +7590,8 @@ impl eframe::App for App {
                         }
                     });
                 });
+                drop(bars);
+                let windows = crate::perf::span("plugins and windows");
                 for c in commands {
                     run_command(ui.ctx(), ready, &mut self.dock, c);
                 }
@@ -7696,6 +7730,8 @@ impl eframe::App for App {
                         .show(ui.ctx(), |ui| self.quickbar.customize_ui(ui));
                     self.customize = open;
                 }
+                drop(windows);
+                let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| {

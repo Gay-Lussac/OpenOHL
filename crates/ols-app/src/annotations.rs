@@ -109,7 +109,8 @@ impl SectionDisplay {
                     )
                     .on_hover_text(
                         "Labels farther from your eye are not written in the 3D view \
-                         (and not built: a long line stays fluid)",
+                         (and not built: a long line stays fluid); the structures' names \
+                         are written at any distance, overlapping ones left out",
                     );
                 ui.label("of the eye");
                 r.changed()
@@ -235,9 +236,11 @@ pub enum Kind {
     Label,
     /// A span's sag.
     Sag,
-    /// An object's label at a point (a structure, a point, a string, a
-    /// wire point).
+    /// An object's label at a point (a point, a string, a wire point).
     Object,
+    /// A structure's name, at its top: written from afar (no label
+    /// distance in 3D) and before the other labels, which give way to it.
+    Structure,
 }
 
 /// A note next to a wire: where (line coordinates), what, and the span's
@@ -266,23 +269,45 @@ pub struct Note {
 /// The notes of `view` for the sections shown in weather case `case`: a
 /// label per section (its first shape shown), a sag per span shown.
 pub fn notes(model: &Model, case: usize, view: View, near: Option<([f64; 3], f64)>) -> Vec<Note> {
+    notes_where(model, case, view, |_, mid| {
+        near.is_none_or(|(eye, r)| within(mid, eye, r))
+    })
+}
+
+/// [`notes`] of the spans `keep` keeps (given a span's points and its
+/// mid-point): those in view, near enough (the others are not made).
+pub fn notes_where(
+    model: &Model,
+    case: usize,
+    view: View,
+    keep: impl Fn(&[[f64; 3]], [f64; 3]) -> bool,
+) -> Vec<Note> {
     let display = &model.section_display;
     let (label, sag) = (display.label[view as usize], display.sag[view as usize]);
     if !label && !sag {
         return Vec::new();
     }
     let line = &model.line;
-    let close = |p: [f64; 3]| near.is_none_or(|(eye, r)| within(p, eye, r));
     let mut labelled = std::collections::BTreeSet::new();
     let mut out = Vec::new();
     // Each section once, in its first display case: several cases drawn
     // show their wires, not a label each.
-    for shape in line
-        .sections
-        .iter()
-        .filter_map(|s| model.shape(&s.id, case))
-    {
-        let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+    // (The shapes of each case by section, found once: a long line has
+    // hundreds of sections.)
+    let mut by_case: std::collections::HashMap<
+        usize,
+        std::collections::HashMap<&str, &ols_line::solve::SectionShape>,
+    > = std::collections::HashMap::new();
+    for section in &line.sections {
+        let k = model.section_case(&section.id, case);
+        let shapes = by_case.entry(k).or_insert_with(|| {
+            let mut m = std::collections::HashMap::new();
+            for x in model.cases.get(k).into_iter().flat_map(|c| &c.shapes) {
+                m.entry(x.section.as_str()).or_insert(x);
+            }
+            m
+        });
+        let Some(shape) = shapes.get(section.id.as_str()).copied() else {
             continue;
         };
         let color = crate::scene::rgb(&line.section_color(section));
@@ -304,7 +329,10 @@ pub fn notes(model: &Model, case: usize, view: View, near: Option<([f64; 3], f64
         };
         if label
             && !shape.spans.is_empty()
-            && close(shape.spans[shape.spans.len() / 2].mid_point)
+            && {
+                let s = &shape.spans[shape.spans.len() / 2];
+                keep(&s.points, s.mid_point)
+            }
             && labelled.insert(shape.section.clone())
         {
             out.push(note(
@@ -319,7 +347,7 @@ pub fn notes(model: &Model, case: usize, view: View, near: Option<([f64; 3], f64
         }
         if sag {
             for (k, s) in shape.spans.iter().enumerate() {
-                if close(s.mid_point) {
+                if keep(&s.points, s.mid_point) {
                     out.push(note(k, Kind::Sag, format!("{:.2} m", s.sag)));
                 }
             }
@@ -383,14 +411,8 @@ pub fn object_notes(
     };
     let close = |p: [f64; 3]| near.is_none_or(|(eye, r)| within(p, eye, r));
     let mut out = Vec::new();
-    // Structures beyond the distance: none of their labels (their strings
-    // are within some 100 m of them).
-    for s in model
-        .line
-        .structures
-        .iter()
-        .filter(|s| near.is_none_or(|(eye, r)| within(s.position, eye, r + 100.0)))
-    {
+    for s in &model.line.structures {
+        // Names at any distance (decluttered where they are written).
         if structures {
             let top = s
                 .points
@@ -398,11 +420,18 @@ pub fn object_notes(
                 .map(|p| p.position[2])
                 .chain(s.members.iter().flatten().map(|p| p[2]))
                 .fold(s.position[2] + 5.0, f64::max);
-            out.push(note(
+            let mut name = note(
                 [s.position[0], s.position[1], top + 2.0],
                 with_description(s.id.clone(), &s.description, show),
                 [235, 235, 240],
-            ));
+            );
+            name.kind = Kind::Structure;
+            out.push(name);
+        }
+        // Structures beyond the distance: none of their other labels
+        // (their strings are within some 100 m of them).
+        if !near.is_none_or(|(eye, r)| within(s.position, eye, r + 100.0)) {
+            continue;
         }
         if points {
             for p in &s.points {
@@ -516,7 +545,7 @@ pub fn anchor(
     screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
 ) -> Option<egui::Pos2> {
     // An object's label: where it is, when in sight.
-    if note.kind == Kind::Object {
+    if matches!(note.kind, Kind::Object | Kind::Structure) {
         return screen(note.at).filter(|p| rect.contains(*p));
     }
     // Too short on screen only when both ends are in front of the camera.
@@ -559,7 +588,7 @@ impl Placer {
                 egui::Align2::CENTER_TOP,
                 egui::FontId::proportional(11.0),
             ),
-            Kind::Object => (
+            Kind::Object | Kind::Structure => (
                 egui::vec2(6.0, -4.0),
                 egui::Align2::LEFT_BOTTOM,
                 egui::FontId::proportional(11.0),
@@ -567,10 +596,23 @@ impl Placer {
         };
         let galley = painter.layout_no_wrap(note.text.clone(), font, color);
         let rect = align.anchor_size(p + offset, galley.size());
+        if self.reserve(rect) {
+            painter.galley(rect.min, galley, color);
+        }
+    }
+
+    /// Takes the place `rect` when nothing written overlaps it; whether
+    /// it did.
+    pub fn reserve(&mut self, rect: egui::Rect) -> bool {
         if self.taken.iter().any(|r| r.intersects(rect.expand(1.0))) {
-            return;
+            return false;
         }
         self.taken.push(rect);
-        painter.galley(rect.min, galley, color);
+        true
+    }
+
+    /// Takes the place `rect` whatever is there (the selection's name).
+    pub fn force(&mut self, rect: egui::Rect) {
+        self.taken.push(rect);
     }
 }

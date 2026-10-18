@@ -33,7 +33,23 @@ pub struct ProfileView {
     pub(crate) rect: Option<egui::Rect>,
     /// The wires' colours, line codes and directions.
     styles: crate::wire_style::StyleCache,
+    /// The routes' alignments.
+    alignments: crate::plan::AlignmentViews,
+    /// Kept while the view does not move (forgotten with the drawing):
+    /// the heights seen at the stations shown,
+    extent: Option<([u64; 2], (f64, f64))>,
+    /// the corridor's shapes (survey dots, ground, drawings),
+    back: Option<((ViewKey, u64), Vec<egui::Shape>)>,
+    /// the wires' shapes.
+    wires: Option<(WiresKey, Vec<egui::Shape>)>,
 }
+
+/// Where the view is: stations, heights, its rectangle (bits of each).
+type ViewKey = [u64; 8];
+
+/// What the wires were drawn for: the view, the selection, the styles,
+/// arrows or not.
+type WiresKey = (ViewKey, Selection, Option<u64>, bool);
 
 /// What the drawing was made for: the route (none: all), the weather
 /// case, the corridor's half width.
@@ -240,6 +256,9 @@ impl ProfileView {
     /// Forgets the drawing (after the model or case changed).
     pub fn invalidate(&mut self) {
         self.drawing = None;
+        self.extent = None;
+        self.back = None;
+        self.wires = None;
     }
 
     /// Shows the view.
@@ -251,7 +270,7 @@ impl ProfileView {
         selection: &mut Selection,
         snaps: &crate::selection::Snaps,
     ) -> Option<Selection> {
-        let routes = model.line.alignment_views();
+        let routes = self.alignments.get(&model.line).to_vec();
         if routes.is_empty() {
             ui.label(
                 "No alignment yet: define the route, then draw its alignment (New alignment tool).",
@@ -395,7 +414,13 @@ impl ProfileView {
                     }
                 }
             }
-            self.drawing = Some((key, joined(parts)?));
+            let mut built = joined(parts)?;
+            // By station: those of the view found by bisection.
+            built.survey.sort_by(|a, b| a[0].total_cmp(&b[0]));
+            self.drawing = Some((key, built));
+            self.extent = None;
+            self.back = None;
+            self.wires = None;
         }
         let built = &self.drawing.as_ref().expect("built").1;
         let d = &built.drawing;
@@ -442,31 +467,40 @@ impl ProfileView {
             self.z_centre = None;
         }
         let [s0, s1] = *range;
-        // Heights of what is visible.
-        let (mut z0, mut z1) = (f64::INFINITY, f64::NEG_INFINITY);
-        let mut see = |s: f64, z: f64| {
-            if s >= s0 && s <= s1 {
-                z0 = z0.min(z);
-                z1 = z1.max(z);
+        // Heights of what is visible (found again when the stations
+        // shown change).
+        let stations = [s0.to_bits(), s1.to_bits()];
+        let (z0, z1) = match self.extent {
+            Some((k, z)) if k == stations => z,
+            _ => {
+                let (mut z0, mut z1) = (f64::INFINITY, f64::NEG_INFINITY);
+                let mut see = |s: f64, z: f64| {
+                    if s >= s0 && s <= s1 {
+                        z0 = z0.min(z);
+                        z1 = z1.max(z);
+                    }
+                };
+                for run in d.ground.iter().chain(d.sides.iter().flat_map(|s| &s.1)) {
+                    for p in run {
+                        see(p[0], p[1]);
+                    }
+                }
+                for w in &d.wires {
+                    for p in &w.points {
+                        see(p[0], p[2]);
+                    }
+                }
+                for m in &d.structures {
+                    see(m.station, m.base);
+                    see(m.station, m.top);
+                }
+                if !z0.is_finite() {
+                    (z0, z1) = (0.0, 100.0);
+                }
+                self.extent = Some((stations, (z0, z1)));
+                (z0, z1)
             }
         };
-        for run in d.ground.iter().chain(d.sides.iter().flat_map(|s| &s.1)) {
-            for p in run {
-                see(p[0], p[1]);
-            }
-        }
-        for w in &d.wires {
-            for p in &w.points {
-                see(p[0], p[2]);
-            }
-        }
-        for m in &d.structures {
-            see(m.station, m.base);
-            see(m.station, m.top);
-        }
-        if !z0.is_finite() {
-            (z0, z1) = (0.0, 100.0);
-        }
         let pad = (z1 - z0).max(10.0) * 0.08;
         let (z0, z1) = match vscale(range) {
             // Fixed ratio: the heights the view's height holds, around
@@ -514,61 +548,99 @@ impl ProfileView {
         }
         let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);
         // The corridor: survey points, the ground at its edges, the 3D
-        // drawings in it (those not hidden), under the centreline ground.
-        for p in built.survey.iter().filter(|p| p[0] >= s0 && p[0] <= s1) {
-            painter.circle_filled(
-                to_screen(p[0], p[1]),
-                1.2,
-                egui::Color32::from_rgb(120, 150, 110),
-            );
-        }
-        for (_, prof) in &d.sides {
-            for run in prof {
-                let pts: Vec<egui::Pos2> = run
-                    .iter()
-                    .filter(|p| visible(p))
-                    .map(|p| to_screen(p[0], p[1]))
-                    .collect();
-                painter.add(egui::Shape::line(
+        // drawings in it (those not hidden), under the centreline ground;
+        // made again when the view moves.
+        let view_key: ViewKey = [
+            s0.to_bits(),
+            s1.to_bits(),
+            z0.to_bits(),
+            z1.to_bits(),
+            u64::from(rect.min.x.to_bits()),
+            u64::from(rect.min.y.to_bits()),
+            u64::from(rect.max.x.to_bits()),
+            u64::from(rect.max.y.to_bits()),
+        ];
+        let hidden = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            model.hidden_backgrounds.hash(&mut h);
+            h.finish()
+        };
+        if self
+            .back
+            .as_ref()
+            .is_none_or(|(k, _)| *k != (view_key, hidden))
+        {
+            let mut out = Vec::new();
+            // One dot per pixel: points falling on a pixel already dotted
+            // look the same drawn once (a far view of a long corridor has
+            // tens of thousands).
+            let survey = &built.survey;
+            let from = survey.partition_point(|p| p[0] < s0);
+            let to = survey.partition_point(|p| p[0] <= s1);
+            let mut dotted = PixelSet::new(rect);
+            for p in &survey[from..to.max(from)] {
+                let q = to_screen(p[0], p[1]);
+                if dotted.insert(q) {
+                    out.push(egui::Shape::circle_filled(
+                        q,
+                        1.2,
+                        egui::Color32::from_rgb(120, 150, 110),
+                    ));
+                }
+            }
+            for (_, prof) in &d.sides {
+                for run in prof {
+                    let pts = crate::plan::thin_px(
+                        run.iter()
+                            .filter(|p| visible(p))
+                            .map(|p| to_screen(p[0], p[1])),
+                    );
+                    out.push(egui::Shape::line(
+                        pts,
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 100, 75)),
+                    ));
+                }
+            }
+            let shown_drawing = |name: &str| {
+                !model
+                    .hidden_backgrounds
+                    .contains(&crate::backgrounds::drawing_key(name))
+            };
+            for (name, c, run) in &built.lines {
+                if !shown_drawing(name) || run.iter().all(|p| p[0] < s0 || p[0] > s1) {
+                    continue;
+                }
+                let pts = crate::plan::thin_px(run.iter().map(|p| to_screen(p[0], p[1])));
+                out.push(egui::Shape::line(
                     pts,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 100, 75)),
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(c[0], c[1], c[2])),
                 ));
             }
-        }
-        let shown_drawing = |name: &str| {
-            !model
-                .hidden_backgrounds
-                .contains(&crate::backgrounds::drawing_key(name))
-        };
-        for (name, c, run) in &built.lines {
-            if !shown_drawing(name) || run.iter().all(|p| p[0] < s0 || p[0] > s1) {
-                continue;
+            for (name, c, p) in &built.points {
+                if shown_drawing(name) && p[0] >= s0 && p[0] <= s1 {
+                    out.push(egui::Shape::circle_filled(
+                        to_screen(p[0], p[1]),
+                        2.0,
+                        egui::Color32::from_rgb(c[0], c[1], c[2]),
+                    ));
+                }
             }
-            let pts: Vec<egui::Pos2> = run.iter().map(|p| to_screen(p[0], p[1])).collect();
-            painter.add(egui::Shape::line(
-                pts,
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(c[0], c[1], c[2])),
-            ));
-        }
-        for (name, c, p) in &built.points {
-            if shown_drawing(name) && p[0] >= s0 && p[0] <= s1 {
-                painter.circle_filled(
-                    to_screen(p[0], p[1]),
-                    2.0,
-                    egui::Color32::from_rgb(c[0], c[1], c[2]),
+            for run in &d.ground {
+                let pts = crate::plan::thin_px(
+                    run.iter()
+                        .filter(|p| visible(p))
+                        .map(|p| to_screen(p[0], p[1])),
                 );
+                out.push(egui::Shape::line(
+                    pts,
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(170, 140, 100)),
+                ));
             }
+            self.back = Some(((view_key, hidden), out));
         }
-        for run in &d.ground {
-            let pts: Vec<egui::Pos2> = run
-                .iter()
-                .filter(|p| visible(p))
-                .map(|p| to_screen(p[0], p[1]))
-                .collect();
-            painter.add(egui::Shape::line(
-                pts,
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(170, 140, 100)),
-            ));
+        if let Some((_, shapes)) = &self.back {
+            painter.extend(shapes.iter().cloned());
         }
         // All alignments: where each begins.
         if built.joints.len() > 1 {
@@ -622,40 +694,55 @@ impl ProfileView {
                 col,
             );
         }
-        // Coloured and coded as Sections › Display options say.
+        // Coloured and coded as Sections › Display options say (made
+        // again when the view, the selection or the styles change).
         let display = &model.section_display;
         let arrows = display.direction[crate::annotations::View::Profile as usize];
-        let styles = self.styles.get(&model.line, display.coloring);
-        for w in &d.wires {
-            let traced = trace_selection(&w.label);
-            let selected = traced.as_ref().is_some_and(|s| s == selection);
-            let (style, forward) = match &traced {
-                Some(Selection::Span { section, .. }) => (
-                    Some(styles.section(section)),
-                    styles.directions.sections.get(section).copied(),
-                ),
-                Some(Selection::Jumper(id)) => (
-                    Some(styles.jumper(id)),
-                    styles.directions.jumpers.get(id).copied(),
-                ),
-                _ => (None, None),
-            };
-            let c = style.as_ref().map_or_else(|| rgb(&w.color), |s| s.color);
-            let pts: Vec<egui::Pos2> = w.points.iter().map(|p| to_screen(p[0], p[2])).collect();
-            crate::plan::styled_wire(
-                &painter,
-                &pts,
-                style.as_ref().map_or(&[][..], |s| &s.pattern),
-                forward.filter(|_| arrows),
-                egui::Stroke::new(
-                    if selected { 3.5 } else { 1.3 },
-                    if selected {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_rgb(c[0], c[1], c[2])
-                    },
-                ),
-            );
+        // (The styles made again first when the line changed: their key.)
+        self.styles.get(&model.line, display.coloring);
+        let wires_key: WiresKey = (view_key, selection.clone(), self.styles.key(), arrows);
+        if self.wires.as_ref().is_none_or(|(k, _)| *k != wires_key) {
+            let styles = self.styles.get(&model.line, display.coloring);
+            let mut out = Vec::new();
+            for w in &d.wires {
+                // Out of the stations shown: not drawn.
+                if w.points.iter().all(|p| p[0] < s0) || w.points.iter().all(|p| p[0] > s1) {
+                    continue;
+                }
+                let traced = trace_selection(&w.label);
+                let selected = traced.as_ref().is_some_and(|s| s == selection);
+                let (style, forward) = match &traced {
+                    Some(Selection::Span { section, .. }) => (
+                        Some(styles.section(section)),
+                        styles.directions.sections.get(section).copied(),
+                    ),
+                    Some(Selection::Jumper(id)) => (
+                        Some(styles.jumper(id)),
+                        styles.directions.jumpers.get(id).copied(),
+                    ),
+                    _ => (None, None),
+                };
+                let c = style.as_ref().map_or_else(|| rgb(&w.color), |s| s.color);
+                let pts = crate::plan::thin_px(w.points.iter().map(|p| to_screen(p[0], p[2])));
+                crate::plan::styled_wire_shapes(
+                    &mut out,
+                    &pts,
+                    style.as_ref().map_or(&[][..], |s| &s.pattern),
+                    forward.filter(|_| arrows),
+                    egui::Stroke::new(
+                        if selected { 3.5 } else { 1.3 },
+                        if selected {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_rgb(c[0], c[1], c[2])
+                        },
+                    ),
+                );
+            }
+            self.wires = Some((wires_key, out));
+        }
+        if let Some((_, shapes)) = &self.wires {
+            painter.extend(shapes.iter().cloned());
         }
         // Section labels and sags (Sections › Display options), on this
         // route's traces of the spans.
@@ -748,6 +835,46 @@ impl ProfileView {
             return Some(pick(pos));
         }
         None
+    }
+}
+
+/// The pixels of a view already drawn on (one bit each).
+pub(crate) struct PixelSet {
+    origin: egui::Pos2,
+    width: usize,
+    height: usize,
+    bits: Vec<u64>,
+}
+
+impl PixelSet {
+    /// None of `rect`'s pixels yet (a margin of a pixel around it).
+    pub(crate) fn new(rect: egui::Rect) -> Self {
+        let width = rect.width().max(0.0) as usize + 3;
+        let height = rect.height().max(0.0) as usize + 3;
+        Self {
+            origin: rect.min - egui::vec2(1.0, 1.0),
+            width,
+            height,
+            bits: vec![0; (width * height).div_ceil(64)],
+        }
+    }
+
+    /// Marks the pixel of `p`; whether it was not marked yet (points off
+    /// the view: false, nothing to draw).
+    pub(crate) fn insert(&mut self, p: egui::Pos2) -> bool {
+        let (x, y) = ((p.x - self.origin.x).round(), (p.y - self.origin.y).round());
+        if !(x >= 0.0 && y >= 0.0) {
+            return false;
+        }
+        let (x, y) = (x as usize, y as usize);
+        if x >= self.width || y >= self.height {
+            return false;
+        }
+        let k = y * self.width + x;
+        let (word, bit) = (k / 64, 1u64 << (k % 64));
+        let fresh = self.bits[word] & bit == 0;
+        self.bits[word] |= bit;
+        fresh
     }
 }
 

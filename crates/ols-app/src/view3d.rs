@@ -63,6 +63,19 @@ pub struct View3d {
     /// its alignments or the ground: fitted again when the first
     /// structures come).
     fitted_on_line: bool,
+    /// Chunks built so far (tests: none while the camera stands still).
+    #[cfg(test)]
+    pub chunks_built: usize,
+    /// Images drawn so far (tests: none while nothing changes).
+    #[cfg(test)]
+    pub images_drawn: usize,
+    /// Changes of what is on the GPU (layers rebuilt, chunks built, the
+    /// point cloud's settings): part of [`View3d::image_key`].
+    generation: u64,
+    /// What the image shown was drawn from: drawn again only when that
+    /// changes (a frame for another panel, the mouse moved elsewhere,
+    /// shows the same image).
+    image_key: Option<u64>,
 }
 
 /// A layer drawn in chunks.
@@ -105,6 +118,42 @@ impl View3d {
             .map_or(0, |c| c.set.drawn().map(|g| g.counts().1).sum())
     }
 
+    /// Segments, points and triangles drawn in the last frame, every
+    /// layer shown (benchmark).
+    #[cfg(test)]
+    pub fn drawn_counts(&self, visible: &HashSet<Layer>) -> [u64; 3] {
+        let mut n = [0u64; 3];
+        let mut add = |g: &GpuScene| {
+            let c = g.counts();
+            n[0] += u64::from(c.0);
+            n[1] += u64::from(c.1);
+            n[2] += u64::from(c.2);
+        };
+        for l in Layer::ALL.iter().filter(|l| visible.contains(l)) {
+            match (self.chunks.get(l), &self.points) {
+                (_, Some(p)) if *l == Layer::Points => {
+                    p.drawn
+                        .iter()
+                        .filter_map(|&i| p.cache.peek(i))
+                        .for_each(&mut add);
+                }
+                (Some(c), _) => c.set.drawn().for_each(&mut add),
+                (None, _) => self.gpu.get(l).into_iter().for_each(&mut add),
+            }
+        }
+        n
+    }
+
+    /// Chunks or nodes still to build or read (benchmark).
+    #[cfg(test)]
+    pub fn pending(&self) -> usize {
+        self.chunks
+            .values()
+            .map(|c| c.set.stats.pending)
+            .sum::<usize>()
+            + self.points.as_ref().map_or(0, |p| p.octree.stats.pending)
+    }
+
     /// What a chunked layer drew in the last frame.
     pub fn lod_stats(&self, layer: Layer) -> Option<ols_render::lod::PlanStats> {
         self.chunks.get(&layer).map(|c| c.set.stats)
@@ -118,7 +167,8 @@ impl View3d {
     /// One frame of the point cloud streamed by node: the settings of
     /// the model (hidden classes, colours, share shown) and of the Level
     /// of detail page, the nodes read since uploaded, the view's nodes
-    /// picked and the missing ones asked for.
+    /// picked and the missing ones asked for. Whether the settings
+    /// changed (the nodes read again).
     fn stream_points(
         p: &mut Streamed,
         model: &Model,
@@ -126,7 +176,7 @@ impl View3d {
         frustum: &Frustum,
         pixels_per_radian: f64,
         device: &eframe::wgpu::Device,
-    ) {
+    ) -> bool {
         let colors: Vec<Option<[u8; 3]>> = (0..=255u8)
             .map(|c| scene::class_color(&model.scheme, c))
             .collect();
@@ -171,6 +221,7 @@ impl View3d {
         p.drawn = p
             .octree
             .frame(&mut p.cache, &view, &limits, |s| GpuScene::new(device, s));
+        changed
     }
 
     /// Captures (`on`) or frees the mouse: captured, it is locked and
@@ -440,6 +491,10 @@ impl View3d {
         }
         // Upload changed layers, render, show.
         let device = &rs.device;
+        let rebuild = crate::perf::span("3d layers rebuilt");
+        if !self.dirty.is_empty() {
+            self.generation += 1;
+        }
         for layer in self.dirty.drain() {
             if layer == Layer::Points
                 && let Some(spec) = &model.cloud
@@ -492,8 +547,10 @@ impl View3d {
             };
             self.gpu.insert(layer, GpuScene::new(device, &s));
         }
+        drop(rebuild);
         // Chunks: the level of each by its distance, the missing ones built
         // nearest first within the frame's budget.
+        let planning = crate::perf::span("3d chunk plan");
         let aspect = f64::from(rect.width()) / f64::from(rect.height().max(1.0));
         let frustum = Frustum::new(camera, aspect);
         let mut wanted = Vec::new();
@@ -516,6 +573,8 @@ impl View3d {
             }
         }
         wanted.sort_by(|a, b| a.1.distance.total_cmp(&b.1.distance));
+        drop(planning);
+        let building = crate::perf::span("3d chunk build");
         let started = std::time::Instant::now();
         let mut built = HashSet::new();
         let mut n_built = 0;
@@ -530,6 +589,13 @@ impl View3d {
             c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
             built.insert(*layer);
             n_built += 1;
+            #[cfg(test)]
+            {
+                self.chunks_built += 1;
+            }
+        }
+        if n_built > 0 {
+            self.generation += 1;
         }
         // What was built is drawn now; the rest in the next frames.
         for layer in &built {
@@ -541,12 +607,16 @@ impl View3d {
         if wanted.len() > n_built {
             ui.ctx().request_repaint();
         }
+        drop(building);
+        let streaming = crate::perf::span("3d point stream");
         // The point cloud: the nodes for this view within the budget.
         if let Some(p) = &mut self.points {
             if visible.contains(&Layer::Points) {
                 let px_height = f64::from(rect.height() * ui.ctx().pixels_per_point()).max(1.0);
                 let pixels_per_radian = 0.5 * px_height / (0.5 * camera.fov_y).tan();
-                Self::stream_points(p, model, lod, &frustum, pixels_per_radian, device);
+                if Self::stream_points(p, model, lod, &frustum, pixels_per_radian, device) {
+                    self.generation += 1;
+                }
                 if p.octree.stats.pending > 0 {
                     // The nodes come back on the readers' repaints; keep
                     // planning.
@@ -557,6 +627,8 @@ impl View3d {
                 p.drawn.clear();
             }
         }
+        drop(streaming);
+        let rendering = crate::perf::span("3d render");
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
         let px = [
@@ -573,34 +645,68 @@ impl View3d {
                 (None, _) => layers.extend(self.gpu.get(l)),
             }
         }
-        let texture = renderer.render(device, &rs.queue, &layers, camera, px);
-        // egui takes texture bytes as sRGB-encoded: a plain view of them.
-        let view = texture.create_view(&eframe::wgpu::TextureViewDescriptor {
-            format: Some(eframe::wgpu::TextureFormat::Rgba8Unorm),
-            ..Default::default()
-        });
-        let mut egui_renderer = rs.renderer.write();
-        let id = match self.texture {
-            Some(id) => {
-                egui_renderer.update_egui_texture_from_wgpu_texture(
-                    device,
-                    &view,
-                    eframe::wgpu::FilterMode::Linear,
-                    id,
-                );
-                id
+        // The same camera, size and scenes as the image shown: kept.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let c: &Camera = camera;
+            [
+                c.target[0],
+                c.target[1],
+                c.target[2],
+                c.distance,
+                c.yaw,
+                c.pitch,
+                c.fov_y,
+                c.exaggeration,
+            ]
+            .map(f64::to_bits)
+            .hash(&mut h);
+            (px, self.generation).hash(&mut h);
+            for g in &layers {
+                (std::ptr::from_ref::<GpuScene>(*g) as usize, g.counts()).hash(&mut h);
             }
-            None => {
-                let id = egui_renderer.register_native_texture(
-                    device,
-                    &view,
-                    eframe::wgpu::FilterMode::Linear,
-                );
-                self.texture = Some(id);
+            h.finish()
+        };
+        let id = match self.texture {
+            Some(id) if self.image_key == Some(key) => id,
+            _ => {
+                #[cfg(test)]
+                {
+                    self.images_drawn += 1;
+                }
+                let texture = renderer.render(device, &rs.queue, &layers, camera, px);
+                // egui takes texture bytes as sRGB-encoded: a plain view of
+                // them.
+                let view = texture.create_view(&eframe::wgpu::TextureViewDescriptor {
+                    format: Some(eframe::wgpu::TextureFormat::Rgba8Unorm),
+                    ..Default::default()
+                });
+                let mut egui_renderer = rs.renderer.write();
+                let id = match self.texture {
+                    Some(id) => {
+                        egui_renderer.update_egui_texture_from_wgpu_texture(
+                            device,
+                            &view,
+                            eframe::wgpu::FilterMode::Linear,
+                            id,
+                        );
+                        id
+                    }
+                    None => {
+                        let id = egui_renderer.register_native_texture(
+                            device,
+                            &view,
+                            eframe::wgpu::FilterMode::Linear,
+                        );
+                        self.texture = Some(id);
+                        id
+                    }
+                };
+                self.image_key = Some(key);
                 id
             }
         };
-        drop(egui_renderer);
         let painter = ui.painter_at(rect);
         painter.image(
             id,
@@ -608,8 +714,10 @@ impl View3d {
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
-        // Section labels and sags (Sections › Display options).
-        // The nearest first: they win the place over farther ones.
+        drop(rendering);
+        let labels = crate::perf::span("3d labels");
+        // Section labels and sags, structures' names and the other
+        // labels (Sections and Structures › Display options).
         let project = camera.projector(size);
         let screen =
             |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
@@ -631,11 +739,17 @@ impl View3d {
                     Some((d, p, note))
                 })
                 .collect();
-        placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // Structures' names first (they are written from afar, the
+        // other labels give way to them), then the nearest first.
+        let name = |n: &crate::annotations::Note| n.kind != crate::annotations::Kind::Structure;
+        placed.sort_by(|a, b| name(&a.2).cmp(&name(&b.2)).then(a.0.total_cmp(&b.0)));
+        let _paint = crate::perf::span("3d labels: paint");
         let mut placer = crate::annotations::Placer::default();
         for (_, p, note) in &placed {
             placer.paint(&painter, *p, note);
         }
+        drop(labels);
+        let _overlays = crate::perf::span("3d overlays");
         // A measured line: on top, its label at its middle.
         if let Some((a, b, label)) = &self.measure
             && let (Some(p), Some(q)) = (screen(*a), screen(*b))
