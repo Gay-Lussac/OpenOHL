@@ -10,8 +10,10 @@
 //! - **Profile**: ground along the centreline (exact TIN profile, a point
 //!   at every triangle edge crossed) and optional side profiles at given
 //!   offsets, the required-clearance line (ground + clearance), structures,
-//!   the route's wires (spans between consecutive structures of the route,
-//!   and jumpers at its structures) coloured by phase, and markers.
+//!   the route's wires (spans between consecutive structures of the route
+//!   along its alignment, spans to a structure of the route away from the
+//!   alignment — projected —, and jumpers at its structures) coloured by
+//!   phase, and markers.
 //! - **Plan**: straightened along the route (station × offset, true
 //!   scale), so it lines up with the profile: centreline, corridor edges,
 //!   structures, wires.
@@ -258,12 +260,13 @@ pub fn build(
             }
         })
         .collect();
-    // Spans of the route: between consecutive structures of the route.
+    // Spans of the route: between consecutive structures of its run along
+    // the alignment, and those to a structure of the route away from it
+    // (a connection beside the line: projected), which do not break the
+    // run.
+    let on = |s: &str| route.structures.iter().any(|x| x == s);
     let consecutive = |a: &str, b: &str| {
-        route
-            .structures
-            .windows(2)
-            .any(|w| (w[0] == a && w[1] == b) || (w[0] == b && w[1] == a))
+        route.consecutive(a, b) || (on(a) && on(b) && (route.is_away(a) || route.is_away(b)))
     };
     let mut wires = Vec::new();
     for shape in shapes {
@@ -519,6 +522,85 @@ pub(crate) mod tests {
             options,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_connection_beside_the_line_keeps_the_spans_along_it() {
+        // A connection 80 m right of the main alignment between T1 and T2
+        // (on the route because it gives it), a short span from T1 down to
+        // it: T1–T2 stays a span of the profile, the span to the
+        // connection is drawn too, projected.
+        let (mut line, mut shapes, jumpers, _) = solved();
+        let mut c = line.structure("T1").unwrap().clone();
+        c.id = "C1".into();
+        c.position = [150.0, -80.0, 490.0];
+        c.points.clear();
+        c.members.clear();
+        c.routes = vec!["main".into()];
+        line.structures.push(c);
+        let s1 = line.sections.iter().find(|s| s.id == "S1").unwrap();
+        let mut sc = s1.clone();
+        sc.id = "SC".into();
+        sc.points.truncate(2);
+        sc.points[1].structure = "C1".into();
+        line.sections.push(sc);
+        let mut shape = shapes.iter().find(|s| s.section == "S1").unwrap().clone();
+        shape.section = "SC".into();
+        shape.spans.truncate(1);
+        let from = shape.spans[0].points[0];
+        shape.spans[0].points = (0..=20)
+            .map(|k| {
+                let t = f64::from(k) / 20.0;
+                [
+                    from[0] + t * (150.0 - from[0]),
+                    from[1] + t * (-80.0 - from[1]),
+                    from[2] + t * (500.0 - from[2]) - 4.0 * t * (1.0 - t),
+                ]
+            })
+            .collect();
+        shapes.push(shape);
+        let views = line.alignment_views();
+        let main = &views[0];
+        assert_eq!(main.structures[..3], ["T1", "C1", "T2"]);
+        assert_eq!(main.away, ["C1"]);
+        assert!(main.consecutive("T1", "T2") && !main.consecutive("T1", "C1"));
+        let d = build(
+            &line,
+            main,
+            &shapes,
+            &jumpers,
+            None,
+            &[],
+            &Options::default(),
+        )
+        .unwrap();
+        // Every span of S1 along the route, T1–T2 too.
+        let s1: Vec<&Trace> = d
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with("S1"))
+            .collect();
+        assert_eq!(s1.len(), 4);
+        assert!(
+            s1.iter().any(|w| w.label.starts_with("S1 span 0 ")
+                && w.points[0][0].abs() < 10.0
+                && (w.points.last().unwrap()[0] - 310.0).abs() < 5.0),
+            "{:?}",
+            s1.iter()
+                .map(|w| (w.label.clone(), w.points[0], *w.points.last().unwrap()))
+                .collect::<Vec<_>>()
+        );
+        // The connection: at its station, 80 m right; its span ends there.
+        let m = d.structures.iter().find(|m| m.id == "C1").unwrap();
+        assert!((m.station - 150.0).abs() < 1e-6 && (m.offset - 80.0).abs() < 1e-6);
+        let to_c: Vec<&Trace> = d
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with("SC"))
+            .collect();
+        assert_eq!(to_c.len(), 1);
+        let end = to_c[0].points.last().unwrap();
+        assert!((end[0] - 150.0).abs() < 1e-6 && (end[1] - 80.0).abs() < 1e-6);
     }
 
     #[test]
