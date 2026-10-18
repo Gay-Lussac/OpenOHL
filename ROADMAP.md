@@ -34,17 +34,22 @@ Guiding principles:
   (levels 1–3, poles, extensions, generators, loads per placed structure,
   FE with joint stabilisation and tension-only members, section library,
   exports) is in place with the limits listed below.
-- 67 validation cases pass; the private Swiss plugin and the importers of
+- 69 validation cases pass; the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
-### Running now (to finish before anything new)
+### Just finished (2026-10-18)
 - **Start-user improvements** in both apps: the review's quick wins, a
-  "Next steps" checklist, the **starter template project**, clearance
-  windows that always have a rule, tool windows that can dock.
-- **Icons in the apps**: window icons, tool icons in the hotbar, inventory
-  and menus, the logo on the start pages.
-- **Spring reactions**: the reaction at a spring support was reported as
-  about 0; being fixed (results without springs unchanged).
+  **Next steps** page, the **starter template project**
+  (`examples/starter/`: invented libraries, no line), **Open the example
+  (copy)**, clearance windows that always have a rule (its distance to
+  set) with an **Add a rule** helper, tool windows that can be docked,
+  Help › User guide / Start from scratch / About in both apps.
+- **Icons in the apps**: window icons, tool icons in the hotbar,
+  inventory and menus, the OpenOHL mark on the start pages and in About.
+- **Spring reactions**: a sprung joint now reports the spring's force
+  (models without springs unchanged; two new validation cases, 69 in all).
+
+Nothing is running now.
 
 > **Owner:**
 
