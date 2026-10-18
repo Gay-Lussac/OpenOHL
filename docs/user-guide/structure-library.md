@@ -94,7 +94,7 @@ A structure file describes its structure at one of three levels. The level is **
 | **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
 | **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….olsfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
 
-A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, a steel pole's wall) level 3. A pole named by a `.olsp` file is level 3. The structure's level is the higher of its members' and its pole's.
+A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a section) level 3. A pole named by a `.olsp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
 ```toml
 [[node]]                             # a joint, local axes
@@ -188,7 +188,7 @@ embedment = "3 m"                    # depth in the ground (optional): length = 
 
 # Level 3: the fields of a .olsp file, same names and meaning
 material = "steel"                   # wood | steel | concrete | other
-wall = "8 mm"                        # or section = "P-12x500" (below); none: solid
+wall = "8 mm"                        # or "solid", or section = "P-12x500" (below); none: not given
 elasticity = "210 GPa"               # P-Delta
 density = "7850 kg/m3"               # the pole's weight
 drag = 0.8                           # shape factor on the wind (default 1)
@@ -209,8 +209,8 @@ moment = "900 kN m"
 ```
 
 - **Outline**: heights rise from row to row (by more than 1 mm); a row gives its `diameter` or its `circumference` (a polygon's perimeter: across flats = perimeter / (n · tan(π/n))). Between the heights the diameter is linear; below the lowest and above the top it is held. The pole's height above ground is the top's z less the feet's.
-- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and its `wall` thickness (or a `section`), whatever the material. A pole named by a `.olsp` file counts as level 3 as given; brought into the structure file, its missing wall is listed.
-- **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
+- **Level 3** needs the `material`, a strength (`fibre_stress`, `moment_capacity` or `[[pole.capacity]]`) and its wall: its wall thickness, `wall = "solid"` (a solid pole, no hollow), or a `section`, whatever the material. `wall` takes a length or the word `"solid"`; any other word is refused, naming `wall`. A pole named by a `.olsp` file counts as level 3 as given; brought into the structure file, its missing wall is listed (a `.olsp` without a wall brings none: you decide between a thickness, solid and a section).
+- **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given: a thickness, or solid), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
 - **A polygon's section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the section library computes it), its elastic modulus taken at a corner (the smaller).
 
 The structure application edits the pole (**Body › Pole**, **Design › Pole**) and brings a named `.olsp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.

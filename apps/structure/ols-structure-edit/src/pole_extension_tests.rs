@@ -90,7 +90,36 @@ fn a_pole_is_outlined_and_designed() {
     // One undo: the wall goes, level 2 again.
     assert_eq!(f.undo().as_deref(), Some("pole wall"));
     assert_eq!(f.structure().detail(), Detail::Outline);
-    f.redo();
+    // Solid instead of the wall: one undoable edit, written back as
+    // `wall = "solid"`, level 3 still.
+    f.edit("pole solid", |doc, _| pole_edit::set_solid(doc, true))
+        .unwrap();
+    assert!(f.text().contains("wall = \"solid\""), "{}", f.text());
+    assert!(pole_edit::is_solid(f.doc()));
+    assert_eq!(f.structure().detail(), Detail::Design);
+    assert!(missing(f.structure(), 3).is_empty());
+    // Not solid: the wall is not given again (level 2).
+    f.edit("pole not solid", |doc, _| pole_edit::set_solid(doc, false))
+        .unwrap();
+    assert!(!f.text().contains("wall"), "{}", f.text());
+    assert_eq!(f.structure().detail(), Detail::Outline);
+    assert_eq!(f.undo().as_deref(), Some("pole not solid"));
+    assert_eq!(f.structure().detail(), Detail::Design);
+    assert_eq!(f.undo().as_deref(), Some("pole solid"));
+    assert!(!pole_edit::is_solid(f.doc()));
+    // Unticking solid leaves a typed thickness alone.
+    let before = f.text();
+    f.edit("pole not solid", |doc, _| pole_edit::set_solid(doc, false))
+        .unwrap();
+    assert_eq!(f.text(), before);
+    // A typo'd word is refused, naming the key; the text stays.
+    let e = f
+        .edit("pole wall", |doc, _| {
+            pole_edit::set_field(doc, "wall", "sold")
+        })
+        .unwrap_err();
+    assert!(e.contains("wall: \"sold\""), "{e}");
+    assert_eq!(f.text(), before);
     assert!(pole_edit::set_field(&mut f.doc().clone(), "colour", "red").is_err());
     // Polygonal: 12 sides; the wireframe has a ring per height and a
     // line per corner.
@@ -142,6 +171,31 @@ fn a_pole_file_is_brought_in() {
     assert_eq!(f.structure().detail(), Detail::Design);
     assert_eq!(f.undo().as_deref(), Some("bring the pole in"));
     assert!(matches!(f.structure().pole, Some(PoleRef::File(_))));
+    // A .olsp without a wall brings none: level 3 lacks it (the user
+    // decides: a thickness, solid or a section).
+    let no_wall = olsp.replace("wall = \"8 mm\"\n", "");
+    assert_ne!(no_wall, olsp);
+    f.edit("bring the pole in", |doc, t| {
+        pole_edit::bring_in(doc, t, &no_wall)
+    })
+    .unwrap();
+    let p = f
+        .structure()
+        .pole
+        .as_ref()
+        .and_then(PoleRef::inline)
+        .unwrap();
+    assert_eq!(p.wall, None);
+    assert_eq!(f.structure().detail(), Detail::Outline);
+    // A solid .olsp comes in solid.
+    f.undo();
+    let solid = olsp.replace("wall = \"8 mm\"", "wall = \"solid\"");
+    f.edit("bring the pole in", |doc, t| {
+        pole_edit::bring_in(doc, t, &solid)
+    })
+    .unwrap();
+    assert!(pole_edit::is_solid(f.doc()));
+    assert_eq!(f.structure().detail(), Detail::Design);
 }
 
 /// A four-legged body on supported feet (z = 0).

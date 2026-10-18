@@ -662,7 +662,7 @@ Source: `crates/ols-structures/src/structures.rs`. All positions in
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
 | `model` | path? | — | separate `.olsfe` model, relative to this file |
-| `pole` | `PoleRef`: a string (`File`: a `.olsp` id, or a file name ending in `.olsp`, in the same folder) **or** a `[pole]` table (`Inline(InlinePole)`, version 3) | m, Pa, kg/m³ | the pole: `shape` (`round`/`polygon`), `sides?`, `embedment?`, `[[pole.outline]]` (`z`, `diameter` **or** `circumference`; rising z; a polygon across flats), level 3 `material` (`wood`/`steel`/`concrete`/`other`), `section?` (section library), `wall?`, `fibre_stress?`, `moment_capacity?`, `[[pole.capacity]]` (`height`, `moment`), `elasticity?`, `density?`, `drag?` — the `.olsp` fields; read into one `ols_structures_fe::Pole` by `pole::structure_pole` (`Pole::from_inline` for a table; `Pole::profile`, `Pole::sides`) |
+| `pole` | `PoleRef`: a string (`File`: a `.olsp` id, or a file name ending in `.olsp`, in the same folder) **or** a `[pole]` table (`Inline(InlinePole)`, version 3) | m, Pa, kg/m³ | the pole: `shape` (`round`/`polygon`), `sides?`, `embedment?`, `[[pole.outline]]` (`z`, `diameter` **or** `circumference`; rising z; a polygon across flats), level 3 `material` (`wood`/`steel`/`concrete`/`other`), `section?` (section library), `wall?` (`PoleWall`: a length, or `"solid"` — no hollow; another word refused naming `wall`; absent: not given, level 3 lacks it; a `.olsp`'s `wall` reads the same, absent there still solid in the check; typed wins over a section's `t`), `fibre_stress?`, `moment_capacity?`, `[[pole.capacity]]` (`height`, `moment`), `elasticity?`, `density?`, `drag?` — the `.olsp` fields; read into one `ols_structures_fe::Pole` by `pole::structure_pole` (`Pole::from_inline` for a table; `Pole::profile`, `Pole::sides`) |
 
 **Detail level** (`StructureType::detail`, never stored — an older
 `detail` key is read and ignored): 3 *full design* when `model` is given
@@ -672,7 +672,8 @@ piece too: its members with sections and a supported joint,
 there are members or body polylines that are not all in one plane
 (within 1 mm, `StructureType::body_is_3d`); else 1 *stick figure*. The
 pole gives its own level (`StructureType::pole_detail`): a named `.olsp`
-or a `[pole]` with material, strength and wall thickness 3, a `[pole]`
+or a `[pole]` with material, strength and its wall (a thickness, `wall =
+"solid"`, or a section) 3, a `[pole]`
 outline with diameters at two heights 2 (`InlinePole::is_3d`,
 `InlinePole::missing_for_design`); the structure's level is the higher.
 Checks that depend on the structure's shape must say what they do at
@@ -718,7 +719,9 @@ the line's forces as cases of given values — a `value` and `direction`
 `take_line_load_cases` one recipe per line case taking its factored
 values at every point). The pole (`pole`:
 `add_outline_row`, `set_outline_row` — refused when the heights would
-not rise —, `remove_outline_row`, `set_shape`, `set_field`, `remove_pole`,
+not rise —, `remove_outline_row`, `set_shape`, `set_field` — `wall` checked as a
+length or `solid` —, `set_solid` / `is_solid` (`wall = "solid"`, unset
+only when solid), `remove_pole`,
 `bring_in` a `.olsp`'s text as a two-height outline from the feet) and
 the extensions (`extension_edits`: `add_joint` — refused outside the
 piece's heights —, `add_member`, `remove_joint` with its members,

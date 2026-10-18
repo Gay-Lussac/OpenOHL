@@ -212,7 +212,7 @@ their menu or from View.
 |---|---|---|
 | **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
-| **Design** (level 3) | Pole (pole structures: material, section or wall, strength), Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
+| **Design** (level 3) | Pole (pole structures: material, section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (section, kind, buckling factor k), Groups (a section and kind per member group), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
 | **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.olsslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
@@ -277,12 +277,16 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   height and lines along the pole. A pole named by a `.olsp` file is
   shown as such; **Bring it into this file** writes its outline and
   fields into the structure file (one undo step; the pole check gives
-  the same numbers). Diameters at two heights make level 2.
+  the same numbers). A `.olsp` without a wall brings none: level 3
+  lists it until you type a thickness, tick solid or pick a section. Diameters at two heights make level 2.
 - **Design › Pole design…**: the material (wood, steel, concrete, other), a
   **section** of the section library next to the file (a polygonal
   hollow section with the pole's sides, or a circular hollow one for a
   round pole: its wall, and its material's elasticity and density), or
-  the wall typed; fibre stress, moment capacity, elasticity, density,
+  the wall typed, or **solid** ticked (`wall = "solid"`: no hollow; it
+  stands for the wall at level 3; unticked, the wall is not given again;
+  each one undo step; a word other than `solid` typed as the wall is
+  refused); fibre stress, moment capacity, elasticity, density,
   drag. Under them what level 3 still lacks, or *The pole check can read
   the pole (level 3)*.
 - **Body › Extensions…**: the extensions (**+ Extension**: +3 m, +6 m…),

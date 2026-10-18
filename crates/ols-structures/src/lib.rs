@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 pub use extensions::{ExtendedBody, Extension, LegExtension};
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary};
-pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape};
+pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape, PoleWall};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, PlacedAttachment, PlacedPoint,
     PlacedString, PlacedStrings, PlacedWire, SpanLimit, StructureLibrary, StructureType,

@@ -138,7 +138,7 @@ ground_diameter = "290 mm"     # or ground_circumference (at the ground line)
 fibre_stress = "55 MPa"        # wood: capacity f·πD³/32 at each height
 # moment_capacity = "180 kN m" # or: at the ground line (steel, concrete)
 # [[capacity]] height = "0 m"; moment = "180 kN m"   # or: by height
-# wall = "6 mm"                # hollow section (for the stiffness)
+# wall = "6 mm"                # hollow section, or "solid" (none: solid)
 elasticity = "11 GPa"          # optional: P-Delta amplification
 density = "650 kg/m3"          # optional: the pole's weight in P-Delta
 drag = 1.0                     # shape factor on the wind pressure
@@ -152,8 +152,9 @@ A structure may describe its pole itself ([Poles](structure-library.md#poles)): 
 
 - the heights of the outline above the feet are the heights above the ground line; the diameter between them is linear (a `.olsp`: linear from the ground line to the top). An outline of two heights starting at the feet is exactly a `.olsp` taper: the example pole written in the structure file gives the `.olsp`'s numbers to the last digit (a test);
 - a polygonal pole: its section at each height is the regular polygon of that width across flats (hollow by the wall), its elastic modulus taken at a corner; its width across flats takes the wind;
-- a `section` of the section library gives the wall, and its material the elasticity and density not given in the table;
-- the pole check runs at level 3 only: a `[pole]` with an outline but no material or strength (level 2) is not checked (the type then needs a capacity, as before).
+- `wall` is a thickness or the word `"solid"` (no hollow; any other word is refused, naming `wall`); solid checks exactly as a `.olsp` without a wall (a test);
+- a `section` of the section library gives the wall (unless `wall` is typed: a thickness, or solid), and its material the elasticity and density not given in the table;
+- the pole check runs at level 3 only: a `[pole]` with an outline but no material, strength or wall (level 2) is not checked (the type then needs a capacity, as before).
 
 `ols structures pole --type structure.olss` without a `.olsp` checks the type's own pole (its `[pole]` table, or the `.olsp` it names), with `--sections` for a section it names.
 

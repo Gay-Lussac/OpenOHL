@@ -383,6 +383,25 @@ impl StructureApp {
                 });
             }
             ui.end_row();
+            // Solid: no hollow (wall = "solid"), level 3's wall.
+            ui.strong("solid").on_hover_text(
+                "A solid pole (wall = \"solid\"): no hollow. Ticked, it stands for the wall \
+                 thickness; unticked, the wall is not given until typed or a section is chosen",
+            );
+            let now = pole_edit::is_solid(f.doc());
+            let mut solid = now;
+            ui.checkbox(&mut solid, "no hollow");
+            if solid != now {
+                let what = if solid {
+                    "pole solid"
+                } else {
+                    "pole not solid"
+                };
+                if let Err(e) = f.edit(what, |doc, _| pole_edit::set_solid(doc, solid)) {
+                    self.message = Some((e, true));
+                }
+            }
+            ui.end_row();
             for (field, tip) in POLE_FIELDS {
                 if matches!(field, "material" | "section" | "embedment") {
                     continue;

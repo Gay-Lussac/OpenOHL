@@ -13,7 +13,8 @@
 //!   polygon with its number of sides);
 //! - **level 3**: the engineering the pole check needs — the material, the
 //!   strength (fibre stress, moment capacity or a capacity table), and
-//!   its wall thickness (typed, or a section of the section library).
+//!   its wall thickness (typed, `"solid"`, or a section of the section
+//!   library).
 //!
 //! ```toml
 //! [pole]
@@ -31,8 +32,8 @@
 //!
 //! # Level 3 (the fields of a .olsp file, same names and meaning):
 //! material = "steel"        # wood | steel | concrete | other
-//! wall = "8 mm"             # or section = "<id>" (a polygonal or circular
-//!                           # hollow section of the section library)
+//! wall = "8 mm"             # or "solid", or section = "<id>" (a polygonal
+//!                           # or circular hollow section of the library)
 //! elasticity = "210 GPa"
 //! density = "7850 kg/m3"
 //! drag = 0.8
@@ -46,7 +47,7 @@
 //! `.olsp` file through one conversion into the same pole.
 
 use ols_core::units::{Density, Length, Stress};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 /// Distance under which two heights are one, m.
 const SAME_HEIGHT: f64 = 1e-3;
@@ -114,6 +115,52 @@ impl PoleShape {
     }
 }
 
+/// The word `wall` takes for a pole without a hollow.
+pub const SOLID: &str = "solid";
+
+/// A pole's wall (`wall`, in `[pole]` and in `.olsp` files): a thickness
+/// (a hollow pole) or the word `"solid"` (no hollow).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PoleWall {
+    /// The wall thickness of a hollow pole.
+    Thickness(Length),
+    /// Solid: no hollow.
+    Solid,
+}
+
+impl PoleWall {
+    /// The thickness of a hollow pole (none: solid).
+    pub fn thickness(self) -> Option<Length> {
+        match self {
+            PoleWall::Thickness(t) => Some(t),
+            PoleWall::Solid => None,
+        }
+    }
+
+    /// Reads `wall` as written: a length (text with a unit, or an SI
+    /// number) or `"solid"`; anything else refused, naming the key.
+    pub fn from_value(v: &toml::Value) -> Result<Self, String> {
+        let bad = |what: &str| format!("wall: {what}: a length (e.g. \"8 mm\") or \"{SOLID}\"");
+        match v {
+            toml::Value::String(s) if s.trim().eq_ignore_ascii_case(SOLID) => Ok(PoleWall::Solid),
+            toml::Value::String(s) => s
+                .parse::<Length>()
+                .map(PoleWall::Thickness)
+                .map_err(|_| bad(&format!("\"{s}\""))),
+            toml::Value::Float(f) => Ok(PoleWall::Thickness(Length::from_si(*f))),
+            toml::Value::Integer(i) => Ok(PoleWall::Thickness(Length::from_si(*i as f64))),
+            other => Err(bad(&other.to_string())),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PoleWall {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = toml::Value::deserialize(d)?;
+        PoleWall::from_value(&v).map_err(serde::de::Error::custom)
+    }
+}
+
 /// One height of a pole's outline.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -152,9 +199,10 @@ pub struct InlinePole {
     /// material's elasticity and density, when not given here).
     #[serde(default)]
     pub section: Option<String>,
-    /// Wall thickness of a hollow pole (none: solid, or from `section`).
+    /// Wall thickness of a hollow pole, or `"solid"` (none: not given;
+    /// from `section` when there is one).
     #[serde(default)]
-    pub wall: Option<Length>,
+    pub wall: Option<PoleWall>,
     /// Wood: fibre stress (the moment capacity from the taper).
     #[serde(default)]
     pub fibre_stress: Option<Stress>,
@@ -255,7 +303,9 @@ impl InlinePole {
             );
         }
         if self.wall.is_none() && self.section.is_none() {
-            out.push("pole: no wall thickness (its wall, or a section)".into());
+            out.push(
+                "pole: no wall thickness (its wall thickness, \"solid\", or a section)".into(),
+            );
         }
         out
     }
@@ -296,10 +346,13 @@ impl InlinePole {
                 POLE_MATERIALS.join(", ")
             ));
         }
-        let positive = [self.wall, self.embedment.filter(|e| e.si() != 0.0)]
-            .into_iter()
-            .flatten()
-            .all(|v| v.si() > 0.0)
+        let positive = [
+            self.wall.and_then(PoleWall::thickness),
+            self.embedment.filter(|e| e.si() != 0.0),
+        ]
+        .into_iter()
+        .flatten()
+        .all(|v| v.si() > 0.0)
             && [self.fibre_stress, self.elasticity]
                 .into_iter()
                 .flatten()
