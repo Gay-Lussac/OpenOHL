@@ -10504,6 +10504,40 @@ fn the_profile_keeps_its_aspect_ratio_when_zooming() {
     assert!((ratio(fitted) - 10.0).abs() > 1e-3, "{fitted:?}");
 }
 
+/// A connection away from the alignment (80 m beside it between T1 and
+/// T2, on the route because it gives it) does not take T1–T2 out of the
+/// profile: its spans are drawn, the connection projected at its station.
+#[test]
+fn the_profile_keeps_the_spans_along_the_alignment_past_a_connection() {
+    let mut model = synthetic();
+    let mut c = model.line.structure("T1").unwrap().clone();
+    c.id = "C1".into();
+    c.position = [150.0, -80.0, 490.0];
+    c.routes = vec!["main".into()];
+    model.line.structures.push(c);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    let r = harness.state_mut().ready().unwrap();
+    let d = &r.profile.drawing.as_ref().unwrap().1.drawing;
+    let ids: Vec<&str> = d.structures.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids[..3], ["T1", "C1", "T2"]);
+    let m = &d.structures[1];
+    assert!((m.station - 150.0).abs() < 1e-6 && (m.offset - 80.0).abs() < 1e-6);
+    for section in ["S1", "S2"] {
+        let spans: Vec<&str> = d
+            .wires
+            .iter()
+            .filter(|w| w.label.starts_with(&format!("{section} span ")))
+            .map(|w| w.label.split_whitespace().nth(2).unwrap())
+            .collect();
+        assert_eq!(spans, ["0", "1", "2", "3"], "{section}");
+    }
+}
+
 /// The profile's corridor: at ±20 m the ground is drawn at both edges and
 /// the survey points within 20 m of the alignment are shown (none at 0);
 /// "All alignments, in order" draws the first, then the second, each

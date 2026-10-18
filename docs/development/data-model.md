@@ -225,10 +225,18 @@ alignment keeps its points.
   route into another is on both); a **jumper** on those of its two ends;
   strings, wire points and counterweights on those of their structure.
 
-`AlignmentView` (id, route, points, structures in station order) is what
-the profile, drawings, stationing and spotting work on; each structure on
-an alignment gets a station there (`Station`: station, offset, line angle,
-ahead span — computed, not stored).
+`AlignmentView` (id, route, points, structures in station order, and
+`away`: those of them neither tied to one of its points nor within 5 m of
+it — on its route because they give it themselves, such as a connection
+beside the line) is what the profile, drawings, stationing and spotting
+work on; each structure on an alignment gets a station there (`Station`:
+station, offset, line angle, ahead span — computed, not stored). The
+**run** along the alignment (`AlignmentView::run`) leaves the structures
+away out: line angles and spans ahead are taken along it (a structure
+away has 0 for both), and the profile's spans are those between
+consecutive structures of the run (`AlignmentView::consecutive`) plus
+those to a structure away (projected), so a connection whose station falls
+between two towers does not break the span between them.
 
 **Files of version 2** held `routes` that were their own alignment
 (`alignment`, `structures`) or followed their structures, and the line's

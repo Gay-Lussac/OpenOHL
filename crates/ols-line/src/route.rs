@@ -303,6 +303,12 @@ pub struct AlignmentView {
     pub alignment: Vec<AlignmentPoint>,
     /// The structures on it, in station order.
     pub structures: Vec<String>,
+    /// Those of [`Self::structures`] away from it: neither tied to one of
+    /// its points nor within [`NEAR_ALIGNMENT`] of it, on its route because
+    /// they give it themselves (a connection or a termination beside the
+    /// line). They have a station (projected) but are not in the run of
+    /// the line along the alignment: [`Self::run`] leaves them out.
+    pub away: Vec<String>,
 }
 
 /// Stationing of one structure on one route.
@@ -380,7 +386,37 @@ impl AlignmentView {
         positions(&self.alignment)
     }
 
-    /// Stationing of every structure of the route.
+    /// Whether structure `id` is one of those away from the alignment
+    /// ([`Self::away`]).
+    pub fn is_away(&self, id: &str) -> bool {
+        self.away.iter().any(|s| s == id)
+    }
+
+    /// The run of the line along the alignment: its structures in station
+    /// order without those away from it.
+    pub fn run(&self) -> impl Iterator<Item = &String> {
+        self.structures.iter().filter(|s| !self.is_away(s))
+    }
+
+    /// Whether structures `a` and `b` follow each other in the run of the
+    /// line along the alignment ([`Self::run`]), either way.
+    pub fn consecutive(&self, a: &str, b: &str) -> bool {
+        let mut last: Option<&String> = None;
+        for s in self.run() {
+            if let Some(l) = last
+                && ((l == a && s == b) || (l == b && s == a))
+            {
+                return true;
+            }
+            last = Some(s);
+        }
+        false
+    }
+
+    /// Stationing of every structure of the route. Line angles and spans
+    /// ahead are those of the run along the alignment ([`Self::run`]); a
+    /// structure away from it has a station and an offset only (0 for
+    /// both others).
     pub fn stations(&self, line: &Line) -> Result<Vec<Station>, LineError> {
         let positions: Vec<Point> = self
             .structures
@@ -394,23 +430,29 @@ impl AlignmentView {
         let pis = self::positions(&self.alignment);
         let alignment = &pis;
         let n = positions.len();
+        // The run: indices of the structures on the alignment itself.
+        let run: Vec<usize> = (0..n)
+            .filter(|&k| !self.is_away(&self.structures[k]))
+            .collect();
         Ok((0..n)
             .map(|k| {
                 let (station, offset) = project(alignment, positions[k]);
-                let line_angle_deg = if k > 0 && k + 1 < n {
-                    let (ax, ay) = horizontal(positions[k - 1], positions[k]);
-                    let (bx, by) = horizontal(positions[k], positions[k + 1]);
-                    // Signed angle from back to ahead direction; right turn positive.
-                    -(ax * by - ay * bx).atan2(ax * bx + ay * by).to_degrees()
-                } else {
-                    0.0
+                let at = run.iter().position(|&j| j == k);
+                let back = at.and_then(|i| i.checked_sub(1)).map(|i| run[i]);
+                let ahead = at.and_then(|i| run.get(i + 1)).copied();
+                let line_angle_deg = match (back, ahead) {
+                    (Some(b), Some(a)) => {
+                        let (ax, ay) = horizontal(positions[b], positions[k]);
+                        let (bx, by) = horizontal(positions[k], positions[a]);
+                        // Signed angle from back to ahead direction; right turn positive.
+                        -(ax * by - ay * bx).atan2(ax * bx + ay * by).to_degrees()
+                    }
+                    _ => 0.0,
                 };
-                let ahead_span = if k + 1 < n {
-                    let (dx, dy) = horizontal(positions[k], positions[k + 1]);
+                let ahead_span = ahead.map_or(0.0, |a| {
+                    let (dx, dy) = horizontal(positions[k], positions[a]);
                     dx.hypot(dy)
-                } else {
-                    0.0
-                };
+                });
                 Station {
                     structure: self.structures[k].clone(),
                     station,
@@ -624,12 +666,25 @@ impl Line {
                     .map(|s| (project_or_point(&pts, s.position), s.id.clone()))
                     .collect();
                 on.sort_by(|x, y| x.0.total_cmp(&y.0));
+                // Away: neither tied to one of its points nor beside it
+                // (on it only because it gives the route itself).
+                let away = on
+                    .iter()
+                    .filter(|(_, id)| {
+                        !points.iter().any(|p| p.structure.as_deref() == Some(id))
+                            && self
+                                .structure(id)
+                                .is_some_and(|s| beside(&pts, s.position) > NEAR_ALIGNMENT)
+                    })
+                    .map(|x| x.1.clone())
+                    .collect();
                 AlignmentView {
                     id: a.id.clone(),
                     name: a.name.clone(),
                     route: a.route.clone(),
                     alignment: points,
                     structures: on.into_iter().map(|x| x.1).collect(),
+                    away,
                 }
             })
             .collect()
@@ -1142,6 +1197,57 @@ mod tests {
         close(st[0].line_angle_deg, 0.0);
         for s in &st {
             assert!(s.offset.abs() < 1e-3, "{}", s.offset); // mm-rounded example
+        }
+    }
+
+    #[test]
+    fn a_connection_away_from_the_alignment_does_not_break_its_run() {
+        let mut line = crate::tests::example();
+        let before = line
+            .alignment_views()
+            .into_iter()
+            .find(|v| v.id == "main")
+            .unwrap();
+        let st0 = before.stations(&line).unwrap();
+        assert!(before.away.is_empty());
+        // A connection 80 m beside main's alignment between its first two
+        // structures, on the route because it gives it.
+        let (a, b) = (&before.structures[0], &before.structures[1]);
+        let (pa, pb) = (
+            line.structure(a).unwrap().position,
+            line.structure(b).unwrap().position,
+        );
+        let mut c = line.structures[0].clone();
+        c.id = "C".into();
+        let mid = [0.5 * (pa[0] + pb[0]), 0.5 * (pa[1] + pb[1])];
+        let n = (pb[0] - pa[0]).hypot(pb[1] - pa[1]);
+        c.position = [
+            mid[0] + 80.0 * (pb[1] - pa[1]) / n,
+            mid[1] - 80.0 * (pb[0] - pa[0]) / n,
+            pa[2] - 10.0,
+        ];
+        c.routes = vec![before.route.clone()];
+        line.structures.push(c);
+        let view = line
+            .alignment_views()
+            .into_iter()
+            .find(|v| v.id == "main")
+            .unwrap();
+        assert_eq!(view.structures[1], "C");
+        assert_eq!(view.away, ["C"]);
+        assert!(view.consecutive(a, b) && !view.consecutive(a, "C"));
+        assert_eq!(view.run().count(), before.structures.len());
+        // Its station and offset (80 m right); the run's angles and spans
+        // ahead as without it.
+        let st = view.stations(&line).unwrap();
+        close(st[1].offset, 80.0);
+        close(st[1].line_angle_deg, 0.0);
+        close(st[1].ahead_span, 0.0);
+        let run: Vec<&Station> = st.iter().filter(|s| s.structure != "C").collect();
+        assert_eq!(run.len(), st0.len());
+        for (x, y) in run.iter().zip(&st0) {
+            close(x.line_angle_deg, y.line_angle_deg);
+            close(x.ahead_span, y.ahead_span);
         }
     }
 

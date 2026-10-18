@@ -664,8 +664,14 @@ impl ProfileView {
         }
         for m in &d.structures {
             let selected = matches!(selection, Selection::Structure(id) if *id == m.id);
+            // Away from the alignment (a connection beside the line, on the
+            // route because it gives it): projected, fainter, its distance
+            // written.
+            let away = m.offset.abs() > ols_line::NEAR_ALIGNMENT;
             let col = if selected {
                 egui::Color32::WHITE
+            } else if away {
+                egui::Color32::from_gray(120)
             } else {
                 egui::Color32::from_gray(190)
             };
@@ -686,10 +692,16 @@ impl ProfileView {
             // Kept inside the view at its ends.
             let mut at = to_screen(m.station, m.top) + egui::vec2(0.0, -6.0);
             at.x = at.x.clamp(rect.min.x + 24.0, rect.max.x - 24.0);
+            let name = if away {
+                let side = if m.offset > 0.0 { "right" } else { "left" };
+                format!("{} ({:.0} m {side})", m.id, m.offset.abs())
+            } else {
+                m.id.clone()
+            };
             painter.text(
                 at,
                 egui::Align2::CENTER_BOTTOM,
-                &m.id,
+                name,
                 egui::FontId::proportional(11.0),
                 col,
             );
