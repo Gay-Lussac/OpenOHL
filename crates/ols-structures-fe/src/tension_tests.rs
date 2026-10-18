@@ -430,10 +430,13 @@ fn an_unsettled_set_keeps_its_members_active_and_flags_the_solution() {
         assert_eq!(s.displacements, r.displacements);
         assert_eq!(s.members, r.members);
         assert_eq!(s.reactions, r.reactions);
-        // Equilibrium: the supports and the spring (−k·u) take the load.
+        // Equilibrium: the supports and the spring take the load, the
+        // spring's −k·u reported as M's reaction.
         let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+        assert!(close(sum, -H), "{sum}");
+        let at_m = s.reactions.iter().find(|r| r.node == 4).unwrap();
         let spring = -1e3 * s.displacements[4][0];
-        assert!(close(sum + spring, -H), "{sum} {spring}");
+        assert!(close(at_m.force[0], spring), "{at_m:?} {spring}");
         assert_eq!(
             kept_active_note(&m, &s).unwrap(),
             "tension-only members kept active because the set did not settle: AM, MC — \

@@ -178,6 +178,8 @@ mod member_tests;
 #[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]
+mod spring_tests;
+#[cfg(test)]
 mod stabilise_tests;
 #[cfg(test)]
 mod tension_tests;
