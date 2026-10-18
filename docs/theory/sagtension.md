@@ -22,9 +22,9 @@ A cable has a fixed unstressed length \\( L_0 \\) at a reference temperature \\(
 \\[ L = L_0\\, e^{\alpha (t - t_0)} \left(1 + \frac{\bar T}{EA}\right), \qquad
    \int_0^L T\\,ds = H\left[\frac{S}{2} + \frac{C}{2}\sinh\frac{S}{C}\cosh\frac{S - 2x_m}{C}\right] \\]
 
-The exponential thermal factor is the exact integral of \\( dL/(L\\,dT) = \alpha \\). The common additive form \\( 1 + \alpha\Delta t + \bar T/EA \\) agrees to second order but is **not path independent**: defining a span at 15 °C, solving at 75 °C, re-defining from that result and solving back gave 28.009 kN instead of 28 kN (span slack magnifies tiny length errors). The multiplicative form makes every state give the same unstressed length.
+The exponential thermal factor is the exact integral of \\( dL/(L\\,dT) = \alpha \\). The common additive form \\( 1 + \alpha\Delta t + \bar T/EA \\) agrees to first order but is **not path independent**: defining a span at 15 °C, solving at 75 °C, re-defining from that result and solving back gave 28.009 kN instead of 28 kN (span slack magnifies tiny length errors). The multiplicative form makes every state give the same unstressed length.
 
-The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few µs; the time limit only guards against a loop).
+The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few µs; the time limit, 10 s, only guards against a loop).
 
 *Validation:* `cos-001…003`.
 

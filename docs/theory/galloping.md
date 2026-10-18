@@ -90,8 +90,10 @@ checks use them:
 
 ## Phase to phase and circuit to circuit
 
-`same_line` rules check every pair of wires of the line (adjacent spans and
-jumpers sharing an attachment excepted). `circuits = "same"` keeps pairs of
+`same_line` rules check every pair of wires of the line (wires sharing an
+end point within 1 cm, such as adjacent spans and a jumper and its
+sections, excepted; wires of the same circuit and phase too, unless
+`include_same_phase = true`). `circuits = "same"` keeps pairs of
 the same circuit (phase to phase), `"different"` pairs of different circuits
 (circuit to circuit). With `case_pairs` the first wire is taken in one
 weather case and the second in another — one circuit at maximum sag and the

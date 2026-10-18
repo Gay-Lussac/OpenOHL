@@ -45,11 +45,13 @@ The **transient** after a step of current integrates the full equation by
 fourth-order Runge–Kutta, by default in 10 s steps (the thermal time
 constant of overhead conductors is several minutes, so the step error is far
 below 0.01 °C; halving it changes the result by less than 10⁻³ °C in the
-tests). One iteration per step; exit clauses: that many steps and 10 s.
+tests). One iteration per step; exit clauses: the number of steps + 1 and
+10 s. The last step is shortened to end at the duration.
 The heat capacity \\( m c_p \\) is estimated from the cable's components
 (aluminium outer wires 955 J/(kg·K), steel core 476 J/(kg·K), with IEEE 738's
-temperature coefficients; the cable's mass shared between them by area ×
-density) unless given; for Drake this gives 1306 J/(m·K), against about
+temperature coefficients; steel outer wires for a steel wire, and rough
+typical values, 1000 J/(kg·K), for the composite core of ACCC; the cable's
+mass shared between them by area × density) unless given; for Drake this gives 1306 J/(m·K), against about
 1310 J/(m·K) in the IEEE example.
 
 ## IEEE Std 738-2012
@@ -145,7 +147,7 @@ temperature of the conductor is the same along each section.
 
 `ohl_thermal::limit` finds, per section, the highest conductor temperature
 at which its wires still meet every ground and point (LiDAR) rule of a
-clearance rule file. The section is solved alone (`ohl_line::solve`) in a
+clearance rule file. The section is solved alone (`ohl_line::solve::solve_one`) in a
 base weather case (still air by default, or a case of the user's) with only
 its temperature changed, and checked by the rules that apply to that case
 (`ohl_clearance::check_case`):
@@ -182,7 +184,8 @@ cancel. The ampacity at the limit then follows per ambient case.
   an angle, industrial air, high Reynolds numbers, current to temperature —
   against an independent evaluation of the same formulas
   (`benchmarks/thermal/reference_thermal.py`: sun as a vector, secant
-  instead of bisection), to 10⁻⁶. These guard the implementation of the
+  instead of bisection), to 10⁻⁶ relative (temperatures to 10⁻⁴ °C). These
+  guard the implementation of the
   formulas, not the methods themselves.
 
 No published CIGRE TB 601 worked example is used yet; in the IEEE example's

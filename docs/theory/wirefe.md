@@ -1,6 +1,6 @@
 # Finite-element wire systems
 
-Implemented in `crates/ohl-wirefe` — a "semi finite element" approach in the spirit of SAPS: each cable span is **one exact elastic catenary element** (no meshing, exact for any sag), insulator strings are truss elements, and the free nodes (clamps, load points, yoke plates) are found by Newton–Raphson in 3D.
+Implemented in `crates/ohl-wirefe` — a "semi finite element" approach: each cable span is **one exact elastic catenary element** (no meshing, exact for any sag), insulator strings are truss elements, and the free nodes (clamps, load points, yoke plates) are found by Newton–Raphson in 3D.
 
 ## Elastic catenary element
 
@@ -9,7 +9,7 @@ Unstressed length \\( L_0 \\), axial stiffness \\( EA \\), uniform load \\( \mat
 \\[ x = \frac{HL_0}{EA} + \frac{H}{w}\left[\operatorname{asinh}\frac{V_1}{H} - \operatorname{asinh}\frac{V_0}{H}\right], \qquad
    z = \frac{V_0L_0 + wL_0^2/2}{EA} + \frac{1}{w}\left[\sqrt{H^2+V_1^2} - \sqrt{H^2+V_0^2}\right] \\]
 
-For given end positions, \\( (H, V_0) \\) come from a damped Newton iteration (exit clauses: 100 iterations, 20 ms). The element returns the end forces and the exact 3×3 tangent stiffness (in-plane: inverse of the flexibility matrix; out-of-plane: \\( H/x \\)), verified against finite differences.
+For given end positions, \\( (H, V_0) \\) come from a damped Newton iteration (exit clauses: 100 iterations; the time limit, 10 s, only guards against a loop). The element returns the end forces and the exact 3×3 tangent stiffness (in-plane: inverse of the flexibility matrix; out-of-plane: \\( H/x \\)), verified against finite differences.
 
 *Validation:* `wirefe-001…003` against RK4 integration of the elastic cable along its unstressed length (with a tension jump for a point load).
 
@@ -25,9 +25,9 @@ Unknowns: positions of the free nodes. Each iteration assembles the stiffness of
 - **Swing-arc projection**: a straight Newton step moves a swinging clamp along the tangent of its arc; with a nearly rigid string, the fake stretch \\( \delta^2/2L \\) creates huge forces. The step keeps Newton's intended string length but puts the clamp back on its arc. A bar between two free nodes (a string hanging from a string) is projected the same way about its end nearer the supports (counted in bars; equally far: its top), with the length change of the ends' relative move. Nodes are placed from the supports outwards, each once the nodes it hangs from are: on its one bar's sphere, or — held by two bars (a V's tip, also the joint closing two chains of strings) — where the two spheres meet nearest to Newton's point; with more bars, a few alternating passes. A node all of whose bars went slack in a step drops back until its bar nearest the supports is taut (slack bars give it no stiffness: Newton cannot bring it back).
 - **Line search** on the largest unbalanced nodal force; a step lowering the unbalanced force of all nodes together (root of the sum of squares) by 10 % is also taken — a chain of strings swinging as a whole lowers it while one joint's force may still grow.
 - **Step limit for chained strings**: where strings hang from strings, a joint moves at most a third of its shortest string per step (a longer step can fold a chain the wrong way). Models without them step as before.
-- **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\\,\varepsilon\\, k_{max} |x| \\) of stiff members.
+- **Tolerance**: \\( 10^{-9} \\) of the loads, but not below the floating-point floor \\( 64\\,\varepsilon\\, k_{max} |x| \\) of stiff members, nor below \\( 10^{-11} \\) of the largest cable \\( EA \\) (the noise of the elements' own iterations).
 - **Exit clauses**: 100 iterations (the time limit, 120 s, only guards against a solve that never ends); the error names the node with the largest unbalanced force. `OHL_FE_TRACE=1` prints the iteration history.
-- **Fallbacks** when Newton stops: (1) the cables under their vertical load alone, then the point loads and the sideways (wind) part of the cables' load ramped up together, each step from the last solution; (2) for models with strings hanging from strings only, **dynamic relaxation** — each free node a mass moving under its unbalanced force (masses from the stiffness's row sums, never decreasing, so every step is stable), the motion stopped at each peak of kinetic energy — to near equilibrium (10⁻³ of the loads), then Newton from there. Exit clauses of the relaxation: 50 000 steps or 5 s. A long chain in high wind (four strings on one side, five on the other, ending in a V) takes about 2 s this way.
+- **Fallbacks** when Newton stops: (1) the cables under their vertical load alone, then the point loads and the sideways (wind) part of the cables' load ramped up together, each step from the last solution (at most 40 steps, no step smaller than 1/256 of the loads); (2) for models with strings hanging from strings only, **dynamic relaxation** — each free node a mass moving under its unbalanced force (masses from the stiffness's row sums, never decreasing, so every step is stable), the motion stopped at each peak of kinetic energy — to near equilibrium (10⁻³ of the loads), then Newton from there. Exit clauses of the relaxation: 50 000 steps or 5 s. A long chain in high wind (four strings on one side, five on the other, ending in a V) takes about 2 s this way.
 
 ## Sections: sagging and clamping
 
@@ -39,10 +39,10 @@ What this shows that the equal-tension (ruling span) model cannot: in the exampl
 
 ## Point loads: marker balls and other bodies
 
-A point load in a span is a weight at a fraction of the span, and may also be a body of some size: a marker ball, an obstruction light. It's given a diameter \\( D \\) (taken as a sphere), a drag coefficient \\( C_d \\) (default 1), and optionally its wind area \\( A \\) or the surface \\( S \\) that takes the ice instead of the sphere's. In a weather case it carries:
+A point load in a span is a weight at a fraction of the span, and may also be a body of some size: a marker ball, an obstruction light. It's given a shape — a sphere of diameter \\( D \\), a cylinder, a box, or given areas (a wind area \\( A \\) and the surface \\( S \\) that takes the ice) — and a drag coefficient \\( C_d \\) (default 1). In a weather case it carries:
 
-- **Ice:** the wire's radial ice thickness \\( t \\) (the case's thickness, or with an ice load and an ice density the thickness that load makes on the wire's bare diameter), as a shell of \\( \frac{\pi}{6}\left((D+2t)^3 - D^3\right) \\), or a layer \\( S\,t \\) on a given surface, at the case's ice density. A case with an ice load but no density gives no thickness, so the body takes no ice.
-- **Wind:** \\( F = p\,C_d\,\frac{\pi}{4}(D+2t)^2 \\) across the span, from the case's side (a given area \\( A \\) is grown by the ice as a sphere of that area).
+- **Ice:** the wire's radial ice thickness \\( t \\) (the case's thickness, or with an ice load and an ice density the thickness that load makes on the wire's bare diameter), as a shell of \\( \frac{\pi}{6}\left((D+2t)^3 - D^3\right) \\) on a sphere, or a layer \\( t \\) on the surface of a cylinder or a box, or \\( S\,t \\) on given areas, at the case's ice density. A case with an ice load but no density gives no thickness, so the body takes no ice.
+- **Wind:** \\( F = p\,C_d\,\frac{\pi}{4}(D+2t)^2 \\) on a sphere, across the span, from the case's side (a cylinder or a box: its projected sizes grown by \\( 2t \\); a given area \\( A \\) is grown by the ice as a sphere of that area).
 
 On a bundle the forces are shared by its subconductors. These loads can matter: a 0.6 m ball takes about 180 N of wind at 650 Pa and, with 16 mm of ice, about 170 N of ice, several times its own weight. A dozen of them on a long earth-wire span add a quarter or more to the wind on the wire. Without their wind area a long marked span swings metres less than it should.
 
