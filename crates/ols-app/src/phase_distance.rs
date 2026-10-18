@@ -1146,9 +1146,9 @@ impl PhaseDistanceWindow {
                     format!("stale — {since}")
                 });
                 ui.label(if same {
-                    t.color(egui::Color32::LIGHT_GREEN)
+                    t.color(crate::menu::ok_color(ui))
                 } else {
-                    t.color(egui::Color32::YELLOW)
+                    t.color(ui.visuals().warn_fg_color)
                 });
                 ui.label(
                     egui::RichText::new("Check runs it again with its parameters")
@@ -1168,7 +1168,7 @@ impl PhaseDistanceWindow {
                 crate::menu::message(
                     ui,
                     format!("Compared with the saved report: {summary}."),
-                    Some(egui::Color32::YELLOW),
+                    Some(ui.visuals().warn_fg_color),
                 );
                 ui.horizontal(|ui| {
                     ui.label(format!(
@@ -1187,7 +1187,7 @@ impl PhaseDistanceWindow {
                     crate::menu::message(
                         ui,
                         format!("A report \"{name}\" exists: replace it with this run?"),
-                        Some(egui::Color32::YELLOW),
+                        Some(ui.visuals().warn_fg_color),
                     );
                     if ui.button("Replace").clicked() {
                         out.apply = self.save(model, &name, true);
@@ -1332,7 +1332,7 @@ impl PhaseDistanceWindow {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("Editing the values (admin):")
-                                .color(egui::Color32::YELLOW),
+                                .color(ui.visuals().warn_fg_color),
                         );
                         if ui.button("Save in the project").clicked() {
                             let edited = self.editing.clone().unwrap_or_default();
@@ -1726,7 +1726,7 @@ impl PhaseDistanceWindow {
                             let mono = |v: f64| egui::RichText::new(format!("{v:.2}")).monospace();
                             let m = mono(r.margin());
                             let m = if r.margin() < 0.0 {
-                                m.color(egui::Color32::LIGHT_RED)
+                                m.color(ui.visuals().error_fg_color)
                             } else {
                                 m
                             };
@@ -1762,9 +1762,11 @@ impl PhaseDistanceWindow {
                                 let change = c.changes.get(&r.key()).copied();
                                 let text = change.map_or("", Change::text);
                                 let color = match change {
-                                    Some(Change::New | Change::Worse) => egui::Color32::LIGHT_RED,
+                                    Some(Change::New | Change::Worse) => {
+                                        ui.visuals().error_fg_color
+                                    }
                                     Some(Change::Fixed | Change::Better) => {
-                                        egui::Color32::LIGHT_GREEN
+                                        crate::menu::ok_color(ui)
                                     }
                                     None => ui.visuals().weak_text_color(),
                                 };

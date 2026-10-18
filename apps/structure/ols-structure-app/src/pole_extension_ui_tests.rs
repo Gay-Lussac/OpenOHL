@@ -51,10 +51,10 @@ fn a_pole_outline_is_edited() {
     h.run();
     assert_eq!(rings(&h).len(), 3);
     assert!((rings(&h)[1].1 - 0.5).abs() < 1e-9);
-    h.get_by_label("⟲ Undo").click();
+    h.get_by_label("Undo").click();
     h.run();
     assert_eq!(rings(&h).len(), 2);
-    h.get_by_label("⟳ Redo").click();
+    h.get_by_label("Redo").click();
     h.run();
     // The middle height deleted again.
     h.get_all_by_label("🗑").nth(1).unwrap().click();
@@ -96,11 +96,11 @@ fn an_extension_gets_its_piece_and_a_leg() {
     // Shown in 3D: the view stands on it.
     assert_eq!(h.state().ext.shown.as_deref(), Some("+3"));
     // One undo step.
-    h.get_by_label("⟲ Undo").click();
+    h.get_by_label("Undo").click();
     h.run();
     let t = h.state().file.as_ref().unwrap().structure().clone();
     assert!(t.extension("+3").unwrap().nodes.is_empty());
-    h.get_by_label("⟳ Redo").click();
+    h.get_by_label("Redo").click();
     h.run();
     // Leg A one metre longer.
     h.get_by_label("+ Leg").click();

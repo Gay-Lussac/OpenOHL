@@ -652,7 +652,7 @@ impl PylonBuilder {
                             if *error {
                                 crate::menu::error_label(ui, t);
                             } else {
-                                ui.colored_label(egui::Color32::LIGHT_GREEN, t);
+                                ui.colored_label(crate::menu::ok_color(ui), t);
                             }
                         });
                 }

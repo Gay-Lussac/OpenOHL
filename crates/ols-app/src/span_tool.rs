@@ -1077,7 +1077,7 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
         .num_columns(2)
         .show(ui, |ui| {
             ui.label("ends");
-            ui.label(format!("{} → {}", end(&s.a), end(&s.b)));
+            ui.label(format!("{} ➡ {}", end(&s.a), end(&s.b)));
             ui.end_row();
             ui.label("id");
             ui.add_enabled(f.new, egui::TextEdit::singleline(&mut s.id));

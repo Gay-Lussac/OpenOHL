@@ -446,7 +446,7 @@ impl SurfacesWindow {
                 );
                 if !is_project {
                     ui.colored_label(
-                        egui::Color32::LIGHT_RED,
+                        ui.visuals().error_fg_color,
                         "A line file keeps no surfaces: open a project (.ols).",
                     );
                     return;

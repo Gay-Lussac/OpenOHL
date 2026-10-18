@@ -432,6 +432,17 @@ fn choice(
     })
 }
 
+/// A file key as a label: `line_case` reads "Line case" (the file keeps
+/// its keys).
+pub(crate) fn readable(key: &str) -> String {
+    let words = key.replace('_', " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|f| f.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
 /// Hover texts of the load columns.
 const LOAD_TIPS: [(&str, &str); 13] = [
     (
@@ -690,7 +701,8 @@ impl StructureApp {
                         "strength" => "Strength factor of the checks (default 1)",
                         _ => "Factor on the structure's own weight (default 1; 0: none)",
                     };
-                    ui.label(*field).on_hover_text(tip);
+                    ui.label(readable(field))
+                        .on_hover_text(format!("{tip} (in the file: {field})"));
                     let (w, hint) = match *field {
                         "description" => (360.0, ""),
                         "strength" | "self_weight" => (140.0, "1"),
@@ -729,7 +741,8 @@ impl StructureApp {
                 egui::Grid::new("loads").striped(true).show(ui, |ui| {
                     ui.strong("#");
                     for (h, tip) in LOAD_TIPS {
-                        ui.strong(h).on_hover_text(tip);
+                        ui.strong(readable(h))
+                            .on_hover_text(format!("{tip} (in the file: {h})"));
                     }
                     ui.end_row();
                     for l in 0..case.loads.len() {
@@ -935,7 +948,7 @@ impl StructureApp {
                             ("why none / note", ""),
                             ("", ""),
                         ] {
-                            ui.strong(h).on_hover_text(tip);
+                            ui.strong(readable(h)).on_hover_text(tip);
                         }
                         ui.end_row();
                         for r in &rows {
@@ -1276,7 +1289,7 @@ impl LoadCasesTab {
             let text = if note.contains("no load case file") {
                 format!(
                     "The line gives no values for {id}: the project has no load cases. Add \
-                     them in the line application (Criteria › Load cases, or a design-code \
+                     them in OHL-Design (Criteria › Load cases library, or a design-code \
                      plugin); the values come here when the line is solved again."
                 )
             } else if !why.is_empty() {

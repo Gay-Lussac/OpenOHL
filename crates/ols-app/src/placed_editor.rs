@@ -364,7 +364,7 @@ impl PlacedEditor {
                 });
             }
         }
-        let list: Vec<String> = renumbered.iter().map(|(a, b)| format!("{a}→{b}")).collect();
+        let list: Vec<String> = renumbered.iter().map(|(a, b)| format!("{a}➡{b}")).collect();
         Ok((
             format!(
                 "changed the strings and points of {}; sets {} (their wires follow)",
@@ -442,7 +442,7 @@ impl PlacedEditor {
                 self.workspace.redraw();
             }
             if dirty {
-                ui.colored_label(egui::Color32::YELLOW, "* not applied");
+                ui.colored_label(ui.visuals().warn_fg_color, "* not applied");
             }
             ui.separator();
             if ui
@@ -459,7 +459,9 @@ impl PlacedEditor {
             if ui
                 .button(MAKE_FILE_AND_EDIT)
                 .on_hover_text(
-                    "It has no structure file, so the structure application has nothing to                      open: save it as a structure type of the project (the structure takes                      that type) and open that file in the structure application",
+                    "It has no structure file, so OHL-Structure has nothing to open: save \
+                     it as a structure type of the project (the structure takes that type) \
+                     and open that file in OHL-Structure",
                 )
                 .clicked()
             {
@@ -502,7 +504,7 @@ impl PlacedEditor {
             if *error {
                 crate::menu::error_label(ui, t);
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, t);
+                ui.colored_label(crate::menu::ok_color(ui), t);
             }
         }
         ui.separator();

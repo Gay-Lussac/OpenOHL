@@ -213,7 +213,7 @@ fn no_load_case_file_is_said_plainly() {
     let mut h = harness(&path, &at);
     menu(&mut h, "Load cases", "Load table…");
     h.get_by_label_contains("The line gives no values for T2: the project has no load cases");
-    h.get_by_label_contains("Criteria › Load cases, or a design-code plugin");
+    h.get_by_label_contains("Criteria › Load cases library, or a design-code plugin");
     // The same in Line values.
     h.state_mut().focus(Panel::InTheLine);
     h.run();

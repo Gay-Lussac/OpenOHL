@@ -751,7 +751,7 @@ const CIRCUITS: &[Column] = &[
         "starts",
         150.0,
         Yes,
-        "its ends that are starts (power flows in): tick them; at least one start and one end; ⇄ swaps starts and ends",
+        "its ends that are starts (power flows in): tick them; at least one start and one end; ⬌ swaps starts and ends",
     ),
     (
         "ends",
@@ -3323,7 +3323,7 @@ fn section_cells(
     if is_new || c.changed(col("points")) {
         let points: Vec<SectionPoint> = c
             .get(col("points"))
-            .split([',', '→'])
+            .split([',', '➡'])
             .filter(|t| !t.trim().is_empty())
             .map(parse_point)
             .collect::<Result<_, _>>()?;
@@ -4706,7 +4706,7 @@ impl TablePage {
         });
         if let Some(takes) = &self.confirm {
             ui.colored_label(
-                egui::Color32::YELLOW,
+                ui.visuals().warn_fg_color,
                 "This also changes (one log entry, undo brings everything back):",
             );
             egui::ScrollArea::vertical()
@@ -4732,10 +4732,10 @@ impl TablePage {
                 egui::RichText::new(match &model.sources.weather {
                     Some(p) => format!(
                         "{} — Apply writes the file (comments kept) and solves the model again",
-                        p.display()
+                        crate::menu::file_label(model, p)
                     ),
                     None if weather_path(model).is_some() => "The project uses a default case (15 °C): add cases here (+ Add row), Apply keeps them in the project".into(),
-                    None => "The model uses a default case (15 °C): make a case file in Criteria › Weather cases and choose Use for the model".into(),
+                    None => "The model uses a default case (15 °C): make a case file in Criteria › Weather cases library and choose Use for the model".into(),
                 })
                 .small()
                 .weak(),
@@ -4750,7 +4750,7 @@ impl TablePage {
                         ui,
                         egui::RichText::new("No route yet: an alignment needs one. Create it:")
                             .small(),
-                        Some(egui::Color32::YELLOW),
+                        Some(ui.visuals().warn_fg_color),
                     );
                 }
                 ui.add(
@@ -4831,9 +4831,9 @@ impl TablePage {
             if *error {
                 crate::menu::error_label(ui, t);
             } else if m.contains("warning:") {
-                crate::menu::message(ui, t, Some(egui::Color32::YELLOW));
+                crate::menu::message(ui, t, Some(ui.visuals().warn_fg_color));
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, t);
+                ui.colored_label(crate::menu::ok_color(ui), t);
             }
         }
         // Filter and sort (on the cells as shown, edits included).
@@ -4924,11 +4924,18 @@ impl TablePage {
                 ui.add_sized([24.0, header_height], egui::Label::new(""));
                 for (c, col) in columns.iter().enumerate() {
                     let arrow = match self.sort {
-                        Some((s, true)) if s == c => " ▲",
-                        Some((s, false)) if s == c => " ▼",
+                        Some((s, true)) if s == c => " ⏶",
+                        Some((s, false)) if s == c => " ⏷",
                         _ => "",
                     };
-                    let text = egui::RichText::new(format!("{}{arrow}", col.0)).strong();
+                    // One style in every table: a capital first letter
+                    // (the column's key stays as it is).
+                    let mut name = col.0.chars();
+                    let shown: String = name
+                        .next()
+                        .map(|f| f.to_uppercase().chain(name).collect())
+                        .unwrap_or_default();
+                    let text = egui::RichText::new(format!("{shown}{arrow}")).strong();
                     if ui
                         .add_sized([col.1, header_height], egui::Button::new(text).frame(false))
                         .on_hover_text(format!("{} — click to sort", col.3))
@@ -4975,7 +4982,7 @@ impl TablePage {
                                             ui,
                                             [col.1, row_height],
                                             &self.added[k][c],
-                                            Some(egui::Color32::LIGHT_GREEN),
+                                            Some(crate::menu::ok_color(ui)),
                                         ) {
                                             let e = extension_column
                                                 .and_then(|e| self.added[k].get(e).cloned())
@@ -4996,7 +5003,7 @@ impl TablePage {
                                             col.1,
                                             &mut text,
                                             list,
-                                            Some(egui::Color32::LIGHT_GREEN),
+                                            Some(crate::menu::ok_color(ui)),
                                             none_of(c),
                                         ) {
                                             self.added[k][c] = text;
@@ -5008,7 +5015,7 @@ impl TablePage {
                                             ui,
                                             [col.1, row_height],
                                             &mut self.added[k][c],
-                                            Some(egui::Color32::LIGHT_GREEN),
+                                            Some(crate::menu::ok_color(ui)),
                                             false,
                                             &col.3,
                                         );
@@ -5021,7 +5028,7 @@ impl TablePage {
                                         continue;
                                     }
                                     let edit = egui::TextEdit::singleline(&mut self.added[k][c])
-                                        .text_color(egui::Color32::LIGHT_GREEN);
+                                        .text_color(crate::menu::ok_color(ui));
                                     ui.add_sized([col.1, row_height], edit);
                                 }
                             });
@@ -5072,7 +5079,9 @@ impl TablePage {
                                     if ui
                                         .button(crate::type_workspace::EDIT_IN_APP)
                                         .on_hover_text(
-                                            "Its structure type in the structure application                                              (its own window), with the loads of this place;                                              one without a type is made a structure file first",
+                                            "Its structure type in OHL-Structure (its own window), with the loads of \
+                                             this place; one without a type is made a \
+                                             structure file first",
                                         )
                                         .clicked()
                                     {
@@ -5108,7 +5117,7 @@ impl TablePage {
                                 if ui
                                     .add_enabled(
                                         editable && !flipped.is_empty(),
-                                        egui::Button::new("⇄")
+                                        egui::Button::new("⬌")
                                             .min_size(egui::vec2(24.0, row_height)),
                                     )
                                     .on_hover_text("Reverse: its starts become its ends and its ends its starts (on Apply)")
@@ -5145,7 +5154,7 @@ impl TablePage {
                                 if deleted || col.2 != Yes || !editable {
                                     let mut t = egui::RichText::new(original).weak();
                                     if deleted {
-                                        t = t.strikethrough().color(egui::Color32::LIGHT_RED);
+                                        t = t.strikethrough().color(ui.visuals().error_fg_color);
                                     }
                                     // A colour read-only: on its colour.
                                     let swatch = (col.0 == "colour" && !deleted)
@@ -5191,7 +5200,7 @@ impl TablePage {
                                         ui,
                                         [col.1, row_height],
                                         &text,
-                                        edited.is_some().then_some(egui::Color32::YELLOW),
+                                        edited.is_some().then_some(ui.visuals().warn_fg_color),
                                     ) {
                                         let e = extension_column.unwrap_or(c);
                                         let shown_extension = self
@@ -5214,7 +5223,7 @@ impl TablePage {
                                 }
                                 if let Some(list) = choices_of(c, &row.cells) {
                                     let color = match (edited, default) {
-                                        (Some(_), _) => Some(egui::Color32::YELLOW),
+                                        (Some(_), _) => Some(ui.visuals().warn_fg_color),
                                         (None, true) => Some(dim),
                                         _ => None,
                                     };
@@ -5244,7 +5253,7 @@ impl TablePage {
                                         ui,
                                         [col.1, row_height],
                                         &mut text,
-                                        edited.is_some().then_some(egui::Color32::YELLOW),
+                                        edited.is_some().then_some(ui.visuals().warn_fg_color),
                                         default,
                                         &hover,
                                     );
@@ -5270,7 +5279,7 @@ impl TablePage {
                                 }
                                 let mut edit = egui::TextEdit::singleline(&mut text);
                                 if edited.is_some() {
-                                    edit = edit.text_color(egui::Color32::YELLOW);
+                                    edit = edit.text_color(ui.visuals().warn_fg_color);
                                 } else if default {
                                     edit = edit.text_color(dim);
                                 }

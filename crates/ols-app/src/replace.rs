@@ -486,7 +486,7 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
                  (what ends there moves with it); none: what ends there is removed.",
             );
             if let Some(note) = &m.note {
-                ui.colored_label(egui::Color32::YELLOW, note);
+                ui.colored_label(ui.visuals().warn_fg_color, note);
             }
             ui.separator();
             egui::Grid::new("replace-mapping")
@@ -565,7 +565,7 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
                         .id_salt("replace-error")
                         .max_height(80.0)
                         .show(ui, |ui| {
-                            ui.colored_label(egui::Color32::LIGHT_RED, e);
+                            ui.colored_label(ui.visuals().error_fg_color, e);
                         });
                 }
             }

@@ -243,7 +243,7 @@ impl GallopingWindow {
                                     let d = egui::RichText::new(format!("{:.2}", r.distance))
                                         .monospace();
                                     ui.label(if bad {
-                                        d.color(egui::Color32::LIGHT_RED)
+                                        d.color(ui.visuals().error_fg_color)
                                     } else {
                                         d
                                     });

@@ -835,7 +835,7 @@ impl ZoneWindow {
         {
             ui.horizontal(|ui| {
                 ui.colored_label(
-                    egui::Color32::from_rgb(255, 180, 90),
+                    ui.visuals().warn_fg_color,
                     format!("Remove the rule \"{}\"?", self.rules[k].name),
                 );
                 if ui.button("Remove").clicked() {
@@ -910,9 +910,9 @@ impl ZoneWindow {
             report.zone.points
         );
         if n == 0 {
-            ui.colored_label(egui::Color32::LIGHT_GREEN, head);
+            ui.colored_label(crate::menu::ok_color(ui), head);
         } else {
-            ui.colored_label(egui::Color32::from_rgb(255, 120, 100), head);
+            ui.colored_label(ui.visuals().error_fg_color, head);
         }
         let mut notes: Vec<String> = Vec::new();
         for (k, low) in report.zone.lowest.iter().enumerate() {
@@ -978,7 +978,7 @@ impl ZoneWindow {
                             ui.label(&report.rules[f.rule].name);
                             ui.label(format!("{:.2}", f.required));
                             ui.colored_label(
-                                egui::Color32::LIGHT_RED,
+                                ui.visuals().error_fg_color,
                                 format!("{:.2}", f.distance),
                             );
                             let s = &report.states[f.state];

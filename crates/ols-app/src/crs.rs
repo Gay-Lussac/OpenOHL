@@ -195,7 +195,7 @@ impl Picker {
                     }
                 ))
                 .strong(),
-                Err(e) => egui::RichText::new(e).color(egui::Color32::LIGHT_RED),
+                Err(e) => egui::RichText::new(e).color(ui.visuals().error_fg_color),
             }
         };
         ui.label(shown);
@@ -395,7 +395,7 @@ impl Windows {
                         && c.is_geographic()
                     {
                         ui.colored_label(
-                            egui::Color32::LIGHT_RED,
+                            ui.visuals().error_fg_color,
                             "Lines are designed in a projected system in metres: choose a \
                              projected system",
                         );
@@ -514,7 +514,7 @@ impl Windows {
                     ui.label(format!("From: {}", ols_crs::describe(&model.line.crs)));
                     if from.is_err() {
                         ui.colored_label(
-                            egui::Color32::LIGHT_RED,
+                            ui.visuals().error_fg_color,
                             "The project's coordinate system is not defined: Terrain › \
                              Coordinate system › Define first",
                         );
@@ -720,7 +720,7 @@ pub fn reproject_file(
         .and_then(|s| s.checkpoint())
         .map_err(|e| e.to_string())?;
     Ok(format!(
-        "{} → {}: {lines} project line(s), {surfaces} surface(s) and {} point \
+        "{} ➡ {}: {lines} project line(s), {surfaces} surface(s) and {} point \
          cloud(s) ({points} points) moved into {}. It opens when you close this window. Check \
          spans and stringing: grid distances change with the projection's scale.",
         ols_crs::describe(from.name()),

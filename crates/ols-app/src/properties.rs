@@ -15,6 +15,10 @@ use crate::selection::Selection;
 /// points beside the pylon in 3D).
 pub const STRINGS_AND_POINTS: &str = "Strings and points…";
 
+/// The button opening a structure's type in the other program,
+/// OHL-Structure (its own window).
+pub const OPEN_IN_STRUCTURE_APP: &str = "Open in OHL-Structure…";
+
 fn grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     egui::Grid::new(id)
         .num_columns(2)
@@ -105,7 +109,7 @@ pub fn ui(
             );
             if line.routes_of(&id).is_empty() {
                 ui.colored_label(
-                    egui::Color32::YELLOW,
+                    ui.visuals().warn_fg_color,
                     "On no route: it stands on no alignment. Give its route(s) in its window \
                      (Edit) or the Structures table.",
                 );
@@ -158,9 +162,9 @@ pub fn ui(
             }
             if let Some(t) = &s.structure_type
                 && ui
-                    .button("Edit…")
+                    .button(OPEN_IN_STRUCTURE_APP)
                     .on_hover_text(format!(
-                        "Open structure {t} in the structure application (its own window) with \
+                        "Open structure type {t} in OHL-Structure (its own window) with \
                          the loads the line puts on {id}; saved there, every structure of the \
                          type follows, and values typed over its load table stay with {id}"
                     ))
@@ -205,11 +209,11 @@ pub fn ui(
             }
             if s.structure_type.is_none()
                 && ui
-                    .button("Edit…")
+                    .button(OPEN_IN_STRUCTURE_APP)
                     .on_hover_text(
-                        "It has no structure file for the structure application to open: make \
-                         it one (a structure type of the project, the structure takes it) and \
-                         open that in the structure application",
+                        "It has no structure file for OHL-Structure to open: make it one (a \
+                         structure type of the project, the structure takes it) and open that \
+                         in OHL-Structure",
                     )
                     .clicked()
             {
@@ -245,7 +249,7 @@ pub fn ui(
                 for (k, w) in sec.points.windows(2).enumerate() {
                     if w[0].structure == id || w[1].structure == id {
                         let text = format!(
-                            "{} span {} ({} {}): {} → {}",
+                            "{} span {} ({} {}): {} ➡ {}",
                             sec.id,
                             k + 1,
                             sec.circuit_name,
@@ -276,7 +280,7 @@ pub fn ui(
                         ols_line::JumperEnd::Wire(p) => format!("set {}", p.set),
                         ols_line::JumperEnd::Tap { .. } => e.to_string(),
                     };
-                    let text = format!("{}: {} → {}", jp.id, end(&jp.from), end(&jp.to));
+                    let text = format!("{}: {} ➡ {}", jp.id, end(&jp.from), end(&jp.to));
                     if ui.link(text).clicked() {
                         next = Some(Selection::Jumper(jp.id.clone()));
                     }
@@ -316,7 +320,7 @@ pub fn ui(
                 rows.push((
                     "string",
                     format!(
-                        "{}: {} → {}, {:.3} m, {:.0} N{}{}{}",
+                        "{}: {} ➡ {}, {:.3} m, {:.0} N{}{}{}",
                         x.label,
                         x.top,
                         x.wire,

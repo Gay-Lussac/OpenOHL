@@ -449,7 +449,7 @@ impl VersionsWindow {
                                     RefKind::Tag => format!("tag: {}", x.name),
                                 })
                                 .collect();
-                            let mark = if rev.parents.len() > 1 { "◆" } else { "●" };
+                            let mark = if rev.parents.len() > 1 { "◎" } else { "○" };
                             let here = head_rev.as_deref() == Some(rev.id.as_str());
                             ui.label(if here {
                                 egui::RichText::new(mark).strong()
@@ -577,7 +577,7 @@ impl VersionsWindow {
                         .show(ui, |ui| {
                             for f in &o.fields {
                                 ui.label(format!(
-                                    "{}: {} → {}",
+                                    "{}: {} ➡ {}",
                                     f.path,
                                     value(&f.before),
                                     value(&f.after)
@@ -835,7 +835,7 @@ impl VersionsWindow {
                     ui.group(|ui| {
                         ui.label(
                             egui::RichText::new(format!(
-                                "#{} {} → {} ({}) — {}",
+                                "#{} {} ➡ {} ({}) — {}",
                                 rv.id,
                                 rv.branch,
                                 rv.target,
@@ -1057,7 +1057,7 @@ fn compare(
         (short(&id).to_owned(), s.revision_state(&id).map_err(e)?)
     };
     let d = diff(&a, &b);
-    Ok((format!("{} → {b_name}", short(&a_id)), d, a, b))
+    Ok((format!("{} ➡ {b_name}", short(&a_id)), d, a, b))
 }
 
 fn impact_ui(ui: &mut egui::Ui, impact: &Impact) {
@@ -1078,8 +1078,8 @@ fn impact_ui(ui: &mut egui::Ui, impact: &Impact) {
             let pair = |x: Option<f64>, y: Option<f64>, k: f64| {
                 let f = |v: Option<f64>| v.map_or("—".to_owned(), |v| format!("{:.2}", v * k));
                 match (x, y) {
-                    (Some(a), Some(b)) => format!("{} → {} ({:+.2})", f(x), f(y), (b - a) * k),
-                    _ => format!("{} → {}", f(x), f(y)),
+                    (Some(a), Some(b)) => format!("{} ➡ {} ({:+.2})", f(x), f(y), (b - a) * k),
+                    _ => format!("{} ➡ {}", f(x), f(y)),
                 }
             };
             for s in &impact.sections {

@@ -391,6 +391,18 @@ impl LibraryKind {
         }
     }
 
+    /// The examples of this kind shipped with the program (where Browse…
+    /// starts in an empty library): `libraries/` and the starter template.
+    pub fn shipped_examples(self) -> Option<PathBuf> {
+        crate::help::shipped(match self {
+            LibraryKind::Cables => "libraries/cables",
+            LibraryKind::Insulators => "libraries/insulators",
+            LibraryKind::StructureTypes => "examples/starter/structures",
+            LibraryKind::WeatherCases => "examples/starter/weather",
+            LibraryKind::LoadCases => "examples/starter/loadcases",
+        })
+    }
+
     /// Title of its page.
     pub fn title(self) -> &'static str {
         match self {
@@ -726,7 +738,7 @@ impl LibraryPage {
         if self.dirty() {
             log::info!("structure application: the page has unsaved changes");
             self.message = Some((
-                "Save or discard the changes here first: the structure application edits the \
+                "Save or discard the changes here first: OHL-Structure edits the \
                  file as saved"
                     .into(),
                 true,
@@ -957,21 +969,29 @@ impl LibraryPage {
                 self.open(&f);
             }
             if dirty {
-                ui.colored_label(egui::Color32::YELLOW, "* unsaved");
+                ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
             ui.separator();
             let filter = (kind.title(), [kind.extension()]);
             let start = kind.new_file_dir(sources);
+            // An empty library: browsing starts at the examples shipped
+            // with the program.
+            let browse_from = if self.files.is_empty() {
+                kind.shipped_examples().unwrap_or_else(|| start.clone())
+            } else {
+                start.clone()
+            };
             if ui
                 .add_enabled(!dirty, egui::Button::new("Browse…"))
                 .on_hover_text(format!(
-                    "Open a .{} file from anywhere on the computer",
+                    "Open a .{} file from anywhere on the computer (an empty library: from \
+                     the examples shipped with OpenOHL, invented or typical values)",
                     kind.extension()
                 ))
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter(filter.0, &filter.1)
-                    .set_directory(&start)
+                    .set_directory(&browse_from)
                     .pick_file()
             {
                 match self.import(sources, &p) {
@@ -1058,19 +1078,35 @@ impl LibraryPage {
             crate::menu::error_label(ui, egui::RichText::new(e).small());
         }
         if let Some(w) = &self.warning {
-            ui.colored_label(egui::Color32::YELLOW, egui::RichText::new(w).small());
+            ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(w).small());
         }
         if let Some((m, error)) = &self.message {
             let t = egui::RichText::new(m).small();
             if *error {
                 crate::menu::error_label(ui, t);
             } else {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, t);
+                ui.colored_label(crate::menu::ok_color(ui), t);
             }
         }
         ui.separator();
         if self.doc.is_none() {
-            ui.label("No file open.");
+            if self.files.is_empty() {
+                ui.label(format!(
+                    "The {} is empty.",
+                    kind.library_name().to_lowercase()
+                ));
+                ui.label(
+                    egui::RichText::new(
+                        "Browse… for a file (it starts at the examples shipped with OpenOHL: \
+                         invented or typical values, not for design), or New file… from a \
+                         template.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            } else {
+                ui.label("No file open: choose one above.");
+            }
             return action;
         }
         let mut changed = false;
@@ -1092,7 +1128,7 @@ impl LibraryPage {
                             egui::Button::new(crate::type_workspace::EDIT_IN_APP),
                         )
                         .on_hover_text(
-                            "Open this structure in the structure application (its own \
+                            "Open this structure in OHL-Structure (its own \
                              window: the body and the design); saved there, the line follows",
                         )
                         .on_disabled_hover_text("Save or discard the changes here first")
@@ -1594,7 +1630,7 @@ fn cable_model_ui(ui: &mut egui::Ui, table: &mut Table, path: &str) -> bool {
         ui.label("");
         ui.horizontal(|ui| {
             ui.colored_label(
-                egui::Color32::YELLOW,
+                ui.visuals().warn_fg_color,
                 format!("this model needs: {}", missing.join(", ")),
             );
             if ui.small_button("Add them").clicked() {
@@ -1650,7 +1686,7 @@ fn value_ui(
             let parsed = buffer.parse::<Value>();
             let mut edit = egui::TextEdit::singleline(buffer);
             if parsed.is_err() {
-                edit = edit.text_color(egui::Color32::LIGHT_RED);
+                edit = edit.text_color(ui.visuals().error_fg_color);
             }
             let r = ui.add_sized([280.0, 20.0], edit);
             let mut changed = false;
@@ -1817,7 +1853,7 @@ fn table_ui(
     if !hidden.is_empty() {
         ui.label(
             egui::RichText::new(format!(
-                "Also in the file, edited in the structure application ({}): {}",
+                "Also in the file, edited in OHL-Structure ({}): {}",
                 crate::type_workspace::EDIT_IN_APP,
                 hidden
                     .iter()

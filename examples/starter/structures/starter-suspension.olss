@@ -1,0 +1,81 @@
+format = "ols-structure"
+version = 2
+id = "starter-suspension"
+name = "Starter suspension (delta, one circuit; invented)"
+kind = "lattice"
+height = "34 m"
+source = "pylon template delta-1c, suspension"
+
+[template]
+id = "delta-1c"
+role = "suspension"
+string_length = "3 m"
+string_weight = "1000 N"
+earth_string_length = "0.3 m"
+earth_string_weight = "100 N"
+[template.values]
+lower_half = "5 m"
+lower_level = "22 m"
+peak = "34 m"
+upper_across = "4 m"
+upper_level = "28 m"
+
+[[point]]
+label = "A-L1"
+point = ["-5 m", "0 m", "22 m"]
+
+[[wire]]
+label = "W-L1"
+set = 1
+
+[[string]]
+label = "S-L1"
+top = "A-L1"
+wire = "W-L1"
+length = "3 m"
+weight = "1000 N"
+
+[[point]]
+label = "A-L2"
+point = ["4 m", "0 m", "28 m"]
+
+[[wire]]
+label = "W-L2"
+set = 2
+
+[[string]]
+label = "S-L2"
+top = "A-L2"
+wire = "W-L2"
+length = "3 m"
+weight = "1000 N"
+
+[[point]]
+label = "A-L3"
+point = ["5 m", "0 m", "22 m"]
+
+[[wire]]
+label = "W-L3"
+set = 3
+
+[[string]]
+label = "S-L3"
+top = "A-L3"
+wire = "W-L3"
+length = "3 m"
+weight = "1000 N"
+
+[[point]]
+label = "A-E1"
+point = ["0 m", "0 m", "34 m"]
+
+[[wire]]
+label = "W-E1"
+set = 19
+
+[[string]]
+label = "S-E1"
+top = "A-E1"
+wire = "W-E1"
+length = "0.3 m"
+weight = "100 N"

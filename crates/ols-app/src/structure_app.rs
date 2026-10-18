@@ -184,7 +184,7 @@ pub fn arguments(
 /// structures sends no values.
 pub const NO_CASES: &str = "the line has no load cases and no weather case is chosen for the \
     structures: tick weather cases in Criteria › Loads for structures (each sent with all \
-    factors 1), or give load cases (Criteria › Load cases, Criteria › Design code)";
+    factors 1), or give load cases (Criteria › Load cases library, Criteria › Design code)";
 
 /// What the line's structure loads are computed from: a copy of the
 /// line, its cables, weather and load cases (taken on the main thread,
@@ -249,12 +249,8 @@ impl LineInputs {
                         .pending(&format!("no values from the line: {e}"))
                         .and(Err(e.clone())),
                 };
-                r.err().map(|e| {
-                    format!(
-                        "loads of {} for the structure application: {e}",
-                        p.structure
-                    )
-                })
+                r.err()
+                    .map(|e| format!("loads of {} for OHL-Structure: {e}", p.structure))
             })
             .collect()
     }
@@ -374,7 +370,7 @@ pub fn not_found(places: &[PathBuf]) -> String {
         .map(|d| format!("    {}", d.display()))
         .collect();
     format!(
-        "The structure application ({file}) was not found.\n\nLooked in:\n{}\n\nBuild it (in \
+        "OHL-Structure ({file}) was not found.\n\nLooked in:\n{}\n\nBuild it (in \
          the OpenOHL folder):\n    {BUILD}\nIt is then next to ohl-design (target/release). Or set \
          {PROGRAM_ENV} to its path.",
         list.join("\n")
@@ -440,7 +436,7 @@ pub fn version_warning(program: &Path, theirs: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "The structure application is from another build: rebuild both (in the OpenOHL \
+        "OHL-Structure is from another build: rebuild both (in the OpenOHL \
          folder):\n    {BUILD_BOTH}\n\nThis program (ohl-design): {VERSION}\nThe structure \
          application ({}): {}\n\nIt was started anyway; what it saves may not read the same \
          here.",
@@ -664,9 +660,7 @@ impl StructureApps {
                     .is_some_and(|c| c.child.try_wait().ok().flatten().is_none())
         }) {
             log::info!("structure {id} is open in the structure application already");
-            return Err(format!(
-                "structure {id} is open in the structure application already"
-            ));
+            return Err(format!("structure {id} is open in OHL-Structure already"));
         }
         if let Some(p) = &placed {
             p.prepare()?;
@@ -682,13 +676,11 @@ impl StructureApps {
             Err(e) => {
                 log::info!("structure application not found: {e}");
                 self.reports.push(Report {
-                    title: "The structure application was not found".into(),
+                    title: "OHL-Structure was not found".into(),
                     text: e,
                     error: true,
                 });
-                return Err(format!(
-                    "the structure application ({PROGRAM}) was not found: {BUILD}"
-                ));
+                return Err(format!("OHL-Structure ({PROGRAM}) was not found: {BUILD}"));
             }
         };
         if program.is_file() {
@@ -699,7 +691,7 @@ impl StructureApps {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         log::info!(
-            "starting the structure application: {} {}",
+            "starting OHL-Structure: {} {}",
             program.display(),
             shown.join(" ")
         );
@@ -719,7 +711,7 @@ impl StructureApps {
                 );
                 log::info!("{text}");
                 self.reports.push(Report {
-                    title: "The structure application did not start".into(),
+                    title: "OHL-Structure did not start".into(),
                     text,
                     error: true,
                 });
@@ -786,7 +778,7 @@ impl StructureApps {
         if let Some(text) = warning {
             log::info!("structure application of another build (here {VERSION})");
             self.reports.push(Report {
-                title: "The structure application is from another build".into(),
+                title: "OHL-Structure is from another build".into(),
                 text,
                 error: false,
             });
@@ -944,7 +936,7 @@ impl StructureApps {
                     self.computing = None;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    out.push("the line's values for the structure application: stopped".into());
+                    out.push("the line's values for OHL-Structure: stopped".into());
                     self.computing = None;
                 }
                 Err(TryRecvError::Empty) => return out,
@@ -982,7 +974,7 @@ impl StructureApps {
 pub fn stopped(id: &str, status: &str, after: Duration, stderr: &str) -> Report {
     let early = after < EARLY;
     let mut text = format!(
-        "The structure application on {id} stopped {} ({status}).",
+        "OHL-Structure on {id} stopped {} ({status}).",
         if early {
             format!("right after it started ({:.1} s)", after.as_secs_f64())
         } else {
@@ -1003,9 +995,9 @@ pub fn stopped(id: &str, status: &str, after: Duration, stderr: &str) -> Report 
     }
     Report {
         title: if early {
-            "The structure application did not start".into()
+            "OHL-Structure did not start".into()
         } else {
-            "The structure application stopped with an error".into()
+            "OHL-Structure stopped with an error".into()
         },
         text,
         error: true,
@@ -1026,9 +1018,9 @@ pub fn report_window(ctx: &egui::Context, apps: &mut StructureApps) {
             .default_width(560.0)
             .show(ctx, |ui| {
                 let color = if r.error {
-                    egui::Color32::LIGHT_RED
+                    ui.visuals().error_fg_color
                 } else {
-                    egui::Color32::YELLOW
+                    ui.visuals().warn_fg_color
                 };
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     egui::ScrollArea::vertical()
@@ -1067,7 +1059,7 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         ui.label(
             egui::RichText::new(
                 "What the line sends to the placed structures (Edit… on a placed structure: \
-                 the cases of the structure application). Load cases (Criteria › Load cases, \
+                 the cases of OHL-Structure). Load cases (Criteria › Load cases library, \
                  Criteria › Design code) add factors and combinations on top of the weather \
                  cases; a weather case on its own is sent with all factors 1, the wires as \
                  strung.",
@@ -1087,7 +1079,8 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
             let names = match r.model.sources.load_cases.clone() {
                 None => {
                     ui.label(
-                        egui::RichText::new("no load case file (Criteria › Load cases)").weak(),
+                        egui::RichText::new("no load case file (Criteria › Load cases library)")
+                            .weak(),
                     );
                     Vec::new()
                 }
@@ -1334,7 +1327,9 @@ mod tests {
             r.structure_apps.dry_run = Some(Vec::new());
         }
         harness.run();
-        harness.get_by_label("Edit…").click();
+        harness
+            .get_by_label(crate::properties::OPEN_IN_STRUCTURE_APP)
+            .click();
         harness.run();
         let path = structures.join("type-02.olss");
         {
@@ -1592,7 +1587,7 @@ mod tests {
         }
         let r = apps.reports.last().unwrap().clone();
         assert!(r.error, "{r:?}");
-        assert_eq!(r.title, "The structure application did not start");
+        assert_eq!(r.title, "OHL-Structure did not start");
         assert!(r.text.contains("cannot read"), "{}", r.text);
         assert!(r.text.contains("unknown field pole"), "{}", r.text);
         assert!(!apps.active());

@@ -212,8 +212,8 @@ impl LoadsPage {
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
-                "no load case file: Criteria › Load cases (a .olslc file next to the line, \
-                 or the project's own)"
+                "no load case file: Criteria › Load cases library (the project's own, or a \
+                 .olslc file next to a line file)"
                     .into(),
             ));
             return;
@@ -340,6 +340,25 @@ impl LoadsPage {
                 );
             }
         });
+        if model.sources.load_cases.is_none() {
+            // Expected in a new project: not an error.
+            ui.label("No load case file yet: the structure loads are computed for its cases.");
+            ui.label(
+                egui::RichText::new(
+                    "Add one in the Load cases library (Criteria menu): Browse… for a .olslc \
+                     file, or New file… from a template.",
+                )
+                .small()
+                .weak(),
+            );
+            if ui.button("Open the Load cases library").clicked() {
+                crate::menu::request_page(
+                    ui.ctx(),
+                    crate::app::Tab::Library(crate::library::LibraryKind::LoadCases),
+                );
+            }
+            return None;
+        }
         let results = match &self.results {
             None => {
                 ui.label(
@@ -386,7 +405,7 @@ impl LoadsPage {
                 .collect();
             if !incomplete.is_empty() {
                 ui.colored_label(
-                    egui::Color32::LIGHT_RED,
+                    ui.visuals().error_fg_color,
                     format!(
                         "not solved in: {} — the structures they hang on are not checked there \
                          (grey); see Loads",
@@ -680,6 +699,7 @@ impl LoadsPage {
             _ => Vec::new(),
         };
         let filter = self.filter.trim().to_lowercase();
+        let (error, ok) = (ui.visuals().error_fg_color, crate::menu::ok_color(ui));
         let pct = |c: Option<&ols_loads::capacity::Check>| match c {
             None => egui::RichText::new("—").weak(),
             Some(c) => {
@@ -689,11 +709,11 @@ impl LoadsPage {
                     "not allowed".into()
                 };
                 let colour = if c.usage > 1.0 {
-                    egui::Color32::LIGHT_RED
+                    error
                 } else if c.usage >= NEAR_FULL {
                     egui::Color32::from_rgb(255, 170, 60)
                 } else {
-                    egui::Color32::LIGHT_GREEN
+                    ok
                 };
                 egui::RichText::new(text).monospace().color(colour)
             }

@@ -17,6 +17,16 @@ use crate::app::{StructureApp, error_label};
 use crate::icons::Icon;
 use crate::layout::{Area, Panel, close_panel, open_panel, options_menu};
 
+/// A shortcut as the platform writes it: ⌘ on a Mac, Ctrl elsewhere (as
+/// OHL-Design).
+pub(crate) fn shortcut(keys: &str) -> String {
+    if cfg!(target_os = "macos") {
+        keys.replace("Ctrl+", "⌘")
+    } else {
+        keys.to_owned()
+    }
+}
+
 /// A menu entry: true when clicked (the menu closes).
 fn item(ui: &mut egui::Ui, label: &str, enabled: bool, tip: &str, why_not: &str) -> bool {
     item_with(ui, None, label, enabled, tip, why_not)
@@ -73,7 +83,12 @@ impl StructureApp {
             });
             ui.menu_button("Plugins", |ui| self.plugins_menu(ui));
             ui.menu_button("Help", |ui| {
-                if ui.button("About OHL-Structure").clicked() {
+                crate::help::manual_entries(ui, &mut self.message);
+                if ui
+                    .button("About OHL-Structure")
+                    .on_hover_text("Its version, what it is, its licence")
+                    .clicked()
+                {
                     self.about = true;
                     ui.close();
                 }
@@ -90,11 +105,11 @@ impl StructureApp {
             .as_ref()
             .and_then(|f| f.undo_name())
             .map_or("Nothing to undo".to_owned(), |w| {
-                format!("Undo {w} (Ctrl+Z)")
+                format!("Undo {w} ({})", shortcut("Ctrl+Z"))
             });
         let can_undo = self.file.as_ref().is_some_and(|f| f.undo_name().is_some());
         if ui
-            .add_enabled(can_undo, egui::Button::new("⟲ Undo"))
+            .add_enabled(can_undo, egui::Button::new("Undo"))
             .on_hover_text(&undo_tip)
             .on_disabled_hover_text(&undo_tip)
             .clicked()
@@ -103,15 +118,18 @@ impl StructureApp {
         }
         let can_redo = self.file.as_ref().is_some_and(|f| f.redo_name().is_some());
         if ui
-            .add_enabled(can_redo, egui::Button::new("⟳ Redo"))
-            .on_hover_text("Make again what was undone (Ctrl+Shift+Z)")
+            .add_enabled(can_redo, egui::Button::new("Redo"))
+            .on_hover_text(format!(
+                "Make again what was undone ({})",
+                shortcut("Shift+Ctrl+Z")
+            ))
             .clicked()
         {
             self.redo();
         }
         if ui
             .add_enabled(self.dirty(), egui::Button::new("Save"))
-            .on_hover_text("Save the file (Ctrl+S)")
+            .on_hover_text(format!("Save the file ({})", shortcut("Ctrl+S")))
             .clicked()
         {
             self.save(None);
@@ -144,7 +162,10 @@ impl StructureApp {
         }
         let has = self.file.is_some();
         if ui
-            .add_enabled(dirty, egui::Button::new("Save").shortcut_text("Ctrl+S"))
+            .add_enabled(
+                dirty,
+                egui::Button::new("Save").shortcut_text(shortcut("Ctrl+S")),
+            )
             .clicked()
         {
             ui.close();
@@ -153,7 +174,7 @@ impl StructureApp {
         if ui
             .add_enabled(
                 has,
-                egui::Button::new("Save as…").shortcut_text("Ctrl+Shift+S"),
+                egui::Button::new("Save as…").shortcut_text(shortcut("Shift+Ctrl+S")),
             )
             .clicked()
         {
@@ -186,7 +207,7 @@ impl StructureApp {
         if ui
             .add_enabled(
                 u.is_some(),
-                egui::Button::new(label("Undo", &u)).shortcut_text("Ctrl+Z"),
+                egui::Button::new(label("Undo", &u)).shortcut_text(shortcut("Ctrl+Z")),
             )
             .clicked()
         {
@@ -196,7 +217,7 @@ impl StructureApp {
         if ui
             .add_enabled(
                 r.is_some(),
-                egui::Button::new(label("Redo", &r)).shortcut_text("Ctrl+Shift+Z"),
+                egui::Button::new(label("Redo", &r)).shortcut_text(shortcut("Shift+Ctrl+Z")),
             )
             .clicked()
         {
@@ -206,10 +227,10 @@ impl StructureApp {
         ui.separator();
         if item(
             ui,
-            "Pick nothing",
+            "Clear selection",
             !self.selected.is_empty(),
-            "Drop what is picked",
-            "Nothing is picked",
+            "Select nothing (as Edit › Clear selection in OHL-Design)",
+            "Nothing is selected",
         ) {
             self.selected.clear();
         }
@@ -556,6 +577,14 @@ impl StructureApp {
                         egui::RichText::new(
                             "View shows and hides the panels; drag a panel's tab to move it.",
                         )
+                        .weak(),
+                    );
+                    ui.label(
+                        egui::RichText::new(
+                            "Free software under the Mozilla Public License 2.0. Help › User \
+                             guide opens the manual on this computer.",
+                        )
+                        .small()
                         .weak(),
                     );
                 });
