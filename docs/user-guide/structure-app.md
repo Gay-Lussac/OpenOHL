@@ -11,12 +11,15 @@ what the levels mean and what comes next.
 ohl-structure examples/synthetic-line/Structures/type-02.ohls
 ```
 
+Its former name `ols-structure` is still built for a transition period:
+it says the program is now called `ohl-structure` and runs it.
+
 Options:
 
 | Option | What |
 |---|---|
 | `--insulators DIR` | the insulator assemblies strings may take; default: the file's folder and an `Insulators` folder there |
-| `--ahead DEG` | which plan angle means ahead along the line, for the compass |
+| `--ahead DEG` | which plan angle means ahead along the line, for the compass; default 0 |
 | `--sections FILE\|DIR` | the [section library](section-library.md) (a `.ohlsec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
 | `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
 | `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
@@ -38,7 +41,7 @@ structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
 structure…** (also in the File menu) asks an id and a name and what to
 start from: **Empty** — one point where an insulator hangs, a level 1
 stick figure to build from — or a **pylon template** (`.ohlpt`: the
-templates shipped with OpenOHL, or **Another template file…**), built
+templates shipped with OpenOHL, or **Another template file (.ohlpt)…**), built
 for suspension or strain with the template's default dimensions (the
 line application's pylon builder sets others). **Create…** asks where
 to write the file (`<id>.ohls`; an existing file is not replaced) and
@@ -167,10 +170,11 @@ as, [Libraries ›](#libraries), Export ›, Close), **Edit** (Undo, Redo,
 Clear selection — the same words as in OHL-Design), **View**, then one
 menu per part of the work — **Geometry**, **Body**, **Design**, **Load
 cases**, **Results**, **In the line** — then **Plugins**
-([below](#plugins)) and **Help** (**User guide…** and **Start from
-scratch (tutorial)…**: the manual on this computer, as in OHL-Design —
-the book built by `mdbook build`, else its sources in `docs/`, nothing
-fetched from the internet —; **About OHL-Structure**: version, licence);
+([below](#plugins)) and **Help** (**User guide…**: the manual on this
+computer, as in OHL-Design — the book built by `mdbook build`, else its
+sources in `docs/`, nothing fetched from the internet —; **Start from
+scratch (tutorial)…**: greyed, the tutorial is planned and not written
+yet; **About OHL-Structure**: version, licence);
 **Undo**, **Redo** and **Save** at their right (the same place as
 OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
 elsewhere. Each work menu lists
@@ -225,8 +229,10 @@ their menu or from View.
 - **Level** panel: **Level N — name** (worked out from the file, never
   stated), the structure's id and name, its file, *\* unsaved*. Under it,
   **for level N + 1:** what the next level still lacks — no member yet,
-  a member without a section (one item per member), no `[[section]]`, no
-  supported joint. Each item is a link: it brings the panel and table
+  a member without a section (one item per member), no supported joint,
+  and the same for each extension with a piece. A supported joint is one
+  with a `support`: a structure standing only on `spring`s does not
+  reach level 3 (this is how the level is worked out now). Each item is a link: it brings the panel and table
   where it is done to the front (opening it if it was closed) and picks
   its row. **advice (n)** (folded) lists what reads
   but is worth a look, never counted in the level: a point on no joint
@@ -333,7 +339,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   in one go (**Build the piece**: under every foot a joint `dz` lower
   along the foot's leg, with the foot's support, a leg to the foot, the
   faces braced — legs only, single diagonal or X, horizontals on
-  request; it replaces the piece there), or by hand (**+ Joint** at the
+  request; it replaces the piece there), or by hand (**Joint** at the
   bottom of the piece, **Member between the 2 picked joints**); its
   joints (support) and members (section) in two tables, 🗑 per row. Its
   **legs**: a leg A–D one `dz` longer (**+ Leg**), the `dz` dragged, 🗑.
@@ -394,8 +400,8 @@ their point (a member's at its middle), **m per kN** long.
 
 ## Results
 
-At level 3 (every member with a section and a support, or a `model =
-"….ohlfe"`) **▶ Run** solves the cases of the load table with the
+At level 3 (every member with a section and a joint with a `support`,
+or a `model = "….ohlfe"`) **▶ Run** solves the cases of the load table with the
 finite-element model: the case chosen, or every case. Rows without a
 value are left out (and said); the case's strength factor and
 self-weight factor come from its recipe (1 for `model` and typed cases).
@@ -429,8 +435,8 @@ asks first: **Save and close**, **Close without saving** or **Cancel**.
 
 ## Libraries
 
-A structure reads these libraries — each where the line application and
-`ohl line` keep them for a structure's folder:
+A structure reads these libraries — each, but the pylon templates, where
+the line application and `ohl line` keep them for a structure's folder:
 
 | Library | Files | Read from (and imported into) |
 |---|---|---|
@@ -440,6 +446,12 @@ A structure reads these libraries — each where the line application and
 | Structure models | `.ohlfe` | beside the structure file |
 | Load-case recipes | `.ohlslc` | beside the structure file |
 | Pylon templates | `.ohlpt` | `PylonTemplates/` beside the structure file |
+
+The pylon templates are kept apart in the two applications: OHL-Structure
+reads and imports them in `PylonTemplates/` beside the structure file;
+the line application's pylon builder reads the project's own in a
+`Pylon templates` folder beside the line. **New structure…** offers only
+the templates shipped with OpenOHL (or another template file chosen).
 
 **File › Libraries ›**:
 
@@ -454,6 +466,8 @@ A structure reads these libraries — each where the line application and
   (**Open in OHL-Structure…** in the line application), the folders are the project's
   working copy: the line application notices the new files within half
   a second, stores them into the project and reads its libraries again.
+  Load-case recipes and pylon templates are not project libraries: they
+  stay in the working copy and are not stored into the project.
 - **Export what it uses…**: into a folder chosen, in the line
   application's layout — `structures/` (the structure file as edited,
   its pole and model), `sections/` (each section library with only the
@@ -505,13 +519,13 @@ members with sections, a supported joint.
 
 | Entry | File | Meant for |
 |---|---|---|
-| **IFC4 — analysis model with load cases, and members** | `.ifc` | RFEM 6 (its structural analysis view: nodes and members), BIM viewers |
+| **IFC4 — analysis model with load cases, and members (analysis programs)** | `.ifc` | analysis programs reading the IFC structural analysis view (nodes and members), BIM viewers |
 | **IFC4 — members with their profiles** | `.ifc` | BIM viewers, coordination |
-| **IFC2x3 — members for Tekla Structures** | `.ifc` | Tekla Structures, as a reference model (its *IFC object conversion* takes IFC2x3 only) |
-| **SAF (xlsx) — analysis model with load cases** | `.xlsx` | RFEM 6, SCIA and other programs reading the Structural Analysis Format |
+| **IFC2x3 — members for steel-detailing programs** | `.ifc` | steel-detailing programs that take a reference model in IFC2x3 only |
+| **SAF (xlsx) — analysis model with load cases (analysis programs)** | `.xlsx` | analysis programs reading the Structural Analysis Format |
 | **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
 
-Pre-alpha, in active development: no exported file has been imported into RFEM, Tekla or SCIA yet.
+Pre-alpha, in active development: no exported file has been imported into another program yet.
 
 File-format plugins turned on are listed under the entries, greyed: they
 write the line's export model, not a structure.

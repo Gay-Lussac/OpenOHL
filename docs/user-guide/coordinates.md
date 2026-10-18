@@ -31,7 +31,7 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
   systems containing* filters by name or code, e.g. `LV95`, `UTM zone 32N`,
   `2056`), type a **proj4 string**, or read a **PRJ file**: WKT that names
   its EPSG code (`AUTHORITY["EPSG","2056"]`, WKT 2 `ID["EPSG",2056]`), WKT
-  whose name is that of an EPSG system (Esri's `CH1903+_LV95` too), or a
+  whose name is that of an EPSG system (also written as `CH1903+_LV95`), or a
   proj4 string. Other WKT is not read: choose its EPSG system instead.
   Lines are designed in projected systems, so geographic ones (longitude,
   latitude) are refused. It is an edit of the line's settings: undone like
@@ -66,14 +66,16 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
 Datum changes use the Helmert parameters of the definitions, not grid
 files.
 
-- **Switzerland, LV95 (EPSG:2056) ↔ WGS84**: matches swisstopo's official
-  transformation service REFRAME to under 1 mm in position and height
-  (validation cases `crs-001` … `crs-012`), with WGS84 taken as
-  CHTRS95/ETRS89 as REFRAME does.
-- **Projection changes within one datum** (e.g. WGS84 ↔ UTM) are exact to
-  the millimetre (validation case `crs-013`).
+- **Switzerland, LV95 (EPSG:2056) ↔ WGS84**: compared with swisstopo's
+  official transformation service REFRAME, with WGS84 taken as
+  CHTRS95/ETRS89 as REFRAME does. The benchmark cases `crs-001` …
+  `crs-012` (`benchmarks/crs/`) check positions to 1 cm; the tests of
+  `ohl-crs` check positions and ellipsoidal heights to 1 cm.
+- **Projection changes within one datum** (e.g. WGS84 ↔ UTM) follow the
+  projection formulas (benchmark case `crs-013`, checked to 1 cm).
 - **Datums that need distortion grids** (LV03 ↔ LV95, NAD27 ↔ NAD83, …) are
   approximated by their Helmert parameters; a PROJ-based plugin with grid
   files can provide them behind the same interface.
 - With heights kept, a round trip through another datum returns within
-  about 1 mm (the datum shift's height change is dropped each way).
+  a few millimetres (about 1 mm in the tests; the datum shift's height
+  change is dropped each way).

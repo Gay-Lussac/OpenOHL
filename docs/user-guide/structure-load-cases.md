@@ -8,9 +8,11 @@ vertical load. Specification: [Building structures](../development/structure-bui
 §2 (decisions 5 to 7).
 
 Status: the recipes, their files, the evaluation and the table's CSV
-are built (`apps/structure/ohl-structure-loads`), and the structure
-application edits them in its **Load cases** tab and solves the table's
-cases in its **Results** tab ([The structure application](structure-app.md#load-cases)).
+are built, in active development (not approved yet)
+(`apps/structure/ohl-structure-loads`). The structure application edits
+them in the **Load recipes** and **Load table** panels (Load cases menu)
+and solves the table's cases in its **FE results** panel (Results menu)
+([The structure application](structure-app.md#load-cases)).
 **Open in OHL-Structure…** on a placed structure in the line application opens the
 structure with that place's line values and keeps the values typed over
 its table with it ([Started for a placed

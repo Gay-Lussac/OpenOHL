@@ -346,12 +346,12 @@ and not undone.
   is remembered on this computer. Each `.ecw` is converted into a temporary
   GeoTIFF (its own georeferencing, else the `.eww` world file next to the
   ECW), imported, and the temporary file removed. Without such a GDAL,
-  convert them once yourself (QGIS with ECW support, or ERDAS's free ECW
-  tools) to GeoTIFF — swisstopo, for one, publishes SWISSIMAGE as GeoTIFF
-  directly.
+  convert them once yourself (QGIS with ECW support, or the ECW vendor's free
+  tools) to GeoTIFF — some mapping agencies publish their orthophotos as
+  GeoTIFF directly.
 - **Import DXF drawing…** — an ASCII DXF file (any version; binary DXF is
   refused): lines, polylines (with their arcs), circles, arcs, ellipses,
-  points and texts, by layer, in their colours (the AutoCAD colour index or
+  points and texts, by layer, in their colours (the DXF colour index or
   true colour; BYLAYER, BYBLOCK), at their own heights; blocks are
   inserted (scaled, turned, nested up to 8 deep) with their attributes.
   Hatches, dimensions, splines, faces and meshes are counted and not

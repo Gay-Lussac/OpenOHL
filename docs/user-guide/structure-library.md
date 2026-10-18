@@ -70,6 +70,10 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `body` | no | Stick drawing: polylines (local axes). Without it, a mast from the centre point to `height` (or the highest point) and a crossarm from the mast to every point. |
 | `height` | no | Mast top (local z) for the generated stick drawing. |
 | `capacity` | no | What the type can carry, for the structure checks (below). |
+| `source` | no | Where the data comes from (free text). |
+| `wind` | no | Wind on the structure, in height bands ([below](#wind-on-the-structure)). |
+| `load_case` | no | The structure's own load cases ([below](#load-cases-of-the-structure)). |
+| `template` | no | The pylon template it was built from, its role and values ([Pylon templates](#pylon-templates-ohlpt)). |
 | `node`, `member` | no | The pylon's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's sections, materials, analysis options and own loads — see [Structure analysis](structure-analysis.md). |
@@ -92,7 +96,7 @@ A structure file describes its structure at one of three levels. The level is **
 |---|---|---|
 | **1 — stick figure** | Only the points, strings and wire points: a mast from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the pylon). | Placing the wires, drawings, the 3D view. |
 | **2 — sticks of the pylon** | Joints (`[[node]]`) and members (`[[member]]`) without sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the pylon's members; distances to the structure (planned). |
-| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint — or a separate `model = "….ohlfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
+| **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint (a joint with a `support`; a joint held only by a `spring` does not count, so a structure standing only on springs stays at level 2) — or a separate `model = "….ohlfe"`. An extension with a body: its members with sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
 
 A **pole** has the same three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a section) level 3. A pole named by a `.ohlp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
@@ -213,7 +217,7 @@ moment = "900 kN m"
 - **`section`**: a hollow section of the project's section library ([Section library](section-library.md)) — `polygonal_hollow` with the pole's sides, or `circular_hollow` for a round pole. Its wall `t` is the pole's wall (unless `wall` is given: a thickness, or solid), and its material's elasticity and density are taken when not given here. The section's own diameter is not used: the outline gives the diameters.
 - **A polygon's section** at each height: a regular polygon of the outline's width across flats, hollow by the wall; its second moment is the same about every axis through the centre (A·(12 r² + a²)/48 for inradius r and side a, as the section library computes it), its elastic modulus taken at a corner (the smaller).
 
-The structure application edits the pole (**Body › Pole**, **Design › Pole**) and brings a named `.ohlp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
+The structure application edits the pole (**Body › Pole…**, **Design › Pole design…**) and brings a named `.ohlp` into the file in one step: its diameters at the ground line and the top become a two-height outline from the feet, its other fields are copied, and the pole check gives the same numbers.
 
 ### Extension bodies and leg extensions
 
@@ -375,7 +379,10 @@ window says why.
 The library grows with files: the templates shipped with OpenOHL in
 `libraries/pylon-templates`, and a project's own in its
 `Pylon templates` folder next to the line (one of the same id is used
-instead of the shipped one).
+instead of the shipped one). The structure application keeps its own
+apart: it reads and imports templates in a `PylonTemplates` folder beside
+the structure file, and its **New structure…** offers the shipped ones
+([OHL-Structure](structure-app.md#libraries)).
 
 ```toml
 format = "ohl-pylon-template"

@@ -37,7 +37,7 @@ On macOS, double-click **Start OHL-Structure.command**. See
 
 ### A new line, step by step
 
-A line is laid out in three steps, each needing the one before: a **route**, its **alignments** (each on one route), and the **alignment points** of each alignment, in order.
+A line is made in the steps below, most needing the one before. Its layout is three kinds of record: a **route**, its **alignments** (each on one route), and the **alignment points** of each alignment, in order.
 
 1. **The route** — File › New project, then name its route (the first window of a new project asks for it; Terrain › Routes later). A route is the path of the line; everything else is put on it.
 2. **Its alignment and its points** — the New alignment tool is held: right-click its points in order (an existing alignment point is used as it is — shared, a junction; a survey or LiDAR point or a structure snaps; elsewhere you type E, N and height), Enter, choose its route (with no route yet, it offers to create one). Or place the points first with the **Add alignment point** tool (not connected), then pick them one after another with New alignment; **Edit alignment** later reroutes a stretch, extends an end, or branches off; or type them in Terrain › Alignments and Terrain › Alignment points.

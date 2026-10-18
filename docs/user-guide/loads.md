@@ -59,7 +59,7 @@ The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,
 
 **Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor. The capacity checks' load trees are per point and leave these out, and so does the **fe** check: it takes the member wind on the profiles instead, when the members' sections come from the [section library](section-library.md) (see [Member wind](structure-analysis.md#member-wind-body-wind-at-level-3)). Height extensions are not added to the bands yet.
 
-Not yet included: jumper loads.
+**Jumpers:** the sections carry them at their clamps as Criteria › Calculation options says (an estimate by default — weight, ice and wind — or the jumper's own pull; line file `solver.jumper_loads`), and a jumper held by helping strings pulls on those strings, so on the structure holding them.
 
 ## Structure usage (capacity checks)
 
