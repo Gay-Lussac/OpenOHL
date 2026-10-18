@@ -1,6 +1,6 @@
 # Architecture
 
-> Subject to the [architecture decisions](adr/README.md). Requirements in [Design goals](DESIGN_GOALS.md).
+> Subject to the architecture decisions ([ADR-0001](adr/0001-license.md) to [ADR-0010](adr/0010-version-control.md); the index is under Design › Architecture decision records). Requirements in [Design goals](DESIGN_GOALS.md).
 
 ## Principles
 
@@ -63,7 +63,7 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | `ols-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines; pure Rust |
 | `ols-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OLS XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), structures along a route, formats and projects from WebAssembly plugins |
 | `ols-session` | Project file (`.ols`, SQLite), validated commands, operation log, per-user undo/redo, admin rollback, roles, live incremental solving; version control (revisions, branches, merge — ADR-0010), edit grants and reviews; spatial index |
-| `ols-server` | Server mode (alpha): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
+| `ols-server` | Server mode (pre-alpha, in active development): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
 | `ols-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
 | `ols-plugins` | Plugin manifests (`ols-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
 | `ols-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ohl validate`) |
@@ -94,7 +94,7 @@ other way round, and its tests run on their own.
 ```
 
 - Desktop single-user = the same session running in-process; joined, the application keeps a replica of the project and applies the server's broadcasts with the same code (`ols-server`).
-- Server mode alpha (`ols-server`, [Server mode](user-guide/server.md)): edits are requests answered after the broadcast; no optimistic prediction, whole-project copy on join, QUIC only for the application; browsers join through the web client (HTTPS + WebSocket, the line and server-solved wires as JSON).
+- Server mode, pre-alpha (`ols-server`, [Server mode](user-guide/server.md)): edits are requests answered after the broadcast; no optimistic prediction, whole-project copy on join, QUIC only for the application; browsers join through the web client (HTTPS + WebSocket, the line and server-solved wires as JSON).
 - Commands are validated, applied atomically, appended to the log, and broadcast as change sets.
 - Recalculation is incremental: a change marks dependent objects dirty (structure → its sections → their clearances) and only those are recomputed.
 - See ADR-0005.

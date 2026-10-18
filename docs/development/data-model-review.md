@@ -3,8 +3,8 @@
 A review of the data the program keeps — the line model (`ols-line`),
 the project file (`ols-session`), OLS XML and the library formats — after
 the points-and-objects work. It says what holds up, what is broken, and
-what is worth changing, most urgent first. §1 to §4 are done
-(marked ✓; how, in [Done](#done)). The [data model
+what is worth changing, most urgent first. §1 to §4 were carried out
+(marked ✓; how, in [Carried out](#carried-out)). The [data model
 map](data-model.md) describes the model as it is.
 
 ## What holds up
@@ -87,7 +87,7 @@ These change the line file (a new version, older files still read).
 | 4.5 ✓ | **Shipped libraries**: the app looks for `libraries/structures`, `libraries/insulators`, `libraries/clearance-rules`, which do not exist; an empty `libraries/phase-distance` is left over | ship small synthetic examples or drop the lookups |
 | 4.6 ✓ | **Examples and schemas lag**: the synthetic line files are version 2; the XSD namespace says 1 while its `version` is the line file's (4); `.olsfe` has no example; JSON Schema only for `.olsw` | rewrite the examples at the current version; say in the XSD that `version` follows the line file |
 
-## Done
+## Carried out
 
 On 2026-10-17, each step its own commit, the line file now version 5:
 
@@ -172,7 +172,7 @@ Then §3:
 
 ## Suggested order
 
-1. ~~The fixes of §1~~ (done).
-2. ~~§2~~ (done, line file version 5).
-3. ~~§4~~ (done).
-4. ~~§3~~ (done).
+1. ~~The fixes of §1~~ (carried out).
+2. ~~§2~~ (carried out, line file version 5).
+3. ~~§4~~ (carried out).
+4. ~~§3~~ (carried out).

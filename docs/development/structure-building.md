@@ -181,7 +181,7 @@ extension without a piece or legs behaves as before.
    rebuild keeps the joints and members made by hand.
 5. **Flat `[[body]]` polylines count as level 2** — *being fixed*: only
    a 3D body gives level 2 (decision 3).
-6. **Wind on the body in the FE model** — *done for the FE check*: the
+6. **Wind on the body in the FE model** — *built for the FE check*: the
    member wind on profiles from the section library (pressure × drag ×
    width × length × sin²θ, half to each joint; no shielding, one `drag`
    per structure); the wind bands stay out of the model. Load-case
@@ -193,12 +193,12 @@ extension without a piece or legs behaves as before.
    and panels with bracing patterns, crossarms, peaks, copying a face,
    rebuild, symmetry and member groups in the structure application.
 9. **Sections and materials are untyped tables**, edited as TOML, kept
-   per structure — *partly done*: the project's section library
+   per structure — *partly built*: the project's section library
    (`.olssec`, a project library kind) is referred to by id, first; the
    structure's own tables remain as raw TOML.
 10. **No import of a body** other than the local PLS importer, and **no
     export** of the model other than the file itself (IFC writes the
-    stick polylines only, `ols-io/src/ifc.rs`) — *export done*: a level
+    stick polylines only, `ols-io/src/ifc.rs`) — *export built*: a level
     3 structure as IFC4, IFC2x3, SAF and CSV ([Structure
     exports](structure-exports.md)).
 11. **No report of a structure**: results are console text or one usage
@@ -347,7 +347,7 @@ and what to pick (row, joint, member). Two kinds:
 
 ### 1.6 Replace structure (line application)
 
-**Status (2026-10-17): done** — session command `replace_structure`
+**Status (2026-10-17): built**, in active development — session command `replace_structure`
 (`crates/ols-session/src/replace.rs`), the Replace structure tool, the
 structure's Properties and the Structures table
 (`crates/ols-app/src/replace.rs`); see the user guide (Editing).
@@ -440,7 +440,7 @@ with its reason.
 - **Report** (HTML / PDF, CSV tables): the file and its hash, level,
   engine version, section library, load cases with their source, the
   governing member per group and per case, reactions, notes.
-- CLI: `ohl structures check structure.olss [--loads table.csv]
+- CLI (planned, not built yet): `ohl structures check structure.olss [--loads table.csv]
   [--report out.html]`; today's `fe` and `pole` remain.
 
 ## 3. Verification
@@ -563,7 +563,7 @@ Each phase is a deliverable of its own, checked and committed.
    section and kind per group written on each member (no `[[group]]`
    table); the Generators panel (preview, Apply = one undo step),
    group column and filter, Shift + click in tables, Design › Groups
-   ([user guide](../user-guide/structure-app.md#the-body-tab)). *Poles
+   ([user guide](../user-guide/structure-app.md#the-body-panels)). *Poles
    and extensions built*: the `[pole]` table (`ols_structures::pole`:
    outline by height, round or polygonal, the level 3 fields of a
    `.olsp`), `detail()` looking at it, the pole check reading it through
@@ -588,7 +588,7 @@ Each phase is a deliverable of its own, checked and committed.
    FE results panel and `ohl structures check`; the report.
 5. **Section library**: the library kind in the project file, sections
    referred to by id, typed sections and materials; surface areas from
-   the profiles; body wind (decision 10). *Done:* the format and
+   the profiles; body wind (decision 10). *Built:* the format and
    properties, the project library kind `sections`, ids resolved in the
    library first by the FE model, the member wind in the FE check.
    *Open:* typed sections edited in the structure application, member
