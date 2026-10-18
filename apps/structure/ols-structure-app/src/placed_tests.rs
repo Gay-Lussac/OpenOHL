@@ -130,7 +130,9 @@ fn a_placed_structure_shows_its_line_values_and_keeps_its_typed_loads() {
     assert!(r.missing.is_none());
     let r = row(&h, "ice, unbalanced", 1, "A11");
     assert!((r.force[2] - 1.3 * 8000.0).abs() < 1e-9, "{:?}", r.force);
-    // In the line: the values per point and case, the other place.
+    // In the line: the values per point and case, the other place (the
+    // points' table, beside it, is closed: it names A11 too).
+    crate::layout::close_panel(&mut h.state_mut().dock, Panel::PointsInsulators);
     h.state_mut().focus(Panel::InTheLine);
     h.run();
     // A11 once per case.

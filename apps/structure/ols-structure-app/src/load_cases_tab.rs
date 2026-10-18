@@ -1250,7 +1250,7 @@ impl LoadCasesTab {
             return vec![(
                 format!(
                     "The line's values for {id} do not read: {e}. Edit… on the placed structure \
-                     in the line application writes them again."
+                     in OHL-Design writes them again."
                 ),
                 Tone::Warn,
             )];
@@ -1259,14 +1259,14 @@ impl LoadCasesTab {
             return vec![if id.is_empty() {
                 (
                     "No line values: open this from a placed structure (select it in the line, \
-                     Properties › Edit…) to get its forces."
+                     Properties › Open in OHL-Structure…) to get its forces."
                         .to_owned(),
                     Tone::Info,
                 )
             } else {
                 (
                     format!(
-                        "Waiting for the line's values of {id}: the line application writes \
+                        "Waiting for the line's values of {id}: OHL-Design writes \
                          them when it has solved the line."
                     ),
                     Tone::Info,
@@ -1325,7 +1325,7 @@ impl LoadCasesTab {
             out.push((
                 format!(
                     "No values in case(s) {}: the line's sections there are not solved in that \
-                     case (solve the line again in the line application).",
+                     case (solve the line again in OHL-Design).",
                     without.join(", ")
                 ),
                 Tone::Warn,

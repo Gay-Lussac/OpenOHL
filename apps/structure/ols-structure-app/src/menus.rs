@@ -342,8 +342,8 @@ impl StructureApp {
             ui,
             "I insulator below the point",
             tops == 1,
-            "An insulator from the point picked down to a new wire point",
-            "Pick one point (or a wire point: an insulator below it)",
+            "An insulator from the point selected down to a new wire point",
+            "Select one point (or a wire point: an insulator below it)",
         ) {
             self.add_insulators();
             self.focus(Panel::PointsInsulators);
@@ -352,8 +352,8 @@ impl StructureApp {
             ui,
             "V insulators to one wire point",
             tops == 2,
-            "Two insulators from the two points picked to one wire point below their middle",
-            "Pick two points (Shift + click the second)",
+            "Two insulators from the two points selected to one wire point below their middle",
+            "Select two points (Shift + click the second)",
         ) {
             self.add_insulators();
             self.focus(Panel::PointsInsulators);
@@ -368,7 +368,7 @@ impl StructureApp {
             Icon::AddJoint,
             "Add a joint",
             true,
-            "A joint above the joint picked (or at the centre)",
+            "A joint above the joint selected (or at the centre)",
             "",
         ) {
             self.add_joint();
@@ -379,8 +379,8 @@ impl StructureApp {
             Icon::AddMember,
             "Member between the two joints",
             joints == 2,
-            "A member between the two joints picked",
-            "Pick two joints (Shift + click the second)",
+            "A member between the two joints selected",
+            "Select two joints (Shift + click the second)",
         ) {
             self.add_member();
             self.focus(Panel::Members);
@@ -390,8 +390,8 @@ impl StructureApp {
             Icon::PointOnJoint,
             "Point on the joint",
             joints == 1 && self.selected.len() == 1,
-            "A point where insulators hang, on the joint picked (it moves with it)",
-            "Pick one joint",
+            "A point where insulators hang, on the joint selected (it moves with it)",
+            "Select one joint",
         ) {
             self.point_here();
             self.focus(Panel::PointsInsulators);
@@ -432,10 +432,10 @@ impl StructureApp {
         ui.separator();
         if item(
             ui,
-            "Delete what is picked…",
+            "Delete what is selected…",
             self.selected.len() == 1,
             "Delete it, with what goes with it (asks first)",
-            "Pick one thing",
+            "Select one thing",
         ) {
             self.ask_delete();
         }
@@ -449,7 +449,7 @@ impl StructureApp {
             can_take,
             "The line's cases (ticked) written into the structure file as cases of given \
              values: the file then has its forces without the line",
-            "No line values: open this from a placed structure (Properties › Edit… in the \
+            "No line values: open this from a placed structure (Properties › Open in OHL-Structure… in \
              line application)",
         ) {
             self.open_store();

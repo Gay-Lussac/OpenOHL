@@ -71,8 +71,9 @@ fn a_body_is_generated_grouped_and_undone() {
         .map(|m| m.id.as_str())
         .collect();
     assert_eq!(grouped, ["body-M1", "body-M2"]);
-    // Design › Groups lists it.
+    // Design › Groups lists it (the members' table beside it too).
     menu(&mut h, "Design", "Groups…");
-    h.get_by_label("main-leg");
+    assert_eq!(h.state_mut().focused(), Some(crate::layout::Panel::Groups));
+    assert!(h.get_all_by_label("main-leg").count() >= 2);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }

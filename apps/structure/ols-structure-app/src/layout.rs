@@ -306,9 +306,10 @@ impl Panel {
     }
 }
 
-/// The default arrangement: the level at the top left, the geometry,
-/// body and design tables under it, the loads and results below them; the
-/// 3D view on the right (about 45 / 55).
+/// The default arrangement: the level at the top left, under it the
+/// geometry and body tables, the design tables, then the loads and
+/// results — groups of a few tabs each, so that every tab's title shows;
+/// the 3D view on the right (about 45 / 55).
 pub fn default_dock() -> DockState<Panel> {
     let mut dock = DockState::new(vec![Panel::View3d]);
     let tree = dock.main_surface_mut();
@@ -322,14 +323,16 @@ pub fn default_dock() -> DockState<Panel> {
             Panel::Joints,
             Panel::Members,
             Panel::Generators,
-            Panel::Supports,
-            Panel::MemberSections,
-            Panel::Groups,
         ],
     );
-    tree.split_below(
+    let [_, design] = tree.split_below(
         tables,
-        0.55,
+        0.4,
+        vec![Panel::Supports, Panel::MemberSections, Panel::Groups],
+    );
+    tree.split_below(
+        design,
+        0.42,
         vec![
             Panel::LoadRecipes,
             Panel::LoadTable,
