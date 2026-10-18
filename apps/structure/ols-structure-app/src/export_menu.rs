@@ -42,6 +42,16 @@ impl StructureApp {
                     self.export_to(f);
                 }
             }
+            // File-format plugins write the line's export model, not a
+            // structure: listed, not applicable (yet).
+            for name in self.plugins.io_plugins() {
+                ui.add_enabled(false, egui::Button::new(format!("{name} (plugin)")))
+                    .on_disabled_hover_text(
+                        "A file-format plugin: it takes the line's export model (its \
+                         structures, wires and cases), not a structure — use it in the line \
+                         application (File › Export)",
+                    );
+            }
             ui.separator();
             let sections = match &self.export.sections {
                 Some(p) => p.display().to_string(),

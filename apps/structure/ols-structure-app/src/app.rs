@@ -137,6 +137,14 @@ pub struct StructureApp {
     pub pole: crate::pole_panel::PoleState,
     /// The Extensions panel (the extension shown in 3D).
     pub ext: crate::extensions_panel::ExtensionsState,
+    /// The Libraries panel and File › Libraries.
+    pub libs: crate::libraries::LibrariesState,
+    /// The files opened recently (the start page).
+    pub recent: crate::start::Recent,
+    /// The New structure window.
+    pub new_structure: Option<crate::start::NewStructure>,
+    /// The plugins (Plugins menu).
+    pub plugins: crate::plugins_ui::PluginsState,
 }
 
 impl StructureApp {
@@ -177,6 +185,10 @@ impl StructureApp {
             body: Default::default(),
             pole: Default::default(),
             ext: Default::default(),
+            libs: Default::default(),
+            recent: Default::default(),
+            new_structure: None,
+            plugins: Default::default(),
         }
     }
 
@@ -186,23 +198,6 @@ impl StructureApp {
     pub fn open(&mut self, path: &Path) {
         match StructureFile::open(path) {
             Ok(f) => {
-                let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-                let dirs = match &self.insulators_dir {
-                    Some(d) => vec![d.clone()],
-                    None => vec![dir.clone(), dir.join("Insulators")],
-                };
-                self.insulators = InsulatorLibrary::default();
-                for d in dirs {
-                    match InsulatorLibrary::load_dir(&d) {
-                        Ok(lib) => {
-                            for a in lib.iter() {
-                                let p = lib.path(&a.id).map(Path::to_path_buf).unwrap_or_default();
-                                let _ = self.insulators.insert(&p, a.clone());
-                            }
-                        }
-                        Err(e) => log::warn!("insulators: {e}"),
-                    }
-                }
                 // The level decides the panel in front: where the work is.
                 let area = match f.structure().detail().level() {
                     1 => Area::Geometry,
@@ -218,12 +213,9 @@ impl StructureApp {
                 self.view = View::default();
                 self.drawn = None;
                 self.results = ResultsTab::default();
-                let sections = self
-                    .sections_path
-                    .clone()
-                    .unwrap_or_else(|| dir.join("Sections"));
-                self.loads
-                    .set_sections(ols_structure_link::section_library(&sections), &sections);
+                self.load_libraries(path);
+                self.libs.listing = None;
+                self.recent.add(path);
                 self.values_seen = None;
                 self.poll_line_values();
                 if let Err(e) = self.loads.opened(path) {
@@ -245,6 +237,36 @@ impl StructureApp {
             }
             Err(e) => self.open_error = Some(e),
         }
+    }
+
+    /// The insulator assemblies (of the folder given, else of the file's
+    /// folder and its Insulators folder) and the section library (given,
+    /// else `Sections/` beside the file) of structure file `path`.
+    pub fn load_libraries(&mut self, path: &Path) {
+        let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let dirs = match &self.insulators_dir {
+            Some(d) => vec![d.clone()],
+            None => vec![dir.clone(), dir.join("Insulators")],
+        };
+        self.insulators = InsulatorLibrary::default();
+        for d in dirs {
+            match InsulatorLibrary::load_dir(&d) {
+                Ok(lib) => {
+                    for a in lib.iter() {
+                        let p = lib.path(&a.id).map(Path::to_path_buf).unwrap_or_default();
+                        let _ = self.insulators.insert(&p, a.clone());
+                    }
+                }
+                Err(e) => log::warn!("insulators: {e}"),
+            }
+        }
+        let sections = self
+            .sections_path
+            .clone()
+            .unwrap_or_else(|| dir.join("Sections"));
+        self.loads
+            .set_sections(ols_structure_link::section_library(&sections), &sections);
+        self.pole = Default::default();
     }
 
     /// File › Open: another structure file, on its own (a placed
@@ -593,6 +615,7 @@ impl StructureApp {
         {
             self.dock = dock;
         }
+        self.recent = crate::start::Recent::load(storage);
     }
 
     /// View › Reset layout: the default arrangement.
@@ -600,26 +623,6 @@ impl StructureApp {
         self.dock = crate::layout::default_dock();
         let panel = self.area.first_panel();
         crate::layout::open_panel(&mut self.dock, panel);
-    }
-
-    /// The window without a file.
-    fn empty(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(80.0);
-            ui.heading("OLS Structure");
-            ui.label("A structure file (.olss): its points and insulators, its body, its design.");
-            ui.add_space(12.0);
-            if ui.button("Open a structure file…").clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Structure", &["olss"])
-                    .pick_file()
-            {
-                self.open(&p);
-            }
-            if let Some(e) = &self.open_error {
-                error_label(ui, e.as_str());
-            }
-        });
     }
 
     /// The window's title: the file, starred with unsaved changes.
@@ -665,6 +668,7 @@ pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
 impl eframe::App for StructureApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, crate::layout::DOCK_KEY, &self.dock);
+        self.recent.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -687,7 +691,7 @@ impl eframe::App for StructureApp {
         self.status_bar(ui);
         self.windows(&ctx);
         if self.file.is_none() {
-            egui::CentralPanel::default().show(ui, |ui| self.empty(ui));
+            egui::CentralPanel::default().show(ui, |ui| self.start_page(ui));
             return;
         }
         // The generator's preview is drawn while its panel is.
@@ -748,6 +752,7 @@ impl StructureApp {
             Panel::LoadTable => self.load_table_ui(ui),
             Panel::Results => self.results_ui(ui),
             Panel::InTheLine => self.in_the_line_ui(ui),
+            Panel::Libraries => self.libraries_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }

@@ -43,6 +43,7 @@ impl StructureApp {
                     ui.menu_button(area.name(), |ui| self.area_menu(ui, area));
                 }
             });
+            ui.menu_button("Plugins", |ui| self.plugins_menu(ui));
             ui.menu_button("Help", |ui| {
                 if ui.button("About OLS Structure").clicked() {
                     self.about = true;
@@ -92,6 +93,15 @@ impl StructureApp {
     fn file_menu(&mut self, ui: &mut egui::Ui) {
         let dirty = self.dirty();
         if ui
+            .add_enabled(!dirty, egui::Button::new("New structure…"))
+            .on_hover_text("An empty level 1 structure, or one built from a pylon template")
+            .on_disabled_hover_text("Save or undo the changes first")
+            .clicked()
+        {
+            ui.close();
+            self.new_structure = Some(crate::start::NewStructure::default());
+        }
+        if ui
             .add_enabled(!dirty, egui::Button::new("Open…"))
             .on_disabled_hover_text("Save or undo the changes first")
             .clicked()
@@ -123,6 +133,7 @@ impl StructureApp {
             self.save_as();
         }
         ui.separator();
+        self.libraries_menu(ui);
         self.export_menu(ui);
         ui.separator();
         if ui
@@ -208,6 +219,7 @@ impl StructureApp {
         };
         tick(ui, self, Panel::Level);
         tick(ui, self, Panel::View3d);
+        tick(ui, self, Panel::Libraries);
         for area in Area::ALL {
             ui.label(egui::RichText::new(area.name()).small().weak());
             for p in Panel::of(area) {
@@ -404,6 +416,7 @@ impl StructureApp {
             self.add_case();
             self.focus(Panel::LoadRecipes);
         }
+        self.code_item(ui);
         ui.separator();
         if item(
             ui,
@@ -478,6 +491,9 @@ impl StructureApp {
     pub(crate) fn windows(&mut self, ctx: &egui::Context) {
         self.confirm_window(ctx);
         self.store_window(ctx);
+        self.libraries_window(ctx);
+        self.new_structure_window(ctx);
+        self.plugin_windows(ctx);
         if self.about {
             let mut open = true;
             egui::Window::new("About OLS Structure")

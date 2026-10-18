@@ -115,13 +115,17 @@ pub enum Panel {
     Results,
     /// The line's values at the placed structure.
     InTheLine,
+    /// The libraries read and where from, what the structure names but
+    /// none has (File › Libraries).
+    Libraries,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 19] = [
+    pub const ALL: [Panel; 20] = [
         Panel::Level,
         Panel::View3d,
+        Panel::Libraries,
         Panel::PointsInsulators,
         Panel::WiresSets,
         Panel::StructureFields,
@@ -163,6 +167,7 @@ impl Panel {
             Panel::LoadTable => "Load table",
             Panel::Results => "FE results",
             Panel::InTheLine => "Line values",
+            Panel::Libraries => "Libraries",
         }
     }
 
@@ -202,13 +207,18 @@ impl Panel {
             }
             Panel::Results => "The cases of the load table solved by the finite-element model",
             Panel::InTheLine => "The line's values at the placed structure, per point and case",
+            Panel::Libraries => {
+                "The libraries the structure reads (sections, insulators, poles, models, \
+                 recipes, templates), where from, and what it names that none has"
+            }
         }
     }
 
-    /// The menu it belongs to (none: the 3D view, the level).
+    /// The menu it belongs to (none: the 3D view, the level, the
+    /// libraries).
     pub fn area(self) -> Option<Area> {
         Some(match self {
-            Panel::Level | Panel::View3d => return None,
+            Panel::Level | Panel::View3d | Panel::Libraries => return None,
             Panel::PointsInsulators | Panel::WiresSets | Panel::StructureFields => Area::Geometry,
             Panel::Joints
             | Panel::Members
@@ -445,9 +455,11 @@ impl TabViewer for Viewer<'_> {
     fn scroll_bars(&self, tab: &Panel) -> [bool; 2] {
         match tab {
             Panel::Level => [false, true],
-            Panel::LoadRecipes | Panel::LoadTable | Panel::Results | Panel::InTheLine => {
-                [true, true]
-            }
+            Panel::Libraries
+            | Panel::LoadRecipes
+            | Panel::LoadTable
+            | Panel::Results
+            | Panel::InTheLine => [true, true],
             _ => [false, false],
         }
     }

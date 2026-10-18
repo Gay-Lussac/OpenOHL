@@ -8,7 +8,10 @@
 //! it into the project and reads the libraries again (as a save of the
 //! Structure types page does). The file's time is looked at twice a
 //! second at most, only while a structure application runs or a change is
-//! waiting.
+//! waiting. The library folders it was given (the structure file's,
+//! `--insulators`, `--sections`) are watched too: library files imported
+//! there (its File › Libraries) are stored into the project
+//! ([`Change::Libraries`], [`library_signature`]).
 //!
 //! On a **placed structure** (Properties › Edit…) the application gets
 //! that place's loads: the line's values there in the cases the line
@@ -291,6 +294,9 @@ pub enum Change {
     /// Values typed over the load table saved (file, the structure id or
     /// placed structure).
     Loads(PathBuf, String),
+    /// Library files imported (or changed) in a folder the application
+    /// was given (the folder, the structure id).
+    Libraries(PathBuf, String),
 }
 
 /// The folders the program is looked for in: next to `exe_dir` (the
@@ -527,6 +533,46 @@ struct Watched {
     /// The values typed over its load table: the file, its time and text
     /// when last read.
     overrides: (PathBuf, Option<SystemTime>, String),
+    /// The library folders the application may import into (the
+    /// structure file's folder, its insulators and sections) and what was
+    /// in them when last looked ([`library_signature`]).
+    libraries: (Vec<PathBuf>, u64),
+}
+
+/// The library files the structure application imports (its
+/// File › Libraries): section libraries, insulator assemblies, poles,
+/// structure models, load-case recipes, pylon templates.
+pub const LIBRARY_EXTENSIONS: [&str; 6] = ["olssec", "olsi", "olsp", "olsfe", "olsslc", "olspt"];
+
+/// What the library files in `dirs` are: their names, sizes and times
+/// hashed (a file added, changed or removed changes it).
+pub fn library_signature(dirs: &[PathBuf]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for d in dirs {
+        let mut files: Vec<(String, u64, Option<SystemTime>)> = std::fs::read_dir(d)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .is_some_and(|x| LIBRARY_EXTENSIONS.iter().any(|l| x == *l))
+            })
+            .map(|e| {
+                let m = e.metadata().ok();
+                (
+                    e.file_name().to_string_lossy().into_owned(),
+                    m.as_ref().map_or(0, std::fs::Metadata::len),
+                    m.and_then(|m| m.modified().ok()),
+                )
+            })
+            .collect();
+        files.sort();
+        d.hash(&mut h);
+        files.hash(&mut h);
+    }
+    h.finish()
 }
 
 /// The structure applications started, and their files.
@@ -662,6 +708,20 @@ impl StructureApps {
         };
         let stderr = child.stderr.take().map(Stderr::read);
         let fresh = placed.is_some();
+        // The folders it imports libraries into: given, else its defaults
+        // beside the file (`Insulators/`, `Sections/`).
+        let beside = path.parent().unwrap_or(Path::new("."));
+        let folder = |p: &Path| {
+            if p.is_file() {
+                p.parent().unwrap_or(beside).to_path_buf()
+            } else {
+                p.to_path_buf()
+            }
+        };
+        let extra = vec![
+            insulators.map_or_else(|| beside.join("Insulators"), folder),
+            sections.map_or_else(|| beside.join("Sections"), folder),
+        ];
         self.watch_running(
             path,
             id,
@@ -671,6 +731,7 @@ impl StructureApps {
                 stderr,
             }),
             placed,
+            extra,
         );
         if fresh {
             // Computed for the new place at the next look.
@@ -722,7 +783,14 @@ impl StructureApps {
             started: Instant::now(),
             stderr: None,
         });
-        self.watch_running(path, id, running, placed);
+        self.watch_running(path, id, running, placed, Vec::new());
+    }
+
+    /// Watches `path` as [`StructureApps::watch`], and the library folders
+    /// `libraries` besides the file's own.
+    #[cfg(test)]
+    pub fn watch_libraries(&mut self, path: &Path, id: &str, libraries: Vec<PathBuf>) {
+        self.watch_running(path, id, None, None, libraries);
     }
 
     fn watch_running(
@@ -731,7 +799,15 @@ impl StructureApps {
         id: &str,
         child: Option<Running>,
         placed: Option<Placed>,
+        extra: Vec<PathBuf>,
     ) {
+        let mut dirs = vec![path.parent().unwrap_or(Path::new(".")).to_path_buf()];
+        for d in extra {
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
+        let signature = library_signature(&dirs);
         let (modified, text) = read(path);
         let at = placed.as_ref().map_or_else(
             || ols_structure_loads::overrides_path(path, None),
@@ -747,6 +823,7 @@ impl StructureApps {
             text,
             placed,
             overrides: (at, m, t),
+            libraries: (dirs, signature),
         });
     }
 
@@ -795,6 +872,12 @@ impl StructureApps {
                     let whose = w.placed.as_ref().map_or(&w.id, |p| &p.structure);
                     changed.push(Change::Loads(at.clone(), whose.clone()));
                 }
+            }
+            let (dirs, before) = &mut w.libraries;
+            let now = library_signature(dirs);
+            if now != *before {
+                *before = now;
+                changed.push(Change::Libraries(dirs[0].clone(), w.id.clone()));
             }
         }
         let mut reports = Vec::new();
@@ -1131,6 +1214,37 @@ mod tests {
             Some(bin.join(&name))
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A section library or insulator assembly imported in the structure
+    /// application (into the folders it was given, or beside the file) is
+    /// a change of the libraries; other files there are not.
+    #[test]
+    fn libraries_imported_there_are_a_change() {
+        let dir = std::env::temp_dir().join(format!("ols-cad-libs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (structures, sections) = (dir.join("structures"), dir.join("sections"));
+        std::fs::create_dir_all(&structures).unwrap();
+        std::fs::create_dir_all(&sections).unwrap();
+        let path = structures.join("t.olss");
+        std::fs::write(&path, "id = \"t\"\n").unwrap();
+        let mut apps = StructureApps::default();
+        apps.watch_libraries(&path, "t", vec![sections.clone()]);
+        assert!(apps.poll().is_empty());
+        // Not a library file: nothing.
+        std::fs::write(structures.join("t.line-values.json"), "{}").unwrap();
+        std::thread::sleep(POLL + Duration::from_millis(50));
+        assert!(apps.poll().is_empty());
+        std::fs::write(sections.join("mine.olssec"), "format = \"ols-sections\"\n").unwrap();
+        std::thread::sleep(POLL + Duration::from_millis(50));
+        assert_eq!(
+            apps.poll(),
+            vec![Change::Libraries(structures.clone(), "t".into())]
+        );
+        std::fs::write(structures.join("p.olsp"), "id = \"p\"\n").unwrap();
+        std::thread::sleep(POLL + Duration::from_millis(50));
+        assert_eq!(apps.poll().len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Edit… on a structure with a type; its file, saved in the structure

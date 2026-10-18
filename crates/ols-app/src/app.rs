@@ -2900,6 +2900,19 @@ impl Ready {
                         Err(e) => (format!("keeping the typed loads of {whose}: {e}"), true),
                     });
                 }
+                // Libraries imported in the structure application (its
+                // File › Libraries, into the working copy's folders): into
+                // the project, and read again, as a save of a library page.
+                Change::Libraries(dir, id) => {
+                    log::info!(
+                        "structure application on {id}: library files changed in {}",
+                        dir.display()
+                    );
+                    self.library_saved(
+                        crate::library::LibraryKind::StructureTypes,
+                        crate::library::PageAction::Saved(dir),
+                    );
+                }
             }
         }
         if let Some(e) = self.structure_apps.refresh_values(&self.model).pop() {

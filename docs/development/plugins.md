@@ -44,6 +44,25 @@ in a column marked "(unused)", typed like text. A check plugin can
 declare a circuit's value its check needs this way (e.g. an insulation
 level read by the distance between conductors).
 
+## Where plugins are found, and the shared settings
+
+Both desktop applications — the line application `ols-cad` and OLS
+Structure `ols-structure` — list the plugins installed for the user (OLS
+CAD's data folder, `plugins/`: `eframe::storage_dir("OLS CAD")`) and
+those of the folders added. The folders and the plugins turned off are
+one settings file, `settings.toml` in that plugin folder
+(`ols_plugins::PluginSettings`: `folders`, `disabled`; written through
+a temporary file renamed into place), read and written by both: a plugin
+added or turned off in one is so in the other.
+
+What applies in OLS Structure: `design-code` (Load cases › Load cases
+from a design code…: its load cases become recipes taking the line's
+values); `check` is listed (member and joint code checks will be a
+structure world later); `io` plugins take the line's export model, not a
+structure (listed as not applicable); `terrain`, `project` and Python
+plugins are the line application's. See [OLS
+Structure](../user-guide/structure-app.md#plugins).
+
 ## WebAssembly plugins
 
 The interface is defined in WIT: `crates/ols-plugins/wit/plugin.wit`. A Rust example lives in `plugins/examples/hello-wasm`:

@@ -20,6 +20,12 @@
 //!     --line-values Structures/type-02.T2.line-values.json --sections Sections
 //! ```
 //!
+//! Without a file it opens on its start page: Open a structure…, the
+//! files opened recently, New structure… (empty, or from a pylon
+//! template). File › Libraries imports and exports the libraries a
+//! structure uses; Plugins › Plugin manager shares the plugins and their
+//! settings with the line application.
+//!
 //! `ols-structure --version` prints the version and the build id (the git
 //! commit it was built from), e.g. `ols-structure 0.0.1 (build
 //! 1a2b3c4d5e6f)`: the line application checks it before it starts this
@@ -32,10 +38,13 @@ mod extensions_panel;
 mod generators_ui;
 mod in_line_tab;
 mod layout;
+mod libraries;
 mod load_cases_tab;
 mod menus;
+mod plugins_ui;
 mod pole_panel;
 mod results_tab;
+mod start;
 mod tables;
 mod view;
 
@@ -54,6 +63,8 @@ mod load_tests;
 mod placed_tests;
 #[cfg(test)]
 mod pole_extension_ui_tests;
+#[cfg(test)]
+mod self_sufficient_tests;
 #[cfg(test)]
 mod tests;
 
@@ -127,6 +138,10 @@ fn main() -> std::process::ExitCode {
             app.sections_path = args.sections.clone();
             app.line_values = args.line_values.clone();
             app.loads.placed = args.structure.clone();
+            // The plugins installed for the user and the shared settings
+            // (the same as the line application's).
+            app.plugins =
+                plugins_ui::PluginsState::load(plugins_ui::PluginsState::default_user_dir());
             if let Some(f) = &args.file {
                 app.open(f);
             }
