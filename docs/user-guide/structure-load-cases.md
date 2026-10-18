@@ -11,7 +11,7 @@ Status: the recipes, their files, the evaluation and the table's CSV
 are built (`apps/structure/ols-structure-loads`), and the structure
 application edits them in its **Load cases** tab and solves the table's
 cases in its **Results** tab ([The structure application](structure-app.md#load-cases)).
-**Edit…** on a placed structure in the line application opens the
+**Open in OHL-Structure…** on a placed structure in the line application opens the
 structure with that place's line values and keeps the values typed over
 its table with it ([Started for a placed
 structure](structure-app.md#started-for-a-placed-structure)). XLSX

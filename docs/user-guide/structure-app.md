@@ -44,7 +44,7 @@ line application's pylon builder sets others). **Create…** asks where
 to write the file (`<id>.olss`; an existing file is not replaced) and
 opens it.
 
-From the line application, **Edit…** on a structure (in its properties)
+From the line application, **Open in OHL-Structure…** on a structure (in its properties)
 and **Edit in the structure application…** (on the [structure
 screen](desktop-app.md#the-structure-screen), the Structure types page
 and the Structures table) start it on the structure's file; saved here,
@@ -77,7 +77,7 @@ the application wrote to its error output. The line application's log
 
 ## Started for a placed structure
 
-**Edit…** in a placed structure's properties (say T2, of type
+**Open in OHL-Structure…** in a placed structure's properties (say T2, of type
 `type-02`) starts the application with T2's loads:
 
 ```bash
@@ -121,7 +121,7 @@ ohl-structure Structures/type-02.olss --structure T2 \
   incomplete: S12 not solved*, the usage of the loads there are shown
   only in brackets); opened
   alone, *No line values: open this from a placed structure (select it
-  in the line, Properties › Edit…) to get its forces*, with the cases
+  in the line, Properties › Open in OHL-Structure…) to get its forces*, with the cases
   stored in the file from the line, if any.
 - The **load table** starts with the **line's forces**, without any
   recipe: every case the line transmits × every attachment point, the
@@ -164,17 +164,22 @@ the type follows in the line.
 
 At the top, the **menus**: **File** (New structure…, Open, Save, Save
 as, [Libraries ›](#libraries), Export ›, Close), **Edit** (Undo, Redo,
-Pick nothing), **View**, then one menu per part of the work —
-**Geometry**, **Body**, **Design**, **Load cases**, **Results**, **In
-the line** — then **Plugins** ([below](#plugins)) and **Help** (About
-OHL-Structure);
-**⟲ Undo**, **⟳ Redo** and **Save** at their right. Each work menu lists
+Clear selection — the same words as in OHL-Design), **View**, then one
+menu per part of the work — **Geometry**, **Body**, **Design**, **Load
+cases**, **Results**, **In the line** — then **Plugins**
+([below](#plugins)) and **Help** (**User guide…** and **Start from
+scratch (tutorial)…**: the manual on this computer, as in OHL-Design —
+the book built by `mdbook build`, else its sources in `docs/`, nothing
+fetched from the internet —; **About OHL-Structure**: version, licence);
+**Undo**, **Redo** and **Save** at their right (the same place as
+OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
+elsewhere. Each work menu lists
 its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
 brought to the front) and its **actions** (Geometry: *Add a point*, *I
 insulator below the point*, *V insulators to one wire point*, *Delete
-what is picked…*; Body: *Add a joint*, *Member between the two joints*,
+what is selected…*; Body: *Add a joint*, *Member between the two joints*,
 *Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
-picked…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
+selected…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
 *Generators…* and *Supports…* have their icons, also on the panels'
 buttons (Add joint, Member, Point here, symmetry), tinted with the text
 colour; Load cases: *Store the line's cases in the file…*, *Take the
@@ -192,8 +197,13 @@ them, close one with its ×. **View** ticks each panel to show or hide it
 back, and **Fit the view** shows the whole structure. The arrangement is
 kept for the next start. By default the tables are on the **left** and
 the **3D view on the right** (about 45 / 55): the Level panel at the top
-left, the geometry, body and design panels under it, the load and result
-panels below them. The last message (what an action did, or why not) is
+left; under it three groups of a few tabs each, so that every tab's
+title shows — the geometry and body panels, the design panels, then the
+load and result panels. (An arrangement kept from before stays as it
+was: **View › Reset layout** gives the new one.) The load recipes'
+columns and fields are named in words (*Line case*, *Self weight*, *One
+sided*); hovering one gives the key it has in the file
+(`line_case`…). The last message (what an action did, or why not) is
 at the bottom of the window.
 
 | Menu | Panels |
@@ -407,12 +417,12 @@ marked; run again.
 
 ## Undo, saving, closing
 
-Every change is one edit of the file, undone with **Ctrl+Z** (⌘Z) or
-**⟲ Undo** and made again with **Ctrl+Shift+Z** or **⟳ Redo**; the Edit
+Every change is one edit of the file, undone with **⌘Z** (Ctrl+Z) or
+**Undo** and made again with **Shift+⌘Z** (Shift+Ctrl+Z) or **Redo**; the Edit
 menu names the edit. A value dragged in a table, or a point dragged in
 the view, is one step. Comments and the order of the file are kept.
 
-**Save** (Ctrl+S) writes the file (and the typed loads beside it); **Save as…** (Ctrl+Shift+S) another
+**Save** (⌘S, Ctrl+S) writes the file (and the typed loads beside it); **Save as…** (Shift+⌘S, Shift+Ctrl+S) another
 one, which is then the file edited. A file that does not read (the error
 is shown in red) is not saved. Closing the window with unsaved changes
 asks first: **Save and close**, **Close without saving** or **Cancel**.
@@ -441,7 +451,7 @@ A structure reads these libraries — each where the line application and
   reasons are shown in a window (they scroll in a box of fixed height).
   The libraries are read again at once (the load panels' member areas,
   the strings' assemblies, the pole's sections). Started from a project
-  (**Edit…** in the line application), the folders are the project's
+  (**Open in OHL-Structure…** in the line application), the folders are the project's
   working copy: the line application notices the new files within half
   a second, stores them into the project and reads its libraries again.
 - **Export what it uses…**: into a folder chosen, in the line
@@ -516,7 +526,7 @@ Under the entries:
   `Sections` folder beside the file — the one the load panels use);
   **Choose library…** takes another file.
 - **Loads**: by default the **Load table panel's table**: for a placed
-  structure (opened with **Edit…** from the line) the line's values at
+  structure (opened with **Open in OHL-Structure…** from the line) the line's values at
   that place, and the values typed over the table; for a structure opened
   on its own the recipes without line values (loads needing a line value
   are left out; the message says how many). Its `[[load]]` tables are
