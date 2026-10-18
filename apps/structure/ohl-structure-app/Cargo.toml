@@ -1,0 +1,58 @@
+[package]
+name = "ohl-structure-app"
+description = "OHL-Structure, the structure application of OpenOHL: a structure file (.ohls) in its own window, from level 1 to level 3"
+default-run = "ohl-structure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ohl-structure"
+path = "src/main.rs"
+
+# The former name, kept for a transition period: says so and runs the
+# program above (`ohl-structure`).
+[[bin]]
+name = "ols-structure"
+path = "src/bin/ols-structure.rs"
+test = false
+doc = false
+
+[dependencies]
+ohl-core.workspace = true
+ohl-structures.workspace = true
+ohl-sections.workspace = true
+toml.workspace = true
+ohl-structure-edit.workspace = true
+ohl-structure-loads.workspace = true
+ohl-structure-link.workspace = true
+ohl-structure-export.workspace = true
+ohl-render.workspace = true
+# Plugins (Plugins › Plugin manager, design codes): a core crate, the
+# settings shared with the line application.
+ohl-plugins.workspace = true
+eframe.workspace = true
+# The movable panels (as the line application), their arrangement kept
+# between runs.
+egui_dock = { workspace = true, features = ["serde"] }
+serde.workspace = true
+clap.workspace = true
+toml_edit = "0.25"
+# Native file dialogs (Open, Save as).
+rfd = "0.17"
+# The artwork of assets/ (action icons, the mark, the window icon) drawn
+# from its SVG files: already used by ohl-drawing.
+resvg = { version = "0.48", default-features = false }
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
+# Screenshots of the window (OHL_RENDER_PNG).
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "ohl-structure-loads"
+description = "OpenOHL structure application: load-case recipes of a structure and its load table"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-structures.workspace = true
+serde.workspace = true
+toml.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

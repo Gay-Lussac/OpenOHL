@@ -1,0 +1,544 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+//! Incremental solving: keep every section's solution and re-solve only
+//! the sections an edit touched.
+//!
+//! A [`SolvedLine`] holds the result of each section (by id) and of each
+//! jumper for one weather case. [`SolvedLine::update`] takes the edited
+//! line and the ids of the sections to recalculate (from the session's
+//! dirty tracking: changed sections, sections through changed
+//! structures), re-solves those, solves new sections, drops deleted ones,
+//! and refreshes the jumpers (cheap, and they hang on the solved clamps).
+//!
+//! Sections are independent finite-element models, so the result is the
+//! same as solving everything again — checked by the tests after every
+//! kind of edit.
+
+use std::collections::{BTreeMap, HashSet};
+
+use ohl_weather::WeatherCase;
+use ohl_wirefe::default_fe_budget;
+
+use crate::jumper::{JumperShape, in_parallel, solve_one_jumper};
+use crate::solve::SectionShape;
+use crate::{Jumper, Line, LineError, Section, Structure};
+
+/// What an update did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Update {
+    /// Sections solved (changed or new).
+    pub solved: usize,
+    /// Sections dropped (deleted from the line).
+    pub dropped: usize,
+    /// Sections kept as they were.
+    pub kept: usize,
+    /// Jumpers solved (the others kept).
+    pub jumpers: usize,
+}
+
+/// Solutions of a line's sections and jumpers in one weather case.
+#[derive(Debug, Clone)]
+pub struct SolvedLine {
+    case: WeatherCase,
+    sections: BTreeMap<String, Result<SectionShape, LineError>>,
+    jumpers: BTreeMap<String, Result<JumperShape, LineError>>,
+    /// What each jumper was solved from: kept while unchanged.
+    jumper_inputs: BTreeMap<String, JumperInputs>,
+    /// The jumpers' loads on the clamps the sections were solved with (the
+    /// estimate, or their last pull): a section whose jumpers load it
+    /// otherwise now is solved again.
+    jumper_weights: crate::solve::JumperLoadMap,
+}
+
+/// What a jumper's solution depends on: itself, the sections at its ends,
+/// the structures it hangs on, and the line's direction there (its wind
+/// side).
+#[derive(Debug, Clone, PartialEq)]
+struct JumperInputs {
+    jumper: Jumper,
+    sections: Vec<Section>,
+    structures: Vec<Structure>,
+    direction: Option<[f64; 2]>,
+}
+
+impl JumperInputs {
+    fn of(line: &Line, jumper: &Jumper) -> Self {
+        let ends = |p: &crate::SectionPoint| jumper.is_at(p);
+        // The sections its taps hang on (and so the jumpers too).
+        let hosts: Vec<String> = jumper
+            .taps()
+            .filter_map(|t| line.tap_section(t, 0).map(|s| s.id.clone()))
+            .collect();
+        Self {
+            jumper: jumper.clone(),
+            sections: line
+                .sections
+                .iter()
+                .filter(|s| s.points.iter().any(ends) || hosts.contains(&s.id))
+                .cloned()
+                .collect(),
+            structures: line
+                .structures
+                .iter()
+                .filter(|s| {
+                    jumper.points().any(|p| p.structure == s.id)
+                        || jumper
+                            .supports()
+                            .iter()
+                            .any(|c| c.structure_id(jumper) == s.id)
+                })
+                .cloned()
+                .collect(),
+            direction: match (
+                jumper.from.point().and_then(|p| line.wire_point(p)),
+                jumper.to.point().and_then(|p| line.wire_point(p)),
+            ) {
+                (Some(a), Some(b)) => line.direction_at([
+                    0.5 * (a.position[0] + b.position[0]),
+                    0.5 * (a.position[1] + b.position[1]),
+                ]),
+                _ => None,
+            },
+        }
+    }
+}
+
+fn solve_one(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    id: &str,
+    jumpers: &crate::solve::JumperLoadMap,
+) -> Result<SectionShape, LineError> {
+    let section = line
+        .sections
+        .iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| LineError::Invalid(format!("no section {id}")))?;
+    let cable = library.get(&section.cable).ok_or_else(|| {
+        LineError::Invalid(format!(
+            "section {}: cable \"{}\" not in the libraries",
+            section.id, section.cable
+        ))
+    })?;
+    // The jumpers hanging on its clamps, with their own cables.
+    let coupling = crate::solve::Coupling {
+        jumpers: Some(jumpers.clone()),
+        ..Default::default()
+    };
+    crate::solve::solve_section_coupled(line, section, cable, case, &default_fe_budget(), &coupling)
+}
+
+impl SolvedLine {
+    /// Nothing solved yet, in `case`.
+    pub fn empty(case: &WeatherCase) -> Self {
+        Self {
+            case: case.clone(),
+            sections: BTreeMap::new(),
+            jumpers: BTreeMap::new(),
+            jumper_inputs: BTreeMap::new(),
+            jumper_weights: BTreeMap::new(),
+        }
+    }
+
+    /// Solves every section and jumper of `line`.
+    pub fn solve(line: &Line, library: &ohl_cables::Library, case: &WeatherCase) -> Self {
+        let mut solved = Self {
+            case: case.clone(),
+            sections: BTreeMap::new(),
+            jumpers: BTreeMap::new(),
+            jumper_inputs: BTreeMap::new(),
+            jumper_weights: BTreeMap::new(),
+        };
+        let all: Vec<String> = line.sections.iter().map(|s| s.id.clone()).collect();
+        solved.update(line, library, &all);
+        solved
+    }
+
+    /// The weather case.
+    pub fn case(&self) -> &WeatherCase {
+        &self.case
+    }
+
+    /// Brings the solutions up to date with `line` after an edit:
+    /// re-solves the sections in `dirty`, solves sections not solved yet,
+    /// drops sections no longer in the line, and re-solves the jumpers
+    /// whose inputs changed (the jumper, the sections at its ends — or one
+    /// of them re-solved —, the structures it hangs on).
+    ///
+    /// Expected cost: one section solve (typically < 1 ms) per dirty or new
+    /// section, plus the jumpers at them (a jumper cut to its sag: its end
+    /// sections solved again in its design case, a few ms).
+    pub fn update(
+        &mut self,
+        line: &Line,
+        library: &ohl_cables::Library,
+        dirty: &[String],
+    ) -> Update {
+        let mut update = Update::default();
+        let before = self.sections.len();
+        self.sections
+            .retain(|id, _| line.sections.iter().any(|s| &s.id == id));
+        update.dropped = before - self.sections.len();
+        let mut resolved: HashSet<&str> = HashSet::new();
+        // The jumpers' load on the clamps now: a section whose jumpers
+        // load it otherwise than when it was solved (their weight, the
+        // calculation options) is solved again. Pulling: the last pulls
+        // where there are some (the passes below settle them again).
+        let estimate = crate::jumper::end_loads(line, &self.case, |id| library.get(id));
+        let pull = crate::solve::needs_pull(line);
+        let mut weights = estimate.clone();
+        if pull {
+            for (p, f) in &self.jumper_weights {
+                if estimate.contains_key(p) {
+                    weights.insert(p.clone(), *f);
+                }
+            }
+        }
+        let reweighed: HashSet<&str> = line
+            .sections
+            .iter()
+            .filter(|section| {
+                let differs =
+                    |k: &crate::solve::LoadAt| weights.get(k) != self.jumper_weights.get(k);
+                section
+                    .points
+                    .iter()
+                    .any(|p| differs(&crate::solve::LoadAt::Clamp(p.clone())))
+                    || weights.keys().chain(self.jumper_weights.keys()).any(|k| {
+                        matches!(k, crate::solve::LoadAt::Span(r) if r.section == section.id)
+                            && differs(k)
+                    })
+            })
+            .map(|s| s.id.as_str())
+            .collect();
+        for section in &line.sections {
+            if dirty.contains(&section.id)
+                || !self.sections.contains_key(&section.id)
+                || reweighed.contains(section.id.as_str())
+            {
+                let result = solve_one(line, library, &self.case, &section.id, &weights);
+                self.sections.insert(section.id.clone(), result);
+                resolved.insert(&section.id);
+                update.solved += 1;
+            } else {
+                update.kept += 1;
+            }
+        }
+        // Sections sharing an assembly with one solved again: solved
+        // together.
+        for group in crate::solve::coupled_groups(line) {
+            if !group
+                .iter()
+                .any(|&k| resolved.contains(line.sections[k].id.as_str()))
+            {
+                continue;
+            }
+            let mut results: Vec<Result<SectionShape, LineError>> = line
+                .sections
+                .iter()
+                .map(|s| {
+                    self.sections
+                        .get(&s.id)
+                        .cloned()
+                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+                })
+                .collect();
+            crate::solve::solve_coupled(
+                line,
+                library,
+                &self.case,
+                &group,
+                &mut results,
+                &default_fe_budget(),
+                &weights,
+            );
+            for &k in &group {
+                let id = &line.sections[k].id;
+                self.sections.insert(id.clone(), results[k].clone());
+                resolved.insert(id);
+            }
+        }
+        // Sections joined by spacers with one solved again: solved together.
+        for group in crate::solve::spacer_groups(line) {
+            if !group
+                .iter()
+                .any(|&k| resolved.contains(line.sections[k].id.as_str()))
+            {
+                continue;
+            }
+            let mut results: Vec<Result<SectionShape, LineError>> = line
+                .sections
+                .iter()
+                .map(|s| {
+                    self.sections
+                        .get(&s.id)
+                        .cloned()
+                        .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+                })
+                .collect();
+            crate::solve::solve_spacer_group(
+                line,
+                library,
+                &self.case,
+                &group,
+                &mut results,
+                &default_fe_budget(),
+                &weights,
+            );
+            for &k in &group {
+                let id = &line.sections[k].id;
+                self.sections.insert(id.clone(), results[k].clone());
+                resolved.insert(id);
+            }
+        }
+        // The jumpers' own pull, settled again on the sections (with the
+        // option, or a jumper taut between its clamps).
+        let mut results: Vec<Result<SectionShape, LineError>> = line
+            .sections
+            .iter()
+            .map(|s| {
+                self.sections
+                    .get(&s.id)
+                    .cloned()
+                    .unwrap_or_else(|| Err(LineError::Invalid("not solved".into())))
+            })
+            .collect();
+        if pull || crate::solve::may_be_taut(line, &results) {
+            let before = results.clone();
+            weights = crate::solve::jumper_pull(
+                line,
+                library,
+                &self.case,
+                &default_fe_budget(),
+                &estimate,
+                weights,
+                &mut results,
+            );
+            for (k, (now, was)) in results.into_iter().zip(before).enumerate() {
+                if now != was {
+                    let id = &line.sections[k].id;
+                    self.sections.insert(id.clone(), now);
+                    if resolved.insert(id) {
+                        update.solved += 1;
+                        update.kept = update.kept.saturating_sub(1);
+                    }
+                }
+            }
+        }
+        self.jumper_weights = weights;
+        let shapes = self.shapes(line);
+        let mut jumpers = BTreeMap::new();
+        let mut inputs = BTreeMap::new();
+        let mut stale: Vec<&Jumper> = Vec::new();
+        for j in &line.jumpers {
+            let now = JumperInputs::of(line, j);
+            let kept = self.jumper_inputs.get(&j.id) == Some(&now)
+                && !now
+                    .sections
+                    .iter()
+                    .any(|s| resolved.contains(s.id.as_str()));
+            match self.jumpers.remove(&j.id) {
+                Some(r) if kept => {
+                    jumpers.insert(j.id.clone(), r);
+                }
+                _ => stale.push(j),
+            }
+            inputs.insert(j.id.clone(), now);
+        }
+        // Those to solve again, over the cores; with taps every jumper, in
+        // their order (a jumper on another's point after it, with the
+        // loads it puts there).
+        let case = &self.case;
+        let taps = line.jumpers.iter().any(crate::Jumper::on_tap);
+        if taps {
+            let all = crate::jumper::solve_jumpers_with(
+                line,
+                library,
+                case,
+                &shapes,
+                &self.jumper_weights,
+            );
+            update.jumpers = all.len();
+            jumpers = line.jumpers.iter().map(|j| j.id.clone()).zip(all).collect();
+        } else {
+            let solved = in_parallel(&stale, |j| {
+                solve_one_jumper(line, library, case, &shapes, j)
+            });
+            update.jumpers = stale.len();
+            for (j, r) in stale.iter().zip(solved) {
+                jumpers.insert(j.id.clone(), r);
+            }
+        }
+        self.jumpers = jumpers;
+        self.jumper_inputs = inputs;
+        update
+    }
+
+    /// Solved sections in line order (failed ones left out).
+    pub fn shapes(&self, line: &Line) -> Vec<SectionShape> {
+        line.sections
+            .iter()
+            .filter_map(|s| self.sections.get(&s.id)?.as_ref().ok().cloned())
+            .collect()
+    }
+
+    /// The result of every section, in line order.
+    pub fn results<'a>(
+        &'a self,
+        line: &'a Line,
+    ) -> Vec<(&'a str, &'a Result<SectionShape, LineError>)> {
+        line.sections
+            .iter()
+            .filter_map(|s| self.sections.get(&s.id).map(|r| (s.id.as_str(), r)))
+            .collect()
+    }
+
+    /// The result of every jumper, in line order.
+    pub fn jumper_results<'a>(
+        &'a self,
+        line: &'a Line,
+    ) -> Vec<(&'a str, &'a Result<JumperShape, LineError>)> {
+        line.jumpers
+            .iter()
+            .filter_map(|j| self.jumpers.get(&j.id).map(|r| (j.id.as_str(), r)))
+            .collect()
+    }
+
+    /// Solved jumpers in line order (failed ones left out).
+    pub fn jumper_shapes(&self, line: &Line) -> Vec<JumperShape> {
+        line.jumpers
+            .iter()
+            .filter_map(|j| self.jumpers.get(&j.id)?.as_ref().ok().cloned())
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jumper::solve_jumpers;
+    use crate::solve::solve_line;
+    use ohl_core::units::Temperature;
+    use std::path::Path;
+
+    fn library() -> ohl_cables::Library {
+        ohl_cables::Library::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
+        )
+        .unwrap()
+    }
+
+    fn assert_same_as_full(line: &Line, solved: &SolvedLine) {
+        let lib = library();
+        let full: Vec<SectionShape> = solve_line(line, &lib, solved.case())
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(solved.shapes(line), full);
+        let jumpers: Vec<JumperShape> = solve_jumpers(line, &lib, solved.case(), &full)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(solved.jumper_shapes(line), jumpers);
+    }
+
+    #[test]
+    fn updates_match_a_full_solve() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = crate::tests::example();
+        let mut solved = SolvedLine::solve(&line, &lib, &case);
+        assert_same_as_full(&line, &solved);
+
+        // Move T6 (branch only): only S3 is dirty.
+        let t6 = line.structures.iter_mut().find(|s| s.id == "T6").unwrap();
+        *t6 = t6.moved_to([t6.position[0] + 3.0, t6.position[1], t6.position[2]]);
+        let u = solved.update(&line, &lib, &["S3".to_owned()]);
+        assert_eq!((u.solved, u.kept, u.dropped, u.jumpers), (1, 2, 0, 1));
+        assert_same_as_full(&line, &solved);
+
+        // Change S1's stringing.
+        line.sections[0].stringing = crate::Stringing::Tension {
+            horizontal_tension: 23_000.0,
+            temperature: 15.0,
+        };
+        let u = solved.update(&line, &lib, &["S1".to_owned()]);
+        assert_eq!((u.solved, u.kept), (1, 2));
+        assert_same_as_full(&line, &solved);
+
+        // The jumper (S3 to S1 at T3) is kept when neither its sections,
+        // its structure nor itself changed — S2 alone, or nothing.
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 0);
+        let u = solved.update(&line, &lib, &["S2".to_owned()]);
+        assert_eq!((u.solved, u.jumpers), (1, 0));
+        assert_same_as_full(&line, &solved);
+        // Itself changed: solved again, and the two sections it hangs its
+        // weight on (no section said dirty).
+        line.jumpers[0].sag = Some(2.0);
+        let u = solved.update(&line, &lib, &[]);
+        assert_eq!((u.solved, u.jumpers), (2, 1));
+        assert_same_as_full(&line, &solved);
+        // Its structure changed (a string at T3 heavier), no section said
+        // dirty: solved again.
+        let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        t3.strings[0].weight += 100.0;
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
+        // (Back as it was: its sections were not solved again.)
+        let t3 = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+        t3.strings[0].weight -= 100.0;
+        assert_eq!(solved.update(&line, &lib, &[]).jumpers, 1);
+        assert_same_as_full(&line, &solved);
+
+        // Delete S2, add a copy of S3 under a new id: dropped, solved.
+        line.sections.remove(1);
+        let mut extra = line.sections[1].clone();
+        extra.id = "S3b".into();
+        line.sections.push(extra);
+        let u = solved.update(&line, &lib, &[]);
+        assert_eq!((u.solved, u.kept, u.dropped), (1, 2, 1));
+        assert_same_as_full(&line, &solved);
+    }
+
+    /// The jumpers' own pull (Criteria › Calculation options): solved from
+    /// scratch, the same as a full solve; switched on, and after an edit,
+    /// the clamps where a full solve puts them (the passes settle to
+    /// within their tolerance from where they start).
+    #[test]
+    fn updates_with_the_jumpers_pull_match_a_full_solve() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = crate::tests::example();
+        line.solver.jumper_loads = crate::JumperLoads::Pull;
+        let solved = SolvedLine::solve(&line, &lib, &case);
+        assert_same_as_full(&line, &solved);
+        let close = |line: &Line, solved: &SolvedLine| {
+            let full: Vec<SectionShape> = solve_line(line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            for (a, b) in solved.shapes(line).iter().zip(&full) {
+                for (p, q) in a.clamps.iter().zip(&b.clamps) {
+                    let d = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+                    assert!(d < 2e-3, "{} {p:?} {q:?}", a.section);
+                }
+            }
+        };
+        // Switched on from the estimate (no section said dirty).
+        let mut estimate = line.clone();
+        estimate.solver.jumper_loads = crate::JumperLoads::Estimate;
+        let mut solved = SolvedLine::solve(&estimate, &lib, &case);
+        let u = solved.update(&line, &lib, &[]);
+        assert!(u.solved >= 1, "the sections at the jumper: {u:?}");
+        close(&line, &solved);
+        // An edit.
+        line.sections[0].stringing = crate::Stringing::Tension {
+            horizontal_tension: 23_000.0,
+            temperature: 15.0,
+        };
+        solved.update(&line, &lib, &["S1".to_owned()]);
+        close(&line, &solved);
+    }
+}

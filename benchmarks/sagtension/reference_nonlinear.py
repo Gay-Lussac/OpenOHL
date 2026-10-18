@@ -5,7 +5,7 @@
 """Independent reference values for benchmarks/sagtension/nonlinear.toml.
 
 Re-implements the composite non-linear cable model from its definition
-(crates/ols-cables/src/mechanics.rs docs) with different numerics:
+(crates/ohl-cables/src/mechanics.rs docs) with different numerics:
 - strain from tension by the Illinois (regula falsi) method, not bisection;
 - span length and mean tension by Simpson integration of the textbook
   catenary, not closed forms;

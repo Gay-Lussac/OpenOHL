@@ -1,0 +1,17 @@
+[package]
+name = "ohl-sections"
+description = "OpenOHL section library (.ohlsec): standard profiles and materials, cross-section properties, projected widths for wind"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "ohl-plugins"
+description = "OpenOHL plugin manifests, discovery and WebAssembly component host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+toml.workspace = true
+wasmtime = { version = "49", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
+wasmtime-wasi = { version = "49", default-features = false, features = ["p2"] }
+
+[dev-dependencies]
+ohl-core.workspace = true
+
+[lints]
+workspace = true

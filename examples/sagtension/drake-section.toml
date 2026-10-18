@@ -1,5 +1,5 @@
 # Example sag-tension job: Drake ACSR over a 4-span tension section.
-# Run:  cargo run -p ols-cli -- sagtension examples/sagtension/drake-section.toml
+# Run:  cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml
 #
 # Weather cases and limits are illustrative, not taken from any design code.
 

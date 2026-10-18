@@ -1,0 +1,22 @@
+[package]
+name = "ohl-pointcloud"
+description = "OpenOHL point clouds in the project file: chunked, per-class, compressed blocks; point sources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-lidar.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+zstd = "0.14"
+# Writing LAS/LAZ (export).
+las = { version = "0.11", features = ["laz"] }
+# COPC: LAZ chunks per octree node.
+laz = "0.13"
+
+[lints]
+workspace = true

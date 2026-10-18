@@ -4,7 +4,7 @@
 
 """Independent reference values for benchmarks/sagtension/change_of_state.toml.
 
-Model (see crates/ols-sagtension/src/change_of_state.rs):
+Model (see crates/ohl-sagtension/src/change_of_state.rs):
     L = L0 * exp(alpha (t - t0)) * (1 + Tavg / EA),  Tavg = (1/L) * integral of T ds
 
 Deliberately different from the Rust implementation:

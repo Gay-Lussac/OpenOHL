@@ -1,0 +1,58 @@
+[package]
+name = "ohl-cli"
+description = "OpenOHL command-line interface (ohl)"
+default-run = "ohl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ohl"
+path = "src/main.rs"
+# The `ols` Python module (ohl-py) owns the `ols` docs page.
+doc = false
+
+# The former name, kept for a transition period: says so and runs the
+# program above (`ohl`).
+[[bin]]
+name = "ols"
+path = "src/bin/ols.rs"
+test = false
+doc = false
+
+[dependencies]
+ohl-core.workspace = true
+ohl-validation.workspace = true
+ohl-plugins.workspace = true
+ohl-server.workspace = true
+ohl-loads.workspace = true
+ohl-cables.workspace = true
+ohl-sagtension.workspace = true
+ohl-weather.workspace = true
+ohl-wirefe.workspace = true
+ohl-line.workspace = true
+ohl-structures.workspace = true
+ohl-structures-fe.workspace = true
+ohl-sections.workspace = true
+ohl-terrain.workspace = true
+ohl-clearance.workspace = true
+ohl-thermal.workspace = true
+ohl-lidar.workspace = true
+ohl-pointcloud.workspace = true
+ohl-session.workspace = true
+ohl-drawing.workspace = true
+ohl-crs.workspace = true
+ohl-io.workspace = true
+ohl-bom.workspace = true
+ohl-spotting.workspace = true
+serde_json.workspace = true
+nalgebra.workspace = true
+serde.workspace = true
+toml.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

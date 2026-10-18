@@ -1,4 +1,4 @@
-# Structure analysis (ols-structures-fe): frames, trusses, guys and poles
+# Structure analysis (ohl-structures-fe): frames, trusses, guys and poles
 # against closed-form textbook results. Each model is an .ohlfe text with
 # its own [[load]]s. E = 210 GPa throughout. The reference values are the
 # formulas in the notes, evaluated to double precision.

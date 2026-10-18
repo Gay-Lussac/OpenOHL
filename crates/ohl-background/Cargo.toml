@@ -1,0 +1,23 @@
+[package]
+name = "ohl-background"
+description = "OpenOHL backgrounds kept in the project file: orthophotos (tiled, with a zoom pyramid) and drawings (DXF)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+zstd = "0.14"
+# Reading orthophotos and writing their tiles (JPEG).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
+# GeoTIFF georeferencing tags.
+tiff = "0.11"
+
+[lints]
+workspace = true

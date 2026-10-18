@@ -1,7 +1,7 @@
 # Example: initial and final conditions with non-linear stress-strain and creep.
 # Uses a SYNTHETIC cable with invented curves (examples/sagtension/synthetic-library) —
 # replace it with curves from your conductor's data sheet for real work.
-# Run:  cargo run -p ols-cli -- sagtension examples/sagtension/synthetic-nonlinear.toml
+# Run:  cargo run -p ohl-cli -- sagtension examples/sagtension/synthetic-nonlinear.toml
 
 cable = "synthetic"
 library = "synthetic-library"

@@ -1,0 +1,24 @@
+[package]
+name = "ohl-sagtension"
+description = "OpenOHL sag-tension: catenary, change of state, ruling span"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-wireloads.workspace = true
+ohl-cables.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "catenary"
+harness = false
+
+[lints]
+workspace = true

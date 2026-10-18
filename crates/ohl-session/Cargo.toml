@@ -1,0 +1,25 @@
+[package]
+name = "ohl-session"
+description = "OpenOHL session: project file (.ohl), validated commands, operation log, per-user undo, admin rollback, version control, permissions and reviews, import/export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-cables.workspace = true
+ohl-core.workspace = true
+ohl-line.workspace = true
+ohl-structures.workspace = true
+ohl-weather.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+zstd = "0.14"
+
+
+[lints]
+workspace = true

@@ -9,7 +9,7 @@ cd "${0:A:h}" || exit 1
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 echo "Building and starting OHL-Structure…"
-cargo build --release -p ols-structure-app && cargo run --release -p ols-structure-app --bin ohl-structure
+cargo build --release -p ohl-structure-app && cargo run --release -p ohl-structure-app --bin ohl-structure
 status=$?
 
 if [ $status -ne 0 ]; then

@@ -10,7 +10,7 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 echo "Building and starting OHL-Design…"
 # Both applications from the same code: Edit… on a structure starts the
 # structure application (ohl-structure), which must be next to ohl-design.
-cargo build --release -p ols-app -p ols-structure-app && cargo run --release -p ols-app --bin ohl-design
+cargo build --release -p ohl-app -p ohl-structure-app && cargo run --release -p ohl-app --bin ohl-design
 status=$?
 
 if [ $status -ne 0 ]; then
