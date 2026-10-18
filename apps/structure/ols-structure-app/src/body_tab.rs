@@ -372,7 +372,12 @@ impl StructureApp {
 }
 
 /// The member fields a group sets on all its members (Design › Groups).
-const GROUP_FIELDS: [&str; 3] = ["lk", "capacity_tension", "capacity_compression"];
+const GROUP_FIELDS: [&str; 4] = [
+    "lk",
+    "capacity_tension",
+    "capacity_compression",
+    "dead_load_factor",
+];
 
 /// Whether a member of `group` is shown with `filter`.
 fn shown(filter: &Option<String>, group: Option<&str>) -> bool {

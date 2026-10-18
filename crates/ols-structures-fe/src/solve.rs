@@ -52,7 +52,8 @@ pub fn default_budget() -> Budget {
 pub struct Loads {
     /// Forces and moments at nodes, structure axes.
     pub nodal: Vec<NodalLoad>,
-    /// Factor on the members' self-weight (0: none).
+    /// Factor on the members' self-weight (0: none), on top of each
+    /// member's dead-load factor ([`Model::dead_load_factor`]).
     pub self_weight: f64,
 }
 
@@ -356,7 +357,7 @@ fn solve_with(
             let mut eqs = [None; 12];
             eqs[..6].copy_from_slice(&eq[m.i]);
             eqs[6..].copy_from_slice(&eq[m.j]);
-            let w = s.weight() * loads.self_weight;
+            let w = s.weight() * model.dead_load_factor(m) * loads.self_weight;
             let weight_local = if m.kind == MemberKind::Frame {
                 frame_uniform_load(l, r * Vector3::new(0.0, 0.0, -w))
             } else {
@@ -385,7 +386,11 @@ fn solve_with(
                 f_ext[m.j][k] += g[6 + k];
             }
         } else {
-            let w = model.sections[m.section].weight() * loads.self_weight * p.l / 2.0;
+            let w = model.sections[m.section].weight()
+                * model.dead_load_factor(m)
+                * loads.self_weight
+                * p.l
+                / 2.0;
             f_ext[m.i][2] -= w;
             f_ext[m.j][2] -= w;
         }

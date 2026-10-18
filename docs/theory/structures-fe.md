@@ -14,7 +14,7 @@ Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference
 - **Cable** (guys): a truss in tension only, with an initial force \\( T_0 \\) (pretension): \\( N = T_0 + \frac{EA}{L}\\,\mathbf e\cdot(\mathbf u_j - \mathbf u_i) \\). The pretension acts as a pair of nodal forces pulling the ends together; the force after the structure deflects differs from \\( T_0 \\) by the structure's give. A cable whose force would fall below zero is **slack**: it is removed and the solve repeated until the set of slack cables does not change.
 - **Frame**: the 12×12 elastic stiffness of the 3D Euler–Bernoulli beam (axial \\( EA/L \\), torsion \\( GJ/L \\), bending \\( 12EI/L^3, 6EI/L^2, 4EI/L, 2EI/L \\) in both planes) — Przemieniecki, *Theory of Matrix Structural Analysis* (1968), ch. 5. Shear deformation is neglected.
 
-**Self-weight**: \\( w = \rho A g \\) per metre, times the load case's vertical factor. On frames as consistent nodal loads (\\( wL/2 \\) and \\( wL^2/12 \\) end moments, in local axes), on trusses and cables half at each end. The reported member end forces of frames subtract the fixed-end part, so they are the true end forces.
+**Self-weight**: \\( w = f_d\\,\rho A g \\) per metre — \\( f_d \\) the member's dead-load factor (its own, else the model's `dead_load_factor`, default 1: bolts, plates) — times the load case's vertical factor. On frames as consistent nodal loads (\\( wL/2 \\) and \\( wL^2/12 \\) end moments, in local axes), on trusses and cables half at each end. The reported member end forces of frames subtract the fixed-end part, so they are the true end forces.
 
 ## Second order (P-Delta)
 

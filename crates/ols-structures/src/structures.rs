@@ -371,7 +371,7 @@ pub struct TypeNode {
 /// A member of the pylon between two joints (levels 2 and 3). Without a
 /// section it is only a stick; the finite-element fields (`kind`,
 /// `reference`, `roll`, `orientation`, `k`, `lk`, `pretension`,
-/// `capacity_tension`, `capacity_compression`) are read by
+/// `capacity_tension`, `capacity_compression`, `dead_load_factor`) are read by
 /// `ols_structures_fe`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -413,6 +413,10 @@ pub struct TypeMember {
     /// Compression capacity instead of the section's and the Euler load.
     #[serde(default)]
     pub capacity_compression: Option<toml::Value>,
+    /// Factor on its self-weight, instead of `[analysis]
+    /// dead_load_factor`.
+    #[serde(default)]
+    pub dead_load_factor: Option<toml::Value>,
     /// Its member group (`"body-leg"`, `"body-bracing-3"`…): sections set
     /// and results reported per group.
     #[serde(default)]

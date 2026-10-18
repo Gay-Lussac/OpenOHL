@@ -102,7 +102,7 @@ fn member_fields_in_a_structure_file() {
         "id = \"t\"\nname = \"t\"\nkind = \"lattice\"\n{}",
         bar(
             "lk = \"2 m\"\ncapacity_tension = \"150 kN\"\ncapacity_compression = \"60 kN\"\n\
-             orientation = \"y+z+\"\ngroup = \"g\"\n"
+             orientation = \"y+z+\"\ngroup = \"g\"\ndead_load_factor = 1.25\n"
         )
     );
     let t = ols_structures::StructureType::parse(std::path::Path::new("t.olss"), &text);
@@ -114,6 +114,7 @@ fn member_fields_in_a_structure_file() {
         (Some(2.0), Some(150e3), Some(60e3))
     );
     assert_eq!(b.reference, Some([0.0, 1.0, 0.0]));
+    assert_eq!(b.dead_load_factor, Some(1.25));
 }
 
 /// A frame cantilever along x of an unequal angle (iy = 100 cm4, iz = 400
@@ -179,4 +180,88 @@ fn orientation_turns_the_bending_axis() {
     }
     let both = model("y+z+", "400 cm4") + "reference = [0, 0, 1]\n";
     assert!(Model::parse(&both).unwrap_err().contains("not both"));
+}
+
+/// A frame portal (two columns, a beam) under its own weight, with
+/// `analysis` in its `[analysis]` table and `beam` on its beam.
+fn portal(analysis: &str, beam: &str, nonlinear: bool) -> String {
+    format!(
+        "[analysis]\nnonlinear = {nonlinear}\n{analysis}\
+         [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
+         [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"30 cm2\"\n\
+         iy = \"800 cm4\"\niz = \"300 cm4\"\ntorsion = \"20 cm4\"\n\
+         [[node]]\nid = \"a\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+         [[node]]\nid = \"b\"\npoint = [\"0 m\", \"0 m\", \"5 m\"]\n\
+         [[node]]\nid = \"c\"\npoint = [\"6 m\", \"0 m\", \"5 m\"]\n\
+         [[node]]\nid = \"d\"\npoint = [\"6 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+         [[member]]\nid = \"left\"\nnodes = [\"a\", \"b\"]\nsection = \"s\"\nkind = \"frame\"\n\
+         [[member]]\nid = \"beam\"\nnodes = [\"b\", \"c\"]\nsection = \"s\"\nkind = \"frame\"\n{beam}\
+         [[member]]\nid = \"right\"\nnodes = [\"c\", \"d\"]\nsection = \"s\"\nkind = \"frame\"\n"
+    )
+}
+
+fn weight_solution(text: &str) -> (Model, crate::Solution) {
+    let m = Model::parse(text).unwrap_or_else(|e| panic!("{e}"));
+    let loads = Loads {
+        nodal: Vec::new(),
+        self_weight: 1.0,
+    };
+    let o = Options {
+        nonlinear: m.analysis.nonlinear,
+        ..Options::default()
+    };
+    let s = solve(&m, &loads, &o, &default_budget()).unwrap();
+    (m, s)
+}
+
+/// The dead-load factor multiplies the members' self-weight: factor 2
+/// doubles every reaction, displacement and member force exactly (a
+/// power of two: bit for bit), 1.35 to rounding, 1 written is no factor;
+/// a member's own factor replaces the analysis's for it alone.
+#[test]
+fn dead_load_factor_scales_the_self_weight() {
+    let (m1, s1) = weight_solution(&portal("", "", false));
+    let (m2, s2) = weight_solution(&portal("dead_load_factor = 2.0\n", "", false));
+    for (a, b) in s1.reactions.iter().zip(&s2.reactions) {
+        assert_eq!(a.force.map(|f| 2.0 * f), b.force);
+        assert_eq!(a.moment.map(|f| 2.0 * f), b.moment);
+    }
+    for (a, b) in s1.displacements.iter().zip(&s2.displacements) {
+        assert_eq!(a.map(|f| 2.0 * f), *b);
+    }
+    assert_eq!(m2.weight(), 2.0 * m1.weight());
+    assert_eq!(m2.steel_weight(), m1.weight());
+    let (_, s) = weight_solution(&portal("dead_load_factor = 1.35\n", "", false));
+    for (a, b) in s1.reactions.iter().zip(&s.reactions) {
+        for k in 0..3 {
+            assert!(close(b.force[k], 1.35 * a.force[k], 1e-12) || a.force[k].abs() < 1e-6);
+        }
+    }
+    // 1 written changes nothing, also with P-Delta.
+    for nonlinear in [false, true] {
+        let (_, plain) = weight_solution(&portal("", "", nonlinear));
+        let (_, one) = weight_solution(&portal("dead_load_factor = 1\n", "", nonlinear));
+        assert_eq!(plain, one);
+    }
+    // The beam's own factor: the vertical reactions grow by its extra
+    // weight (1.5 − 1) × w × 6 m, the columns' weight as before.
+    let (m, s) = weight_solution(&portal(
+        "dead_load_factor = 1.0\n",
+        "dead_load_factor = 1.5\n",
+        false,
+    ));
+    let w = 30e-4 * 7850.0 * ols_core::units::STANDARD_GRAVITY;
+    let total: f64 = s.reactions.iter().map(|r| r.force[2]).sum();
+    let before: f64 = s1.reactions.iter().map(|r| r.force[2]).sum();
+    assert!(
+        close(total - before, 0.5 * w * 6.0, 1e-9),
+        "{total} {before}"
+    );
+    assert!(close(m.weight(), w * (5.0 + 5.0 + 1.5 * 6.0), 1e-12));
+    assert_eq!(m.dead_load_factor(&m.members[0]), 1.0);
+    assert_eq!(m.dead_load_factor(&m.members[1]), 1.5);
+    for bad in ["dead_load_factor = 0\n", "dead_load_factor = -1.2\n"] {
+        assert!(Model::parse(&portal(bad, "", false)).is_err(), "{bad}");
+        assert!(Model::parse(&portal("", bad, false)).is_err(), "{bad}");
+    }
 }

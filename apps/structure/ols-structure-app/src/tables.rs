@@ -62,7 +62,7 @@ pub(crate) fn text_cell(
 
 /// The member fields of the finite-element check typed as text in the
 /// Member sections and Groups tables: (field, heading, what it is, hint).
-pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 4] = [
+pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 5] = [
     (
         "lk",
         "lk",
@@ -88,6 +88,12 @@ pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 4] = [
         "Compression capacity, instead of the section's and the buckling load (empty: computed)",
         "computed",
     ),
+    (
+        "dead_load_factor",
+        "DLF",
+        "Factor on its self-weight (bolts, plates), instead of the analysis's dead-load factor",
+        "analysis",
+    ),
 ];
 
 /// A member's field of [`MEMBER_FIELDS`] as written.
@@ -100,6 +106,7 @@ pub(crate) fn member_field<'a>(
         "orientation" => m.orientation.as_ref(),
         "capacity_tension" => m.capacity_tension.as_ref(),
         "capacity_compression" => m.capacity_compression.as_ref(),
+        "dead_load_factor" => m.dead_load_factor.as_ref(),
         _ => None,
     }
 }
@@ -1330,6 +1337,21 @@ impl StructureApp {
                     edit::set_analysis_field(doc, "stabilise", if stabilise { "" } else { "false" })
                 })
             {
+                self.message = Some((e, true));
+            }
+            ui.label("dead-load factor");
+            let current = field_text(analysis.get("dead_load_factor"));
+            if let Some(typed) = text_cell(
+                ui,
+                &mut self.buffers,
+                "analysis/dead_load_factor".into(),
+                &current,
+                "1",
+                "Factor on the members' self-weight for bolts, plates and the like (typically \
+                 1.1–1.4; empty: 1); a member's own (DLF) replaces it",
+            ) && let Err(e) = f.edit("dead-load factor", |doc, _| {
+                edit::set_analysis_field(doc, "dead_load_factor", &typed)
+            }) {
                 self.message = Some((e, true));
             }
         });
