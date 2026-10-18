@@ -26,7 +26,7 @@
 - [Import and export](user-guide/import-export.md)
   - [OLS XML schema](schema/ols-line.md)
 - [Project files and point clouds (.ols)](user-guide/project.md)
-- [Server mode (alpha)](user-guide/server.md)
+- [Server mode (pre-alpha)](user-guide/server.md)
 - [Project lines and phases](user-guide/project-lines.md)
 - [Versions, branches and reviews](user-guide/versions.md)
 

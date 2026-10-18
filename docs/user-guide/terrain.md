@@ -102,7 +102,7 @@ radial = "4.5 m"
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
 | `case_pairs` | Wire rules: `[["glaze ice", "max temperature"]]` — the first wire in the first case, the second wire in the second (e.g. an iced upper wire sagging towards a hot lower one); checked after all cases are solved. |
 
-A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ohl zones`](#vertical-and-radial-clearances-without-the-window-ols-zones) read it (the windows write it); `ohl line` ignores it and checks each weather case as it is:
+A rule file may hold a `[wind]` table. The desktop [vertical and radial clearance windows](desktop-app.md#vertical-and-radial-clearances) and [`ohl zones`](#vertical-and-radial-clearances-without-the-window-ohl-zones) read it (the windows write it); `ohl line` ignores it and checks each weather case as it is:
 
 ```toml
 [wind]

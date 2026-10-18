@@ -1,4 +1,4 @@
-# Server mode (alpha)
+# Server mode (pre-alpha)
 
 Several people work on one project at the same time, like players on a game server: one computer **hosts** the project, the others **join** it. Every edit, from anyone, is validated by the server, applied in one order, written to the project file and sent to everyone (ADR-0005).
 
@@ -28,7 +28,7 @@ File › **Join a server…** (also on the start page): the invitation and your 
 
 - **Edits** work as usual: each is sent to the server, which applies it or refuses it (the reason shows in the status bar). Others' edits appear between frames, and the sections they touch are solved again.
 - **Undo** is per user: Undo takes back your last edit, never someone else's.
-- **Roles:** viewers read; designers edit; admins also change roles (People) and reverse anyone's edits (Edit › **History…**: **Reverse** one entry, or **Back to here**, the line as it was just after an entry; both are undoable).
+- **Roles:** viewers read; designers edit; admins also change roles (People) and reverse anyone's edits (Versions › **History…**: **Reverse** one entry, or **Back to here**, the line as it was just after an entry; both are undoable).
 - **People** (View › People) lists who is connected: their role, their selection, what they are editing, and **Go to** to look where they look. Others are also shown in the plan view, as a diamond with their name.
 - **Soft locks:** a structure in someone's Move window is theirs until they close it. Others cannot open it, and the server refuses their edits of it.
 - **Versions** (Versions › Revisions and branches…): commits, branches, merges, reviews and edit rights go through the server too, and every replica keeps the same history. Every user works on their own project line (Versions › Project lines): edits go to it, and others see them when they work on or show that line. See [Project lines and phases](project-lines.md). See [Versions, branches and reviews](versions.md).
@@ -78,7 +78,7 @@ shows:
 
 **Security.** The page and the WebSocket are served over **HTTPS with the server's self-signed certificate**, so the browser warns the first time ("not private", "not trusted"). Before accepting it, compare the certificate's SHA-256 fingerprint (the browser shows it in the certificate details) with the one `ohl serve` prints, or with the last part of the `ols://` invitation: if they differ, do not continue. The access code travels in the link's `#` part, which browsers do not send to the server or other sites, but it is in the browser history: hand links out like invitations. The listener serves only the client's own four files and the WebSocket; messages have the same size limits as the application's, and a browser silent for 30 s is disconnected. On a network you do not trust, prefer the application (its certificate is checked against the invitation automatically).
 
-## Limits of the alpha
+## Limits for now
 
 - Edits wait for the server's answer (milliseconds on a network; at most 15 s) before they show. Edits are not shown before the server confirms them.
 - Joining copies the whole project. Only the chunks a user views will be sent, later.
