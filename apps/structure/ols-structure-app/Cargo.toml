@@ -43,11 +43,16 @@ clap.workspace = true
 toml_edit = "0.25"
 # Native file dialogs (Open, Save as).
 rfd = "0.17"
+# The artwork of assets/ (action icons, the mark, the window icon) drawn
+# from its SVG files: already used by ols-drawing.
+resvg = { version = "0.48", default-features = false }
 log = "0.4"
 env_logger = "0.11"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
+# Screenshots of the window (OLS_RENDER_PNG).
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true

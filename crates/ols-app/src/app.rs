@@ -7119,7 +7119,8 @@ fn menus(
         item(ui, Command::Inventory, out);
         for t in crate::tools::Tool::ALL {
             let held = r.hotbar.tool() == t;
-            let mut b = egui::Button::selectable(held, format!("{} {}", t.icon(), t.name()));
+            let mut b = egui::Button::selectable(held, (t.image(ui.ctx(), 16.0), t.name()))
+                .image_tint_follows_text_color(true);
             if let Some(k) = t.key() {
                 b = b.shortcut_text(k);
             }
@@ -7171,7 +7172,10 @@ fn menus(
         }
     });
     ui.menu_button("Help", |ui| {
-        ui.label(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION")));
+        ui.horizontal(|ui| {
+            ui.add(crate::icons::mark(ui.ctx(), 32.0));
+            ui.label(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION")));
+        });
         ui.label(
             egui::RichText::new(
                 "The line application of OpenOHL: sag-tension, clearances, line layout",

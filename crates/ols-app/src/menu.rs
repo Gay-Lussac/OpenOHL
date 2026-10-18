@@ -146,7 +146,7 @@ impl Command {
             Command::DisplayCases => "Display weather cases…".into(),
             Command::Library(k) => k.library_name(),
             Command::Table(k) => format!("{} table", k.title()),
-            Command::Hold(t) => format!("{} {}", t.icon(), t.name()),
+            Command::Hold(t) => t.name().into(),
         }
     }
 
@@ -195,9 +195,18 @@ impl Command {
         Command::catalog().into_iter().find(|c| c.key() == key)
     }
 
+    /// Its button: a tool's icon (in the text colour) before its name.
+    pub fn button(self, ui: &egui::Ui) -> egui::Button<'static> {
+        match self {
+            Command::Hold(t) => egui::Button::new((t.image(ui.ctx(), 16.0), self.name()))
+                .image_tint_follows_text_color(true),
+            _ => egui::Button::new(self.name()),
+        }
+    }
+
     /// A menu entry (with its shortcut); true when chosen.
     pub fn menu_item(self, ui: &mut egui::Ui) -> bool {
-        let mut b = egui::Button::new(self.name());
+        let mut b = self.button(ui);
         if let Some(s) = self.shortcut() {
             b = b.shortcut_text(s);
         }
@@ -234,7 +243,7 @@ impl QuickBar {
     pub fn ui(&self, ui: &mut egui::Ui) -> Option<Command> {
         let mut out = None;
         for c in &self.0 {
-            let r = ui.button(c.name());
+            let r = ui.add(c.button(ui));
             let r = match c.shortcut() {
                 Some(s) => r.on_hover_text(s),
                 None => r,
@@ -257,7 +266,15 @@ impl QuickBar {
             .striped(true)
             .show(ui, |ui| {
                 for (k, c) in self.0.iter().enumerate() {
-                    ui.label(c.name());
+                    ui.horizontal(|ui| {
+                        if let Command::Hold(t) = c {
+                            ui.add(
+                                t.image(ui.ctx(), 16.0)
+                                    .tint(crate::icons::text_tint(ui.visuals())),
+                            );
+                        }
+                        ui.label(c.name());
+                    });
                     if ui
                         .add_enabled(k > 0, egui::Button::new("▲").small())
                         .clicked()
@@ -286,7 +303,7 @@ impl QuickBar {
         ui.label("Add:");
         ui.horizontal_wrapped(|ui| {
             for c in Command::catalog() {
-                if !self.0.contains(&c) && ui.button(c.name()).clicked() {
+                if !self.0.contains(&c) && ui.add(c.button(ui)).clicked() {
                     self.0.push(c);
                 }
             }

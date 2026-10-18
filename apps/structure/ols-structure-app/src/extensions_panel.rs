@@ -192,7 +192,7 @@ impl StructureApp {
         ui.horizontal_wrapped(|ui| {
             ui.strong("by hand");
             if ui
-                .button("+ Joint")
+                .add(crate::icons::Icon::AddJoint.button(ui, "Joint"))
                 .on_hover_text(
                     "A joint at the bottom of the piece, under the centre (then move it)",
                 )
@@ -208,7 +208,10 @@ impl StructureApp {
             }
             let two = picked.len() == 2;
             if ui
-                .add_enabled(two, egui::Button::new("Member between the 2 picked joints"))
+                .add_enabled(
+                    two,
+                    crate::icons::Icon::AddMember.button(ui, "Member between the 2 picked joints"),
+                )
                 .on_disabled_hover_text(
                     "Pick two joints (Shift + click), one of this extension at least (show it in \
                      3D)",

@@ -240,6 +240,8 @@ pub fn file_keys(ctx: &egui::Context, action: &mut Option<FileAction>) {
 pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAction>) {
     ui.add_space(40.0);
     ui.vertical_centered(|ui| {
+        // The OpenOHL mark above the name.
+        ui.add(crate::icons::mark(ui.ctx(), 64.0));
         ui.heading(crate::APP_NAME);
         ui.label(egui::RichText::new(format!("version {}", env!("CARGO_PKG_VERSION"))).weak());
         ui.add_space(20.0);

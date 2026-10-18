@@ -402,7 +402,7 @@ impl StructureApp {
             }
             if area == Area::Body {
                 if ui
-                    .button("Add joint")
+                    .add(crate::icons::Icon::AddJoint.button(ui, "Add joint"))
                     .on_hover_text("A joint above the joint picked (or at the centre)")
                     .clicked()
                 {
@@ -410,7 +410,10 @@ impl StructureApp {
                 }
                 let joints = self.picked_joints();
                 if ui
-                    .add_enabled(joints.len() == 2, egui::Button::new("Member"))
+                    .add_enabled(
+                        joints.len() == 2,
+                        crate::icons::Icon::AddMember.button(ui, "Member"),
+                    )
                     .on_hover_text("A member between the two joints picked")
                     .on_disabled_hover_text("Pick two joints (Shift + click the second)")
                     .clicked()
@@ -419,7 +422,7 @@ impl StructureApp {
                 }
                 if matches!(self.selected.as_slice(), [Handle::Joint(_)])
                     && ui
-                        .button("Point here")
+                        .add(crate::icons::Icon::PointOnJoint.button(ui, "Point here"))
                         .on_hover_text("A point where insulators hang, on this joint (it moves with it)")
                         .clicked()
                 {

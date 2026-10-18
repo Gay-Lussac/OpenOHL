@@ -31,7 +31,8 @@ folder (macOS; it builds the program and starts it), or
 cargo run --release -p ols-structure-app --bin ohl-structure
 ```
 
-Without a file it opens on its **start page**: **Open a structure…**,
+Without a file it opens on its **start page** (the OpenOHL mark above
+the name; the window has OHL-Structure's icon): **Open a structure…**,
 the files opened recently (a click opens one; kept between runs), **New
 structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
 structure…** (also in the File menu) asks an id and a name and what to
@@ -173,7 +174,10 @@ brought to the front) and its **actions** (Geometry: *Add a point*, *I
 insulator below the point*, *V insulators to one wire point*, *Delete
 what is picked…*; Body: *Add a joint*, *Member between the two joints*,
 *Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
-picked…*; Load cases: *Store the line's cases in the file…*, *Take the
+picked…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
+*Generators…* and *Supports…* have their icons, also on the panels'
+buttons (Add joint, Member, Point here, symmetry), tinted with the text
+colour; Load cases: *Store the line's cases in the file…*, *Take the
 line's load cases as they are*, *Add a load case*, *Load cases from a
 design code…* ([Plugins](#plugins)), *Import / Export load
 recipes…*, *Import a load table…*, *Export the load table…*; Results:
