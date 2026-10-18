@@ -10,7 +10,7 @@
 //! ([`ols_clearance::zone`]); the circuits checked, the calculation
 //! method and the distance beyond which LiDAR points are ignored. The
 //! rules are kept with the project, in a rule file of its clearance rules
-//! (`<model>.vertical-clearances.olsr`, `<model>.radial-clearances.olsr`;
+//! (`<model>.vertical-clearances.ohlr`, `<model>.radial-clearances.ohlr`;
 //! next to a line file), which `ohl line --rules` reads too.
 //! **Load preset…** takes the rules of a design code's preset (kept in the
 //! project's rule files when the code generated, with a weather case file
@@ -173,7 +173,7 @@ impl ZoneWindow {
             .map(|w| w.join("rules"))
             .filter(|d| d.is_dir())
             .unwrap_or_else(|| ols_core::files::dir_of(model_file));
-        dir.join(format!("{stem}.{}-clearances.olsr", measure.as_str()))
+        dir.join(format!("{stem}.{}-clearances.ohlr", measure.as_str()))
     }
 
     /// Another project line worked on (it has its own rule files): a
@@ -292,8 +292,7 @@ impl ZoneWindow {
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| {
-                p.extension().and_then(|e| e.to_str())
-                    == Some(ols_clearance::rules::RULE_FILE_EXTENSION)
+                ols_core::files::has_extension(p, ols_clearance::rules::RULE_FILE_EXTENSION)
             })
             .collect();
         files.sort();
@@ -302,7 +301,7 @@ impl ZoneWindow {
             let name = r
                 .file_name()
                 .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            if name.ends_with("-clearances.olsr") {
+            if name.ends_with("-clearances.ohlr") || name.ends_with("-clearances.olsr") {
                 continue;
             }
             let stem = r
@@ -758,12 +757,14 @@ impl ZoneWindow {
             });
             if ui
                 .button("Import…")
-                .on_hover_text("Rules from a rule file (.olsr): they replace those listed")
+                .on_hover_text("Rules from a rule file (.ohlr): they replace those listed")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter(
                         "Clearance rules",
-                        &[ols_clearance::rules::RULE_FILE_EXTENSION],
+                        &ols_core::files::open_extensions(
+                            ols_clearance::rules::RULE_FILE_EXTENSION,
+                        ),
                     )
                     .pick_file()
             {
@@ -777,14 +778,14 @@ impl ZoneWindow {
             }
             if ui
                 .button("Export…")
-                .on_hover_text("The rules as a rule file (.olsr), for ohl line --rules too")
+                .on_hover_text("The rules as a rule file (.ohlr), for ohl line --rules too")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter(
                         "Clearance rules",
                         &[ols_clearance::rules::RULE_FILE_EXTENSION],
                     )
-                    .set_file_name(format!("{}-clearances.olsr", self.zone.measure.as_str()))
+                    .set_file_name(format!("{}-clearances.ohlr", self.zone.measure.as_str()))
                     .save_file()
             {
                 self.status = Some(match self.rule_set().save(&p) {

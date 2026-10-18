@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Design codes (`code-plugin` world, extension point `design-code`): a
-//! plugin turns the user's parameter file into weather cases (`.olswc`)
-//! and load cases (`.olslc`), and may give presets of the clearance
-//! windows (a rule file `.olsr` with the weather cases its rules name),
+//! plugin turns the user's parameter file into weather cases (`.ohlwc`)
+//! and load cases (`.ohllc`), and may give presets of the clearance
+//! windows (a rule file `.ohlr` with the weather cases its rules name),
 //! checked here like any such file. OpenOHL ships no code tables: every
 //! value of a code is in the parameter file.
 //!
@@ -60,9 +60,9 @@ pub fn list(roots: &[PathBuf]) -> Vec<CodePlugin> {
 pub struct Generated {
     /// The plugin's name.
     pub plugin: String,
-    /// Weather case file text (`.olswc`).
+    /// Weather case file text (`.ohlwc`).
     pub weather_text: String,
-    /// Load case file text (`.olslc`).
+    /// Load case file text (`.ohllc`).
     pub load_cases_text: String,
     /// The weather cases read.
     pub weather: WeatherCases,
@@ -81,9 +81,9 @@ pub struct Preset {
     pub name: String,
     /// The window it is for.
     pub measure: Measure,
-    /// Rule file text (`.olsr`).
+    /// Rule file text (`.ohlr`).
     pub rules_text: String,
-    /// Weather case file text (`.olswc`): the cases its rules name.
+    /// Weather case file text (`.ohlwc`): the cases its rules name.
     pub weather_text: String,
     /// The rules read.
     pub rules: RuleSet,
@@ -215,8 +215,8 @@ impl Generated {
         })
     }
 
-    /// Writes each clearance preset as `<plugin>-<name>.olsr` in `rules`
-    /// and its weather cases as `<plugin>-<name>.olswc` in `weather`
+    /// Writes each clearance preset as `<plugin>-<name>.ohlr` in `rules`
+    /// and its weather cases as `<plugin>-<name>.ohlwc` in `weather`
     /// ([`preset_stem`]); returns the files written (rules, weather).
     pub fn write_presets(
         &self,
@@ -528,10 +528,10 @@ mod tests {
 
     #[test]
     fn outputs_are_checked() {
-        let w = "format = \"ols-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
+        let w = "format = \"ohl-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
         let l = |weather: &str| {
             format!(
-                "format = \"ols-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"{weather}\"\n"
+                "format = \"ohl-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"{weather}\"\n"
             )
         };
         assert!(Generated::check("p", w.into(), l("a"), vec![], vec![]).is_ok());
@@ -542,16 +542,16 @@ mod tests {
 
     /// Clearance presets: the rule file read, a rule of the window's
     /// measure, the weather cases its rules name among the preset's; an
-    /// error names the file. Written as `<plugin>-<name>.olsr / .olswc`.
+    /// error names the file. Written as `<plugin>-<name>.ohlr / .ohlwc`.
     #[test]
     fn clearance_presets_are_checked() {
-        let w = "format = \"ols-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
+        let w = "format = \"ohl-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
         let l =
-            "format = \"ols-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"a\"\n";
-        let hot = "format = \"ols-weather-cases\"\nversion = 1\n[[case]]\nname = \"hot\"\ntemperature = \"80 °C\"\n";
+            "format = \"ohl-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"a\"\n";
+        let hot = "format = \"ohl-weather-cases\"\nversion = 1\n[[case]]\nname = \"hot\"\ntemperature = \"80 °C\"\n";
         let rules = |body: &str| {
             format!(
-                "format = \"ols-clearance-rules\"\nversion = 1\nname = \"p\"\n\
+                "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n\
                  [check]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
                  [[rule]]\nname = \"r\"\ntarget = \"points\"\nclasses = [6]\n{body}"
             )
@@ -573,7 +573,7 @@ mod tests {
         // No rule of the window's measure.
         let e = run(vec![preset(ClearanceMeasure::Radial, good)]).unwrap_err();
         assert!(
-            e.contains("code-vertical-one.olsr") && e.contains("no rule with a radial"),
+            e.contains("code-vertical-one.ohlr") && e.contains("no rule with a radial"),
             "{e}"
         );
         // A weather case not in the preset.
@@ -589,7 +589,7 @@ mod tests {
             "vertical = \"x\"\n",
         )])
         .unwrap_err();
-        assert!(e.contains("code-vertical-one.olsr"), "{e}");
+        assert!(e.contains("code-vertical-one.ohlr"), "{e}");
         // Twice.
         let e = run(vec![
             preset(ClearanceMeasure::Vertical, good),
@@ -602,7 +602,7 @@ mod tests {
         let files = g
             .write_presets(&dir.join("rules"), &dir.join("weather"))
             .unwrap();
-        assert!(files[0].0.ends_with("rules/code-vertical-one.olsr"));
+        assert!(files[0].0.ends_with("rules/code-vertical-one.ohlr"));
         assert!(RuleSet::load(&files[0].0).is_ok());
         assert!(WeatherCases::load(&files[0].1).is_ok());
         std::fs::remove_dir_all(&dir).unwrap();

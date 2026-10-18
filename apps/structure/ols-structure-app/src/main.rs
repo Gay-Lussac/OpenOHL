@@ -4,12 +4,12 @@
 
 //! `ohl-structure` — OHL-Structure, the structure application of OpenOHL
 //! (formerly `ols-structure`, still built as an alias that runs this
-//! program): one structure file (`.olss`) in its own window, built from level 1
+//! program): one structure file (`.ohls`) in its own window, built from level 1
 //! (stick figure) to level 3 (full design). The menus are at the top, the
 //! panels under them can be moved, closed and shown again (View).
 //!
 //! ```bash
-//! ohl-structure examples/synthetic-line/Structures/type-02.olss
+//! ohl-structure examples/synthetic-line/Structures/type-02.ohls
 //! ```
 //!
 //! The line application (`ohl-design`, OHL-Design) starts it with **Edit** on a structure
@@ -17,7 +17,7 @@
 //! also hands over that place's loads:
 //!
 //! ```bash
-//! ohl-structure Structures/type-02.olss --structure T2 \
+//! ohl-structure Structures/type-02.ohls --structure T2 \
 //!     --line-values Structures/type-02.T2.line-values.json --sections Sections
 //! ```
 //!
@@ -97,11 +97,11 @@ pub const VERSION: &str = concat!(
 );
 
 /// OHL-Structure, the structure application of OpenOHL: a structure file
-/// (.olss) in 3D and in tables, every edit undoable.
+/// (.ohls) in 3D and in tables, every edit undoable.
 #[derive(Parser)]
 #[command(name = "ohl-structure", version = VERSION)]
 struct Args {
-    /// Structure file (.olss); none: open one from the window.
+    /// Structure file (.ohls); none: open one from the window.
     file: Option<PathBuf>,
     /// Insulator library folder (the assemblies strings may take);
     /// default: the folder of the file and its Insulators folder.
@@ -121,7 +121,7 @@ struct Args {
     /// changes.
     #[arg(long, value_name = "FILE")]
     line_values: Option<PathBuf>,
-    /// Section library (a .olssec file or a folder of them) for the
+    /// Section library (a .ohlsec file or a folder of them) for the
     /// members' areas; default: the Sections folder beside the file.
     #[arg(long, value_name = "FILE|DIR")]
     sections: Option<PathBuf>,

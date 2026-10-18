@@ -160,7 +160,7 @@ pub enum VersionCommand {
         #[arg(long, short)]
         message: Option<String>,
         /// KEY=ours|theirs (repeatable); KEY as listed (`structure:T6`,
-        /// `structure:T6/position`, `library:cables/x.olsw`).
+        /// `structure:T6/position`, `library:cables/x.ohlw`).
         #[arg(long = "choose")]
         choose: Vec<String>,
         /// Only show what the merge would do.

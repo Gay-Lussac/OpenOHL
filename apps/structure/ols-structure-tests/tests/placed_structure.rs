@@ -33,16 +33,16 @@ fn example() -> (
     LoadCases,
 ) {
     let types = StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
-    let mut line = Line::load(&ex().join("synthetic-line-typed.ols.json"))
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
         .unwrap()
         .resolve(&types, &ols_structures::InsulatorLibrary::default())
         .unwrap();
     line.creep_stretch.creep_case = Some("everyday".into());
     let library = ols_cables::Library::load(&ex().join("../../libraries/cables")).unwrap();
-    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.olswc"))
+    let weather = ols_weather::WeatherCases::load(&ex().join("weather-cases.ohlwc"))
         .unwrap()
         .cases;
-    let cases = LoadCases::load(&ex().join("load-cases.olslc")).unwrap();
+    let cases = LoadCases::load(&ex().join("load-cases.ohllc")).unwrap();
     (line, library, weather, cases)
 }
 
@@ -79,7 +79,7 @@ fn the_line_values_file_gives_the_same_table() {
 
     let dir = std::env::temp_dir().join(format!("ols-placed-values-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("type-02.olss");
+    let file = dir.join("type-02.ohls");
     let at = line_values_path(&file, "T2");
     assert_eq!(at, dir.join("type-02.T2.line-values.json"));
     assert_eq!(
@@ -92,7 +92,7 @@ fn the_line_values_file_gives_the_same_table() {
     assert_eq!(back, placed);
     std::fs::remove_dir_all(&dir).ok();
 
-    let path = ex().join("Structures/type-02.olss");
+    let path = ex().join("Structures/type-02.ohls");
     let structure = StructureType::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
     let recipes = StructureLoadCases::from_structure(&structure).unwrap();
     let direct = evaluate(&recipes, &structure, &line_values(&loads, &line, "T2"));
@@ -234,7 +234,7 @@ fn load_cases_and_weather_cases_are_sent_with_their_sources() {
 #[test]
 fn a_pressure_on_a_library_section_takes_width_times_length() {
     let text = r#"
-format = "ols-structure"
+format = "ohl-structure"
 version = 2
 id = "mast"
 name = "test mast"
@@ -292,7 +292,7 @@ members = ["mast"]
 "#;
     let sections = SectionLibrary::parse(
         r#"
-format = "ols-sections"
+format = "ohl-sections"
 version = 1
 name = "test"
 
@@ -311,7 +311,7 @@ t = "5 mm"
 "#,
     )
     .unwrap();
-    let structure = StructureType::parse(Path::new("mast.olss"), text).unwrap();
+    let structure = StructureType::parse(Path::new("mast.ohls"), text).unwrap();
     let recipes = StructureLoadCases::from_structure(&structure).unwrap();
     let areas = SectionAreas::new(&structure, text, None, &sections);
     let table = evaluate_with_areas(&recipes, &structure, &Default::default(), &areas);

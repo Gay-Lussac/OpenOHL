@@ -14,7 +14,7 @@ use crate::tests::{copy_of, harness, menu};
 
 #[test]
 fn a_body_is_generated_grouped_and_undone() {
-    let path = copy_of("type-01.olss", "body");
+    let path = copy_of("type-01.ohls", "body");
     let mut h = harness(&path);
     menu(&mut h, "Body", "Generators…");
     assert_eq!(h.state_mut().focused(), Some(Panel::Generators));

@@ -13,10 +13,10 @@
 //! the art of conductor galloping", 2007) size the ellipse from the span's
 //! sag, its length, the conductor diameter and the number of loops. OpenOHL
 //! ships none of their coefficients: every coefficient comes from a
-//! parameter file (`*.olsg`), and the shipped example's are invented.
+//! parameter file (`*.ohlg`), and the shipped example's are invented.
 //!
 //! ```toml
-//! format = "ols-galloping"
+//! format = "ohl-galloping"
 //! version = 1
 //! name = "Example — invented values"
 //! required = "0.3 m"            # or { by_voltage = [[...]] }, as in rules
@@ -62,9 +62,9 @@ use crate::geometry::P3;
 use crate::rules::{PairVoltage, RawRequirement, Requirement};
 
 /// File extension of galloping parameter files.
-pub const GALLOPING_FILE_EXTENSION: &str = "olsg";
+pub const GALLOPING_FILE_EXTENSION: &str = "ohlg";
 /// Format identifier.
-pub const GALLOPING_FILE_FORMAT: &str = "ols-galloping";
+pub const GALLOPING_FILE_FORMAT: &str = "ohl-galloping";
 /// Newest format version read.
 pub const GALLOPING_FILE_VERSION: u32 = 1;
 
@@ -794,7 +794,7 @@ mod tests {
             "[[method]]\nname = \"a\"\nloops = 1\nmajor = {}\nminor = {}\nalong = \"cosine\"",
             "[[method]]\nname = \"a\"\nloops = 1\nmajor = {}\nminor = {}\ntilt = 120.0",
             "stations = 1\n[[method]]\nname = \"a\"\nloops = 1\nmajor = {}\nminor = {}",
-            "format = \"ols-clearance-rules\"\n[[method]]\nname = \"a\"\nloops = 1\nmajor = {}\nminor = {}",
+            "format = \"ohl-clearance-rules\"\n[[method]]\nname = \"a\"\nloops = 1\nmajor = {}\nminor = {}",
         ] {
             assert!(GallopingParams::parse(text).is_err(), "{text}");
         }

@@ -278,16 +278,16 @@ impl WeatherCase {
 }
 
 /// File extension of weather case files.
-pub const WEATHER_FILE_EXTENSION: &str = "olswc";
+pub const WEATHER_FILE_EXTENSION: &str = "ohlwc";
 /// Format identifier.
-pub const WEATHER_FILE_FORMAT: &str = "ols-weather-cases";
+pub const WEATHER_FILE_FORMAT: &str = "ohl-weather-cases";
 /// Newest format version read.
 pub const WEATHER_FILE_VERSION: u32 = 1;
 
-/// A set of weather cases (`*.olswc`).
+/// A set of weather cases (`*.ohlwc`).
 ///
 /// ```toml
-/// format = "ols-weather-cases"
+/// format = "ohl-weather-cases"
 /// version = 1
 /// name = "Project X"
 ///
@@ -307,7 +307,7 @@ pub const WEATHER_FILE_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WeatherCases {
-    /// `"ols-weather-cases"` (optional header).
+    /// `"ohl-weather-cases"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -580,7 +580,7 @@ mod tests {
     fn case_files_and_selection() {
         let set = WeatherCases::parse(
             r#"
-            format = "ols-weather-cases"
+            format = "ohl-weather-cases"
             name = "test"
             [[case]]
             name = "everyday"
@@ -623,7 +623,7 @@ mod tests {
     fn air_density_factor_relates_velocity_and_pressure() {
         let cases = WeatherCases::parse(
             r#"
-format = "ols-weather-cases"
+format = "ohl-weather-cases"
 version = 1
 name = "q"
 

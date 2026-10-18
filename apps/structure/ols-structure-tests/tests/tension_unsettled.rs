@@ -73,7 +73,7 @@ kind = "tension"
 
 #[test]
 fn an_unsettled_structure_solves_flagged_approximate() {
-    let structure = StructureType::parse(Path::new("k.olss"), TYPE).unwrap();
+    let structure = StructureType::parse(Path::new("k.ohls"), TYPE).unwrap();
     // 10 kN at M across the frame, typed in the table's case "pull".
     let table = LoadTable {
         rows: vec![LoadRow {

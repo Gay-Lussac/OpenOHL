@@ -5,7 +5,7 @@
 //! Every library format refuses a key it does not know (a typo is said,
 //! not silently left out): each shipped or example file reads as it is,
 //! and is refused with a mistyped key added at its top and in its first
-//! item. The structure application's formats (`[[load_case]]`, `.olsslc`)
+//! item. The structure application's formats (`[[load_case]]`, `.ohlslc`)
 //! are checked in `apps/structure/ols-structure-tests` (core crates do not
 //! depend on the application's).
 
@@ -21,69 +21,69 @@ type Parse = fn(&str) -> Result<(), String>;
 
 fn formats() -> Vec<(&'static str, Parse)> {
     vec![
-        ("libraries/cables/acsr-examples.olsw", |t| {
+        ("libraries/cables/acsr-examples.ohlw", |t| {
             ols_cables::Library::default()
-                .add_toml(Path::new("x.olsw"), t)
+                .add_toml(Path::new("x.ohlw"), t)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/objects/templates.olsload", |t| {
+        ("libraries/objects/templates.ohlload", |t| {
             ols_line::ObjectLibrary::parse(t).map(drop)
         }),
-        ("libraries/lidar-classes/asprs-las-1.4.olsc", |t| {
+        ("libraries/lidar-classes/asprs-las-1.4.ohlc", |t| {
             ols_lidar::ClassScheme::parse(t).map(drop)
         }),
-        ("libraries/pylon-templates/danube-2c.olspt", |t| {
-            ols_structures::templates::PylonTemplate::parse(Path::new("x.olspt"), t)
+        ("libraries/pylon-templates/danube-2c.ohlpt", |t| {
+            ols_structures::templates::PylonTemplate::parse(Path::new("x.ohlpt"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/insulators/example-v-string.olsi", |t| {
-            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+        ("libraries/insulators/example-v-string.ohli", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.ohli"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/insulators/example-strain.olsi", |t| {
-            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+        ("libraries/insulators/example-strain.ohli", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.ohli"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/insulators/example-suspension-i.olsi", |t| {
-            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.olsi"), t)
+        ("libraries/insulators/example-suspension-i.ohli", |t| {
+            ols_structures::insulators::InsulatorAssembly::parse(Path::new("x.ohli"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("examples/synthetic-line/Structures/type-01.olss", |t| {
-            ols_structures::structures::StructureType::parse(Path::new("x.olss"), t)
+        ("examples/synthetic-line/Structures/type-01.ohls", |t| {
+            ols_structures::structures::StructureType::parse(Path::new("x.ohls"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
         (
-            "examples/synthetic-line/Structures/type-02-model.olsfe",
+            "examples/synthetic-line/Structures/type-02-model.ohlfe",
             |t| ols_structures_fe::model::Model::parse(t).map(drop),
         ),
         (
-            "examples/synthetic-line/Structures/steel-pole-30m.olsp",
+            "examples/synthetic-line/Structures/steel-pole-30m.ohlp",
             |t| ols_structures_fe::pole::Pole::parse(t).map(drop),
         ),
-        ("libraries/sections/example-sections.olssec", |t| {
+        ("libraries/sections/example-sections.ohlsec", |t| {
             ols_sections::SectionLibrary::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/weather-cases.olswc", |t| {
+        ("examples/synthetic-line/weather-cases.ohlwc", |t| {
             ols_weather::WeatherCases::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/load-cases.olslc", |t| {
+        ("examples/synthetic-line/load-cases.ohllc", |t| {
             ols_loads::LoadCases::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/clearance-rules.olsr", |t| {
+        ("examples/synthetic-line/clearance-rules.ohlr", |t| {
             ols_clearance::rules::RuleSet::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/galloping-example.olsg", |t| {
+        ("examples/synthetic-line/galloping-example.ohlg", |t| {
             ols_clearance::galloping::GallopingParams::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/thermal-ambient.olsta", |t| {
+        ("examples/synthetic-line/thermal-ambient.ohlta", |t| {
             ols_thermal::ambient::AmbientCases::parse(t).map(drop)
         }),
-        ("examples/synthetic-line/unit-costs.olscost", |t| {
+        ("examples/synthetic-line/unit-costs.ohlcost", |t| {
             ols_bom::cost::CostData::from_toml(t).map(drop)
         }),
     ]

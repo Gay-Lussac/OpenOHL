@@ -4,8 +4,8 @@
 
 //! Shared by the OpenOHL design-code plugins (`code-plugin` world): reading
 //! the user's parameter file, building weather cases and load cases, and
-//! writing them as `.olswc` / `.olslc` text; presets of the clearance
-//! windows ([`Preset`], their rules written as `.olsr` text).
+//! writing them as `.ohlwc` / `.ohllc` text; presets of the clearance
+//! windows ([`Preset`], their rules written as `.ohlr` text).
 //!
 //! The plugins implement each code's *method* (which cases, how a wind
 //! pressure follows from a wind speed, which factor goes where). Every
@@ -457,7 +457,7 @@ pub struct Preset {
     pub weather: Vec<Weather>,
 }
 
-/// One rule of a clearance rule file (`.olsr`): to points of LiDAR
+/// One rule of a clearance rule file (`.ohlr`): to points of LiDAR
 /// classes and/or the ground.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ClearanceRule {
@@ -481,7 +481,7 @@ pub struct ClearanceRule {
     pub cases: Vec<String>,
 }
 
-/// A clearance rule file (`.olsr`, format `ols-clearance-rules`).
+/// A clearance rule file (`.ohlr`, format `ohl-clearance-rules`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RuleFile {
     /// Name.
@@ -512,7 +512,7 @@ impl RuleFile {
             s += &format!("# {h}\n");
         }
         s += &format!(
-            "format = \"ols-clearance-rules\"\nversion = 1\nname = {}\n",
+            "format = \"ohl-clearance-rules\"\nversion = 1\nname = {}\n",
             quote(&self.name)
         );
         s += &format!(
@@ -711,12 +711,12 @@ impl Cases {
         s
     }
 
-    /// The weather case file (`.olswc`).
+    /// The weather case file (`.ohlwc`).
     pub fn weather_text(&self) -> String {
         self.weather_file(&self.weather)
     }
 
-    /// The weather case file of a preset's cases (`.olswc`).
+    /// The weather case file of a preset's cases (`.ohlwc`).
     pub fn preset_weather_text(&self, preset: &Preset) -> String {
         Self {
             name: format!("{} — {}", self.name, preset.name),
@@ -727,7 +727,7 @@ impl Cases {
     }
 
     fn weather_file(&self, weather: &[Weather]) -> String {
-        let mut s = self.head("ols-weather-cases");
+        let mut s = self.head("ohl-weather-cases");
         for w in weather {
             s += &format!("\n[[case]]\nname = {}\n", quote(&w.name));
             if !w.description.is_empty() {
@@ -759,9 +759,9 @@ impl Cases {
         s
     }
 
-    /// The load case file (`.olslc`).
+    /// The load case file (`.ohllc`).
     pub fn load_cases_text(&self) -> String {
-        let mut s = self.head("ols-load-cases");
+        let mut s = self.head("ohl-load-cases");
         for l in &self.loads {
             s += &format!("\n[[case]]\nname = {}\n", quote(&l.name));
             if !l.description.is_empty() {

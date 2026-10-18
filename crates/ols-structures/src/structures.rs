@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Structure types (`*.olss`, one type per file) and their placement.
+//! Structure types (`*.ohls`, one type per file) and their placement.
 //!
 //! **Local axes**: origin at the centre of the structure, **x to the
 //! right of the line** looking ahead, **y ahead** along the line, z up
@@ -15,7 +15,7 @@
 //! below z = 0, so everything above the feet rises by its `dz`.
 //!
 //! ```toml
-//! format = "ols-structure"
+//! format = "ohl-structure"
 //! version = 1
 //! id = "DL380-tangent"
 //! name = "380 kV double circuit, tangent"
@@ -154,8 +154,8 @@
 //! ```
 //!
 //! **Analysis** (optional): a finite-element model of the structure
-//! (`model = "type.olsfe"`, next to this file; its nodes name the
-//! attachments they carry) and/or a pole (`pole = "id"`, a `.olsp` file
+//! (`model = "type.ohlfe"`, next to this file; its nodes name the
+//! attachments they carry) and/or a pole (`pole = "id"`, a `.ohlp` file
 //! in the same folder, or a `[pole]` table, [`crate::pole`]) — checked
 //! with the attachment loads of each load case (`ols_structures_fe`,
 //! through `ols_loads::capacity`).
@@ -181,9 +181,9 @@ use crate::insulators::{AssemblyKind, InsulatorLibrary};
 use crate::{Library, LibraryItem};
 
 /// File extension of structure types.
-pub const STRUCTURE_FILE_EXTENSION: &str = "olss";
+pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
-pub const STRUCTURE_FILE_FORMAT: &str = "ols-structure";
+pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// Newest format version read. Version 5 adds the member kind `tension`
 /// (a truss in tension only, slack in compression). Version 4 adds a
 /// string's optional limits,
@@ -382,7 +382,7 @@ pub struct TypeMember {
     pub id: String,
     /// Its two joints.
     pub nodes: [String; 2],
-    /// Section id: in the project's section library (`.olssec`) or a
+    /// Section id: in the project's section library (`.ohlsec`) or a
     /// `[[section]]` table of the file (resolved by `ols_structures_fe`,
     /// the library first); needed for a full design.
     #[serde(default)]
@@ -793,7 +793,7 @@ pub struct Outline {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureType {
-    /// `"ols-structure"` (optional header).
+    /// `"ohl-structure"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -879,11 +879,11 @@ pub struct StructureType {
     /// The wind on the structure itself (structure loads).
     #[serde(default)]
     pub wind: Option<StructureWind>,
-    /// A separate structure model for the finite-element check (`.olsfe`
+    /// A separate structure model for the finite-element check (`.ohlfe`
     /// file, relative to this file's folder) instead of the members here.
     #[serde(default)]
     pub model: Option<String>,
-    /// The pole: `pole = "id"` (a `.olsp` file in this file's folder,
+    /// The pole: `pole = "id"` (a `.ohlp` file in this file's folder,
     /// level 3) or a `[pole]` table ([`InlinePole`], levels 1 to 3).
     #[serde(default)]
     pub pole: Option<PoleRef>,
@@ -1570,7 +1570,7 @@ impl StructureType {
     /// figure.
     ///
     /// A pole gives its own level ([`StructureType::pole_detail`]): a
-    /// named `.olsp` file or a `[pole]` with everything the pole check
+    /// named `.ohlp` file or a `[pole]` with everything the pole check
     /// needs a full design, a `[pole]` outline (diameters at two heights)
     /// the outline; the higher of the two counts.
     pub fn detail(&self) -> Detail {
@@ -1585,7 +1585,7 @@ impl StructureType {
         body.max(pole)
     }
 
-    /// The level of the pole (none: no pole): a `.olsp` file named, or a
+    /// The level of the pole (none: no pole): a `.ohlp` file named, or a
     /// `[pole]` the pole check can read, a full design; a `[pole]` outline
     /// in 3D (diameters at two heights at least) the outline; else a
     /// stick figure.
@@ -1826,8 +1826,8 @@ mod tests {
             "id = \"V5\"\nname = \"V\"\nkind = \"v_string\"\nlength = \"5 m\"\nhalf_width = \"3 m\"",
         ] {
             lib.insert(
-                Path::new("t.olsi"),
-                InsulatorAssembly::parse(Path::new("t.olsi"), text).unwrap(),
+                Path::new("t.ohli"),
+                InsulatorAssembly::parse(Path::new("t.ohli"), text).unwrap(),
             )
             .unwrap();
         }
@@ -1836,7 +1836,7 @@ mod tests {
 
     fn tower() -> StructureType {
         StructureType::parse(
-            Path::new("t.olss"),
+            Path::new("t.ohls"),
             r#"
             id = "T"
             name = "test"
@@ -1864,7 +1864,7 @@ mod tests {
     fn detail_levels() {
         let parse = |body: &str| {
             let text = format!("id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n{body}");
-            StructureType::parse(Path::new("t.olss"), &text).map(|t| t.detail())
+            StructureType::parse(Path::new("t.ohls"), &text).map(|t| t.detail())
         };
         assert_eq!(parse("").unwrap(), Detail::Stick);
         // A level stated by an older file is read, but the content decides.
@@ -1889,7 +1889,7 @@ mod tests {
         assert_eq!(parse(&body(&[face, side])).unwrap(), Detail::Outline);
         let off = "[\"-6 m\", \"0 m\", \"20 m\"], [\"6 m\", \"0.01 m\", \"20 m\"]";
         assert_eq!(parse(&body(&[face, off])).unwrap(), Detail::Outline);
-        assert_eq!(parse("model = \"t.olsfe\"\n").unwrap(), Detail::Design);
+        assert_eq!(parse("model = \"t.ohlfe\"\n").unwrap(), Detail::Design);
         // Joints and members: sticks; with sections and a support: a design.
         let joints = "[[node]]\nid = \"B\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\n\
                       [[node]]\nid = \"T\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\n";
@@ -1901,7 +1901,7 @@ mod tests {
         let section = "[[section]]\nid = \"L\"\nmaterial = \"steel\"\narea = \"10 cm2\"\n";
         let unsupported = format!("{joints}{section}{member}section = \"L\"\n");
         let t = StructureType::parse(
-            Path::new("t.olss"),
+            Path::new("t.ohls"),
             &format!("id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n{unsupported}"),
         )
         .unwrap();
@@ -1941,7 +1941,7 @@ mod tests {
     fn version_3_groups_generators_and_symmetry() {
         let text = |version: u32| {
             format!(
-                "format = \"ols-structure\"\nversion = {version}\n\
+                "format = \"ohl-structure\"\nversion = {version}\n\
                  id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n\
                  [[symmetry]]\nmirror = \"xy\"\n\
                  [[generator]]\nid = \"body\"\nkind = \"panels\"\n\
@@ -1950,16 +1950,16 @@ mod tests {
                  [[member]]\nid = \"M\"\nnodes = [\"B\", \"T\"]\ngroup = \"body-leg\"\nmade_by = \"body\"\n"
             )
         };
-        let t = StructureType::parse(Path::new("t.olss"), &text(3)).unwrap();
+        let t = StructureType::parse(Path::new("t.ohls"), &text(3)).unwrap();
         assert_eq!(t.members[0].group.as_deref(), Some("body-leg"));
         assert_eq!(t.members[0].made_by.as_deref(), Some("body"));
         assert_eq!(t.nodes[0].made_by.as_deref(), Some("body"));
         assert_eq!((t.symmetry.len(), t.generators.len()), (1, 1));
         assert_eq!(t.detail(), Detail::Outline);
         for older in [1, 2] {
-            assert!(StructureType::parse(Path::new("t.olss"), &text(older)).is_ok());
+            assert!(StructureType::parse(Path::new("t.ohls"), &text(older)).is_ok());
         }
-        let newer = StructureType::parse(Path::new("t.olss"), &text(STRUCTURE_FILE_VERSION + 1))
+        let newer = StructureType::parse(Path::new("t.ohls"), &text(STRUCTURE_FILE_VERSION + 1))
             .unwrap_err();
         assert!(newer.message.contains("newer"), "{}", newer.message);
     }
@@ -1969,7 +1969,7 @@ mod tests {
     /// insulator's are the assembly's); bad values refused.
     #[test]
     fn version_4_string_limits() {
-        let text = "format = \"ols-structure\"\nversion = 4\nid = \"T\"\nname = \"t\"\n\
+        let text = "format = \"ohl-structure\"\nversion = 4\nid = \"T\"\nname = \"t\"\n\
             kind = \"lattice\"\n\
             [[point]]\nlabel = \"A\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
             [[point]]\nlabel = \"B\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
@@ -1978,7 +1978,7 @@ mod tests {
             [[string]]\nlabel = \"S1\"\ntop = \"A\"\nwire = \"W1\"\ninsulator = \"I5\"\n\
             max_load = \"120 kN\"\nmax_swing_across = \"40 deg\"\n\
             [[string]]\nlabel = \"S2\"\ntop = \"B\"\nwire = \"W2\"\nlength = \"3 m\"\n";
-        let t = StructureType::parse(Path::new("t.olss"), text).unwrap();
+        let t = StructureType::parse(Path::new("t.ohls"), text).unwrap();
         let l = t.strings[0].limits();
         assert_eq!(l.max_load, Some(120_000.0));
         assert!((l.max_swing_across_deg.unwrap() - 40.0).abs() < 1e-9);
@@ -1990,12 +1990,12 @@ mod tests {
         for (from, to) in [("120 kN", "-1 kN"), ("40 deg", "181 deg")] {
             let worse = text.replace(from, to);
             assert!(
-                StructureType::parse(Path::new("t.olss"), &worse).is_err(),
+                StructureType::parse(Path::new("t.ohls"), &worse).is_err(),
                 "{to}"
             );
         }
         let typo = text.replace("max_swing_across", "max_swing_sideways");
-        assert!(StructureType::parse(Path::new("t.olss"), &typo).is_err());
+        assert!(StructureType::parse(Path::new("t.ohls"), &typo).is_err());
     }
 
     /// Points at a joint or along a member follow it.
@@ -2007,7 +2007,7 @@ mod tests {
             [[member]]\nid = \"arm\"\nnodes = [\"N1\", \"N2\"]\n\
             [[point]]\nlabel = \"tip\"\nnode = \"N2\"\n\
             [[point]]\nlabel = \"mid\"\nmember = \"arm\"\nat = 0.25\n";
-        let t = StructureType::parse(Path::new("t.olss"), text).unwrap();
+        let t = StructureType::parse(Path::new("t.ohls"), text).unwrap();
         assert_eq!(t.point_local("tip", None), Some([-10.0, 0.0, 30.0]));
         assert_eq!(t.point_local("mid", None), Some([-2.5, 0.0, 30.0]));
         for bad in [
@@ -2017,7 +2017,7 @@ mod tests {
             "[[point]]\nlabel = \"x\"\n",
         ] {
             assert!(
-                StructureType::parse(Path::new("t.olss"), &format!("{text}{bad}")).is_err(),
+                StructureType::parse(Path::new("t.ohls"), &format!("{text}{bad}")).is_err(),
                 "{bad}"
             );
         }
@@ -2097,7 +2097,7 @@ mod tests {
             "[[attachment]]\nset = 9\nphase = 1\nlabel = \"earth wire\"\npoint = [\"0 m\", \"0 m\", \"50 m\"]\n",
         );
         text.push_str("[[extension]]\nname = \"+3\"\ndz = \"3 m\"\n");
-        StructureType::parse(Path::new("d.olss"), &text).unwrap()
+        StructureType::parse(Path::new("d.ohls"), &text).unwrap()
     }
 
     #[test]
@@ -2179,7 +2179,7 @@ mod tests {
         text.push_str(
             "[[body]]\npoints = [[\"-4 m\", \"0 m\", \"-30 m\"], [\"0 m\", \"0 m\", \"12 m\"]]\n",
         );
-        let t = StructureType::parse(Path::new("f.olss"), &text).unwrap();
+        let t = StructureType::parse(Path::new("f.ohls"), &text).unwrap();
         let none = InsulatorLibrary::default();
         let placed = t
             .place_strings([0.0, 0.0, 500.0], 0.0, None, &none)
@@ -2215,7 +2215,7 @@ mod tests {
                 .contains("needs a side")
         );
         let text = "id = \"X\"\nname = \"x\"\nkind = \"lattice\"\n[[attachment]]\nset = 1\nphase = 1\npoint = [\"0 m\", \"0 m\", \"-1 m\"]";
-        assert!(StructureType::parse(Path::new("x.olss"), text).is_err());
+        assert!(StructureType::parse(Path::new("x.ohls"), text).is_err());
     }
 
     /// Version 2: a V with a string below and a TAK, their wire points
@@ -2289,7 +2289,7 @@ mod tests {
             point = "K"
             vertical = "10 kN"
         "#;
-        let t = StructureType::parse(Path::new("vt.olss"), text).unwrap();
+        let t = StructureType::parse(Path::new("vt.ohls"), text).unwrap();
         assert_eq!(t.sets(), vec![1, 2, 3]);
         assert!(t.capacity_at("K").is_some() && t.capacity_at("L").is_none());
         let placed = t.place_strings([0.0; 3], 0.0, None, &insulators()).unwrap();
@@ -2330,7 +2330,7 @@ mod tests {
             "[[string]]\n            label = \"i\"\n\n            top = \"V\"\n            wire = \"C\"\n            insulator = \"I5\"",
             "",
         );
-        let t = StructureType::parse(Path::new("vt.olss"), &bad).unwrap();
+        let t = StructureType::parse(Path::new("vt.ohls"), &bad).unwrap();
         assert!(
             t.place_strings([0.0; 3], 0.0, None, &insulators())
                 .unwrap_err()

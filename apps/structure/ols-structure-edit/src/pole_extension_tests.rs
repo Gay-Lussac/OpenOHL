@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The pole's edits (outline rows, shape, design fields, a `.olsp`
+//! The pole's edits (outline rows, shape, design fields, a `.ohlp`
 //! brought in) and the extensions' (joints, members, the piece, legs):
 //! each one undo step, comments kept, and what each level lacks.
 
@@ -15,7 +15,7 @@ use crate::extension_edits::{self as ext, PieceBracing};
 use crate::pole::{self as pole_edit};
 
 const POLE: &str = "# A pole carrying one wire (comment kept).\n\
-     format = \"ols-structure\"\nversion = 2\nid = \"P\"\nname = \"p\"\nkind = \"pole\"\n\
+     format = \"ohl-structure\"\nversion = 2\nid = \"P\"\nname = \"p\"\nkind = \"pole\"\n\
      height = \"27 m\"\n\
      [[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"26 m\"]\n";
 
@@ -140,7 +140,7 @@ fn a_pole_is_outlined_and_designed() {
     assert!(f.structure().pole.is_none());
 }
 
-/// A named `.olsp` brought into the file: two heights from the feet, the
+/// A named `.ohlp` brought into the file: two heights from the feet, the
 /// same fields; level 3 before and after.
 #[test]
 fn a_pole_file_is_brought_in() {
@@ -151,7 +151,7 @@ fn a_pole_file_is_brought_in() {
     assert!(e.contains("bring it into this file"), "{e}");
     let olsp = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../examples/synthetic-line/Structures/steel-pole-30m.olsp"),
+            .join("../../../examples/synthetic-line/Structures/steel-pole-30m.ohlp"),
     )
     .unwrap();
     f.edit("bring the pole in", |doc, t| {
@@ -171,7 +171,7 @@ fn a_pole_file_is_brought_in() {
     assert_eq!(f.structure().detail(), Detail::Design);
     assert_eq!(f.undo().as_deref(), Some("bring the pole in"));
     assert!(matches!(f.structure().pole, Some(PoleRef::File(_))));
-    // A .olsp without a wall brings none: level 3 lacks it (the user
+    // A .ohlp without a wall brings none: level 3 lacks it (the user
     // decides: a thickness, solid or a section).
     let no_wall = olsp.replace("wall = \"8 mm\"\n", "");
     assert_ne!(no_wall, olsp);
@@ -187,7 +187,7 @@ fn a_pole_file_is_brought_in() {
         .unwrap();
     assert_eq!(p.wall, None);
     assert_eq!(f.structure().detail(), Detail::Outline);
-    // A solid .olsp comes in solid.
+    // A solid .ohlp comes in solid.
     f.undo();
     let solid = olsp.replace("wall = \"8 mm\"", "wall = \"solid\"");
     f.edit("bring the pole in", |doc, t| {
@@ -199,7 +199,7 @@ fn a_pole_file_is_brought_in() {
 }
 
 /// A four-legged body on supported feet (z = 0).
-const TOWER: &str = "format = \"ols-structure\"\nversion = 3\nid = \"T\"\nname = \"t\"\n\
+const TOWER: &str = "format = \"ohl-structure\"\nversion = 3\nid = \"T\"\nname = \"t\"\n\
      kind = \"lattice\"\n\
      [[node]]\nid = \"F1\"\npoint = [\"2 m\", \"2 m\", \"0 m\"]\nsupport = \"pinned\"\n\
      [[node]]\nid = \"F2\"\npoint = [\"-2 m\", \"2 m\", \"0 m\"]\nsupport = \"pinned\"\n\

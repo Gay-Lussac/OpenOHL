@@ -154,7 +154,7 @@ impl StructureApp {
         {
             ui.close();
             if let Some(p) = rfd::FileDialog::new()
-                .add_filter("Structure", &["olss"])
+                .add_filter("Structure", &ols_core::files::open_extensions("ohls"))
                 .pick_file()
             {
                 self.open_chosen(&p);
@@ -482,7 +482,7 @@ impl StructureApp {
             ui,
             "Import load recipes…",
             true,
-            "Load cases from a structure load-case file (.olsslc) or CSV",
+            "Load cases from a structure load-case file (.ohlslc) or CSV",
             "",
         ) {
             self.import_recipes_dialog();
@@ -492,7 +492,7 @@ impl StructureApp {
             ui,
             "Export load recipes…",
             true,
-            "The load cases as a structure load-case file (.olsslc) or CSV",
+            "The load cases as a structure load-case file (.ohlslc) or CSV",
             "",
         ) {
             self.export_recipes_dialog();
@@ -569,7 +569,7 @@ impl StructureApp {
                         });
                     });
                     ui.label(
-                        "The structure application of OpenOHL: one structure file (.olss), from \
+                        "The structure application of OpenOHL: one structure file (.ohls), from \
                          level 1 (stick figure) to level 3 (full design), its loads and its \
                          finite-element results.",
                     );

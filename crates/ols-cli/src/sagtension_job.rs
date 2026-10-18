@@ -30,7 +30,7 @@ use serde::Deserialize;
 struct Job {
     /// Cable id in the library.
     cable: String,
-    /// Wire library (`.olsw` file or directory), relative to the job file (default: the shipped
+    /// Wire library (`.ohlw` file or directory), relative to the job file (default: the shipped
     /// `libraries/cables`).
     library: Option<PathBuf>,
     spans: Vec<SpanInput>,

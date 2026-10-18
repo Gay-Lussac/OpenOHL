@@ -94,7 +94,7 @@ fn member_capacities_and_effective_length_override_the_computed_ones() {
     }
 }
 
-/// The member fields in a structure type file (`.olss`): read by the
+/// The member fields in a structure type file (`.ohls`): read by the
 /// structure, given to the model.
 #[test]
 fn member_fields_in_a_structure_file() {
@@ -105,7 +105,7 @@ fn member_fields_in_a_structure_file() {
              orientation = \"y+z+\"\ngroup = \"g\"\ndead_load_factor = 1.25\n"
         )
     );
-    let t = ols_structures::StructureType::parse(std::path::Path::new("t.olss"), &text);
+    let t = ols_structures::StructureType::parse(std::path::Path::new("t.ohls"), &text);
     assert!(t.is_ok(), "{:?}", t.err());
     let m = Model::from_structure_type(&text).unwrap();
     let b = &m.members[0];

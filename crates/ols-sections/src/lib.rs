@@ -2,13 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Section library (`.olssec`, TOML): standard profiles that structures
+//! Section library (`.ohlsec`, TOML): standard profiles that structures
 //! refer to by id, shared by a whole project, with their materials; the
 //! cross-section properties computed from each profile's dimensions, and
 //! its projected width for wind.
 //!
 //! ```toml
-//! format = "ols-sections"
+//! format = "ohl-sections"
 //! version = 1
 //! name = "Example sections (invented)"
 //! default_material = "steel-a"     # for sections naming none
@@ -63,11 +63,11 @@ use serde::Deserialize;
 use geometry::{Outline, Part};
 
 /// Value of the `format` header of section library files.
-pub const SECTION_FILE_FORMAT: &str = "ols-sections";
+pub const SECTION_FILE_FORMAT: &str = "ohl-sections";
 /// Latest section library format version.
 pub const SECTION_FILE_VERSION: u32 = 1;
 /// File extension of section libraries.
-pub const SECTION_FILE_EXTENSION: &str = "olssec";
+pub const SECTION_FILE_EXTENSION: &str = "ohlsec";
 
 /// Shear modulus over Young's modulus when a material gives none
 /// (ν = 0.3, as structure models).
@@ -834,7 +834,7 @@ impl SectionFile {
     }
 }
 
-/// Sections and materials of one or more `.olssec` files.
+/// Sections and materials of one or more `.ohlsec` files.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SectionLibrary {
     /// Name (of the first file read).
@@ -889,7 +889,7 @@ impl SectionLibrary {
         Ok(lib)
     }
 
-    /// Reads a file, or every `.olssec` file of a folder in name order (an
+    /// Reads a file, or every `.ohlsec` file of a folder in name order (an
     /// id in two of them is refused).
     pub fn load(path: &Path) -> Result<Self, String> {
         let read = |p: &Path| {

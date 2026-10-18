@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The pole of a pole structure (decision 2 of *Building structures*):
-//! named (`pole = "id"`, a `.olsp` file next to the structure, as before)
+//! named (`pole = "id"`, a `.ohlp` file next to the structure, as before)
 //! or described in the structure file itself, a `[pole]` table (format
 //! version 3). The table has the same three levels as any structure:
 //!
@@ -30,7 +30,7 @@
 //! z = "27 m"
 //! diameter = "300 mm"
 //!
-//! # Level 3 (the fields of a .olsp file, same names and meaning):
+//! # Level 3 (the fields of a .ohlp file, same names and meaning):
 //! material = "steel"        # wood | steel | concrete | other
 //! wall = "8 mm"             # or "solid", or section = "<id>" (a polygonal
 //!                           # or circular hollow section of the library)
@@ -44,7 +44,7 @@
 //! ```
 //!
 //! The pole check (`ols_structures_fe::pole`) reads the table and a
-//! `.olsp` file through one conversion into the same pole.
+//! `.ohlp` file through one conversion into the same pole.
 
 use ols_core::units::{Density, Length, Stress};
 use serde::{Deserialize, Deserializer};
@@ -52,14 +52,14 @@ use serde::{Deserialize, Deserializer};
 /// Distance under which two heights are one, m.
 const SAME_HEIGHT: f64 = 1e-3;
 
-/// The materials a pole may be of (as `.olsp` files name them).
+/// The materials a pole may be of (as `.ohlp` files name them).
 pub const POLE_MATERIALS: [&str; 4] = ["wood", "steel", "concrete", "other"];
 
-/// The pole of a structure: a `.olsp` file or the `[pole]` table.
+/// The pole of a structure: a `.ohlp` file or the `[pole]` table.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "toml::Value")]
 pub enum PoleRef {
-    /// `pole = "id"`: the `.olsp` file with this id (or this file name)
+    /// `pole = "id"`: the `.ohlp` file with this id (or this file name)
     /// next to the structure: level 3.
     File(String),
     /// `[pole]`: described in the structure file.
@@ -79,7 +79,7 @@ impl TryFrom<toml::Value> for PoleRef {
                 p.check()?;
                 Ok(PoleRef::Inline(Box::new(p)))
             }
-            _ => Err("pole: the id of a .olsp file, or a [pole] table".into()),
+            _ => Err("pole: the id of a .ohlp file, or a [pole] table".into()),
         }
     }
 }
@@ -118,7 +118,7 @@ impl PoleShape {
 /// The word `wall` takes for a pole without a hollow.
 pub const SOLID: &str = "solid";
 
-/// A pole's wall (`wall`, in `[pole]` and in `.olsp` files): a thickness
+/// A pole's wall (`wall`, in `[pole]` and in `.ohlp` files): a thickness
 /// (a hollow pole) or the word `"solid"` (no hollow).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PoleWall {

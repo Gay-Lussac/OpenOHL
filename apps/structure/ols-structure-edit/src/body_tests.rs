@@ -14,12 +14,12 @@ use super::*;
 use crate::body::{set_symmetry, symmetry_option};
 
 const EMPTY: &str =
-    "format = \"ols-structure\"\nversion = 2\nid = \"G\"\nname = \"g\"\nkind = \"lattice\"\n";
+    "format = \"ohl-structure\"\nversion = 2\nid = \"G\"\nname = \"g\"\nkind = \"lattice\"\n";
 
 fn read(doc: &DocumentMut) -> StructureType {
     let text = doc.to_string();
     let t =
-        StructureType::parse(Path::new("g.olss"), &text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+        StructureType::parse(Path::new("g.ohls"), &text).unwrap_or_else(|e| panic!("{e}\n{text}"));
     body::check(&t).unwrap();
     t
 }
@@ -519,7 +519,7 @@ fn generator_records_round_trip() {
         "[[symmetry]]\nmirror = \"z\"\n",
         "[[symmetry]]\nmirror = \"x\"\ngroup = [\"a\"]\n",
     ] {
-        let t = StructureType::parse(Path::new("g.olss"), &format!("{EMPTY}{bad}")).unwrap();
+        let t = StructureType::parse(Path::new("g.ohls"), &format!("{EMPTY}{bad}")).unwrap();
         assert!(body::check(&t).is_err(), "{bad}");
         assert!(
             StructureFile::parse(&format!("{EMPTY}{bad}"), None).is_err(),

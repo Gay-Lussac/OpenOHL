@@ -357,15 +357,15 @@ impl StructureApp {
             .as_ref()
             .and_then(|f| f.path())
             .and_then(Path::file_name)
-            .map_or("structure.olss".into(), |n| {
+            .map_or("structure.ohls".into(), |n| {
                 n.to_string_lossy().into_owned()
             });
         if let Some(p) = rfd::FileDialog::new()
-            .add_filter("Structure", &["olss"])
+            .add_filter("Structure", &["ohls"])
             .set_file_name(name)
             .save_file()
         {
-            self.save(Some(&p.with_extension("olss")));
+            self.save(Some(&p.with_extension("ohls")));
         }
     }
 

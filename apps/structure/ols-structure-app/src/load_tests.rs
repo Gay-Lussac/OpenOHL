@@ -72,7 +72,7 @@ fn row(h: &Harness<'static, StructureApp>, case: &str, load: usize, label: &str)
 /// a case added and removed likewise.
 #[test]
 fn a_load_row_is_added_and_undone() {
-    let path = copy_of("type-02.olss", "add");
+    let path = copy_of("type-02.ohls", "add");
     let mut h = harness(&path);
     let before = h.state().file.as_ref().unwrap().text();
     menu(&mut h, "Load cases", "Load recipes…");
@@ -113,7 +113,7 @@ fn a_load_row_is_added_and_undone() {
 /// "no line value"; the values of the cases themselves are there.
 #[test]
 fn opened_alone_the_line_values_are_missing() {
-    let path = copy_of("type-02.olss", "alone");
+    let path = copy_of("type-02.ohls", "alone");
     let mut h = harness(&path);
     menu(&mut h, "Load cases", "Load table…");
     assert_eq!(h.state_mut().focused(), Some(Panel::LoadTable));
@@ -140,7 +140,7 @@ fn opened_alone_the_line_values_are_missing() {
 /// is saved beside the file and read back with it.
 #[test]
 fn a_typed_value_is_kept_after_evaluating_again() {
-    let path = copy_of("type-02.olss", "typed");
+    let path = copy_of("type-02.ohls", "typed");
     let mut h = harness(&path);
     menu(&mut h, "Load cases", "Load recipes…");
     let r = row(&h, "wind", 1, "A1");
@@ -191,7 +191,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
 /// The table written as CSV and read back is the same table.
 #[test]
 fn the_table_goes_out_and_back_as_csv() {
-    let path = copy_of("type-02.olss", "csv");
+    let path = copy_of("type-02.ohls", "csv");
     let mut h = harness(&path);
     menu(&mut h, "Load cases", "Load recipes…");
     let r = row(&h, "ice, unbalanced", 1, "A11");
@@ -232,7 +232,7 @@ fn the_table_goes_out_and_back_as_csv() {
 /// the reactions, the usage shown.
 #[test]
 fn results_of_a_typed_case() {
-    let path = copy_of("type-02.olss", "results");
+    let path = copy_of("type-02.ohls", "results");
     let mut h = harness(&path);
     menu(&mut h, "Load cases", "Load recipes…");
     for (label, force) in [

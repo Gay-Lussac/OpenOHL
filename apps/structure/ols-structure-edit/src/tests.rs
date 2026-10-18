@@ -40,7 +40,7 @@ node = "N3"
 "#;
 
 fn read(doc: &DocumentMut) -> StructureType {
-    StructureType::parse(Path::new("p.olss"), &doc.to_string()).unwrap()
+    StructureType::parse(Path::new("p.ohls"), &doc.to_string()).unwrap()
 }
 
 fn examples() -> PathBuf {
@@ -162,7 +162,7 @@ fn insulators_are_made_from_the_library_saved_and_deleted() {
     let lib_dir = std::env::temp_dir().join(format!("ols-edit-ins-{}", std::process::id()));
     std::fs::create_dir_all(&lib_dir).unwrap();
     std::fs::write(
-        lib_dir.join("D.olsi"),
+        lib_dir.join("D.ohli"),
         "id = \"D\"\nname = \"dead end\"\nkind = \"strain\"\nlength = \"4 m\"\nweight = \"1 kN\"\n",
     )
     .unwrap();
@@ -175,7 +175,7 @@ fn insulators_are_made_from_the_library_saved_and_deleted() {
     assert!(t.strings.iter().find(|x| x.label == s3).unwrap().strain);
     // Saved to the library: a strain assembly of its length and weight.
     let text = assembly_text(&t, &g, &lib, &s3, "D2").unwrap();
-    let back = ols_structures::InsulatorAssembly::parse(Path::new("D2.olsi"), &text).unwrap();
+    let back = ols_structures::InsulatorAssembly::parse(Path::new("D2.ohli"), &text).unwrap();
     assert_eq!(back.kind, ols_structures::AssemblyKind::Strain);
     assert!((back.length.si() - 4.0).abs() < 1e-9 && (back.weight.si() - 1000.0).abs() < 1e-9);
     // The V's leg: a V-string assembly, half width from its tops.
@@ -239,7 +239,7 @@ fn insulator_fields_are_changed() {
 /// is. The tables offer the four kinds.
 #[test]
 fn a_tension_only_member_raises_the_version() {
-    let mut doc: DocumentMut = format!("format = \"ols-structure\"\nversion = 3\n{PYLON}")
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 3\n{PYLON}")
         .parse()
         .unwrap();
     set_member_kind(&mut doc, "M1", "frame");
@@ -265,7 +265,7 @@ fn a_tension_only_member_raises_the_version() {
 /// the library with them.
 #[test]
 fn insulator_limits_are_edited() {
-    let mut doc: DocumentMut = format!("format = \"ols-structure\"\nversion = 2\n{PYLON}")
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 2\n{PYLON}")
         .parse()
         .unwrap();
     let t = read(&doc);
@@ -293,7 +293,7 @@ fn insulator_limits_are_edited() {
     assert_eq!(l.max_swing_deg, Some(60.0));
     assert_eq!(l.max_swing_across_deg, Some(55.5));
     assert_eq!(l.max_swing_along_deg, Some(30.0));
-    // Saved to the library: its limits go along (an .olsi version 2).
+    // Saved to the library: its limits go along (an .ohli version 2).
     let g = geometry(&t, &none);
     let olsi = assembly_text(&t, &g, &none, &s, "lim").unwrap();
     assert!(
@@ -469,7 +469,7 @@ fn name_height_foot_and_extensions_are_edited() {
 /// Comments and the order of the file stay through edits.
 #[test]
 fn comments_are_kept() {
-    let mut f = example("type-02.olss");
+    let mut f = example("type-02.ohls");
     f.edit("support", |doc, _| set_support(doc, "L0A", Some("fixed")));
     let text = f.text();
     assert!(text.contains("# The pylon (invented, NOT a real design)"));
@@ -530,7 +530,7 @@ fn edits_are_undone_and_redone() {
 fn saved_and_saved_as() {
     let dir = std::env::temp_dir().join(format!("ols-edit-save-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.olss");
+    let path = dir.join("p.ohls");
     std::fs::write(&path, PYLON).unwrap();
     let mut f = StructureFile::open(&path).unwrap();
     assert!(!f.dirty());
@@ -543,7 +543,7 @@ fn saved_and_saved_as() {
             .unwrap()
             .contains("support = \"fixed\"")
     );
-    let other = dir.join("q.olss");
+    let other = dir.join("q.ohls");
     f.save(Some(&other)).unwrap();
     assert_eq!(f.path(), Some(other.as_path()));
     // A text that does not read: kept, the structure as it was, not saved.
@@ -574,7 +574,7 @@ fn level_items(m: &[Missing]) -> Vec<&str> {
 /// advice without members.
 #[test]
 fn missing_for_level_two_of_a_stick_figure() {
-    let f = example("type-01.olss");
+    let f = example("type-01.ohls");
     let t = f.structure();
     assert_eq!(t.detail(), Detail::Stick);
     assert_eq!(next_level(t.detail()), Some(2));
@@ -589,7 +589,7 @@ fn missing_for_level_two_of_a_stick_figure() {
 /// X-braces crossing without a joint, not for the arms.
 #[test]
 fn a_full_design_needs_nothing_but_gets_advice() {
-    let f = example("type-02.olss");
+    let f = example("type-02.ohls");
     let t = f.structure();
     assert_eq!(t.detail(), Detail::Design);
     assert_eq!(next_level(t.detail()), None);
@@ -611,7 +611,7 @@ fn a_full_design_needs_nothing_but_gets_advice() {
 /// member what level 3 lacks, each item picking its member.
 #[test]
 fn missing_for_level_three_names_each_member() {
-    let mut f = example("type-02.olss");
+    let mut f = example("type-02.ohls");
     f.edit("strip", |doc, t| {
         for m in &t.members {
             set_member_section(doc, &m.id, None);
@@ -671,7 +671,7 @@ fn crossing_members_are_found() {
          [[member]]\nid = \"M3\"\nnodes = [\"N4\", \"N5\"]\n\n\
          [[member]]\nid = \"M4\"\nnodes = [\"N6\", \"N7\"]\n"
     );
-    let t = StructureType::parse(Path::new("p.olss"), &text).unwrap();
+    let t = StructureType::parse(Path::new("p.ohls"), &text).unwrap();
     let m = missing(&t, 2);
     let crossing: Vec<&str> = m
         .iter()
@@ -693,7 +693,7 @@ fn ids_follow_the_last() {
 /// it; nothing far away.
 #[test]
 fn picked_on_the_screen() {
-    let t = StructureType::parse(Path::new("p.olss"), PYLON).unwrap();
+    let t = StructureType::parse(Path::new("p.ohls"), PYLON).unwrap();
     let g = geometry(&t, &InsulatorLibrary::default());
     // Seen from the front, 10 px per metre, z up.
     let project = |p: [f64; 3]| Some([100.0 + 10.0 * p[0], 400.0 - 10.0 * p[2]]);

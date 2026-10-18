@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Poles (`*.olsp`, one pole per file) and the pole check.
+//! Poles (`*.ohlp`, one pole per file) and the pole check.
 //!
 //! A pole is a tapered shaft: its diameter (or circumference) at the
 //! ground line and at the top, the length above ground being `length −
@@ -12,7 +12,7 @@
 //! table of capacities by height.
 //!
 //! ```toml
-//! format = "ols-pole"
+//! format = "ohl-pole"
 //! version = 1
 //! id = "wood-14m"
 //! name = "Wood pole 14 m (invented)"
@@ -37,7 +37,7 @@
 //! (`[pole]`, [`ols_structures::pole`]): its outline by height, round or
 //! polygonal, and the same level 3 fields. [`structure_pole`] reads
 //! either into the same [`Pole`] ([`Pole::from_inline`]); a two-height
-//! outline from the ground line gives exactly the `.olsp` taper.
+//! outline from the ground line gives exactly the `.ohlp` taper.
 //!
 //! **Check** ([`check_pole`]): at heights from the ground line to the top,
 //! the bending moment of the factored loads above (r × F about the pole
@@ -60,11 +60,11 @@ use crate::solve::{FeError, Loads, Options, solve};
 use crate::units::Moment;
 
 /// `format` of a pole file.
-pub const POLE_FILE_FORMAT: &str = "ols-pole";
+pub const POLE_FILE_FORMAT: &str = "ohl-pole";
 /// Newest format version read.
 pub const POLE_FILE_VERSION: u32 = 1;
 /// File extension of poles.
-pub const POLE_FILE_EXTENSION: &str = "olsp";
+pub const POLE_FILE_EXTENSION: &str = "ohlp";
 
 /// Pole material.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -219,10 +219,10 @@ impl Pole {
     /// The pole a structure file describes (`[pole]`), its id `id`: the
     /// outline's heights above the feet (`foot`, local z) give the
     /// diameters by height above the ground line; the level 3 fields read
-    /// as in a `.olsp` file. A `section` of `library` (a polygonal or
+    /// as in a `.ohlp` file. A `section` of `library` (a polygonal or
     /// circular hollow section) gives the wall (unless `wall` is typed: a
     /// thickness, or solid), and its material the elasticity and density
-    /// not given. Checked as a `.olsp` pole.
+    /// not given. Checked as a `.ohlp` pole.
     pub fn from_inline(
         id: &str,
         name: &str,
@@ -242,7 +242,7 @@ impl Pole {
         let (first, last) = (rings[0], rings[rings.len() - 1]);
         let height = last.0;
         let ground = p.diameter_at(foot).expect("an outline");
-        // The plain taper from the ground line: no profile (the .olsp
+        // The plain taper from the ground line: no profile (the .ohlp
         // formula); anything else by height.
         let profile = if rings.len() == 2 && first.0.abs() < 1e-9 {
             Vec::new()
@@ -482,9 +482,9 @@ impl Pole {
 }
 
 /// The pole of structure `t` for the pole check (none: it has none): its
-/// `[pole]` table ([`Pole::from_inline`]), or the `.olsp` file it names —
-/// by file name when the name ends in `.olsp`, else by id among the
-/// `.olsp` files of `dir` (the structure file's folder).
+/// `[pole]` table ([`Pole::from_inline`]), or the `.ohlp` file it names —
+/// by file name when the name ends in `.ohlp`, else by id among the
+/// `.ohlp` files of `dir` (the structure file's folder).
 pub fn structure_pole(
     t: &StructureType,
     dir: &Path,
@@ -492,18 +492,20 @@ pub fn structure_pole(
 ) -> Option<Result<Pole, String>> {
     Some(match t.pole.as_ref()? {
         PoleRef::Inline(p) => Pole::from_inline(&t.id, &t.name, p, t.foot_level(), library),
-        PoleRef::File(name) if name.ends_with(&format!(".{POLE_FILE_EXTENSION}")) => {
+        PoleRef::File(name)
+            if ols_core::files::has_extension(Path::new(name), POLE_FILE_EXTENSION) =>
+        {
             Pole::load(&dir.join(name))
         }
         PoleRef::File(id) => load_poles(dir).and_then(|list| {
             list.into_iter().find(|p| &p.id == id).ok_or_else(|| {
-                format!("pole {id}: no .olsp file with this id in {}", dir.display())
+                format!("pole {id}: no .ohlp file with this id in {}", dir.display())
             })
         }),
     })
 }
 
-/// Every pole (`*.olsp`) of a directory, sorted by file name.
+/// Every pole (`*.ohlp`) of a directory, sorted by file name.
 pub fn load_poles(dir: &Path) -> Result<Vec<Pole>, String> {
     let mut out: Vec<Pole> = Vec::new();
     for path in ols_core::files::files_with_extension(dir, POLE_FILE_EXTENSION) {

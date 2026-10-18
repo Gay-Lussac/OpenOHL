@@ -4,7 +4,7 @@
 
 //! The edits of a structure's pole (`[pole]`, `ols_structures::pole`):
 //! its outline rows (height, diameter), its shape, its level 3 fields,
-//! and a named `.olsp` pole brought into the file. Each is one function
+//! and a named `.ohlp` pole brought into the file. Each is one function
 //! on the file's text (one undo step through
 //! [`crate::StructureFile::edit`]); comments and the rest stay.
 
@@ -73,7 +73,7 @@ fn outline(t: &StructureType) -> Vec<(f64, f64)> {
 /// the highest step, its diameter between. Its row (or why not).
 pub fn add_outline_row(doc: &mut DocumentMut, t: &StructureType) -> Result<usize, String> {
     if matches!(t.pole, Some(PoleRef::File(_))) {
-        return Err("the pole is a .olsp file: bring it into this file first".into());
+        return Err("the pole is a .ohlp file: bring it into this file first".into());
     }
     let rings = outline(t);
     let foot = t.foot_level();
@@ -193,7 +193,7 @@ pub fn set_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Result<(), 
         return Err(format!("pole: no field {field}"));
     }
     let typed = typed.trim();
-    let t = table(doc).ok_or("the pole is a .olsp file: bring it into this file first")?;
+    let t = table(doc).ok_or("the pole is a .ohlp file: bring it into this file first")?;
     if typed.is_empty() {
         t.remove(field);
         return Ok(());
@@ -229,7 +229,7 @@ pub fn is_solid(doc: &DocumentMut) -> bool {
 /// stays).
 pub fn set_solid(doc: &mut DocumentMut, solid: bool) -> Result<(), String> {
     if solid {
-        let t = table(doc).ok_or("the pole is a .olsp file: bring it into this file first")?;
+        let t = table(doc).ok_or("the pole is a .ohlp file: bring it into this file first")?;
         t.insert("wall", toml_edit::value(SOLID));
     } else if is_solid(doc)
         && let Some(t) = doc.get_mut("pole").and_then(Item::as_table_mut)
@@ -239,12 +239,12 @@ pub fn set_solid(doc: &mut DocumentMut, solid: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Removes the pole (its table, or the `.olsp` named).
+/// Removes the pole (its table, or the `.ohlp` named).
 pub fn remove_pole(doc: &mut DocumentMut) {
     doc.remove("pole");
 }
 
-/// Brings the `.olsp` pole named by `pole = "id"` into the file (`text`:
+/// Brings the `.ohlp` pole named by `pole = "id"` into the file (`text`:
 /// that file's text): its diameters at the ground line and the top
 /// become a two-height outline from the feet, its other fields are
 /// copied (the pole check gives the same numbers).
@@ -316,7 +316,7 @@ pub fn bring_in(doc: &mut DocumentMut, t: &StructureType, text: &str) -> Result<
     Ok(())
 }
 
-/// A text, number or truth value of a `.olsp` file as written here.
+/// A text, number or truth value of a `.ohlp` file as written here.
 fn plain(v: &toml::Value) -> Option<Item> {
     match v {
         toml::Value::String(s) => Some(toml_edit::value(s.as_str())),

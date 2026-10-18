@@ -804,7 +804,7 @@ mod tests {
     fn example() -> Line {
         Line::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+                .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
         )
         .unwrap()
     }

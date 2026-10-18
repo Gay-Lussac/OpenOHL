@@ -681,7 +681,7 @@ mod tests {
             "initial = [0.0, 1800.0, -120.0, 30.0, -5.0, 0.0, 0.0]",
         );
         let mut library = Library::default();
-        library.add_toml(Path::new("t.olsw"), &text).unwrap();
+        library.add_toml(Path::new("t.ohlw"), &text).unwrap();
         let six = Mechanics::from_cable(library.get("synthetic").unwrap()).unwrap();
         let four = Mechanics::from_cable(&cable()).unwrap();
         let state = MaterialState::Initial;
@@ -704,7 +704,7 @@ mod tests {
         .replace("final_modulus = 550.0", "final_modulus = 55000.0")
         .replace("max_strain = 0.9", "");
         let mut library = Library::default();
-        library.add_toml(Path::new("t.olsw"), &text).unwrap();
+        library.add_toml(Path::new("t.ohlw"), &text).unwrap();
     }
 
     #[test]

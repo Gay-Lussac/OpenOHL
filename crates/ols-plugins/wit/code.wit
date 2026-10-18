@@ -37,21 +37,21 @@ interface code-types {
         name: string,
         /// The window it is for.
         measure: clearance-measure,
-        /// The rules, as a clearance rule file (.olsr, TOML, format
-        /// `ols-clearance-rules`), with its `[wind]` and `[check]` tables
+        /// The rules, as a clearance rule file (.ohlr, TOML, format
+        /// `ohl-clearance-rules`), with its `[wind]` and `[check]` tables
         /// (the wind steps and sides, the circuits, the calculation
         /// method, the search distance).
         rules: string,
         /// The weather cases its rules name, as a weather case file
-        /// (.olswc, TOML).
+        /// (.ohlwc, TOML).
         weather-cases: string,
     }
 
     /// What a design code generated from a parameter file.
     record generated {
-        /// Weather cases, as a weather case file (.olswc, TOML).
+        /// Weather cases, as a weather case file (.ohlwc, TOML).
         weather-cases: string,
-        /// Load cases, as a load case file (.olslc, TOML); each names one
+        /// Load cases, as a load case file (.ohllc, TOML); each names one
         /// of the weather cases.
         load-cases: string,
         /// What was generated, assumed or left out (shown to the user).

@@ -1,0 +1,35 @@
+# Starter template: load cases for learning (INVENTED factors, not taken
+# from any design code): they only show the format. A design code's
+# combinations and partial factors are written in such a file from the
+# standard (Criteria › Design code).
+format = "ohl-load-cases"
+version = 1
+name = "Starter load cases (invented)"
+
+[[case]]
+name = "everyday"
+description = "still air, as strung"
+weather = "everyday"
+condition = "initial"
+tags = ["starter"]
+
+[[case]]
+name = "wind"
+description = "high wind, factored"
+weather = "high wind"
+condition = "initial"
+vertical = 1.0
+transverse = 1.4
+longitudinal = 1.0
+tags = ["starter"]
+
+[[case]]
+name = "ice"
+description = "glaze ice after creep, factored"
+weather = "glaze ice"
+condition = "creep"
+vertical = 1.3
+transverse = 1.0
+longitudinal = 1.0
+strength = 0.9
+tags = ["starter"]

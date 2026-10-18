@@ -5,7 +5,7 @@
 //! `ohl zones`: the check of the desktop application's **Vertical
 //! clearances…** and **Radial clearances…** windows without the window
 //! ([`ols_clearance::zone::run_zone_check`]): the zone, the rules, the
-//! wind and what is solved come from a rule file (`.olsr`, its `[check]`
+//! wind and what is solved come from a rule file (`.ohlr`, its `[check]`
 //! and `[wind]`), the targets from the project — its point cloud and its
 //! ground surface — or from files given.
 //!
@@ -36,9 +36,9 @@ const SURFACES_SETTING: &str = "app.surfaces";
 /// Arguments of `ohl zones`.
 #[derive(clap::Args, Clone)]
 pub struct ZonesArgs {
-    /// Line file (.ols.json) or project file (.ols).
+    /// Line file (.ohl.json) or project file (.ohl).
     pub file: PathBuf,
-    /// Clearance rules (.olsr; for a project, also the name of one of its
+    /// Clearance rules (.ohlr; for a project, also the name of one of its
     /// own): the rules of one measure (vertical or radial) with ground or
     /// LiDAR class targets; its `[check]` (circuits, method, search
     /// distance) and `[wind]` are used.
@@ -48,7 +48,7 @@ pub struct ZonesArgs {
     /// radial.
     #[arg(long)]
     pub measure: Option<String>,
-    /// Weather case file (.olswc; for a project, also the name of one of
+    /// Weather case file (.ohlwc; for a project, also the name of one of
     /// its own) (default: the file of the same name as the rule file, next
     /// to it or in a `weather` folder beside it — a design code's preset;
     /// else the project's weather case file used last, else its first).
@@ -58,7 +58,7 @@ pub struct ZonesArgs {
     /// default: every case of the rules).
     #[arg(long)]
     pub case: Vec<String>,
-    /// Point cloud: a project file (`FILE.ols` or `FILE.ols#name`) or a
+    /// Point cloud: a project file (`FILE.ohl` or `FILE.ohl#name`) or a
     /// COPC file (`FILE.copc.laz`) (default: the project's own cloud, if
     /// it holds one).
     #[arg(long)]
@@ -74,20 +74,20 @@ pub struct ZonesArgs {
     /// A terrain surface stored in the project, by name, as the ground.
     #[arg(long, conflicts_with = "terrain")]
     pub surface: Option<String>,
-    /// Class scheme (.olsc) of the LiDAR (default: the point cloud's own,
+    /// Class scheme (.ohlc) of the LiDAR (default: the point cloud's own,
     /// else ASPRS LAS 1.4): the classes of the rules' roles.
     #[arg(long)]
     pub lidar_classes: Option<PathBuf>,
-    /// Wire library: .olsw file or directory (default: a project's own,
+    /// Wire library: .ohlw file or directory (default: a project's own,
     /// else the shipped libraries/cables).
     #[arg(long)]
     pub library: Option<PathBuf>,
-    /// Structure type directory (.olss), for typed structures (default: a
+    /// Structure type directory (.ohls), for typed structures (default: a
     /// project's own, else the `Structures` folder next to the line or
     /// project file).
     #[arg(long)]
     pub structures: Option<PathBuf>,
-    /// Insulator assembly library directory (.olsi) (default: a project's
+    /// Insulator assembly library directory (.ohli) (default: a project's
     /// own, else the shipped libraries/insulators).
     #[arg(long)]
     pub insulators: Option<PathBuf>,
@@ -211,7 +211,7 @@ fn cloud_of(args: &ZonesArgs) -> Option<String> {
         return None;
     }
     args.cloud.clone().or_else(|| {
-        let is_project = args.file.extension().is_some_and(|e| e == "ols");
+        let is_project = ols_core::files::is_project_file(&args.file);
         let has = is_project
             && ols_pointcloud::Store::open(&args.file)
                 .and_then(|s| s.clouds())

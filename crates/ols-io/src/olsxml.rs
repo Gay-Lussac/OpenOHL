@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OLS XML: the whole line model as XML (namespace [`NAMESPACE`], schema
-//! `docs/schema/ols-line.xsd`), the same content as a line file
-//! (`.ols.json`) — written and read back without loss.
+//! OHL XML: the whole line model as XML (namespace [`NAMESPACE`], schema
+//! `docs/schema/ohl-line.xsd`), the same content as a line file
+//! (`.ohl.json`) — written and read back without loss.
 //!
 //! Names follow the line file: an object is an element, its plain values
 //! are attributes with the JSON key's name, points are `x`, `y`, `z`
 //! attributes, lists are repeated child elements. Absent optional values
-//! are absent attributes. See `docs/schema/ols-line.md`.
+//! are absent attributes. See `docs/schema/ohl-line.md`.
 
 use std::fmt::Write as _;
 
@@ -24,8 +24,13 @@ use ols_line::{
 use crate::xml::{Element, attribute as attr};
 use crate::{ExportModel, Exporter, Importer, Options};
 
-/// The XML namespace of OLS XML line documents.
-pub const NAMESPACE: &str = "urn:ols-cad:ols-line:1";
+/// The XML namespace of OHL XML line documents.
+pub const NAMESPACE: &str = "urn:openohl:ohl-line:1";
+
+/// The namespace of OLS XML documents of before 2026-10-18, when OLS XML
+/// became OHL XML: read as the current one (as are documents in no
+/// namespace).
+pub const LEGACY_NAMESPACE: &str = "urn:ols-cad:ols-line:1";
 
 /// A number as written (shortest text that reads back to the same value).
 fn num(x: f64) -> String {
@@ -847,7 +852,7 @@ fn write_system(out: &mut String, s: &System) {
     out.push_str("  </system>\n");
 }
 
-/// The line as an OLS XML document.
+/// The line as an OHL XML document.
 pub fn to_xml(line: &Line) -> String {
     let Line {
         format,
@@ -1766,17 +1771,17 @@ fn read_system(e: &Element) -> Result<System, String> {
     })
 }
 
-/// Reads an OLS XML document (the line is not validated here).
+/// Reads an OHL XML document (the line is not validated here).
 pub fn from_xml(text_: &str) -> Result<Line, String> {
     let root = crate::xml::parse(text_)?;
     from_element(&root)
 }
 
-/// Reads the line of a parsed OLS XML document.
+/// Reads the line of a parsed OHL XML document.
 pub fn from_element(root: &Element) -> Result<Line, String> {
     if root.name != "line" {
         return Err(format!(
-            "not an OLS XML line: root element <{}> (expected <line>)",
+            "not an OHL XML line: root element <{}> (expected <line>)",
             root.name
         ));
     }
@@ -1912,10 +1917,12 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         Some(version),
         ols_line::LINE_FILE_FORMAT,
         ols_line::LINE_FILE_VERSION,
-        "OLS XML line",
+        "OHL XML line",
     )?;
     let mut line = Line {
-        format: owned(root, "format").unwrap_or_else(|| ols_line::LINE_FILE_FORMAT.into()),
+        // Checked above (the id of before 2026-10-18 is read too); the
+        // current one is kept.
+        format: ols_line::LINE_FILE_FORMAT.into(),
         version,
         bimetallic,
         solver,
@@ -1987,15 +1994,15 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     Ok(line)
 }
 
-/// The OLS XML format (export and import; an import replaces the line).
+/// The OHL XML format (export and import; an import replaces the line).
 pub struct OlsXml;
 
 impl Exporter for OlsXml {
     fn id(&self) -> &str {
-        "ols-xml"
+        "ohl-xml"
     }
     fn description(&self) -> &str {
-        "The whole line model as OLS XML (docs/schema/ols-line.xsd)"
+        "The whole line model as OHL XML (docs/schema/ohl-line.xsd)"
     }
     fn extension(&self) -> &str {
         "xml"
@@ -2007,10 +2014,10 @@ impl Exporter for OlsXml {
 
 impl Importer for OlsXml {
     fn id(&self) -> &str {
-        "ols-xml"
+        "ohl-xml"
     }
     fn description(&self) -> &str {
-        "A line from OLS XML; LandXML (alignments, CgPoints) is recognised too"
+        "A line from OHL XML; LandXML (alignments, CgPoints) is recognised too"
     }
     fn extension(&self) -> &str {
         "xml"
@@ -2028,7 +2035,7 @@ impl Importer for OlsXml {
         }
         if let Some(app) = root.child("creator").and_then(|c| c.attr("application")) {
             return Err(format!(
-                "an XML report of {app}, not an OLS XML line: open it with File › New project \
+                "an XML report of {app}, not an OHL XML line: open it with File › New project \
                  from another program (a project plugin reading {app} reports)"
             ));
         }

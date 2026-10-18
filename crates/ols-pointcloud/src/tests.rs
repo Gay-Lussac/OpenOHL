@@ -77,7 +77,7 @@ fn store_returns_exactly_the_tiles_points() {
     write_tile(&dir.join("a.laz"), 0.0, 70.0);
     write_tile(&dir.join("b.laz"), 70.0, 50.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, stats) = store
         .import_tiles(
@@ -140,7 +140,7 @@ fn several_clouds_and_newer_schema() {
     let dir = scratch("clouds");
     write_tile(&dir.join("a.laz"), 0.0, 10.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let mut store = Store::open(&db).unwrap();
     for name in ["2023", "2025"] {
         store
@@ -178,7 +178,7 @@ fn points_per_grid_tile() {
     // Points over x 0–120 m, y 0–40 m (a tile of 120 × 40 m).
     write_tile(&dir.join("a.laz"), 0.0, 120.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -229,7 +229,7 @@ fn a_rectangle_gives_exactly_its_points() {
     let dir = scratch("rect");
     write_tile(&dir.join("a.laz"), 0.0, 120.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -285,7 +285,7 @@ fn damaged_block_counts_error_cleanly() {
     let dir = scratch("damaged");
     write_tile(&dir.join("a.laz"), 0.0, 10.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -331,7 +331,7 @@ fn tile_extents_cover_chunks_across_tile_borders() {
     let dir = scratch("extents");
     write_tile(&dir.join("a.laz"), 0.0, 120.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -407,7 +407,7 @@ fn export_and_import_again_give_the_same_points() {
     write_tile(&dir.join("a.laz"), 0.0, 60.0);
     write_high_classes(&dir.join("b.las"));
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -432,7 +432,7 @@ fn export_and_import_again_give_the_same_points() {
     assert_eq!(stats.points_visited, cloud.points);
     assert_eq!(last, (cloud.points, cloud.points));
     // Imported again into another project: the same points.
-    let db2 = dir.join("again.ols");
+    let db2 = dir.join("again.ohl");
     let mut again = Store::open(&db2).unwrap();
     let (cloud2, _) = again
         .import_tiles(
@@ -489,7 +489,7 @@ fn any_chunk_size_far_from_the_origin() {
     let dir = scratch("odd-chunk");
     write_tile(&dir.join("a.laz"), 2_600_000.0, 40.0);
     let tiles = ols_lidar::tiles_in(&dir).unwrap();
-    let db = dir.join("project.ols");
+    let db = dir.join("project.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -713,7 +713,7 @@ fn copc_written_and_read_back() {
     assert_eq!(root, f.nodes[0].points);
     assert!(root < f.points / 2);
     // A COPC file is a LAZ file: it imports as one.
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
         .import_tiles(
@@ -771,7 +771,7 @@ fn copc_written_and_read_back() {
 #[test]
 fn levels_of_detail_are_stored_and_read() {
     let dir = scratch("lod");
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let points = synthetic(2_600_000.0, 200, 100);
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
@@ -909,7 +909,7 @@ fn levels_of_detail_are_stored_and_read() {
 fn nodes_read_by_level_of_detail() {
     use crate::octree::{LodReader, Refine};
     let dir = scratch("nodes");
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let points = synthetic(2_600_000.0, 300, 120);
     let mut store = Store::open(&db).unwrap();
     store
@@ -964,7 +964,7 @@ fn lod_speed() {
     use crate::octree::{LodLimits, LodView};
     use std::time::Instant;
     let dir = scratch("speed");
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     std::fs::remove_file(&db).ok();
     // 2.5 km × 1.25 km at 0.5 m: 12.5 million points, twice (two strips).
     let mut store = Store::open(&db).unwrap();
@@ -1034,7 +1034,7 @@ fn lod_speed() {
 #[test]
 fn a_stored_cloud_exports_to_copc() {
     let dir = scratch("to-copc");
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     let points = synthetic(2_600_000.0, 120, 60);
     let mut store = Store::open(&db).unwrap();
     let (cloud, _) = store
@@ -1087,7 +1087,7 @@ fn a_stored_cloud_exports_to_copc() {
 #[test]
 fn a_cloud_moves_into_another_coordinate_system() {
     let dir = scratch("reproject");
-    let db = dir.join("p.ols");
+    let db = dir.join("p.ohl");
     std::fs::remove_file(&db).ok();
     let mut store = Store::open(&db).unwrap();
     let pts = synthetic(2_600_000.0, 100, 60);

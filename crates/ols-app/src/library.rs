@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Library editors: wires (`.olsw`), insulator assemblies (`.olsi`),
-//! structure types (`.olss`) and weather cases (`.olswc`). One editor for
+//! Library editors: wires (`.ohlw`), insulator assemblies (`.ohli`),
+//! structure types (`.ohls`) and weather cases (`.ohlwc`). One editor for
 //! all of them: the file is edited as TOML (`toml_edit`, so comments and
 //! layout stay), every field as text with its units (`"28.1 mm"`), with
 //! the known fields of each kind to add. A change is checked at once with
@@ -21,15 +21,15 @@ use crate::model::Sources;
 /// A kind of library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LibraryKind {
-    /// Wires and cables (`.olsw`, several per file).
+    /// Wires and cables (`.ohlw`, several per file).
     Cables,
-    /// Insulator assemblies (`.olsi`, one per file).
+    /// Insulator assemblies (`.ohli`, one per file).
     Insulators,
-    /// Structure types (`.olss`, one per file).
+    /// Structure types (`.ohls`, one per file).
     StructureTypes,
-    /// Weather cases (`.olswc`, several per file).
+    /// Weather cases (`.ohlwc`, several per file).
     WeatherCases,
-    /// Load cases (`.olslc`, several per file).
+    /// Load cases (`.ohllc`, several per file).
     LoadCases,
 }
 
@@ -177,19 +177,19 @@ const LOAD_CASE: &[Field] = &[
 ];
 
 const LOAD_FILE: &[Field] = &[
-    ("format", "\"ols-load-cases\"", "file format"),
+    ("format", "\"ohl-load-cases\"", "file format"),
     ("version", "1", "format version"),
     ("name", "\"Load cases\"", "name of the set (e.g. the code)"),
 ];
 
 const WEATHER_FILE: &[Field] = &[
-    ("format", "\"ols-weather-cases\"", "file format"),
+    ("format", "\"ohl-weather-cases\"", "file format"),
     ("version", "1", "format version"),
     ("name", "\"Weather cases\"", "name of the set"),
 ];
 
 const INSULATOR: &[Field] = &[
-    ("format", "\"ols-insulator\"", "file format"),
+    ("format", "\"ohl-insulator\"", "file format"),
     ("version", "1", "format version"),
     (
         "id",
@@ -562,22 +562,22 @@ impl LibraryKind {
     pub fn template(self, id: &str) -> String {
         match self {
             LibraryKind::Cables => format!(
-                "# OpenOHL wire library (.olsw)\nformat = \"ols-wire\"\nversion = 1\n\n{}",
+                "# OpenOHL wire library (.ohlw)\nformat = \"ohl-wire\"\nversion = 1\n\n{}",
                 self.item_template(id)
             ),
             LibraryKind::WeatherCases => format!(
-                "# OpenOHL weather cases (.olswc)\nformat = \"ols-weather-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
+                "# OpenOHL weather cases (.ohlwc)\nformat = \"ohl-weather-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
                 self.item_template("everyday")
             ),
             LibraryKind::LoadCases => format!(
-                "# OpenOHL load cases (.olslc)\nformat = \"ols-load-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
+                "# OpenOHL load cases (.ohllc)\nformat = \"ohl-load-cases\"\nversion = 1\nname = \"{id}\"\n\n{}",
                 self.item_template("everyday")
             ),
             LibraryKind::Insulators => format!(
-                "format = \"ols-insulator\"\nversion = 1\nid = \"{id}\"\nname = \"{id}\"\nkind = \"suspension\"\nlength = \"4.5 m\"\nweight = \"1500 N\"\n"
+                "format = \"ohl-insulator\"\nversion = 1\nid = \"{id}\"\nname = \"{id}\"\nkind = \"suspension\"\nlength = \"4.5 m\"\nweight = \"1500 N\"\n"
             ),
             LibraryKind::StructureTypes => format!(
-                "format = \"ols-structure\"\nversion = 1\nid = \"{id}\"\nname = \"{id}\"\nkind = \"lattice\"\n\n[[attachment]]\nset = 1\nphase = 1\nlabel = \"\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\nstring = {{ length = \"4 m\", weight = \"1000 N\" }}\n"
+                "format = \"ohl-structure\"\nversion = 1\nid = \"{id}\"\nname = \"{id}\"\nkind = \"lattice\"\n\n[[attachment]]\nset = 1\nphase = 1\nlabel = \"\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\nstring = {{ length = \"4 m\", weight = \"1000 N\" }}\n"
             ),
         }
     }
@@ -972,7 +972,10 @@ impl LibraryPage {
                 ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
             ui.separator();
-            let filter = (kind.title(), [kind.extension()]);
+            let filter = (
+                kind.title(),
+                ols_core::files::open_extensions(kind.extension()),
+            );
             let start = kind.new_file_dir(sources);
             // An empty library: browsing starts at the examples shipped
             // with the program.
@@ -1986,14 +1989,14 @@ mod tests {
     #[test]
     fn edits_keep_comments_and_are_checked() {
         let dir = temp("weather");
-        let path = dir.join("cases.olswc");
+        let path = dir.join("cases.ohlwc");
         std::fs::copy(
-            root().join("examples/synthetic-line/weather-cases.olswc"),
+            root().join("examples/synthetic-line/weather-cases.ohlwc"),
             &path,
         )
         .unwrap();
         let sources = Sources {
-            file: dir.join("line.ols.json"),
+            file: dir.join("line.ohl.json"),
             weather: Some(path.clone()),
             ..Sources::default()
         };
@@ -2028,15 +2031,15 @@ mod tests {
     fn new_files_and_items() {
         let dir = temp("wires");
         let sources = Sources {
-            file: dir.join("line.ols.json"),
+            file: dir.join("line.ohl.json"),
             library: Some(dir.clone()),
             ..Sources::default()
         };
         let mut page = LibraryPage::new(LibraryKind::Cables, &sources);
         assert!(page.files.is_empty());
-        page.create_at(&sources, &dir.join("my-wires.olsw"))
+        page.create_at(&sources, &dir.join("my-wires.ohlw"))
             .unwrap();
-        assert_eq!(page.files, vec![dir.join("my-wires.olsw")]);
+        assert_eq!(page.files, vec![dir.join("my-wires.ohlw")]);
         page.add_item(true);
         assert_eq!(page.items(), vec!["my-wires", "my-wires-1"]);
         assert!(page.error.is_none(), "{:?}", page.error);
@@ -2044,7 +2047,7 @@ mod tests {
         let lib = ols_cables::Library::load(&dir).unwrap();
         assert!(lib.get("my-wires-1").is_some());
         // Browsed from elsewhere: listed and opened; used for the model.
-        let other = temp("wires-elsewhere").join("theirs.olsw");
+        let other = temp("wires-elsewhere").join("theirs.ohlw");
         std::fs::write(&other, LibraryKind::Cables.template("theirs")).unwrap();
         page.add_file(&other);
         assert_eq!(page.file.as_deref(), Some(other.as_path()));
@@ -2081,7 +2084,7 @@ mod tests {
         ] {
             assert!(locked.iter().any(|x| x == k), "{k} locked");
         }
-        kind.check(Path::new("x.olsw"), &doc.to_string()).unwrap();
+        kind.check(Path::new("x.ohlw"), &doc.to_string()).unwrap();
         // Non-linear: the outer curves; with a core, its own.
         let cable = doc
             .get_mut("cable")
@@ -2160,9 +2163,9 @@ mod tests {
         add_for_model(cable, "nonlinear");
         assert!(required(kind, "cable", cable, None).contains(&"max_virtual_compression".into()));
         let text = doc.to_string();
-        kind.check(Path::new("x.olsw"), &text).unwrap();
+        kind.check(Path::new("x.ohlw"), &text).unwrap();
         let mut lib = ols_cables::Library::default();
-        lib.add_toml(Path::new("x.olsw"), &text).unwrap();
+        lib.add_toml(Path::new("x.ohlw"), &text).unwrap();
         let c = lib.iter().next().unwrap();
         assert!(
             c.outer.stress_strain.is_some() && c.core.as_ref().unwrap().stress_strain.is_some()

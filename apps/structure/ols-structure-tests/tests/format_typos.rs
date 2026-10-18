@@ -32,15 +32,15 @@ fn with_typo(text: &str, after: &str) -> String {
 type Parse = fn(&str) -> Result<(), String>;
 
 fn in_structure(text: &str) -> Result<(), String> {
-    let s = StructureType::parse(Path::new("x.olss"), text).map_err(|e| e.to_string())?;
+    let s = StructureType::parse(Path::new("x.ohls"), text).map_err(|e| e.to_string())?;
     StructureLoadCases::from_structure(&s).map(drop)
 }
 
 #[test]
 fn structure_load_cases_refuse_a_mistyped_key() {
-    let file = std::fs::read_to_string(ex().join("structure-load-cases.olsslc")).unwrap();
+    let file = std::fs::read_to_string(ex().join("structure-load-cases.ohlslc")).unwrap();
     StructureLoadCases::parse(&file).unwrap();
-    let structure = std::fs::read_to_string(ex().join("Structures/type-02.olss")).unwrap();
+    let structure = std::fs::read_to_string(ex().join("Structures/type-02.ohls")).unwrap();
     in_structure(&structure).unwrap();
     let cases: [(String, Parse); 5] = [
         (with_typo(&file, "version"), |t| {

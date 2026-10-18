@@ -11,7 +11,7 @@
 
 use std::process::Command;
 
-const MODEL: &str = r#"format = "ols-structure-model"
+const MODEL: &str = r#"format = "ohl-structure-model"
 version = 2
 [analysis]
 nonlinear = false
@@ -75,7 +75,7 @@ fn an_unsettled_model_solves_flagged_approximate() {
     let dir = std::env::temp_dir().join(format!("ols-fe-unsettled-{}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("kinked.olsfe");
+    let file = dir.join("kinked.ohlfe");
     std::fs::write(&file, MODEL).unwrap();
     let csv = dir.join("members.csv");
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))

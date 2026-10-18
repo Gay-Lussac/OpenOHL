@@ -12,7 +12,7 @@ use super::*;
 fn typed() -> Line {
     Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line-typed.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line-typed.ohl.json"),
     )
     .unwrap()
 }
@@ -21,7 +21,7 @@ fn project(name: &str, line: &Line) -> Session {
     let dir =
         std::env::temp_dir().join(format!("ols-session-{}-replace-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let mut s = Session::open(&path).unwrap();
     s.import(line, "ana").unwrap();

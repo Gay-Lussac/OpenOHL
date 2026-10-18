@@ -8,7 +8,7 @@
 //!
 //! ```json
 //! {
-//!   "format": "ols-structure-line-values",
+//!   "format": "ohl-structure-line-values",
 //!   "version": 3,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
@@ -38,7 +38,7 @@ use crate::recipe::LineQuantity;
 use crate::table::LineValues;
 
 /// `format` of a line-values file.
-pub const LINE_VALUES_FILE_FORMAT: &str = "ols-structure-line-values";
+pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `version` of a line-values file (2: `sources`; 3: `missing`; older
 /// files are read too).
 pub const LINE_VALUES_FILE_VERSION: u32 = 3;
@@ -99,7 +99,7 @@ pub fn incomplete_text(missing: &[MissingWire], case: &str) -> Option<String> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaseSource {
-    /// A load case of the line (`.olslc`, from a file or a design code):
+    /// A load case of the line (`.ohllc`, from a file or a design code):
     /// a weather case, a wire condition and factors.
     #[default]
     LoadCase,

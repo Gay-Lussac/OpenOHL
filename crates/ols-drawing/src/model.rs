@@ -100,20 +100,20 @@ impl Layer {
     /// Layer name in DXF.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Frame => "OLS_FRAME",
-            Self::Title => "OLS_TITLE",
-            Self::Logo => "OLS_LOGO",
-            Self::Grid => "OLS_GRID",
-            Self::Labels => "OLS_LABELS",
-            Self::Panels => "OLS_PANELS",
-            Self::Centreline => "OLS_CENTRELINE",
-            Self::Ground => "OLS_GROUND",
-            Self::GroundSide => "OLS_GROUND_SIDE",
-            Self::Clearance => "OLS_CLEARANCE",
-            Self::Structures => "OLS_STRUCTURES",
-            Self::Wires => "OLS_WIRES",
-            Self::Markers => "OLS_MARKERS",
-            Self::Match => "OLS_MATCH",
+            Self::Frame => "OHL_FRAME",
+            Self::Title => "OHL_TITLE",
+            Self::Logo => "OHL_LOGO",
+            Self::Grid => "OHL_GRID",
+            Self::Labels => "OHL_LABELS",
+            Self::Panels => "OHL_PANELS",
+            Self::Centreline => "OHL_CENTRELINE",
+            Self::Ground => "OHL_GROUND",
+            Self::GroundSide => "OHL_GROUND_SIDE",
+            Self::Clearance => "OHL_CLEARANCE",
+            Self::Structures => "OHL_STRUCTURES",
+            Self::Wires => "OHL_WIRES",
+            Self::Markers => "OHL_MARKERS",
+            Self::Match => "OHL_MATCH",
         }
     }
 

@@ -15,8 +15,8 @@ use ols_structures_fe::{Loads, Model, NodalLoad, Pole, PoleLoad};
 /// Arguments of `ohl structures fe`.
 #[derive(clap::Args)]
 pub struct FeArgs {
-    /// Structure model: a structure type holding its members (.olss) or a
-    /// model file (.olsfe).
+    /// Structure model: a structure type holding its members (.ohls) or a
+    /// model file (.ohlfe).
     model: PathBuf,
     /// Structure loads (CSV of `ohl line --loads-csv`): the factored loads
     /// at the attachments, applied at the model's attachment nodes
@@ -44,7 +44,7 @@ pub struct FeArgs {
     /// Write every member of every case as CSV.
     #[arg(long)]
     csv: Option<PathBuf>,
-    /// Section library (.olssec file or folder): a member's section is
+    /// Section library (.ohlsec file or folder): a member's section is
     /// looked up there first, then in the model's [[section]] tables.
     #[arg(long)]
     sections: Option<PathBuf>,
@@ -67,13 +67,13 @@ pub struct FeArgs {
 /// Arguments of `ohl structures pole`.
 #[derive(clap::Args)]
 pub struct PoleArgs {
-    /// Pole (.olsp); none: the structure type's own pole (its `[pole]`
-    /// table, or the `.olsp` it names).
+    /// Pole (.ohlp); none: the structure type's own pole (its `[pole]`
+    /// table, or the `.ohlp` it names).
     pole: Option<PathBuf>,
-    /// Structure type (.olss): where the attachments are.
+    /// Structure type (.ohls): where the attachments are.
     #[arg(long = "type")]
     structure_type: PathBuf,
-    /// Section library (.olssec file or folder): a `[pole]`'s section.
+    /// Section library (.ohlsec file or folder): a `[pole]`'s section.
     #[arg(long)]
     sections: Option<PathBuf>,
     /// Structure loads (CSV of `ohl line --loads-csv`).
@@ -380,7 +380,7 @@ pub fn pole(args: &PoleArgs) -> Result<(), String> {
                 .unwrap_or(Path::new("."))
                 .to_path_buf();
             ols_structures_fe::pole::structure_pole(&t, &dir, &sections)
-                .ok_or_else(|| format!("type {} has no pole: give a .olsp file", t.id))??
+                .ok_or_else(|| format!("type {} has no pole: give a .ohlp file", t.id))??
         }
     };
     let side = match args.wind_from.as_str() {

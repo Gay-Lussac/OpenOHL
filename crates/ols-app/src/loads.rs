@@ -213,7 +213,7 @@ impl LoadsPage {
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
                 "no load case file: Criteria › Load cases library (the project's own, or a \
-                 .olslc file next to a line file)"
+                 .ohllc file next to a line file)"
                     .into(),
             ));
             return;
@@ -345,7 +345,7 @@ impl LoadsPage {
             ui.label("No load case file yet: the structure loads are computed for its cases.");
             ui.label(
                 egui::RichText::new(
-                    "Add one in the Load cases library (Criteria menu): Browse… for a .olslc \
+                    "Add one in the Load cases library (Criteria menu): Browse… for a .ohllc \
                      file, or New file… from a template.",
                 )
                 .small()

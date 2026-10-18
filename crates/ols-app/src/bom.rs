@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! File › Bill of materials › Cables: the wire lengths of each cable and
-//! their stringing, priced with a cost file (`.olscost`), computed in the
+//! their stringing, priced with a cost file (`.ohlcost`), computed in the
 //! background from the model as it is; the model is not changed. CSV
 //! export. (The bill also counts structures, insulators and hardware;
 //! those parts are not offered yet.)
@@ -125,10 +125,13 @@ impl BomWindow {
             ui.strong(name);
             if ui
                 .button("Choose…")
-                .on_hover_text("Unit costs (.olscost)")
+                .on_hover_text("Unit costs (.ohlcost)")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Unit costs", &[ols_bom::cost::COST_FILE_EXTENSION])
+                    .add_filter(
+                        "Unit costs",
+                        &ols_core::files::open_extensions(ols_bom::cost::COST_FILE_EXTENSION),
+                    )
                     .pick_file()
             {
                 self.cost_path = Some(p);

@@ -1130,7 +1130,7 @@ fn clamps_are_drawn_to_their_shape_and_across_a_bundle() {
     // A 2-bundle 0.4 m apart: one bar between its subconductors.
     let line = ols_line::Line::load(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .unwrap();
     let mut sec = line.sections[0].clone();

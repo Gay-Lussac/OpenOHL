@@ -154,7 +154,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             title: "Cables",
             done: !model.library.is_empty(),
             detail: if model.library.is_empty() {
-                "the wire library is empty: add or import a cable file (.olsw)".into()
+                "the wire library is empty: add or import a cable file (.ohlw)".into()
             } else {
                 count(model.library.len(), "cable", "cables")
             },
@@ -192,7 +192,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             detail: if model.sources.weather.is_some() {
                 count(model.cases.len(), "weather case", "weather cases")
             } else {
-                "only still air at 15 °C: add a weather case file (.olswc)".into()
+                "only still air at 15 °C: add a weather case file (.ohlwc)".into()
             },
             go: Go::Library(LibraryKind::WeatherCases),
             link: "Open the weather cases library",
@@ -204,7 +204,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             detail: if model.sources.load_cases.is_some() {
                 "for the structure loads (Checks › Compute structure loads)".into()
             } else {
-                "none: the structure loads need a load case file (.olslc)".into()
+                "none: the structure loads need a load case file (.ohllc)".into()
             },
             go: Go::Library(LibraryKind::LoadCases),
             link: "Open the load cases library",

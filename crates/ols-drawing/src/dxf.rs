@@ -131,7 +131,7 @@ pub fn write(d: &Drawing) -> String {
                     dashes.push(pattern.clone());
                     dashes.len() - 1
                 });
-                format!("OLS_DASH{}", k + 1)
+                format!("OHL_DASH{}", k + 1)
             }
         }
     };
@@ -294,7 +294,7 @@ pub fn write(d: &Drawing) -> String {
             elements.extend(pattern.iter().copied());
         }
         w.pair(0, "LTYPE");
-        w.pair(2, format!("OLS_DASH{}", k + 1));
+        w.pair(2, format!("OHL_DASH{}", k + 1));
         w.pair(70, 0);
         let text: Vec<String> = pattern.iter().map(f64::to_string).collect();
         w.pair(3, format!("dashes {} mm", text.join(" ")));
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(lines, vec![vec![10.0]]);
         // y flipped: 50 − 20.
         assert_eq!(values(&pairs, "LINE", 21), vec![vec![30.0]]);
-        assert!(text.contains("OLS_DASH1") && text.contains("AC1009"));
+        assert!(text.contains("OHL_DASH1") && text.contains("AC1009"));
         assert!(pairs.last().is_some_and(|p| p.1 == "EOF"));
         assert_eq!(dxf_text("1+250 – T3 ×2"), "1+250 \\U+2013 T3 \\U+00D72");
     }

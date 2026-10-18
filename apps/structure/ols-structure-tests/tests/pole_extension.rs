@@ -4,7 +4,7 @@
 
 //! The structure application's pole and extension edits with the core:
 //! the example pole brought into its structure file is checked by the
-//! core's pole check with the `.olsp` numbers; a generated body standing
+//! core's pole check with the `.ohlp` numbers; a generated body standing
 //! on an extension piece built by the application (and a leg made
 //! longer) is solved by the core's model, the reactions on the piece.
 
@@ -25,19 +25,19 @@ fn structures() -> std::path::PathBuf {
 }
 
 fn read(doc: &DocumentMut) -> StructureType {
-    StructureType::parse(Path::new("g.olss"), &doc.to_string()).unwrap()
+    StructureType::parse(Path::new("g.ohls"), &doc.to_string()).unwrap()
 }
 
 #[test]
 fn the_example_pole_brought_in_checks_the_same() {
     let dir = structures();
-    let text = std::fs::read_to_string(dir.join("type-05.olss")).unwrap();
-    let named = StructureType::parse(&dir.join("type-05.olss"), &text).unwrap();
+    let text = std::fs::read_to_string(dir.join("type-05.ohls")).unwrap();
+    let named = StructureType::parse(&dir.join("type-05.ohls"), &text).unwrap();
     let lib = ols_sections::SectionLibrary::default();
     let olsp = structure_pole(&named, &dir, &lib).unwrap().unwrap();
-    assert_eq!(olsp, Pole::load(&dir.join("steel-pole-30m.olsp")).unwrap());
+    assert_eq!(olsp, Pole::load(&dir.join("steel-pole-30m.ohlp")).unwrap());
     let mut doc: DocumentMut = text.parse().unwrap();
-    let pole_text = std::fs::read_to_string(dir.join("steel-pole-30m.olsp")).unwrap();
+    let pole_text = std::fs::read_to_string(dir.join("steel-pole-30m.ohlp")).unwrap();
     pole_edit::bring_in(&mut doc, &named, &pole_text).unwrap();
     let t = read(&doc);
     assert_eq!(t.detail(), Detail::Design);

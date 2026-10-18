@@ -414,8 +414,11 @@ async fn receive_file(
             .map_err(|e| e.to_string())?;
     }
     // The replica's own files (an older copy) go first.
-    for ext in ["ols-wal", "ols-shm"] {
-        let _ = tokio::fs::remove_file(file.with_extension(ext)).await;
+    let ext = file
+        .extension()
+        .map_or(String::new(), |e| e.to_string_lossy().into_owned());
+    for log in ["wal", "shm"] {
+        let _ = tokio::fs::remove_file(file.with_extension(format!("{ext}-{log}"))).await;
     }
     let mut out = tokio::fs::File::create(file)
         .await

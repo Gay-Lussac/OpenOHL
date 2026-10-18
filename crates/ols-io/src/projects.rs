@@ -171,7 +171,7 @@ pub struct CreatedProject {
 }
 
 /// Reads another program's file (format: `format`, else the extension)
-/// into a new project `into` (`.ols` added): the line and its library
+/// into a new project `into` (`.ohl` added): the line and its library
 /// files, the sections clipped in if asked. Refused if the project file
 /// exists.
 pub fn create_project(
@@ -183,7 +183,7 @@ pub fn create_project(
     user: &str,
     clip_in: bool,
 ) -> Result<CreatedProject, String> {
-    let into = into.with_extension("ols");
+    let into = into.with_extension(ols_core::files::PROJECT_EXTENSION);
     if into.exists() {
         return Err(format!("{} exists already", into.display()));
     }

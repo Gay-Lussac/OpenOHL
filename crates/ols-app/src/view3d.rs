@@ -87,7 +87,7 @@ struct Chunked {
 
 /// A point cloud streamed by node: its nodes on the GPU, those drawn.
 struct Streamed {
-    /// The cloud (`FILE.ols`, `FILE.ols#name` or a COPC file).
+    /// The cloud (`FILE.ohl`, `FILE.ohl#name` or a COPC file).
     spec: String,
     octree: crate::octree::PointOctree,
     cache: NodeCache<GpuScene>,

@@ -19,7 +19,7 @@ use ols_structures_fe::{Loads, Model, NodalLoad};
 use toml_edit::DocumentMut;
 
 fn read(doc: &DocumentMut) -> StructureType {
-    StructureType::parse(Path::new("g.olss"), &doc.to_string()).unwrap()
+    StructureType::parse(Path::new("g.ohls"), &doc.to_string()).unwrap()
 }
 
 fn generator(id: &str, kind: Kind) -> Generator {

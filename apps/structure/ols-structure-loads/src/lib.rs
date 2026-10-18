@@ -13,10 +13,10 @@
 //! **where** (points by label, set, phase or side, or members with a
 //! pressure on their area). Kept in the structure file as
 //! `[[load_case]]`, or on their own in a structure load-case file
-//! (`.olsslc`) for export and import:
+//! (`.ohlslc`) for export and import:
 //!
 //! ```toml
-//! format = "ols-structure-load-cases"
+//! format = "ohl-structure-load-cases"
 //! version = 1
 //!
 //! [[load_case]]

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Clearances of solved wires (DESIGN_GOALS §13): **vertical and radial**
-//! clearances by rule (`.olsr`, [`rules`]) to the ground, to points of
+//! clearances by rule (`.ohlr`, [`rules`]) to the ground, to points of
 //! chosen classes (LiDAR), to wires of other lines and to other wires of
 //! the same line ([`checks`]); the checks of one weather case as the
 //! command line and the application run them ([`case`]); the lowest
@@ -64,7 +64,7 @@ mod tests {
     fn example() -> (Line, ols_cables::Library) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let line =
-            Line::load(&root.join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
         (line, library)
     }

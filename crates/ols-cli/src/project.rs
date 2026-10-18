@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `ohl project …`: the project file (`.ols`) through the session.
+//! `ohl project …`: the project file (`.ohl`) through the session.
 
 use std::path::{Path, PathBuf};
 
@@ -11,12 +11,12 @@ use ols_session::{Applied, Command, Kind, Role, Session};
 
 #[derive(Subcommand)]
 pub enum ProjectCommand {
-    /// Load a line file (.ols.json) into a project file (created if
+    /// Load a line file (.ohl.json) into a project file (created if
     /// missing; the first user becomes its admin).
     Import {
         /// Line file.
         line: PathBuf,
-        /// Project file (.ols).
+        /// Project file (.ohl).
         #[arg(long)]
         into: PathBuf,
         /// User name.
@@ -29,7 +29,7 @@ pub enum ProjectCommand {
     ImportFrom {
         /// The file.
         file: PathBuf,
-        /// New project file (.ols; must not exist).
+        /// New project file (.ohl; must not exist).
         #[arg(long)]
         into: PathBuf,
         /// User (the project's admin).
@@ -50,13 +50,13 @@ pub enum ProjectCommand {
         clip_in: bool,
     },
     /// Read a file of any line format (see ohl formats: structure points
-    /// from CSV, GeoJSON or shapefiles, LandXML, OLS XML…) into a project
+    /// from CSV, GeoJSON or shapefiles, LandXML, OHL XML…) into a project
     /// file: a new project gets the line, one holding a line gets it
     /// updated (structures moved or added, the route) — one logged command.
     ImportFile {
         /// The file.
         file: PathBuf,
-        /// Project file (.ols; created if missing).
+        /// Project file (.ohl; created if missing).
         #[arg(long)]
         into: PathBuf,
         /// User (the admin of a new project).
@@ -73,7 +73,7 @@ pub enum ProjectCommand {
         #[arg(long)]
         plugin: Vec<PathBuf>,
     },
-    /// Write the project's line as a line file (.ols.json).
+    /// Write the project's line as a line file (.ohl.json).
     Export {
         /// Project file.
         project: PathBuf,
@@ -468,9 +468,9 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether `path` names a project file (`.ols`).
+/// Whether `path` names a project file (`.ohl`).
 pub fn is_project(path: &Path) -> bool {
-    path.extension().is_some_and(|e| e == "ols")
+    ols_core::files::is_project_file(path)
 }
 
 /// Opens an existing project file to read it (one that is missing is not
@@ -731,7 +731,7 @@ fn working_folder(file: &Path) -> PathBuf {
     ))
 }
 
-/// Loads a line from a line file or a project file (`.ols`).
+/// Loads a line from a line file or a project file (`.ohl`).
 pub fn load_line(path: &Path) -> Result<ols_line::Line, String> {
     if is_project(path) {
         let s = open_existing(path)?;

@@ -232,7 +232,7 @@ mod tests {
     use ols_core::units::{ForcePerLength, Temperature};
     use std::path::Path;
 
-    const SYNTHETIC: &str = include_str!("../tests/data/synthetic-cable.olsw");
+    const SYNTHETIC: &str = include_str!("../tests/data/synthetic-cable.ohlw");
 
     fn cable() -> ols_cables::Cable {
         let mut library = Library::default();

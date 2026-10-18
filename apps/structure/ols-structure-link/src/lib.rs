@@ -126,7 +126,7 @@ impl StructureCases {
 }
 
 /// The cases the line sends to the placed structures as `choice` says
-/// (the line's `structure_loads`): of `load_cases` (the line's `.olslc`)
+/// (the line's `structure_loads`): of `load_cases` (the line's `.ohllc`)
 /// those chosen (all by default), then each weather case chosen on its own
 /// ([`LoadCase::from_weather`]: `weather: <name>`, all factors 1; named
 /// `weather case: <name>` if a load case has that name), in the order of
@@ -303,7 +303,7 @@ pub fn missing_wires(loads: &[CaseLoads], structure: &str) -> Vec<MissingWire> {
         .collect()
 }
 
-/// The section library at `path` (a `.olssec` file, or every one of a
+/// The section library at `path` (a `.ohlsec` file, or every one of a
 /// folder); a folder that is not there is an empty library.
 pub fn section_library(path: &Path) -> Result<SectionLibrary, String> {
     if !path.exists() {
@@ -312,13 +312,13 @@ pub fn section_library(path: &Path) -> Result<SectionLibrary, String> {
     SectionLibrary::load(path)
 }
 
-/// A pole file's (`.olsp`) id, read and checked as the pole check reads
+/// A pole file's (`.ohlp`) id, read and checked as the pole check reads
 /// it; or why it does not read (the application's Libraries panel).
 pub fn pole_file_id(text: &str) -> Result<String, String> {
     ols_structures_fe::Pole::parse(text).map(|p| p.id)
 }
 
-/// A structure model file's (`.olsfe`) name, read with the section library
+/// A structure model file's (`.ohlfe`) name, read with the section library
 /// `sections` as the finite-element check reads it; or why it does not
 /// read (the application's Libraries panel).
 pub fn model_file_name(text: &str, sections: &SectionLibrary) -> Result<String, String> {
@@ -338,7 +338,7 @@ pub struct SectionAreas {
 
 impl SectionAreas {
     /// The areas of `structure` (`text`: its file's text, `dir`: its
-    /// folder, for a `model = "….olsfe"` it names) with `sections`.
+    /// folder, for a `model = "….ohlfe"` it names) with `sections`.
     pub fn new(
         structure: &StructureType,
         text: &str,
@@ -542,7 +542,7 @@ impl CaseResult {
 pub type CaseRun = (String, Result<CaseResult, String>);
 
 /// The finite-element model of `structure`: its own members, or the
-/// `model = "….olsfe"` it names (beside the file, in `dir`); `text` is the
+/// `model = "….ohlfe"` it names (beside the file, in `dir`); `text` is the
 /// structure file's text. A member's section is looked up in `sections`
 /// first.
 fn model_of(

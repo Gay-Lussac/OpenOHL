@@ -39,10 +39,10 @@ fn synthetic() -> model::Model {
     solved_all(
         model::load(
             Sources {
-                file: ex.join("synthetic-line.ols.json"),
+                file: ex.join("synthetic-line.ohl.json"),
                 library: Some(root().join("libraries/cables")),
                 terrain: Some(ex.join("synthetic-survey.csv")),
-                weather: Some(ex.join("weather-cases.olswc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 ..Sources::default()
@@ -610,9 +610,9 @@ fn synthetic_project_with(name: &str, edit: impl FnOnce(&mut ols_line::Line)) ->
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ols-app-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
-    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
     edit(&mut line);
     ols_session::Session::open(&path)
         .unwrap()
@@ -623,8 +623,8 @@ fn synthetic_project_with(name: &str, edit: impl FnOnce(&mut ols_line::Line)) ->
             Sources {
                 file: path,
                 library: Some(root().join("libraries/cables")),
-                weather: Some(ex.join("weather-cases.olswc")),
-                load_cases: Some(ex.join("load-cases.olslc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
+                load_cases: Some(ex.join("load-cases.ohllc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 user: Some("tester".into()),
@@ -1220,7 +1220,7 @@ fn the_checks_menu_runs_the_clearance_check() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let r = harness.state_mut().ready().unwrap();
-    assert!(r.clearances.files[0].ends_with("clearance-rules.olsr"));
+    assert!(r.clearances.files[0].ends_with("clearance-rules.ohlr"));
     let rep = r.clearances.report.clone().unwrap().unwrap();
     assert_eq!(r.view3d.marks.len(), rep.findings.len());
     // Rules for other lines and across cases are noted, not run.
@@ -1251,7 +1251,7 @@ fn the_checks_menu_opens_the_galloping_window() {
         r.galloping
             .file
             .as_ref()
-            .is_some_and(|f| f.ends_with("galloping-example.olsg"))
+            .is_some_and(|f| f.ends_with("galloping-example.ohlg"))
     );
     r.galloping.case = r
         .model
@@ -1321,7 +1321,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
         assert!(
             w.file
                 .as_ref()
-                .is_some_and(|f| f.ends_with("synthetic-line.vertical-clearances.olsr")),
+                .is_some_and(|f| f.ends_with("synthetic-line.vertical-clearances.ohlr")),
             "{:?}",
             w.file
         );
@@ -1330,7 +1330,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
         assert!(w.why_not_run().is_some());
         w.rules.clear();
         // Kept in a scratch folder, not next to the example.
-        w.file = Some(dir.join("rules.olsr"));
+        w.file = Some(dir.join("rules.ohlr"));
         w.wind = ols_clearance::WindSteps {
             stepped: true,
             step: 200.0,
@@ -1390,7 +1390,7 @@ fn the_radial_clearances_window_keeps_its_rules() {
     open_clearance_window(&mut harness, "Radial clearances…");
     let dir = std::env::temp_dir().join(format!("ols-app-{}-zones-r", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("rules.olsr");
+    let file = dir.join("rules.ohlr");
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.radial_clearances.open && !r.vertical_clearances.open);
@@ -1516,7 +1516,7 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
     points.push(point([mid[0], mid[1], mid[2] - 3.0], 5));
     let dir = std::env::temp_dir().join(format!("ols-app-{}-scan", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("scan.ols");
+    let file = dir.join("scan.ohl");
     std::fs::remove_file(&file).ok();
     ols_pointcloud::Store::open(&file)
         .unwrap()
@@ -1904,10 +1904,10 @@ fn a_saved_library_reaches_the_model() {
     use crate::library::{LibraryKind, PageAction};
     let mut model = synthetic_project("library");
     let dir = model.sources.file.parent().unwrap().to_path_buf();
-    let weather = dir.join("cases.olswc");
+    let weather = dir.join("cases.ohlwc");
     std::fs::write(
         &weather,
-        "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n",
+        "format = \"ohl-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n",
     )
     .unwrap();
     model.sources.weather = Some(weather.clone());
@@ -1932,7 +1932,7 @@ fn a_saved_library_reaches_the_model() {
     // A second case written, as the page saves it.
     std::fs::write(
         &weather,
-        "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n\n[[case]]\nname = \"hot\"\ntemperature = \"60 °C\"\n",
+        "format = \"ohl-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"cold\"\ntemperature = \"-10 °C\"\n\n[[case]]\nname = \"hot\"\ntemperature = \"60 °C\"\n",
     )
     .unwrap();
     let r = harness.state_mut().ready().unwrap();
@@ -1955,13 +1955,13 @@ fn a_browsed_library_is_used_for_the_model_only_when_it_loads() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     let r = harness.state_mut().ready().unwrap();
-    let theirs = dir.join("theirs.olsw");
+    let theirs = dir.join("theirs.ohlw");
     std::fs::write(&theirs, LibraryKind::Cables.template("theirs")).unwrap();
     r.library_saved(LibraryKind::Cables, PageAction::UseForModel(theirs));
     assert!(r.status.as_ref().unwrap().1, "{:?}", r.status);
     assert_eq!(r.model.sources.library, before, "kept");
-    let good = dir.join("good.olsw");
-    std::fs::copy(root().join("libraries/cables/acsr-examples.olsw"), &good).unwrap();
+    let good = dir.join("good.ohlw");
+    std::fs::copy(root().join("libraries/cables/acsr-examples.ohlw"), &good).unwrap();
     r.library_saved(LibraryKind::Cables, PageAction::UseForModel(good.clone()));
     assert!(!r.status.as_ref().unwrap().1, "{:?}", r.status);
     assert_eq!(r.model.sources.library, Some(good));
@@ -2422,9 +2422,9 @@ fn alignment_points_are_edited_in_their_table() {
 fn the_weather_case_table_writes_its_file() {
     use crate::tables::TableKind;
     let mut model = synthetic_project("weather-table");
-    let path = model.sources.file.parent().unwrap().join("cases.olswc");
+    let path = model.sources.file.parent().unwrap().join("cases.ohlwc");
     std::fs::copy(
-        root().join("examples/synthetic-line/weather-cases.olswc"),
+        root().join("examples/synthetic-line/weather-cases.ohlwc"),
         &path,
     )
     .unwrap();
@@ -2796,7 +2796,7 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
 /// Weather case files of earlier versions: the wind side is dropped.
 #[test]
 fn old_weather_files_lose_the_wind_side() {
-    let old = "format = \"ols-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"w\"\ntemperature = \"15 °C\"\nwind_pressure = \"400 Pa\"\nwind_from = \"left\"\n";
+    let old = "format = \"ohl-weather-cases\"\nversion = 1\n\n[[case]]\nname = \"w\"\ntemperature = \"15 °C\"\nwind_pressure = \"400 Pa\"\nwind_from = \"left\"\n";
     let new = crate::model::without_wind_side(old).unwrap();
     assert!(!new.contains("wind_from") && new.contains("wind_pressure = \"400 Pa\""));
     assert!(crate::model::without_wind_side(&new).is_none());
@@ -2876,18 +2876,18 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(dir.join("Structures")).unwrap();
     let beside = [
-        ("rules", "clearance-rules.olsr"),
-        ("galloping", "galloping-example.olsg"),
-        ("ambient", "thermal-ambient.olsta"),
-        ("costs", "unit-costs.olscost"),
+        ("rules", "clearance-rules.ohlr"),
+        ("galloping", "galloping-example.ohlg"),
+        ("ambient", "thermal-ambient.ohlta"),
+        ("costs", "unit-costs.ohlcost"),
     ];
     for (_, name) in beside {
         std::fs::copy(ex.join(name), dir.join(name)).unwrap();
     }
     let structures = [
-        ("structures", "type-02.olss"),
-        ("femodels", "type-02-model.olsfe"),
-        ("poles", "steel-pole-30m.olsp"),
+        ("structures", "type-02.ohls"),
+        ("femodels", "type-02-model.ohlfe"),
+        ("poles", "steel-pole-30m.ohlp"),
     ];
     for (_, name) in structures {
         let to = dir.join("Structures").join(name);
@@ -2901,8 +2901,8 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     let structures_dir = dir.join("Structures");
     std::fs::write(structures_dir.join("type-02.T2.loads.csv"), typed).unwrap();
     std::fs::write(structures_dir.join("notes.csv"), "a,b\n").unwrap();
-    let file = dir.join("p.ols");
-    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    let file = dir.join("p.ohl");
+    let line = ols_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
     ols_session::Session::open(&file)
         .unwrap()
         .import(&line, "tester")
@@ -2912,7 +2912,7 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
             Sources {
                 file: file.clone(),
                 library: Some(root().join("libraries/cables")),
-                weather: Some(ex.join("weather-cases.olswc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 user: Some("tester".into()),
@@ -2952,11 +2952,11 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     let work = m.library_dir.clone().unwrap();
     assert_eq!(
         m.project_files("costs"),
-        [work.join("costs").join("unit-costs.olscost")]
+        [work.join("costs").join("unit-costs.ohlcost")]
     );
     assert!(
         work.join("structures")
-            .join("steel-pole-30m.olsp")
+            .join("steel-pole-30m.ohlp")
             .is_file()
     );
     // T2's typed loads come back from the project; T4's, saved in the
@@ -2970,11 +2970,11 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     let session = &m.editing.as_ref().unwrap().session;
     assert_eq!(session.library_files("loads").unwrap().len(), 2);
     let r = crate::clearance::Clearances::new(&m, None);
-    assert_eq!(r.files, [work.join("rules").join("clearance-rules.olsr")]);
+    assert_eq!(r.files, [work.join("rules").join("clearance-rules.ohlr")]);
     assert!(matches!(r.rules, Some(Ok(_))), "the only file chosen");
     // A rule file saved in the working copy goes into the project.
     let rules = std::fs::read_to_string(&r.files[0]).unwrap();
-    std::fs::write(work.join("rules").join("more.olsr"), &rules).unwrap();
+    std::fs::write(work.join("rules").join("more.ohlr"), &rules).unwrap();
     m.store_libraries().unwrap();
     let session = &mut m.editing.as_mut().unwrap().session;
     assert_eq!(session.library_files("rules").unwrap().len(), 2);
@@ -2984,12 +2984,12 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     let session = &mut m.editing.as_mut().unwrap().session;
     let changed = format!("# phase 1\n{rules}");
     session
-        .put_library_file("tester", "rules", "more.olsr", &changed)
+        .put_library_file("tester", "rules", "more.ohlr", &changed)
         .unwrap();
     m.refresh_project_libraries().unwrap();
     let read = |m: &model::Model| {
         let w = m.library_dir.clone().unwrap();
-        std::fs::read_to_string(w.join("rules").join("more.olsr")).unwrap()
+        std::fs::read_to_string(w.join("rules").join("more.ohlr")).unwrap()
     };
     assert_eq!(read(&m), changed);
     m.switch_line("main").unwrap();
@@ -3000,7 +3000,7 @@ fn the_project_keeps_its_rules_costs_poles_and_models() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// The section library (`.olssec`) in the `Sections/` folder next to the
+/// The section library (`.ohlsec`) in the `Sections/` folder next to the
 /// project is copied into it when it opens; then the project's copy is
 /// read (the folder gone), and a project without one has none.
 #[test]
@@ -3009,14 +3009,14 @@ fn the_project_keeps_its_section_library() {
     let dir = std::env::temp_dir().join(format!("ols-app-{}-sections", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(dir.join("Sections")).unwrap();
-    let name = "example-sections.olssec";
+    let name = "example-sections.ohlsec";
     std::fs::copy(
         root().join("libraries/sections").join(name),
         dir.join("Sections").join(name),
     )
     .unwrap();
-    let file = dir.join("p.ols");
-    let line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    let file = dir.join("p.ohl");
+    let line = ols_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
     ols_session::Session::open(&file)
         .unwrap()
         .import(&line, "tester")
@@ -3026,7 +3026,7 @@ fn the_project_keeps_its_section_library() {
             Sources {
                 file: file.clone(),
                 library: Some(root().join("libraries/cables")),
-                weather: Some(ex.join("weather-cases.olswc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 user: Some("tester".into()),
@@ -3055,7 +3055,7 @@ fn the_project_keeps_its_section_library() {
     assert!(out.join(name).is_file(), "exported with the others");
     drop(m);
     // Another project with no section library next to it: none.
-    let other = dir.join("q.ols");
+    let other = dir.join("q.ohl");
     ols_session::Session::open(&other)
         .unwrap()
         .import(&line, "tester")
@@ -3913,7 +3913,7 @@ fn files_are_created_opened_and_closed() {
     use crate::files::FileAction;
     let dir = std::env::temp_dir().join(format!("ols-app-{}-files", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("fresh.ols");
+    let path = dir.join("fresh.ohl");
     std::fs::remove_file(&path).ok();
     let created =
         crate::files::create_project(&dir.join("fresh"), "Fresh line", "EPSG:2056", "tester")
@@ -4617,7 +4617,7 @@ fn surveys_are_imported_and_exported() {
         "EPSG:2056",
         64.0,
         Some(
-            &std::fs::read_to_string(root().join("libraries/lidar-classes/asprs-las-1.4.olsc"))
+            &std::fs::read_to_string(root().join("libraries/lidar-classes/asprs-las-1.4.ohlc"))
                 .unwrap(),
         ),
         &|t, f| progress.borrow_mut().push((t, f)),
@@ -4644,7 +4644,7 @@ fn surveys_are_imported_and_exported() {
     let r = crate::survey_io::export(&file, None, &out, None, None, true, &|_, _| {}).unwrap();
     assert!(r.contains("32000 points"), "{r}");
     // The class scheme stored at import, next to it.
-    let olsc = std::fs::read_to_string(out.with_extension("olsc")).unwrap();
+    let olsc = std::fs::read_to_string(out.with_extension("ohlc")).unwrap();
     assert!(ols_lidar::ClassScheme::parse(&olsc).is_ok());
     let only = dir.join("veg.las");
     let r = crate::survey_io::export(
@@ -4659,7 +4659,7 @@ fn surveys_are_imported_and_exported() {
     .unwrap();
     // 100 columns of 160 points in 600–650 m, half of them vegetation.
     assert!(r.contains("8000 points"), "{r}");
-    assert!(!only.with_extension("olsc").exists());
+    assert!(!only.with_extension("ohlc").exists());
 }
 
 /// Terrain › Survey data opens the import window (export needs a point
@@ -4767,7 +4767,7 @@ fn sections_are_calculated_after_creep_or_load_as_chosen() {
 #[test]
 fn cable_models_and_bimetallic_curves_are_read() {
     let text = r#"
-format = "ols-wire"
+format = "ohl-wire"
 version = 1
 
 [[cable]]
@@ -4803,10 +4803,10 @@ creep_temperature_shift = 15.0
 outer = { area = "550 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
 "#;
     crate::library::LibraryKind::Cables
-        .check(std::path::Path::new("x.olsw"), text)
+        .check(std::path::Path::new("x.ohlw"), text)
         .unwrap();
     let mut lib = ols_cables::Library::default();
-    lib.add_toml(std::path::Path::new("x.olsw"), text).unwrap();
+    lib.add_toml(std::path::Path::new("x.ohlw"), text).unwrap();
     let b = lib.get("bimetallic").unwrap();
     assert!(b.outer.stress_strain.is_some() && b.core.as_ref().unwrap().stress_strain.is_some());
     assert_eq!(
@@ -4817,7 +4817,7 @@ outer = { area = "550 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
     let bad = text.replace("creep_temperature_shift = 15.0\n", "");
     assert!(
         crate::library::LibraryKind::Cables
-            .check(std::path::Path::new("x.olsw"), &bad)
+            .check(std::path::Path::new("x.ohlw"), &bad)
             .is_err()
     );
 }
@@ -5453,9 +5453,9 @@ fn weather_cases_are_solved_when_shown() {
     let ex = root().join("examples/synthetic-line");
     let model = model::load(
         Sources {
-            file: ex.join("synthetic-line.ols.json"),
+            file: ex.join("synthetic-line.ohl.json"),
             library: Some(root().join("libraries/cables")),
-            weather: Some(ex.join("weather-cases.olswc")),
+            weather: Some(ex.join("weather-cases.ohlwc")),
             point_budget: 1000,
             corridor: 60.0,
             ..Sources::default()
@@ -5656,15 +5656,15 @@ fn a_project_is_created_from_another_programs_file() {
     let ex = root().join("examples/synthetic-line");
     let bundle = serde_json::json!({
         "line": serde_json::from_str::<serde_json::Value>(
-            &std::fs::read_to_string(ex.join("synthetic-line.ols.json")).unwrap()).unwrap(),
+            &std::fs::read_to_string(ex.join("synthetic-line.ohl.json")).unwrap()).unwrap(),
         "libraries": [
-            {"kind": "cables", "name": "acsr-examples.olsw",
-             "text": std::fs::read_to_string(root().join("libraries/cables/acsr-examples.olsw")).unwrap()},
-            {"kind": "weather", "name": "weather-cases.olswc",
-             "text": std::fs::read_to_string(ex.join("weather-cases.olswc")).unwrap()},
+            {"kind": "cables", "name": "acsr-examples.ohlw",
+             "text": std::fs::read_to_string(root().join("libraries/cables/acsr-examples.ohlw")).unwrap()},
+            {"kind": "weather", "name": "weather-cases.ohlwc",
+             "text": std::fs::read_to_string(ex.join("weather-cases.ohlwc")).unwrap()},
         ],
     });
-    let file = tmp.join("line.olsb");
+    let file = tmp.join("line.ohlb");
     std::fs::write(&file, bundle.to_string()).unwrap();
     let mut app = App::empty(Sources::default(), None);
     app.plugins = crate::plugins::Plugins::load(None, None);
@@ -5677,7 +5677,7 @@ fn a_project_is_created_from_another_programs_file() {
     h.step();
     h.step();
     h.get_by_label("New project from another program");
-    let into = tmp.join("imported.ols");
+    let into = tmp.join("imported.ohl");
     h.state_mut()
         .plugins
         .create_project(crate::plugins::ProjectImport {
@@ -5721,7 +5721,7 @@ fn class_colours_come_from_a_scheme_file() {
     harness.state_mut().ready().unwrap().class_window = Some(Default::default());
     harness.run();
     harness.get_by_label_contains("Scheme: ");
-    let file = dir.join("mine.olsc");
+    let file = dir.join("mine.ohlc");
     {
         let r = harness.state_mut().ready().unwrap();
         set_color(&mut r.model.scheme, 2, Some("#123456".into()));
@@ -5851,7 +5851,7 @@ fn bill_of_materials_and_spotting_windows() {
     let ex = root().join("examples/synthetic-line");
     let model = model::load(
         Sources {
-            file: ex.join("synthetic-line-typed.ols.json"),
+            file: ex.join("synthetic-line-typed.ohl.json"),
             library: Some(root().join("libraries/cables")),
             structures: Some(ex.join("Structures")),
             terrain: Some(ex.join("synthetic-survey.csv")),
@@ -5882,7 +5882,7 @@ fn bill_of_materials_and_spotting_windows() {
             r.bom
                 .cost_path
                 .as_ref()
-                .is_some_and(|p| p.ends_with("unit-costs.olscost"))
+                .is_some_and(|p| p.ends_with("unit-costs.ohlcost"))
         );
         let e = r.bom.result.as_ref().unwrap().as_ref().unwrap();
         assert!(e.priced && e.missing.is_empty(), "{:?}", e.missing);
@@ -5962,9 +5962,9 @@ fn design_code_cases_go_into_the_project() {
     assert_eq!(names[0], "EN extreme wind");
     assert_eq!(names.len(), 6);
     let lc = r.model.sources.load_cases.clone().unwrap();
-    assert!(lc.ends_with("loadcases/en50341.olslc"), "{}", lc.display());
+    assert!(lc.ends_with("loadcases/en50341.ohllc"), "{}", lc.display());
     let session = &r.model.editing.as_ref().unwrap().session;
-    for (kind, name) in [("weather", "en50341.olswc"), ("loadcases", "en50341.olslc")] {
+    for (kind, name) in [("weather", "en50341.ohlwc"), ("loadcases", "en50341.ohllc")] {
         let files = session.library_files(kind).unwrap();
         assert!(files.iter().any(|(n, _)| n == name), "{kind}: {name}");
     }
@@ -5979,11 +5979,11 @@ fn design_code_cases_go_into_the_project() {
 fn design_code_clearance_presets_load_into_the_window() {
     use ols_plugins::{ClearanceMeasure, ClearancePreset};
     let mut r = crate::app::Ready::new(synthetic_project("clearance-preset"));
-    let w = "format = \"ols-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
-    let l = "format = \"ols-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"a\"\n";
-    let hot = "format = \"ols-weather-cases\"\nversion = 1\nname = \"p\"\n\
+    let w = "format = \"ohl-weather-cases\"\nversion = 1\n[[case]]\nname = \"a\"\ntemperature = \"5 °C\"\n";
+    let l = "format = \"ohl-load-cases\"\nversion = 1\n[[case]]\nname = \"x\"\nweather = \"a\"\n";
+    let hot = "format = \"ohl-weather-cases\"\nversion = 1\nname = \"p\"\n\
                [[case]]\nname = \"Preset 80 °C\"\ntemperature = \"80 °C\"\n";
-    let rules = "format = \"ols-clearance-rules\"\nversion = 1\nname = \"Code vertical\"\n\
+    let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"Code vertical\"\n\
                  [wind]\nsteps = false\nsides = \"both\"\n\
                  [check]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
                  [[rule]]\nname = \"roads\"\ntarget = \"points\"\nclasses = [11]\n\
@@ -6006,9 +6006,9 @@ fn design_code_clearance_presets_load_into_the_window() {
     // Written next to the generated cases' files in the project.
     let work = r.model.library_dir.clone().unwrap();
     let report = crate::codes::apply(&mut r, &g, "code").unwrap();
-    assert!(report.contains("code-vertical.olsr"), "{report}");
-    assert!(work.join("rules/code-vertical.olsr").is_file());
-    assert!(work.join("weather/code-vertical.olswc").is_file());
+    assert!(report.contains("code-vertical.ohlr"), "{report}");
+    assert!(work.join("rules/code-vertical.ohlr").is_file());
+    assert!(work.join("weather/code-vertical.ohlwc").is_file());
     // The model's cases are the generated ones ("a"): the preset's is
     // missing.
     assert!(!r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"));
@@ -6310,7 +6310,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     harness.get_by_label("Reproject project…").click();
     harness.run();
     assert!(harness.state_mut().ready().unwrap().crs.reproject.is_some());
-    let target = file.with_file_name("moved.ols");
+    let target = file.with_file_name("moved.ohl");
     std::fs::remove_file(&target).ok();
     {
         let s = ols_session::Session::open(&file).unwrap();
@@ -6537,7 +6537,7 @@ fn the_ground_is_built_from_the_classes_ticked() {
         ([3000, 0, 0], 6),
     ];
     model.class_counts = vec![(2, 40), (3, 10), (5, 7), (6, 2)];
-    model.cloud = Some("survey.ols".into());
+    model.cloud = Some("survey.ohl".into());
     let classes = crate::surfaces::lidar_classes(&model);
     assert_eq!(
         classes.iter().map(|c| (c.0, c.2)).collect::<Vec<_>>(),
@@ -6607,7 +6607,7 @@ fn surfaces_window_image() {
         (9, 3),
         (17, 4),
     ];
-    model.cloud = Some("survey.ols".into());
+    model.cloud = Some("survey.ohl".into());
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
@@ -7457,7 +7457,7 @@ fn surfaces_sections_image() {
     let mut model = synthetic_project("surfaces-sections");
     model.points = vec![([0, 0, 0], 2), ([1000, 0, 0], 5)];
     model.class_counts = vec![(2, 40), (5, 7)];
-    model.cloud = Some("survey.ols".into());
+    model.cloud = Some("survey.ohl".into());
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
@@ -8467,11 +8467,11 @@ fn exported_libraries_stay_in_their_folder() {
             "tester",
             ols_session::Command::Put {
                 kind: ols_session::Kind::Library,
-                id: "cables/../escaped.olsw".into(),
+                id: "cables/../escaped.ohlw".into(),
                 value: serde_json::json!({
-                    "id": "cables/../escaped.olsw",
+                    "id": "cables/../escaped.ohlw",
                     "kind": "cables",
-                    "name": "../escaped.olsw",
+                    "name": "../escaped.ohlw",
                     "text": "x"
                 }),
                 ord: None,
@@ -8482,7 +8482,7 @@ fn exported_libraries_stay_in_their_folder() {
     let err = model.export_libraries(&dir).unwrap_err();
     assert!(err.contains("not a plain file name"), "{err}");
     assert!(
-        !dir.join("escaped.olsw").exists() && !dir.parent().unwrap().join("escaped.olsw").exists()
+        !dir.join("escaped.ohlw").exists() && !dir.parent().unwrap().join("escaped.ohlw").exists()
     );
 }
 
@@ -8969,7 +8969,7 @@ fn the_structure_screen_shows_the_basics_left_of_the_pylon() {
     let ex = root().join("examples/synthetic-line");
     let model = model::load(
         Sources {
-            file: ex.join("synthetic-line-typed.ols.json"),
+            file: ex.join("synthetic-line-typed.ohl.json"),
             library: Some(root().join("libraries/cables")),
             structures: Some(ex.join("Structures")),
             point_budget: 1000,
@@ -9126,7 +9126,7 @@ fn edit_on_a_structure_without_a_file_makes_one_first() {
         .iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    assert!(args[0].ends_with("t3-pylon.olss"), "{args:?}");
+    assert!(args[0].ends_with("t3-pylon.ohls"), "{args:?}");
     let k = args.iter().position(|a| a == "--structure").unwrap();
     assert_eq!(args[k + 1], "T3");
 }
@@ -9681,7 +9681,7 @@ fn palettes_export_and_import() {
         description: "earth wires, 380 kV".into(),
     });
     let text = p.to_toml();
-    assert!(text.contains("format = \"ols-colors\""), "{text}");
+    assert!(text.contains("format = \"ohl-colors\""), "{text}");
     assert_eq!(Palette::parse(&text).unwrap(), p.entries);
     // Remembered.
     let mut storage = Memory::default();
@@ -9691,16 +9691,16 @@ fn palettes_export_and_import() {
     assert_eq!(Palette::load(&Memory::default()), Palette::default());
     // Refused.
     let e = Palette::parse("format = \"ols-colours\"\nversion = 1\n").unwrap_err();
-    assert!(e.contains("is not \"ols-colors\""), "{e}");
+    assert!(e.contains("is not \"ohl-colors\""), "{e}");
     // The header optional, as every format's.
     assert_eq!(Palette::parse("version = 1\n").unwrap(), Vec::new());
     assert!(
-        Palette::parse("format = \"ols-colors\"\nversion = 9\n")
+        Palette::parse("format = \"ohl-colors\"\nversion = 9\n")
             .unwrap_err()
             .contains("newer")
     );
     let e = Palette::parse(
-        "format = \"ols-colors\"\nversion = 1\n[[color]]\nname = \"a\"\ncolor = \"red\"\n\
+        "format = \"ohl-colors\"\nversion = 1\n[[color]]\nname = \"a\"\ncolor = \"red\"\n\
          [[color]]\ncolor = \"#123456\"\n",
     )
     .unwrap_err();
@@ -9712,12 +9712,12 @@ fn palettes_export_and_import() {
     // Through a file: refused, then replaced and added.
     let dir = std::env::temp_dir().join(format!("ols-colours-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let bad = dir.join("bad.olscolors");
+    let bad = dir.join("bad.ohlcolors");
     std::fs::write(&bad, "format = \"x\"\n").unwrap();
     let mut tool = ColorTool::new("t", None);
     tool.import_file(&bad);
     assert!(tool.status.as_ref().unwrap().1);
-    let file = dir.join("mine.olscolors");
+    let file = dir.join("mine.ohlcolors");
     p.write(&file).unwrap();
     let mut q = Palette {
         entries: vec![p.entries[0].clone()],
@@ -9754,9 +9754,9 @@ fn an_empty_project_gets_its_first_alignment_and_a_view() {
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ols-app-{}-empty", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
-    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+    let mut line = ols_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
     line.structures.clear();
     line.sections.clear();
     line.jumpers.clear();
@@ -10090,7 +10090,7 @@ fn descriptions_are_typed_and_shown_as_labels() {
 #[test]
 fn a_structure_type_opens_on_its_own() {
     let gpu = ols_render::headless_device().is_ok();
-    let file = root().join("examples/synthetic-line/Structures/type-02.olss");
+    let file = root().join("examples/synthetic-line/Structures/type-02.ohls");
     let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 950.0));
     if gpu {
         builder = builder.wgpu();
@@ -10397,19 +10397,19 @@ fn a_new_project_starts_empty_and_takes_weather_cases() {
     use crate::tables::TableKind;
     let dir = std::env::temp_dir().join(format!("ols-app-{}-fresh-libs", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("fresh.ols");
+    let path = dir.join("fresh.ohl");
     std::fs::remove_file(&path).ok();
     crate::files::create_project(&path, "Fresh line", "EPSG:2056", "tester").unwrap();
     // Library files lie next to it and are given (as by a previous
     // project): not taken in.
     std::fs::copy(
-        root().join("libraries/cables/acsr-examples.olsw"),
-        dir.join("around.olsw"),
+        root().join("libraries/cables/acsr-examples.ohlw"),
+        dir.join("around.ohlw"),
     )
     .unwrap();
     let sources = Sources {
         library: Some(root().join("libraries/cables")),
-        weather: Some(root().join("examples/synthetic-line/weather-cases.olswc")),
+        weather: Some(root().join("examples/synthetic-line/weather-cases.ohlwc")),
         file: path.clone(),
         point_budget: 1000,
         corridor: 60.0,
@@ -12307,7 +12307,7 @@ fn labels_are_one_per_section_and_near_only() {
 /// (an invented column) — its default shown where not set; a value chosen goes to the
 /// circuit's sections in one command; one not among its values refused.
 /// Without the plugin the column still shows (unused) and the values stay,
-/// through other edits and an OLS XML round trip.
+/// through other edits and an OHL XML round trip.
 #[test]
 fn plugin_columns_in_tables() {
     use crate::tables::{PluginColumn, TableKind};
@@ -12422,7 +12422,7 @@ fn plugin_columns_in_tables() {
     let s3 = r.model.line.sections.iter().find(|s| s.id == "S3").unwrap();
     assert_eq!(s3.description, "kept its level");
     assert_eq!(s3.fields.get(&column.key).map(String::as_str), Some("low"));
-    // The OLS XML keeps them.
+    // The OHL XML keeps them.
     let back = ols_io::olsxml::from_xml(&ols_io::olsxml::to_xml(&r.model.line)).unwrap();
     for id in &ids {
         let s = back.sections.iter().find(|s| &s.id == id).unwrap();
@@ -12804,7 +12804,7 @@ fn phase_distance_values_are_locked_but_an_admin_edits_them() {
         let s = &r.model.editing.as_ref().unwrap().session;
         let files = s.library_files("phase-distance").unwrap();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "lev-ch.olspd");
+        assert_eq!(files[0].0, "lev-ch.ohlpd");
         assert!(files[0].1.contains("3.7 m"), "{}", files[0].1);
         assert!(files[0].1.starts_with("# Edited in OHL-Design by"));
         // The next run uses them.
@@ -13698,7 +13698,7 @@ fn typed_project(name: &str) -> model::Model {
         let p = e.unwrap().path();
         std::fs::copy(&p, dir.join("Structures").join(p.file_name().unwrap())).unwrap();
     }
-    let text = std::fs::read_to_string(ex.join("Structures/type-02.olss")).unwrap();
+    let text = std::fs::read_to_string(ex.join("Structures/type-02.ohls")).unwrap();
     let body = text
         .lines()
         .skip_while(|l| l.starts_with('#'))
@@ -13711,7 +13711,7 @@ fn typed_project(name: &str) -> model::Model {
             1,
         );
     std::fs::write(
-        dir.join("Structures/ext-02.olss"),
+        dir.join("Structures/ext-02.ohls"),
         format!(
             "# A taller copy of type-02 for road crossings.\n{body}\n\n\
              [[extension]]\nname = \"+3\"\ndz = \"3 m\"\n\n\
@@ -13719,8 +13719,8 @@ fn typed_project(name: &str) -> model::Model {
         ),
     )
     .unwrap();
-    let file = dir.join("p.ols");
-    let line = ols_line::Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap();
+    let file = dir.join("p.ohl");
+    let line = ols_line::Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
     ols_session::Session::open(&file)
         .unwrap()
         .import(&line, "tester")
@@ -13730,7 +13730,7 @@ fn typed_project(name: &str) -> model::Model {
             Sources {
                 file,
                 library: Some(root().join("libraries/cables")),
-                weather: Some(ex.join("weather-cases.olswc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 user: Some("tester".into()),

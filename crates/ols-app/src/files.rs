@@ -80,16 +80,21 @@ pub fn pick_file() -> Option<PathBuf> {
         .add_filter(
             "OpenOHL project, line or structure type",
             &[
-                "ols",
+                ols_core::files::PROJECT_EXTENSION,
+                ols_core::files::LEGACY_PROJECT_EXTENSION,
                 "json",
                 ols_structures::structures::STRUCTURE_FILE_EXTENSION,
+                "olss",
             ],
         )
-        .add_filter("OpenOHL project", &["ols"])
+        .add_filter(
+            "OpenOHL project",
+            &ols_core::files::open_extensions(ols_core::files::PROJECT_EXTENSION),
+        )
         .add_filter("Line file", &["json"])
         .add_filter(
             "Structure type (opened on its own)",
-            &[ols_structures::structures::STRUCTURE_FILE_EXTENSION],
+            &ols_core::files::open_extensions(ols_structures::structures::STRUCTURE_FILE_EXTENSION),
         )
         .pick_file()
 }
@@ -130,7 +135,7 @@ pub fn file_menu(
         }
         if ui
             .add(egui::Button::new("New project…").shortcut_text(cmd("N")))
-            .on_hover_text("Create a project file (.ols) with an empty line and open it")
+            .on_hover_text("Create a project file (.ohl) with an empty line and open it")
             .clicked()
         {
             *action = Some(FileAction::New);
@@ -146,7 +151,7 @@ pub fn file_menu(
         }
         if ui
             .add(egui::Button::new("Open…").shortcut_text(cmd("O")))
-            .on_hover_text("Open a project (.ols) or a line file (.ols.json)")
+            .on_hover_text("Open a project (.ohl) or a line file (.ohl.json)")
             .clicked()
         {
             *action = Some(FileAction::Open(None));
@@ -202,13 +207,13 @@ pub fn file_menu(
             ui.separator();
             match shared {
                 Shared::No => {
-                    let project = path.extension().is_some_and(|e| e == "ols");
+                    let project = ols_core::files::is_project_file(path);
                     if ui
                         .add_enabled(project, egui::Button::new("Host this project…"))
                         .on_hover_text(
                             "Let others work on this project with you: a server on this computer",
                         )
-                        .on_disabled_hover_text("A project file (.ols) can be hosted")
+                        .on_disabled_hover_text("A project file (.ohl) can be hosted")
                         .clicked()
                     {
                         *action = Some(FileAction::Host);
@@ -433,9 +438,9 @@ impl ImportProjectWindow {
                         }
                     }
                     && let Some(into) = rfd::FileDialog::new()
-                        .add_filter("OpenOHL project", &["ols"])
+                        .add_filter("OpenOHL project", &[ols_core::files::PROJECT_EXTENSION])
                         .set_file_name(format!(
-                            "{}.ols",
+                            "{}.ohl",
                             file.file_stem()
                                 .map_or("project".into(), |s| s.to_string_lossy())
                         ))
@@ -514,9 +519,9 @@ pub fn copy_example(into: &Path) -> Result<crate::model::Sources, String> {
     }
     copy_dir(&from, &to)?;
     Ok(crate::model::Sources {
-        file: to.join("synthetic-line.ols.json"),
+        file: to.join("synthetic-line.ohl.json"),
         terrain: Some(to.join("synthetic-survey.csv")),
-        weather: Some(to.join("weather-cases.olswc")),
+        weather: Some(to.join("weather-cases.ohlwc")),
         ..Default::default()
     })
 }
@@ -663,7 +668,7 @@ impl NewProject {
                 };
                 ui.label(
                     egui::RichText::new(
-                        "The project file (.ols) keeps the line and its libraries; you are its \
+                        "The project file (.ohl) keeps the line and its libraries; you are its \
                          admin.",
                     )
                     .small()
@@ -681,8 +686,8 @@ impl NewProject {
                     .clicked()
                     && let Ok(crs) = crs
                     && let Some(path) = rfd::FileDialog::new()
-                        .add_filter("OpenOHL project", &["ols"])
-                        .set_file_name(format!("{}.ols", self.name.trim()))
+                        .add_filter("OpenOHL project", &[ols_core::files::PROJECT_EXTENSION])
+                        .set_file_name(format!("{}.ohl", self.name.trim()))
                         .save_file()
                 {
                     match create_project_from(&path, &self.name, &crs, &user(), self.template) {
@@ -702,7 +707,7 @@ pub fn user() -> String {
         .unwrap_or_else(|_| "user".into())
 }
 
-/// Creates the project file `path` (`.ols`) holding an empty line `name`
+/// Creates the project file `path` (`.ohl`) holding an empty line `name`
 /// in `crs`, `user` its admin; refuses to replace a file. Returns the
 /// path with its extension. (The window makes it with
 /// [`create_project_from`].)
@@ -711,7 +716,7 @@ pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<
     create_project_from(path, name, crs, user, Template::Empty)
 }
 
-/// Creates the project file `path` (`.ols`) holding an empty line `name`
+/// Creates the project file `path` (`.ohl`) holding an empty line `name`
 /// in `crs`, `user` its admin, with what the project starts with: the
 /// starter template's libraries kept in it (and its pylon templates and
 /// survey points beside it), or nothing; refuses to replace a file.
@@ -723,7 +728,7 @@ pub fn create_project_from(
     user: &str,
     template: Template,
 ) -> Result<PathBuf, String> {
-    let path = path.with_extension("ols");
+    let path = path.with_extension(ols_core::files::PROJECT_EXTENSION);
     let name = name.trim();
     if name.is_empty() {
         return Err("give the line a name".into());

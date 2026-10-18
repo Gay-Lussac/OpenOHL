@@ -287,7 +287,7 @@ impl StructureApp {
         if t.detail() != Detail::Design {
             ui.label(
                 "Results need level 3: every member with a section and a supported joint (or a \
-                 model = \"….olsfe\" file). What is still missing is listed in the header.",
+                 model = \"….ohlfe\" file). What is still missing is listed in the header.",
             );
             return;
         }

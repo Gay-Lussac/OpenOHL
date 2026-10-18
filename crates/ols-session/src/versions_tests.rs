@@ -10,7 +10,7 @@ use std::path::PathBuf;
 fn example() -> Line {
     Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .unwrap()
 }
@@ -18,7 +18,7 @@ fn example() -> Line {
 fn project(name: &str) -> (PathBuf, Session) {
     let dir = std::env::temp_dir().join(format!("ols-versions-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let mut s = Session::open(&path).unwrap();
     s.import(&example(), "ana").unwrap();
@@ -115,7 +115,7 @@ fn diff_lists_fields() {
         },
     )
     .unwrap();
-    s.put_library_file("ana", "cables", "x.olsw", "# one\n")
+    s.put_library_file("ana", "cables", "x.ohlw", "# one\n")
         .unwrap();
     let b = s.commit("ana", "moved, deleted, library").unwrap();
     let d = diff(
@@ -313,7 +313,7 @@ fn grants_limit_edits() {
     assert!(refused.to_string().contains("is outside"), "{refused}");
     // Admins are not limited; libraries need a grant naming them.
     shift(&mut s, "ana", "T6", 1.0).unwrap();
-    assert!(s.put_library_file("ben", "cables", "a.olsw", "").is_err());
+    assert!(s.put_library_file("ben", "cables", "a.ohlw", "").is_err());
     // Limited users do not merge (they may still look at other lines).
     s.commit("ana", "one").unwrap();
     assert!(s.merge("ben", "main", None, &Choices::new()).is_err());
@@ -502,7 +502,7 @@ fn engineering_impact_solves_both_sides() {
 fn offline_branch_comes_back_through_a_bundle() {
     let (path, mut s) = with_branch("bundle");
     // The offline copy (as a client joining a server receives).
-    let copy = path.with_file_name("copy.ols");
+    let copy = path.with_file_name("copy.ohl");
     std::fs::remove_file(&copy).ok();
     s.copy_to(&copy).unwrap();
     let t6 = position(&s, "T6");

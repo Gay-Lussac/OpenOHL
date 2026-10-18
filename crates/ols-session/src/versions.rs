@@ -377,7 +377,7 @@ pub type Choices = BTreeMap<String, Side>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conflict {
     /// Key to choose by: `structure:T3` (the whole object),
-    /// `structure:T3/position` (a field), `library:cables/x.olsw`.
+    /// `structure:T3/position` (a field), `library:cables/x.ohlw`.
     pub key: String,
     /// In words.
     pub what: String,
@@ -493,7 +493,7 @@ impl std::fmt::Display for RefDeletion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bundle {
-    /// `ols-bundle`.
+    /// `ohl-bundle`.
     pub format: String,
     /// 1.
     pub version: u32,
@@ -508,7 +508,7 @@ pub struct Bundle {
 }
 
 /// Format id of bundles.
-pub const BUNDLE_FILE_FORMAT: &str = "ols-bundle";
+pub const BUNDLE_FILE_FORMAT: &str = "ohl-bundle";
 /// Newest bundle version read.
 pub const BUNDLE_FILE_VERSION: u32 = 1;
 

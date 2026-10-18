@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Point class schemes (`*.olsc`).
+//! Point class schemes (`*.ohlc`).
 //!
 //! What a class number means depends on who classified the data: the ASPRS
 //! LAS standard ([`ClassScheme::asprs`]) or a utility's or surveyor's own
@@ -13,7 +13,7 @@
 //! asphalt road is `ground` and `road`); roles are not a fixed list.
 //!
 //! ```toml
-//! format = "ols-lidar-classes"
+//! format = "ohl-lidar-classes"
 //! version = 1
 //! id = "my-survey"
 //! name = "Survey company X, project Y"
@@ -39,13 +39,13 @@ use ols_core::text::parse_rgb;
 use serde::{Deserialize, Serialize};
 
 /// File extension of class schemes.
-pub const CLASS_FILE_EXTENSION: &str = "olsc";
+pub const CLASS_FILE_EXTENSION: &str = "ohlc";
 /// Format identifier.
-pub const CLASS_FILE_FORMAT: &str = "ols-lidar-classes";
+pub const CLASS_FILE_FORMAT: &str = "ohl-lidar-classes";
 /// Newest format version read and the one written.
 pub const CLASS_FILE_VERSION: u32 = 1;
 
-const ASPRS: &str = include_str!("../../../libraries/lidar-classes/asprs-las-1.4.olsc");
+const ASPRS: &str = include_str!("../../../libraries/lidar-classes/asprs-las-1.4.ohlc");
 
 /// One class of a scheme.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -77,7 +77,7 @@ impl ClassDef {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClassScheme {
-    /// `"ols-lidar-classes"` (optional header).
+    /// `"ohl-lidar-classes"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -137,7 +137,7 @@ impl ClassScheme {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// The scheme as a file (`.olsc`).
+    /// The scheme as a file (`.ohlc`).
     pub fn to_toml(&self) -> String {
         let mut s = self.clone();
         s.format = Some(CLASS_FILE_FORMAT.into());

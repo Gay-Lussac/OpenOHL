@@ -105,9 +105,9 @@ pub fn applies_to(found: &Found) -> (String, bool) {
 pub struct CodeResult {
     /// The plugin.
     pub plugin: String,
-    /// Weather cases (`.olswc` text).
+    /// Weather cases (`.ohlwc` text).
     pub weather: String,
-    /// Load cases (`.olslc` text).
+    /// Load cases (`.ohllc` text).
     pub load_cases: String,
     /// The load cases' names.
     pub names: Vec<String>,
@@ -519,8 +519,8 @@ impl StructureApp {
                 .and_then(Path::parent)
                 .ok_or("save the structure first: the files go beside it")?
                 .to_path_buf();
-            let weather = dir.join(format!("{}.olswc", r.plugin));
-            let cases = dir.join(format!("{}.olslc", r.plugin));
+            let weather = dir.join(format!("{}.ohlwc", r.plugin));
+            let cases = dir.join(format!("{}.ohllc", r.plugin));
             for (p, t) in [(&weather, &r.weather), (&cases, &r.load_cases)] {
                 std::fs::write(p, t).map_err(|e| format!("{}: {e}", p.display()))?;
             }

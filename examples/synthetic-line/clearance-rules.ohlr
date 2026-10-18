@@ -1,0 +1,44 @@
+# Example clearance rules for the synthetic line (invented values, not a
+# design code). Targets: ground, points (LiDAR classes by number or role),
+# same_line (other wires of this line), other_lines.
+format = "ohl-clearance-rules"
+version = 1
+name = "Synthetic example rules"
+
+[[rule]]
+name = "Ground"
+target = "ground"
+vertical = "7 m"
+radial = "6.5 m"
+
+[[rule]]
+name = "Phase to phase"
+target = "same_line"
+# By the voltage between the two conductors (phase angles of the system).
+radial = { by_voltage = [[0, "2 m"], [150, "3 m"], [245, "4 m"]] }
+pair_voltage = "difference"
+
+[[rule]]
+name = "Crossed lines"
+target = "other_lines"
+# By the higher voltage of the two wires ([up to kV, distance]).
+vertical = { by_voltage = [[0, "3 m"], [150, "4 m"], [245, "4.5 m"], [420, "5.5 m"]] }
+radial = { by_voltage = [[0, "3 m"], [150, "4 m"], [245, "4.5 m"], [420, "5.5 m"]] }
+
+[[rule]]
+name = "Iced wire over a hot wire"
+target = "same_line"
+radial = "4 m"
+case_pairs = [["glaze ice", "max temperature"]]
+
+[[rule]]
+name = "Ground at maximum temperature"
+target = "ground"
+vertical = "7.5 m"
+cases = ["max temperature"]
+
+[[rule]]
+name = "Ground away from the supports"
+target = "ground"
+vertical = "7 m"
+exclude_near_ends = "15 m"

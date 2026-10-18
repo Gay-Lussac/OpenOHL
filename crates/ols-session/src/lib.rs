@@ -4,7 +4,7 @@
 
 //! The session (ADR-0005): the only way to change a model.
 //!
-//! A [`Session`] owns a line model stored in the project file (`.ols`,
+//! A [`Session`] owns a line model stored in the project file (`.ohl`,
 //! SQLite, ADR-0004). Every edit is a [`Command`] from a user: it is
 //! validated (the whole line must stay valid), applied atomically, and
 //! appended to the **operation log** together with its **inverse** and the
@@ -27,7 +27,7 @@
 //! - **Version control** ([`versions`]): revisions, branches (the project
 //!   lines), tags, diff, merge and revert of the line and its libraries;
 //!   reviews of branches before they are merged ([`collab`]).
-//! - **Import / export**: [`Session::import`] loads a line (`.ols.json`)
+//! - **Import / export**: [`Session::import`] loads a line (`.ohl.json`)
 //!   into a project file, [`Session::export`] gives it back.
 //!
 //! Objects: the line settings (`meta`), routes, structures (with their

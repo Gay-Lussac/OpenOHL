@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Clearance violations of the shown weather case, checked on a background
-//! thread with a rule file (`.olsr`): the wires against the ground, LiDAR
+//! thread with a rule file (`.ohlr`): the wires against the ground, LiDAR
 //! points of the rules' classes (read again from the point cloud each time,
 //! in a corridor around the spans: ~2 s for 20 million points, nothing
 //! kept in memory) and the line's own wires. After an edit the check runs
@@ -77,7 +77,7 @@ pub struct Input {
     pub rules: Vec<Rule>,
     /// Class scheme of the points.
     pub scheme: ols_lidar::ClassScheme,
-    /// Point cloud (`FILE.ols` or `FILE.ols#name`), if any.
+    /// Point cloud (`FILE.ohl` or `FILE.ohl#name`), if any.
     pub cloud: Option<String>,
     /// Ground surface.
     pub ground: Option<Arc<Terrain>>,
@@ -228,7 +228,7 @@ pub fn run(input: &Input) -> Result<Report, String> {
 }
 
 /// Rule files to choose from: the one given, then the project's clearance
-/// rules (`*.olsr`; next to a line file). Rules come from the design code
+/// rules (`*.ohlr`; next to a line file). Rules come from the design code
 /// used: none are shipped.
 pub fn rule_files(model: &Model, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();

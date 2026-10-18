@@ -11,7 +11,7 @@
 //! ```bash
 //! OLS_REQUIRE_GPU_TESTS=1 cargo test --release -p ols-app frame_benchmark -- --ignored --nocapture
 //! # a project of your own (a copy: it is opened for editing):
-//! OLS_BENCH_FILE=/path/to/copy.ols OLS_BENCH_PREFS=prefs.json cargo test --release …
+//! OLS_BENCH_FILE=/path/to/copy.ohl OLS_BENCH_PREFS=prefs.json cargo test --release …
 //! ```
 
 use std::time::{Duration, Instant};
@@ -89,10 +89,10 @@ pub fn synthetic() -> Model {
     let ex = root.join("examples/synthetic-line");
     let mut m = model::load(
         Sources {
-            file: ex.join("synthetic-line.ols.json"),
+            file: ex.join("synthetic-line.ohl.json"),
             library: Some(root.join("libraries/cables")),
             terrain: Some(ex.join("synthetic-survey.csv")),
-            weather: Some(ex.join("weather-cases.olswc")),
+            weather: Some(ex.join("weather-cases.ohlwc")),
             point_budget: 1000,
             corridor: 60.0,
             ..Sources::default()

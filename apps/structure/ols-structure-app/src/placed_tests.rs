@@ -23,11 +23,11 @@ use crate::tests::menu;
 /// A copy of example structure type-02 in a folder of its own.
 fn copy_of(tag: &str) -> PathBuf {
     let from = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../examples/synthetic-line/Structures/type-02.olss");
+        .join("../../../examples/synthetic-line/Structures/type-02.ohls");
     let dir =
         std::env::temp_dir().join(format!("ols-structure-placed-{tag}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let to = dir.join("type-02.olss");
+    let to = dir.join("type-02.ohls");
     std::fs::copy(&from, &to).unwrap();
     to
 }
@@ -207,7 +207,7 @@ fn no_load_case_file_is_said_plainly() {
         "T2",
         "test line",
         "type-02",
-        "no values from the line: no load case file: Criteria › Load cases (a .olslc file \
+        "no values from the line: no load case file: Criteria › Load cases (a .ohllc file \
          next to the line, or the project's own)",
     )
     .save(&at)
@@ -229,7 +229,7 @@ fn no_load_case_file_is_said_plainly() {
 /// again, they replace those (asked first).
 #[test]
 fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
-    let path = copy_named("type-01.olss", "store");
+    let path = copy_named("type-01.ohls", "store");
     let at = line_values_path(&path, "T2");
     write(&at, [1500.0, -200.0, 6000.0]);
     let mut h = harness(&path, &at);

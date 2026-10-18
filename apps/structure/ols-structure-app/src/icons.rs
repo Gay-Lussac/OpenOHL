@@ -242,7 +242,7 @@ mod tests {
         crate::tests::menu(&mut h, "Help", "About OHL-Structure");
         h.get_by_label("About OHL-Structure");
         screenshot(&mut h, "ohl-structure-about.png");
-        let path = crate::tests::copy_of("type-02.olss", "icons");
+        let path = crate::tests::copy_of("type-02.ohls", "icons");
         h.state_mut().open(&path);
         h.state_mut().about = false;
         h.run();

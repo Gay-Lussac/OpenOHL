@@ -4210,8 +4210,8 @@ pub fn empty_wire_library(ui: &mut egui::Ui) {
         if ui
             .button(OPEN_WIRE_LIBRARY)
             .on_hover_text(
-                "Sections › Wires library: Browse… for a cable file (.olsw), e.g. \
-                 libraries/cables/acsr-examples.olsw (typical example values), or add one",
+                "Sections › Wires library: Browse… for a cable file (.ohlw), e.g. \
+                 libraries/cables/acsr-examples.ohlw (typical example values), or add one",
             )
             .clicked()
         {

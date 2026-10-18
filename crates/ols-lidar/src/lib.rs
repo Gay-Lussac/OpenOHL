@@ -14,7 +14,7 @@
 //!   first-party terrain builder; other builders (plugins) produce the same
 //!   output, a mesh for [`Terrain::from_mesh`].
 //!
-//! - [`classes`]: what class numbers mean ([`ClassScheme`], `*.olsc`
+//! - [`classes`]: what class numbers mean ([`ClassScheme`], `*.ohlc`
 //!   files): ground is chosen by role, so any classification works.
 //! - [`classify`]: ground and height-above-ground classes for points not
 //!   classified yet, and LAS/LAZ writing of the result.
@@ -550,10 +550,10 @@ mod tests {
         all.add(0.0, 0.0, 1.0);
         all.add(0.0, 0.0, 0.0);
         assert_eq!(all.points().len(), 2);
-        assert_eq!(cloud_spec("p.ols"), (Path::new("p.ols"), None));
+        assert_eq!(cloud_spec("p.ohl"), (Path::new("p.ohl"), None));
         assert_eq!(
-            cloud_spec("p.ols#scan 2"),
-            (Path::new("p.ols"), Some("scan 2"))
+            cloud_spec("p.ohl#scan 2"),
+            (Path::new("p.ohl"), Some("scan 2"))
         );
     }
 

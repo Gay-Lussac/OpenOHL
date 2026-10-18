@@ -217,7 +217,7 @@ mod tests {
         assert!(edit_value(&host, check, values, [1, 0, 1], "x").is_err());
 
         let ex = root().join("examples/synthetic-line");
-        let mut line = ols_line::Line::load(&ex.join("synthetic-line.ols.json")).unwrap();
+        let mut line = ols_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
         let library = ols_cables::Library::load(&root().join("libraries/cables")).unwrap();
         let case = ols_weather::WeatherCase::still("10", Temperature::from_celsius(10.0));
         let run = |line: &ols_line::Line| {

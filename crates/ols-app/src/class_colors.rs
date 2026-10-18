@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Terrain › Survey data › Class colours: the display colour of the LiDAR
-//! points by class number, from a class scheme file (`.olsc`: names,
+//! points by class number, from a class scheme file (`.ohlc`: names,
 //! roles, colours). Every class of the point cloud is listed with its
 //! points; a colour is picked per class (none: from its roles). The scheme
 //! is this user's choice (remembered on this computer): for this project
@@ -75,10 +75,15 @@ impl ClassWindow {
                 ui.horizontal(|ui| {
                     if ui
                         .button("Open a scheme…")
-                        .on_hover_text("A class scheme file (.olsc): names, roles, colours")
+                        .on_hover_text("A class scheme file (.ohlc): names, roles, colours")
                         .clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
+                            .add_filter(
+                                "Class scheme",
+                                &ols_core::files::open_extensions(
+                                    ols_lidar::classes::CLASS_FILE_EXTENSION,
+                                ),
+                            )
                             .pick_file()
                     {
                         match ClassScheme::load(&p) {
@@ -97,7 +102,7 @@ impl ClassWindow {
                     if ui.button("Save as…").clicked()
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter("Class scheme", &[ols_lidar::classes::CLASS_FILE_EXTENSION])
-                            .set_file_name(format!("{}.olsc", model.scheme.id))
+                            .set_file_name(format!("{}.ohlc", model.scheme.id))
                             .save_file()
                         && self.save(model, p.clone())
                     {

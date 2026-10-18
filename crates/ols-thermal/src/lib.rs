@@ -37,7 +37,7 @@
 //! - [`limit`]: the highest conductor temperature at which a line still
 //!   meets its clearances, per section.
 //!
-//! Ambient conditions come from `.olsta` files ([`ambient`]).
+//! Ambient conditions come from `.ohlta` files ([`ambient`]).
 
 pub mod ambient;
 pub mod cigre;

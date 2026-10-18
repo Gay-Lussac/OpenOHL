@@ -428,7 +428,7 @@ impl SurfacesWindow {
             .map(|e| e.user.clone())
             .unwrap_or_default();
         let project = model.sources.file.clone();
-        let is_project = project.extension().is_some_and(|e| e == "ols");
+        let is_project = ols_core::files::is_project_file(&project);
         let mut open = self.open;
         let mut action: Option<Action> = None;
         egui::Window::new("Terrain surfaces (TIN)")
@@ -447,7 +447,7 @@ impl SurfacesWindow {
                 if !is_project {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
-                        "A line file keeps no surfaces: open a project (.ols).",
+                        "A line file keeps no surfaces: open a project (.ohl).",
                     );
                     return;
                 }

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! A small XML reader (a tree of elements) and writing helpers, for the
-//! XML formats (OLS XML, LandXML); [`decode`] gives a file's text in the
+//! XML formats (OHL XML, LandXML); [`decode`] gives a file's text in the
 //! encoding it declares.
 //!
 //! It reads well-formed XML 1.0: elements, attributes, text, CDATA, the

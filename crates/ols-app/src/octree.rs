@@ -393,7 +393,7 @@ mod tests {
     fn a_large_cloud_stays_within_the_budget() {
         let dir = std::env::temp_dir().join(format!("ols-app-{}-octree", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let db = dir.join("p.ols");
+        let db = dir.join("p.ohl");
         std::fs::remove_file(&db).ok();
         // 1 km × 1 km at 0.5 m: 4 million points.
         let points = (0..2000).flat_map(|i| {
@@ -490,8 +490,8 @@ mod tests {
     fn the_readers_let_go_of_the_file() {
         let dir = std::env::temp_dir().join(format!("ols-app-{}-octree-close", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let db = dir.join("p.ols");
-        for f in ["p.ols", "p.ols-wal", "p.ols-shm"] {
+        let db = dir.join("p.ohl");
+        for f in ["p.ohl", "p.ohl-wal", "p.ohl-shm"] {
             std::fs::remove_file(dir.join(f)).ok();
         }
         let points = (0..200).flat_map(|i| {
@@ -525,8 +525,8 @@ mod tests {
             every: 1,
             colors: Arc::new(vec![Some([200, 200, 200]); 256]),
         });
-        assert!(dir.join("p.ols-wal").exists(), "open: the log is there");
+        assert!(dir.join("p.ohl-wal").exists(), "open: the log is there");
         drop(stream);
-        assert!(!dir.join("p.ols-wal").exists() && !dir.join("p.ols-shm").exists());
+        assert!(!dir.join("p.ohl-wal").exists() && !dir.join("p.ohl-shm").exists());
     }
 }

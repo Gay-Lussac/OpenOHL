@@ -142,11 +142,11 @@ pub fn own_load_table(
 
 fn parse(text: &str) -> Result<ols_structures::StructureType, String> {
     use ols_structures::LibraryItem as _;
-    ols_structures::StructureType::parse(Path::new("structure.olss"), text).map_err(|e| e.message)
+    ols_structures::StructureType::parse(Path::new("structure.ohls"), text).map_err(|e| e.message)
 }
 
-/// The section library of `paths` (files `.olssec`, or folders whose
-/// `.olssec` files are read in name order), merged: an id found earlier
+/// The section library of `paths` (files `.ohlsec`, or folders whose
+/// `.ohlsec` files are read in name order), merged: an id found earlier
 /// wins; the ids left out are the second value.
 pub fn load_sections(paths: &[PathBuf]) -> Result<(SectionLibrary, Vec<String>), String> {
     let mut library = SectionLibrary::default();

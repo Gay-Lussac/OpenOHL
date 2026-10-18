@@ -88,7 +88,7 @@ pub fn type_id(text: &str) -> String {
 pub fn as_type(s: &Structure) -> DocumentMut {
     let local = |p: [f64; 3]| to_local(s.position, s.orientation_deg, p);
     let mut doc = DocumentMut::new();
-    doc.insert("format", toml_edit::value("ols-structure"));
+    doc.insert("format", toml_edit::value("ohl-structure"));
     // Version 4 only where a string gives limits (an older program reads
     // the rest).
     let limits = s.strings.iter().any(|x| !x.limits().is_empty());
@@ -225,7 +225,7 @@ impl PlacedEditor {
 
     /// The type the document reads as (or why not).
     fn read(&self) -> Result<StructureType, String> {
-        StructureType::parse(Path::new("structure.olss"), &self.doc.to_string())
+        StructureType::parse(Path::new("structure.ohls"), &self.doc.to_string())
             .map_err(|e| e.to_string())
     }
 

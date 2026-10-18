@@ -42,7 +42,7 @@ fn plugin_info_knows_every_world() {
         (
             "examples/project-bundle",
             "project-plugin",
-            "format ols-bundle:",
+            "format ohl-bundle:",
         ),
         ("codes/en50341", "code-plugin", "parameter template:"),
         ("codes/iec60826", "code-plugin", "parameter template:"),

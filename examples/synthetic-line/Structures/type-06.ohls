@@ -1,0 +1,40 @@
+# Derived from the geometry of an existing line — check and complete.
+format = "ohl-structure"
+version = 2
+id = "type-06"
+name = "type-06 (1 structures, e.g. T7)"
+kind = "other"
+source = "derived from: T7"
+
+[[point]]
+label = "A1"
+point = ["0.000 m", "0.000 m", "26.000 m"]
+
+[[wire]]
+label = "W1"
+set = 1
+
+[[string]]
+label = "S1"
+top = "A1"
+wire = "W1"
+length = "5.025 m"
+weight = "0.0 N"
+strain = true
+side = "back"
+
+# Capacity (invented values for the example): allowable spans by line
+# angle (Method 1) and allowable loads per attachment (Method 2).
+
+[[capacity.spans]]
+angle = "0 deg"
+wind_span = "350 m"
+weight_span = "500 m"
+min_weight_span = "-50 m"
+
+[[capacity.attachment]]
+point = "A1"
+vertical = "10 kN"
+uplift = "5 kN"
+transverse = "10 kN"
+longitudinal = "40 kN"

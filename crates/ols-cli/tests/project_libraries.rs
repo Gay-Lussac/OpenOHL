@@ -22,7 +22,7 @@ fn example(name: &str) -> PathBuf {
 const OWN_CABLE: &str = "invented-project-cable";
 
 /// A vertical ground rule in the maximum temperature case.
-const RULES: &str = r#"format = "ols-clearance-rules"
+const RULES: &str = r#"format = "ohl-clearance-rules"
 version = 1
 name = "Project rules"
 
@@ -58,21 +58,21 @@ fn setup(tag: &str) -> Setup {
     let dir = std::env::temp_dir().join(&stem);
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
-    let text = std::fs::read_to_string(example("synthetic-line.ols.json")).unwrap();
+    let text = std::fs::read_to_string(example("synthetic-line.ohl.json")).unwrap();
     let line = ols_line::Line::from_json(&text.replace("acsr-drake-26-7", OWN_CABLE)).unwrap();
-    let wires = std::fs::read_to_string(root().join("libraries/cables/acsr-examples.olsw"))
+    let wires = std::fs::read_to_string(root().join("libraries/cables/acsr-examples.ohlw"))
         .unwrap()
         .replace("acsr-drake-26-7", OWN_CABLE);
-    let weather = std::fs::read_to_string(example("weather-cases.olswc")).unwrap();
-    let project = dir.join(format!("{stem}.ols"));
+    let weather = std::fs::read_to_string(example("weather-cases.ohlwc")).unwrap();
+    let project = dir.join(format!("{stem}.ohl"));
     let mut s = ols_session::Session::open(&project).unwrap();
     s.import(&line, "tester").unwrap();
     s.keep_library_files(
         "tester",
         &[
-            ("cables".into(), "own.olsw".into(), Some(wires)),
-            ("rules".into(), "project.olsr".into(), Some(RULES.into())),
-            ("weather".into(), "cases.olswc".into(), Some(weather)),
+            ("cables".into(), "own.ohlw".into(), Some(wires)),
+            ("rules".into(), "project.ohlr".into(), Some(RULES.into())),
+            ("weather".into(), "cases.ohlwc".into(), Some(weather)),
         ],
     )
     .unwrap();
@@ -133,7 +133,7 @@ fn line_reads_the_projects_libraries() {
             "line",
             &project,
             "--weather",
-            "cases.olswc",
+            "cases.ohlwc",
             "--case",
             "max*",
         ],
@@ -171,7 +171,7 @@ fn zones_reads_the_projects_libraries() {
         "zones",
         &project,
         "--rules",
-        "project.olsr",
+        "project.ohlr",
         "--terrain",
         &survey,
         "--no-cloud",
@@ -188,11 +188,11 @@ fn zones_reads_the_projects_libraries() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("Project rules (project.olsr (the project's))"),
+        stdout.contains("Project rules (project.ohlr (the project's))"),
         "{stdout}"
     );
     assert!(
-        stdout.contains("weather: cases.olswc (the project's)"),
+        stdout.contains("weather: cases.ohlwc (the project's)"),
         "{stdout}"
     );
     assert!(!stdout.contains("not solved"), "{stdout}");
@@ -216,7 +216,7 @@ fn zones_reads_the_projects_libraries() {
 fn missing_project_is_not_created() {
     let dir = std::env::temp_dir().join(format!("libtest-missing-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let project = dir.join("none.ols");
+    let project = dir.join("none.ohl");
     let out = ols(&dir, &["line", &project.display().to_string()]);
     assert!(!out.status.success());
     assert!(

@@ -85,7 +85,7 @@ pub fn rebuild_all(doc: &mut DocumentMut, t: &StructureType) -> Result<Report, S
     for g in generators(t)? {
         let body = generate(&now, &g)?;
         report.add(write(doc, &now, &g.id, &body)?);
-        now = StructureType::parse(Path::new("structure.olss"), &doc.to_string())
+        now = StructureType::parse(Path::new("structure.ohls"), &doc.to_string())
             .map_err(|e| e.message)?;
     }
     Ok(report)

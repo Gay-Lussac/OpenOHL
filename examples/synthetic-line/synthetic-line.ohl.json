@@ -1,0 +1,665 @@
+{
+  "format": "ohl-line",
+  "version": 6,
+  "name": "Synthetic example line (invented coordinates)",
+  "crs": "local (invented)",
+  "routes": [
+    {
+      "id": "main",
+      "name": "Main route"
+    },
+    {
+      "id": "branch",
+      "name": "Branch from the Y pylon T3"
+    }
+  ],
+  "alignments": [
+    {
+      "id": "main",
+      "name": "Main route",
+      "route": "main",
+      "points": [
+        "P1",
+        "P2",
+        "P3"
+      ]
+    },
+    {
+      "id": "branch",
+      "name": "Branch from the Y pylon T3",
+      "route": "branch",
+      "points": [
+        "P2",
+        "P4",
+        "P5"
+      ]
+    }
+  ],
+  "alignment_points": [
+    {
+      "id": "P1",
+      "position": [
+        0.0,
+        0.0,
+        500.0
+      ]
+    },
+    {
+      "id": "P2",
+      "position": [
+        640.0,
+        0.0,
+        498.0
+      ],
+      "structure": "T3"
+    },
+    {
+      "id": "P3",
+      "position": [
+        1250.580806867569,
+        107.6618701534968,
+        503.0
+      ]
+    },
+    {
+      "id": "P4",
+      "position": [
+        640.0,
+        280.0,
+        504.0
+      ],
+      "structure": "T6"
+    },
+    {
+      "id": "P5",
+      "position": [
+        640.0,
+        560.0,
+        496.0
+      ],
+      "structure": "T7"
+    }
+  ],
+  "structures": [
+    {
+      "id": "T1",
+      "position": [
+        0.0,
+        0.0,
+        500.0
+      ],
+      "orientation_deg": -90.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            0.0,
+            -6.0,
+            530.0
+          ]
+        },
+        {
+          "label": "A11",
+          "position": [
+            0.0,
+            6.0,
+            530.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 5.024937810560445,
+          "angle_deg": 84.28940686250036,
+          "direction_deg": 3.508354649267438e-15
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "length": 5.024937810560445,
+          "angle_deg": 84.28940686250036,
+          "direction_deg": 3.508354649267438e-15
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            5.0,
+            -6.0,
+            529.5
+          ],
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            5.0,
+            6.0,
+            529.5
+          ],
+          "set": 11
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "position": [
+        310.0,
+        0.0,
+        505.0
+      ],
+      "orientation_deg": -90.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            310.0,
+            -6.0,
+            535.0
+          ]
+        },
+        {
+          "label": "A11",
+          "position": [
+            310.0,
+            6.0,
+            535.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 3.5,
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "length": 3.5,
+          "weight": 900.0
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            310.0,
+            -6.0,
+            531.5
+          ],
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            310.0,
+            6.0,
+            531.5
+          ],
+          "set": 11
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "position": [
+        640.0,
+        0.0,
+        498.0
+      ],
+      "orientation_deg": -85.24,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            640.498,
+            -5.979,
+            528.0
+          ]
+        },
+        {
+          "label": "A11",
+          "position": [
+            639.502,
+            5.979,
+            528.0
+          ]
+        },
+        {
+          "label": "A2",
+          "position": [
+            640.0,
+            1.5,
+            524.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 3.5,
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "length": 3.5,
+          "weight": 900.0
+        },
+        {
+          "label": "S2",
+          "top": "A2",
+          "wire": "W2",
+          "length": 5.024937810560445,
+          "angle_deg": 84.28940686250036,
+          "direction_deg": 274.76
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            640.498,
+            -5.979,
+            524.5
+          ],
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            639.502,
+            5.979,
+            524.5
+          ],
+          "set": 11
+        },
+        {
+          "label": "W2",
+          "position": [
+            640.0,
+            6.5,
+            523.5
+          ],
+          "set": 2
+        }
+      ]
+    },
+    {
+      "id": "T4",
+      "position": [
+        935.442,
+        52.094,
+        510.0
+      ],
+      "orientation_deg": -80.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            936.484,
+            46.186,
+            540.0
+          ]
+        },
+        {
+          "label": "A11",
+          "position": [
+            934.4,
+            58.003,
+            540.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 3.5,
+          "weight": 900.0
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "length": 3.5,
+          "weight": 900.0
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            936.484,
+            46.186,
+            536.5
+          ],
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            934.4,
+            58.003,
+            536.5
+          ],
+          "set": 11
+        }
+      ]
+    },
+    {
+      "id": "T5",
+      "position": [
+        1250.581,
+        107.662,
+        503.0
+      ],
+      "orientation_deg": -80.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            1251.623,
+            101.753,
+            533.0
+          ]
+        },
+        {
+          "label": "A11",
+          "position": [
+            1249.539,
+            113.571,
+            533.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 5.024858206954677,
+          "angle_deg": 84.28931609474498,
+          "direction_deg": 180.00264134581178
+        },
+        {
+          "label": "S11",
+          "top": "A11",
+          "wire": "W11",
+          "length": 5.0250310446802,
+          "angle_deg": 84.28951316873062,
+          "direction_deg": 179.9913563999198
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            1246.699,
+            100.885,
+            532.5
+          ],
+          "set": 1
+        },
+        {
+          "label": "W11",
+          "position": [
+            1244.615,
+            112.702,
+            532.5
+          ],
+          "set": 11
+        }
+      ]
+    },
+    {
+      "id": "T6",
+      "position": [
+        640.0,
+        280.0,
+        504.0
+      ],
+      "orientation_deg": 0.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            640.0,
+            280.0,
+            530.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 3.5,
+          "weight": 900.0
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            640.0,
+            280.0,
+            526.5
+          ],
+          "set": 1
+        }
+      ]
+    },
+    {
+      "id": "T7",
+      "position": [
+        640.0,
+        560.0,
+        496.0
+      ],
+      "orientation_deg": 0.0,
+      "points": [
+        {
+          "label": "A1",
+          "position": [
+            640.0,
+            560.0,
+            522.0
+          ]
+        }
+      ],
+      "strings": [
+        {
+          "label": "S1",
+          "top": "A1",
+          "wire": "W1",
+          "length": 5.024937810560445,
+          "angle_deg": 84.28940686250036,
+          "direction_deg": 180.0
+        }
+      ],
+      "wires": [
+        {
+          "label": "W1",
+          "position": [
+            640.0,
+            555.0,
+            521.5
+          ],
+          "set": 1
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "S1",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "Example 1",
+      "phase_label": "L1",
+      "system": "ex220",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 1
+        },
+        {
+          "structure": "T2",
+          "set": 1
+        },
+        {
+          "structure": "T3",
+          "set": 1
+        },
+        {
+          "structure": "T4",
+          "set": 1
+        },
+        {
+          "structure": "T5",
+          "set": 1
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 25000.0,
+        "temperature": 15.0
+      },
+      "span_points": [
+        {
+          "label": "L1",
+          "span": 1,
+          "at": {
+            "fraction": 0.5
+          },
+          "description": "marker ball",
+          "object": {
+            "kind": "body",
+            "weight": 55.0,
+            "shape": "point"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "Example 1",
+      "phase_label": "L2",
+      "system": "ex220",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T1",
+          "set": 11
+        },
+        {
+          "structure": "T2",
+          "set": 11
+        },
+        {
+          "structure": "T3",
+          "set": 11
+        },
+        {
+          "structure": "T4",
+          "set": 11
+        },
+        {
+          "structure": "T5",
+          "set": 11
+        }
+      ],
+      "stringing": {
+        "kind": "unstressed_lengths",
+        "lengths": [
+          306.074,
+          330.73,
+          300.741,
+          316.129
+        ],
+        "temperature": 15.0
+      }
+    },
+    {
+      "id": "S3",
+      "cable": "acsr-drake-26-7",
+      "circuit_name": "Branch",
+      "phase_label": "L1",
+      "bundle": 1,
+      "points": [
+        {
+          "structure": "T3",
+          "set": 2
+        },
+        {
+          "structure": "T6",
+          "set": 1
+        },
+        {
+          "structure": "T7",
+          "set": 1
+        }
+      ],
+      "stringing": {
+        "kind": "tension",
+        "horizontal_tension": 22000.0,
+        "temperature": 15.0
+      }
+    }
+  ],
+  "jumpers": [
+    {
+      "id": "J-T3-branch",
+      "cable": "acsr-drake-26-7",
+      "from": {
+        "structure": "T3",
+        "set": 2
+      },
+      "to": {
+        "structure": "T3",
+        "set": 1
+      },
+      "sag": 1.5,
+      "temperature": 15.0
+    }
+  ],
+  "systems": [
+    {
+      "id": "ex220",
+      "name": "220 kV example system",
+      "kind": "ac",
+      "voltage_kv": 220.0,
+      "frequency_hz": 50.0,
+      "phases": [
+        {
+          "label": "L1",
+          "angle_deg": 0.0
+        },
+        {
+          "label": "L2",
+          "angle_deg": -120.0
+        },
+        {
+          "label": "L3",
+          "angle_deg": 120.0
+        }
+      ]
+    }
+  ]
+}

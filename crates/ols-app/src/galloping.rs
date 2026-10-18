@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Checks › Galloping ellipses: the ellipses of the wires of each span by
-//! the methods of a galloping parameter file (`.olsg`), in one weather
+//! the methods of a galloping parameter file (`.ohlg`), in one weather
 //! case, and the clearance between them ([`ols_clearance::galloping`]).
 //! Computed on demand in the background; worst pairs first; a click goes
 //! to the span.
@@ -80,7 +80,7 @@ impl GallopingWindow {
 
     fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(path) = self.file.clone() else {
-            self.job.result = Some(Err("choose a galloping parameter file (.olsg)".into()));
+            self.job.result = Some(Err("choose a galloping parameter file (.ohlg)".into()));
             return;
         };
         let Some(solved) = model.cases.get(self.case) else {
@@ -147,7 +147,9 @@ impl GallopingWindow {
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter(
                                 "Galloping parameters",
-                                &[ols_clearance::galloping::GALLOPING_FILE_EXTENSION],
+                                &ols_core::files::open_extensions(
+                                    ols_clearance::galloping::GALLOPING_FILE_EXTENSION,
+                                ),
                             )
                             .pick_file()
                     {

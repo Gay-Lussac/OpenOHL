@@ -12,7 +12,7 @@
 //!
 //! An exporter receives an [`ExportModel`]: the line, its coordinate system
 //! and, for each weather case, the solved wires. Plugins receive it as JSON
-//! ([`ExportModel::to_json`], format `ols-export-model` version 1).
+//! ([`ExportModel::to_json`], format `ohl-export-model` version 1).
 
 pub mod checks;
 pub mod codes;
@@ -33,6 +33,7 @@ pub mod xml;
 
 use std::collections::BTreeMap;
 
+use ols_core::files::is_format;
 use ols_line::Line;
 use ols_line::jumper::JumperShape;
 use ols_line::solve::SectionShape;
@@ -264,7 +265,7 @@ impl ExportModel {
     }
 
     /// The model as JSON for plugins:
-    /// `{"format": "ols-export-model", "version": 1, "crs": …, "line": <line
+    /// `{"format": "ohl-export-model", "version": 1, "crs": …, "line": <line
     /// file>, "cases": [{"name", "summary", "wires": [{"section", "span",
     /// "circuit", "phase", "color", "system", "voltage_kv",
     /// "horizontal_tension_n", "max_tension_n", "sag_m", "points":
@@ -314,7 +315,7 @@ impl ExportModel {
             })
             .collect();
         serde_json::json!({
-            "format": "ols-export-model",
+            "format": "ohl-export-model",
             "version": 1,
             "crs": self.line.crs,
             "line": line,
@@ -418,11 +419,11 @@ impl Registry {
         let k = self
             .project_importers
             .iter()
-            .position(|e| e.id() == key)
+            .position(|e| is_format(&key, e.id()))
             .or_else(|| {
                 self.project_importers
                     .iter()
-                    .position(|e| e.extension() == key)
+                    .position(|e| is_format(&key, e.extension()))
             })?;
         self.project_importers.get_mut(k)
     }
@@ -441,11 +442,11 @@ impl Registry {
         let k = self
             .surface_importers
             .iter()
-            .position(|e| e.id() == key)
+            .position(|e| is_format(&key, e.id()))
             .or_else(|| {
                 self.surface_importers
                     .iter()
-                    .position(|e| e.extension() == key)
+                    .position(|e| is_format(&key, e.extension()))
             })?;
         self.surface_importers.get_mut(k)
     }
@@ -493,8 +494,12 @@ impl Registry {
         let k = self
             .exporters
             .iter()
-            .position(|e| e.id() == key)
-            .or_else(|| self.exporters.iter().position(|e| e.extension() == key))?;
+            .position(|e| is_format(&key, e.id()))
+            .or_else(|| {
+                self.exporters
+                    .iter()
+                    .position(|e| is_format(&key, e.extension()))
+            })?;
         self.exporters.get_mut(k)
     }
 
@@ -504,8 +509,12 @@ impl Registry {
         let k = self
             .importers
             .iter()
-            .position(|e| e.id() == key)
-            .or_else(|| self.importers.iter().position(|e| e.extension() == key))?;
+            .position(|e| is_format(&key, e.id()))
+            .or_else(|| {
+                self.importers
+                    .iter()
+                    .position(|e| is_format(&key, e.extension()))
+            })?;
         self.importers.get_mut(k)
     }
 }

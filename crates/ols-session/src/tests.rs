@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn example() -> Line {
     Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/synthetic-line/synthetic-line.ols.json"),
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .unwrap()
 }
@@ -16,7 +16,7 @@ fn example() -> Line {
 fn project(name: &str) -> (PathBuf, Session) {
     let dir = std::env::temp_dir().join(format!("ols-session-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let mut s = Session::open(&path).unwrap();
     s.import(&example(), "ana").unwrap();
@@ -833,10 +833,10 @@ fn deleting_a_string_takes_its_sections_and_jumpers() {
 fn a_typed_structure_leaves_out_a_string_of_its_type() {
     let dir = std::env::temp_dir().join(format!("ols-session-{}-typed", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let ex = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
-    let line = Line::load(&ex.join("synthetic-line-typed.ols.json")).unwrap();
+    let line = Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
     let mut s = Session::open(&path).unwrap();
     s.import(&line, "ana").unwrap();
     s.apply(
@@ -948,15 +948,15 @@ fn renaming_keeps_the_place_and_what_refers_to_it_follows() {
 fn settings_are_kept_with_the_project() {
     let (path, s) = project("settings");
     assert_eq!(s.setting("app.weather").unwrap(), None);
-    s.set_setting("app.weather", Some("/x/cases.olswc"))
+    s.set_setting("app.weather", Some("/x/cases.ohlwc"))
         .unwrap();
-    s.set_setting("app.weather", Some("/y/cases.olswc"))
+    s.set_setting("app.weather", Some("/y/cases.ohlwc"))
         .unwrap();
     drop(s);
     let again = Session::open(&path).unwrap();
     assert_eq!(
         again.setting("app.weather").unwrap().as_deref(),
-        Some("/y/cases.olswc")
+        Some("/y/cases.ohlwc")
     );
     again.set_setting("app.weather", None).unwrap();
     assert_eq!(again.setting("app.weather").unwrap(), None);
@@ -967,18 +967,18 @@ fn settings_are_kept_with_the_project() {
 fn library_files_are_kept_in_the_project() {
     let (path, mut s) = project("libraries");
     assert!(s.library_files("cables").unwrap().is_empty());
-    s.put_library_file("ben", "cables", "a.olsw", "x = 1")
+    s.put_library_file("ben", "cables", "a.ohlw", "x = 1")
         .unwrap();
-    s.put_library_file("ben", "cables", "b.olsw", "y = 2")
+    s.put_library_file("ben", "cables", "b.ohlw", "y = 2")
         .unwrap();
-    s.put_library_file("ben", "cables", "a.olsw", "x = 3")
+    s.put_library_file("ben", "cables", "a.ohlw", "x = 3")
         .unwrap();
-    s.put_library_file("ben", "weather", "w.olswc", "z = 4")
+    s.put_library_file("ben", "weather", "w.ohlwc", "z = 4")
         .unwrap();
     // Viewers cannot; names are file names.
-    assert!(s.put_library_file("vic", "cables", "c.olsw", "").is_err());
+    assert!(s.put_library_file("vic", "cables", "c.ohlw", "").is_err());
     assert!(
-        s.put_library_file("ben", "cables", "../c.olsw", "")
+        s.put_library_file("ben", "cables", "../c.ohlw", "")
             .is_err()
     );
     drop(s);
@@ -986,11 +986,11 @@ fn library_files_are_kept_in_the_project() {
     assert_eq!(
         s.library_files("cables").unwrap(),
         vec![
-            ("a.olsw".to_owned(), "x = 3".to_owned()),
-            ("b.olsw".to_owned(), "y = 2".to_owned())
+            ("a.ohlw".to_owned(), "x = 3".to_owned()),
+            ("b.ohlw".to_owned(), "y = 2".to_owned())
         ]
     );
-    s.delete_library_file("ben", "cables", "a.olsw").unwrap();
+    s.delete_library_file("ben", "cables", "a.ohlw").unwrap();
     assert_eq!(s.library_files("cables").unwrap().len(), 1);
     assert_eq!(s.library_files("weather").unwrap().len(), 1);
     // Logged: undone as any change.
@@ -1011,7 +1011,7 @@ fn library_files_of_schema_3_become_each_lines() {
                  kind TEXT NOT NULL, name TEXT NOT NULL,
                  time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, text TEXT NOT NULL, PRIMARY KEY (kind, name));
-             INSERT INTO library_file (kind, name, user, text) VALUES ('cables', 'old.olsw', 'ana', 'x = 1');
+             INSERT INTO library_file (kind, name, user, text) VALUES ('cables', 'old.ohlw', 'ana', 'x = 1');
              UPDATE ols_meta SET value = '3' WHERE key = 'session_schema';",
         )
         .unwrap();
@@ -1019,7 +1019,7 @@ fn library_files_of_schema_3_become_each_lines() {
     let s = Session::open(&path).unwrap();
     assert_eq!(
         s.library_files("cables").unwrap(),
-        vec![("old.olsw".to_owned(), "x = 1".to_owned())]
+        vec![("old.ohlw".to_owned(), "x = 1".to_owned())]
     );
     assert!(!has_table(&path, "library_file"));
 }
@@ -1064,10 +1064,10 @@ fn a_new_project_has_no_tables_of_older_schemas() {
 #[test]
 fn library_file_names_are_plain() {
     for good in [
-        "cables.olsw",
-        "type-01.olss",
-        "I-0.10m.olsi",
-        "Zürich (2).olss",
+        "cables.ohlw",
+        "type-01.ohls",
+        "I-0.10m.ohli",
+        "Zürich (2).ohls",
     ] {
         assert!(crate::safe_file_name(good), "{good}");
     }
@@ -1077,9 +1077,9 @@ fn library_file_names_are_plain() {
         ".hidden",
         "a/b",
         "a\\b",
-        "C:evil.olsw",
+        "C:evil.ohlw",
         "x:stream",
-        "CON.olsw",
+        "CON.ohlw",
         "lpt1",
         "end.",
         "end ",
@@ -1257,7 +1257,7 @@ fn old_projects_get_routes_and_alignments_when_they_open() {
     // stays so (no route "main" made for it).
     let dir = std::env::temp_dir().join(format!("ols-session-{}-no-alignment", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     let mut line = example();
     line.routes.clear();
@@ -1665,7 +1665,7 @@ fn settings_changed_mark_every_section() {
 fn a_newer_project_file_is_left_unchanged() {
     let dir = std::env::temp_dir().join(format!("ols-session-{}-newer", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("p.ols");
+    let path = dir.join("p.ohl");
     std::fs::remove_file(&path).ok();
     {
         let c = Connection::open(&path).unwrap();
@@ -1870,7 +1870,7 @@ fn structure_loads_are_a_settings_row() {
 #[test]
 fn the_routes_upgrade_keeps_library_files() {
     let (path, mut s) = project("upgrade-libraries");
-    s.put_library_file("ana", "cables", "a.olsw", "x = 1")
+    s.put_library_file("ana", "cables", "a.ohlw", "x = 1")
         .unwrap();
     drop(s);
     {
@@ -1881,6 +1881,6 @@ fn the_routes_upgrade_keeps_library_files() {
     let s = Session::open(&path).unwrap();
     assert_eq!(
         s.library_files("cables").unwrap(),
-        vec![("a.olsw".to_owned(), "x = 1".to_owned())]
+        vec![("a.ohlw".to_owned(), "x = 1".to_owned())]
     );
 }

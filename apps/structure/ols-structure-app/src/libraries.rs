@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The libraries of a structure (File › Libraries, the Libraries panel):
-//! section libraries (`.olssec`), insulator assemblies (`.olsi`), poles
-//! (`.olsp`), structure models (`.olsfe`), load-case recipes (`.olsslc`)
-//! and pylon templates (`.olspt`) — where the window reads them, what the
+//! section libraries (`.ohlsec`), insulator assemblies (`.ohli`), poles
+//! (`.ohlp`), structure models (`.ohlfe`), load-case recipes (`.ohlslc`)
+//! and pylon templates (`.ohlpt`) — where the window reads them, what the
 //! structure names that none has, **Import** (a file or a folder copied
 //! into the folder the window reads, after each file is read and checked)
 //! and **Export** (the libraries the structure uses, or every one, written
@@ -42,7 +42,7 @@ pub enum LibKind {
     Insulators,
     /// Poles (`pole = "id"`).
     Poles,
-    /// Structure models (`model = "….olsfe"`).
+    /// Structure models (`model = "….ohlfe"`).
     Models,
     /// Load-case recipes on their own.
     Recipes,
@@ -78,8 +78,8 @@ impl LibKind {
         match self {
             LibKind::Sections => SECTION_FILE_EXTENSION,
             LibKind::Insulators => INSULATOR_FILE_EXTENSION,
-            LibKind::Poles => "olsp",
-            LibKind::Models => "olsfe",
+            LibKind::Poles => "ohlp",
+            LibKind::Models => "ohlfe",
             LibKind::Recipes => STRUCTURE_LOAD_CASE_FILE_EXTENSION,
             LibKind::Templates => TEMPLATE_FILE_EXTENSION,
         }
@@ -164,7 +164,7 @@ pub struct References {
     pub insulators: BTreeSet<String>,
     /// The pole file named (`pole = "…"`).
     pub pole: Option<String>,
-    /// The structure model named (`model = "….olsfe"`).
+    /// The structure model named (`model = "….ohlfe"`).
     pub model: Option<String>,
     /// The pylon template it was built from (`[template] id`).
     pub template: Option<String>,
@@ -344,7 +344,7 @@ pub fn scan(folders: &Folders, t: Option<&StructureType>) -> Listing {
                 crate::pole_panel::pole_file(&folders.structure, name).is_some_and(|p| p.is_file());
             if !found {
                 listing.missing.push(format!(
-                    "pole \"{name}\": no .olsp file of that name or id beside the structure"
+                    "pole \"{name}\": no .ohlp file of that name or id beside the structure"
                 ));
             }
         }
@@ -387,7 +387,7 @@ pub fn import(kind: LibKind, from: &Path, folders: &Folders) -> Result<Imported,
     let into = folders.import_into(kind)?;
     let files = if from.is_dir() {
         files_of(from, kind)
-    } else if from.extension().is_some_and(|x| x == kind.extension()) {
+    } else if ols_core::files::has_extension(from, kind.extension()) {
         vec![from.to_path_buf()]
     } else {
         return Err(format!(
@@ -681,7 +681,7 @@ impl StructureApp {
         let (name, text) = {
             let f = self.file.as_ref().ok_or("no structure open")?;
             let name = f.path().and_then(Path::file_name).map_or_else(
-                || format!("{}.olss", f.structure().id),
+                || format!("{}.ohls", f.structure().id),
                 |n| n.to_string_lossy().into_owned(),
             );
             (name, f.text())
@@ -733,7 +733,7 @@ impl StructureApp {
                         {
                             ui.close();
                             if let Some(p) = rfd::FileDialog::new()
-                                .add_filter(kind.title(), &[ext])
+                                .add_filter(kind.title(), &ols_core::files::open_extensions(ext))
                                 .pick_file()
                             {
                                 let _ = self.import_library(kind, &p);
@@ -948,10 +948,10 @@ mod tests {
             std::env::temp_dir().join(format!("ols-structure-libs-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("t.olss");
+        let path = dir.join("t.ohls");
         std::fs::write(
             &path,
-            r#"format = "ols-structure"
+            r#"format = "ohl-structure"
 version = 2
 id = "t"
 name = "T"
@@ -1016,11 +1016,11 @@ section = "NOT-THERE"
             before.missing
         );
         assert!(before.missing.iter().any(|m| m.contains("example-220-i")));
-        let lib = root().join("libraries/sections/example-sections.olssec");
+        let lib = root().join("libraries/sections/example-sections.ohlsec");
         let done = import(LibKind::Sections, &lib, &folders).unwrap();
         assert_eq!(
             done.written,
-            vec![dir.join("Sections/example-sections.olssec")]
+            vec![dir.join("Sections/example-sections.ohlsec")]
         );
         import(
             LibKind::Insulators,
@@ -1034,31 +1034,31 @@ section = "NOT-THERE"
         assert_eq!(after.missing.len(), 1, "{:?}", after.missing);
         assert!(after.missing[0].contains("NOT-THERE"));
         // The same ids in another file: refused, nothing copied.
-        let twin = dir.join("twin.olssec");
+        let twin = dir.join("twin.ohlsec");
         std::fs::copy(&lib, &twin).unwrap();
         let e = import(LibKind::Sections, &twin, &folders).unwrap_err();
         assert!(
             e.starts_with("nothing imported") && e.contains("is also in"),
             "{e}"
         );
-        assert!(!dir.join("Sections/twin.olssec").exists());
+        assert!(!dir.join("Sections/twin.ohlsec").exists());
         // A typo: refused with the file's error.
-        let typo = dir.join("typo.olssec");
+        let typo = dir.join("typo.ohlsec");
         std::fs::write(
             &typo,
-            "format = \"ols-sections\"\nversion = 1\nnmae = \"x\"\n",
+            "format = \"ohl-sections\"\nversion = 1\nnmae = \"x\"\n",
         )
         .unwrap();
         let e = import(LibKind::Sections, &typo, &folders).unwrap_err();
-        assert!(e.contains("typo.olssec") && e.contains("nmae"), "{e}");
+        assert!(e.contains("typo.ohlsec") && e.contains("nmae"), "{e}");
         // The wrong kind of file.
         assert!(import(LibKind::Poles, &typo, &folders).is_err());
         // Export what it uses: the structure, one section, its material.
         let out = dir.join("out");
         let text = std::fs::read_to_string(&path).unwrap();
-        let w = export(&after, "t.olss", &text, Which::Used, &out).unwrap();
-        assert!(w.contains(&out.join("structures/t.olss")));
-        let s = std::fs::read_to_string(out.join("sections/example-sections.olssec")).unwrap();
+        let w = export(&after, "t.ohls", &text, Which::Used, &out).unwrap();
+        assert!(w.contains(&out.join("structures/t.ohls")));
+        let s = std::fs::read_to_string(out.join("sections/example-sections.ohlsec")).unwrap();
         let read = SectionLibrary::parse(&s).unwrap();
         assert_eq!(
             read.sections
@@ -1073,7 +1073,7 @@ section = "NOT-THERE"
         assert_eq!(insulators.len(), 1);
         // Every library: all three assemblies.
         let all = dir.join("all");
-        export(&after, "t.olss", &text, Which::All, &all).unwrap();
+        export(&after, "t.ohls", &text, Which::All, &all).unwrap();
         assert_eq!(
             std::fs::read_dir(all.join("insulators")).unwrap().count(),
             3

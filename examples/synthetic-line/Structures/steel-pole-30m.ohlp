@@ -1,0 +1,29 @@
+# Invented example steel pole (NOT a real product): tapered tube, 30 m
+# long, 3 m in the ground. The moment capacities are round invented
+# numbers; a real pole takes them from its manufacturer.
+format = "ohl-pole"
+version = 1
+id = "steel-pole-30m"
+name = "Steel pole 30 m (invented example)"
+material = "steel"
+length = "30 m"
+embedment = "3 m"
+top_diameter = "300 mm"
+ground_diameter = "700 mm"
+wall = "8 mm"
+elasticity = "210 GPa"
+density = "7850 kg/m3"
+drag = 0.8
+
+# Moment capacity by height above the ground line.
+[[capacity]]
+height = "0 m"
+moment = "900 kN m"
+
+[[capacity]]
+height = "13 m"
+moment = "450 kN m"
+
+[[capacity]]
+height = "27 m"
+moment = "120 kN m"

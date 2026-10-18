@@ -12,7 +12,7 @@ fn parse(body: &str) -> Result<StructureType, String> {
     let text = format!(
         "version = 3\nid = \"P\"\nname = \"p\"\nkind = \"pole\"\nheight = \"20 m\"\n{body}"
     );
-    StructureType::parse(Path::new("p.olss"), &text).map_err(|e| e.message)
+    StructureType::parse(Path::new("p.ohls"), &text).map_err(|e| e.message)
 }
 
 const RINGS: &str = "[[pole.outline]]\nz = \"0 m\"\ndiameter = \"500 mm\"\n\
@@ -24,7 +24,7 @@ fn with(fields: &str) -> String {
 }
 
 /// Level 1 without an outline, 2 with diameters at two heights, 3 with
-/// what the pole check needs; a named `.olsp` is level 3.
+/// what the pole check needs; a named `.ohlp` is level 3.
 #[test]
 fn pole_levels() {
     let t = parse("[pole]\nshape = \"round\"\n").unwrap();

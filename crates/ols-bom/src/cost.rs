@@ -2,11 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Unit costs (`*.olscost`, TOML): the user's own prices, in one currency
+//! Unit costs (`*.ohlcost`, TOML): the user's own prices, in one currency
 //! (a label only; nothing is converted).
 //!
 //! ```toml
-//! format = "ols-cost"
+//! format = "ohl-cost"
 //! version = 1
 //! name = "Example unit costs (invented)"
 //! currency = "EUR"
@@ -49,11 +49,11 @@ use ols_core::units::Length;
 use serde::Deserialize;
 
 /// `format` of a cost file.
-pub const COST_FILE_FORMAT: &str = "ols-cost";
+pub const COST_FILE_FORMAT: &str = "ohl-cost";
 /// Newest format version read.
 pub const COST_FILE_VERSION: u32 = 1;
 /// File extension of cost files.
-pub const COST_FILE_EXTENSION: &str = "olscost";
+pub const COST_FILE_EXTENSION: &str = "ohlcost";
 
 /// Unit costs of one structure type.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -146,7 +146,7 @@ pub struct FixedItem {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CostData {
-    /// `"ols-cost"` (optional header).
+    /// `"ohl-cost"` (optional header).
     #[serde(default)]
     pub format: Option<String>,
     /// Format version (optional).
@@ -336,7 +336,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(CostData::from_toml("format = \"ols-line\"").is_err());
+        assert!(CostData::from_toml("format = \"ohl-line\"").is_err());
         assert!(CostData::from_toml("unknown = 1").is_err());
     }
 }

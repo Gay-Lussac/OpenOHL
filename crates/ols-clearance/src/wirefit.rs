@@ -583,7 +583,7 @@ mod tests {
     fn example() -> (Line, ols_cables::Library) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let line =
-            Line::load(&root.join("examples/synthetic-line/synthetic-line.ols.json")).unwrap();
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
         let library = ols_cables::Library::load(&root.join("libraries/cables")).unwrap();
         (line, library)
     }

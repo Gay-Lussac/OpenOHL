@@ -67,7 +67,7 @@ force = ["1 kN", "2 kN", "-3 kN"]
 "#;
 
 const RECIPES: &str = r#"
-format = "ols-structure-load-cases"
+format = "ohl-structure-load-cases"
 version = 1
 name = "test cases"
 
@@ -109,7 +109,7 @@ members = "all"
 "#;
 
 fn structure() -> StructureType {
-    StructureType::parse(Path::new("test.olss"), STRUCTURE).unwrap()
+    StructureType::parse(Path::new("test.ohls"), STRUCTURE).unwrap()
 }
 
 fn line() -> LineValues {
@@ -167,7 +167,7 @@ fn a_file_reads_with_units_and_refuses_typos() {
             "strenght",
         ),
         (
-            RECIPES.replace("format = \"ols-structure-load-cases\"", "format = \"x\""),
+            RECIPES.replace("format = \"ohl-structure-load-cases\"", "format = \"x\""),
             "\"x\"",
         ),
         (RECIPES.replace("version = 1", "version = 9"), "newer"),
@@ -457,7 +457,7 @@ fn a_table_read_back_types_only_what_differs() {
 /// reads back the same.
 #[test]
 fn line_values_files_mark_the_source_of_each_case() {
-    let v1 = r#"{"format": "ols-structure-line-values", "version": 1, "structure": "T2",
+    let v1 = r#"{"format": "ohl-structure-line-values", "version": 1, "structure": "T2",
         "cases": ["everyday", "wind"]}"#;
     let old = PlacedValues::parse(v1).unwrap();
     assert!(old.sources.is_empty());
@@ -483,7 +483,7 @@ fn line_values_files_mark_the_source_of_each_case() {
 /// file has none.
 #[test]
 fn line_values_files_carry_the_wires_missing_per_case() {
-    let v2 = r#"{"format": "ols-structure-line-values", "version": 2, "structure": "T2",
+    let v2 = r#"{"format": "ohl-structure-line-values", "version": 2, "structure": "T2",
         "cases": ["everyday", "ice"], "sources": ["load_case", "load_case"]}"#;
     let old = PlacedValues::parse(v2).unwrap();
     assert!(old.missing.is_empty());

@@ -58,7 +58,7 @@ interface io-types {
 
 /// World of file-format plugins: export a solved model, import a file.
 ///
-/// The export model is JSON (format "ols-export-model", documented in the
+/// The export model is JSON (format "ohl-export-model", documented in the
 /// OpenOHL plugin guide): the line file, its coordinate system and, per
 /// weather case, the solved wires as polylines.
 world io-plugin {
@@ -76,7 +76,7 @@ world io-plugin {
     export export-model: func(format: string, model: string, options: list<tuple<string, string>>) -> result<list<u8>, string>;
 
     /// Reads `data` in format `format` (an importer's id) and returns a line
-    /// file (.ols.json) as JSON.
+    /// file (.ohl.json) as JSON.
     export import-file: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<string, string>;
 }
 
@@ -115,11 +115,11 @@ world terrain-plugin {
 interface project-types {
     /// A library file of the project (as OpenOHL writes them).
     record library-file {
-        /// Library kind: "cables" (.olsw), "weather" (.olswc),
-        /// "loadcases" (.olslc), "structures" (.olss), "insulators"
-        /// (.olsi), "rules" (.olsr), "galloping" (.olsg), "ambient"
-        /// (.olsta), "costs" (.olscost), "poles" (.olsp), "femodels"
-        /// (.olsfe).
+        /// Library kind: "cables" (.ohlw), "weather" (.ohlwc),
+        /// "loadcases" (.ohllc), "structures" (.ohls), "insulators"
+        /// (.ohli), "rules" (.ohlr), "galloping" (.ohlg), "ambient"
+        /// (.ohlta), "costs" (.ohlcost), "poles" (.ohlp), "femodels"
+        /// (.ohlfe).
         kind: string,
         /// File name, with its extension.
         name: string,
@@ -129,7 +129,7 @@ interface project-types {
 
     /// A project read from another program's file.
     record project {
-        /// The line, as a line file (.ols.json) in JSON.
+        /// The line, as a line file (.ohl.json) in JSON.
         line: string,
         /// Its libraries.
         libraries: list<library-file>,

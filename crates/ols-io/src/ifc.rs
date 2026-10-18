@@ -10,11 +10,11 @@
 //! - every structure as an `IfcBuildingElementProxy` placed and turned
 //!   like the structure, drawn as 3D polylines (its stick drawing, else a
 //!   mast with arms to the insulator points) and the insulator strings,
-//!   with property set `OLS_Structure`;
+//!   with property set `OHL_Structure`;
 //! - every span (and jumper) of the chosen weather cases (option `cases`:
 //!   `first`, the default, or `all`) as an `IfcCableSegment`
 //!   (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set
-//!   `OLS_Wire` (case, section, span, cable, tensions, sag, voltage).
+//!   `OHL_Wire` (case, section, span, cable, tensions, sag, voltage).
 //!
 //! Heights and plan coordinates are the line's (no map conversion is
 //! written). Linear in the number of points.
@@ -267,7 +267,7 @@ pub fn document(model: &ExportModel, options: &Options) -> Result<String, String
         );
         f.properties(
             &e,
-            "OLS_Structure",
+            "OHL_Structure",
             &[
                 ("Id", format!("IFCIDENTIFIER({})", string(&s.id))),
                 ("Type", opt(s.structure_type.as_deref(), label)),
@@ -319,7 +319,7 @@ pub fn document(model: &ExportModel, options: &Options) -> Result<String, String
                 .map(|s| s.cable.as_str());
             f.properties(
                 &e,
-                "OLS_Wire",
+                "OHL_Wire",
                 &[
                     ("Case", label(&case.name)),
                     ("Section", label(&w.section)),

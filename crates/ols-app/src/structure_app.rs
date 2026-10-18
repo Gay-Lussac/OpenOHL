@@ -268,7 +268,7 @@ pub fn line_name(model: &Model) -> String {
         .file
         .file_name()
         .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-    name.strip_suffix(".ols.json")
+    ols_core::files::line_file_stem(&name)
         .map(str::to_owned)
         .unwrap_or(name)
 }
@@ -558,7 +558,7 @@ struct Watched {
 /// The library files the structure application imports (its
 /// File › Libraries): section libraries, insulator assemblies, poles,
 /// structure models, load-case recipes, pylon templates.
-pub const LIBRARY_EXTENSIONS: [&str; 6] = ["olssec", "olsi", "olsp", "olsfe", "olsslc", "olspt"];
+pub const LIBRARY_EXTENSIONS: [&str; 6] = ["ohlsec", "ohli", "ohlp", "ohlfe", "ohlslc", "ohlpt"];
 
 /// What the library files in `dirs` are: their names, sizes and times
 /// hashed (a file added, changed or removed changes it).
@@ -571,9 +571,9 @@ pub fn library_signature(dirs: &[PathBuf]) -> u64 {
             .flatten()
             .filter_map(Result::ok)
             .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|x| LIBRARY_EXTENSIONS.iter().any(|l| x == *l))
+                LIBRARY_EXTENSIONS
+                    .iter()
+                    .any(|l| ols_core::files::has_extension(&e.path(), l))
             })
             .map(|e| {
                 let m = e.metadata().ok();
@@ -620,7 +620,7 @@ pub struct StructureApps {
 }
 
 impl StructureApps {
-    /// The names of the load cases of `path` (the line's `.olslc`), read
+    /// The names of the load cases of `path` (the line's `.ohllc`), read
     /// again when the file changed.
     pub fn load_case_names(&mut self, path: &Path) -> Result<Vec<String>, String> {
         let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
@@ -1266,7 +1266,7 @@ mod tests {
         let (structures, sections) = (dir.join("structures"), dir.join("sections"));
         std::fs::create_dir_all(&structures).unwrap();
         std::fs::create_dir_all(&sections).unwrap();
-        let path = structures.join("t.olss");
+        let path = structures.join("t.ohls");
         std::fs::write(&path, "id = \"t\"\n").unwrap();
         let mut apps = StructureApps::default();
         apps.watch_libraries(&path, "t", vec![sections.clone()]);
@@ -1275,13 +1275,13 @@ mod tests {
         std::fs::write(structures.join("t.line-values.json"), "{}").unwrap();
         std::thread::sleep(POLL + Duration::from_millis(50));
         assert!(apps.poll().is_empty());
-        std::fs::write(sections.join("mine.olssec"), "format = \"ols-sections\"\n").unwrap();
+        std::fs::write(sections.join("mine.ohlsec"), "format = \"ohl-sections\"\n").unwrap();
         std::thread::sleep(POLL + Duration::from_millis(50));
         assert_eq!(
             apps.poll(),
             vec![Change::Libraries(structures.clone(), "t".into())]
         );
-        std::fs::write(structures.join("p.olsp"), "id = \"p\"\n").unwrap();
+        std::fs::write(structures.join("p.ohlp"), "id = \"p\"\n").unwrap();
         std::thread::sleep(POLL + Duration::from_millis(50));
         assert_eq!(apps.poll().len(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1306,7 +1306,7 @@ mod tests {
         }
         let model = model::load(
             Sources {
-                file: ex.join("synthetic-line-typed.ols.json"),
+                file: ex.join("synthetic-line-typed.ohl.json"),
                 library: Some(root.join("libraries/cables")),
                 structures: Some(structures.clone()),
                 point_budget: 1000,
@@ -1331,7 +1331,7 @@ mod tests {
             .get_by_label(crate::properties::OPEN_IN_STRUCTURE_APP)
             .click();
         harness.run();
-        let path = structures.join("type-02.olss");
+        let path = structures.join("type-02.ohls");
         {
             let r = harness.state_mut().ready().unwrap();
             let launched = r.structure_apps.dry_run.take().unwrap();
@@ -1414,11 +1414,11 @@ mod tests {
         }
         let mut model = model::load(
             Sources {
-                file: ex.join("synthetic-line-typed.ols.json"),
+                file: ex.join("synthetic-line-typed.ohl.json"),
                 library: Some(root.join("libraries/cables")),
                 structures: Some(structures.clone()),
-                weather: Some(ex.join("weather-cases.olswc")),
-                load_cases: Some(ex.join("load-cases.olslc")),
+                weather: Some(ex.join("weather-cases.ohlwc")),
+                load_cases: Some(ex.join("load-cases.ohllc")),
                 point_budget: 1000,
                 corridor: 60.0,
                 ..Sources::default()
@@ -1427,7 +1427,7 @@ mod tests {
         )
         .unwrap();
         let (path, placed) = prepare_edit(&model, "type-02", Some("T2")).unwrap();
-        assert_eq!(path, structures.join("type-02.olss"));
+        assert_eq!(path, structures.join("type-02.ohls"));
         let placed = placed.unwrap();
         assert_eq!(
             placed.values,
@@ -1567,7 +1567,7 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let file = dir.join("p.olss");
+        let file = dir.join("p.ohls");
         std::fs::write(&file, "id = \"p\"\n").unwrap();
         let mut apps = StructureApps {
             program: Some(program.clone()),

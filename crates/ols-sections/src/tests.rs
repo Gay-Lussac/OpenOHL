@@ -367,7 +367,7 @@ fn polygonal_hollow() {
 }
 
 const FILE: &str = r#"
-format = "ols-sections"
+format = "ohl-sections"
 version = 1
 name = "Test sections (invented)"
 default_material = "steel-x"
@@ -490,8 +490,8 @@ fn mistakes_are_refused_by_name() {
     assert!(e.contains("letters, digits"), "{e}");
     let e = err(&FILE.replace("version = 1", "version = 9"));
     assert!(e.contains("newer"), "{e}");
-    let e = err(&FILE.replace("\"ols-sections\"", "\"ols-wire\""));
-    assert!(e.contains("is not \"ols-sections\""), "{e}");
+    let e = err(&FILE.replace("\"ohl-sections\"", "\"ohl-wire\""));
+    assert!(e.contains("is not \"ohl-sections\""), "{e}");
 }
 
 #[test]

@@ -5,7 +5,7 @@
 //! Structure analysis (Phase 5): 3D finite elements of lattice towers,
 //! frames and guyed structures, and the pole check.
 //!
-//! - [`model`]: structure models (`.olsfe`): nodes in the structure's axes
+//! - [`model`]: structure models (`.ohlfe`): nodes in the structure's axes
 //!   (x right of the line, y ahead, z up), truss, frame (3D
 //!   Euler–Bernoulli), cable (tension only, pretension) and tension-only
 //!   truss members, sections and materials, supports and springs; nodes
@@ -19,7 +19,7 @@
 //!   held when a model would otherwise be a mechanism.
 //! - [`check`]: member usage (tension, compression with Euler buckling,
 //!   frame interaction N + M).
-//! - [`pole`]: pole library (`.olsp`) and the ground-line / taper moment
+//! - [`pole`]: pole library (`.ohlp`) and the ground-line / taper moment
 //!   check with wind on the pole and P-Delta amplification.
 //!
 //! The theory manual (`docs/theory/structures-fe.md`) gives the
