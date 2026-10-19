@@ -6,6 +6,15 @@ violation markers) and above it the plan, straightened along the route so
 that it lines up with the profile. The same drawings are written as SVG,
 DXF, PDF and PNG; the profile's numbers as CSV and XML.
 
+**Profile first, sheets on top.** The profile is one **continuous** view
+along the route: the desktop app's Profile page works on it, with no sheet
+breaks, and an export without `--page` writes it as one continuous
+drawing. **Sheets** are a separate, optional layer on top of it, for
+exports: the sheet format, the scales and where the sheets break belong
+to the export settings only (`ohl drawing … --page`, `ohl line --drawings
+… --page`, File › Export › Drawings… in the app) and never change the
+profile view or any computed number.
+
 ## From the command line
 
 `ohl drawing` solves the line exactly like `ohl line` (it takes all of its
@@ -49,6 +58,33 @@ sheet has its own height range and a title block: logos, line, weather
 cases, route, sheet n/N, station range and structures, scales, format. A
 span longer than the sheet, or a profile taller than it, is drawn anyway
 and reported as a warning: change the scales or the format.
+
+**Where a sheet may break.** A match line never falls at, or cuts
+through, a structure drawn on the sheet:
+
+- a sheet breaks only at a structure of the **run along the alignment**.
+  A structure of the route that stands **away from the alignment** (such
+  as a connection beside the line: on the route because it gives the
+  route itself, more than 5 m from the alignment) is drawn at its station
+  but never ends a sheet: a match line there would cut through the span
+  of the line passing it;
+- the break structure must stand at least **2 mm on paper** (4 m at
+  1:2000, 1 m at 1:500) from what is drawn of **every other structure**
+  — its station, its attachment points and its stick drawing, along the
+  route — whether that structure is on the alignment or away from it;
+- when the structure where the sheet would end is not free, the break
+  moves back to the last free structure that still fits on the sheet;
+- when no free structure fits, the sheet runs on to the next free one. It
+  is drawn anyway (longer than the paper, like a span that is too long)
+  and the warning names the structures it could not break at and why:
+  `no free sheet break within the 526 m the sheet holds at 1:2000 (T2 is
+  within 4.0 m of C1 (0+312.0); C1 stands off the alignment): the sheet
+  runs on to T3 (640 m), drawn anyway`.
+
+The first sheet starts at the first structure and the last ends at the
+last, whichever they are; the ends of a station range are kept as given.
+Lines without structures away from the alignment or close to one another
+are split as before.
 
 ## Files
 
@@ -137,7 +173,11 @@ horizontal and vertical scale, station range, clearance line, PNG
 resolution, the profile alone, the other solved weather cases (dashed),
 and the output folder. **Export** writes the files in the background with a
 progress window; the views stay usable and the window stays open for the
-next export. It draws the weather case shown (solid).
+next export. It draws the weather case shown (solid). The sheet format and
+scales chosen here are for the export only: the Profile page stays one
+continuous view along the route, without sheet breaks. A preview of the
+sheets in the app (their frames over the profile, or a page of their own)
+is not built yet; the files written are the preview.
 
 ## What is not there yet
 
