@@ -54,23 +54,34 @@ pub enum Tool {
 }
 
 impl Tool {
-    /// Every tool (the inventory).
+    /// Every tool, theme by theme ([`THEMES`]): the inventory and the
+    /// Tools menu list them in this order.
     pub const ALL: [Tool; 14] = [
         Tool::Select,
-        Tool::Move,
+        Tool::Edit,
         Tool::Delete,
         Tool::GoTo,
-        Tool::Edit,
+        Tool::NewAlignment,
+        Tool::AddAlignment,
+        Tool::EditAlignment,
         Tool::AddStructure,
+        Tool::Move,
+        Tool::Replace,
         Tool::AddString,
         Tool::StringWire,
-        Tool::AddAlignment,
         Tool::AddJumper,
-        Tool::NewAlignment,
-        Tool::EditAlignment,
         Tool::OnSpan,
-        Tool::Replace,
     ];
+
+    /// Its theme, by its name in [`THEMES`].
+    pub fn theme(self) -> &'static str {
+        match self {
+            Tool::Select | Tool::Edit | Tool::Delete | Tool::GoTo => "General",
+            Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment => "Alignments",
+            Tool::AddStructure | Tool::Move | Tool::Replace | Tool::AddString => "Structures",
+            Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
+        }
+    }
 
     /// Name.
     pub fn name(self) -> &'static str {
@@ -476,8 +487,12 @@ impl WheelSteps {
     }
 }
 
-/// The inventory (E): every tool; drag one onto a slot of the hotbar, or
-/// drag a slot here to empty it.
+/// The tools' themes, in the order the inventory and the Tools menu show
+/// them.
+pub const THEMES: [&str; 4] = ["General", "Alignments", "Structures", "Wires"];
+
+/// The inventory (E): every tool, grouped by theme; drag one onto a slot
+/// of the hotbar, or drag a slot here to empty it.
 pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
     let mut keep = *open;
     let screen = ctx.content_rect();
@@ -492,21 +507,24 @@ pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
             ui.label("Drag a tool onto a hotbar slot; drag a slot here to empty it.");
             let (_, dropped) =
                 ui.dnd_drop_zone::<Dragged, _>(egui::Frame::group(ui.style()), |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        for t in Tool::ALL {
-                            ui.vertical(|ui| {
-                                ui.dnd_drag_source(
-                                    egui::Id::new(("inventory", t.name())),
-                                    Dragged {
-                                        tool: t,
-                                        from_slot: None,
-                                    },
-                                    |ui| slot_frame(ui, Some(t), false, None),
-                                );
-                                ui.label(egui::RichText::new(t.name()).small());
-                            });
-                        }
-                    });
+                    for theme in THEMES {
+                        ui.label(egui::RichText::new(theme).strong());
+                        ui.horizontal_wrapped(|ui| {
+                            for t in Tool::ALL.into_iter().filter(|t| t.theme() == theme) {
+                                ui.vertical(|ui| {
+                                    ui.dnd_drag_source(
+                                        egui::Id::new(("inventory", t.name())),
+                                        Dragged {
+                                            tool: t,
+                                            from_slot: None,
+                                        },
+                                        |ui| slot_frame(ui, Some(t), false, None),
+                                    );
+                                    ui.label(egui::RichText::new(t.name()).small());
+                                });
+                            }
+                        });
+                    }
                 });
             if let Some(d) = dropped
                 && let Some(from) = d.from_slot
@@ -520,6 +538,16 @@ pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every tool has a theme of [`THEMES`], and [`Tool::ALL`] lists them
+    /// theme by theme (the alignment tools together, …).
+    #[test]
+    fn tools_are_listed_by_theme() {
+        let themes: Vec<&str> = Tool::ALL.iter().map(|t| t.theme()).collect();
+        let mut order: Vec<&str> = themes.clone();
+        order.dedup();
+        assert_eq!(order, THEMES, "{themes:?}");
+    }
 
     #[test]
     fn wheel_steps_are_one_at_a_time() {

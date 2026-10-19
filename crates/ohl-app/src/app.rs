@@ -7584,7 +7584,13 @@ fn menus(
     });
     ui.menu_button("Tools", |ui| {
         item(ui, Command::Inventory, out);
+        // Theme by theme, a line between them (as the inventory groups them).
+        let mut theme = "";
         for t in crate::tools::Tool::ALL {
+            if t.theme() != theme {
+                ui.separator();
+                theme = t.theme();
+            }
             let held = r.hotbar.tool() == t;
             let mut b = egui::Button::selectable(held, (t.image(ui.ctx(), 16.0), t.name()))
                 .image_tint_follows_text_color(true);
