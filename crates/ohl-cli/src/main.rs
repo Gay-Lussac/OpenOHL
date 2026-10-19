@@ -337,9 +337,10 @@ struct LineArgs {
     /// Side ground profile at this offset, m (right positive; repeatable).
     #[arg(long, allow_hyphen_values = true)]
     side_offset: Vec<f64>,
-    /// Half width of the plan view, m: the line width of the drawings (a
-    /// sheet may break at a structure within it of the alignment).
-    #[arg(long, default_value_t = 40.0)]
+    /// Line width of the drawings, m: the half width of the plan; what is
+    /// drawn along the line (a structure beside the line only within it,
+    /// wires cut at it). Also --line-width.
+    #[arg(long, alias = "line-width", default_value_t = 40.0)]
     plan_width: f64,
     /// Scale of the plan across the line, 1:1000 or 1000 (default: the
     /// horizontal scale).
