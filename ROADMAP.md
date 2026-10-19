@@ -301,8 +301,13 @@ memory.
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
   of its axes, snapped, one command each; a point of the type becomes the
-  structure's own. Joints are shown but not dragged (the body is edited
-  in OHL-Structure; a placed structure has no joints of its own).
+  structure's own. A dragged point takes along the wire points whose
+  strings all hang from it (given by length and direction or by their own
+  position: the strings keep their length and direction); a wire point
+  also held from another point (a V) stays and its strings change length,
+  the status bar says so. Joints are shown but not dragged: they are
+  edited in OHL-Structure only (a placed structure has no joints of its
+  own).
 - **U8. Level 2 and 3 members**: now drawn (built, in active development,
   not approved yet) in the line's 3D view — as lines, and close by as
   solids of their library profile; a member clicked selects its structure
