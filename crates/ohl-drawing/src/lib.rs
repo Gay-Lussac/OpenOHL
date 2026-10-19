@@ -1363,7 +1363,7 @@ pub(crate) mod tests {
         assert_eq!(across.len(), 1);
         assert_eq!(across[0].points, [[2.0, -40.0, 2.0], [10.0, 40.0, 10.0]]);
         assert!(cut_trace(&trace(&[[0.0, 50.0, 0.0], [1.0, 60.0, 0.0]]), 40.0).is_empty());
-        assert_eq!(cut_trace(&w, 60.0), [w.clone()]);
+        assert_eq!(cut_trace(&w, 60.0), std::slice::from_ref(&w));
     }
 
     #[test]
