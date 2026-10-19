@@ -50,7 +50,10 @@ pub mod pdf;
 pub mod png;
 mod table;
 
-pub use layout::{Sheet, SheetLayout, plan_model, profile_model, sheet_layout, sheets};
+pub use layout::{
+    ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet_layout,
+    sheets,
+};
 pub use table::{profile_csv, profile_xml};
 
 /// Drawing options.
