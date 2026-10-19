@@ -22,10 +22,11 @@ case checked on its own, both conductors always from the same case):
    (3D). The measurement is made in the vertical plane through P and Q
    (not square to the span: with large line angles a square section
    would compare points far apart along the other conductor).
-3. **Distance** d = |PQ| less both conductors' radii (iced in a case
-   with ice) and their polylines' bounds: the distance between the
-   conductors' **surfaces** ([Clearance](../user-guide/terrain.md#clearance));
-   P and Q are on the axes.
+3. **Distance** d = |PQ| between the conductors' **axes**, as the codes
+   define the phase distance (LeV: between axes, owner 2026-10-19), less
+   both polylines' error bounds (a few millimetres); P and Q are on the
+   axes. The other clearances are measured to the surfaces
+   ([Clearance](../user-guide/terrain.md#clearance)).
 4. **Local sag** of each conductor at its point: the vertical distance
    from its chord (the straight line between its clamps) down to the
    conductor — 0 at the clamps.
@@ -48,11 +49,11 @@ other conductor.
 
 How exact the measuring is (labels as in the [theory manual](../theory/conventions.md#conservative-assumptions-and-simplifications)):
 
-- **Conservative:** d is between the conductors' surfaces, less both
-  polylines' bounds (a few millimetres). A plugin whose code defines the
-  required distance between the axes is on the safe side by the two radii
-  (until 2026-10 d was between the axes). Exact: d between the surfaces of
-  the catenaries themselves.
+- **Conservative:** d is between the conductors' axes less both
+  polylines' bounds (a few millimetres), so never above the true distance
+  between the catenaries' axes. A code that defines the required distance
+  between the surfaces would need the two radii added to its required
+  distance by its plugin.
 - **Simplification:** stations every Δs: the closest approach between two
   stations is not measured, but the second conductor's closest point is
   searched continuously at each station, so the error is that of the first

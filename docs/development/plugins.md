@@ -262,8 +262,9 @@ geometry, and fast), the code's numbers and its formulas stay out of it.
   conductors (`conductor-pair`: same system, same span, each one's kV,
   plugin columns, diameter and mass, the mean height, the largest sags
   between spacers when spacers join them) and its stations (6 numbers
-  each: distance — between the conductors' surfaces, iced in a case with
-  ice, less the polylines' bound — β, each local sag, each l_k), the
+  each: distance — between the conductors' axes, as the codes define the
+  phase distance, less the polylines' bounds — β, each local sag, each
+  l_k), the
   numbers required at
   each station — the distance first, then the check's own (kept with the
   worst station) — and the rule applied.
