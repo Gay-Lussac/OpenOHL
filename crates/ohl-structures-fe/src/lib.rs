@@ -26,6 +26,7 @@
 //! formulation and its references.
 
 pub mod check;
+pub mod drawn;
 mod element;
 pub mod model;
 pub mod pole;
