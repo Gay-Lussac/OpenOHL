@@ -217,7 +217,10 @@ extension without a piece or legs behaves as before.
     pole check, notes and flags, the software version, the pre-alpha
     warning) and the members' results as CSV, from **Results › Structure
     report…** and `ohl-structure-report` (`ohl_structure_export::report`).
-    Not yet: a PDF of its own (the page prints), the input hashes of §3.
+    Not yet: a PDF of its own (the page prints), the input hashes of §3;
+    the report's format is to be defined with the owner (reports will be
+    needed as for the line). `ohl structure report` asks the tool for it
+    in JSON (`--request`).
 12. ~~**Poles are text files** (`.ohlp`), not edited in the app, and
     have no level.~~ *Built* (phase 3): a `[pole]` table in the structure
     file (outline by height, round or polygonal; the `.ohlp` fields), its

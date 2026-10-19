@@ -153,6 +153,16 @@ model's member `kind` (CSV, IFC `TENSION_MEMBER`, SAF "Tension only")
 takes the value `tension` too.
 The export model JSON stays version 1 (keys only added: `strings` per
 case) and the plugin WIT is unchanged (no record passes strings).
+The structures' own wind in a load case (`[case.structure]`) made
+`.ohllc` **2** (written at 2 only when a case gives a value there:
+`ohl_loads::LoadCases::written_version`, the design-code plugins'
+`ohl-code-common`, OHL-Design's library page on save); the line
+quantities `structure_wind` and `structure_wind_factored` of the
+structure recipes made `.ohlslc` **2** (`StructureLoadCases::new` writes
+2 only when a load takes one) and `.ohls` **6** (OHL-Structure raises a
+file to 6 after any edit leaving such a load,
+`ohl_structure_edit::raise_for_line_pressures`); the line-values file
+went to **4** (`structure_wind` in the values, always written).
 
 ### Coordinates and angles
 
@@ -713,7 +723,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 6 (`STRUCTURE_FILE_VERSION`; 6 adds the body generators' options in `[[generator]]` — and anything else added before the next release —, written only when a generator uses one (`ohl_structure_edit::body::OPTIONS_VERSION`); 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 6 (`STRUCTURE_FILE_VERSION`; 6 adds the body generators' options in `[[generator]]` — and anything else added before the next release —, written only when a generator uses one (`ohl_structure_edit::body::OPTIONS_VERSION`), and the recipe quantities `structure_wind` and `structure_wind_factored` in `[[load_case.load]]`, the file raised to the same 6 after any edit leaving such a load (`raise_for_line_pressures`); 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name`, `description` | string | — | unique id (referred to by `Structure.type`), display name, free text |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
@@ -963,7 +973,17 @@ looking ahead), `air_density_factor`, `ambient_temperature`.
 
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors
-`vertical`, `transverse`, `longitudinal`, `strength`, `tags`.
+`vertical`, `transverse`, `longitudinal`, `strength`, `tags`;
+`structure` (version 2, `[case.structure]`, `StructureWind`:
+`wind_pressure` Pa?, `wind_factor`?) — the wind on the structures' own
+bodies when it differs from the wires': each given replaces, for the
+structures only, the weather case's pressure or the transverse factor.
+`LoadCase::structure_wind(weather) -> BodyWind` (`pressure`, `factor`,
+`towards` −1/+1 across the line, `own_pressure`, `own_factor`;
+`factored()`, `origin()`) is the one rule every structure check takes:
+the wind bands (`add_structure_wind`), the member wind and the pole wind
+of the capacity checks (`analysis.rs`), and the line values sent to
+OHL-Structure. The wires and strings never take it.
 
 Results of `ohl_loads::structure_loads` (derived, never stored):
 `CaseLoads` per load case — `case`, `loads` (`AttachmentLoad` per
@@ -972,7 +992,8 @@ words) and `missing` (`MissingWire`: `structure`, `kind`
 `WireKind::Section`/`Jumper`, `id`, `reason` — one per structure a
 section not solved ends at or hangs on, or whose strings hold a jumper
 not solved: that structure's loads in that case are **incomplete**;
-`CaseLoads::missing_at`, `is_incomplete`). The usage
+`CaseLoads::missing_at`, `is_incomplete`) and `structure_wind`
+(`BodyWind` of the case). The usage
 (`ohl_loads::capacity`, `CaseUsage` → `StructureUsage`) carries the
 same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
@@ -993,13 +1014,13 @@ The structure application's recipes
 (`apps/structure/ohl-structure-loads`, [crates](structure-app.md)): in a
 `.ohls` as `[[load_case]]` (the core keeps them as raw tables,
 `StructureType::load_cases`), or on their own in a `.ohlslc` file
-(`format = "ohl-structure-load-cases"`, version 1). Full reference:
+(`format = "ohl-structure-load-cases"`, version 2: the line quantities `structure_wind*`; 1 read too). Full reference:
 [Structure load cases](../user-guide/structure-load-cases.md).
 
 | Item | Fields | Refers to |
 |---|---|---|
 | `LoadCaseRecipe` (`[[load_case]]`) | `name`, `description`, `line_case`, `strength`, `self_weight`, `load[]` | `line_case` ─► a line `LoadCase.name` |
-| `LoadRecipe` (`[[load_case.load]]`) | what: `what` (`LineQuantity`) **or** `value` (N) **or** `pressure` (Pa); how: `line_case`, `factor`, `one_sided`, `side`, `direction` (structure axes); where: `points` (`"all"` or labels), `sets`, `phases`, **or** `members` (`"all"` or ids); `note` | point / wire point labels, sets, phase labels (from the line), member ids of the `.ohls` |
+| `LoadRecipe` (`[[load_case.load]]`) | what: `what` (`LineQuantity`; `structure_wind`, `structure_wind_factored` — version 2 of `.ohlslc`, 6 of `.ohls` — are pressures on `members`, `LineQuantity::is_pressure`) **or** `value` (N) **or** `pressure` (Pa); how: `line_case`, `factor`, `one_sided`, `side`, `direction` (structure axes); where: `points` (`"all"` or labels), `sets`, `phases`, **or** `members` (`"all"` or ids); `note` | point / wire point labels, sets, phase labels (from the line), member ids of the `.ohls` |
 
 Evaluated (`evaluate`) with `LineValues` (per point: sets, phases; values
 per line load case, point or set and quantity) into a `LoadTable`
@@ -1026,8 +1047,22 @@ beyond the evaluation (`LoadTable::overrides_over`). `[[load]]` is read
 as case `model` (joints). CSV of the table (the `area` column optional
 when read) and the recipes; XLSX later.
 
+`LineValues` also carries `structure_wind` (`CaseWind` per line case:
+`case`, `pressure` Pa, `factor`, `towards` `-x`/`x`, `origin` — empty
+when the line's values, else which of the case's own); a load taking a
+structure wind is evaluated on its members as a surface load
+(pressure × factor for `_factored`, the wind's direction unless the load
+gives one, source `line`; `line_pressure`), and
+`resolve_line_pressures` writes those pressures into the recipes for a
+run (the extension's piece, the pole's wind). OHL-Structure adds, per
+line case with a wind on the body, a recipe of the case's name taking
+`structure_wind_factored` on all members (`line_wind_recipes`, rows of
+source `line`; on a pole, its wind); stored from the line
+(`GivenCase::wind`) as a `pressure` on all members.
+
 `ohl-structure-link` fills `LineValues` from `ohl_loads::structure_loads`
-(the six force values; tensions, wire wind and ice not yet), solves
+(the six force values and the case's `structure_wind`; tensions, wire
+wind and ice not yet), solves
 table cases on the structure's model (`analyse_cases` → `CaseResult`:
 joints with displacements, members with axial force and usage,
 reactions, Σ loads and Σ reactions; members' sections from the section
@@ -1051,8 +1086,8 @@ file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
-`format = "ohl-structure-line-values"`, version 3; versions 1 and 2 are
-read too): what the line application hands to the structure application
+`format = "ohl-structure-line-values"`, version 4; versions 1 to 3 are
+read too; 4 adds `structure_wind` in `values` and in each of `others`): what the line application hands to the structure application
 for **Edit…** on a placed structure — `structure` (placed structure id),
 `line` (project line, or the line file's name), `structure_type`,
 `cases` (the cases the line sends, its `structure_loads`: the load cases
@@ -1084,6 +1119,41 @@ resource (styles inline, no scripts, images or fonts) and
 tension positive; usage as a share, empty without a capacity), every
 member of every case solved by the FE model, the fields as
 `MemberResult` gives them.
+
+### Structure request and reply (JSON)
+
+How the command line asks the structure side for results without
+depending on its crates (`ohl structure analyse|report`, `crates/ohl-cli/src/structure_app_run.rs`;
+answered by `ohl-structure-report --request FILE|-`,
+`ohl_structure_export::request`). The tool is found as OHL-Design finds
+OHL-Structure: the program `OHL_STRUCTURE_REPORT` names, else
+`ohl-structure-report` next to `ohl` (or in the folder above), else on
+the `PATH`. Request on the tool's input, reply on its output; exit status
+0 when `ok`. Each side has its own types; the JSON is the contract
+(`apps/structure/ohl-structure-tests/tests/ohl_structure_cli.rs`).
+
+| Request (`ohl-structure-request`, version 1) | |
+|---|---|
+| `format`, `version` | `"ohl-structure-request"`, 1 (a newer one refused) |
+| `action` | `analyse` or `report` |
+| `structure` | the `.ohls` file (relative paths: from the working folder) |
+| `sections` | section library files or folders (empty: `Sections/` beside the file) |
+| `loads` | a load table CSV, or null (the file's own recipes without line values) |
+| `extension` | the extension to stand on, or null |
+| `cases` | the cases to solve (empty: all; an unknown one is an error) |
+| `report` | `report`: the `.html` to write (the members' CSV beside it) |
+| `date` | `report`: write today's date |
+
+| Reply (`ohl-structure-reply`, version 1) | |
+|---|---|
+| `format`, `version` | `"ohl-structure-reply"`, 1 |
+| `ok`, `error` | the run went through; else why (the rest empty) |
+| `software` | `ohl-structure-report <version>` |
+| `structure`, `extension`, `dz` | the structure's id, the extension stood on (null: as written), its `dz` (m) |
+| `notes` | what applies to every case (`StructureRun::notes`, sections given twice) |
+| `checks` | per check (`members`, `pole`): `check`, `usage` (share, null: none), `case`, `governs`, `failed` ([case, why]) |
+| `cases` | per case: `name`, `usage` (largest over its checks; null when not finite), `members` and `pole` (null: no such check): `usage`, `governs`, `error` (null: it ran), `notes` |
+| `files` | `report`: `report`, `members_csv` (paths); else null |
 
 ### Structure exports (IFC, SAF, CSV)
 
@@ -1228,7 +1298,7 @@ above**.
 | `io-plugin` import | file bytes, options (`into`: a line file to update) | a **line file** JSON, validated by the host like any line file |
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in the project's `library` objects |
-| `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2) |
+| `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2; the structures' own wind of a case travels in the `.ohllc` text as `[case.structure]`, interface unchanged) |
 | `code-wind-plugin` (`design-code`; optional export `structure-wind`, looked for by the host: a 0.3 plugin without it unchanged) | the same parameter file | `option<string>`: a section library's text with only a `[wind]` table (drag per shape, face drag and shielding by solidity), checked as the section library reads it and written as `<plugin>-wind.ohlsec` into the section library; none: no factors (the member wind keeps its generic drag, no shielding) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 

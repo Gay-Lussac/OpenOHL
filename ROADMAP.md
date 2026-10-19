@@ -40,7 +40,7 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 72 validation cases pass; the private Swiss plugin and the importers of
+- 74 validation cases pass; the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -277,11 +277,27 @@ memory.
   the preview on or off) are kept in the project per project line.
 - **U4. OHL-Structure**: *built, in active development (not approved
   yet)*: the Results tab solves on the chosen extension, with the line's
-  pole check; wind bands rise with an extension (line and app, one rule);
-  the structure report (HTML and members CSV, menu and
-  `ohl-structure-report`). Still open: a PDF of its own, the input hashes
-  in the report; the pole's wind in the app taken from the case's
-  pressure on all members (owner to confirm).
+  pole check (as the line does); wind bands rise with an extension (line
+  and app, one rule); the structure report (HTML and members CSV, menu
+  and `ohl-structure-report`). Follow-up of 2026-10-19, built (not
+  approved yet): **the wind on the structures set apart from the wind on
+  the wires** per load case (`[case.structure]` of the `.ohllc`, version
+  2: the structures' own wind pressure and factor, defaulting to the
+  weather case's pressure and the transverse factor; design-code plugins
+  can supply them in the load cases they generate, the example plugins
+  give none) — one rule for the line's structure checks (bands, member
+  wind, pole) and OHL-Structure (the line values carry it; line cases put
+  it on the members and the pole; recipes take `structure_wind` /
+  `structure_wind_factored`); **`ohl structure analyse|report`**: `ohl`
+  asks OHL-Structure's headless tool `ohl-structure-report` for a
+  structure's results in JSON (a program of its own, found next to `ohl`,
+  on the `PATH` or through `OHL_STRUCTURE_REPORT`; no crate dependency).
+  Still open: the **report format, to define with the owner** (reports
+  will be needed as for the line); a PDF of its own and the input hashes
+  in the report with it; the same pressure still becomes member
+  forces differently: the line's member wind takes U5's drag and
+  shielding factors, OHL-Structure's surface loads the projected area
+  without drag.
 - **U5. Section library**: sections are now typed in OHL-Structure
   (Sections & materials › Section library: new, edit, duplicate, delete,
   properties computed as typed, undoable), and the member wind takes drag
@@ -514,7 +530,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view built since 2026-10-19 (U7): points and wire points; joints shown only. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
 - [x] **Body generators** (format version 3; the options version 6): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group; options off by default: redundants per panel (one or two levels), plan bracing (X, diamond) per level and where the slope changes or at the crossarms' levels, widths per panel, several points on one crossarm (2026-10-19)
-- [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`)*
+- [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`, its format still to define with the owner; the structures' own wind per load case, `[case.structure]` of the `.ohllc`, one rule for the line and OHL-Structure; `ohl structure analyse|report` asking `ohl-structure-report` in JSON)*
 - [x] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] Tower geometry from another program's XML export (joints, members, sections) into levels 2 and 3 (local importer)
 - [ ] Level 2 from LiDAR: a plugin (later); the classes holding pylons chosen by the user from all classes, as in the display options

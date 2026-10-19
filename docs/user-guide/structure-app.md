@@ -411,6 +411,29 @@ were read and from where.
 **Arrows** draws the loads of the case shown in the view, ending at
 their point (a member's at its middle), **m per kN** long.
 
+### The line's wind on the structure body
+
+Each line case comes with the wind on the structure's own body as the
+line's checks take it: the load case's own values for the structures
+(`[case.structure]` of the `.ohllc`,
+[Load cases](loads.md#wind-on-the-structures-apart-from-the-wires-casestructure))
+or its weather case's pressure and transverse factor. A line case with
+such a wind gets, after its forces at the points, one row per member:
+pressure × factor × the member's area (as a surface load, source `line`,
+note *the line case's wind on the structure body*), blowing as the
+line's wind (−x for wind from the right); a pole takes the same
+pressure as its wind. So a line case solved here loads the body with the
+same pressure as the line's **fe** and **pole** checks. (How the
+pressure becomes member forces still differs: the line's member wind
+takes the section library's drag and shielding factors, the surface
+loads here the projected area without drag or shielding,
+[theory](../theory/structures-fe.md#the-structures-wind-of-a-load-case).) Recipes take it with `what = "structure_wind_factored"` (or
+`structure_wind`, unfactored) on `members`; **Take the line's load
+cases** adds that load to a case taken from a line case with wind, and
+**Store in the structure file** stores it as a `pressure` on every
+member. Files written before have no such values: a recipe taking one
+shows **no line value**, the line cases no wind rows (as before).
+
 ## Results
 
 At level 3 (every member with a section and a joint with a `support`,
@@ -507,6 +530,29 @@ a load table CSV (default: the file's own recipes without line values),
 `--extension`, `--case` (default: every case), `--date` (default: no
 date, so that reports of the same file are identical). It prints the
 usage per check and writes `<name>.members.csv` beside the page.
+
+**From `ohl`.** The command line asks this tool for a structure's
+results — the applications talk, the crates stay apart:
+
+```bash
+ohl structure analyse tower.ohls --sections libraries/sections --extension +3
+ohl structure report tower.ohls --case wind -o tower-report.html
+ohl structure analyse tower.ohls --json     # the tool's JSON reply as it is
+```
+
+`ohl` starts `ohl-structure-report --request -` — the program
+`OHL_STRUCTURE_REPORT` names, else the one next to `ohl` (or in the
+folder above), else on the `PATH`, as OHL-Design finds OHL-Structure —,
+writes the request (JSON) on its input and reads the reply (JSON) on its
+output: per check its largest usage and governing case, per case the
+usage of the members and the pole with what governs and the notes, and
+for a report the files written
+([data model](../development/data-model.md#structure-request-and-reply-json)).
+Not found, `ohl` says where it looked and how to build it (`cargo build
+--release -p ohl-cli -p ohl-structure-export`). The tool gets
+`--timeout` seconds (default 300). The tool answers such a request on
+its own too: `ohl-structure-report --request request.json` (or `-` for
+the input).
 
 ## Undo, saving, closing
 
