@@ -65,13 +65,15 @@ A tutorial of about 10 short chapters on the starter template: route,
 alignment, first basic structures, strings on the structures, the cable
 file and stringing, jumpers; then results, checks, OHL-Structure, saving.
 Proposed to start once the starter template has landed.
-> **Owner:**
+> **Owner:** Later: the tutorial comes once most features are done, just
+> before a release. Other work goes first.
 
 ### O2. Rename the project folder on disk
 `…/Claude/OLS CAD` → `…/Claude/OpenOHL`, as the last step when nothing is
 running and the apps are closed (the agents' worktrees and the saved
 session notes follow the path).
-> **Owner:**
+> **Owner:** Done 2026-10-18 (folder, repository and website renamed;
+> formats, crates, plugins and local data renamed ols → ohl).
 
 ### O3. Usability review — items not yet decided
 From the review of 2026-10-18 (quick wins are being done now):
@@ -83,53 +85,123 @@ From the review of 2026-10-18 (quick wins are being done now):
 - **Option "tools act on left-click"** (today a right-click uses a tool;
   left-click selects). Default unchanged.
 - **A searchable coordinate-system picker** (EPSG list).
-> **Owner:**
+> **Owner:** (2026-10-19)
+> 1. 3D and Plan: leave as is, the layout is fine.
+> 2. One name per object: yes, same object same name everywhere; unify.
+> 3. "String all sets…": only if it is robust (how does it know which set
+>    goes where?); otherwise not. Decided: not done (matching sets by
+>    number does not work between suspension and tension structures).
+> 4. Tools on left-click option: go ahead.
+> 5. Searchable coordinate-system picker: yes.
 
 ### O4. Code checks of members and joints (e.g. SIA 263)
 A plugin interface for code checks: what the core hands over (member
 forces, buckling lengths, sections, joint details), what comes back
 (usage per member and joint, formulas). To be agreed before it is built.
-> **Owner:**
+> **Owner:** (2026-10-19) Can be done in parallel with other work. First
+> code: SIA 263 for steel. Members first, then joints. The theory of the
+> checks goes in a theory page of the book.
 
 ### O5. Tension-only parts that stay nearly free
 Today: kept active and flagged *approximate* (see U1). Options when this is
 treated: a very low compression stiffness instead of tension-only (your
 idea), a damped or energy-based active-set update, and telling the user
 which part is nearly free.
-> **Owner:**
+> **Owner:** (2026-10-19) What matters: it always solves, close to
+> reality. In reality such a member takes a very light compression. Also
+> consider treating tension-only members as cables. The complex
+> active-set update can go on the list for later.
+> Decided: a tension-only member carries compression up to its own buckling
+> load (always solves; members at that load shown in the results). Not as
+> sagging cables. The complex active-set update: later.
 
 ### O6. Clearances to the structure body (levels 2 and 3)
 None at level 1. The tests for levels 2 and 3 are still to be defined with
 you (what is checked, against which part of the body, in which cases).
-> **Owner:**
+> **Owner:** (2026-10-19)
+> 1. What is checked: the conductors, and **basic volumes on the strings**:
+>    spheres, cylinders, boxes and cones, each **grounded**, **insulated**
+>    or **electrified**; distances are computed from these as well as from
+>    the conductors. Each shape is placed along the string's length, with
+>    its rotations (degrees of freedom) **free or blocked** to mimic real
+>    strings; the freedoms are along the string's own axis, so they do not
+>    depend on how the string is defined in the pylon. For double or triple
+>    strings: the attachment point of each, the configuration and the
+>    spacing.
+> 2. Against every member of the body.
+> 3. Cases as for the other clearances: weather cases chosen, wind stepped.
+> 4. Distances rule based; a rule may give a different distance with wind
+>    than in still air.
+
+**Proposed details for O6 (to confirm):**
+- **The shapes belong to the string type** (the insulator library), so
+  every string of that type has them; a structure may override one.
+- **Position along the string** from its top (fraction or metres), size,
+  and an offset from the string's axis (an arcing horn beside it).
+- **Electrical state:** *grounded* = at the structure's potential (top
+  fittings, tower-side horn); *electrified* = at the line's potential
+  (clamp, conductor-side horn, corona ring, yoke at the bottom);
+  *insulated* = the insulator itself (its length counts as insulation, not
+  as a clearance). Checked: electrified shapes and conductors against
+  grounded shapes and every body member.
+- **Freedoms** in the string's own axes: swing across the line, swing
+  along it, twist about the axis; each free or blocked.
+- **Several strings in one assembly** (double, triple): number,
+  arrangement (side by side across the line, one behind the other along
+  it, triangle), spacing, and the yoke plate as a shape.
+- **The members' real size:** distance to the member's surface (from its
+  section's outer dimensions), not to its centre line.
+- **Jumpers** at tension structures checked against the body too.
+- **Results:** the smallest distance per rule and case, which shape and
+  which member, shown in the 3D view; levels 2 and 3 only (level 1 has no
+  body).
+> Details confirmed by the owner (2026-10-19).
 
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from
 level 3 structures. Level 4: structures and line iterated until both
 converge. Order and timing to decide.
-> **Owner:**
+> **Owner:** (2026-10-19) Straight to level 4: level 3 is a simplified
+> version of 4 and can easily be derived from it afterwards.
+> Also needed (possibly with O7): **anchoring (guy) cables** in the
+> structures.
 
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications but have
 not been imported into the target programs yet. A test file opened by
 someone with those programs would confirm them.
-> **Owner:**
+> **Owner:** (2026-10-19) Both: check the files now with free open-source
+> tools (IfcOpenShell for IFC, the SAF schema), and have a test file opened
+> in the real programs when someone can.
 
 ### O9. Design-code loads still to come
 Security / broken-wire and construction loads, and code-specific wind on
 structures, in the design-code plugins.
-> **Owner:**
+> **Owner:** (2026-10-19) All three, each in its respective design-code
+> plugin. The core gets a **broken-wire case** type (the section solved
+> with the wire gone) for the plugins to use: approved.
 
 ### O10. A pole with both `solid` and a library section
 Today *solid* wins (the section still gives elasticity and density).
 Alternative: refuse the combination.
-> **Owner:**
+> **Owner:** (2026-10-19) Poles need their own user-defined volumes: some
+> shapes fall outside the standard library.
+
+**Proposed for O10 (to confirm):** a pole's shape is either a library
+section or its **own shape**, never both (the combination is refused with a
+clear message). Its own shape is given along the height in segments, each
+with a cross-section (circle, polygon with n sides, rectangle, or a drawn
+outline), solid or hollow (wall thickness), tapering from bottom to top;
+area, inertia, section modulus, weight and wind area are computed from that
+geometry, and the material (steel, concrete, wood) is chosen per pole.
+> Confirmed by the owner (2026-10-19).
 
 ### O11. Validation report
 Phase 1 validation against published examples (CIGRE TB 324, textbooks)
 is still open; a full validation report is a goal for 1.0. Needs
 published reference data (no tables typed from memory).
-> **Owner:**
+> **Owner:** (2026-10-19) Later: the owner will say when reference data is
+> available.
 
 ## Unfinished or approximate (known limitations)
 
