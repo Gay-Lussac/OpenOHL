@@ -798,3 +798,112 @@ fn write_files() {
     assert_eq!(ifc::iso_time(0), "1970-01-01T00:00:00");
     assert_eq!(ifc::iso_time(1_760_659_200), "2025-10-17T00:00:00");
 }
+
+/// The report of a structure file on its own (its recipes without line
+/// values, its `[[load]]`s as case `model`).
+fn report_of(text: &str, dir: Option<&Path>) -> report::Report {
+    let library = SectionLibrary::default();
+    let (table, recipes) = own_load_table(text, &library).unwrap();
+    report::from_text(&report::FromText {
+        text,
+        file: "type.ohls",
+        dir,
+        sections: &library,
+        sections_from: "none",
+        table: &table,
+        recipes: &recipes,
+        extension: None,
+        case: None,
+        incomplete: &[("wind".to_owned(), "S12 not solved".to_owned())],
+        software: "OHL-Structure 9.9.9",
+        date: Some("2026-10-19"),
+    })
+    .unwrap()
+}
+
+/// The report of the example lattice structure: one page without any
+/// external resource, the warning, the version, every case, the members
+/// by usage with their governing case, the reactions; the CSV one row
+/// per case and member.
+#[test]
+fn the_structure_report_of_a_lattice_structure() {
+    let text = type_02();
+    let r = report_of(&text, None);
+    let h = &r.html;
+    assert!(h.starts_with("<!DOCTYPE html>"));
+    for gone in [
+        "http:", "https:", "<script", "<link", "<img", "src=", "@import", "url(",
+    ] {
+        assert!(!h.contains(gone), "{gone}");
+    }
+    for shown in [
+        report::WARNING,
+        "OHL-Structure 9.9.9",
+        "2026-10-19",
+        "Level</th><td>3 — full design",
+        "none — as written",
+        "<h2>Sections and materials</h2>",
+        "<h2>Load cases</h2>",
+        "ice, unbalanced",
+        "<h2>Usage per check</h2>",
+        "members (finite elements)",
+        "<h2>Members — largest usage over the cases</h2>",
+        "<h2>Reactions</h2>",
+        "<h2>Notes and flags</h2>",
+        "wind: not checked — S12 not solved",
+    ] {
+        assert!(h.contains(shown), "{shown}");
+    }
+    // The warning at the top and at the end.
+    assert_eq!(h.matches(report::WARNING).count(), 2);
+    // Quotes are escaped.
+    assert!(h.contains("the line&#39;s wind case"));
+    assert!(!h.contains("Pole check"));
+    let lines: Vec<&str> = r.csv.lines().collect();
+    assert_eq!(lines[0], "case,member,axial_n,usage,governs,slack");
+    let members = text.matches("[[member]]").count();
+    assert_eq!(lines.len(), 1 + 4 * members);
+    assert!(r.summary[0].starts_with("members: "), "{:?}", r.summary);
+}
+
+/// The report of the example pole structure with one case of its own:
+/// the pole, its check per case and the governing case.
+#[test]
+fn the_structure_report_of_a_pole() {
+    let dir = root().join("examples/synthetic-line/Structures");
+    let text = std::fs::read_to_string(dir.join("type-05.ohls"))
+        .unwrap()
+        .replace("version = 2", "version = 3")
+        + "\n[[load_case]]\nname = \"c1\"\n[[load_case.load]]\nvalue = \"5 kN\"\n\
+           direction = \"x\"\npoints = [\"A1\"]\n";
+    let r = report_of(&text, Some(&dir));
+    for shown in ["<h2>Pole</h2>", "steel-pole-30m", "<h2>Pole check</h2>"] {
+        assert!(r.html.contains(shown), "{shown}");
+    }
+    assert!(!r.html.contains("<h2>Reactions</h2>"));
+    assert_eq!(r.csv.lines().count(), 1);
+    assert!(
+        r.summary[0].starts_with("pole: ") && r.summary[0].contains("in case c1"),
+        "{:?}",
+        r.summary
+    );
+    // An extension the structure does not have.
+    let library = SectionLibrary::default();
+    let (table, recipes) = own_load_table(&text, &library).unwrap();
+    let e = report::from_text(&report::FromText {
+        text: &text,
+        file: "",
+        dir: Some(&dir),
+        sections: &library,
+        sections_from: "none",
+        table: &table,
+        recipes: &recipes,
+        extension: Some("+3"),
+        case: None,
+        incomplete: &[],
+        software: "x",
+        date: None,
+    });
+    assert!(e.unwrap_err().contains("+3"));
+    assert_eq!(report::today().len(), 10);
+}

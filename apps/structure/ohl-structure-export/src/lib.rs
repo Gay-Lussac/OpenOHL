@@ -12,7 +12,9 @@
 //!   into their own parts);
 //! - [`saf`]: SAF, the Structural Analysis Format (xlsx; analysis
 //!   programs);
-//! - [`csv`]: neutral CSV tables for anything else.
+//! - [`csv`]: neutral CSV tables for anything else;
+//! - [`report`]: the structure report (printable HTML and the members'
+//!   results as CSV) of a run of the structure's cases.
 //!
 //! Each takes plain data, an [`ExportStructure`], made by
 //! `ohl_structure_link::export_structure` from the structure file, the
@@ -21,6 +23,7 @@
 
 pub mod csv;
 pub mod ifc;
+pub mod report;
 pub mod saf;
 mod step;
 pub mod xlsx;
