@@ -302,7 +302,10 @@ TAK) and id renames in the tables.
     the waist, panel levels — and each panel's **bracing pattern**
     (single diagonal, X, K, diamond, Warren, with or without horizontals
     and redundants);
-  - **crossarms** from a face of the body to the structure's points;
+  - **crossarms** from a face of the body to the structure's points
+    (several points on one arm: *built*, option `one_arm`);
+  - **plan bracing** at chosen levels, and where the slope changes and
+    at the crossarms' levels (*built*, options `plan`, `plan_auto`);
   - **peak / earth-wire peak**;
   - **copy a face** to the opposite face.
 - **Symmetry** (option, decision 14): joints and members mirrored about
@@ -574,7 +577,13 @@ Each phase is a deliverable of its own, checked and committed.
    rectangular), *peak*, *copy a face*, each a pure function writing
    ordinary joints and members; rebuild replacing only what a generator
    made (what was set on it kept, what others use kept and reported);
-   edits mirrored by the symmetry and **Make symmetric**; groups with a
+   edits mirrored by the symmetry and **Make symmetric**; *built
+   (2026-10-19), off by default:* redundants per panel (one or two
+   levels, in every bracing pattern, triangulated), plan bracing per
+   level (X, diamond with a cross) and where the slope changes or at
+   the crossarms' levels, widths per panel (the slope changing), several
+   points on one crossarm (a section of the arm at each inner point);
+   groups with a
    section and kind per group written on each member (no `[[group]]`
    table); the Generators panel (preview, Apply = one undo step),
    group column and filter, Shift + click in tables, Design › Groups
@@ -593,10 +602,8 @@ Each phase is a deliverable of its own, checked and committed.
    the file, or the wall typed) and **Body › Extensions** (the piece by
    hand or built in one go, legs, the view standing on an extension)
    ([user guide](../user-guide/structure-app.md#poles-and-extensions)).
-   Not yet: redundants in the panels, plan bracing, a crossarm with
-   several points on one arm. *Built* (U4): the FE results panel solving
-   on an extension, the pole check in it, wind bands raised by an
-   extension.
+   *Built* (U4): the FE results panel solving on an extension, the pole
+   check in it, wind bands raised by an extension.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the

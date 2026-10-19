@@ -282,8 +282,11 @@ memory.
   member wind only; only members in a face turned to the wind shielded;
   the face outline as the convex hull of its joints; no factor outside a
   table's range). **Materials typed in the section editor: planned.**
-- **U6. Body generators**: no redundants, plan bracing, or several points
-  on one crossarm yet.
+- **U6. Body generators**: redundants, plan bracing, widths per panel and
+  several points on one crossarm built (2026-10-19, options off by
+  default, not approved yet); open: whether files using them raise the
+  `.ohls` version, and the small share of the loads the stabilisation
+  takes with P-Delta at the redundants' joints (0.2–1.1 % in the tests).
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
@@ -485,7 +488,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] String points as joints or as a fraction along a member, so strings follow the members
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view built since 2026-10-19 (U7): points and wire points; joints shown only. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
-- [x] **Body generators** (format version 3): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group *(not yet: redundants in the panels, plan bracing, a crossarm with several points on one arm)*
+- [x] **Body generators** (format version 3): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group; options off by default: redundants per panel (one or two levels), plan bracing (X, diamond) per level and where the slope changes or at the crossarms' levels, widths per panel, several points on one crossarm (2026-10-19)
 - [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`)*
 - [x] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] Tower geometry from another program's XML export (joints, members, sections) into levels 2 and 3 (local importer)
