@@ -256,7 +256,11 @@ away out: line angles and spans ahead are taken along it (a structure
 away has 0 for both), and the profile's spans are those between
 consecutive structures of the run (`AlignmentView::consecutive`) plus
 those to a structure away (projected), so a connection whose station falls
-between two towers does not break the span between them.
+between two towers does not break the span between them. The drawings
+mark it too (`ohl_drawing::Mark::away`, computed): a plan and profile
+sheet never breaks at a structure away, nor within
+`BREAK_CLEARANCE_MM` (2 mm on paper) of what is drawn of any other
+structure.
 
 **Files of version 2** held `routes` that were their own alignment
 (`alignment`, `structures`) or followed their structures, and the line's
