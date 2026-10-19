@@ -17,10 +17,18 @@
 //! - **Frames**: linear interaction N/N_c + M_y/M_y,c + M_z/M_z,c with the
 //!   largest end moments (the allowable moments, else W × yield).
 //! - **Cables**: tension only.
-//! - **Tension-only members**: as trusses while they take force; one left
-//!   out as slack uses 0 ("slack"). One kept active because the active
-//!   set did not settle ([`Solution::kept_active`]) is checked as a truss
-//!   (compression too) and marked [`KEPT_ACTIVE`]: approximate.
+//! - **Tension-only members**: tension as trusses; their compression —
+//!   never above their own buckling load, which the solver caps
+//!   ([`crate::solve::buckling_loads`]) — against the member's
+//!   `capacity_compression`, else the allowable compression, else area ×
+//!   yield, without the Euler load again (the solve has taken buckling
+//!   into account: a bowed member carries its buckling load and no more,
+//!   it does not fail by it). One bowed says so ([`BOWED`]: `bowed:
+//!   carries its buckling load 0.83 kN`); one left out as slack (no
+//!   buckling load) uses 0 ("slack"). One kept active because the active
+//!   set did not settle ([`Solution::kept_active`], the last resort) is
+//!   checked as a truss (compression too) and marked [`KEPT_ACTIVE`]:
+//!   approximate.
 
 use crate::model::{MemberKind, Model};
 use crate::solve::Solution;
@@ -41,6 +49,11 @@ pub struct MemberUsage {
 /// active set did not settle ([`Solution::kept_active`]): its usage is
 /// that of a truss, approximate.
 pub const KEPT_ACTIVE: &str = "kept active (did not settle)";
+
+/// The mark on what governs a bowed tension-only member
+/// ([`crate::MemberForces::bowed`]), followed by its buckling load:
+/// `bowed: carries its buckling load 0.83 kN`.
+pub const BOWED: &str = "bowed: carries its buckling load";
 
 /// Euler buckling load of a member, N (none without a second moment).
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
@@ -90,6 +103,33 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
                 }
             } else if m.kind == MemberKind::Cable {
                 Some((0.0, "slack".into()))
+            } else if m.kind == MemberKind::Tension && !solution.kept_active.contains(&idx) {
+                // Buckling is in the solve (the cap): no Euler term.
+                let bowed = if f.bowed {
+                    format!("{BOWED} {:.2} kN — ", kn(-n))
+                } else {
+                    String::new()
+                };
+                let cap = m.capacity_compression.map(|c| (c, " (given)")).or(s
+                    .compression
+                    .or(s.yield_strength.map(|y| y * s.area))
+                    .map(|c| (c, "")));
+                let Some((cap, given)) = cap else {
+                    // No capacity: no usage, but a bowed member says so.
+                    return MemberUsage {
+                        member: idx,
+                        usage: None,
+                        governs: bowed.trim_end_matches(" — ").to_owned(),
+                    };
+                };
+                Some((
+                    -n / (strength * cap),
+                    format!(
+                        "{bowed}compression {:.1} kN of {:.1} kN{given}",
+                        kn(-n),
+                        kn(cap)
+                    ),
+                ))
             } else if let Some(cap) = m.capacity_compression {
                 Some((
                     -n / (strength * cap),

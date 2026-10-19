@@ -799,8 +799,9 @@ impl Calculation for StructureFe {
         "Structure model under its own loads (inputs: model = .ohlfe text, optional \
          self_weight factor); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
          r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
-         members: 1 slack, 0 taut), iterations, passes (solves of the tension-only members' \
-         active-set iterations; 0: none)"
+         members: 1 slack, 0 taut), bowed_<member> (tension-only members: 1 at their own \
+         buckling load), iterations, passes (solves of the tension-only members' active-set \
+         iterations; 0: none)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -830,6 +831,9 @@ impl Calculation for StructureFe {
                 ohl_structures_fe::MemberKind::Cable | ohl_structures_fe::MemberKind::Tension
             ) {
                 out.insert(format!("slack_{}", m.id), f64::from(u8::from(f.slack)));
+            }
+            if m.kind == ohl_structures_fe::MemberKind::Tension {
+                out.insert(format!("bowed_{}", m.id), f64::from(u8::from(f.bowed)));
             }
         }
         for r in &s.reactions {
