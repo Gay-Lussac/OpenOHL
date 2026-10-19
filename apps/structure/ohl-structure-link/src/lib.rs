@@ -473,6 +473,9 @@ pub struct MemberResult {
     pub governs: String,
     /// A cable or a tension-only member gone slack.
     pub slack: bool,
+    /// A tension-only member bowed: shortened beyond its own buckling
+    /// load, it carries that load (`axial`) and no more.
+    pub bowed: bool,
 }
 
 /// A support's reaction: the force and moment on the structure.
@@ -663,6 +666,7 @@ fn analyse_one(
                 usage: u.and_then(|u| u.usage),
                 governs: u.map(|u| u.governs.clone()).unwrap_or_default(),
                 slack: solution.members[k].slack,
+                bowed: solution.members[k].bowed,
             }
         })
         .collect();

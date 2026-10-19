@@ -13,7 +13,8 @@
 //! - [`solve`](mod@solve): static solution, first order or P-Delta (Newton
 //!   iterations on Kₑ + K_g with exit clauses), skyline LDLᵀ solver;
 //!   displacements, member end forces, reactions; active-set iterations
-//!   for tension-only members.
+//!   for tension-only members (compression up to their own buckling
+//!   load).
 //! - [`stabilise`]: joint stabilisation — the joint directions no member
 //!   stiffens (coplanar or collinear trusses, a frame chain free to spin),
 //!   held when a model would otherwise be a mechanism.
@@ -109,8 +110,12 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
 }
 
 /// The tension-only members of a solution in words (none: the model has
-/// none): how many of them went slack and how many solves the active-set
-/// iterations took, with the first slack ones named.
+/// none): how many of them went slack and how many are bowed (at their
+/// buckling load, [`MemberForces::bowed`]) and how many solves the
+/// active-set iterations took, with the first slack ones named and the
+/// first bowed ones with their load: `tension-only members: 0 of 2
+/// slack, 1 bowed (2 solve(s)); bowed (carry their buckling load): BD
+/// 0.83 kN`.
 pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
     if solution.passes == 0 {
         return None;
@@ -123,10 +128,26 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
         .filter(|&&k| solution.members[k].slack)
         .map(|&k| model.members[k].id.as_str())
         .collect();
+    let bowed: Vec<String> = tension
+        .iter()
+        .filter(|&&k| solution.members[k].bowed)
+        .map(|&k| {
+            format!(
+                "{} {:.2} kN",
+                model.members[k].id,
+                -solution.members[k].axial / 1000.0
+            )
+        })
+        .collect();
     let mut text = format!(
-        "tension-only members: {} of {} slack ({} solve(s))",
+        "tension-only members: {} of {} slack{} ({} solve(s))",
         slack.len(),
         tension.len(),
+        if bowed.is_empty() {
+            String::new()
+        } else {
+            format!(", {} bowed", bowed.len())
+        },
         solution.passes
     );
     if !slack.is_empty() {
@@ -145,13 +166,30 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
             }
         ));
     }
+    if !bowed.is_empty() {
+        text.push_str(&format!(
+            "; bowed (carry their buckling load): {}{}",
+            bowed
+                .iter()
+                .take(NOTE_NAMES)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            if bowed.len() > NOTE_NAMES {
+                ", …"
+            } else {
+                ""
+            }
+        ));
+    }
     Some(text)
 }
 
 /// The tension-only members kept active because the active set did not
 /// settle ([`Solution::kept_active`]) in words (none: it settled, or the
 /// model has none): `tension-only members kept active because the set did
-/// not settle: AC, BD — approximate; to be treated later`.
+/// not settle: AC, BD — approximate (last resort)` ([`solve()`]'s last
+/// resort).
 pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
     let kept = &solution.kept_active;
     if kept.is_empty() {
@@ -164,7 +202,7 @@ pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
         .collect();
     Some(format!(
         "tension-only members kept active because the set did not settle: {}{} — \
-         approximate; to be treated later",
+         approximate (last resort)",
         names.join(", "),
         if kept.len() > NOTE_NAMES {
             format!(", … ({} in all)", kept.len())

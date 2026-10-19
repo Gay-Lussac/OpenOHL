@@ -532,3 +532,88 @@ expected.r_base_ry = { value = -4000.0, rel_tol = 1e-9 }
 expected.r_base_z = { value = 1000.0, rel_tol = 1e-9 }
 expected.u_base_ry = { value = 0.04, rel_tol = 1e-9 }
 expected.u_tip_z = { value = -0.2107936507936508, rel_tol = 1e-9 }
+
+# The X-braced panel of structfe-008 with diagonals of a second moment:
+# the compressed diagonal BD is no longer slack but bowed, carrying its own
+# elastic buckling load (pinned ends, K = 1, L = 5 m):
+#   N_cr = π² E I / L² = π² · 210e9 · 1e-8 / 25 = 829.0468 N.
+# Method of joints with BD's compression c = N_cr pushing D away from B
+# (force (−0.8c, +0.6c) on D) and B away from D ((+0.8c, −0.6c) on B):
+#   joint D, x: H − 0.8c + N_DC = 0       → N_DC = −H + 0.8c = −9336.76 N
+#   joint D, z: 0.6c − N_AD = 0           → N_AD = +0.6c     =   497.43 N
+#   joint C, x: −N_DC − 0.8 N_AC = 0      → N_AC = 5H/4 − c  = 11670.95 N
+#   joint C, z: −N_BC − 0.6 N_AC = 0      → N_BC = −3H/4 + 0.6c = −7002.57 N
+#   reactions: A_x = −0.8 N_AC = −H + 0.8c, B_x = −0.8c, A_z = −3H/4, B_z = +3H/4.
+# Before (no second moment, structfe-008): BD 0, AC 12500 N — the change
+# is the small compression BD now carries.
+[[case]]
+id = "structfe-011"
+title = "X-braced panel, tension-only diagonals with bending stiffness: the compressed diagonal is bowed and carries its buckling load"
+calculation = "structures.fe"
+reference = "Euler load π²EI/L² of the pinned diagonal and the method of joints on the panel with that compression in the shortened diagonal: AC = 5H/4 − N_cr, DC = −H + 0.8 N_cr, BC = −3H/4 + 0.6 N_cr, AD = 0.6 N_cr"
+notes = "structfe-008 with I_min = 1 cm4 (N_cr = 829.05 N): BD bowed, its force −N_cr; 2 solves; first order"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+i_min = "1 cm4"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "C"
+point = ["4 m", "0 m", "3 m"]
+[[node]]
+id = "D"
+point = ["0 m", "0 m", "3 m"]
+[[member]]
+id = "AD"
+nodes = ["A", "D"]
+section = "s"
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "s"
+[[member]]
+id = "DC"
+nodes = ["D", "C"]
+section = "s"
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+kind = "tension"
+[[member]]
+id = "BD"
+nodes = ["B", "D"]
+section = "s"
+kind = "tension"
+[[load]]
+node = "D"
+force = ["10 kN", "0 N", "0 N"]
+'''
+expected.n_BD = { value = -829.046769691506, rel_tol = 1e-9 }
+expected.bowed_BD = { value = 1.0, abs_tol = 1e-12 }
+expected.slack_BD = { value = 0.0, abs_tol = 1e-12 }
+expected.bowed_AC = { value = 0.0, abs_tol = 1e-12 }
+expected.n_AC = { value = 11670.953230308494, rel_tol = 1e-9 }
+expected.n_DC = { value = -9336.762584246795, rel_tol = 1e-9 }
+expected.n_BC = { value = -7002.571938185097, rel_tol = 1e-9 }
+expected.n_AD = { value = 497.4280618149036, rel_tol = 1e-9 }
+expected.r_A_x = { value = -9336.762584246795, rel_tol = 1e-9 }
+expected.r_B_x = { value = -663.2374157532049, rel_tol = 1e-9 }
+expected.r_A_z = { value = -7500.0, rel_tol = 1e-9 }
+expected.r_B_z = { value = 7500.0, rel_tol = 1e-9 }
+expected.passes = { value = 2.0, abs_tol = 1e-12 }

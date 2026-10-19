@@ -44,8 +44,9 @@
 //! marked ([`Check::incomplete`], [`StructureUsage::missing`],
 //! [`UsageStatus::Incomplete`]) — never a plain pass.
 //!
-//! A finite-element check whose tension-only members did not settle
-//! (kept active as trusses, [`ohl_structures_fe::Solution::kept_active`])
+//! A finite-element check whose tension-only members did not settle even
+//! with their ties split (the solver's last resort: kept active as
+//! trusses, [`ohl_structures_fe::Solution::kept_active`])
 //! is **approximate** ([`Check::approximate`], [`UsageStatus::Approximate`]):
 //! its usage is computed and shown, marked so — never a plain pass.
 
@@ -98,8 +99,8 @@ pub struct Check {
     /// so the usage may be too low.
     pub incomplete: bool,
     /// Approximate: the finite-element solve kept tension-only members
-    /// active because their set did not settle
-    /// ([`ohl_structures_fe::Solution::kept_active`]); to be treated later.
+    /// active because their set did not settle (the solver's last resort,
+    /// [`ohl_structures_fe::Solution::kept_active`]).
     pub approximate: bool,
 }
 

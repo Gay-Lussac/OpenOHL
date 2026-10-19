@@ -6,11 +6,14 @@
 //! compressed diagonal goes slack (against the hand solution of the
 //! panel with one diagonal), the load reversed, a crossing joint held
 //! only by slack halves, P-Delta, the cycle and pass limits of the
-//! active-set iterations, a set that does not settle (its members kept
-//! active, the solution flagged approximate), and models whose
-//! tension-only members stay taut solving exactly as trusses.
+//! active-set iterations, models whose tension-only members stay taut
+//! solving exactly as trusses; compression up to the members' own
+//! buckling load (the X panel's compressed diagonal bowed, carrying it,
+//! against the method of joints; a stocky one a truss); and the formerly
+//! cycling kinked joint settling (its ties split), with the runs that
+//! split ties and, as the last resort, keep members active.
 
-use crate::solve::{TENSION_PASSES, next_active_set, settle, solve_stabilised};
+use crate::solve::{TENSION_PASSES, next_active_set, rounds, settle, solve_stabilised};
 use crate::{
     FeError, Loads, Member, MemberKind, Model, NodalLoad, Node, Options, Section, Solution,
     default_budget, kept_active_note, member_usage, solve, tension_only_note,
@@ -365,13 +368,14 @@ fn mechanism() -> FeError {
 /// A pair of tension-only diagonals AC and BD of a 4 m × 3 m frame,
 /// each in two halves through a joint M 1 mm off the line of AC (so AM,
 /// MC are still one tie, as are BM, MD), the corners pinned, M held
-/// otherwise only by a weak spring (1 kN/m): with the halves taken out,
-/// M is nearly free. Pulled along the frame, the iterations go round:
-/// the halves of AC taut and slack in turn — the pattern seen on a
-/// tower whose diagonals left a part nearly free.
-fn kinked_joint(kind: MemberKind) -> Model {
+/// otherwise only by a weak spring (1 kN/m), the section's second moment
+/// `i`: with the halves taken out, M is nearly free. Pulled along the
+/// frame, the iterations with the halves switched as ties go round (the
+/// halves of AC taut and slack in turn) — the pattern seen on a tower
+/// whose diagonals left a part nearly free.
+fn kinked_joint(kind: MemberKind, i: f64) -> Model {
     let mut m = Model {
-        sections: vec![Section::elastic("s", E, 1e-3, 0.0)],
+        sections: vec![Section::elastic("s", E, 1e-3, i)],
         ..Model::default()
     };
     let mut joint = Node::free("M", [2.0, 0.0, 1.501]);
@@ -393,23 +397,28 @@ fn kinked_loads() -> Vec<NodalLoad> {
     vec![force(4, [H, 0.0, 0.0])]
 }
 
-/// The set of the kinked joint does not settle: its flipping halves are
-/// kept active as ordinary trusses, the others solved by the active-set
-/// iterations, and the solution flagged — named in the solution, the
-/// note, and what governs their usage. The numbers are those of the
-/// model with those halves made trusses.
+/// The kinked joint, switched by ties alone, goes round (a cycle of the
+/// halves of AC). [`solve`] switches the ties that go round member by
+/// member, and the tie BD, whose half BM is then compressed while the
+/// tie end to end is not, too: it settles without keeping any member
+/// active. M is a real joint (loaded, sprung): pulled along x, it is held
+/// by the stretched halves AM and MD; the shortened MC and BM are slack.
+/// By the method of joints at M (AM along (0.8, 0.6), MD along
+/// (0.8, −0.6), the spring nearly nothing): 2 · 0.8 N = H, N = H/1.6 =
+/// 6.25 kN in each, within the 1 mm kink (0.1 %).
 #[test]
-fn an_unsettled_set_keeps_its_members_active_and_flags_the_solution() {
-    let m = kinked_joint(MemberKind::Tension);
+fn the_formerly_cycling_kinked_joint_settles() {
+    let m = kinked_joint(MemberKind::Tension, 0.0);
     assert_eq!(crate::solve::chains(&m), [vec![0, 1], vec![2, 3]]);
-    // The iterations alone: a cycle of the halves of AC.
+    // The iterations alone, by ties: a cycle of the halves of AC.
     let loads = Loads {
         nodal: kinked_loads(),
         self_weight: 0.0,
     };
+    let ties = crate::solve::chains(&m);
     let e = settle(&m, false, |_, inactive| {
-        let s = solve_stabilised(&m, &loads, &first_order(), &default_budget(), inactive)?;
-        let (next, shortening) = next_active_set(&m, &s, inactive);
+        let s = solve_stabilised(&m, &loads, &first_order(), &default_budget(), inactive, &[])?;
+        let (next, shortening) = next_active_set(&m, &s, inactive, &ties, &[]);
         Ok((s, next, shortening))
     })
     .unwrap_err();
@@ -419,17 +428,16 @@ fn an_unsettled_set_keeps_its_members_active_and_flags_the_solution() {
     );
     for options in [first_order(), Options::default()] {
         let s = solved(&m, kinked_loads(), &options);
-        assert_eq!(s.kept_active, [0, 1], "{s:?}");
-        assert!(s.passes > 2);
-        // The same as the halves of AC made trusses.
-        let mut t = m.clone();
-        t.members[0].kind = MemberKind::Truss;
-        t.members[1].kind = MemberKind::Truss;
-        let r = solved(&t, kinked_loads(), &options);
-        assert!(r.kept_active.is_empty());
-        assert_eq!(s.displacements, r.displacements);
-        assert_eq!(s.members, r.members);
-        assert_eq!(s.reactions, r.reactions);
+        assert!(s.kept_active.is_empty(), "{s:?}");
+        assert!(kept_active_note(&m, &s).is_none());
+        for id in ["AM", "MD"] {
+            let n = axial(&m, &s, id);
+            assert!((n / (H / 1.6) - 1.0).abs() < 1e-3, "{id}: {n}");
+        }
+        for id in ["MC", "BM"] {
+            let f = &s.members[index(&m, id)];
+            assert!(f.slack && !f.bowed && f.axial == 0.0, "{id}: {f:?}");
+        }
         // Equilibrium: the supports and the spring take the load, the
         // spring's −k·u reported as M's reaction.
         let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
@@ -437,27 +445,177 @@ fn an_unsettled_set_keeps_its_members_active_and_flags_the_solution() {
         let at_m = s.reactions.iter().find(|r| r.node == 4).unwrap();
         let spring = -1e3 * s.displacements[4][0];
         assert!(close(at_m.force[0], spring), "{at_m:?} {spring}");
-        assert_eq!(
-            kept_active_note(&m, &s).unwrap(),
-            "tension-only members kept active because the set did not settle: AM, MC — \
-             approximate; to be treated later"
-        );
-        let mut steel = m.clone();
-        steel.sections[0].yield_strength = Some(355e6);
-        let u = member_usage(&steel, &s, 1.0);
-        for k in [0, 1] {
-            assert!(
-                u[k].governs.ends_with(crate::check::KEPT_ACTIVE),
-                "{}",
-                u[k].governs
-            );
-        }
-        for k in [2, 3] {
-            assert!(!u[k].governs.contains(crate::check::KEPT_ACTIVE));
-        }
+        assert!(s.passes > 2);
     }
-    // A model that settles: no member kept active, no note.
-    let p = panel(MemberKind::Tension, false);
-    let s = solved(&p, vec![force(3, [H, 0.0, 0.0])], &first_order());
-    assert!(s.kept_active.is_empty() && kept_active_note(&p, &s).is_none());
+}
+
+/// The kinked joint with a second moment: MC and BM, shortened beyond
+/// their buckling load N_cr = π²EI/L² (I = 0.1 cm⁴, L = 2.5 m, pinned
+/// ends: 332 N), are
+/// bowed and carry it, pushing M away from C and from B: (−1.6 N_cr, 0)
+/// on M. AM and MD then take 2 · 0.8 N = H − 1.6 N_cr: N = H/1.6 − N_cr.
+#[test]
+fn the_kinked_joint_with_bending_stiffness_bows_its_shortened_halves() {
+    let i = 1e-9;
+    let m = kinked_joint(MemberKind::Tension, i);
+    for options in [first_order(), Options::default()] {
+        let s = solved(&m, kinked_loads(), &options);
+        assert!(s.kept_active.is_empty(), "{s:?}");
+        for id in ["MC", "BM"] {
+            let k = index(&m, id);
+            let ncr = std::f64::consts::PI.powi(2) * E * i / m.length(&m.members[k]).powi(2);
+            let f = &s.members[k];
+            assert!(f.bowed && !f.slack && f.axial == -ncr, "{id}: {f:?}");
+        }
+        let ncr = std::f64::consts::PI.powi(2) * E * i / 2.5f64.powi(2);
+        for id in ["AM", "MD"] {
+            let n = axial(&m, &s, id);
+            assert!((n / (H / 1.6 - ncr) - 1.0).abs() < 1e-3, "{id}: {n}");
+        }
+        let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+        assert!(close(sum, -H), "{sum}");
+    }
+}
+
+/// The X panel with diagonals of a second moment I = 1 cm⁴ (E = 210 GPa,
+/// 5 m long): BD, shortened, carries its buckling load
+/// N_cr = π²EI/L² = π² · 2100 N·m² / 25 m² = 829.05 N and no more. By the
+/// method of joints, with BD's compression pushing D away from B
+/// ((−0.8, 0.6) N_cr on D) and B away from D: AC = 5H/4 − N_cr, the top
+/// DC = −H + 0.8 N_cr, the leg BC = −3H/4 + 0.6 N_cr, the leg AD
+/// +0.6 N_cr (in tension: BD lifts D). First order exact; with P-Delta
+/// close to it.
+#[test]
+fn x_panel_compressed_diagonal_carries_its_buckling_load() {
+    let mut m = panel(MemberKind::Tension, false);
+    m.sections[0].i_min = 1e-8;
+    let ncr = std::f64::consts::PI.powi(2) * E * 1e-8 / 25.0;
+    assert_eq!(crate::solve::buckling_loads(&m)[index(&m, "BD")], ncr);
+    // Only tension-only members have one.
+    assert_eq!(crate::solve::buckling_loads(&m)[index(&m, "AD")], 0.0);
+    let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    let bd = &s.members[index(&m, "BD")];
+    assert!(bd.bowed && !bd.slack && bd.axial == -ncr, "{bd:?}");
+    assert_eq!((bd.end_forces[0], bd.end_forces[6]), (ncr, -ncr));
+    assert!(close(axial(&m, &s, "AC"), 1.25 * H - ncr), "{s:?}");
+    assert!(close(axial(&m, &s, "DC"), -H + 0.8 * ncr));
+    assert!(close(axial(&m, &s, "BC"), -0.75 * H + 0.6 * ncr));
+    assert!(close(axial(&m, &s, "AD"), 0.6 * ncr));
+    assert_eq!(s.passes, 2);
+    let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+    assert!(close(sum, -H), "{sum}");
+    assert_eq!(
+        tension_only_note(&m, &s).unwrap(),
+        "tension-only members: 0 of 2 slack, 1 bowed (2 solve(s)); bowed (carry their \
+         buckling load): BD 0.83 kN"
+    );
+    // Its usage: against the squash load (buckling is in the solve).
+    let mut steel = m.clone();
+    steel.sections[0].yield_strength = Some(355e6);
+    let u = member_usage(&steel, &s, 1.0);
+    let ub = &u[index(&m, "BD")];
+    assert_eq!(
+        ub.governs,
+        "bowed: carries its buckling load 0.83 kN — compression 0.8 kN of 355.0 kN"
+    );
+    assert!((ub.usage.unwrap() - ncr / 355e3).abs() < 1e-12);
+    // Without a capacity: no usage, but it says so.
+    let u = member_usage(&m, &s, 1.0);
+    let ub = &u[index(&m, "BD")];
+    assert_eq!(
+        (ub.usage, ub.governs.as_str()),
+        (None, "bowed: carries its buckling load 0.83 kN")
+    );
+    // With P-Delta: still bowed, close to first order.
+    let p = solved(&m, vec![force(3, [H, 0.0, 0.0])], &Options::default());
+    assert!(p.members[index(&m, "BD")].bowed);
+    assert_eq!(axial(&m, &p, "BD"), -ncr);
+    assert!((axial(&m, &p, "AC") / (1.25 * H - ncr) - 1.0).abs() < 1e-2);
+    let sum: f64 = p.reactions.iter().map(|r| r.force[0]).sum();
+    assert!((sum + H).abs() < 1e-6 * H, "{sum}");
+}
+
+/// A tension-only member compressed less than its buckling load is a
+/// truss: the X panel with stocky diagonals (I = 1000 cm⁴: N_cr = 829 kN
+/// against about 6 kN) solves exactly as with truss diagonals, both
+/// carrying, in one solve.
+#[test]
+fn compression_below_the_buckling_load_is_carried_as_a_truss() {
+    let mut m = panel(MemberKind::Tension, false);
+    m.sections[0].i_min = 1e-5;
+    let mut t = panel(MemberKind::Truss, false);
+    t.sections[0].i_min = 1e-5;
+    for options in [first_order(), Options::default()] {
+        let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &options);
+        let r = solved(&t, vec![force(3, [H, 0.0, 0.0])], &options);
+        assert!(axial(&m, &s, "BD") < -0.1 * H, "{s:?}");
+        assert_eq!(s.members, r.members);
+        assert_eq!(s.displacements, r.displacements);
+        assert_eq!(s.passes, if options.nonlinear { 2 } else { 1 });
+    }
+}
+
+/// The runs of the active-set iterations ([`crate::solve::rounds`]): a
+/// tie going round is split into its members and run again; one hiding
+/// compression too; single members going round are the last resort, kept
+/// active as trusses (and a model left without tension-only members is
+/// solved once).
+#[test]
+fn runs_split_ties_then_keep_members_as_the_last_resort() {
+    let m = kinked_joint(MemberKind::Tension, 0.0);
+    let unsettled = |indices: Vec<usize>| FeError::Unsettled {
+        members: Vec::new(),
+        flipping: indices.len(),
+        indices,
+        passes: 3,
+        cycle: true,
+    };
+    // AM, MC go round as a tie; split, they settle.
+    let mut seen: Vec<Vec<Vec<usize>>> = Vec::new();
+    let (s, passes, kept) = rounds(
+        &m,
+        |_, ties| {
+            seen.push(ties.to_vec());
+            if ties.len() == 2 {
+                Err(unsettled(vec![0, 1]))
+            } else {
+                Ok(("settled", 2, Vec::new()))
+            }
+        },
+        |_| Ok("once"),
+    )
+    .unwrap();
+    assert_eq!((s, passes, kept), ("settled", 5, vec![]));
+    assert_eq!(seen[1], [vec![0], vec![1], vec![2, 3]]);
+    // BM hides compression in the tie BD: split.
+    let mut seen: Vec<Vec<Vec<usize>>> = Vec::new();
+    let (_, passes, _) = rounds(
+        &m,
+        |_, ties| {
+            seen.push(ties.to_vec());
+            Ok(((), 2, if seen.len() == 1 { vec![2] } else { vec![] }))
+        },
+        |_| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(passes, 4);
+    assert_eq!(seen[1], [vec![0, 1], vec![2], vec![3]]);
+    // Single members going round: kept active, made trusses; with all
+    // of them kept, one solve of the model left.
+    let mut kinds: Vec<Vec<MemberKind>> = Vec::new();
+    let (s, passes, kept) = rounds(
+        &m,
+        |model, ties| {
+            kinds.push(model.members.iter().map(|x| x.kind).collect());
+            Err(unsettled(ties.iter().flatten().copied().collect()))
+        },
+        |model| {
+            assert!(model.members.iter().all(|x| x.kind == MemberKind::Truss));
+            Ok("once")
+        },
+    )
+    .unwrap();
+    // Two ties split (3 solves), then all four kept (3), one solve.
+    assert_eq!((s, passes, kept), ("once", 7, vec![0, 1, 2, 3]));
+    assert_eq!(kinds.len(), 2);
 }

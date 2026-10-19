@@ -5,7 +5,8 @@
 //! Static solution: first order, or second order (P-Delta) by Newton
 //! iterations on the tangent K = Kₑ + K_g(N), tension-only cables that go
 //! slack, and the active-set iterations of tension-only members
-//! ([`MemberKind::Tension`]).
+//! ([`MemberKind::Tension`]), which carry compression up to their own
+//! buckling load.
 
 use std::fmt;
 use std::time::Duration;
@@ -127,7 +128,8 @@ pub enum FeError {
     /// The tension-only members do not settle: the active-set iterations
     /// came back to a set they had solved before (a cycle), or took
     /// [`TENSION_PASSES`] solves. [`solve`] does not give this error: it
-    /// keeps such members active and flags the solution
+    /// switches the ties that go round member by member and, as a last
+    /// resort, keeps such members active and flags the solution
     /// ([`Solution::kept_active`]); the iterations alone do.
     Unsettled {
         /// The members going taut and slack in turn (at most
@@ -233,8 +235,13 @@ pub struct MemberForces {
     /// Mz), then node j.
     pub end_forces: [f64; 12],
     /// A cable gone slack, or a tension-only member left out as slack
-    /// (its forces 0).
+    /// (its forces 0: it has no buckling load, [`buckling_loads`]).
     pub slack: bool,
+    /// A tension-only member **bowed**: shortened beyond its own buckling
+    /// load, it carries that load ([`buckling_loads`]; `axial` = −N_cr)
+    /// and no more — left out of the stiffness, its force a constant pair
+    /// pushing its ends apart.
+    pub bowed: bool,
 }
 
 /// A support reaction: what holds a joint with a support or a spring.
@@ -275,14 +282,13 @@ pub struct Solution {
     /// once, as always); [`Solution::iterations`] are those of the last.
     pub passes: u32,
     /// The tension-only members kept active, as ordinary truss members,
-    /// because the active-set iterations did not settle (they went taut
-    /// and slack in turn): indices, in member order; empty when the set
-    /// settled. Such a solution is **approximate** — a member kept active
-    /// may be compressed, which it cannot be — and is flagged so in the
-    /// notes ([`crate::kept_active_note`]) and the usage
-    /// ([`crate::check::KEPT_ACTIVE`]). Not settling may mean information
-    /// is missing at that point (a part held only by those members);
-    /// to be treated later (see the theory manual).
+    /// because the active-set iterations did not settle even member by
+    /// member (the **last-resort** fallback, [`solve`]): indices, in member
+    /// order; empty when the set settled — always so far on the models
+    /// tested. Such a solution is **approximate** — a member kept active
+    /// may be compressed beyond its buckling load, which it cannot be —
+    /// and is flagged so in the notes ([`crate::kept_active_note`]) and
+    /// the usage ([`crate::check::KEPT_ACTIVE`]).
     pub kept_active: Vec<usize>,
 }
 
@@ -318,22 +324,29 @@ struct Prepared {
 /// twice. `budget` bounds the iterations of each solve.
 ///
 /// A model with **tension-only members** ([`MemberKind::Tension`]) is
-/// solved by active-set iterations ([`TENSION_PASSES`]): solved, its
-/// compressed tension-only members left out and its left-out ones that
-/// would be stretched put back, and solved again, until the set does not
-/// change — first order, then (P-Delta) with the geometric stiffness from
-/// that set on, each solve converged before the set is updated. Each
-/// solve is stabilised as above on the model of its active members, so a
-/// joint held only by members gone slack is held in the directions they
-/// left free. A model without tension-only members is solved once, as
-/// always.
+/// solved by active-set iterations ([`TENSION_PASSES`]): a tension-only
+/// member is a truss in tension and in compression up to its own elastic
+/// buckling load N_cr ([`buckling_loads`]; 0 without a second moment);
+/// shortened beyond, it is **bowed**: left out of the stiffness, it
+/// carries N_cr (a constant pair of forces; with N_cr = 0 it is slack).
+/// Solved, its members beyond their load bowed and its bowed ones that
+/// the structure would load less put back, and solved again, until the
+/// set does not change — first order, then (P-Delta) with the geometric
+/// stiffness from that set on, each solve converged before the set is
+/// updated. Each solve is stabilised as above on the model of its active
+/// members, so a joint held only by members gone slack or bowed is held
+/// in the directions they left free. A model without tension-only
+/// members is solved once, as always.
 ///
 /// When the set does **not settle** ([`FeError::Unsettled`]: a cycle, or
-/// [`TENSION_PASSES`] solves), the members going taut and slack in turn
-/// are kept active as ordinary truss members and the iterations repeated
-/// on the others — until they settle, or no tension-only member is left
-/// (the model then solved once). The solution names them
-/// ([`Solution::kept_active`]) and is approximate. A model that settles
+/// [`TENSION_PASSES`] solves), the ties (members on one line through a joint) going round are
+/// switched member by member from then on and the iterations repeated
+/// (a tie through a joint that something else holds — a spring, a load,
+/// another member — is not one rope there). Only when single members go
+/// round, or after [`TENSION_PASSES_TOTAL`] solves, the last resort:
+/// they are kept active as ordinary truss members and the solution is
+/// flagged approximate ([`Solution::kept_active`]). The time limit of
+/// `budget` also bounds all the solves together. A model that settles
 /// solves exactly as before.
 pub fn solve(
     model: &Model,
@@ -344,54 +357,140 @@ pub fn solve(
     if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
         return solve_tension_only(model, loads, options, budget);
     }
-    solve_stabilised(model, loads, options, budget, &[])
+    solve_stabilised(model, loads, options, budget, &[], &[])
 }
 
 /// Solves `model` with the members `inactive` left out (empty: none),
-/// stabilised when it fails as a mechanism or as unstable (see
-/// [`solve`]).
+/// each carrying the compression `caps` (N, per member; empty: none) —
+/// bowed tension-only members —, stabilised when it fails as a mechanism
+/// or as unstable (see [`solve`]).
 pub(crate) fn solve_stabilised(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
     inactive: &[bool],
+    caps: &[f64],
 ) -> Result<Solution, FeError> {
-    match solve_with(model, loads, options, budget, &[], inactive) {
+    match solve_with(model, loads, options, budget, &[], inactive, caps) {
         Err(e @ (FeError::Mechanism { .. } | FeError::Unstable { .. })) if options.stabilise => {
             let held = crate::stabilise::find(model, inactive);
             if held.is_empty() {
                 return Err(e);
             }
-            solve_with(model, loads, options, budget, &held, inactive)
+            solve_with(model, loads, options, budget, &held, inactive, caps)
         }
         other => other,
     }
 }
 
-/// Most solves of the active-set iterations of the tension-only members
-/// (first order and P-Delta together).
+/// Most solves of one run of the active-set iterations of the
+/// tension-only members (first order and P-Delta together).
 pub const TENSION_PASSES: u32 = 100;
 
-/// A tension-only member is compressed (left out) when its force is below
-/// −this share of the largest axial force of the solve, and stretched (put
-/// back) when it would take more than this share: round-off on a member
-/// without force does not switch it.
+/// Most solves of the active-set iterations in all, over the runs with
+/// ties switched member by member ([`solve`]); beyond, a set that goes
+/// round is kept active (the last resort).
+pub const TENSION_PASSES_TOTAL: u32 = 1000;
+
+/// A tension-only member goes beyond its buckling load (bowed, or slack)
+/// when its force is below −(that load + this share of the largest axial
+/// force of the solve), and is put back when it would carry less
+/// compression than its load less this share: round-off on a member at
+/// its load (or without force) does not switch it.
 pub const TENSION_TOLERANCE: f64 = 1e-9;
 
+/// The load a tension-only member carries in compression at most, N: its
+/// elastic (Euler) buckling load π²·E·I_min/L_k² from its own section and
+/// length, L_k its `lk`, else its `k` (default 1: pinned ends) × its
+/// length — as the compression check ([`crate::check::euler_load`]); 0
+/// without a second moment (I_min = 0: slack in compression, as a rope).
+/// 0 for the other kinds.
+pub fn buckling_loads(model: &Model) -> Vec<f64> {
+    (0..model.members.len())
+        .map(|k| {
+            if model.members[k].kind == MemberKind::Tension {
+                crate::check::euler_load(model, k).unwrap_or(0.0)
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+/// Per member, the compression its tie ([`chains`]) carries at most: the
+/// least buckling load of the tie's members (the force along a tie is
+/// one; its weakest member bows first).
+pub(crate) fn tie_caps(ties: &[Vec<usize>], own: &[f64]) -> Vec<f64> {
+    let mut caps = vec![0.0; own.len()];
+    for tie in ties {
+        let least = tie.iter().map(|&k| own[k]).fold(f64::INFINITY, f64::min);
+        for &k in tie {
+            caps[k] = least;
+        }
+    }
+    caps
+}
+
 /// [`solve`] of a model with tension-only members: the active-set
-/// iterations.
-///
-/// A set that does not settle: its flipping members kept active (made
-/// trusses in a copy of the model) and the iterations repeated
-/// ([`Solution::kept_active`]); each round makes at least one member a
-/// truss, so the rounds end.
+/// iterations ([`settle`]) in runs ([`rounds`]), the time limit of
+/// `budget` over all of them.
 fn solve_tension_only(
     model: &Model,
     loads: &Loads,
     options: &Options,
     budget: &Budget,
 ) -> Result<Solution, FeError> {
+    let own = buckling_loads(model);
+    let run = budget.start();
+    let (mut s, passes, kept) = rounds(
+        model,
+        |m, ties| {
+            let caps = tie_caps(ties, &own);
+            let mut residual = f64::NAN;
+            let (s, passes) = settle(m, options.nonlinear, |nonlinear, inactive| {
+                run.check()
+                    .map_err(|stop| FeError::Stopped { stop, residual })?;
+                let opts = Options {
+                    nonlinear,
+                    ..*options
+                };
+                let s = solve_stabilised(m, loads, &opts, budget, inactive, &caps)?;
+                residual = s.residual;
+                let (next, shortening) = next_active_set(m, &s, inactive, ties, &caps);
+                Ok((s, next, shortening))
+            })?;
+            let over = ties_hiding_compression(&s, ties, &own);
+            Ok((s, passes, over))
+        },
+        |m| solve_stabilised(m, loads, options, budget, &[], &[]),
+    )?;
+    s.passes = passes;
+    s.kept_active = kept;
+    Ok(s)
+}
+
+/// The runs of the active-set iterations of `model`'s tension-only
+/// members. `run(model, ties)` settles the model with its tension-only
+/// members switched by `ties` and gives its solution, the solves done and
+/// the members of ties that hide compression
+/// ([`ties_hiding_compression`]); `once(model)` solves a model left
+/// without tension-only members.
+///
+/// The ties start as [`chains`]; a tie that hides compression in a member,
+/// or that goes round ([`FeError::Unsettled`]), is split into its members
+/// and the iterations run again. Members going round on their own (or
+/// after [`TENSION_PASSES_TOTAL`] solves) are the last resort: kept active
+/// as ordinary trusses (made trusses in a copy of the model) and the
+/// iterations run again on the others. Each run splits a tie or keeps a
+/// member, so the runs end. The solution, the solves in all and the
+/// members kept active.
+pub(crate) fn rounds<S>(
+    model: &Model,
+    mut run: impl FnMut(&Model, &[Vec<usize>]) -> Result<(S, u32, Vec<usize>), FeError>,
+    mut once: impl FnMut(&Model) -> Result<S, FeError>,
+) -> Result<(S, u32, Vec<usize>), FeError> {
+    let mut ties = chains(model);
     // The model with the members kept active made trusses (none: as it is).
     let mut kept_model: Option<Model> = None;
     let mut kept: Vec<usize> = Vec::new();
@@ -400,63 +499,111 @@ fn solve_tension_only(
         let m = kept_model.as_ref().unwrap_or(model);
         if !m.members.iter().any(|x| x.kind == MemberKind::Tension) {
             // Every tension-only member kept active: one solve.
-            let mut s = solve_stabilised(m, loads, options, budget, &[])?;
-            s.passes = done + 1;
-            s.kept_active = kept;
-            return Ok(s);
+            return Ok((once(m)?, done + 1, kept));
         }
-        let result = settle(m, options.nonlinear, |nonlinear, inactive| {
-            let opts = Options {
-                nonlinear,
-                ..*options
-            };
-            let s = solve_stabilised(m, loads, &opts, budget, inactive)?;
-            let (next, shortening) = next_active_set(m, &s, inactive);
-            Ok((s, next, shortening))
-        });
-        match result {
-            Ok((mut s, passes)) => {
-                s.passes = done + passes;
-                s.kept_active = kept;
-                return Ok(s);
+        match run(m, &ties) {
+            Ok((s, passes, over)) => {
+                done += passes;
+                // A tie hiding compression in a member: member by member.
+                if !over.is_empty() && done < TENSION_PASSES_TOTAL {
+                    let before = ties.len();
+                    ties = split(ties, &over);
+                    if ties.len() > before {
+                        continue;
+                    }
+                }
+                return Ok((s, done, kept));
             }
             Err(FeError::Unsettled {
                 indices, passes, ..
             }) if !indices.is_empty() => {
                 done += passes;
+                // The ties going round, switched member by member.
+                if done < TENSION_PASSES_TOTAL {
+                    let before = ties.len();
+                    ties = split(ties, &indices);
+                    if ties.len() > before {
+                        continue;
+                    }
+                }
+                // Last resort: the members going round kept active.
                 let copy = kept_model.get_or_insert_with(|| model.clone());
-                for k in indices {
+                for &k in &indices {
                     copy.members[k].kind = MemberKind::Truss;
                     kept.push(k);
                 }
                 kept.sort_unstable();
                 kept.dedup();
+                for t in &mut ties {
+                    t.retain(|k| !indices.contains(k));
+                }
+                ties.retain(|t| !t.is_empty());
             }
             Err(e) => return Err(e),
         }
     }
 }
 
+/// `ties` with those of more than one member that hold one of `members`
+/// split into ties of one member each.
+fn split(ties: Vec<Vec<usize>>, members: &[usize]) -> Vec<Vec<usize>> {
+    ties.into_iter()
+        .flat_map(|t| {
+            if t.len() > 1 && t.iter().any(|k| members.contains(k)) {
+                t.into_iter().map(|k| vec![k]).collect()
+            } else {
+                vec![t]
+            }
+        })
+        .collect()
+}
+
+/// A member of an active tie compressed beyond its own buckling load
+/// `own` by more than this share of the largest axial force of the solve
+/// splits its tie (see [`solve`]).
+pub const TIE_SPLIT_TOLERANCE: f64 = 1e-6;
+
+/// The members of active ties (of more than one member) in solution `s`
+/// compressed beyond their own buckling load `own` (by more than
+/// [`TIE_SPLIT_TOLERANCE`]): a tie is one rope only through a joint that
+/// nothing else holds along it; where a load, a spring or another member
+/// does, its halves carry different forces and one of them may be
+/// compressed while the tie, end to end, is not.
+fn ties_hiding_compression(s: &Solution, ties: &[Vec<usize>], own: &[f64]) -> Vec<usize> {
+    let largest = s.members.iter().map(|f| f.axial.abs()).fold(0.0, f64::max);
+    let tolerance = TIE_SPLIT_TOLERANCE * largest;
+    ties.iter()
+        .filter(|t| t.len() > 1)
+        .flatten()
+        .copied()
+        .filter(|&k| {
+            let f = &s.members[k];
+            !f.slack && !f.bowed && f.axial < -own[k] - tolerance
+        })
+        .collect()
+}
+
 /// The active-set iterations: `step(nonlinear, inactive)` solves the
-/// model with the members `inactive` left out and gives its solution, the
-/// set to leave out next and per member how far it is compressed (its
-/// shortening strain; 0: not); repeated until the set does not change,
-/// first order, then (`nonlinear`) with P-Delta from the set found — a
-/// compressed tension-only member's geometric softening in the first
-/// solves would not be real.
+/// model with the members `inactive` left out (slack or bowed) and gives
+/// its solution, the set to leave out next and per member how far it is
+/// shortened beyond its load (a strain; 0: not); repeated until the set
+/// does not change, first order, then (`nonlinear`) with P-Delta from the
+/// set found — a compressed tension-only member's geometric softening in
+/// the first solves would not be real.
 ///
 /// Members left out together may leave a part free to move that one of
 /// them alone would hold — both diagonals of an X panel shortened by its
 /// legs under a heavy vertical load, of which one is stretched as soon as
 /// the panel sways. A solve that fails as a mechanism (or holding load,
 /// or buckling) after members were left out is therefore tried again
-/// with only the more compressed half of them left out, down to one; one
+/// with only the more shortened half of them left out, down to one; one
 /// member whose leaving fails the solve gives that error (the structure
-/// needs it in compression).
+/// needs it beyond its buckling load).
 ///
 /// A set solved before in the same phase (a cycle) or [`TENSION_PASSES`]
-/// solves: [`FeError::Unsettled`] ([`solve`] then keeps the flipping
-/// members active). The last solution and the solves done.
+/// solves: [`FeError::Unsettled`] ([`solve`] then switches the ties going
+/// round member by member, or keeps the members active). The last
+/// solution and the solves done.
 pub(crate) fn settle<S>(
     model: &Model,
     nonlinear: bool,
@@ -529,9 +676,10 @@ pub(crate) fn settle<S>(
 }
 
 /// The tension-only members to leave out after solution `s` of the model
-/// with `inactive` left out: an active one compressed (beyond
-/// [`TENSION_TOLERANCE`]) goes, a left-out one that would be stretched
-/// comes back.
+/// with `inactive` left out (slack or bowed): an active one compressed
+/// beyond its tie's buckling load `caps` (and [`TENSION_TOLERANCE`]) goes,
+/// a left-out one that would carry less compression than that load (with
+/// `caps` 0: be stretched) comes back.
 ///
 /// A left-out member's stretch is that of its ends, except at a joint
 /// direction the solve held ([`Solution::stabilised`]): a joint held only
@@ -541,18 +689,22 @@ pub(crate) fn settle<S>(
 /// two halves of a slack diagonal through a held joint stretch alike, by
 /// half of the diagonal's own stretch.
 ///
-/// Tension-only members on one line through a joint ([`chains`]) are one
-/// tie — a diagonal in two halves through its crossing with the other: it
-/// goes or comes back as a whole, by its stretch end to end (the sum of
-/// its members' stretches, an active one's N·L/EA) over its flexibility
-/// Σ L/EA, a force. A half alone would hang from the crossing joint.
+/// Tension-only members on one line through a joint (`ties`, from
+/// [`chains`]) are one tie — a diagonal in two halves through its
+/// crossing with the other: it goes or comes back as a whole, by its
+/// stretch end to end (the sum of its members' stretches, an active one's
+/// N·L/EA) over its flexibility Σ L/EA, a force. A half alone would hang
+/// from the crossing joint.
 ///
-/// Also per member its shortening strain (its tie's compression over its
-/// EA) when its tie is active and compressed, else 0 ([`settle`]).
+/// Also per member its shortening strain beyond the load (its tie's
+/// compression less `caps`, over its EA) when its tie is active and
+/// compressed beyond it, else 0 ([`settle`]).
 pub(crate) fn next_active_set(
     model: &Model,
     s: &Solution,
     inactive: &[bool],
+    ties: &[Vec<usize>],
+    caps: &[f64],
 ) -> (Vec<bool>, Vec<f64>) {
     let largest = s.members.iter().map(|f| f.axial.abs()).fold(0.0, f64::max);
     let tolerance = TENSION_TOLERANCE * largest;
@@ -563,10 +715,10 @@ pub(crate) fn next_active_set(
         sec.e * sec.area
     };
     let mut next = vec![false; model.members.len()];
-    for tie in chains(model) {
+    for tie in ties {
         // Its stretch end to end and its flexibility.
         let (mut long, mut flex) = (0.0, 0.0);
-        for &k in &tie {
+        for &k in tie {
             let f = model.length(&model.members[k]) / ea(k);
             flex += f;
             long += if inactive[k] {
@@ -576,15 +728,17 @@ pub(crate) fn next_active_set(
             };
         }
         let force = long / flex;
+        // The tie's buckling load (0: none, slack below zero).
+        let cap = caps.get(tie[0]).copied().unwrap_or(0.0);
         let out = if tie.iter().all(|&k| inactive[k]) {
-            force <= tolerance
+            force <= tolerance - cap
         } else {
-            force < -tolerance
+            force < -tolerance - cap
         };
-        for &k in &tie {
+        for &k in tie {
             next[k] = out;
             if !inactive[k] {
-                shortening[k] = (-force / ea(k)).max(0.0);
+                shortening[k] = ((-force - cap) / ea(k)).max(0.0);
             }
         }
     }
@@ -756,8 +910,9 @@ fn slack_stretch(model: &Model, s: &Solution, inactive: &[bool]) -> Vec<f64> {
 }
 
 /// Solves `model` under `loads` with the joint directions `held` and the
-/// members `inactive` left out (tension-only members gone slack; empty:
-/// none).
+/// members `inactive` left out (tension-only members gone slack or bowed;
+/// empty: none), each carrying the compression `caps` (N; empty or 0:
+/// none, slack) as a constant pair of forces along it.
 fn solve_with(
     model: &Model,
     loads: &Loads,
@@ -765,6 +920,7 @@ fn solve_with(
     budget: &Budget,
     held: &[Stabilisation],
     inactive: &[bool],
+    caps: &[f64],
 ) -> Result<Solution, FeError> {
     model.check().map_err(FeError::Invalid)?;
     let n_nodes = model.nodes.len();
@@ -903,6 +1059,14 @@ fn solve_with(
     for (s, &out) in slack.iter_mut().zip(inactive) {
         *s = out;
     }
+    // The compression each bowed member carries (0: none).
+    let mut bowed = vec![0.0; model.members.len()];
+    for (k, &c) in caps.iter().enumerate() {
+        if slack.get(k).copied().unwrap_or(false) && c > 0.0 {
+            bowed[k] = c;
+            axial[k] = -c;
+        }
+    }
     let mut slack_solved: Option<Vec<bool>> = None;
     let scale = f
         .iter()
@@ -931,20 +1095,7 @@ fn solve_with(
             &mut k,
         );
         let mut r = f.clone();
-        // Cable pretension pulls the end nodes together.
-        for (idx, (m, p)) in model.members.iter().zip(&prepared).enumerate() {
-            if m.kind == MemberKind::Cable && !slack[idx] && m.pretension != 0.0 {
-                let e = p.r.row(0).transpose() * m.pretension;
-                for c in 0..3 {
-                    if let Some(q) = p.eq[c] {
-                        r[q] += e[c];
-                    }
-                    if let Some(q) = p.eq[6 + c] {
-                        r[q] -= e[c];
-                    }
-                }
-            }
-        }
+        constant_forces(model, &prepared, &slack, &bowed, &mut r);
         let ku = k.mul(&u);
         for (a, b) in r.iter_mut().zip(&ku) {
             *a -= b;
@@ -999,8 +1150,9 @@ fn solve_with(
                 slack[idx] = n < 0.0;
                 axial[idx] = n.max(0.0);
             } else if slack[idx] {
-                // A tension-only member left out: no force.
-                axial[idx] = 0.0;
+                // A tension-only member left out: slack, no force, or
+                // bowed, its buckling load.
+                axial[idx] = -bowed[idx];
             } else {
                 axial[idx] = n;
             }
@@ -1009,7 +1161,9 @@ fn solve_with(
         if !options.nonlinear && !model.members.iter().any(|m| m.kind == MemberKind::Cable) {
             assemble(model, &prepared, &eq, (&axial, &slack), false, held, &mut k);
             let ku = k.mul(&u);
-            residual = f
+            let mut r = f.clone();
+            constant_forces(model, &prepared, &slack, &bowed, &mut r);
+            residual = r
                 .iter()
                 .zip(&ku)
                 .map(|(a, b)| (a - b) * (a - b))
@@ -1056,8 +1210,9 @@ fn solve_with(
                 end[6] = n;
                 let e = p.r.row(0).transpose();
                 let mut fi = -e * n;
-                if options.nonlinear && !slack[idx] {
-                    // The transverse part of a rotated axial force.
+                if options.nonlinear && (!slack[idx] || n != 0.0) {
+                    // The transverse part of a rotated axial force (a
+                    // bowed member's too: its force follows its chord).
                     let dg = global_translation(&displacements, m.j)
                         - global_translation(&displacements, m.i);
                     let block = axial_block(&e, 0.0, n / p.l);
@@ -1071,7 +1226,8 @@ fn solve_with(
             MemberForces {
                 axial: n,
                 end_forces: end,
-                slack: slack[idx],
+                slack: slack[idx] && bowed[idx] == 0.0,
+                bowed: slack[idx] && bowed[idx] > 0.0,
             }
         })
         .collect();
@@ -1139,6 +1295,38 @@ fn solve_with(
         passes: 0,
         kept_active: Vec::new(),
     })
+}
+
+/// Adds to `r` the constant member forces on the nodes: a cable's
+/// pretension pulls its ends together; a bowed tension-only member's
+/// compression (`bowed`, N) pushes them apart.
+fn constant_forces(
+    model: &Model,
+    prepared: &[Prepared],
+    slack: &[bool],
+    bowed: &[f64],
+    r: &mut [f64],
+) {
+    for (idx, (m, p)) in model.members.iter().zip(prepared).enumerate() {
+        let n = if m.kind == MemberKind::Cable && !slack[idx] {
+            m.pretension
+        } else if slack[idx] {
+            -bowed[idx]
+        } else {
+            0.0
+        };
+        if n != 0.0 {
+            let e = p.r.row(0).transpose() * n;
+            for c in 0..3 {
+                if let Some(q) = p.eq[c] {
+                    r[q] += e[c];
+                }
+                if let Some(q) = p.eq[6 + c] {
+                    r[q] -= e[c];
+                }
+            }
+        }
+    }
 }
 
 /// Refuses a stabilisation that carries load: one whose force is above
@@ -1287,12 +1475,15 @@ fn assemble(
                 }
             }
             MemberKind::Truss | MemberKind::Cable | MemberKind::Tension => {
-                if slack[idx] {
+                let n_l = if nonlinear { axial[idx] / p.l } else { 0.0 };
+                // Left out: no stiffness of its own; a bowed member's
+                // constant force still turns with its chord (P-Delta).
+                let ea_l = if slack[idx] { 0.0 } else { p.ea_l };
+                if slack[idx] && n_l == 0.0 {
                     continue;
                 }
                 let e = p.r.row(0).transpose();
-                let n_l = if nonlinear { axial[idx] / p.l } else { 0.0 };
-                let b = axial_block(&e, p.ea_l, n_l);
+                let b = axial_block(&e, ea_l, n_l);
                 for (oa, sa) in [(0, 1.0), (6, -1.0)] {
                     for (ob, sb) in [(0, 1.0), (6, -1.0)] {
                         for r in 0..3 {

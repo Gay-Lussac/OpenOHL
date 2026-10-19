@@ -2,12 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A structure whose tension-only members do not settle (an invented
+//! A structure whose tension-only members used to go round (an invented
 //! pair of diagonals in halves through a joint 1 mm off the line, the
-//! joint held otherwise only by a weak spring), solved through the link
-//! as the structure application does: it solves, its results carry the
-//! note — kept active, approximate, to be treated later — and the
-//! members kept active say so in what governs.
+//! joint held otherwise only by a weak spring; a section of 0.1 cm⁴),
+//! solved through the link as the structure application does: it
+//! settles, the shortened halves bowed at their buckling load — marked
+//! so in the member results, named in the notes and in what governs —
+//! and nothing kept active.
 
 use std::path::Path;
 
@@ -29,6 +30,7 @@ material = "steel"
 area = "10 cm2"
 tension = "100 kN"
 compression = "100 kN"
+i_min = "0.1 cm4"
 [[node]]
 id = "A"
 point = [0, 0, 0]
@@ -72,7 +74,7 @@ kind = "tension"
 "#;
 
 #[test]
-fn an_unsettled_structure_solves_flagged_approximate() {
+fn the_formerly_unsettled_structure_settles_with_bowed_halves() {
     let structure = StructureType::parse(Path::new("k.ohls"), TYPE).unwrap();
     // 10 kN at M across the frame, typed in the table's case "pull".
     let table = LoadTable {
@@ -122,16 +124,25 @@ fn an_unsettled_structure_solves_flagged_approximate() {
     }
     assert!(
         r.notes.iter().any(|n| n
-            == "tension-only members kept active because the set did not settle: AM, MC — \
-                approximate; to be treated later"),
+            == "tension-only members: 0 of 4 slack, 2 bowed (3 solve(s)); bowed (carry their \
+                buckling load): MC 0.33 kN, BM 0.33 kN"),
         "{:?}",
         r.notes
     );
+    assert!(!r.notes.iter().any(|n| n.contains("kept active")));
     for m in &r.members {
-        let kept = m.governs.contains(ohl_structures_fe::check::KEPT_ACTIVE);
-        assert_eq!(kept, m.id == "AM" || m.id == "MC", "{m:?}");
-        if kept {
-            assert!(!m.slack);
+        let bowed = m.id == "MC" || m.id == "BM";
+        assert_eq!(m.bowed, bowed, "{m:?}");
+        assert!(!m.slack, "{m:?}");
+        assert_eq!(
+            m.governs.starts_with(ohl_structures_fe::check::BOWED),
+            bowed,
+            "{m:?}"
+        );
+        if bowed {
+            assert!((m.axial + 331.7).abs() < 0.5, "{m:?}");
+        } else {
+            assert!(m.axial > 5e3, "{m:?}");
         }
     }
 }

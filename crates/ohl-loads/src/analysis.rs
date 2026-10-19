@@ -176,7 +176,8 @@ impl Analyses {
                     notes.push(format!("model: {note}"));
                 }
                 // Tension-only members kept active (their set did not
-                // settle): the check is approximate.
+                // settle, the solver's last resort): the check is
+                // approximate. Bowed and slack ones are in the note above.
                 if let Some(note) = ohl_structures_fe::kept_active_note(model, &solution) {
                     notes.push(format!("model: {note}"));
                 }
