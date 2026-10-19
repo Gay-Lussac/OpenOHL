@@ -546,3 +546,106 @@ fn the_shipped_example_reads() {
     let folder = SectionLibrary::load(path.parent().unwrap()).unwrap();
     assert_eq!(folder.sections.len(), lib.sections.len());
 }
+
+/// Wind factors of the `[wind]` table (numbers invented): read, checked,
+/// interpolated by hand.
+const WIND: &str = r#"
+[wind]
+source = "invented test values"
+drag = { equal_angle = 2.0, circular_hollow = 1.2 }
+
+[wind.face_drag]
+solidity = [0.1, 0.3, 0.5]
+factor = [3.0, 2.6, 2.2]
+
+[wind.shielding]
+solidity = [0.1, 0.5]
+spacing = [1.0, 3.0]
+factor = [[0.8, 0.4], [1.0, 0.6]]
+"#;
+
+#[test]
+fn wind_factors_read_and_interpolate() {
+    let lib = SectionLibrary::parse(WIND).unwrap();
+    let w = lib.wind.as_ref().unwrap();
+    assert_eq!(w.source_name(), "invented test values");
+    assert_eq!(w.drag_of("equal_angle"), Some(2.0));
+    assert_eq!(w.drag_of("channel"), None);
+    let face = w.face_drag.as_ref().unwrap();
+    // Halfway between 0.1 (3.0) and 0.3 (2.6): 2.8.
+    close(face.at(0.2).unwrap(), 2.8, 1e-12);
+    close(face.at(0.5).unwrap(), 2.2, 1e-12);
+    assert_eq!(face.at(0.05), None, "below the table: none");
+    assert_eq!(face.at(0.6), None, "above the table: none");
+    let s = w.shielding.as_ref().unwrap();
+    // φ = 0.3: rows 0.6 (spacing 1) and 0.8 (spacing 3); spacing 2: 0.7.
+    close(s.at(0.3, 2.0).unwrap(), 0.7, 1e-12);
+    close(s.at(0.1, 1.0).unwrap(), 0.8, 1e-12);
+    assert_eq!(s.at(0.3, 4.0), None, "spacing beyond the table");
+    // Without spacing: one row, the spacing ignored.
+    let flat =
+        SectionLibrary::parse("[wind.shielding]\nsolidity = [0, 1]\nfactor = [1, 0.5]\n").unwrap();
+    let s = flat.wind.unwrap().shielding.unwrap();
+    close(s.at(0.5, 99.0).unwrap(), 0.75, 1e-12);
+    // A library without [wind] has none.
+    assert_eq!(SectionLibrary::parse("").unwrap().wind, None);
+}
+
+#[test]
+fn wind_mistakes_are_refused() {
+    for (text, says) in [
+        ("[wind]\ndrag = { angle = 2 }", "not a shape"),
+        ("[wind]\ndrag = { round_bar = 0 }", "above 0"),
+        (
+            "[wind.face_drag]\nsolidity = [0.3, 0.1]\nfactor = [1, 2]",
+            "rise",
+        ),
+        (
+            "[wind.face_drag]\nsolidity = [0.1]\nfactor = [1]",
+            "two values",
+        ),
+        (
+            "[wind.face_drag]\nsolidity = [0.1, 1.2]\nfactor = [1, 2]",
+            "between 0 and 1",
+        ),
+        (
+            "[wind.face_drag]\nsolidity = [0.1, 0.2]\nfactor = [1]",
+            "one factor per solidity",
+        ),
+        (
+            "[wind.shielding]\nsolidity = [0.1, 0.2]\nfactor = [1, 1.5]",
+            "between 0 and 1",
+        ),
+        (
+            "[wind.shielding]\nsolidity = [0.1, 0.2]\nfactor = [[1, 1]]",
+            "need spacing",
+        ),
+        (
+            "[wind.shielding]\nsolidity = [0.1, 0.2]\nspacing = [1, 2]\nfactor = [[1, 1]]",
+            "one row of factors per spacing",
+        ),
+        ("[wind]\nshade = 1", "unknown field"),
+    ] {
+        let e = SectionLibrary::parse(text).unwrap_err();
+        assert!(e.contains(says), "{text}: {e}");
+    }
+}
+
+#[test]
+fn one_wind_table_per_library() {
+    let dir = std::env::temp_dir().join(format!("ohl-sections-wind-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.ohlsec"), WIND).unwrap();
+    std::fs::write(dir.join("b.ohlsec"), "[wind]\ndrag = { round_bar = 1.1 }\n").unwrap();
+    let e = SectionLibrary::load(&dir).unwrap_err();
+    assert!(e.contains("[wind]") && e.contains("b.ohlsec"), "{e}");
+    std::fs::remove_file(dir.join("b.ohlsec")).unwrap();
+    let lib = SectionLibrary::load(&dir).unwrap();
+    assert_eq!(lib.wind.unwrap().drag_of("equal_angle"), Some(2.0));
+    std::fs::remove_dir_all(&dir).unwrap();
+    // Merged: the earlier one stays, the later one is reported.
+    let mut a = SectionLibrary::parse(WIND).unwrap();
+    let b = SectionLibrary::parse("[wind]\ndrag = { round_bar = 1.1 }\n").unwrap();
+    assert_eq!(a.merge(b), vec![WIND_TABLE.to_owned()]);
+    assert_eq!(a.wind.unwrap().drag_of("round_bar"), None);
+}
