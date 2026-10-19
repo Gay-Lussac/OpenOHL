@@ -62,6 +62,8 @@ pub use rebuild::{Report, apply, rebuild, rebuild_all, remove_generator};
 #[cfg(test)]
 mod body_tests;
 #[cfg(test)]
+mod generators_tests;
+#[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]
 mod tests;
