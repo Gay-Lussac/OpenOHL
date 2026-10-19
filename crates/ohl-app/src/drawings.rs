@@ -99,6 +99,9 @@ impl Default for DrawingsWindow {
 /// The line width by default, m (the drawings' plan half width).
 pub const DEFAULT_LINE_WIDTH: f64 = 40.0;
 
+/// The elevations' base offsets accepted, mm on paper.
+pub const ELEVATION_OFFSETS: std::ops::RangeInclusive<f64> = 0.0..=500.0;
+
 /// The line widths accepted, m.
 pub const LINE_WIDTHS: std::ops::RangeInclusive<f64> = 1.0..=2000.0;
 
@@ -145,6 +148,12 @@ pub struct DrawingSettings {
     pub line_width: f64,
     /// Sheet break clearance on paper, mm.
     pub break_clearance: f64,
+    /// The structures' elevations on the plan: `off`, `above` or `below`.
+    pub elevations: String,
+    /// From the line to the elevations' base, mm on paper.
+    pub elevation_offset: f64,
+    /// Angle between the line and the elevations' height, degrees.
+    pub elevation_rotation: f64,
     /// The sheet preview on.
     pub preview: bool,
 }
@@ -172,6 +181,9 @@ impl DrawingSettings {
             dpi: w.dpi,
             line_width: w.line_width,
             break_clearance: w.break_clearance,
+            elevations: w.elevations.place.key().to_owned(),
+            elevation_offset: w.elevations.offset_mm,
+            elevation_rotation: w.elevations.rotation_deg,
             preview,
         }
     }
@@ -208,6 +220,20 @@ impl DrawingSettings {
         w.line_width = ok(self.line_width, LINE_WIDTHS, d.line_width);
         w.break_clearance =
             ohl_drawing::check_break_clearance(self.break_clearance).unwrap_or(d.break_clearance);
+        w.elevations = ohl_drawing::Elevations {
+            place: ohl_drawing::ElevationPlace::parse(&self.elevations)
+                .unwrap_or(d.elevations.place),
+            offset_mm: ok(
+                self.elevation_offset,
+                ELEVATION_OFFSETS,
+                d.elevations.offset_mm,
+            ),
+            rotation_deg: ok(
+                self.elevation_rotation,
+                -180.0..=180.0,
+                d.elevations.rotation_deg,
+            ),
+        };
     }
 }
 
@@ -246,6 +272,9 @@ pub struct PreviewRoute {
     pub centreline: Vec<[f64; 3]>,
     /// Its sheets: stations, structures at the ends, warnings.
     pub sheets: Vec<ohl_drawing::SheetLayout>,
+    /// The structures' elevations the sheets' plan carries (none when
+    /// off), in the route's (station, offset).
+    pub elevations: Vec<ohl_drawing::ElevationDrawing>,
 }
 
 /// The export's sheets, as File › Export › Drawings… would write them now.
@@ -301,6 +330,7 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
             routes.push(PreviewRoute {
                 id: route.id.clone(),
                 sheets: ohl_drawing::sheet_layout(&d, &options, page),
+                elevations: ohl_drawing::elevations(&d, &options),
                 centreline: d.centreline,
             });
         }
@@ -680,7 +710,7 @@ impl DrawingsWindow {
                             ui.add_enabled(
                                 on,
                                 egui::DragValue::new(&mut e.offset_mm)
-                                    .range(0.0..=500.0)
+                                    .range(ELEVATION_OFFSETS)
                                     .suffix(" mm")
                                     .speed(0.5),
                             )

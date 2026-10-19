@@ -86,6 +86,28 @@ fn paint_sheets(
             let q = point_at(c, s, o);
             to_screen([q[0], q[1], 0.0])
         };
+        // The structures' elevations the sheets carry (the export's own
+        // layout), and their leaders.
+        let grey = egui::Color32::from_gray(150);
+        for e in &r.elevations {
+            for (line, closed) in &e.lines {
+                let pts: Vec<egui::Pos2> = line.iter().map(|p| at(p[0], p[1])).collect();
+                let stroke = egui::Stroke::new(1.0, grey);
+                painter.add(if *closed {
+                    egui::Shape::closed_line(pts, stroke)
+                } else {
+                    egui::Shape::line(pts, stroke)
+                });
+            }
+            if let Some([a, b]) = e.leader {
+                painter.extend(egui::Shape::dashed_line(
+                    &[at(a[0], a[1]), at(b[0], b[1])],
+                    egui::Stroke::new(0.7, grey),
+                    3.0,
+                    3.0,
+                ));
+            }
+        }
         for s in &r.sheets {
             let col = if s.warnings.is_empty() { blue } else { warn };
             let n = 24;

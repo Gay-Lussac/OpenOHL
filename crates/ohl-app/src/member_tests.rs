@@ -472,3 +472,57 @@ fn solids_distance_benchmark() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The elevation options are kept with the drawing settings (settings
+/// written before them read the defaults, odd values too), and the sheet
+/// preview carries the elevations the sheets draw (the export's own
+/// layout): every structure drawn along the route, none when off.
+#[test]
+fn elevation_settings_are_kept_and_the_preview_shows_them() {
+    use crate::drawings::{DrawingSettings, DrawingsWindow};
+    use ohl_drawing::{ElevationPlace, Elevations};
+    let w = DrawingsWindow {
+        elevations: Elevations {
+            place: ElevationPlace::Below,
+            offset_mm: 14.0,
+            rotation_deg: 80.0,
+        },
+        ..DrawingsWindow::default()
+    };
+    let text = serde_json::to_string(&DrawingSettings::of(&w, false)).unwrap();
+    let back: DrawingSettings = serde_json::from_str(&text).unwrap();
+    let mut again = DrawingsWindow::default();
+    back.apply(&mut again);
+    assert_eq!(again.elevations, w.elevations);
+    let old: DrawingSettings = serde_json::from_str(r#"{"page":"A1"}"#).unwrap();
+    let mut from_old = DrawingsWindow::default();
+    old.apply(&mut from_old);
+    assert_eq!(from_old.elevations, Elevations::default());
+    let odd = DrawingSettings {
+        elevations: "sideways".into(),
+        elevation_offset: -3.0,
+        elevation_rotation: 999.0,
+        ..DrawingSettings::default()
+    };
+    let mut from_odd = DrawingsWindow::default();
+    odd.apply(&mut from_odd);
+    assert_eq!(from_odd.elevations, Elevations::default());
+    // The preview (A3 sheets).
+    let dir = scratch("members-elevations-preview");
+    let m = solved(typed_in(&dir, false));
+    let mut w = DrawingsWindow::default();
+    let off = crate::drawings::preview(&m, 0, &w).unwrap();
+    assert!(off.routes.iter().all(|r| r.elevations.is_empty()));
+    w.elevations.place = ElevationPlace::Above;
+    let p = crate::drawings::preview(&m, 0, &w).unwrap();
+    let main = p.route("main").unwrap();
+    let t2 = main.elevations.iter().find(|e| e.id == "T2").unwrap();
+    assert_eq!(t2.lines.len(), 178);
+    assert!(t2.leader.is_some());
+    // Above the line: left of it (negative offsets), the base 10 mm on
+    // paper away (20 m at 1:2000).
+    let base = t2.leader.unwrap()[1];
+    assert!((base[1] + 20.0).abs() < 1e-9, "{base:?}");
+    assert!(t2.lines.iter().flat_map(|(l, _)| l).all(|q| q[1] < 0.0));
+    let _ = std::fs::remove_dir_all(&dir);
+}
