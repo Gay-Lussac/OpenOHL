@@ -531,7 +531,8 @@ impl LineObject {
     /// on a wire of bare diameter `wire_diameter` (m): its weight and its
     /// ice (the wire's radial ice on its surface, [`Shape::ice_and_wind`]);
     /// the wind on its iced area with its drag. A case with an ice load
-    /// but no density has no thickness: the body takes no ice.
+    /// but no density ices it as glaze ice of that load
+    /// ([`ohl_weather::WeatherCase::radial_ice`]).
     pub fn forces(&self, case: &ohl_weather::WeatherCase, wire_diameter: f64) -> [f64; 2] {
         let (t, rho) = case
             .radial_ice(ohl_core::units::Length::from_si(wire_diameter))
