@@ -7,7 +7,7 @@
 //! tower program's fictitious member), on invented models: a rod in two
 //! halves carrying a load across it at its middle (against the fixed-end
 //! beam's hand solution), the same rod as tension-only trusses (the load
-//! across it not carried by them), an X-braced panel whose compressed
+//! across it carried only by a relative hold, flagged), an X-braced panel whose compressed
 //! bending diagonal bows as a truss, and the file keys.
 
 use crate::check::{NOT_CHECKED, worst};
@@ -94,15 +94,25 @@ fn a_tension_only_beam_carries_a_load_across_it() {
     assert!(close(t.displacements[1][0], H * L / 2.0 / (E * 1e-3)));
 }
 
-/// The same rod of tension-only trusses holds nothing across it: the load
-/// at M is refused, not carried by the stabilisation.
+/// The same rod of tension-only trusses holds nothing across it by its
+/// members: M lies on the straight line A–B, so the stabilisation holds it
+/// relative to A and B and the load P (10 % of the loads, above the
+/// limit) goes to them through that hold — not refused since the owner's
+/// decision of 2026-10-19, but flagged ([`Solution::relative_over`]); the
+/// halves carry no moment.
 #[test]
-fn a_tension_only_truss_rod_does_not_carry_it() {
+fn a_tension_only_truss_rod_carries_it_only_by_a_relative_hold() {
     let m = rod(false);
-    let e = run(&m, vec![force(2, [H, 0.0, 0.0]), force(1, [0.0, 0.0, -P])]).unwrap_err();
+    let s = run(&m, vec![force(2, [H, 0.0, 0.0]), force(1, [0.0, 0.0, -P])])
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(s.relative_over.len(), 1);
+    let h = &s.stabilised[s.relative_over[0]];
+    assert!(h.at.node == 1 && !h.at.relative.is_empty());
+    assert!((h.force.abs() - P).abs() <= 1e-9 * P);
     assert!(
-        matches!(e, FeError::Held { ref node, .. } if node == "M"),
-        "{e}"
+        s.members
+            .iter()
+            .all(|f| f.end_forces[4] == 0.0 && f.end_forces[5] == 0.0)
     );
 }
 

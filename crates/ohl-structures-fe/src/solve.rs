@@ -27,13 +27,19 @@ pub const DOF_NAMES: [&str; 6] = ["x", "y", "z", "rx", "ry", "rz"];
 /// At most this many joints of a mechanism are named.
 pub const MECHANISM_JOINTS: usize = 12;
 
-/// A stabilisation carrying more than this share of the loads (the larger
-/// of their resultant and the largest load at a joint) and more than
-/// [`HELD_JOINT_SHARE`] of its own joint's load holds a load in a
-/// direction no member holds: a mechanism ([`FeError::Held`]). Otherwise
-/// its force is reported ([`Solution::stabilised`]) — the out-of-plane
-/// part of the self-weight at a joint of a battered tower face, or the
-/// weight at the crossing of a horizontal bracing, for example.
+/// A stabilisation held to the ground carrying more than this share of
+/// the loads (the larger of their resultant and the largest load at a
+/// joint) and more than [`HELD_JOINT_SHARE`] of its own joint's load
+/// holds a load in a direction no member holds: a mechanism
+/// ([`FeError::Held`]). Otherwise its force is reported
+/// ([`Solution::stabilised`]) — the out-of-plane part of the self-weight
+/// at a joint of a battered tower face, or the weight at the crossing of
+/// a horizontal bracing, for example. A hold **relative** to the ends of
+/// the joint's lines ([`crate::Stabilisation::relative`]) is never
+/// refused (owner's decision, 2026-10-19): its force stays in the
+/// structure, carried by the lines' ends; above these limits it is listed
+/// in [`Solution::relative_over`] and flagged in the notes
+/// ([`crate::stabilisation_note`]).
 pub const HELD_SHARE: f64 = 0.01;
 
 /// See [`HELD_SHARE`]: a quarter of the joint's own load (about 14.5°
@@ -290,6 +296,13 @@ pub struct Solution {
     /// and is flagged so in the notes ([`crate::kept_active_note`]) and
     /// the usage ([`crate::check::KEPT_ACTIVE`]).
     pub kept_active: Vec<usize>,
+    /// The holds relative to the ends of their joints' lines
+    /// ([`crate::Stabilisation::relative`]) that take more than
+    /// [`HELD_SHARE`] of the loads and [`HELD_JOINT_SHARE`] of their
+    /// joint's own load — above the limits at which a hold to the ground
+    /// is refused: indices into [`Solution::stabilised`]. Not refused
+    /// (their force is carried by the lines' ends), flagged in the notes.
+    pub relative_over: Vec<usize>,
 }
 
 /// Per member: what does not change between iterations.
@@ -1312,9 +1325,11 @@ fn solve_with(
             }
         })
         .collect();
-    if !held.is_empty() {
-        check_held(model, &f_ext, &stabilised)?;
-    }
+    let relative_over = if held.is_empty() {
+        Vec::new()
+    } else {
+        check_held(model, &f_ext, &stabilised)?
+    };
     let reactions = model
         .nodes
         .iter()
@@ -1355,6 +1370,7 @@ fn solve_with(
         stabilised,
         passes: 0,
         kept_active: Vec::new(),
+        relative_over,
     })
 }
 
@@ -1390,12 +1406,19 @@ fn constant_forces(
     }
 }
 
-/// Refuses a stabilisation that carries load: one whose force is above
-/// [`HELD_SHARE`] of the loads (the larger of their resultant and the
-/// largest load at a joint; a moment over the model's size) and above
-/// [`HELD_JOINT_SHARE`] of its joint's own load — a load in a direction
-/// no member holds, which the structure does not carry.
-fn check_held(model: &Model, f_ext: &[[f64; 6]], held: &[Stabilised]) -> Result<(), FeError> {
+/// Refuses a stabilisation held to the ground that carries load: one
+/// whose force is above [`HELD_SHARE`] of the loads (the larger of their
+/// resultant and the largest load at a joint; a moment over the model's
+/// size) and above [`HELD_JOINT_SHARE`] of its joint's own load — a load
+/// in a direction no member holds, which the structure does not carry.
+/// A hold relative to its lines' ends above the same limits is not
+/// refused (its force is carried by the structure: owner's decision,
+/// 2026-10-19); their indices in `held` are returned.
+fn check_held(
+    model: &Model,
+    f_ext: &[[f64; 6]],
+    held: &[Stabilised],
+) -> Result<Vec<usize>, FeError> {
     let mut resultant = [0.0; 3];
     let mut largest: f64 = 0.0;
     for f in f_ext {
@@ -1409,7 +1432,7 @@ fn check_held(model: &Model, f_ext: &[[f64; 6]], held: &[Stabilised]) -> Result<
             .sqrt(),
     );
     if loads <= 0.0 {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
@@ -1430,16 +1453,21 @@ fn check_held(model: &Model, f_ext: &[[f64; 6]], held: &[Stabilised]) -> Result<
         let f = &f_ext[h.at.node][base..base + 3];
         (f[0] * f[0] + f[1] * f[1] + f[2] * f[2]).sqrt()
     };
+    let above = |h: &Stabilised| share(h) > HELD_SHARE && h.force.abs() > HELD_JOINT_SHARE * own(h);
+    // Relative holds: carried by their lines' ends, flagged only.
+    let relative_over: Vec<usize> = (0..held.len())
+        .filter(|&k| !held[k].at.relative.is_empty() && above(&held[k]))
+        .collect();
     let over: Vec<&Stabilised> = held
         .iter()
-        .filter(|h| share(h) > HELD_SHARE && h.force.abs() > HELD_JOINT_SHARE * own(h))
+        .filter(|h| h.at.relative.is_empty() && above(h))
         .collect();
     let Some(worst) = over
         .iter()
         .copied()
         .max_by(|a, b| share(a).total_cmp(&share(b)))
     else {
-        return Ok(());
+        return Ok(relative_over);
     };
     let mut joints: Vec<String> = Vec::new();
     for h in &over {

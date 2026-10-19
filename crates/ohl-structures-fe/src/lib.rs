@@ -109,6 +109,36 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
             ));
         }
     }
+    if !solution.relative_over.is_empty() {
+        // Relative holds above the refusal limit of a ground hold:
+        // carried by their lines, flagged.
+        let mut over: Vec<&crate::Stabilised> = solution
+            .relative_over
+            .iter()
+            .filter_map(|&k| held.get(k))
+            .collect();
+        over.sort_by(|a, b| b.force.abs().total_cmp(&a.force.abs()));
+        let names: Vec<String> = over
+            .iter()
+            .take(NOTE_NAMES)
+            .map(|h| {
+                format!(
+                    "{} {} {:.2} kN",
+                    model.nodes[h.at.node].id,
+                    h.at.dof_name(),
+                    h.force.abs() / 1000.0
+                )
+            })
+            .collect();
+        text.push_str(&format!(
+            "; LARGE: {} hold(s) relative to their lines take more than {} % of the loads \
+             (carried by the lines' ends, not refused — check those joints): {}{}",
+            over.len(),
+            crate::solve::HELD_SHARE * 100.0,
+            names.join(", "),
+            if over.len() > NOTE_NAMES { ", …" } else { "" }
+        ));
+    }
     Some(text)
 }
 
@@ -217,6 +247,8 @@ pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
 
 #[cfg(test)]
 mod bending_tests;
+#[cfg(test)]
+mod held_limit_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]
