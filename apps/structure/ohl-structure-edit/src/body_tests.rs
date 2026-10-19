@@ -797,3 +797,47 @@ fn several_points_on_one_arm() {
     }
     assert!(generate(&t, &three).is_err());
 }
+
+/// The options raise the file to version 6 (`body::OPTIONS_VERSION`),
+/// and only they: a body without them stays at the body version 3, a
+/// file without a version stays without; each option counts.
+#[test]
+fn options_raise_the_version() {
+    let version = |doc: &DocumentMut| doc.get("version").and_then(|v| v.as_integer());
+    let plain = frustum(&[(5.0, Bracing::X, true), (10.0, Bracing::X, true)]);
+    let mut doc: DocumentMut = EMPTY.parse().unwrap();
+    applied(&mut doc, &plain);
+    assert_eq!(version(&doc), Some(body::BODY_VERSION));
+    let redundants = with(plain.clone(), 1, |p| p.redundants = Redundants::One);
+    applied(&mut doc, &redundants);
+    assert_eq!(version(&doc), Some(body::OPTIONS_VERSION));
+    assert_eq!(read(&doc).version, Some(6));
+    // Written back without them: the version stays (it is never lowered).
+    applied(&mut doc, &plain);
+    assert_eq!(version(&doc), Some(body::OPTIONS_VERSION));
+    let mut unversioned: DocumentMut = EMPTY.replace("version = 2\n", "").parse().unwrap();
+    applied(&mut unversioned, &redundants);
+    assert_eq!(version(&unversioned), None);
+    let mut auto = plain.clone();
+    if let Kind::Panels(p) = &mut auto.kind {
+        p.plan_auto = Plan::X;
+    }
+    let arm = Generator {
+        id: "arm".into(),
+        kind: Kind::Crossarm(Crossarm {
+            points: vec!["A1".into()],
+            one_arm: true,
+            ..Default::default()
+        }),
+    };
+    for g in [
+        &redundants,
+        &with(plain.clone(), 1, |p| p.plan = Plan::Diamond),
+        &with(plain.clone(), 1, |p| p.width = Some([4.0, 4.0])),
+        &auto,
+        &arm,
+    ] {
+        assert!(g.uses_options(), "{g:?}");
+    }
+    assert!(!plain.uses_options());
+}
