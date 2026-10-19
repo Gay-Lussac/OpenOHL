@@ -21,8 +21,8 @@
 //! [`build`] collects the drawing data. The layout makes format-free
 //! [`model::Drawing`]s from it: [`drawing`] the whole route (or a station
 //! range) as one continuous drawing; [`sheets`] split **at structures**
-//! of the run along the alignment, clear of every other structure drawn,
-//! over sheets of a standard format (A0–A4 or custom) with a title block
+//! within the line width, clear of every other structure drawn
+//! ([`sheet_layout`]: where, without drawing them), over sheets of a standard format (A0–A4 or custom) with a title block
 //! and logos; [`profile_model`] and [`plan_model`] in model space. Writers:
 //! SVG ([`model::Drawing::svg`]), [`dxf`], [`pdf`], [`png`]; the numbers
 //! as CSV and XML ([`profile_csv`], [`profile_xml`]). [`export`] writes a
@@ -47,7 +47,7 @@ pub mod pdf;
 pub mod png;
 mod table;
 
-pub use layout::{BREAK_CLEARANCE_MM, Sheet, plan_model, profile_model, sheets};
+pub use layout::{Sheet, SheetLayout, plan_model, profile_model, sheet_layout, sheets};
 pub use table::{profile_csv, profile_xml};
 
 /// Drawing options.
@@ -61,7 +61,10 @@ pub struct Options {
     pub side_offsets: Vec<f64>,
     /// Required vertical clearance drawn above the ground, m.
     pub clearance: Option<f64>,
-    /// Half width of the plan view, m.
+    /// Half width of the plan view, m: the **line width** of the drawings
+    /// (`--plan-width`). A structure whose offset from the alignment is
+    /// within it is on the line and may end a sheet; one outside it never
+    /// does.
     pub plan_half_width: f64,
     /// Title lines (line name, weather case…).
     pub title: Vec<String>,
@@ -75,6 +78,32 @@ pub struct Options {
     pub stations: Option<[f64; 2]>,
     /// Draw the plan above the profile (else the profile alone).
     pub plan: bool,
+    /// Clearance on paper, mm, between a sheet break and what is drawn of
+    /// every other structure (its station, attachments and stick
+    /// drawing): 0 to [`MAX_BREAK_CLEARANCE_MM`], default
+    /// [`BREAK_CLEARANCE_MM`] (see [`check_break_clearance`]).
+    pub break_clearance: f64,
+}
+
+/// Default clearance on paper, mm, between a sheet break and the drawing
+/// of any other structure ([`Options::break_clearance`]).
+pub const BREAK_CLEARANCE_MM: f64 = 2.0;
+
+/// Largest sheet break clearance accepted, mm on paper (under a tenth of
+/// an A4 sheet's 263 mm of drawing width: more would leave few structures
+/// free to break at).
+pub const MAX_BREAK_CLEARANCE_MM: f64 = 20.0;
+
+/// The sheet break clearance `mm` (on paper) if it is a number from 0 to
+/// [`MAX_BREAK_CLEARANCE_MM`], else why not.
+pub fn check_break_clearance(mm: f64) -> Result<f64, String> {
+    if (0.0..=MAX_BREAK_CLEARANCE_MM).contains(&mm) {
+        Ok(mm)
+    } else {
+        Err(format!(
+            "sheet break clearance {mm} mm: give 0 to {MAX_BREAK_CLEARANCE_MM} mm on paper"
+        ))
+    }
 }
 
 impl Default for Options {
@@ -90,6 +119,7 @@ impl Default for Options {
             logos: Vec::new(),
             stations: None,
             plan: true,
+            break_clearance: BREAK_CLEARANCE_MM,
         }
     }
 }
@@ -137,7 +167,9 @@ pub struct Mark {
     /// Offset.
     pub offset: f64,
     /// Away from the alignment (not on the run along it, such as a
-    /// connection beside the line): sheets never break at it.
+    /// connection beside the line; the route's rule,
+    /// `AlignmentView::away`). Sheets do not use it: they break only at a
+    /// structure within the line width ([`Options::plan_half_width`]).
     pub away: bool,
     /// Position in project coordinates (x, y).
     pub xy: [f64; 2],
@@ -966,7 +998,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn sheets_never_break_at_or_near_a_structure_off_the_alignment() {
+    fn sheets_never_break_at_or_near_a_structure_outside_the_line_width() {
         // Main route: T1 0, T2 310, T3 640, T4 940, T5 1260 m. A3 at
         // 1:2000 holds (420 − 34) mm × 2 m/mm = 772 m; the clearance of
         // 2 mm on paper is 4 m. Profile at 1:500 so the height fits.
@@ -978,11 +1010,11 @@ pub(crate) mod tests {
         let plain = sheets(&main_route(&o), &o, &a3);
         assert_eq!(ends(&plain), [("T1", "T3"), ("T3", "T5")]);
 
-        // The old fault: C1 40 m right of the line at 0+700 is the last
+        // The old fault: C1 60 m right of the line at 0+700 is the last
         // structure within 772 m of T1, so the greedy break fell at C1 —
         // a match line through the span T3–T4. Now the break stays at T3
         // and the sheets are those without C1.
-        let s = sheets(&main_with_away(700.0, 40.0), &o, &a3);
+        let s = sheets(&main_with_away(700.0, 60.0), &o, &a3);
         assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
         assert!(
             s.iter().all(|s| s.warnings.is_empty()),
@@ -998,7 +1030,7 @@ pub(crate) mod tests {
         // drawing, so it moves back to T2 (the last free structure within
         // reach); from T2 (reach to 1082 m) T3 and C1 are skipped, T4 (940)
         // fits; T4–T5 ends the route. No warnings: every sheet fits.
-        let s = sheets(&main_with_away(642.0, 40.0), &o, &a3);
+        let s = sheets(&main_with_away(642.0, 60.0), &o, &a3);
         assert_eq!(ends(&s), [("T1", "T2"), ("T2", "T4"), ("T4", "T5")]);
         assert!(
             s.iter().all(|s| s.warnings.is_empty()),
@@ -1016,12 +1048,14 @@ pub(crate) mod tests {
         // past T2 blocks T2 and T3 (640) lies beyond the reach. The sheet
         // runs on to T3 (640 m) and says so; the others are as before.
         let a4 = page_format("A4").unwrap();
-        let s = sheets(&main_with_away(312.0, 40.0), &o, &a4);
+        let s = sheets(&main_with_away(312.0, 60.0), &o, &a4);
         assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T4"), ("T4", "T5")]);
         let w = &s[0].warnings;
         assert!(
             w.iter().any(|w| w.starts_with("no free sheet break")
-                && w.contains("C1 stands off the alignment")
+                && w.contains(
+                    "C1 stands 60.0 m right of the alignment, outside the line width ±40.0 m"
+                )
                 && w.contains("T2 is within 4.0 m of C1")
                 && w.contains("runs on to T3 (640 m)")),
             "{w:?}"
@@ -1041,13 +1075,119 @@ pub(crate) mod tests {
             stations: Some([100.0, 1100.0]),
             ..o.clone()
         };
-        let s = sheets(&main_with_away(642.0, 40.0), &range, &a3);
+        let s = sheets(&main_with_away(642.0, 60.0), &range, &a3);
         assert_eq!(s[0].structures.0, "0+100.0");
         assert_eq!(s.last().unwrap().structures.1, "1+100.0");
         assert!(
             s.iter()
                 .all(|s| s.structures.1 != "T3" && s.structures.1 != "C1")
         );
+    }
+
+    #[test]
+    fn a_structure_within_the_line_width_may_end_a_sheet() {
+        // As above: A3 at 1:2000 holds 772 m from T1 (0); C1 at 0+700 is
+        // the last structure within reach, 60 m from T3 (640) and 240 m
+        // from T4 (940): free of every other structure's drawing.
+        let o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        let a3 = page_format("A3").unwrap();
+        // Just inside the line width (±40 m by default): on the line, the
+        // sheet ends at C1 and the next one starts there (C1 at 700 holds
+        // to 1472 m: T5 at 1260 ends it).
+        let s = sheets(&main_with_away(700.0, 39.9), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "C1"), ("C1", "T5")]);
+        assert!((s[0].to - 700.0).abs() < 1e-6, "{}", s[0].to);
+        // Just outside: away, the sheets are those without C1.
+        let s = sheets(&main_with_away(700.0, 40.1), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
+        // Left of the alignment the same.
+        let s = sheets(&main_with_away(700.0, -39.9), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "C1"), ("C1", "T5")]);
+        // The line width is the drawings' (the plan's half width): at ±30 m
+        // the same C1 39.9 m beside the alignment is outside it.
+        let narrow = Options {
+            plan_half_width: 30.0,
+            ..o.clone()
+        };
+        let s = sheets(&main_with_away(700.0, 39.9), &narrow, &a3);
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
+    }
+
+    #[test]
+    fn the_break_clearance_is_a_setting() {
+        let o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        let a3 = page_format("A3").unwrap();
+        // C1 (outside the line width) 2 m past T3 (640). At the default
+        // 2 mm on paper (4 m at 1:2000) T3 is blocked: T1–T2, T2–T4, T4–T5.
+        let d = main_with_away(642.0, 60.0);
+        assert_eq!(o.break_clearance, BREAK_CLEARANCE_MM);
+        assert_eq!(
+            ends(&sheets(&d, &o, &a3)),
+            [("T1", "T2"), ("T2", "T4"), ("T4", "T5")]
+        );
+        // At 0.5 mm (1 m) the 2 m between T3 and C1 are enough.
+        let close = Options {
+            break_clearance: 0.5,
+            ..o.clone()
+        };
+        assert_eq!(ends(&sheets(&d, &close, &a3)), [("T1", "T3"), ("T3", "T5")]);
+        // At 1.5 mm (3 m) not.
+        let one = Options {
+            break_clearance: 1.5,
+            ..o.clone()
+        };
+        assert_eq!(
+            ends(&sheets(&d, &one, &a3)),
+            [("T1", "T2"), ("T2", "T4"), ("T4", "T5")]
+        );
+        // Checked: 0 to 20 mm.
+        assert_eq!(check_break_clearance(0.0), Ok(0.0));
+        assert_eq!(check_break_clearance(MAX_BREAK_CLEARANCE_MM), Ok(20.0));
+        for bad in [-0.1, 20.5, f64::NAN, f64::INFINITY] {
+            assert!(check_break_clearance(bad).is_err(), "{bad}");
+        }
+        // The export refuses an invalid one (before writing anything).
+        let dir =
+            std::env::temp_dir().join(format!("ohl-drawing-clearance-{}", std::process::id()));
+        let bad = Options {
+            break_clearance: -1.0,
+            ..o.clone()
+        };
+        let e = export::Export {
+            page: Some(a3.clone()),
+            ..Default::default()
+        };
+        let err =
+            export::write_route(&d, &bad, &e, &dir, &ohl_core::budget::Budget::new()).unwrap_err();
+        assert!(err.contains("0 to 20 mm"), "{err}");
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn the_sheet_layout_is_that_of_the_sheets() {
+        let o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        let a4 = page_format("A4").unwrap();
+        let d = main_with_away(312.0, 60.0);
+        let layout = sheet_layout(&d, &o, &a4);
+        let drawn = sheets(&d, &o, &a4);
+        assert_eq!(layout.len(), drawn.len());
+        for (l, s) in layout.iter().zip(&drawn) {
+            assert_eq!(
+                (l.number, l.from, l.to, &l.structures, &l.warnings),
+                (s.number, s.from, s.to, &s.structures, &s.warnings)
+            );
+            assert!((l.reach - 526.0).abs() < 1e-9, "{}", l.reach);
+        }
+        assert!(layout[0].warnings[0].starts_with("no free sheet break"));
     }
 
     #[test]

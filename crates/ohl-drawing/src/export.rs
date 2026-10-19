@@ -144,6 +144,7 @@ pub fn write_route(
     dir: &Path,
     budget: &Budget,
 ) -> Result<Written, String> {
+    crate::check_break_clearance(o.break_clearance)?;
     std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let mut run = budget.start();
     let mut written = Written::default();
