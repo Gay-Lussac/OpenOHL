@@ -158,18 +158,30 @@ same axes as `iy`, `iz`: set by `reference` and `roll`). In the line run
 the wind blows across the line from the weather case's wind side, as on
 the wires and the poles.
 
-Approximations: no member shields another (a lattice's far face takes the
-full wind), no solidity or shape factors from a code — `drag` (one factor
-for the whole structure, default 1) is the only one; an angle's legs do
-not shield each other ([Wind on the profile](section-library.md#wind-on-the-profile));
-the load is lumped at the joints, so a member's own bending under its
-wind is left out (the joints carry the same forces).
+**Drag and shielding factors** are data: when the section library has a
+`[wind]` table ([Wind factors for structures](section-library.md#wind-factors-for-structures-wind),
+from a design-code plugin or typed), a member takes the drag factor of its
+profile's shape, or of its lattice face by the face's solidity ratio, and
+a member behind another face of the lattice (the far face of a body) the
+shielding factor of the face in front — OpenOHL finds the faces, their
+solidity ratios and which face is in front of which member ([Wind on
+lattice structures](../theory/structure-wind.md)). Without the table,
+`drag` (one factor for the whole structure, default 1) is the only one
+and no member shields another, as the notes say.
+
+Approximations: an angle's legs do not shield each other ([Wind on the
+profile](section-library.md#wind-on-the-profile)); the load is lumped at
+the joints, so a member's own bending under its wind is left out (the
+joints carry the same forces).
 
 The type's wind bands (`[[wind.band]]`) are loads at no point of the
 structure: they are in the structure loads (and the CSV), never in the FE
 model, so the body wind is not counted twice. The usage notes say when
 the member wind was used: `model: member wind from the section profiles,
-12.3 kN across the line (the type's wind bands not in the model)`.
+12.3 kN across the line (the type's wind bands not in the model)`, then
+which drag factors and shielding it took (`model: member wind: drag
+factor 1 on every profile (the model's generic drag: no code drag factors
+given); no shielding (no shielding factors given)`).
 Without profiles (sections from the tables only) there is no member wind
 and nothing changes.
 
@@ -233,4 +245,4 @@ ohl structures pole Structures/steel-pole-30m.ohlp --type Structures/type-05.ohl
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
 
-`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.ohlsec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
+`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--top N` (members printed per case), `--sections` (a `.ohlsec` file or folder: the section library, looked up first), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles; the drag and shielding factors of the section library's `[wind]` table when it has one, the notes printed) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.

@@ -3650,6 +3650,7 @@ dependencies = [
  "ohl-line",
  "ohl-loads",
  "ohl-plugins",
+ "ohl-sections",
  "ohl-session",
  "ohl-terrain",
  "ohl-weather",
@@ -3850,6 +3851,7 @@ name = "ohl-structure-edit"
 version = "0.0.1"
 dependencies = [
  "ohl-core",
+ "ohl-sections",
  "ohl-structures",
  "serde",
  "toml 0.9.12+spec-1.1.0",
@@ -3968,6 +3970,7 @@ dependencies = [
  "ohl-core",
  "ohl-crs",
  "ohl-sagtension",
+ "ohl-sections",
  "ohl-spotting",
  "ohl-structures-fe",
  "ohl-thermal",

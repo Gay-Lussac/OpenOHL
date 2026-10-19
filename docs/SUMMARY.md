@@ -39,6 +39,7 @@
 - [Thermal rating](theory/thermal.md)
 - [Optimum structure spotting](theory/spotting.md)
 - [Structure analysis: frames, trusses, guys and poles](theory/structures-fe.md)
+- [Wind on lattice structures: faces, solidity, shielding](theory/structure-wind.md)
 - [Galloping ellipses and blowout](theory/galloping.md)
 - [LiDAR analyses](theory/lidar-analysis.md)
 

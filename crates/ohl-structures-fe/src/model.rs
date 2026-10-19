@@ -1176,27 +1176,23 @@ impl Model {
     /// where the wind blows to, structure axes. No member shields
     /// another.
     pub fn member_wind(&self, pressure: f64, direction: [f64; 3]) -> Vec<NodalLoad> {
-        let n = norm(direction);
-        if pressure == 0.0 || n.is_nan() || n <= 0.0 {
-            return Vec::new();
-        }
-        let w = direction.map(|d| d / n);
-        let mut out = Vec::new();
-        for m in &self.members {
-            let Some((normal, sin, width)) = self.across(m, w) else {
-                continue;
-            };
-            // q·C·d·L·sin²θ along the unit normal: q·C·d·L·sin θ × normal.
-            let f = pressure * self.analysis.drag * width * self.length(m) * sin;
-            for node in [m.i, m.j] {
-                out.push(NodalLoad {
-                    node,
-                    force: normal.map(|c| 0.5 * f * c),
-                    moment: [0.0; 3],
-                });
-            }
-        }
-        out
+        self.member_wind_with(pressure, direction, None).loads
+    }
+
+    /// The member wind with wind factors given as data (`factors`: the
+    /// section library's `[wind]`: drag per shape, a lattice face's drag
+    /// and shielding by solidity ratio — [`crate::wind`]), and what was
+    /// applied ([`crate::wind::MemberWind::notes`]). Without factors the
+    /// loads are those of [`Self::member_wind`]. Computes the faces each
+    /// call: for several directions or cases, build a
+    /// [`crate::wind::MemberWindSetup`] once.
+    pub fn member_wind_with(
+        &self,
+        pressure: f64,
+        direction: [f64; 3],
+        factors: Option<&ohl_sections::StructureWind>,
+    ) -> crate::wind::MemberWind {
+        crate::wind::MemberWindSetup::new(self, factors).wind(pressure, direction)
     }
 
     /// The area member `member` (its place) shows to a wind blowing in
@@ -1222,7 +1218,7 @@ impl Model {
     /// component normal to the member, its length (sin θ) and the
     /// profile's width for it. None: no profile, or the wind along the
     /// member.
-    fn across(&self, m: &Member, w: [f64; 3]) -> Option<([f64; 3], f64, f64)> {
+    pub(crate) fn across(&self, m: &Member, w: [f64; 3]) -> Option<([f64; 3], f64, f64)> {
         let p = self.sections[m.section].profile.as_ref()?;
         let r = crate::element::axes(self, m);
         let row = |k: usize| [r[(k, 0)], r[(k, 1)], r[(k, 2)]];

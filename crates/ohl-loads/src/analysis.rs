@@ -41,6 +41,10 @@ type ModelKey = (String, Option<String>);
 pub(crate) struct Analyses {
     models: BTreeMap<ModelKey, Result<Model, String>>,
     poles: BTreeMap<String, Result<Pole, String>>,
+    /// The section library's wind factors (`[wind]`), when given.
+    wind: Option<ohl_sections::StructureWind>,
+    /// The lattice faces of each model, when the wind factors need them.
+    faces: BTreeMap<ModelKey, Vec<ohl_structures_fe::wind::Face>>,
 }
 
 impl Analyses {
@@ -75,6 +79,18 @@ impl Analyses {
             }
             if let Some(pole) = ohl_structures_fe::pole::structure_pole(t, &dir, sections) {
                 out.poles.insert(t.id.clone(), pole);
+            }
+        }
+        out.wind = sections.wind.clone();
+        if ohl_structures_fe::wind::needs_faces(out.wind.as_ref()) {
+            // Once per model: the faces do not change with the case.
+            for (key, model) in &out.models {
+                if let Ok(m) = model
+                    && m.has_profiles()
+                {
+                    out.faces
+                        .insert(key.clone(), ohl_structures_fe::wind::faces(m));
+                }
             }
         }
         out
@@ -135,13 +151,20 @@ impl Analyses {
         if let Some(w) = weather
             && model.has_profiles()
         {
-            // The wind blows across the line: from the right, to −x.
-            let wind = model.member_wind(
+            // The wind blows across the line: from the right, to −x. Drag
+            // and shielding factors from the section library's [wind]
+            // when given (else the model's generic drag, no shielding).
+            let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
+                model,
+                self.wind.as_ref(),
+                self.faces.get(&key).cloned().unwrap_or_default(),
+            );
+            let wind = setup.wind(
                 w.wind_pressure.si() * case.transverse,
                 [-w.wind_from.to_left(), 0.0, 0.0],
             );
-            if !wind.is_empty() {
-                let total: f64 = wind.iter().map(|l| l.force[0]).sum();
+            if !wind.loads.is_empty() {
+                let total = wind.total()[0];
                 notes.push(format!(
                     "model: member wind from the section profiles, {:.1} kN across the line{}",
                     total.abs() / 1000.0,
@@ -151,7 +174,8 @@ impl Analyses {
                         ""
                     }
                 ));
-                nodal.extend(wind);
+                notes.extend(wind.notes.iter().map(|n| format!("model: {n}")));
+                nodal.extend(wind.loads);
             }
         }
         let loads = Loads {

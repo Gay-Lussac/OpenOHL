@@ -233,26 +233,30 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         }
     );
     let a = args.wind_dir.to_radians();
-    let wind = model.member_wind(args.wind, [a.cos(), a.sin(), 0.0]);
+    // Drag and shielding factors from the section library's [wind] when
+    // given; else the model's generic drag and no shielding (said).
+    let member_wind =
+        model.member_wind_with(args.wind, [a.cos(), a.sin(), 0.0], sections.wind.as_ref());
     if args.wind != 0.0 {
         if !model.has_profiles() {
             return Err(
                 "--wind: no member's section comes from a section library (give --sections)".into(),
             );
         }
-        let total = wind.iter().fold([0.0; 3], |s, l| {
-            [s[0] + l.force[0], s[1] + l.force[1], s[2] + l.force[2]]
-        });
+        let total = member_wind.total();
         println!(
-            "member wind {:.0} Pa to {:.0}°: {:.1} / {:.1} / {:.1} kN (drag {})",
+            "member wind {:.0} Pa to {:.0}°: {:.1} / {:.1} / {:.1} kN",
             args.wind,
             args.wind_dir,
             total[0] / 1000.0,
             total[1] / 1000.0,
             total[2] / 1000.0,
-            model.analysis.drag
         );
+        for n in &member_wind.notes {
+            println!("  {n}");
+        }
     }
+    let wind = member_wind.loads;
     let runs: Vec<(String, Vec<NodalLoad>)> = match (&args.loads, &args.structure) {
         (Some(path), Some(structure)) => read_loads(path, structure, &args.case)?
             .into_iter()
