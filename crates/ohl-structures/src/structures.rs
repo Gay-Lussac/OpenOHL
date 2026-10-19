@@ -115,7 +115,9 @@
 //! **Capacity** ([`Capacity`], optional): what the structure can carry,
 //! for the structure checks. Method 1, allowable spans — the wind span and
 //! weight span the type is designed for, by line angle (interpolated
-//! linearly; a structure turning more than the last angle fails); Method
+//! linearly in the sine of half the angle, on the safe side —
+//! [`Capacity::spans_at`]; a structure turning more than the last angle
+//! fails); Method
 //! 2, allowable loads at each attachment (a load tree), compared with the
 //! factored loads times the load case's strength factor:
 //!
@@ -671,8 +673,22 @@ pub struct AllowedSpans {
 
 impl Capacity {
     /// The allowable spans at line angle `angle_deg` (either way):
-    /// interpolated between the given angles, the first ones below the
-    /// first angle; `None` beyond the last angle (or without Method 1).
+    /// interpolated between the given angles linearly in
+    /// \\( s = \sin(\theta/2) \\), the first ones below the first angle;
+    /// `None` beyond the last angle (or without Method 1).
+    ///
+    /// On the safe side: the wires' pull across the structure at a line
+    /// angle θ is \\( 2T\sin(\theta/2) = 2Ts \\). With the structure's
+    /// response linear in its loads, each member's force is linear in the
+    /// wind span, the weight span and \\( s \\); a largest span keeping every
+    /// member within its capacity is then the least of functions linear in
+    /// \\( s \\) — concave in \\( s \\) — and lies on or above the straight line
+    /// between two of its values. A smallest weight span (uplift) is the
+    /// largest of such functions — convex — and lies on or below its
+    /// chord. So the interpolated limits never allow more than the type
+    /// does between two given angles. Linear in θ they could: \\( s \\) is
+    /// concave in θ, so a span falling linearly in \\( s \\) lies below its
+    /// chord in θ.
     pub fn spans_at(&self, angle_deg: f64) -> Option<AllowedSpans> {
         let a = angle_deg.abs();
         let at = |l: &SpanLimit| l.angle.map_or(0.0, |x| x.degrees());
@@ -687,8 +703,12 @@ impl Capacity {
         }
         for w in self.spans.windows(2) {
             let (a0, a1) = (at(&w[0]), at(&w[1]));
-            if a <= a1 {
-                let t = (a - a0) / (a1 - a0);
+            // The last angle itself, within rounding of degrees.
+            if a <= a1 + 1e-9 {
+                // Linear in the sine of half the angle (above).
+                let half_sine = |deg: f64| (deg.to_radians() / 2.0).sin();
+                let t = ((half_sine(a) - half_sine(a0)) / (half_sine(a1) - half_sine(a0)))
+                    .clamp(0.0, 1.0);
                 let (l0, l1) = (of(&w[0]), of(&w[1]));
                 let lerp = |x: f64, y: f64| x + (y - x) * t;
                 return Some(AllowedSpans {
@@ -1850,6 +1870,58 @@ mod tests {
     use super::*;
     use crate::insulators::InsulatorAssembly;
     use std::path::Path;
+
+    /// Allowable spans by line angle on the safe side, with an invented
+    /// structure whose members' forces are linear in the loads: two
+    /// members, each keeping \\( q W + 2 T s \le F \\) (wind q per metre of
+    /// wind span W, the wires' pull 2T at s = sin(θ/2)), so the true
+    /// largest wind span is \\( \min_i (F_i - 2T_i s)/q_i \\); the uplift
+    /// limit \\( \max_i (a_i + b_i s) \\). The type's table gives them at
+    /// 0°, 30° and 60°; in between the interpolated limits never allow
+    /// more than the true ones, and linear in θ they would.
+    #[test]
+    fn allowable_spans_interpolate_on_the_safe_side() {
+        // (F, 2T, q) of the two members, N and N/m (invented).
+        let members = [(60_000.0, 100_000.0, 100.0), (45_000.0, 20_000.0, 90.0)];
+        let wind = |s: f64| {
+            members
+                .iter()
+                .map(|(f, t2, q)| (f - t2 * s) / q)
+                .fold(f64::INFINITY, f64::min)
+        };
+        let uplift = |s: f64| (-80.0 + 150.0 * s).max(-40.0 + 60.0 * s);
+        let half = |deg: f64| (deg.to_radians() / 2.0).sin();
+        let row = |deg: f64| SpanLimit {
+            angle: Some(ohl_core::units::Angle::from_degrees(deg)),
+            wind_span: Length::from_si(wind(half(deg))),
+            weight_span: Length::from_si(800.0),
+            min_weight_span: Some(Length::from_si(uplift(half(deg)))),
+        };
+        let c = Capacity {
+            spans: [0.0, 30.0, 60.0].map(row).to_vec(),
+            attachments: Vec::new(),
+        };
+        // By hand at 45°: the first member governs 30°–60° (the second
+        // below about 14.8°): W = 600 − 1000 s, so exact in s:
+        // 600 − 1000 sin 22.5° = 217.317 m; linear in θ it would be
+        // (341.181 + 100)/2 = 220.590 m — too much.
+        let at45 = c.spans_at(45.0).unwrap();
+        assert!((at45.wind_span - (600.0 - 1000.0 * half(45.0))).abs() < 1e-9);
+        assert!((at45.wind_span - 217.317).abs() < 1e-3);
+        let linear_theta = (wind(half(30.0)) + wind(half(60.0))) / 2.0;
+        assert!((linear_theta - 220.590).abs() < 1e-3);
+        for k in 0..=600 {
+            let deg = k as f64 / 10.0;
+            let a = c.spans_at(deg).unwrap();
+            let s = half(deg);
+            assert!(a.wind_span <= wind(s) + 1e-9, "{deg}°: {a:?}");
+            assert!(
+                a.min_weight_span.unwrap() >= uplift(s) - 1e-9,
+                "{deg}°: {a:?}"
+            );
+        }
+        assert!(c.spans_at(60.5).is_none());
+    }
 
     fn insulators() -> InsulatorLibrary {
         let mut lib = InsulatorLibrary::default();
