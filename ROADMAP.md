@@ -260,6 +260,9 @@ memory.
   still are. *Still open:* two towers stay unstable — joints a little
   off a plane by the export's rounding of their primary coordinates, and
   a small frame group that turns about the line of its frame chain.
+  *Owner, 2026-10-19:* the reading of the "tension-only beam" confirmed;
+  the relaxed refusal for relative holds accepted; rebuilding rounded
+  primary joints (one tower left) later; the exports keep the bending.
 - **U3. Profile sheets**: a sheet break can still fall at a structure that
   stands off the alignment. *Built 2026-10-19, in active development (not
   approved yet)*: sheets break only at structures of the run along the
