@@ -23,6 +23,9 @@ ohl-structure-link.workspace = true
 ohl-structure-loads.workspace = true
 ohl-structures.workspace = true
 clap.workspace = true
+# The request and reply of `ohl-structure-report --request` (JSON).
+serde.workspace = true
+serde_json.workspace = true
 # The SAF workbook (a zip of XML parts), as ohl-io's XLSX writer.
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 

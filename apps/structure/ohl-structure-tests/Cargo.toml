@@ -24,6 +24,8 @@ ohl-weather.workspace = true
 ohl-wirefe.workspace = true
 toml.workspace = true
 toml_edit = "0.25"
+# `ohl structure …` end to end: the reply read as JSON.
+serde_json.workspace = true
 
 [lints]
 workspace = true

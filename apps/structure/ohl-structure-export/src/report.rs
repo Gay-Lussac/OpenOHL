@@ -522,6 +522,8 @@ pub struct Report {
     pub csv: String,
     /// Per check its largest usage and governing case, one line each.
     pub summary: Vec<String>,
+    /// The run reported on.
+    pub run: ohl_structure_link::StructureRun,
 }
 
 /// Solves the cases of a structure file (each under 200 iterations and
@@ -589,5 +591,6 @@ pub fn from_text(input: &FromText) -> Result<Report, String> {
         csv: members_csv(&run),
         html,
         summary,
+        run,
     })
 }
