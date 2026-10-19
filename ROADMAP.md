@@ -204,6 +204,16 @@ published reference data (no tables typed from memory).
 > **Owner:** (2026-10-19) Later: the owner will say when reference data is
 > available.
 
+### O12. Bowed tension-only members: usage and buckling length
+Since U1 a tension-only member carries compression up to its own buckling
+load. Its usage is checked against its compression capacity *without* the
+buckling reduction (the solve already caps its force at N_cr; otherwise
+every bowed member would show 100 % or more). Its buckling length is its
+own length between joints (k = 1) unless `lk` or `k` is given, so a
+diagonal drawn in halves buckles at half length.
+> **Owner:** (2026-10-19) Usage: OK for now, to be discussed again later.
+> Buckling length: depends on the joint type; OK for now.
+
 ## Unfinished or approximate (known limitations)
 
 - **U1. Tension-only members** now carry compression up to their own
