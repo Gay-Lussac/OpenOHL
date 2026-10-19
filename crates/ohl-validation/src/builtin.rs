@@ -6,7 +6,7 @@
 
 use nalgebra::Vector3;
 use ohl_core::units::{
-    Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
+    Area, Density, Force, ForcePerLength, Length, MassPerLength, Quantity, Stress, Temperature,
 };
 use ohl_sagtension::LoadedSpan;
 use ohl_sagtension::catenary::{SpanGeometry, default_solver_budget, tension_for_sag};
@@ -42,6 +42,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(StructureFe));
     registry.register(Box::new(StructurePole));
     registry.register(Box::new(StructureMemberWind));
+    registry.register(Box::new(StructureWindRule));
     registry.register(Box::new(GallopingEllipses));
     registry.register(Box::new(CatenaryFit));
 }
@@ -1052,6 +1053,46 @@ impl Calculation for StructurePole {
             ("ground_usage", c.ground_moment / cap),
             ("usage", c.usage),
             ("amplification", c.amplification),
+        ]))
+    }
+}
+
+/// `loads.structure_wind`: the wind on a structure's own body in a load
+/// case (`ohl_loads::LoadCase::structure_wind`) and on a wind band of it.
+struct StructureWindRule;
+
+impl Calculation for StructureWindRule {
+    fn id(&self) -> &'static str {
+        "loads.structure_wind"
+    }
+
+    fn description(&self) -> &'static str {
+        "The structures' wind of a load case (inputs: load_cases = .ohllc text with one case, \
+         weather_pressure, band_area, band_drag); outputs pressure_pa, factor, factored_pa, \
+         wire_factored_pa (the wires': weather × transverse), band_force_n, band_factored_n"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let cases = ohl_loads::LoadCases::parse(string_input(inputs, "load_cases")?)?;
+        let case = cases.cases.first().ok_or("no load case")?;
+        let pressure = quantity_input::<Stress>(inputs, "weather_pressure")?;
+        let weather: WeatherCase = toml::from_str(&format!(
+            "name = \"{}\"\ntemperature = \"15 °C\"\nwind_pressure = \"{} Pa\"\n",
+            case.weather,
+            pressure.si()
+        ))
+        .map_err(|e| e.to_string())?;
+        let area = quantity_input::<Area>(inputs, "band_area")?.si();
+        let drag = float_input(inputs, "band_drag")?;
+        let body = case.structure_wind(&weather);
+        let band = body.pressure * drag * area;
+        Ok(outputs([
+            ("pressure_pa", body.pressure),
+            ("factor", body.factor),
+            ("factored_pa", body.factored()),
+            ("wire_factored_pa", pressure.si() * case.transverse),
+            ("band_force_n", band),
+            ("band_factored_n", band * body.factor),
         ]))
     }
 }

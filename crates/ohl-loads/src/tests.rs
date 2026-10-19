@@ -970,3 +970,242 @@ fn an_approximate_fe_check_is_never_a_plain_pass() {
     s.fe.as_mut().unwrap().usage = 1.5;
     assert_eq!(s.status(), capacity::UsageStatus::Approximate);
 }
+
+/// A load case's own values for the structures (`[case.structure]`,
+/// version 2): read with units, checked, and the file written at version
+/// 2 only when a case has one; version 1 files read as before.
+#[test]
+fn structure_values_of_a_load_case_are_read_and_checked() {
+    let old = "format = \"ohl-load-cases\"\nversion = 1\n[[case]]\nname = \"a\"\nweather = \"w\"\n";
+    let c = LoadCases::parse(old).unwrap();
+    assert_eq!(c.cases[0].structure, None);
+    assert_eq!(c.written_version(), 1);
+    let new = "format = \"ohl-load-cases\"\nversion = 2\n[[case]]\nname = \"a\"\nweather = \"w\"\n\
+               transverse = 1.4\n[case.structure]\nwind_pressure = \"0.9 kPa\"\nwind_factor = 1.2\n";
+    let c = LoadCases::parse(new).unwrap();
+    let s = c.cases[0].structure.unwrap();
+    assert_eq!(s.wind_pressure, Some(900.0));
+    assert_eq!(s.wind_factor, Some(1.2));
+    assert_eq!(c.written_version(), 2);
+    // Only the pressure: the factor stays the transverse one.
+    let only = "[[case]]\nname = \"a\"\nweather = \"w\"\ntransverse = 1.4\n\
+                [case.structure]\nwind_pressure = 700\n";
+    let c = LoadCases::parse(only).unwrap();
+    let w: WeatherCase =
+        toml::from_str("name = \"w\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n")
+            .unwrap();
+    let b = c.cases[0].structure_wind(&w);
+    assert_eq!((b.pressure, b.factor), (700.0, 1.4));
+    assert!(b.own_pressure && !b.own_factor);
+    assert!((b.factored() - 980.0).abs() < 1e-9);
+    // Without the table: the weather case's pressure, the transverse factor.
+    let plain = LoadCases::parse(old).unwrap().cases[0].structure_wind(&w);
+    assert_eq!(
+        (plain.pressure, plain.factor, plain.towards),
+        (600.0, 1.0, -1.0)
+    );
+    assert!(!plain.is_own() && plain.origin().is_empty());
+    // An empty table writes version 1.
+    let empty =
+        LoadCases::parse("[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\n").unwrap();
+    assert_eq!(empty.written_version(), 1);
+    for bad in [
+        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nwind_pressure = -5\n",
+        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nwind_factor = 101\n",
+        "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\ndrag = 2\n",
+        "format = \"ohl-load-cases\"\nversion = 3\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+    ] {
+        assert!(LoadCases::parse(bad).is_err(), "{bad}");
+    }
+}
+
+/// The example line in its wind case (high wind, 600 Pa, transverse 1.4)
+/// with the structures' own values. Invented numbers, by hand:
+///
+/// - `[case.structure]` 420 Pa × 2.0 = 840 Pa = 600 Pa × 1.4: every
+///   check of the structures (member wind of the FE model, wind on the
+///   pole) is the same as without the table; the wires' loads are the
+///   same (they keep the weather case's 600 Pa × 1.4); a 0–20 m band of
+///   10 m² with drag 3 carries 420 × 3 × 10 = 12 600 N unfactored (600 ×
+///   30 = 18 000 N without), 12 600 × 2.0 = 25 200 N factored (18 000 ×
+///   1.4 = 25 200 N without).
+/// - 900 Pa × 1.2 = 1 080 Pa: the band 900 × 30 = 27 000 N, factored
+///   32 400 N; the tower's FE usage is that of its model solved by hand
+///   with the member wind of 1 080 Pa; the pole's that of the pole check
+///   by hand with a wind of 1 080 Pa to −x.
+#[test]
+fn the_structures_take_the_load_cases_own_wind() {
+    let sections = ohl_sections::SectionLibrary::parse(
+        "[[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
+         yield = \"355 MPa\"\n\
+         [[section]]\nid = \"leg\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"110 mm\"\nt = \"12 mm\"\n\
+         [[section]]\nid = \"brace\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"70 mm\"\nt = \"7 mm\"\n\
+         [[section]]\nid = \"arm\"\nshape = \"equal_angle\"\nmaterial = \"steel\"\n\
+         h = \"90 mm\"\nt = \"9 mm\"\n",
+    )
+    .unwrap();
+    let loaded = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut types = ohl_structures::StructureLibrary::default();
+    for t in loaded.iter() {
+        let mut t = t.clone();
+        if t.id == "type-02" {
+            t.wind = Some(
+                toml::from_str::<ohl_structures::StructureType>(
+                    "id = \"x\"\nname = \"x\"\nkind = \"other\"\n[[wind.band]]\nfrom = \"0 m\"\nto = \"20 m\"\narea = \"10 m²\"\ndrag = 3.0\n",
+                )
+                .unwrap()
+                .wind
+                .unwrap(),
+            );
+        }
+        // Kept where it was read from (its model and pole files beside).
+        let path = loaded.path(&t.id).unwrap().to_path_buf();
+        types.insert(&path, t).unwrap();
+    }
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
+        .unwrap()
+        .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, cases) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let wind_case = cases.cases[1].clone();
+    assert_eq!(
+        (wind_case.name.as_str(), wind_case.transverse),
+        ("wind", 1.4)
+    );
+    let with = |pressure: f64, factor: f64| {
+        let mut c = wind_case.clone();
+        c.structure = Some(StructureWind {
+            wind_pressure: Some(pressure),
+            wind_factor: Some(factor),
+        });
+        c
+    };
+    let run = |case: LoadCase| {
+        let wires = structure_loads(
+            &line,
+            &library,
+            &weather,
+            std::slice::from_ref(&case),
+            &budget,
+        )
+        .unwrap();
+        let mut loads = wires.clone();
+        add_structure_wind(&mut loads, &line, &types, &weather);
+        let usage =
+            capacity::usage_with_sections(&line, &types, &sections, &library, &weather, &wires);
+        (wires, loads, usage)
+    };
+    let at = |u: &[capacity::CaseUsage], id: &str| {
+        u[0].structures
+            .iter()
+            .find(|s| s.structure == id)
+            .unwrap()
+            .clone()
+    };
+    let band = |l: &[CaseLoads]| {
+        l[0].loads
+            .iter()
+            .find(|l| l.point.is_empty() && l.structure == "T2")
+            .unwrap()
+            .clone()
+    };
+    let (plain_wires, plain_loads, plain) = run(wind_case.clone());
+    let (same_wires, same_loads, same) = run(with(420.0, 2.0));
+    // The wires keep the weather case's wind.
+    assert_eq!(plain_wires[0].loads, same_wires[0].loads);
+    assert!((plain_wires[0].structure_wind.factored() - 840.0).abs() < 1e-9);
+    assert!((same_wires[0].structure_wind.factored() - 840.0).abs() < 1e-9);
+    // The same design pressure on the structures: the same checks.
+    for id in ["T2", "T6"] {
+        assert_eq!(at(&plain, id).fe, at(&same, id).fe, "{id}");
+        assert_eq!(at(&plain, id).pole, at(&same, id).pole, "{id}");
+    }
+    assert!(at(&plain, "T2").fe.is_some() && at(&plain, "T6").pole.is_some());
+    // The band: 18 000 N / 12 600 N unfactored, 25 200 N factored both.
+    let (b0, b1) = (band(&plain_loads), band(&same_loads));
+    assert!((b0.local[0] + 18_000.0).abs() < 1e-6, "{b0:?}");
+    assert!((b1.local[0] + 12_600.0).abs() < 1e-6, "{b1:?}");
+    assert!((b0.factored[0] + 25_200.0).abs() < 1e-6);
+    assert!((b1.factored[0] + 25_200.0).abs() < 1e-6);
+
+    // 900 Pa × 1.2.
+    let (wires, loads, own) = run(with(900.0, 1.2));
+    assert_eq!(plain_wires[0].loads, wires[0].loads);
+    let b = band(&loads);
+    assert!((b.local[0] + 27_000.0).abs() < 1e-6, "{b:?}");
+    assert!((b.factored[0] + 32_400.0).abs() < 1e-6, "{b:?}");
+    let factored_at = |id: &str| {
+        let mut at: std::collections::BTreeMap<String, [f64; 3]> = Default::default();
+        for l in wires[0]
+            .loads
+            .iter()
+            .filter(|l| l.structure == id && !l.point.is_empty())
+        {
+            let e = at.entry(l.point.clone()).or_default();
+            for (sum, f) in e.iter_mut().zip(l.factored) {
+                *sum += f;
+            }
+        }
+        at
+    };
+    // The tower by hand: its model, the wires' loads, the member wind.
+    let model =
+        ohl_structures_fe::Model::load_with(types.path("type-02").unwrap(), &sections).unwrap();
+    let mut nodal = Vec::new();
+    for (label, [tr, lo, ve]) in factored_at("T2") {
+        nodal.extend(model.point_loads(&label, [tr, lo, -ve]).unwrap());
+    }
+    nodal.extend(model.member_wind(1080.0, [-1.0, 0.0, 0.0]));
+    let (_, usage) = ohl_structures_fe::analyse(
+        &model,
+        &ohl_structures_fe::Loads {
+            nodal,
+            self_weight: wind_case.vertical,
+        },
+        wind_case.strength,
+        &ohl_structures_fe::default_budget(),
+    )
+    .unwrap();
+    let worst = ohl_structures_fe::check::worst(&usage).unwrap();
+    let fe = at(&own, "T2").fe.unwrap();
+    assert!((fe.usage - worst.usage.unwrap()).abs() < 1e-12, "{fe:?}");
+    assert!(fe.usage > at(&plain, "T2").fe.unwrap().usage);
+    assert!(
+        at(&own, "T2")
+            .notes
+            .iter()
+            .any(|n| n.contains("member wind") && n.contains("900 Pa × 1.2")),
+        "{:?}",
+        at(&own, "T2").notes
+    );
+    // The pole by hand: the wires' loads at its points, 1 080 Pa to −x.
+    let t5 = types.get("type-05").unwrap();
+    let dir = types.path("type-05").unwrap().parent().unwrap();
+    let pole =
+        ohl_structures_fe::pole::structure_pole(t5, dir, &ohl_sections::SectionLibrary::default())
+            .unwrap()
+            .unwrap();
+    let on_pole: Vec<ohl_structures_fe::PoleLoad> = factored_at("T6")
+        .into_iter()
+        .map(|(label, [tr, lo, ve])| ohl_structures_fe::PoleLoad {
+            point: t5.point_local(&label, None).unwrap(),
+            force: [tr, lo, -ve],
+        })
+        .collect();
+    let by_hand = ohl_structures_fe::check_pole(
+        &pole,
+        &on_pole,
+        [-1080.0, 0.0],
+        wind_case.strength,
+        true,
+        &ohl_structures_fe::default_budget(),
+    )
+    .unwrap();
+    let p = at(&own, "T6").pole.unwrap();
+    assert!((p.usage - by_hand.usage).abs() < 1e-12, "{p:?} {by_hand:?}");
+    assert!(p.usage > at(&plain, "T6").pole.unwrap().usage);
+}

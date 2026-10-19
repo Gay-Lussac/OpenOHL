@@ -1,0 +1,59 @@
+# The wind on a structure's own body in a load case (the rule of
+# `ohl_loads::LoadCase::structure_wind`): the case's `[case.structure]`
+# values where given, else the weather case's pressure and the transverse
+# factor. Invented values (no design code). By hand:
+#   wires: p_w × transverse;  structures: p_s × γ_s;
+#   a wind band: p_s × drag × area, factored × γ_s.
+
+[[case]]
+id = "loadwind-001"
+title = "A load case's own wind for the structures, apart from the wires'"
+calculation = "loads.structure_wind"
+reference = "Hand calculation: 600 Pa × 1.4 = 840 Pa on the wires; 900 Pa × 1.2 = 1080 Pa on the structures; band 900 × 3 × 10 = 27 000 N, × 1.2 = 32 400 N"
+notes = "invented values; the weather case gives 600 Pa"
+max_seconds = 1.0
+inputs.load_cases = '''
+format = "ohl-load-cases"
+version = 2
+[[case]]
+name = "wind"
+weather = "high wind"
+transverse = 1.4
+[case.structure]
+wind_pressure = "900 Pa"
+wind_factor = 1.2
+'''
+inputs.weather_pressure = "600 Pa"
+inputs.band_area = "10 m²"
+inputs.band_drag = 3.0
+expected.pressure_pa = { value = 900.0, rel_tol = 1e-12 }
+expected.factor = { value = 1.2, rel_tol = 1e-12 }
+expected.factored_pa = { value = 1080.0, rel_tol = 1e-12 }
+expected.wire_factored_pa = { value = 840.0, rel_tol = 1e-12 }
+expected.band_force_n = { value = 27000.0, rel_tol = 1e-12 }
+expected.band_factored_n = { value = 32400.0, rel_tol = 1e-12 }
+
+[[case]]
+id = "loadwind-002"
+title = "Without the table the structures take the weather case's pressure and the transverse factor"
+calculation = "loads.structure_wind"
+reference = "Hand calculation: 600 Pa × 1.4 = 840 Pa on wires and structures; band 600 × 3 × 10 = 18 000 N, × 1.4 = 25 200 N"
+notes = "invented values; the behaviour of a version 1 file"
+max_seconds = 1.0
+inputs.load_cases = '''
+format = "ohl-load-cases"
+version = 1
+[[case]]
+name = "wind"
+weather = "high wind"
+transverse = 1.4
+'''
+inputs.weather_pressure = "600 Pa"
+inputs.band_area = "10 m²"
+inputs.band_drag = 3.0
+expected.pressure_pa = { value = 600.0, rel_tol = 1e-12 }
+expected.factor = { value = 1.4, rel_tol = 1e-12 }
+expected.factored_pa = { value = 840.0, rel_tol = 1e-12 }
+expected.wire_factored_pa = { value = 840.0, rel_tol = 1e-12 }
+expected.band_force_n = { value = 18000.0, rel_tol = 1e-12 }
+expected.band_factored_n = { value = 25200.0, rel_tol = 1e-12 }

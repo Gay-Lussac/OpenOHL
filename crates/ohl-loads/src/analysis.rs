@@ -109,10 +109,11 @@ impl Analyses {
     /// The finite-element check of a structure of type `t` standing on
     /// `extension` (none: the type has no model, or no member a
     /// capacity). Members with a
-    /// profile from the section library take the wind of `weather`
-    /// (across the line, times the transverse factor); the type's wind
-    /// bands are never in the model, so the body wind is not counted
-    /// twice.
+    /// profile from the section library take the structures' wind of the
+    /// case ([`LoadCase::structure_wind`]: across the line, its pressure
+    /// times its factor — by default the weather case's pressure and the
+    /// transverse factor); the type's wind bands are never in the model,
+    /// so the body wind is not counted twice.
     pub fn fe(
         &self,
         t: &StructureType,
@@ -151,27 +152,37 @@ impl Analyses {
         if let Some(w) = weather
             && model.has_profiles()
         {
-            // The wind blows across the line: from the right, to −x. Drag
-            // and shielding factors from the section library's [wind]
-            // when given (else the model's generic drag, no shielding).
+            // The wind blows across the line: from the right, to −x. The
+            // pressure and factor are the structures' of the load case
+            // (LoadCase::structure_wind); drag and shielding factors from
+            // the section library's [wind] when given (else the model's
+            // generic drag, no shielding).
+            let body = case.structure_wind(w);
             let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
                 model,
                 self.wind.as_ref(),
                 self.faces.get(&key).cloned().unwrap_or_default(),
             );
-            let wind = setup.wind(
-                w.wind_pressure.si() * case.transverse,
-                [-w.wind_from.to_left(), 0.0, 0.0],
-            );
+            let wind = setup.wind(body.factored(), [body.towards, 0.0, 0.0]);
             if !wind.loads.is_empty() {
                 let total = wind.total()[0];
                 notes.push(format!(
-                    "model: member wind from the section profiles, {:.1} kN across the line{}",
+                    "model: member wind from the section profiles, {:.1} kN across the line{}{}",
                     total.abs() / 1000.0,
                     if t.wind.is_some() {
                         " (the type's wind bands not in the model)"
                     } else {
                         ""
+                    },
+                    if body.is_own() {
+                        format!(
+                            " ({}: {} Pa × {})",
+                            body.origin(),
+                            body.pressure,
+                            body.factor
+                        )
+                    } else {
+                        String::new()
                     }
                 ));
                 notes.extend(wind.notes.iter().map(|n| format!("model: {n}")));
@@ -230,7 +241,8 @@ impl Analyses {
     }
 
     /// The pole check of a structure of type `t`: the loads at the type's
-    /// attachment points, the wind of `weather` on the pole.
+    /// attachment points, the structures' wind of the case on the pole
+    /// ([`LoadCase::structure_wind`], times the pole's drag).
     pub fn pole(
         &self,
         t: &StructureType,
@@ -260,10 +272,16 @@ impl Analyses {
         }
         // The wind blows across the line: from the right, to −x.
         let wind = weather.map_or([0.0; 2], |w| {
-            [
-                -w.wind_from.to_left() * w.wind_pressure.si() * case.transverse,
-                0.0,
-            ]
+            let body = case.structure_wind(w);
+            if body.is_own() && body.factored() > 0.0 {
+                notes.push(format!(
+                    "pole: wind {} Pa × {} ({})",
+                    body.pressure,
+                    body.factor,
+                    body.origin()
+                ));
+            }
+            [body.towards * body.factored(), 0.0]
         });
         Some(
             match ohl_structures_fe::check_pole(
