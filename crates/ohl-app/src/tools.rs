@@ -398,7 +398,15 @@ fn slot_frame(
 /// The hotbar at the bottom of the window: click a slot to hold its tool,
 /// drop a tool on a slot (from the inventory or another slot); right-click
 /// empties a slot.
-pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar, at: egui::Pos2, arranging: bool) {
+/// `tools_on_left`: the help reads "left-click" for "right-click"
+/// ([`crate::controls::click_words`]).
+pub fn hotbar_ui(
+    ctx: &egui::Context,
+    hotbar: &mut Hotbar,
+    at: egui::Pos2,
+    arranging: bool,
+    tools_on_left: bool,
+) {
     egui::Area::new(egui::Id::new("hotbar"))
         .pivot(egui::Align2::CENTER_BOTTOM)
         .fixed_pos(at - egui::vec2(0.0, 8.0))
@@ -446,7 +454,7 @@ pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar, at: egui::Pos2, arran
                 egui::RichText::new(format!(
                     "{} — {} · 1–9 or wheel (captured) · E: inventory (arrange)",
                     hotbar.tool().name(),
-                    hotbar.tool().help()
+                    crate::controls::click_words(hotbar.tool().help(), tools_on_left)
                 ))
                 .small()
                 .color(egui::Color32::from_gray(200)),

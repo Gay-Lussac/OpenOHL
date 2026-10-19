@@ -53,6 +53,8 @@ pub struct View3d {
     pub drawn: bool,
     /// The release of the press that captured the mouse is not a click.
     swallow_release: bool,
+    /// The last left press was on a drag handle (its click only selects).
+    left_press_on_handle: bool,
     /// Clearance violations to draw: (on the wire, on the target).
     pub marks: Vec<([f64; 3], [f64; 3])>,
     /// A wire being strung: its points so far.
@@ -366,6 +368,7 @@ impl View3d {
         visible: &HashSet<Layer>,
         snaps: &selection::Snaps,
         lod: &crate::lod::LodSettings,
+        select_held: bool,
     ) -> Option<selection::Use> {
         let Some(rs) = rs else {
             // Shown (its page in front), only without an image.
@@ -547,8 +550,15 @@ impl View3d {
             self.handles.swallow = false;
         }
         let handle_drag = self.handles.drag.is_some() || self.handles.swallow;
+        // Which button's click selects and which uses the held tool (the
+        // option "Tools act on left-click"; drags are not clicks).
+        let (select_button, tool_button) =
+            crate::controls::click_buttons(self.controls.tools_on_left, select_held);
+        if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
+            self.left_press_on_handle = pressed_on_handle;
+        }
         let mut pick_at: Option<([f64; 2], bool)> = None;
-        // A right-click uses the held tool on what is there.
+        // A click of the tool button uses the held tool on what is there.
         let mut use_at: Option<[f64; 2]> = None;
         if self.captured {
             // Raw mouse movement turns the view (mouse down: look down).
@@ -563,23 +573,26 @@ impl View3d {
                 let k = self.controls.mouse_sensitivity;
                 camera.look(f64::from(d.x) * k, -f64::from(d.y) * k);
             }
-            // Clicks aim with the crosshair.
+            // Clicks aim with the crosshair; the release of the press that
+            // captured the mouse is no click (of either role).
+            let swallowed =
+                |b: egui::PointerButton| self.swallow_release && b == egui::PointerButton::Primary;
             let (click, double) = ui.input(|i| {
                 (
-                    i.pointer.button_clicked(egui::PointerButton::Primary),
-                    i.pointer
-                        .button_double_clicked(egui::PointerButton::Primary),
+                    i.pointer.button_clicked(select_button),
+                    i.pointer.button_double_clicked(select_button),
                 )
             });
-            if self.swallow_release {
-                if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
-                    self.swallow_release = false;
-                }
-            } else if click || double {
+            if !swallowed(select_button) && (click || double) {
                 pick_at = Some((centre, double));
             }
-            if ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary)) {
+            if !swallowed(tool_button) && ui.input(|i| i.pointer.button_clicked(tool_button)) {
                 use_at = Some(centre);
+            }
+            if self.swallow_release
+                && ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+            {
+                self.swallow_release = false;
             }
             // Ctrl + wheel sets the speed (the wheel alone does nothing).
             // Raw wheel events: egui turns Ctrl + wheel into a zoom.
@@ -631,17 +644,34 @@ impl View3d {
                 self.swallow_release =
                     !ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
                 response.request_focus();
-            } else if self.controls.capture {
-                // Nothing else for the left button in this scheme.
-            } else if (response.clicked() || response.double_clicked())
-                && let Some(pos) = response.interact_pointer_pos()
-            {
-                pick_at = Some((local(pos), response.double_clicked()));
             }
-            if response.secondary_clicked()
-                && let Some(pos) = response.interact_pointer_pos()
-            {
-                use_at = Some(local(pos));
+            // In the first-person scheme the left button only captures the
+            // mouse here (its clicks act once captured).
+            let acts = |b: egui::PointerButton| {
+                !(self.controls.capture && b == egui::PointerButton::Primary)
+            };
+            // A left-click on a drag handle (released without moving) only
+            // selects, also when tools act on left-click.
+            let on_handle = self.left_press_on_handle;
+            let tool_click = acts(tool_button)
+                && response.clicked_by(tool_button)
+                && !(tool_button == egui::PointerButton::Primary && on_handle);
+            let select_click = acts(select_button)
+                && (response.clicked_by(select_button)
+                    || response.double_clicked_by(select_button));
+            let handle_click = acts(tool_button)
+                && tool_button == egui::PointerButton::Primary
+                && on_handle
+                && (response.clicked() || response.double_clicked());
+            if let Some(pos) = response.interact_pointer_pos() {
+                if select_click {
+                    pick_at = Some((local(pos), response.double_clicked_by(select_button)));
+                } else if handle_click {
+                    pick_at = Some((local(pos), false));
+                }
+                if tool_click {
+                    use_at = Some(local(pos));
+                }
             }
             if response.dragged()
                 && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
@@ -693,7 +723,7 @@ impl View3d {
                 .ray(at, size)
                 .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]));
             log::info!(
-                "3D view: right-click (mouse captured: {}) on {}",
+                "3D view: tool click (mouse captured: {}) on {}",
                 self.captured,
                 target.describe()
             );

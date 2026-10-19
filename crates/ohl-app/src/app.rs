@@ -1228,6 +1228,10 @@ impl TabViewer for Viewer<'_> {
         let r = &mut *self.ready;
         let before = r.selection.clone();
         let snaps = r.effective_snaps();
+        // Which click selects and which uses the held tool (option "Tools
+        // act on left-click", kept with the 3D view's controls).
+        let select_held = r.hotbar.tool() == crate::tools::Tool::Select;
+        let buttons = crate::controls::click_buttons(r.view3d.controls.tools_on_left, select_held);
         let _timed = crate::perf::span(match tab {
             Tab::View3d => "tab 3d",
             Tab::Plan => "tab plan",
@@ -1248,6 +1252,7 @@ impl TabViewer for Viewer<'_> {
                     &r.visible,
                     &snaps,
                     self.lod,
+                    select_held,
                 );
                 if let Some(done) = r.view3d.handles.done.take() {
                     r.handle_done(done);
@@ -1262,6 +1267,7 @@ impl TabViewer for Viewer<'_> {
                 &snaps,
                 &r.visible,
                 r.drawings.preview(&r.model, r.case),
+                buttons,
             ),
             Tab::Profile => r
                 .profile
@@ -1272,6 +1278,7 @@ impl TabViewer for Viewer<'_> {
                     &mut r.selection,
                     &snaps,
                     &mut r.drawings,
+                    buttons,
                 )
                 .map(|target| crate::selection::Use {
                     target,
@@ -1505,7 +1512,9 @@ impl Ready {
         s
     }
 
-    /// Uses the held tool on what was right-clicked in a view: Select
+    /// Uses the held tool on what was clicked with the tool button in a
+    /// view (a right-click, or a left-click with the option "Tools act on
+    /// left-click"): Select
     /// selects, Go to opens its window, the editing tools act on the object
     /// (or, Add structure, on the ground point).
     pub fn use_tool(&mut self, u: crate::selection::Use) {
@@ -4676,7 +4685,13 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
             (true, Some(v)) => v.center_bottom(),
             _ => ctx.content_rect().center_bottom(),
         };
-        crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
+        crate::tools::hotbar_ui(
+            ctx,
+            &mut r.hotbar,
+            at,
+            r.inventory,
+            r.view3d.controls.tools_on_left,
+        );
     }
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
@@ -4879,6 +4894,22 @@ impl ControlsPage {
     }
 }
 
+/// The option "Tools act on left-click" (Tools menu, Help › Controls):
+/// kept with the 3D view's controls, saved with the preferences.
+fn tools_on_left_checkbox(ui: &mut egui::Ui, c: &mut crate::controls::Controls) {
+    if ui
+        .checkbox(&mut c.tools_on_left, "Tools act on left-click")
+        .on_hover_text(
+            "On: a left-click uses the tool held (Select held: it selects) and a \
+             right-click selects. Off (default): a left-click selects, a right-click uses \
+             the tool. Drags (orbit, look, pan) are not affected.",
+        )
+        .changed()
+    {
+        log::info!("controls: tools act on left-click {}", c.tools_on_left);
+    }
+}
+
 /// A grid of input → action rows.
 fn controls_grid(ui: &mut egui::Ui, id: &str, rows: &[(String, String)]) {
     egui::Grid::new(id).striped(true).show(ui, |ui| {
@@ -4902,73 +4933,79 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
-        .show(ctx, |ui| match page {
-            ControlsPage::View3d => {
-                let c = &mut r.view3d.controls;
-                ui.horizontal(|ui| {
-                    ui.label("Navigation scheme");
-                    egui::ComboBox::from_id_salt("controls")
-                        .selected_text(c.name)
-                        .show_ui(ui, |ui| {
-                            for p in crate::controls::Controls::presets() {
-                                if ui.selectable_label(c.name == p.name, p.name).clicked() {
-                                    log::info!("controls: {}", p.name);
-                                    // Keep the chosen speed.
-                                    let speed = c.speed;
-                                    *c = p;
-                                    c.speed = speed;
+        .show(ctx, |ui| {
+            tools_on_left_checkbox(ui, &mut r.view3d.controls);
+            ui.separator();
+            let clicks = crate::controls::click_rows(r.view3d.controls.tools_on_left);
+            let select_double = if r.view3d.controls.tools_on_left {
+                "right double-click"
+            } else {
+                "double-click"
+            };
+            match page {
+                ControlsPage::View3d => {
+                    let c = &mut r.view3d.controls;
+                    ui.horizontal(|ui| {
+                        ui.label("Navigation scheme");
+                        egui::ComboBox::from_id_salt("controls")
+                            .selected_text(c.name)
+                            .show_ui(ui, |ui| {
+                                for p in crate::controls::Controls::presets() {
+                                    if ui.selectable_label(c.name == p.name, p.name).clicked() {
+                                        log::info!("controls: {}", p.name);
+                                        // Keep the chosen speed and click option.
+                                        let (speed, left) = (c.speed, c.tools_on_left);
+                                        *c = p;
+                                        c.speed = speed;
+                                        c.tools_on_left = left;
+                                    }
                                 }
-                            }
-                        });
-                });
-                ui.add(
-                    egui::Slider::new(&mut c.speed, 1.0..=2000.0)
-                        .text("speed, m/s")
-                        .logarithmic(true),
-                );
-                if c.capture {
-                    // Shown ×1000 (milliradians per pixel): a readable number.
-                    let mut mrad = c.mouse_sensitivity * 1000.0;
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut mrad, 0.3..=10.0)
-                                .text("look sensitivity")
-                                .logarithmic(true),
-                        )
-                        .changed()
-                    {
-                        c.mouse_sensitivity = mrad / 1000.0;
+                            });
+                    });
+                    ui.add(
+                        egui::Slider::new(&mut c.speed, 1.0..=2000.0)
+                            .text("speed, m/s")
+                            .logarithmic(true),
+                    );
+                    if c.capture {
+                        // Shown ×1000 (milliradians per pixel): a readable number.
+                        let mut mrad = c.mouse_sensitivity * 1000.0;
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut mrad, 0.3..=10.0)
+                                    .text("look sensitivity")
+                                    .logarithmic(true),
+                            )
+                            .changed()
+                        {
+                            c.mouse_sensitivity = mrad / 1000.0;
+                        }
                     }
+                    ui.separator();
+                    let mut rows = c.describe();
+                    rows.push(row("1–9, wheel", "choose a tool of the hotbar"));
+                    rows.push(row("E", "tool inventory"));
+                    controls_grid(ui, "controls-3d", &rows);
                 }
-                ui.separator();
-                let mut rows = c.describe();
-                rows.push(row("right-click", "use the tool held (hotbar)"));
-                rows.push(row("1–9, wheel", "choose a tool of the hotbar"));
-                rows.push(row("E", "tool inventory"));
-                controls_grid(ui, "controls-3d", &rows);
+                ControlsPage::Plan => {
+                    let mut rows = vec![
+                        row("drag (any button)", "pan"),
+                        row("scroll", "zoom at the pointer"),
+                    ];
+                    rows.extend(clicks);
+                    rows.push(row(select_double, "select and centre on it"));
+                    controls_grid(ui, "controls-plan", &rows);
+                }
+                ControlsPage::Profile => {
+                    let mut rows = vec![
+                        row("drag (any button)", "move along the route"),
+                        row("scroll", "zoom along the route at the pointer"),
+                    ];
+                    rows.extend(clicks);
+                    rows.push(row(select_double, "show the whole route"));
+                    controls_grid(ui, "controls-profile", &rows);
+                }
             }
-            ControlsPage::Plan => controls_grid(
-                ui,
-                "controls-plan",
-                &[
-                    row("drag", "pan"),
-                    row("scroll", "zoom at the pointer"),
-                    row("click", "select"),
-                    row("double-click", "select and centre on it"),
-                    row("right-click", "use the tool held (hotbar)"),
-                ],
-            ),
-            ControlsPage::Profile => controls_grid(
-                ui,
-                "controls-profile",
-                &[
-                    row("drag", "move along the route"),
-                    row("scroll", "zoom along the route at the pointer"),
-                    row("click", "select"),
-                    row("double-click", "show the whole route"),
-                    row("right-click", "use the tool held (hotbar)"),
-                ],
-            ),
         });
     if !open {
         r.controls_window = None;
@@ -7602,8 +7639,11 @@ fn menus(
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
     });
-    ui.menu_button("Tools", |ui| {
+    // A tick menu (the option below): ticking it keeps the menu open;
+    // choosing a tool closes it.
+    crate::menu::options_menu(ui, "Tools", |ui| {
         item(ui, Command::Inventory, out);
+        tools_on_left_checkbox(ui, &mut r.view3d.controls);
         // Theme by theme, a line between them (as the inventory groups them).
         let mut theme = "";
         for t in crate::tools::Tool::ALL {
@@ -7617,7 +7657,8 @@ fn menus(
             if let Some(k) = t.key() {
                 b = b.shortcut_text(k);
             }
-            if ui.add(b).on_hover_text(t.help()).clicked() {
+            let help = crate::controls::click_words(t.help(), r.view3d.controls.tools_on_left);
+            if ui.add(b).on_hover_text(help.as_ref()).clicked() {
                 out.push(Command::Hold(t));
                 ui.close();
             }
@@ -8080,7 +8121,12 @@ impl eframe::App for App {
                         }
                         if let Some((text, error)) = &ready.status {
                             ui.separator();
-                            let t = egui::RichText::new(text).small();
+                            // Tool hints are written for a right-click.
+                            let text = crate::controls::click_words(
+                                text,
+                                ready.view3d.controls.tools_on_left,
+                            );
+                            let t = egui::RichText::new(text.as_ref()).small();
                             if *error {
                                 crate::menu::error_label(ui, t);
                             } else {
