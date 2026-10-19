@@ -54,7 +54,7 @@ line's default) the same structure gives the same bytes in every format.
 | OpenOHL | Export data |
 |---|---|
 | `[[node]]` `point`, `support` (`fixed`, `pinned`, a list of x, y, z, rx, ry, rz), `spring` | joint, held directions, springs (N/m, N·m/rad) |
-| `[[member]]` `nodes`, `section`, `kind` (truss, frame, cable), `reference`, `roll`, `k`, `pretension` | member with its **local axes** worked out exactly as the FE model does (`member_axes`: y in the plane of x and the reference — global z, or global x for a vertical member — then the roll about x); k and pretension carried along |
+| `[[member]]` `nodes`, `section`, `kind` (truss, frame, cable, tension), `bending`, `check`, `reference`, `roll`, `k`, `pretension` | member with its **local axes** worked out exactly as the FE model does (`member_axes`: y in the plane of x and the reference — global z, or global x for a vertical member — then the roll about x); k and pretension carried along |
 | section of the library (`.ohlsec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
 | `[[section]]` table | A, Iy, Iz, It only (no shape) |
 | material (library or `[[material]]`) | E, G, density, yield |
@@ -77,7 +77,7 @@ instead.
 | Export data | IFC4 |
 |---|---|
 | structure | `IfcProject` (units: m, rad, N, Pa, kg, m², m³ and the derived units of the values written), `IfcSite` at the origin |
-| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OHL_Member` (Section, Kind, EffectiveLengthFactor, Pretension, From, To) |
+| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OHL_Member` (Section, Kind, EffectiveLengthFactor, Pretension, From, To; where set: Bending `IFCBOOLEAN(.T.)` for a tension-only member that bends, Check `IFCBOOLEAN(.F.)` for a member not design-checked) |
 | profile: equal / unequal angle | `IfcLShapeProfileDef` (Depth h, Width b, Thickness t, FilletRadius r) |
 | channel | `IfcUShapeProfileDef` (Depth h, FlangeWidth b, WebThickness tw, FlangeThickness tf, FilletRadius r) |
 | I section | `IfcIShapeProfileDef` (OverallWidth b, OverallDepth h, tw, tf, r) |
@@ -91,7 +91,7 @@ instead.
 | material | `IfcMaterial` (category from E and density, below) with `IfcMaterialProperties` `Pset_MaterialMechanical` (YoungModulus, ShearModulus, PoissonRatio), `Pset_MaterialCommon` (MassDensity), `Pset_MaterialSteel` (YieldStress) |
 | analysis model | `IfcStructuralAnalysisModel` (`.LOADING_3D.`, a shared placement at the origin), items assigned by `IfcRelAssignsToGroup`, serving the site (`IfcRelServicesBuildings`) |
 | joint | `IfcStructuralPointConnection` with an `IfcVertexPoint` topology; a support as `IfcBoundaryNodeCondition`: held `IFCBOOLEAN(.T.)`, free `.F.`, a spring as `IfcLinearStiffnessMeasure` / `IfcRotationalStiffnessMeasure` |
-| member (analysis) | `IfcStructuralCurveMember` with an `IfcEdge` between the joints' vertices; `Axis` = the member's local z; truss → `.PIN_JOINED_MEMBER.`, frame → `.RIGID_JOINED_MEMBER.`, cable → `.CABLE.`; `IfcRelConnectsStructuralMember` at both ends; `IfcRelAssignsToProduct` to its `IfcMember` |
+| member (analysis) | `IfcStructuralCurveMember` with an `IfcEdge` between the joints' vertices; `Axis` = the member's local z; truss → `.PIN_JOINED_MEMBER.`, frame → `.RIGID_JOINED_MEMBER.`, cable → `.CABLE.`, tension → `.TENSION_MEMBER.`, a tension member with `bending` → `.RIGID_JOINED_MEMBER.` ([below](#tension-only-members-that-bend-and-members-not-checked)); `Description` "tension only, bending" and/or "not checked" where it applies, else none; `IfcRelConnectsStructuralMember` at both ends (no applied condition: rigid, as for every member); `IfcRelAssignsToProduct` to its `IfcMember` |
 | load case | `IfcStructuralLoadCase` (`.LOAD_CASE.`, action type and source `.NOTDEFINED.`), `SelfWeightCoefficients` (0, 0, −factor) |
 | load at a joint | `IfcStructuralPointAction` (no placement of its own, as the standard requires) with `IfcStructuralLoadSingleForce`, `.GLOBAL_COORDS.`, connected to the point connection |
 | load along a member (a point) | `IfcStructuralPointAction` with its own placement and vertex, connected to the curve member |
@@ -118,7 +118,7 @@ section's id.
 | `StructuralCrossSection` | one per section | **Parametric**: angle → `Angle` (H; B; t; R; R1 = h; b; t; r; 0), channel → `Channel` (H; B; t; s; R = h; b; tf; tw; r), I → `I rolled` (H; B; t; s; R = h; b; tf; tw; r), rectangular hollow → `Tube` (H; B; s; R; r1 = h; b; t; 0; 0), circular hollow → `Pipe` (D; t), round bar → `Circle` (D), parameters in mm. **General** (polygonal hollow, `general`, `[[section]]` tables): `Profile` names a `CompositeShapeDef` row. A, Iy, Iz, It, Wply, Wplz given for every section |
 | `CompositeShapeDef` | sections without a parametric shape | polygonal hollow: the outline (counter-clockwise, with the material) and the opening (clockwise); `general`: its outline box; a `[[section]]` table: **a square of the same area** (no shape is known; its A, Iy, Iz, It are in the cross-section row) |
 | `StructuralPointConnection` | one per joint | m |
-| `StructuralCurveMember` | one per member | `Nodes` "first; second", `Segments` Line, `LCS` **z by vector** with the member's local z, rotation 0 (the roll is in the vector), `System line` Centre, analysis eccentricities 0; `Behaviour in analysis`: truss → Axial force only, frame → Standard, cable → Tension only |
+| `StructuralCurveMember` | one per member | `Nodes` "first; second", `Segments` Line, `LCS` **z by vector** with the member's local z, rotation 0 (the roll is in the vector), `System line` Centre, analysis eccentricities 0; `Behaviour in analysis`: truss → Axial force only, frame → Standard, cable and tension → Tension only, a tension member with `bending` → Standard; `Layer` "OHL: tension only, bending" and/or "OHL: not checked" where it applies, else empty |
 | `StructuralPointSupport` | one per supported joint | In node, Global; each direction Rigid, Free or Flexible (stiffness MN/m, MN·m/rad); `Type` Fixed, Hinged or Custom |
 | `StructuralLoadGroup` | one, `LG1` | Permanent, Standard |
 | `StructuralLoadCase` | one per case | Permanent, load group LG1, load type Standard; the description says the self-weight factor |
@@ -132,9 +132,46 @@ new dependency), inline strings, a fixed zip time.
 ### CSV
 
 One table per file, a header row with the unit in the column name (`_m`,
-`_pa`, `_n`…), SI units, structure axes. `members.csv` carries the local
+`_pa`, `_n`…), SI units, structure axes. `members.csv` has `bending` and
+`check` (1 or 0) after `kind`, and carries the local
 y and z axes (`y_x … z_z`), `loads.csv` the place (`node`,
 `member_point` with its position 0–1, `member_uniform` per metre).
+
+### Tension-only members that bend and members not checked
+
+A `tension` member with `bending = true` (decided by the owner on
+2026-10-19: the exports **keep the bending**) bends and twists as a frame
+while it is in the model, and drops out in compression beyond its
+buckling load. No format written has a member that is both: IFC4's
+`.TENSION_MEMBER.` and SAF's "Tension only" are axial members. So it is
+written as a **frame** — what the analysis takes while it carries load —
+and its tension-only behaviour as information an engineer (or an
+importer) can read and act on:
+
+| Format | Analysis behaviour | Tension-only information | Not checked (`check = false`) |
+|---|---|---|---|
+| IFC4 analysis view | `IfcStructuralCurveMember` `.RIGID_JOINED_MEMBER.`, both ends connected without an applied condition (rigid), as a frame member | `IfcMember` `ObjectType` and `OHL_Member` `Kind` = `tension`, `Bending` = true; the analysis member's `Description` "tension only, bending" | `OHL_Member` `Check` = false; `Description` "not checked" |
+| IFC4 members only, IFC2x3 | (no analysis model) | `ObjectType` and `Kind` = `tension`, `Bending` = true | `Check` = false |
+| SAF | `Behaviour in analysis` Standard (a beam) | `Layer` "OHL: tension only, bending" | `Layer` "OHL: not checked" |
+| CSV | `kind` = `tension` | `bending` = 1 | `check` = 0 |
+
+`Bending` and `Check` are written only where set (a member that bends;
+a member not checked), so other members' files are unchanged. A member
+not checked is exported as any other member of its kind.
+
+**SAF:** the `StructuralCurveMember` sheet has no comment column, and a
+member's `Name` is what the actions refer to, so the information goes in
+`Layer`, a free-text column that also groups such members in the
+importing program (prefix `OHL: `; both notes joined by `; `). No SAF
+rule is assumed beyond the column taking text; whether an importer
+keeps the layer is for the import test (O8). "Tension only" is not
+written for such a member: an importer would make it an axial member and
+lose the bending.
+
+**What is lost:** the switch itself — no format here says that the frame
+drops out (or carries only its buckling load) in compression. An
+analysis in the target program treats the member as a frame in every
+case unless the engineer sets it up as tension-only there.
 
 ### Material category
 
@@ -171,6 +208,9 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
   is longer than h is written as it is (the attributes allow it).
 - **IFC2x3** carries no analysis model and no material values (the
   detailing program maps names).
+- **Tension-only members that bend** are frames in IFC4's analysis
+  model and in SAF; their tension-only behaviour is information only
+  ([above](#tension-only-members-that-bend-and-members-not-checked)).
 - Coordinates are the structure's own axes; a placed structure's
   position and orientation in the line are not written.
 
@@ -210,7 +250,7 @@ exports of three structures — the example lattice
 `examples/synthetic-line/Structures/type-02.ohls` (`[[section]]` tables:
 no shapes), the invented `examples/exports/every-profile.ohls` (every
 profile of the example section library, a spring support, a load along a
-member) and a body built by the generators (X panels with horizontals,
+member, a tension-only member that bends and a member not checked) and a body built by the generators (X panels with horizontals,
 triangular crossarms, a peak; library angles) — and runs the script on
 them. The test runs only when `OHL_IFC_PYTHON` names a Python with
 IfcOpenShell; otherwise it says so and passes:
@@ -274,6 +314,9 @@ within 0.1 % of the library's area). Warnings left: the SAF export of
 give the area only (its members are truss members, which need only A); an
 analysis program may refuse zero bending stiffness for a frame member —
 give such sections in the section library.
+Rerun on 2026-10-19 after `every-profile` gained a tension-only member
+that bends and a member not checked (`Bending`, `Check` in `OHL_Member`,
+the analysis members' `Description`, SAF `Layer`): 12 files, 0 errors.
 
 **What the free tools cannot confirm** (only the target programs can):
 

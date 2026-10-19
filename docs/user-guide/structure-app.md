@@ -669,6 +669,16 @@ the [section library](section-library.md); a section given only by its
 values (`[[section]]`) has no shape (IFC: the member's axis only; SAF: a
 square of the same area, its values given).
 
+A tension-only member that bends (`bending = true`) is written as a
+frame — no format here has a member that is both — with its tension-only
+behaviour as information (IFC: the property set `OHL_Member` and the
+analysis member's description; SAF: the member's layer; CSV: the
+`bending` column); set it up as tension-only in the other program if it
+must drop out there. A member not design-checked (`check = false`) is
+written as any other, flagged the same way (`Check` false, "not
+checked", the `check` column). See
+[Structure exports](../development/structure-exports.md#tension-only-members-that-bend-and-members-not-checked).
+
 Under the entries:
 
 - **Section library**: by default the window's (`--sections`, else the
