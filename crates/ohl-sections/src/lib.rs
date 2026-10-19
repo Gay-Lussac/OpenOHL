@@ -50,8 +50,13 @@
 //! | `general` | `h`, `b` (outline box); `area`, `iy`, `iz` given |
 //!
 //! `r` (root radius) is optional, default 0.
+//!
+//! An optional `[wind]` table holds wind factors for structures given as
+//! data — a drag factor per shape, a lattice face's drag and shielding
+//! factors by solidity ratio ([`wind`]); none are shipped.
 
 mod geometry;
+pub mod wind;
 
 use std::collections::BTreeMap;
 use std::f64::consts::PI;
@@ -61,6 +66,7 @@ use ohl_core::units::{Angle, Area, Density, Length, SecondMoment, SectionModulus
 use serde::Deserialize;
 
 use geometry::{Outline, Part};
+pub use wind::{Curve, Shielding, StructureWind};
 
 /// Value of the `format` header of section library files.
 pub const SECTION_FILE_FORMAT: &str = "ohl-sections";
@@ -618,6 +624,8 @@ struct LibraryFile {
     materials: Vec<MaterialFile>,
     #[serde(rename = "section", default)]
     sections: Vec<SectionFile>,
+    #[serde(default)]
+    wind: Option<wind::WindFile>,
 }
 
 /// An id of letters, digits, `-`, `_` and `.`.
@@ -845,7 +853,14 @@ pub struct SectionLibrary {
     pub sections: Vec<Section>,
     /// Materials, in file order.
     pub materials: Vec<Material>,
+    /// Wind factors for structures (`[wind]`: drag per shape, a lattice
+    /// face's drag and shielding by solidity), when given — data from a
+    /// design-code plugin or the user, never shipped values.
+    pub wind: Option<StructureWind>,
 }
+
+/// What [`SectionLibrary::merge`] reports for a second `[wind]` table.
+pub const WIND_TABLE: &str = "[wind]";
 
 impl SectionLibrary {
     /// Parses and checks a file's text. Ids are unique within the file; a
@@ -886,6 +901,9 @@ impl SectionLibrary {
                     .map_err(|e| format!("section \"{id}\": {e}"))?,
             );
         }
+        if let Some(w) = file.wind {
+            lib.wind = Some(w.resolve().map_err(|e| format!("[wind]: {e}"))?);
+        }
         Ok(lib)
     }
 
@@ -903,7 +921,14 @@ impl SectionLibrary {
         for p in ohl_core::files::files_with_extension(path, SECTION_FILE_EXTENSION) {
             let next = read(&p)?;
             if let Some(id) = lib.merge(next).first() {
-                return Err(format!("{}: \"{id}\" is also in another file", p.display()));
+                return Err(if id == WIND_TABLE {
+                    format!(
+                        "{}: wind factors ({WIND_TABLE}) are also in another file: keep them in one",
+                        p.display()
+                    )
+                } else {
+                    format!("{}: \"{id}\" is also in another file", p.display())
+                });
             }
         }
         Ok(lib)
@@ -911,13 +936,19 @@ impl SectionLibrary {
 
     /// Adds the sections and materials of `other` whose ids this library
     /// does not have (the earlier one wins: merge the project's library
-    /// first, then the user's); returns the ids left out.
+    /// first, then the user's); returns the ids left out ([`WIND_TABLE`]
+    /// for a `[wind]` table when this library has one).
     pub fn merge(&mut self, other: SectionLibrary) -> Vec<String> {
         if self.name.is_empty() {
             self.name = other.name;
             self.description = other.description;
         }
         let mut left_out = Vec::new();
+        match (&self.wind, other.wind) {
+            (_, None) => {}
+            (None, Some(w)) => self.wind = Some(w),
+            (Some(_), Some(_)) => left_out.push(WIND_TABLE.to_owned()),
+        }
         for m in other.materials {
             if self.material(&m.id).is_some() {
                 left_out.push(m.id);
