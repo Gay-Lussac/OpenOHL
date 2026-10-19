@@ -43,6 +43,9 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--profile-only` | the profile alone, without the plan |
 | `--side-offset`, `--clearance`, `--logo` | as for `ohl line --drawings` |
 | `--dpi` | resolution of PNG images (default 150) |
+| `--elevations` | the structures' elevations on the plan: `off` (default), `above` or `below` the line ([Elevations](#elevations)) |
+| `--elevation-offset` | from the line to the elevations' base, mm on paper (default 10) |
+| `--elevation-rotation` | angle between the line and the elevations' height, degrees (default 90: standing perpendicular to the line) |
 | `--out DIR` | output folder (created) |
 
 The first weather case is drawn solid, the others dashed (each its own
@@ -70,9 +73,26 @@ layer `OHL_MEMBERS`:
 - in the plan in model space (`R-plan-model.dxf`), the same in project
   coordinates.
 
+A **pole at level 2 or 3** (a `[pole]` outline with diameters at two
+heights at least, or a named `.ohlp` file) is drawn with its **outline**
+instead of the symbol, on the same layer `OHL_MEMBERS` (the members'
+layer: the outline is the pole's body, as the members are a tower's):
+
+- in the **profile**, its silhouette by height: at each height of its
+  outline the outline's extent along the route, up one side and down the
+  other (a closed line; between the heights the taper is straight);
+- in the **plan**, its outline at the ground line and at its top (round
+  as a 16-sided polygon, a polygon with its sides), seen from above;
+- in `R-plan-model.dxf`, the same two outlines in project coordinates.
+
+The pole is drawn from the ground line up (the part in the ground left
+out), at the structure's position, orientation and height adjustment,
+raised by its extension. Its stick drawing (the mast line and the arms
+to the attachment points) stays on `OHL_STRUCTURES`, as before.
+
 The name, station and attachment points stay on `OHL_STRUCTURES` (the
-name above the highest member). In SVG the members carry
-`class="OHL_MEMBERS"`. The members' profiles (their sections) are not
+name above the highest member or the pole's top). In SVG the members and
+poles carry `class="OHL_MEMBERS"`. The members' profiles (their sections) are not
 drawn on the sheets: at the usual scales they are thinner than the pen.
 `ohl drawing` reads the section library from `--sections` or the
 `Sections` folder next to the line (only for a type with a separate
@@ -104,6 +124,45 @@ line it is `--plan-width` (or `--line-width`). The line width does not
 decide where sheets end (below). The LiDAR corridor of the analyses
 (`--corridor`, the points read for the ground surface and the clearance
 checks) is a separate setting and is not changed by it.
+
+## Elevations
+
+On request (`--elevations above|below`, or **Elevations** in the
+app's Export drawings window; off by default) the plan carries each
+structure's **elevation** beside the line, so its shape can be read on
+the sheet next to where it stands:
+
+- each structure drawn along the line (every one of the run along the
+  alignment, one beside the line only within the [line width](#line-width);
+  of the sheet's station range on a sheet) is drawn **seen along the line**: its members (levels 2 and 3), its pole's
+  silhouette across the line, else its stick drawing (level 1: the mast
+  and the arms to its attachment points), true shape at the
+  **horizontal scale** (a 30 m tower is 15 mm tall at 1:2000);
+- its **base** stands at the structure's station, `--elevation-offset`
+  mm on paper (default 10 mm) above or below the line (the route's
+  centreline in the plan);
+- its height makes `--elevation-rotation` degrees with the line (default
+  **90°: standing perpendicular to the line**), pointing away from it:
+  above the line the top points up the sheet, below the line the
+  elevation is turned half a turn, its top pointing down the sheet; 0°
+  lays it along the line;
+- a thin dashed **leader** joins where the structure stands in the plan
+  to the elevation's base;
+- elevations and leaders are on their own layer **`OHL_ELEVATIONS`**
+  (SVG `class="OHL_ELEVATIONS"`, each elevation titled `ID elevation`),
+  in every format (SVG, DXF sheets, PDF, PNG); they are not clipped to
+  the plan panel. Not in the model-space files.
+
+Elevations are never moved: when two would **overlap** each other, or
+one would reach into the **profile** band, both are drawn as they are
+and the export reports a warning naming them (a continuous drawing as
+well as sheets, and the sheet preview); draw them above the line, nearer to it, or at another
+scale.
+
+*Reading of the request, to be confirmed:* "rotated 90°" is read as the
+elevation standing perpendicular to the line on the sheet (its height
+across the line), seen along the line (the crossarms across); the
+rotation is the angle between the line and the elevation's height.
 
 ## Sheets
 
@@ -182,7 +241,7 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **DXF** (release 12, `AC1009`, ASCII): a format most CAD programs read; not tried
   in a given program yet (no DWG file is written). Entities are LINE,
   POLYLINE, TEXT and CIRCLE on layers `OHL_GROUND`, `OHL_WIRES`,
-  `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_CLEARANCE`, `OHL_GRID`,
+  `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_ELEVATIONS`, `OHL_CLEARANCE`, `OHL_GRID`,
   `OHL_TITLE`… Colours are
   the nearest of DXF's indexed colours; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
@@ -249,7 +308,9 @@ formats, sheets (one continuous drawing, or A0–A4 split at structures),
 horizontal and vertical scale, **line width** (± m, the plan's half
 width: the same setting as the Profile page's **line width ±**, see
 [Line width](#line-width)), **sheet breaks** (the break clearance, mm on
-paper), station range, clearance line, PNG resolution, the profile alone,
+paper), station range, clearance line, the structures'
+[elevations](#elevations) (off, above or below; base offset in mm;
+rotation), PNG resolution, the profile alone,
 the other solved weather cases (dashed), and the output folder.
 **Export** writes the files in the background with a progress window; the
 views stay usable and the window stays open for the next export. It draws
@@ -259,7 +320,7 @@ the route, without sheet breaks.
 
 **The settings are kept in the project**, per project line: formats,
 sheet format, scales, line width, break clearance, station range,
-clearance line, PNG resolution, the profile alone, the other cases and
+clearance line, the elevations, PNG resolution, the profile alone, the other cases and
 the sheet preview on or off (not the route chosen nor the output folder,
 which belongs to the computer). They are written as they change (not
 while a value is being dragged or typed) and are there when the project
@@ -287,8 +348,9 @@ the sheets the export would write now, over the continuous views:
   of a sheet beyond what its paper holds darker amber.
 - **Plan**: each sheet's band along its alignment (the line width each
   side, as the sheets' plan shows it), its match lines across the band and
-  its number; when the export draws the profile alone, the plan says so
-  and shows no sheets.
+  its number; the structures' [elevations](#elevations) and their
+  leaders when they are on, as the sheets draw them; when the export
+  draws the profile alone, the plan says so and shows no sheets.
 
 The preview is laid out by the export's own code with the window's
 settings (format, scales, line width, break clearance, station range, the
