@@ -833,7 +833,7 @@ the section's plane (body wind from the profiles, decision 10 of
 order (`merge`: project first, then user; the earlier id wins);
 `missing_materials()` lists sections whose material is in none.
 
-The `[wind]` factors are used by `ohl_structures_fe::wind` (the member
+The format stays version 1 with `[wind]` (a table only added; a program built before it refuses a file holding one, naming the key). The `[wind]` factors are used by `ohl_structures_fe::wind` (the member
 wind with lattice faces, their solidity ratios and shielding:
 `faces(model)`, `MemberWindSetup`, `Model::member_wind_with`; nothing
 stored, computed from the model's geometry; theory: [Wind on lattice
