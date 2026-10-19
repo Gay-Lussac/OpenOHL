@@ -424,6 +424,12 @@ polyline of closely spaced points on the exact catenary; between those
 points it lies slightly below its chords, so clearances can be high by at
 most the chord sag of a piece — a few millimetres.
 
+How exact the clearances are (labels as in the [theory manual](../theory/conventions.md#conservative-assumptions-and-simplifications)):
+
+- **Simplification:** clearances are measured to the wire's axis (each subconductor's), not to its surface: every clearance is high by the conductor's radius, half its diameter (unsafe). Exact: the distance less the conductor's radius.
+- **Simplification:** the wire as a polyline on the catenary: below the wire, clearances are high by at most the chord sag of a piece (a few millimetres, unsafe); above it, low by as much (safe). Exact: the distance to the catenary itself.
+- **Simplification:** the radial distance to the ground is taken from wire points every 0.5 m, so it is high by at most \\( s^2/8d \\) (3 mm at 10 m, unsafe). Exact: the distance from the continuous wire.
+
 Several weather cases are checked together with [envelopes](#envelopes-over-weather-cases); exclusion zones near the wire ends are rule fields (`exclude_near_ends`, `exclude_spans_at`); the plan and profile sheets draw the required-clearance line and the violations.
 
 ## Example data

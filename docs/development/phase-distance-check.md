@@ -43,6 +43,18 @@ and a long conductor are both covered. For a bundle, each
 subconductor's stations are measured to the nearest subconductor of the
 other conductor.
 
+How exact the measuring is (labels as in the [theory manual](../theory/conventions.md#conservative-assumptions-and-simplifications)):
+
+- **Simplification:** d is measured between the conductors' axes, not
+  their surfaces: it is high by the two conductors' radii (unsafe, unless
+  the plugin's required distance is defined between axes). Exact: d less
+  the two radii.
+- **Simplification:** stations every Δs: the closest approach between two
+  stations is not measured, but the second conductor's closest point is
+  searched continuously at each station, so the error is that of the first
+  conductor's spacing (small for Δs = 1 m, unsafe). Exact: the minimum of d
+  along the first conductor.
+
 The plugin receives, per pair, what its rules need besides the stations
 (`conductor-pair`): whether both are in one electrical system, whether
 they hang between the same two structures, each one's nominal voltage
