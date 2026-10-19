@@ -1419,6 +1419,11 @@ impl TabViewer for Viewer<'_> {
         if r.selection != before {
             r.view3d.dirty.insert(Layer::Selection);
         }
+        // A member clicked in the 3D view: selected in the structure screen
+        // when it shows the structure's type.
+        if let Some((structure, member)) = r.view3d.picked_member.take() {
+            r.select_member(&structure, &member);
+        }
         // A right-click uses the held tool on what is there.
         if let Some(target) = used {
             r.use_tool(target);
@@ -1427,6 +1432,33 @@ impl TabViewer for Viewer<'_> {
 }
 
 impl Ready {
+    /// Selects member `member` of structure `structure` in the structure
+    /// screen (the Structure types page's pylon workspace) when it is open
+    /// on the structure's type; whether it was.
+    pub fn select_member(&mut self, structure: &str, member: &str) -> bool {
+        let Some(type_id) = self
+            .model
+            .line
+            .structure(structure)
+            .and_then(|s| s.structure_type.clone())
+        else {
+            return false;
+        };
+        let Some(page) = self
+            .libraries
+            .get_mut(&crate::library::LibraryKind::StructureTypes)
+        else {
+            return false;
+        };
+        let w = &mut page.workspace;
+        if !w.on || w.shown().is_none_or(|t| t.id != type_id) {
+            return false;
+        }
+        w.selected = vec![crate::type_workspace::Handle::Member(member.to_owned())];
+        w.redraw();
+        true
+    }
+
     /// What can be right-clicked now: the Snap menu's choice, and strings
     /// while a tool that works on them is held.
     pub fn effective_snaps(&self) -> crate::selection::Snaps {

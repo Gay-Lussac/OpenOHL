@@ -91,12 +91,70 @@ pub enum Part {
     Insulator,
 }
 
-/// The lines a structure is drawn with (and picked by): its stick drawing,
-/// or a mast up to the highest point and arms out to its points; then its
-/// strings as given (from their tops to their wire points).
-pub fn structure_lines(st: &ohl_line::Structure) -> Vec<(Part, Vec<[f64; 3]>)> {
+/// Where a structure's type is placed: its position raised by its height
+/// adjustment (as the line places it).
+pub fn type_origin(st: &ohl_line::Structure) -> [f64; 3] {
+    [
+        st.position[0],
+        st.position[1],
+        st.position[2] + st.height_adjust,
+    ]
+}
+
+/// The body a structure is drawn with: its type's at level 2 or 3 on its
+/// extension ([`ohl_structures_fe::drawn`]); none at level 1 or without a
+/// type.
+pub fn drawn_body<'a>(
+    bodies: &'a ohl_structures_fe::drawn::Bodies,
+    st: &ohl_line::Structure,
+) -> Option<&'a ohl_structures_fe::drawn::DrawnBody> {
+    bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())
+}
+
+/// The members of a structure as placed (levels 2 and 3), each with its
+/// id (none: a body polyline); empty at level 1.
+pub fn placed_members(
+    bodies: &ohl_structures_fe::drawn::Bodies,
+    st: &ohl_line::Structure,
+) -> Vec<(Option<String>, Vec<[f64; 3]>)> {
+    let Some(b) = drawn_body(bodies, st) else {
+        return Vec::new();
+    };
+    b.members
+        .iter()
+        .map(|m| m.id.clone())
+        .zip(b.placed_lines(type_origin(st), st.orientation_deg))
+        .collect()
+}
+
+/// Gives the structures of drawing `d` (of `line`) their members at levels
+/// 2 and 3 (`bodies`): drawn on their own layer instead of the symbol.
+pub fn set_drawn_members(
+    d: &mut ohl_drawing::RouteDrawing,
+    line: &ohl_line::Line,
+    bodies: &ohl_structures_fe::drawn::Bodies,
+) {
+    d.set_members(|id| {
+        let st = line.structure(id)?;
+        drawn_body(bodies, st).map(|b| b.placed_lines(type_origin(st), st.orientation_deg))
+    });
+}
+
+/// The lines a structure is drawn with (and picked by): its members
+/// (levels 2 and 3, `bodies`), else its stick drawing, else a mast up to
+/// the highest point and arms out to its points; then its strings as given
+/// (from their tops to their wire points).
+pub fn structure_lines(
+    bodies: &ohl_structures_fe::drawn::Bodies,
+    st: &ohl_line::Structure,
+) -> Vec<(Part, Vec<[f64; 3]>)> {
     let mut out = Vec::new();
-    if st.members.is_empty() {
+    let members = placed_members(bodies, st);
+    if !members.is_empty() {
+        for (_, m) in members {
+            out.push((Part::Member, m));
+        }
+    } else if st.members.is_empty() {
         let top = st
             .points
             .iter()
@@ -321,8 +379,23 @@ pub fn structures(
             pick(by_usage.unwrap_or_else(|| tint.map_or([215, 215, 220, 255], |c| rgba(c, 230))));
         let blue = pick(tint.map_or([120, 180, 255, 255], |c| rgba(c, 230)));
         let at = st.position;
-        let lattice = !st.members.is_empty();
-        for (part, pts) in structure_lines(st) {
+        let body = drawn_body(&model.bodies, st);
+        let lattice = !st.members.is_empty() || body.is_some();
+        // Members with a profile (level 3): their solids when close
+        // (level 0), under the lines they are drawn with from afar. The
+        // type's geometry is shared, only moved here.
+        if let Some(b) = body.filter(|b| b.triangles() > 0) {
+            let mut s = Prim::new(
+                at,
+                b.placed_triangles(type_origin(st), st.orientation_deg),
+                steel,
+                0.0,
+            )
+            .at(0, 0);
+            s.filled = true;
+            out.push(s);
+        }
+        for (part, pts) in structure_lines(&model.bodies, st) {
             let prim = match part {
                 // Stick drawings: the mast at every level, arms down to 1.
                 Part::Mast => Prim::new(at, pts, steel, 2.5).at(0, 2),

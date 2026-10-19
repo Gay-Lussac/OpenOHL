@@ -86,7 +86,9 @@ impl DetailKind {
             (DetailKind::PerSpan, 0) => {
                 "every point, bundles as subconductors, clamps and bodies to their shape".into()
             }
-            (DetailKind::Structure, 0) => "lattice, arms and strings".into(),
+            (DetailKind::Structure, 0) => {
+                "members (with profiles: solids), arms and strings".into()
+            }
             (DetailKind::Tolerance, 0) => "every vertex and point".into(),
             (DetailKind::Tolerance, _) => format!(
                 "lines simplified to {value} m; lines and points smaller than that left out"

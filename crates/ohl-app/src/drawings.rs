@@ -90,6 +90,9 @@ pub struct Drawings {
 pub struct Input {
     /// The line.
     pub line: Line,
+    /// Its structure types' bodies (levels 2 and 3: members drawn on their
+    /// own layer).
+    pub bodies: Arc<ohl_structures_fe::drawn::Bodies>,
     /// Routes to draw.
     pub routes: Vec<AlignmentView>,
     /// Solved cases: name, sections, jumpers; the first drawn solid.
@@ -161,6 +164,7 @@ impl Input {
         ];
         Ok(Self {
             line: model.line.clone(),
+            bodies: model.bodies.clone(),
             routes,
             ground: model.ground.clone(),
             options: ohl_drawing::Options {
@@ -208,6 +212,7 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
             &[],
             &input.options,
         )?;
+        crate::scene::set_drawn_members(&mut d, &input.line, &input.bodies);
         for (k, (name, shapes, jumpers)) in input.cases.iter().enumerate().skip(1) {
             let other = ohl_drawing::build(
                 &input.line,
