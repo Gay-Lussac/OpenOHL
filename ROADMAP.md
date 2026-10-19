@@ -229,8 +229,12 @@ published reference data (no tables typed from memory).
   code drag factors still to come.
 - **U6. Body generators**: no redundants, plan bracing, or several points
   on one crossarm yet.
-- **U7. Structure screen in OHL-Design**: no drag handles for points in the
-  line's 3D view.
+- **U7. Structure screen in OHL-Design**: drag handles for points in the
+  line's 3D view built (in active development, not approved yet): points
+  and wire points of the structure being edited, held to an axis or plane
+  of its axes, snapped, one command each; a point of the type becomes the
+  structure's own. Joints are shown but not dragged (the body is edited
+  in OHL-Structure; a placed structure has no joints of its own).
 - **U8. Level 2 and 3 members** not yet drawn in 3D of the line nor on the
   plan and profile sheets.
 
@@ -419,7 +423,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] One file per pylon (`.ohls`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable / tension) to the same members; `.ohlfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and a joint has a `support`; a structure standing only on springs stays at level 2 today); the marker follows
 - [x] String points as joints or as a fraction along a member, so strings follow the members
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
-- [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view still to come. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
+- [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view built since 2026-10-19 (U7): points and wire points; joints shown only. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
 - [x] **Body generators** (format version 3): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group *(not yet: redundants in the panels, plan bracing, a crossarm with several points on one arm)*
 - [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(not yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension)*
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
