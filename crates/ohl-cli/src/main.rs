@@ -337,7 +337,8 @@ struct LineArgs {
     /// Side ground profile at this offset, m (right positive; repeatable).
     #[arg(long, allow_hyphen_values = true)]
     side_offset: Vec<f64>,
-    /// Half width of the plan view, m.
+    /// Half width of the plan view, m: the line width of the drawings (a
+    /// sheet may break at a structure within it of the alignment).
     #[arg(long, default_value_t = 40.0)]
     plan_width: f64,
     /// Scale of the plan across the line, 1:1000 or 1000 (default: the
@@ -348,6 +349,10 @@ struct LineArgs {
     /// A2, A3, A4 (landscape) or WIDTHxHEIGHT in mm.
     #[arg(long)]
     page: Option<String>,
+    /// Clearance on paper, mm, between a sheet break and what is drawn of
+    /// every other structure (0 to 20).
+    #[arg(long, default_value_t = ohl_drawing::BREAK_CLEARANCE_MM, value_parser = break_clearance)]
+    break_clearance: f64,
     /// Logo for the sheets' title block: FILE (SVG, PNG, JPEG) or
     /// FILE:WIDTH_MM (repeatable).
     #[arg(long)]
@@ -398,6 +403,17 @@ struct DrawingArgs {
 /// A scale denominator from `1:2000` or `2000`.
 fn scale(text: &str) -> Result<f64, String> {
     ohl_drawing::parse_scale(text).ok_or_else(|| format!("{text}: write 1:2000 or 2000"))
+}
+
+/// A sheet break clearance on paper, mm (0 to the maximum).
+fn break_clearance(text: &str) -> Result<f64, String> {
+    let mm: f64 = text
+        .trim()
+        .trim_end_matches("mm")
+        .trim()
+        .parse()
+        .map_err(|_| format!("{text}: write a clearance in mm, e.g. 2"))?;
+    ohl_drawing::check_break_clearance(mm)
 }
 
 /// A station from metres or `km+m`.
@@ -1278,6 +1294,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         plan_width,
         plan_scale,
         page,
+        break_clearance,
         logo,
         export,
         export_options,
@@ -1801,6 +1818,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 logos,
                 stations: None,
                 plan: !spec.profile_only,
+                break_clearance: *break_clearance,
             };
             let target = ohl_drawing::export::Export {
                 page: page.clone(),
