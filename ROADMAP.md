@@ -37,9 +37,10 @@ Guiding principles:
   Project renamed OpenOHL (formerly OLS CAD).
 - Phases 0 to 5 of Part 2 are built as a base, all in active development (none approved yet); the structure work
   (levels 1–3, poles, extensions, generators, loads per placed structure,
-  FE with joint stabilisation and tension-only members, section library,
+  FE with joint stabilisation and tension-only members (compression up to
+  their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 69 validation cases pass; the private Swiss plugin and the importers of
+- 70 validation cases pass; the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -205,10 +206,17 @@ published reference data (no tables typed from memory).
 
 ## Unfinished or approximate (known limitations)
 
-- **U1. Tension-only sets that do not settle** are solved with the
-  flipping members kept active; the result is marked *approximate*. Also:
-  with a slightly kinked tie, the one-tie rule can hide compression in one
-  half. *To be treated later; information may be missing at that point.*
+- **U1. Tension-only members** now carry compression up to their own
+  elastic buckling load (O5, decided 2026-10-19; built, in active
+  development, not approved yet): beyond it they are **bowed** and carry
+  that load, shown in the results; without a second moment they go slack
+  as before. A set that goes round, or a tie hiding compression in one
+  half (a slightly kinked tie), has its ties split into their members:
+  the case that used to go round now settles. *Still open:* keeping
+  members active (flagged *approximate*) remains as a last resort when
+  single members go round — no model tested reaches it; the
+  energy-based active-set update that would always settle is for later
+  (O5); no post-buckling rise or bending of a bowed member.
 - **U2. Imported lattice towers**: many towers imported from another program's export still fail
   as mechanisms, mostly where a load acts in a direction no member holds;
   the stabilisation reports them. Needs a look at how such joints are
@@ -390,7 +398,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Finite-element wire system (SAPS-style, `ohl-wirefe`): exact elastic catenary elements, I- and V-strings (tension-only legs), 3D wind blowout, insulator swing, broken span, point loads, unequal spans *(delivered early, in Phase 1)*
 - [x] FE wire system extensions: strain insulators (free strain members), jumpers (solved between the section ends), bundles, non-linear stress-strain and creep in elements (secant iteration on the curves, permanent set from the material state; FE and RS agree within 0.02 % in tension on a fixed-end span) *(general linked assemblies from the structure library wait for the insulator assembly graph, with 3D pylons)*
 - [x] Structure loads output (attachment point loads per load case): line and structure axes, unfactored and factored; Structure loads page, CSV (`ohl line --load-cases --loads-csv`) — wind on the structures by height band (`[[wind.band]]`), the strings holding jumpers' support clamps *(the pull of jumpers on their end clamps still open)*
-- [x] Usage / utilisation reports: Structure loads › Usage (worst first, governing case, colours), `ohl line --usage-csv`, structures coloured by usage in the plan and 3D views with a legend; a structure whose wires did not solve is **incomplete** (never a pass), one whose FE check kept tension-only members active is **approximate**
+- [x] Usage / utilisation reports: Structure loads › Usage (worst first, governing case, colours), `ohl line --usage-csv`, structures coloured by usage in the plan and 3D views with a legend; a structure whose wires did not solve is **incomplete** (never a pass), one whose FE check kept tension-only members active (the last resort) is **approximate**
 - [x] String limits: optional maximum load and swing angles on strings, kept for plugins (no core check)
 - [x] Clearance presets from design-code plugins for the Vertical and Radial clearances windows
 
@@ -403,10 +411,10 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 
 - [x] `ohl-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.ohlfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the tower body only on profiles from the section library (no shielding, one drag factor), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design
 - [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused; true mechanisms are named with the joints that move
-- [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): solved by active-set iterations (compressed members left out, stretched ones put back, first order then P-Delta); members on one line through a joint switch as one tie. *Unfinished — see Known limitations below:* a set that does not settle is solved with its flipping members kept active and the result flagged approximate
+- [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): a truss in tension and in compression up to its own elastic buckling load π²EI_min/L_k² (L_k: `lk`, else `k` × length, k = 1 pinned), **bowed** beyond it carrying that load (slack without a second moment); solved by active-set iterations on that cap (members beyond it bowed, those loaded less put back, first order then P-Delta); members on one line through a joint switch as one tie, split into their members when the set goes round or a half hides compression; bowed members named in the notes, usage, `ohl structures fe` and OHL-Structure's results (benchmark `structfe-011`). *See Known limitations below:* the last resort
 
 ### Structure analysis — known limitations (unfinished)
-- [ ] **Tension-only sets that do not settle** (recorded 2026-10-18). When the active-set iterations come back to a set they solved before, or take 100 solves, the members going taut and slack in turn are today **kept active as ordinary truss members**, the others iterated on, and the result is flagged: a note *"tension-only members kept active because the set did not settle: … — approximate; to be treated later"* (solution notes, structure usage notes, OHL-Structure's Results, `ohl structures fe`), those members marked *kept active (did not settle)* in what governs, and the structure's usage shown as **approximate** (never a plain pass). Owner's note: *we might be missing information at that point; it should be treated later.* Seen where a pair of diagonals, taken out, leaves a part nearly free (held only by a weak member or a joint slightly off a tie's line). Options to look at when this is treated: the owner's idea of **dropping tension-only for such members and giving them a very low compression stiffness instead** (which seemed to converge more), a damped or energy-based active-set update, and telling the user which part is nearly free
+- [ ] **Tension-only sets that do not settle — last resort** (recorded 2026-10-18; O5 decided 2026-10-19). Since the buckling-load cap and the splitting of ties (above), the case that used to go round (a pair of diagonals in halves through a joint slightly off a tie's line, the joint held otherwise only by a weak spring) settles. Kept as a flagged **last resort**: when single members still go taut and slack in turn (or after 1000 solves), they are **kept active as ordinary truss members**, the others iterated on, and the result is flagged — a note *"tension-only members kept active because the set did not settle: … — approximate (last resort)"*, those members marked *kept active (did not settle)*, the structure's usage **approximate** (never a plain pass). No tested model reaches it. Later (owner, O5): the energy-based (or damped) active-set update, which would always settle
 - [x] Wood/steel/concrete pole libraries and checks. *Base:* `.ohlp` poles (taper by diameter or circumference, fibre stress for wood, moment capacity at the ground line or by height, hollow wall), moment along the pole from the factored attachment loads (both directions, offsets) plus wind on the pole, P-Delta amplification from a tapered frame model (`pole` check, `ohl structures pole`). *Simplified / later:* one amplification factor for every height, no foundation/embedment check, no shear or deflection limits, no pole class tables (user data)
 - [x] LiDAR basics (`ohl-lidar`, delivered early in Phase 2): LAS/LAZ tiles, class schemes with roles (`.ohlc`, any classification), ground in a corridor, TIN from LiDAR — matched a commercial TIN's span clearances to a median of 2 mm on a real line
 - [x] LiDAR: COPC, octree streaming and point budget (billions of points at 60 fps) — *base*: COPC read directly as a point source (area/corridor/depth queries by octree node; also on `--pointcloud` for `ohl line` and the app), imported like LAZ, written on export (in memory), `ohl pointcloud info` shows its octree; stored clouds keep levels of detail per block (¼, 1/16, 1/64 of the points; schema 2, `ohl pointcloud octree` for older files, ADR-0007 amendment); the 3D view streams nodes on background threads by screen-space error under a per-user point budget (default 5 M) with an LRU GPU cache. Measured (M1 Max, synthetic 25 M points): 5 M points drawn at 16.5 ms a frame, 10 M at 32 ms; a view read in 0.1–0.2 s. Not measured with 10⁹ points (synthetic data only, extrapolated in the user guide); stored-cloud nodes are 256 m squares × 4 levels, not a spatial octree, so very large *areas* hit the budget at the coarsest level; COPC export holds the points in memory; COPC colours/GPS time not kept
