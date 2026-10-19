@@ -809,7 +809,13 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
                         ui.monospace(format!(
                             "{:9.2}{}",
                             m.axial / 1000.0,
-                            if m.slack { " slack" } else { "" }
+                            if m.slack {
+                                " slack"
+                            } else if m.bowed {
+                                " bowed"
+                            } else {
+                                ""
+                            }
                         ));
                         ui.colored_label(
                             rgb(usage_colour(m.usage)),

@@ -101,7 +101,7 @@ pub enum ExportKind {
     Frame,
     /// Tension only (guys, with a pretension).
     Cable,
-    /// A truss in tension only (slack in compression).
+    /// A truss in tension only (compression up to its own buckling load).
     Tension,
 }
 
