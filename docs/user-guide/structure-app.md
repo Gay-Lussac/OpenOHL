@@ -280,11 +280,24 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     foot), and per panel its top, its bracing (single diagonal, X, K,
     diamond, Warren) and whether it has horizontals at its top; **+ Panel**
     adds one on top. A new body goes up to the lowest point of the
-    structure (the waist under the crossarms), in four X panels.
+    structure (the waist under the crossarms), in four X panels. Options
+    per panel (all off by default, [format](structure-library.md#body-generators-groups-and-symmetry)):
+    a **width** at its top (ticked: the slope changes there, say legs
+    then a straight body; the last panel's is the waist), **redundants**
+    (*none*, *one* or *two* levels of secondary members in its faces,
+    group `body-redundant-<panel>`) and **plan** bracing at its top (*x*
+    or *diamond*, group `body-plan-<level>`). Above the table, **plan
+    bracing where the slope changes and at the crossarms' levels** puts
+    that plan bracing at those levels (a panel's own goes first; after
+    adding a crossarm, **Rebuild all** so the body knows its levels).
   - *Crossarms*: the points ticked each get an arm from the body face on
     their side, triangular (four chords to the point) or rectangular (a
     tip at the point and one above it); the point is put on the arm's
-    tip, so it carries its loads in the analysis.
+    tip, so it carries its loads in the analysis. **Several points on one
+    arm**: the points on one side at one level (an inner and an outer
+    phase, a V string's two upper points) make one arm, the outermost at
+    its tip and the others each on a section of the arm, every point on
+    a joint.
   - *Peak*: a tip above the top of the body, or one at each earth-wire
     point ticked, joined to the joints at the top.
   - *Copy a face*: the members on one face of a legs-and-panels body (a
