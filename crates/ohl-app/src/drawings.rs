@@ -50,6 +50,12 @@ pub struct DrawingsWindow {
     pub all_cases: bool,
     /// PNG resolution, dpi.
     pub dpi: f64,
+    /// Line width: half width of the plan, m. A structure within it of
+    /// the alignment is on the line and may end a sheet.
+    pub line_width: f64,
+    /// Clearance on paper between a sheet break and every other
+    /// structure's drawing, mm.
+    pub break_clearance: f64,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -71,19 +77,110 @@ impl Default for DrawingsWindow {
             clearance: None,
             all_cases: false,
             dpi: 150.0,
+            line_width: ohl_drawing::Options::default().plan_half_width,
+            break_clearance: ohl_drawing::BREAK_CLEARANCE_MM,
             out: None,
             error: None,
         }
     }
 }
 
-/// The drawings window and the export it started.
+/// The drawings window, the export it started and the sheet preview.
 #[derive(Debug, Default)]
 pub struct Drawings {
     /// The window, when open.
     pub window: Option<DrawingsWindow>,
+    /// The settings of the window when it was last closed (for this
+    /// session: the next window starts from them, the preview uses them).
+    pub last: DrawingsWindow,
     /// The export running (or finished, until closed).
     pub job: Option<Job>,
+    /// Show the export's sheets over the profile and the plan (the sheet
+    /// preview; off by default).
+    pub preview_on: bool,
+    /// The preview made, for what (the settings and the case).
+    preview: Option<(PreviewKey, Result<Preview, String>)>,
+}
+
+/// What a preview was made for: the settings that shape the sheets and
+/// the weather case shown.
+type PreviewKey = (DrawingsWindow, usize);
+
+/// The export's sheets of one alignment, laid out by the export's own
+/// code ([`ohl_drawing::sheet_layout`]).
+#[derive(Debug, Clone)]
+pub struct PreviewRoute {
+    /// The alignment (a route of the export).
+    pub id: String,
+    /// Its centreline (for the plan).
+    pub centreline: Vec<[f64; 3]>,
+    /// Its sheets: stations, structures at the ends, warnings.
+    pub sheets: Vec<ohl_drawing::SheetLayout>,
+}
+
+/// The export's sheets, as File › Export › Drawings… would write them now.
+#[derive(Debug, Clone)]
+pub struct Preview {
+    /// The sheet format (none: the export writes one continuous drawing).
+    pub page: Option<ohl_drawing::Page>,
+    /// The sheets of every alignment.
+    pub routes: Vec<PreviewRoute>,
+    /// The sheets have a plan above the profile.
+    pub plan: bool,
+    /// The line width (half width of the plan), m.
+    pub line_width: f64,
+}
+
+impl Preview {
+    /// The export's warnings, as the export writes them.
+    pub fn warnings(&self) -> Vec<String> {
+        self.routes
+            .iter()
+            .flat_map(|r| {
+                r.sheets.iter().flat_map(move |s| {
+                    s.warnings
+                        .iter()
+                        .map(move |w| format!("route {}: sheet {}: {w}", r.id, s.number))
+                })
+            })
+            .collect()
+    }
+
+    /// The sheets of alignment `id`.
+    pub fn route(&self, id: &str) -> Option<&PreviewRoute> {
+        self.routes.iter().find(|r| r.id == id)
+    }
+}
+
+/// The sheets the export would write with settings `w` for `model`
+/// showing case `case`, laid out by the export's own code.
+///
+/// Expected cost: what the export takes to collect the drawing data
+/// (under a second per route), without writing anything.
+pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview, String> {
+    let every = DrawingsWindow {
+        route: None,
+        ..w.clone()
+    };
+    let input = Input::prepare(model, case, &every, PathBuf::new())?;
+    let options = input.route_options();
+    let mut routes = Vec::new();
+    if let Some(page) = &input.export.page {
+        for route in &input.routes {
+            let d = input.drawing(route)?;
+            routes.push(PreviewRoute {
+                id: route.id.clone(),
+                sheets: ohl_drawing::sheet_layout(&d, &options, page),
+                centreline: d.centreline,
+            });
+        }
+    }
+    Ok(Preview {
+        page: input.export.page.clone(),
+        routes,
+        plan: options.plan,
+        line_width: options.plan_half_width,
+    })
 }
 
 /// What an export needs, taken from the model (sent to the background).
@@ -115,6 +212,23 @@ impl Input {
         let out = w.out.clone().ok_or("choose an output folder")?;
         if w.formats.is_empty() {
             return Err("tick a format".into());
+        }
+        Self::prepare(model, case, w, out)
+    }
+
+    /// The export of `w` into `out`, the folder and formats not checked.
+    fn prepare(
+        model: &Model,
+        case: usize,
+        w: &DrawingsWindow,
+        out: PathBuf,
+    ) -> Result<Self, String> {
+        let break_clearance = ohl_drawing::check_break_clearance(w.break_clearance)?;
+        if !(w.line_width.is_finite() && w.line_width > 0.0) {
+            return Err(format!(
+                "line width ±{} m: give a positive width",
+                w.line_width
+            ));
         }
         let all = model.line.alignment_views();
         let routes = match w.route {
@@ -173,6 +287,8 @@ impl Input {
                 clearance: w.clearance,
                 title,
                 plan: !w.profile_only,
+                plan_half_width: w.line_width,
+                break_clearance,
                 ..Default::default()
             },
             range: w.range.then_some([w.from.min(w.to), w.from.max(w.to)]),
@@ -184,6 +300,40 @@ impl Input {
             cases,
             out,
         })
+    }
+
+    /// The drawing data of `route`: the first case's wires solid, the
+    /// others' dashed.
+    pub fn drawing(&self, route: &AlignmentView) -> Result<ohl_drawing::RouteDrawing, String> {
+        let (_, shapes, jumpers) = &self.cases[0];
+        let mut d = ohl_drawing::build(
+            &self.line,
+            route,
+            shapes,
+            jumpers,
+            self.ground.as_deref(),
+            &[],
+            &self.options,
+        )?;
+        crate::scene::set_drawn_members(&mut d, &self.line, &self.bodies);
+        for (k, (name, shapes, jumpers)) in self.cases.iter().enumerate().skip(1) {
+            let other =
+                ohl_drawing::build(&self.line, route, shapes, jumpers, None, &[], &self.options)?;
+            for mut w in other.wires {
+                w.label = format!("{} — {name}", w.label);
+                w.dash = Some(ohl_drawing::case_dash(k));
+                d.wires.push(w);
+            }
+        }
+        Ok(d)
+    }
+
+    /// The options of each route's drawings (with the station range).
+    pub fn route_options(&self) -> ohl_drawing::Options {
+        ohl_drawing::Options {
+            stations: self.range,
+            ..self.options.clone()
+        }
     }
 }
 
@@ -202,37 +352,8 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
             format!("route {} ({} of {n})", route.id, r + 1),
             r as f32 / n as f32,
         );
-        let (_, shapes, jumpers) = &input.cases[0];
-        let mut d = ohl_drawing::build(
-            &input.line,
-            route,
-            shapes,
-            jumpers,
-            input.ground.as_deref(),
-            &[],
-            &input.options,
-        )?;
-        crate::scene::set_drawn_members(&mut d, &input.line, &input.bodies);
-        for (k, (name, shapes, jumpers)) in input.cases.iter().enumerate().skip(1) {
-            let other = ohl_drawing::build(
-                &input.line,
-                route,
-                shapes,
-                jumpers,
-                None,
-                &[],
-                &input.options,
-            )?;
-            for mut w in other.wires {
-                w.label = format!("{} — {name}", w.label);
-                w.dash = Some(ohl_drawing::case_dash(k));
-                d.wires.push(w);
-            }
-        }
-        let options = ohl_drawing::Options {
-            stations: input.range,
-            ..input.options.clone()
-        };
+        let d = input.drawing(route)?;
+        let options = input.route_options();
         let written =
             ohl_drawing::export::write_route(&d, &options, &input.export, &input.out, &budget)?;
         files += written.files.len();
@@ -264,6 +385,7 @@ impl DrawingsWindow {
         model: &Model,
         case: usize,
         open: &mut bool,
+        preview_on: &mut bool,
     ) -> Option<Job> {
         let mut job = None;
         let routes = model.line.alignment_views();
@@ -345,6 +467,40 @@ impl DrawingsWindow {
                         });
                         ui.end_row();
 
+                        ui.label("Line width");
+                        ui.horizontal(|ui| {
+                            ui.label("±");
+                            ui.add(
+                                egui::DragValue::new(&mut self.line_width)
+                                    .range(1.0..=2000.0)
+                                    .suffix(" m")
+                                    .speed(1.0),
+                            )
+                            .on_hover_text(
+                                "Half width of the plan. A structure within it of the \
+                                 alignment is on the line and may end a sheet; one outside it \
+                                 never does",
+                            );
+                        });
+                        ui.end_row();
+
+                        ui.label("Sheet breaks");
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut self.break_clearance)
+                                    .range(0.0..=ohl_drawing::MAX_BREAK_CLEARANCE_MM)
+                                    .suffix(" mm")
+                                    .speed(0.1)
+                                    .max_decimals(1),
+                            )
+                            .on_hover_text(
+                                "Clearance on paper between a sheet break and what is drawn \
+                                 of every other structure (0 to 20 mm)",
+                            );
+                            ui.label("on paper clear of other structures");
+                        });
+                        ui.end_row();
+
                         ui.label("Stations");
                         ui.horizontal(|ui| {
                             ui.checkbox(&mut self.range, "from");
@@ -389,6 +545,8 @@ impl DrawingsWindow {
                     &mut self.all_cases,
                     "the other solved weather cases too (dashed)",
                 );
+                ui.checkbox(preview_on, PREVIEW_TICK)
+                    .on_hover_text(PREVIEW_HELP);
                 ui.horizontal(|ui| {
                     if ui.button("Folder…").clicked()
                         && let Some(dir) = rfd::FileDialog::new().pick_folder()
@@ -437,11 +595,12 @@ impl Drawings {
     pub fn show(&mut self, ctx: &egui::Context, model: &Model, case: usize) {
         if let Some(w) = &mut self.window {
             let mut open = true;
-            if let Some(job) = w.ui(ctx, model, case, &mut open) {
+            if let Some(job) = w.ui(ctx, model, case, &mut open, &mut self.preview_on) {
                 self.job = Some(job);
             }
             if !open {
-                self.window = None;
+                self.last = self.window.take().unwrap_or_default();
+                self.last.error = None;
             }
         }
         if let Some(job) = &mut self.job
@@ -450,4 +609,92 @@ impl Drawings {
             self.job = None;
         }
     }
+
+    /// Opens the window (with the settings it had when last closed).
+    pub fn open(&mut self) {
+        if self.window.is_none() {
+            self.window = Some(self.last.clone());
+        }
+    }
+
+    /// The export settings: the window's, or those it had when closed.
+    pub fn settings(&self) -> &DrawingsWindow {
+        self.window.as_ref().unwrap_or(&self.last)
+    }
+
+    /// Forgets the preview (after the line or the solved cases changed).
+    pub fn invalidate_preview(&mut self) {
+        self.preview = None;
+    }
+
+    /// The sheet preview when it is on: made again when the settings or
+    /// the case change (and after [`Self::invalidate_preview`]).
+    pub fn preview(&mut self, model: &Model, case: usize) -> Option<&Result<Preview, String>> {
+        if !self.preview_on {
+            return None;
+        }
+        // Only what shapes the sheets (not the folder, formats, message).
+        let key: PreviewKey = (
+            DrawingsWindow {
+                route: None,
+                formats: Vec::new(),
+                dpi: 0.0,
+                out: None,
+                error: None,
+                ..self.settings().clone()
+            },
+            case,
+        );
+        if self.preview.as_ref().is_none_or(|(k, _)| *k != key) {
+            let made = preview(model, case, &key.0);
+            self.preview = Some((key, made));
+        }
+        self.preview.as_ref().map(|(_, p)| p)
+    }
+
+    /// The sheet preview's options, in a menu of ticks (it stays open on
+    /// a tick); its button opens the drawing settings.
+    pub fn preview_menu(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.preview_on, PREVIEW_TICK)
+            .on_hover_text(PREVIEW_HELP);
+        let s = self.settings();
+        let text = if s.page.is_empty() {
+            "Export settings: one continuous drawing (no sheets). Choose a sheet format in \
+             the drawing settings."
+                .to_owned()
+        } else {
+            format!(
+                "Export settings: {} at 1:{} / 1:{}{}, line width ±{} m, breaks {} mm clear \
+                 of other structures{}",
+                s.page,
+                s.hscale,
+                s.vscale,
+                if s.profile_only {
+                    ", the profile alone"
+                } else {
+                    ", plan and profile"
+                },
+                s.line_width,
+                s.break_clearance,
+                if s.range {
+                    format!(", stations {} to {}", s.from, s.to)
+                } else {
+                    String::new()
+                }
+            )
+        };
+        ui.label(egui::RichText::new(text).small().weak());
+        if ui.button("Drawing settings…").clicked() {
+            self.open();
+            ui.close();
+        }
+    }
 }
+
+/// The sheet preview's tick.
+pub const PREVIEW_TICK: &str = "Show the export's sheets over the profile and the plan";
+
+/// What the sheet preview shows.
+const PREVIEW_HELP: &str = "Sheet edges (match lines), sheet numbers and the export's warnings \
+     over the continuous profile and the plan, laid out by the export itself with the settings \
+     of File › Export › Drawings…; nothing is computed differently";

@@ -1253,13 +1253,26 @@ impl TabViewer for Viewer<'_> {
                 }
                 used
             }
-            Tab::Plan => r
-                .plan
-                .ui(ui, &r.model, r.case, &mut r.selection, &snaps, &r.visible),
+            Tab::Plan => r.plan.ui(
+                ui,
+                &r.model,
+                r.case,
+                &mut r.selection,
+                &snaps,
+                &r.visible,
+                r.drawings.preview(&r.model, r.case),
+            ),
             Tab::Profile => {
                 let used = r
                     .profile
-                    .ui(ui, &r.model, r.case, &mut r.selection, &snaps)
+                    .ui(
+                        ui,
+                        &r.model,
+                        r.case,
+                        &mut r.selection,
+                        &snaps,
+                        &mut r.drawings,
+                    )
                     .map(|target| crate::selection::Use {
                         target,
                         at: None,
@@ -2438,6 +2451,7 @@ impl Ready {
             Layer::Selection,
         ]);
         self.profile.invalidate();
+        self.drawings.invalidate_preview();
     }
 
     /// Selects `target`.
@@ -3812,6 +3826,7 @@ impl Ready {
                 .filter(|l| !matches!(l, Layer::Ground | Layer::Points)),
         );
         self.profile.invalidate();
+        self.drawings.invalidate_preview();
     }
 
     /// Whether the selected object is still in the line.
@@ -7067,7 +7082,7 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
             )
             .clicked()
         {
-            r.drawings.window.get_or_insert_with(Default::default);
+            r.drawings.open();
             ui.close();
         }
         if ui
@@ -7216,6 +7231,7 @@ fn menus(
             // Remembered with the other display choices when the app saves.
             crate::profile::ratio_menu(ui, &mut r.model.profile_ratio);
         });
+        crate::menu::options_menu(ui, "Sheet preview", |ui| r.drawings.preview_menu(ui));
         crate::menu::options_menu(ui, "Layers", |ui| {
             for layer in Layer::ALL {
                 let mut on = r.visible.contains(&layer);
