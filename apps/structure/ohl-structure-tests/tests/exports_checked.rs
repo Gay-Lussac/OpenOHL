@@ -59,8 +59,10 @@ fn generated() -> String {
                 top,
                 bracing: Bracing::X,
                 horizontal: true,
+                ..Default::default()
             })
             .collect(),
+        ..Default::default()
     });
     let t = read(&doc);
     apply(&mut doc, &t, &g("body", panels)).unwrap();
@@ -73,6 +75,7 @@ fn generated() -> String {
     let arms = Kind::Crossarm(Crossarm {
         points: labels,
         shape: ArmShape::Triangular,
+        ..Default::default()
     });
     apply(&mut doc, &t, &g("arms", arms)).unwrap();
     let t = read(&doc);
