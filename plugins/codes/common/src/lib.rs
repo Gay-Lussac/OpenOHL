@@ -287,6 +287,22 @@ pub struct Load {
     pub strength: f64,
     /// Tags.
     pub tags: Vec<String>,
+    /// The wind on the structure bodies when the code treats it apart
+    /// from the wind on the wires (`[case.structure]` of the `.ohllc`,
+    /// version 2); none: the structures take the weather case's pressure
+    /// and the transverse factor, as the wires.
+    pub structure: Option<StructureWind>,
+}
+
+/// A load case's own values for the wind on the structure bodies
+/// (`[case.structure]`): each given replaces, for the structures only,
+/// the weather case's pressure or the transverse factor.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct StructureWind {
+    /// Pressure on the structure bodies, Pa.
+    pub wind_pressure: Option<f64>,
+    /// Factor on it.
+    pub wind_factor: Option<f64>,
 }
 
 impl Load {
@@ -302,7 +318,18 @@ impl Load {
             longitudinal: 1.0,
             strength: 1.0,
             tags: Vec::new(),
+            structure: None,
         }
+    }
+
+    /// With the structures' own wind pressure (Pa) and factor (none of
+    /// either: the line's value).
+    pub fn structure_wind(mut self, pressure: Option<f64>, factor: Option<f64>) -> Self {
+        self.structure = Some(StructureWind {
+            wind_pressure: pressure,
+            wind_factor: factor,
+        });
+        self
     }
 
     /// With a description.
@@ -432,6 +459,7 @@ impl ExtraLoad {
             longitudinal: self.longitudinal,
             strength: self.strength,
             tags: self.tags.clone(),
+            structure: None,
         }
     }
 }
@@ -713,17 +741,35 @@ impl Cases {
             if l.strength == 0.0 {
                 return Err(format!("load case \"{}\": strength factor 0", l.name));
             }
+            if let Some(s) = l.structure {
+                if s.wind_pressure
+                    .is_some_and(|p| !(p.is_finite() && p >= 0.0))
+                {
+                    return Err(format!(
+                        "load case \"{}\": structure wind pressure below 0",
+                        l.name
+                    ));
+                }
+                if s.wind_factor
+                    .is_some_and(|f| !(f.is_finite() && (0.0..=100.0).contains(&f)))
+                {
+                    return Err(format!(
+                        "load case \"{}\": structure wind factor (0 to 100)",
+                        l.name
+                    ));
+                }
+            }
         }
         Ok(())
     }
 
-    fn head(&self, format: &str) -> String {
+    fn head(&self, format: &str, version: u32) -> String {
         let mut s = String::new();
         for h in &self.header {
             s += &format!("# {h}\n");
         }
         s += &format!(
-            "format = {}\nversion = 1\nname = {}\n",
+            "format = {}\nversion = {version}\nname = {}\n",
             quote(format),
             quote(&self.name)
         );
@@ -746,7 +792,7 @@ impl Cases {
     }
 
     fn weather_file(&self, weather: &[Weather]) -> String {
-        let mut s = self.head("ohl-weather-cases");
+        let mut s = self.head("ohl-weather-cases", 1);
         for w in weather {
             s += &format!("\n[[case]]\nname = {}\n", quote(&w.name));
             if !w.description.is_empty() {
@@ -780,7 +826,14 @@ impl Cases {
 
     /// The load case file (`.ohllc`).
     pub fn load_cases_text(&self) -> String {
-        let mut s = self.head("ohl-load-cases");
+        // Version 2 only when a case gives the structures' own wind (an
+        // older OpenOHL still reads the others).
+        let own = |l: &Load| {
+            l.structure
+                .is_some_and(|s| s.wind_pressure.is_some() || s.wind_factor.is_some())
+        };
+        let version = if self.loads.iter().any(own) { 2 } else { 1 };
+        let mut s = self.head("ohl-load-cases", version);
         for l in &self.loads {
             s += &format!("\n[[case]]\nname = {}\n", quote(&l.name));
             if !l.description.is_empty() {
@@ -798,6 +851,15 @@ impl Cases {
             );
             if !l.tags.is_empty() {
                 s += &format!("tags = {}\n", tags(&l.tags));
+            }
+            if let Some(w) = l.structure.filter(|_| own(l)) {
+                s += "\n[case.structure]\n";
+                if let Some(p) = w.wind_pressure {
+                    s += &format!("wind_pressure = \"{} Pa\"\n", num(p));
+                }
+                if let Some(f) = w.wind_factor {
+                    s += &format!("wind_factor = {}\n", num(f));
+                }
             }
         }
         s
@@ -839,6 +901,24 @@ mod tests {
         assert!(text.contains("ice_load = \"20 N/m\""), "{text}");
         let lc = c.load_cases_text();
         assert!(lc.contains("transverse = 1.2\nlongitudinal = 1\nstrength = 0.9"));
+        // No structures' own wind: version 1, no [case.structure].
+        assert!(lc.contains("version = 1\n") && !lc.contains("[case.structure]"));
+        let mut own = c.clone();
+        own.loads[0] = own.loads[0].clone().structure_wind(Some(900.0), Some(1.2));
+        own.check().unwrap();
+        let lc = own.load_cases_text();
+        assert!(lc.contains("version = 2\n"), "{lc}");
+        assert!(
+            lc.contains("\n[case.structure]\nwind_pressure = \"900 Pa\"\nwind_factor = 1.2\n"),
+            "{lc}"
+        );
+        let read: toml::Table = toml::from_str(&lc).unwrap();
+        assert_eq!(
+            read["case"][0]["structure"]["wind_factor"].as_float(),
+            Some(1.2)
+        );
+        own.loads[0] = own.loads[0].clone().structure_wind(Some(-1.0), None);
+        assert!(own.check().is_err());
         c.loads.push(Load::new("LC1", &w));
         assert!(c.check().is_err());
     }
