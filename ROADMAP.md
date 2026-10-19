@@ -214,6 +214,19 @@ diagonal drawn in halves buckles at half length.
 > **Owner:** (2026-10-19) Usage: OK for now, to be discussed again later.
 > Buckling length: depends on the joint type; OK for now.
 
+### O13. Conductor jump when ice drops suddenly (ice shedding)
+When ice falls off a span at once, the conductor jumps upwards and can
+swing towards the wire above (phase to phase, phase to earth wire). To be
+evaluated: the jump height and the clearances during the jump, per section
+and weather case, shown with the other clearances. Options when it is
+treated: a simplified method (from the sag difference between the iced and
+the bare conductor, with a rebound factor from published data), or a
+dynamic time-domain solve of the section with the ice removed (in one span
+or several). Reference data to come from published sources, not from
+memory.
+> **Owner:** (2026-10-19) Add the evaluation of the conductor jump when the
+> ice drops suddenly.
+
 ## Unfinished or approximate (known limitations)
 
 - **U1. Tension-only members** now carry compression up to their own
