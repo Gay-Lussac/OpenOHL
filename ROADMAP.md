@@ -284,9 +284,15 @@ memory.
   table's range). **Materials typed in the section editor: planned.**
 - **U6. Body generators**: redundants, plan bracing, widths per panel and
   several points on one crossarm built (2026-10-19, options off by
-  default, not approved yet); open: whether files using them raise the
-  `.ohls` version, and the small share of the loads the stabilisation
-  takes with P-Delta at the redundants' joints (0.2–1.1 % in the tests).
+  default, in active development, not approved yet). A file using one is
+  written at `.ohls` version 6 (one unreleased raise, also for anything
+  else added before the next release; an older program says "newer").
+  The joints the stabilisation holds across their face (the redundants'
+  and plan bracing's) are held relative to the ends of the members they
+  cut, so with P-Delta they follow the face: what they take is below
+  5·10⁻⁴ of the loads in the tests, as in first order (held to the
+  ground: 0.2–1.1 %), and a load across such a joint goes to the line's
+  ends instead of the ground.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
@@ -456,7 +462,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 *Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
 - [x] `ohl-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.ohlfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the tower body only on profiles from the section library (drag per shape, face drag by solidity and shielding of the faces behind only when the section library's `[wind]` gives them — from a design-code plugin or typed; else one drag factor, no shielding), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design
-- [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused; true mechanisms are named with the joints that move
+- [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused; true mechanisms are named with the joints that move *(since 2026-10-19, U6, not approved yet: a joint on a straight line of members is held relative to the line's ends, following its face with P-Delta; the others to the ground)*
 - [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): a truss in tension and in compression up to its own elastic buckling load π²EI_min/L_k² (L_k: `lk`, else `k` × length, k = 1 pinned), **bowed** beyond it carrying that load (slack without a second moment); solved by active-set iterations on that cap (members beyond it bowed, those loaded less put back, first order then P-Delta); members on one line through a joint switch as one tie, split into their members when the set goes round or a half hides compression; bowed members named in the notes, usage, `ohl structures fe` and OHL-Structure's results (benchmark `structfe-011`). *See Known limitations below:* the last resort
 
 ### Structure analysis — known limitations (unfinished)
@@ -488,7 +494,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] String points as joints or as a fraction along a member, so strings follow the members
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view built since 2026-10-19 (U7): points and wire points; joints shown only. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
-- [x] **Body generators** (format version 3): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group; options off by default: redundants per panel (one or two levels), plan bracing (X, diamond) per level and where the slope changes or at the crossarms' levels, widths per panel, several points on one crossarm (2026-10-19)
+- [x] **Body generators** (format version 3; the options version 6): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group; options off by default: redundants per panel (one or two levels), plan bracing (X, diamond) per level and where the slope changes or at the crossarms' levels, widths per panel, several points on one crossarm (2026-10-19)
 - [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`)*
 - [x] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] Tower geometry from another program's XML export (joints, members, sections) into levels 2 and 3 (local importer)
