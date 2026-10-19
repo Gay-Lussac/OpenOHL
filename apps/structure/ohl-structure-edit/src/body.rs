@@ -59,6 +59,12 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 /// The format version that has what this module writes.
 pub const BODY_VERSION: i64 = 3;
 
+/// The format version that has the generators' options (a panel's
+/// `width`, `redundants` and `plan`, a body's `plan_auto`, a crossarm's
+/// `one_arm`): a file is raised to it only when a generator using one is
+/// written ([`Generator::uses_options`]).
+pub const OPTIONS_VERSION: i64 = 6;
+
 /// A bracing pattern of a panel's faces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -557,6 +563,23 @@ impl Generator {
         Ok(())
     }
 
+    /// Whether its record holds one of the options of version
+    /// [`OPTIONS_VERSION`] (all off: it is written as before).
+    pub fn uses_options(&self) -> bool {
+        match &self.kind {
+            Kind::Panels(p) => {
+                p.plan_auto != Plan::None
+                    || p.panels.iter().any(|panel| {
+                        panel.width.is_some()
+                            || panel.redundants != Redundants::None
+                            || panel.plan != Plan::None
+                    })
+            }
+            Kind::Crossarm(c) => c.one_arm,
+            Kind::Peak(_) | Kind::CopyFace(_) => false,
+        }
+    }
+
     /// As a `[[generator]]` table.
     pub fn to_table(&self) -> Table {
         let mut t = Table::new();
@@ -732,9 +755,13 @@ pub fn ensure_version(doc: &mut DocumentMut) {
     }
 }
 
-/// The record of generator `g` written (replacing one with its id).
+/// The record of generator `g` written (replacing one with its id); the
+/// file raised to [`OPTIONS_VERSION`] when it uses an option.
 pub fn set_generator(doc: &mut DocumentMut, g: &Generator) {
     ensure_version(doc);
+    if g.uses_options() {
+        crate::edits::raise_version(doc, OPTIONS_VERSION);
+    }
     let table = g.to_table();
     let a = crate::edits::array(doc, "generator");
     let at = a

@@ -184,7 +184,12 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
-/// Newest format version read. Version 5 adds the member kind `tension`
+/// Newest format version read. Version 6 adds the body generators'
+/// options in `[[generator]]` (a panel's `width`, `redundants`, `plan`; a
+/// body's `plan_auto`; a crossarm's `one_arm` — tables the core keeps
+/// unread, read by the structure application) and anything else added
+/// before the next release; a file is written at 6 only when it uses one.
+/// Version 5 adds the member kind `tension`
 /// (a truss in tension only, slack in compression). Version 4 adds a
 /// string's optional limits,
 /// not checked by OpenOHL (`max_load`, `max_swing`, `max_swing_across`,
@@ -192,8 +197,8 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// application writes: a member's `group` and `made_by`, a joint's
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
-/// tables; versions 1 to 4 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 5;
+/// tables; versions 1 to 5 read as before.
+pub const STRUCTURE_FILE_VERSION: u32 = 6;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -1981,7 +1986,7 @@ mod tests {
         assert_eq!(t.nodes[0].made_by.as_deref(), Some("body"));
         assert_eq!((t.symmetry.len(), t.generators.len()), (1, 1));
         assert_eq!(t.detail(), Detail::Outline);
-        for older in [1, 2] {
+        for older in [1, 2, 5, STRUCTURE_FILE_VERSION] {
             assert!(StructureType::parse(Path::new("t.ohls"), &text(older)).is_ok());
         }
         let newer = StructureType::parse(Path::new("t.ohls"), &text(STRUCTURE_FILE_VERSION + 1))
