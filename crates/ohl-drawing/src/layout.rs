@@ -544,38 +544,116 @@ const SHEET_MARGIN: f64 = 10.0;
 const TITLE_BLOCK: f64 = 32.0;
 const AXIS_ROOM: f64 = 14.0;
 
+/// Clearance on paper, mm, between a sheet break and the drawing of any
+/// other structure (its station, attachments and stick drawing).
+pub const BREAK_CLEARANCE_MM: f64 = 2.0;
+
+/// A place a sheet may start or end: a structure, or the end of a station
+/// range.
+struct Stop {
+    station: f64,
+    label: String,
+    /// Why no sheet may break here (`None`: a free break).
+    blocked: Option<String>,
+}
+
+/// Station range of what is drawn of structure `m` (its station, its
+/// attachments and its stick drawing).
+fn extent(m: &crate::Mark) -> (f64, f64) {
+    m.attachments
+        .iter()
+        .chain(m.sticks.iter().flatten())
+        .map(|p| p[0])
+        .filter(|s| s.is_finite())
+        .fold((m.station, m.station), |(a, b), s| (a.min(s), b.max(s)))
+}
+
+/// Where sheets may start and end, in station order: every structure (the
+/// first and last always), or the ends of the station range. A break
+/// inside is **free** at a structure of the run along the alignment whose
+/// station is at least `clear` m (the clearance on paper) from what is
+/// drawn of every other structure — one away from the alignment
+/// included.
+fn stops(d: &RouteDrawing, o: &Options, clear: f64) -> Vec<Stop> {
+    let extents: Vec<(f64, f64)> = d.structures.iter().map(extent).collect();
+    let mut stops: Vec<Stop> = d
+        .structures
+        .iter()
+        .enumerate()
+        .map(|(k, m)| {
+            let blocked = if m.away {
+                Some(format!("{} stands off the alignment", m.id))
+            } else {
+                d.structures
+                    .iter()
+                    .zip(&extents)
+                    .enumerate()
+                    .find(|&(j, (_, &(a, b)))| {
+                        j != k && m.station > a - clear && m.station < b + clear
+                    })
+                    .map(|(_, (other, _))| {
+                        format!(
+                            "{} is within {:.1} m of {} ({})",
+                            m.id,
+                            clear,
+                            other.id,
+                            format_station(other.station)
+                        )
+                    })
+            };
+            Stop {
+                station: m.station,
+                label: m.id.clone(),
+                blocked,
+            }
+        })
+        .collect();
+    stops.sort_by(|a, b| a.station.total_cmp(&b.station));
+    if let Some([a, b]) = o.stations {
+        let (a, b) = (a.min(b), a.max(b));
+        stops.retain(|s| s.station > a + 1e-6 && s.station < b - 1e-6);
+        let end = |s: f64| Stop {
+            station: s,
+            label: format_station(s),
+            blocked: None,
+        };
+        stops.insert(0, end(a));
+        stops.push(end(b));
+    }
+    stops
+}
+
 /// The route split over sheets of `page`, **at structures**: each sheet
 /// holds as many whole spans as fit at the horizontal scale, and the
-/// structure where it ends starts the next sheet (match line). Each sheet
-/// has its own height range and a title block (title lines, route, sheet
-/// n/N, station range, scales, logos). With a station range in the
-/// options, the first sheet starts and the last ends at the range.
+/// structure where it ends starts the next sheet (match line). A sheet
+/// only breaks at a structure of the run along the alignment that stands
+/// at least [`BREAK_CLEARANCE_MM`] on paper from what is drawn of every
+/// other structure (one off the alignment included): otherwise the break
+/// moves back to the last free structure that fits, and when none fits
+/// the sheet runs on to the next free one (drawn anyway, with a warning).
+/// Each sheet has its own height range and a title block (title lines,
+/// route, sheet n/N, station range, scales, logos). With a station range
+/// in the options, the first sheet starts and the last ends at the range.
 pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     let (h, v) = (1000.0 / o.horizontal_scale, 1000.0 / o.vertical_scale);
     let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
     let left = SHEET_MARGIN + AXIS_ROOM;
     let usable = page.width - left - SHEET_MARGIN;
     let reach = usable / h; // metres per sheet
-    let mut stations: Vec<(f64, String)> = d
-        .structures
-        .iter()
-        .map(|m| (m.station, m.id.clone()))
-        .collect();
-    stations.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if let Some([a, b]) = o.stations {
-        let (a, b) = (a.min(b), a.max(b));
-        stations.retain(|(s, _)| *s > a + 1e-6 && *s < b - 1e-6);
-        stations.insert(0, (a, format_station(a)));
-        stations.push((b, format_station(b)));
-    }
-    // Break points: greedy, whole spans per sheet.
+    let stations = stops(d, o, BREAK_CLEARANCE_MM / h);
+    // Break points: greedy, whole spans per sheet, at free stops only.
+    let last = stations.len().saturating_sub(1);
+    let can_break = |k: usize| k == last || stations[k].blocked.is_none();
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
-    while i + 1 < stations.len() {
-        let mut j = i + 1;
-        while j + 1 < stations.len() && stations[j + 1].0 - stations[i].0 <= reach + 1e-9 {
-            j += 1;
-        }
+    while i < last {
+        let fits = |k: &usize| stations[*k].station - stations[i].station <= reach + 1e-9;
+        let j = (i + 1..=last)
+            .filter(|&k| can_break(k))
+            .take_while(fits)
+            .last()
+            .or_else(|| (i + 1..=last).find(|&k| can_break(k)))
+            .unwrap_or(last);
         ranges.push((i, j));
         i = j;
     }
@@ -595,13 +673,30 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         .iter()
         .enumerate()
         .map(|(k, &(a, b))| {
-            let (s0, s1) = (stations[a].0, stations[b].0);
+            let (s0, s1) = (stations[a].station, stations[b].station);
             let mut warnings = Vec::new();
-            if (s1 - s0) * h > usable + 1e-6 {
+            // Structures within the sheet's reach where it could not break.
+            let skipped: Vec<&str> = stations
+                .get(a + 1..b)
+                .unwrap_or_default()
+                .iter()
+                .filter(|s| s.station - s0 <= reach + 1e-9)
+                .filter_map(|s| s.blocked.as_deref())
+                .collect();
+            if (s1 - s0) * h > usable + 1e-6 && !skipped.is_empty() {
+                warnings.push(format!(
+                    "no free sheet break within the {reach:.0} m the sheet holds at 1:{} ({}): \
+                     the sheet runs on to {} ({:.0} m), drawn anyway",
+                    o.horizontal_scale,
+                    skipped.join("; "),
+                    stations[b].label,
+                    s1 - s0
+                ));
+            } else if (s1 - s0) * h > usable + 1e-6 {
                 warnings.push(format!(
                     "{what} {}–{} ({:.0} m) is longer than the sheet holds at 1:{} ({:.0} m)",
-                    stations[a].1,
-                    stations[b].1,
+                    stations[a].label,
+                    stations[b].label,
                     s1 - s0,
                     o.horizontal_scale,
                     reach
@@ -618,7 +713,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             if needed > available + 1e-6 {
                 warnings.push(format!(
                     "profile {}–{} needs {:.0} mm of height at 1:{}, the sheet has {:.0} mm",
-                    stations[a].1, stations[b].1, needed, o.vertical_scale, available
+                    stations[a].label, stations[b].label, needed, o.vertical_scale, available
                 ));
             }
             let f = Frame {
@@ -711,8 +806,8 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     "{} – {}   ({} – {})",
                     format_station(s0),
                     format_station(s1),
-                    stations[a].1,
-                    stations[b].1
+                    stations[a].label,
+                    stations[b].label
                 ),
                 scales_text(o),
                 format!(
@@ -736,7 +831,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 number: k + 1,
                 from: s0,
                 to: s1,
-                structures: (stations[a].1.clone(), stations[b].1.clone()),
+                structures: (stations[a].label.clone(), stations[b].label.clone()),
                 drawing,
                 warnings,
             }
