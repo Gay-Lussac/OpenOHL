@@ -575,3 +575,60 @@ fn a_v_wire_point_stays_and_its_string_changes_length() {
     );
     assert_eq!(m.line.structure("T3"), Some(&before));
 }
+
+/// With "Tools act on left-click" on and Move held: a left click on a
+/// handle, without moving, only selects, and a left drag on it still moves
+/// the point (one command, the tool not used).
+#[test]
+fn handles_drag_with_tools_on_left_click() {
+    if !gpu() {
+        return;
+    }
+    let mut h = harness(synthetic_project("handles-left-click"));
+    h.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
+    h.run();
+    let (label, before) = {
+        let r = h.state_mut().ready().unwrap();
+        r.view3d.controls.tools_on_left = true;
+        r.edit_structure("T3");
+        let p = r.model.line.structure("T3").unwrap().points[0].clone();
+        (p.label, p.position)
+    };
+    h.run();
+    press(&mut h, egui::Key::M, egui::Modifiers::NONE);
+    assert_eq!(
+        h.state_mut().ready().unwrap().hotbar.tool(),
+        crate::tools::Tool::Move
+    );
+    screen_aside(&mut h, Tab::StructureEditor, before);
+    let at = on_screen(&mut h, before);
+    pointer(&mut h, at, None);
+    h.run();
+    assert_eq!(
+        h.state_mut().ready().unwrap().view3d.handles.hovered,
+        Some(Handle::Point(label.clone()))
+    );
+    // A click on the handle: no tool, the point where it was.
+    pointer(&mut h, at, Some(true));
+    pointer(&mut h, at, Some(false));
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.move_dialog.is_none(), "a click on a handle uses no tool");
+        // (A press and release on a handle may snap it to the 5 cm grid:
+        // the drag handles' own behaviour, the same with the option off.)
+        let s = r.model.line.structure("T3").unwrap();
+        let p = s.point(&label).unwrap().position;
+        let moved = (0..3).map(|k| (p[k] - before[k]).abs()).fold(0.0, f64::max);
+        assert!(moved < 0.05, "{before:?} ➡ {p:?}");
+    }
+    // A drag on it moves the point; no tool either.
+    drag(&mut h, at, egui::vec2(0.0, -60.0), &[(egui::Key::Z, false)]);
+    pointer(&mut h, at + egui::vec2(0.0, -60.0), Some(false));
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.move_dialog.is_none(), "a handle drag uses no tool");
+    let s = r.model.line.structure("T3").unwrap();
+    let after = s.point(&label).unwrap().position;
+    assert!(after[2] > before[2] + 0.5, "{before:?} ➡ {after:?}");
+}

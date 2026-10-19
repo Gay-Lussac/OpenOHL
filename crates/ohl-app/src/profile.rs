@@ -299,6 +299,7 @@ impl ProfileView {
     }
 
     /// Shows the view.
+    #[allow(clippy::too_many_arguments)]
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -307,6 +308,7 @@ impl ProfileView {
         selection: &mut Selection,
         snaps: &crate::selection::Snaps,
         drawings: &mut crate::drawings::Drawings,
+        buttons: (egui::PointerButton, egui::PointerButton),
     ) -> Option<Selection> {
         self.sheets_drawn.clear();
         let routes = self.alignments.get(&model.line).to_vec();
@@ -559,7 +561,8 @@ impl ProfileView {
                 }
             }
         }
-        if response.double_clicked() {
+        // A double-click of the select button ([`crate::controls::click_buttons`]).
+        if response.double_clicked_by(buttons.0) {
             *range = [0.0, d.length.max(1.0)];
             self.z_centre = None;
         }
@@ -1005,7 +1008,8 @@ impl ProfileView {
             egui::Color32::from_gray(150),
         );
         // Picking: structures by station, wires by nearest point. A left
-        // click selects; a right-click uses the held tool.
+        // click selects and a right-click uses the held tool, or the other
+        // way round ([`crate::controls::click_buttons`]).
         let pick = |pos: egui::Pos2| -> Selection {
             let mut best: Option<(f32, Selection)> = None;
             let mut consider = |d: f32, s: Selection| {
@@ -1035,12 +1039,13 @@ impl ProfileView {
             }
             best.map_or(Selection::None, |b| b.1)
         };
-        if response.clicked()
+        let (select_button, tool_button) = buttons;
+        if response.clicked_by(select_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
             *selection = pick(pos);
         }
-        if response.secondary_clicked()
+        if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
             return Some(pick(pos));

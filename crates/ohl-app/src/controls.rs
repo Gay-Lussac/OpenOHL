@@ -120,6 +120,76 @@ pub struct Controls {
     pub capture: bool,
     /// Mouse movement while captured, radians per pixel.
     pub mouse_sensitivity: f64,
+    /// Tools act on a left-click (a right-click selects); off (the
+    /// default): a left-click selects, a right-click uses the tool held.
+    /// For every view (3D, plan, profile); drags are not affected.
+    pub tools_on_left: bool,
+}
+
+/// The mouse buttons whose clicks (select, use the tool held) in a view:
+/// a left-click selects and a right-click uses the tool, or the other way
+/// round with `tools_on_left` — except when Select is held (`select_held`):
+/// a left-click then selects as always. Drags are not affected (a click
+/// is a press and release without moving).
+pub fn click_buttons(
+    tools_on_left: bool,
+    select_held: bool,
+) -> (egui::PointerButton, egui::PointerButton) {
+    use egui::PointerButton::{Primary, Secondary};
+    if tools_on_left && !select_held {
+        (Secondary, Primary)
+    } else {
+        (Primary, Secondary)
+    }
+}
+
+/// A help or status text as the clicks are set: written for the default
+/// ("right-click" uses the tool), with `tools_on_left` its "right-click"
+/// and "left-click" are swapped (texts are written once, shown either way).
+pub fn click_words(text: &str, tools_on_left: bool) -> std::borrow::Cow<'_, str> {
+    if !tools_on_left || !(text.contains("ight-click") || text.contains("eft-click")) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    const SWAPS: [(&str, &str); 4] = [
+        ("right-click", "left-click"),
+        ("Right-click", "Left-click"),
+        ("left-click", "right-click"),
+        ("Left-click", "Right-click"),
+    ];
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    'outer: while !rest.is_empty() {
+        for (from, to) in SWAPS {
+            if let Some(after) = rest.strip_prefix(from) {
+                out.push_str(to);
+                rest = after;
+                continue 'outer;
+            }
+        }
+        let c = rest.chars().next().expect("not empty");
+        out.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// The click rows of the controls list: what a left-click and a
+/// right-click do (`tools_on_left`: [`Controls::tools_on_left`]).
+pub fn click_rows(tools_on_left: bool) -> Vec<(String, String)> {
+    if tools_on_left {
+        vec![
+            (
+                "left-click".into(),
+                "use the tool held (hotbar; Select held: select)".into(),
+            ),
+            ("right-click".into(), "select".into()),
+        ]
+    } else {
+        vec![
+            ("left-click".into(), "select".into()),
+            ("right-click".into(), "use the tool held (hotbar)".into()),
+        ]
+    }
 }
 
 /// W A S D, Space up, Shift down, Ctrl sprint (Minecraft creative).
@@ -155,6 +225,7 @@ impl Controls {
                 sprint: 4.0,
                 capture: false,
                 mouse_sensitivity: 0.003,
+                tools_on_left: false,
             },
             Controls {
                 name: "Minecraft creative",
@@ -166,6 +237,7 @@ impl Controls {
                 sprint: 4.0,
                 capture: true,
                 mouse_sensitivity: 0.003,
+                tools_on_left: false,
             },
         ]
     }
@@ -178,14 +250,23 @@ impl Controls {
             .find(|c| !wanted.is_empty() && c.name.to_lowercase().starts_with(&wanted))
     }
 
-    /// Saves the scheme, speed and sensitivity.
+    /// Saves the scheme, speed, sensitivity and the click option.
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
         storage.set_string("controls", self.name.to_owned());
+        storage.set_string("controls.tools-on-left", self.tools_on_left.to_string());
         storage.set_string("controls.speed", self.speed.to_string());
         storage.set_string("controls.sensitivity", self.mouse_sensitivity.to_string());
     }
 
-    /// The scheme saved by [`Controls::save`], if any.
+    /// The click option saved by [`Controls::save`] (off when none).
+    pub fn load_tools_on_left(storage: &dyn eframe::Storage) -> bool {
+        storage
+            .get_string("controls.tools-on-left")
+            .is_some_and(|v| v == "true")
+    }
+
+    /// The scheme saved by [`Controls::save`], if any (with its click
+    /// option).
     pub fn load(storage: &dyn eframe::Storage) -> Option<Controls> {
         let mut c = Self::by_name(&storage.get_string("controls")?)?;
         let num = |key: &str| storage.get_string(key).and_then(|v| v.parse::<f64>().ok());
@@ -195,6 +276,7 @@ impl Controls {
         if let Some(v) = num("controls.sensitivity").filter(|v| v.is_finite() && *v > 0.0) {
             c.mouse_sensitivity = v;
         }
+        c.tools_on_left = Self::load_tools_on_left(storage);
         Some(c)
     }
 
@@ -238,17 +320,43 @@ impl Controls {
             .map(|(m, i)| (i.name(), m.name().to_owned()))
             .collect();
         if self.capture {
-            out.push(("click 3D view".into(), "capture the mouse".into()));
+            let (select, tool) = if self.tools_on_left {
+                ("right-click", "left-click")
+            } else {
+                ("left-click", "right-click")
+            };
+            out.push(("left-click 3D view".into(), "capture the mouse".into()));
             out.push(("mouse (captured)".into(), "look around".into()));
-            out.push(("click (captured)".into(), "select at the crosshair".into()));
+            out.push((
+                format!("{select} (captured)"),
+                "select at the crosshair".into(),
+            ));
+            out.push((
+                format!("{tool} (captured)"),
+                if self.tools_on_left {
+                    "use the tool held at the crosshair (Select held: select)".into()
+                } else {
+                    "use the tool held at the crosshair".into()
+                },
+            ));
             out.push(("Ctrl + wheel (captured)".into(), "speed".into()));
             out.push(("Esc".into(), "free the mouse".into()));
+        }
+        if !self.capture {
+            out.extend(click_rows(self.tools_on_left));
         }
         out.push(("left drag".into(), self.left.name().into()));
         out.push(("right drag".into(), self.right.name().into()));
         out.push(("middle drag".into(), self.middle.name().into()));
         out.push(("scroll".into(), "zoom".into()));
-        out.push(("double-click".into(), "fly to the object".into()));
+        out.push((
+            if self.tools_on_left {
+                "right double-click".into()
+            } else {
+                "double-click".into()
+            },
+            "fly to the object".into(),
+        ));
         // The drag handles of the structure being edited (its structure
         // screen open: [`crate::handles`]).
         out.push((
@@ -288,5 +396,12 @@ mod tests {
         let mc = &Controls::presets()[1];
         assert_eq!(mc.drag(egui::PointerButton::Primary), Drag::Look);
         assert!(mc.describe().iter().any(|(k, v)| k == "Space" && v == "up"));
+        // Texts written for right-click read the other way with the option.
+        let t = "String wire: right-click the next string (Right-click: …; left-click selects)";
+        assert_eq!(click_words(t, false), t);
+        assert_eq!(
+            click_words(t, true),
+            "String wire: left-click the next string (Left-click: …; right-click selects)"
+        );
     }
 }

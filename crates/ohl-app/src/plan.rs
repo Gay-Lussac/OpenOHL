@@ -332,7 +332,9 @@ impl PlanView {
         self.centre = Some([p[0], p[1]]);
     }
 
-    /// Shows the view (with the sheet preview's `sheets` when it is on).
+    /// Shows the view (with the sheet preview's `sheets` when it is on);
+    /// `buttons`: the select and tool buttons
+    /// ([`crate::controls::click_buttons`]).
     #[allow(clippy::too_many_arguments)]
     pub fn ui(
         &mut self,
@@ -343,7 +345,11 @@ impl PlanView {
         snaps: &selection::Snaps,
         visible: &std::collections::HashSet<crate::scene::Layer>,
         sheets: Option<&Result<crate::drawings::Preview, String>>,
+        buttons: (egui::PointerButton, egui::PointerButton),
     ) -> Option<selection::Use> {
+        // The button whose click selects, the one whose click uses the
+        // held tool ([`crate::controls::click_buttons`]).
+        let (select_button, tool_button) = buttons;
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.drawn = Some(rect);
@@ -396,8 +402,8 @@ impl PlanView {
                 mid.y - ((p[1] - c[1]) * scale) as f32,
             )
         };
-        // A right-click uses the held tool on what is there.
-        let used = if response.secondary_clicked()
+        // A click of the tool button uses the held tool on what is there.
+        let used = if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
             let target = selection::pick_in_model(
@@ -446,7 +452,7 @@ impl PlanView {
         } else {
             None
         };
-        if (response.clicked() || response.double_clicked())
+        if (response.clicked_by(select_button) || response.double_clicked_by(select_button))
             && let Some(pos) = response.interact_pointer_pos()
         {
             let (picked, picked_case) = selection::pick_in_model_case(
@@ -462,7 +468,7 @@ impl PlanView {
             );
             *selection = picked;
             self.picked_case = Some(picked_case);
-            if response.double_clicked()
+            if response.double_clicked_by(select_button)
                 && let Some(f) = selection.focus(model, case)
             {
                 self.centre_on(f);
