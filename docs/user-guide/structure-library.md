@@ -270,7 +270,8 @@ The structure application's **Body › Extensions** adds a piece by hand or buil
 The structure checks ([Structure usage](loads.md#structure-usage-capacity-checks)) read what a type can carry from its `[capacity]` — the values from its design (drawings, calculations, the manufacturer); OpenOHL ships none. Both methods are optional:
 
 ```toml
-# Method 1: allowable spans by line angle (interpolated linearly; a
+# Method 1: allowable spans by line angle (interpolated linearly in the
+# sine of half the angle, on the safe side; a
 # structure turning more than the last angle fails).
 [[capacity.spans]]
 angle = "0 deg"
