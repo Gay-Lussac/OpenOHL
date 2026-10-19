@@ -56,18 +56,31 @@ inner points of the span (default 19) both ellipses are drawn in the plane
 square to the first wire's chord, each around its own wire at rest there,
 and their distance is found: zero when they overlap (a vertex of one inside
 the other, or crossing edges), else the shortest vertex-to-edge distance.
+The ellipses are those of the wires' axes (centre lines); the clearance is
+to the wires' surfaces: the distance between the ellipses less each wire's
+outer radius — its bundle radius, its conductor's radius (iced in a case
+with ice) and its polyline's bound ([Clearance](../user-guide/terrain.md#clearance))
+— and zero when that is not above zero.
 The smallest over the stations is reported per pair and method, with the
 requirement (a distance, or by voltage as in rule files, with the pair's
 voltage taken as the higher, sum or difference of the two systems').
 
-Accuracy: the ellipses are 72-sided inscribed polygons, so a distance is
-high by at most \\( A(1-\cos 2.5°)/2 \\), about 0.05 % of the major
-axis; the wires of a span are taken as parallel (one cross-section plane).
+Accuracy: the ellipses are 72-sided circumscribed polygons — the regular
+72-gon about the unit circle (vertices at radius \\( 1/\cos 2.5° \\))
+stretched onto the ellipse, so each holds its ellipse and touches it from
+outside; the wires of a span are taken as parallel (one cross-section
+plane).
 
-**Simplification:** the inscribed polygons lie inside the ellipses, so the
-gap found is high by at most that amount (unsafe, by about 0.05 % of the
-major axis). Exact: the distance between the true ellipses (or polygons
-circumscribed about them, which would be on the safe side).
+**Conservative:** the circumscribed polygons hold the ellipses, so the gap
+found is never more than between the true ellipses; it is low by at most
+about \\( A(1/\cos 2.5° - 1) \\), 0.1 % of the major axis (2 × 2.4 mm for
+two 5.12 m minor axes side by side). Exact: the distance between the true
+ellipses.
+
+**Conservative:** for a bundle, the ellipse of its centre line widened by
+the bundle's outer envelope (bundle radius plus a subconductor's radius):
+each subconductor's own ellipse lies inside. Exact: the ellipses of each
+subconductor.
 
 **Simplification:** both ellipses in the plane square to the first wire's
 chord, the wires taken as parallel there. Wires that are not parallel (a
@@ -104,9 +117,14 @@ checks use them:
   right-of-way widths each side; **encroachment** is how far the wire goes
   beyond the edge (negative: the margin inside).
 
-  **Simplification:** the offset is to the wire's axis plus the bundle
-  radius: the conductor's own radius is not added (unsafe by half its
-  diameter). Exact: the offset of the conductor's outer surface.
+  The offset is to the conductor's outer surface: the wire's axis plus
+  the bundle radius, the conductor's radius (iced in a case with ice) and
+  the polyline's bound ([Clearance](../user-guide/terrain.md#clearance)).
+
+  **Conservative:** the bundle's outer envelope (bundle radius plus a
+  subconductor's radius) all round, also where no subconductor stands at
+  that side of the bundle. Exact: the outer subconductor's surface on
+  each side.
 
 ## Phase to phase and circuit to circuit
 

@@ -6549,6 +6549,10 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// What every clearance shown is measured to.
+pub(crate) const SURFACE_NOTE: &str =
+    "Clearances to the conductor's surface (iced in a case with ice).";
+
 /// What a vertical or radial clearance window asks: its violations drawn
 /// (layer "Clearance violations"), a span gone to.
 impl Ready {
@@ -6841,6 +6845,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
             for note in &rep.notes {
                 ui.label(egui::RichText::new(note).small().weak());
             }
+            ui.label(egui::RichText::new(SURFACE_NOTE).small().weak());
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for f in &rep.findings {

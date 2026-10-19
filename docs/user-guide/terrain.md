@@ -51,7 +51,8 @@ Every rule names a **target** and the required **vertical** and/or **radial** cl
 
 - **vertical**: to the ground, the wire's height above it directly below (negative: the wire is below the ground); to points, the vertical separation from points within `vertical_band` (default 0.5 m) of the wire in plan, above or below it; to other wires, the vertical separation where the wires cross in plan.
 - **radial**: the shortest 3D distance between the wire and the target.
-- **Bundles** (sections with `bundle_spacing`): to the nearest subconductor — the lowest one for vertical clearances below the wire, the highest above it, each subconductor for radial clearances.
+- **To the surface**: every clearance is measured to the conductor's surface — the distance from its axis less its radius (half its diameter, iced in a weather case with ice) and less the bound of its polyline (see [Clearance](#clearance)); between two wires, both wires' radii and bounds.
+- **Bundles** (sections with `bundle_spacing`): to the nearest subconductor's surface — the lowest one for vertical clearances below the wire, the highest above it, each subconductor for radial clearances.
 
 ```toml
 format = "ohl-clearance-rules"
@@ -181,8 +182,8 @@ ground: survey file examples/synthetic-line/synthetic-survey.csv
 points: not needed
 solved 3 section(s) in 2 wind position(s) in 283.8ms; checked in 10.0ms; 0 LiDAR points read
 1 span below a rule
-  status    rule      span        case & wind       target   found m required m    count
-  violation Ground    S2 span 2   max temperature   ground      4.72       7.50 16 pieces
+  status    rule      span        case & wind       target surface m required m    count
+  violation Ground    S2 span 2   max temperature   ground      4.70       7.50 16 pieces
 ```
 
 The rule file is read as the windows import it: its ground and point
@@ -417,18 +418,39 @@ and no ridge missed between samples.
 
 ## Clearance
 
-For every span (and every jumper, reported as `jumper:<id>`) the **vertical** distance from the wire down to the ground is
+For every span (and every jumper, reported as `jumper:<id>`) the **vertical** distance from the wire's surface down to the ground is
 evaluated under every piece of the solved wire, at every TIN edge crossing,
-and the smallest value is reported with its location. The wire is a
-polyline of closely spaced points on the exact catenary; between those
-points it lies slightly below its chords, so clearances can be high by at
-most the chord sag of a piece — a few millimetres.
+and the smallest value is reported with its location (the point on the
+wire's axis it is measured from).
+
+**Every clearance is to the conductor's surface** — to the ground, to
+LiDAR points, to other wires, in zones, for vegetation, galloping, the
+right of way and the distance between conductors: the distance measured
+from the conductor's axis (each subconductor's) less
+
+- the conductor's **radius**: half its diameter, and in a weather case
+  with ice half its iced diameter — \\( d/2 + t \\) for a radial thickness
+  \\( t \\), \\( \sqrt{d^2 + 4A/\pi}/2 \\) for an ice load (its area
+  \\( A \\) from the case's ice density, else glaze ice, see
+  [Weather cases](weather.md#how-ice-loads-a-wire));
+- the **polyline's bound**: the wire is a polyline of closely spaced points
+  on the solved catenary, and between two points the catenary lies off
+  their chord by at most the sagitta \\( R - \sqrt{R^2 - L^2/4} \\) of the
+  piece's length \\( L \\) on a circle of radius \\( R = H/w \\) — the
+  catenary curves at most \\( w/H \\), at its low point (a few
+  millimetres: about 1.8 mm for the 4.8 m pieces of a 305 m span of the example line
+  at \\( H/w \\) ≈ 1570 m);
+
+and between two wires, both wires' radii and bounds. A clearance reported
+is therefore never more than the exact one to the surface.
 
 How exact the clearances are (labels as in the [theory manual](../theory/conventions.md#conservative-assumptions-and-simplifications)):
 
-- **Simplification:** clearances are measured to the wire's axis (each subconductor's), not to its surface: every clearance is high by the conductor's radius, half its diameter (unsafe). Exact: the distance less the conductor's radius.
-- **Simplification:** the wire as a polyline on the catenary: below the wire, clearances are high by at most the chord sag of a piece (a few millimetres, unsafe); above it, low by as much (safe). Exact: the distance to the catenary itself.
-- **Simplification:** the radial distance to the ground is taken from wire points every 0.5 m, so it is high by at most \\( s^2/8d \\) (3 mm at 10 m, unsafe). Exact: the distance from the continuous wire.
+- **Conservative:** the polyline's bound is taken off every clearance, below and above the wire, although the catenary lies below its chords (a clearance to a target above the wire is low by up to twice the bound, a few millimetres). Exact: the distance to the catenary itself.
+- **Conservative:** the radial distance to the ground is taken from points every 0.5 m (at most) along the wire, and the shortest one \\( D \\) is lowered to \\( \sqrt{D^2 - (s/2)^2} \\) for points \\( s \\) apart: no point of the wire between them can be nearer the ground than that (where the wire comes nearest, it runs square to the line to the ground, so the nearest point taken is at most \\( \sqrt{d^2 + (s/2)^2} \\) away). The clearance is low by at most \\( s^2/8d \\) (3 mm at 10 m). Exact: the distance from the continuous wire.
+- **Conservative:** in a weather case with ice, the iced radius all along every wire (the case's ice on every span, as for its loads). Exact: the ice where it is.
+- **Simplification:** a wire swung by the wind lies off its chords in the swung plane, so its plan position too differs from the polyline's by up to the bound times the sine of the swing; over ground sloping across the line the ground under it is then higher or lower by the slope times that (micrometres to a millimetre, either way). Exact: the distance to the catenary itself.
+- Bundles: each subconductor where the bundle's spacing puts it, to its own surface (exact for the bundle's geometry); galloping and the right of way take the bundle's outer envelope ([Galloping](../theory/galloping.md)).
 
 Several weather cases are checked together with [envelopes](#envelopes-over-weather-cases); exclusion zones near the wire ends are rule fields (`exclude_near_ends`, `exclude_spans_at`); the plan and profile sheets draw the required-clearance line and the violations.
 

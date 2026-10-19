@@ -117,8 +117,8 @@ clearance-limited temperature of 3 sections (0–150 °C, ±0.5 °C; base case "
   S1           acsr-drake-26-7      above 150 °C
       summer noon              at least 1424 A (CIGRE TB 601)
   …
-  S2           acsr-drake-26-7      69.1 °C            ground span 2 vertical 4.99 m < 5.00 m at 69.4 °C
-      summer noon                  655 A (CIGRE TB 601)
+  S2           acsr-drake-26-7      68.4 °C            ground span 2 vertical 4.99 m < 5.00 m at 68.8 °C
+      summer noon                  644 A (CIGRE TB 601)
 ```
 
 Each section is solved at other temperatures in the base weather case

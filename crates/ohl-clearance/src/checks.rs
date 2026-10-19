@@ -10,9 +10,18 @@
 //! each target (a LiDAR point, a ground triangle, another wire's segment)
 //! is compared only with the wire segments near it.
 //!
-//! Accuracy: between polyline points the wire lies below its chord by at
-//! most the chord sag of a piece (a few mm for 6 m pieces); for the ground
-//! the wire is sampled every [`GROUND_STEP`] for the radial distance.
+//! **To the surface.** Every clearance is measured to the conductor's
+//! surface: the distance from its axis (each subconductor's, for a
+//! bundle) less [`Wire::allowance`] — the subconductor's radius (iced in a
+//! case with ice) and the most the wire lies off its polyline (the bound
+//! of the solver, [`ohl_line::solve::polyline_error`]); between two wires,
+//! both wires' allowances. So the polyline can only make a clearance
+//! smaller than the exact one, never larger.
+//!
+//! For the ground the wire is sampled every [`GROUND_STEP`] for the radial
+//! distance; the shortest sample distance \\( D \\) is lowered to
+//! \\( \sqrt{D^2 - (s/2)^2} \\) for samples \\( s \\) apart, a lower
+//! bound of the distance from the continuous piece ([`sampled_floor`]).
 
 use std::collections::HashMap;
 
@@ -29,8 +38,28 @@ use crate::geometry::{
 use crate::rules::{Required, Rule};
 
 /// Spacing of wire samples for the radial distance to the ground, m: the
-/// distance is over-estimated by at most s²/(8d) — 3 mm at d = 10 m.
+/// closest sample is at most s²/(8d) farther than the wire (3 mm at
+/// d = 10 m), and [`sampled_floor`] takes that off.
 pub const GROUND_STEP: f64 = 0.5;
+
+/// A lower bound of the distance from a straight wire piece to a surface,
+/// m, from the shortest distance `d` of samples `spacing` apart along it
+/// (its ends sampled): \\( \sqrt{d^2 - (s/2)^2} \\), 0 below \\( s/2 \\).
+///
+/// Proof: let \\( p^* \\) be the piece's closest point to the surface, at
+/// distance \\( d^* \\) from its nearest point \\( q \\). If \\( p^* \\) is
+/// inside the piece, the piece is square to \\( p^* - q \\) there (else
+/// moving along it would come nearer \\( q \\)); a sample lies within
+/// \\( s/2 \\) of \\( p^* \\) along the piece, so its distance is at most
+/// \\( \sqrt{d^{*2} + (s/2)^2} \\), and \\( d \\) is too. At an end, the
+/// end is a sample: \\( d = d^* \\).
+pub fn sampled_floor(d: f64, spacing: f64) -> f64 {
+    let h = spacing / 2.0;
+    if d <= 0.0 {
+        return d;
+    }
+    (d * d - h * h).max(0.0).sqrt()
+}
 
 /// Plan grid cell size of the wire index, m.
 const CELL: f64 = 10.0;
@@ -57,12 +86,31 @@ pub struct Wire {
     /// The attachments it hangs on (`structure:set:phase`): wires sharing
     /// one are connected (adjacent spans, a jumper and its sections).
     pub ends: Vec<String>,
+    /// Radius of a subconductor's surface, m: half its cable's diameter,
+    /// iced in a case with ice (0: measured to the axis).
+    pub surface_radius: f64,
+    /// The most the wire lies off its polyline `points`, m.
+    pub polyline_error: f64,
 }
 
 impl Wire {
     /// Nominal voltage of its system, kV (none: earthed).
     pub fn kv(&self) -> Option<f64> {
         self.potential.map(|p| p.nominal_kv)
+    }
+
+    /// What is taken off a distance measured to its polyline (a
+    /// subconductor's axis) for the distance to its surface, m: the
+    /// surface radius and the polyline's error.
+    pub fn allowance(&self) -> f64 {
+        self.surface_radius + self.polyline_error
+    }
+
+    /// How far the wire's outer surface reaches from its centre line, m:
+    /// the bundle radius and [`Wire::allowance`] (the outer envelope of the
+    /// subconductors).
+    pub fn outer_radius(&self) -> f64 {
+        self.bundle_radius() + self.allowance()
     }
 
     /// Radius of the bundle, m (0 for a single wire).
@@ -160,6 +208,8 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
                 potential: potential(&shape.section),
                 bundle: section.map_or(Vec::new(), |s| s.bundle_offsets()),
                 points: span.points.clone(),
+                surface_radius: span.surface_radius,
+                polyline_error: span.polyline_error,
                 ends: section.map_or(Vec::new(), |s| {
                     let mut e: Vec<String> = s.points.iter().skip(k).take(2).map(key).collect();
                     // Its clamps jumpers hang on: where taps join them to
@@ -193,6 +243,8 @@ pub fn wires_of(line: &Line, shapes: &[SectionShape], jumpers: &[JumperShape]) -
             potential: from.and_then(|s| potential(&s.id)),
             bundle: def.map_or(Vec::new(), |d| line.jumper_bundle(d).offsets()),
             points: j.points.clone(),
+            surface_radius: j.surface_radius,
+            polyline_error: j.polyline_error,
             ends: def.map_or(Vec::new(), |d| {
                 let end = |e: &ohl_line::JumperEnd| match e {
                     ohl_line::JumperEnd::Wire(p) => key(p),
@@ -308,6 +360,8 @@ pub struct WireSet {
     pub wires: Vec<Wire>,
     /// Bundle radius of each wire, m.
     pub(crate) radii: Vec<f64>,
+    /// [`Wire::allowance`] of each wire, m.
+    pub(crate) allowances: Vec<f64>,
     reach: f64,
     segments: Vec<(u32, u32)>,
     cells: HashMap<(i64, i64), Vec<u32>>,
@@ -323,8 +377,9 @@ impl WireSet {
         let mut segments = Vec::new();
         let mut cells: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
         for (w, wire) in wires.iter().enumerate() {
-            // Subconductors reach out by the bundle radius.
-            let reach = reach + wire.bundle_radius();
+            // Subconductors reach out by the bundle radius, their surface
+            // by the allowance.
+            let reach = reach + wire.outer_radius();
             for (k, s) in wire.points.windows(2).enumerate() {
                 let id = segments.len() as u32;
                 segments.push((w as u32, k as u32));
@@ -339,6 +394,7 @@ impl WireSet {
         }
         Self {
             radii: wires.iter().map(Wire::bundle_radius).collect(),
+            allowances: wires.iter().map(Wire::allowance).collect(),
             wires,
             reach,
             segments,
@@ -373,11 +429,12 @@ impl WireSet {
 /// A clearance found: its value and where.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
-    /// Clearance, m. Vertical to the ground: wire height above it
-    /// (negative if below); to points and other wires: the vertical
-    /// separation, whichever is higher.
+    /// Clearance to the wire's surface, m ([`Wire::allowance`] off the
+    /// distance to its axis). Vertical to the ground: the surface's height
+    /// above it (negative if below); to points and other wires: the
+    /// vertical separation, whichever is higher.
     pub distance: f64,
-    /// Point on the wire.
+    /// Point on the wire's axis (a subconductor's) it is measured from.
     pub wire: P3,
     /// Point on the target.
     pub target: P3,
@@ -520,14 +577,17 @@ impl PointCheck {
             let wire = &wires.wires[w];
             let result = &mut self.results[w];
             let reach = (result.required.largest() + self.rule.search_margin).min(wires.reach);
+            // To the surface.
+            let off = wires.allowances[w];
             // The centre line first: subconductors only when within reach.
             let (q, _) = closest_on_segment(p, a, b);
-            let near = distance(p, q) - wires.radii[w] <= reach;
+            let near = distance(p, q) - wires.radii[w] - off <= reach;
             let (d, sub) = if near && wires.radii[w] > 0.0 {
                 wire.nearest(p, a, b)
             } else {
                 (distance(p, q), q)
             };
+            let d = d - off;
             if near && d <= reach {
                 let hit = Hit {
                     distance: d,
@@ -543,7 +603,8 @@ impl PointCheck {
                 // Vertical separation, above or below the wire (a tree
                 // overhanging a low wire, a line crossing over); with a
                 // depth, to the wire's lowest (highest) in the slice.
-                let gap = wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth);
+                let gap =
+                    wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth) - off;
                 let hit = Hit {
                     distance: gap.max(0.0),
                     wire: q,
@@ -637,6 +698,8 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
             let reach = result.required.largest() + rule.search_margin;
             // Bundles: the lowest subconductor for the vertical clearance.
             let (lowest, _) = wire.vertical_extent();
+            // To the surface.
+            let off = wire.allowance();
             for s in wire.points.windows(2) {
                 let (a, b) = (s[0], s[1]);
                 let (mut vertical_bad, mut radial_bad) = (false, false);
@@ -644,7 +707,7 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                 for (t, g) in ground_under(terrain, a, b, rule.vertical_band) {
                     let z = a[2] + (b[2] - a[2]) * t + lowest;
                     let hit = Hit {
-                        distance: z - rise - g[2],
+                        distance: z - rise - g[2] - off,
                         wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
                         target: g,
                         class: None,
@@ -656,6 +719,8 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                     continue;
                 }
                 let n = ((distance(a, b) / GROUND_STEP).ceil() as usize).max(1);
+                // The samples' spacing, at most GROUND_STEP.
+                let spacing = distance(a, b) / n as f64;
                 for i in 0..=n {
                     let t = i as f64 / n as f64;
                     let centre = [
@@ -680,11 +745,13 @@ pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireR
                             }
                         });
                         if let Some((d, q)) = best {
+                            // Between samples the wire may come nearer:
+                            // the lower bound, then to the surface.
                             let d = if below.is_some_and(|g| p[2] < g) {
                                 -d
                             } else {
-                                d
-                            };
+                                sampled_floor(d, spacing)
+                            } - off;
                             let hit = Hit {
                                 distance: d,
                                 wire: p,
@@ -796,10 +863,12 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                 let required = rule
                     .required(rule.pair_voltage(wire.potential.as_ref(), other.potential.as_ref()));
                 let reach = (required.largest() + rule.search_margin).min(b.reach);
+                // To the surfaces of both.
+                let off = wire.allowance() + b.allowances[j];
                 // Centre lines first: bundles only when within reach.
                 let (ca, cb) = closest_between_segments(p, q, c, d);
                 let spread = wire.bundle_radius() + b.radii[j];
-                if distance(ca, cb) - spread > reach && crossing.is_none() {
+                if distance(ca, cb) - spread - off > reach && crossing.is_none() {
                     continue;
                 }
                 // Bundles: the nearest pair of subconductor pieces.
@@ -816,6 +885,7 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                         .min_by(|x, y| x.0.total_cmp(&y.0))
                         .expect("at least one subconductor each")
                 };
+                let dist = dist - off;
                 if dist > reach && crossing.is_none() {
                     continue;
                 }
@@ -842,7 +912,7 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
                         (x[2] + alo) - (y[2] + bhi)
                     } else {
                         (y[2] + blo) - (x[2] + ahi)
-                    };
+                    } - off;
                     let hit = Hit {
                         distance: gap,
                         wire: x,
@@ -900,6 +970,8 @@ mod tests {
             ends: vec![],
             potential: None,
             bundle: vec![],
+            surface_radius: 0.0,
+            polyline_error: 0.0,
         }
     }
 
@@ -1092,9 +1164,84 @@ mod tests {
         let r = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0\nradial = 8.0");
         let res = &ground_check(&r, &wires, &terrain)[0];
         assert!((res.vertical.unwrap().distance - 10.0).abs() < 1e-9);
+        // Pieces of 1.6 m sampled 0.4 m apart: the bound √(d² − 0.2²).
         let radial = res.radial.unwrap().distance;
-        assert!((radial - 10.0 / 2f64.sqrt()).abs() < 1e-9, "{radial}");
+        assert!((radial - (50.0f64 - 0.04).sqrt()).abs() < 1e-9, "{radial}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    /// The sampling bound: never above the true distance of the piece,
+    /// within s²/(8d) of it.
+    #[test]
+    fn sampled_floor_bounds_the_piece() {
+        // A piece along x at height 5 over a point at x = 0.37 (between
+        // samples at 0.25 and 0.5): the true distance 5, the samples'
+        // smallest √(5² + 0.12²).
+        let d_true: f64 = 5.0;
+        let nearest = d_true.hypot(0.12);
+        let floor = sampled_floor(nearest, 0.5);
+        assert!(floor <= d_true);
+        assert!(d_true - floor <= 0.5f64.powi(2) / (8.0 * d_true) + 1e-12);
+        assert_eq!(sampled_floor(0.1, 0.5), 0.0);
+        assert_eq!(sampled_floor(-1.0, 0.5), -1.0);
+    }
+
+    /// Every clearance is to the surface: the wires' allowances (radius
+    /// and polyline error) off each distance, both wires' between two.
+    #[test]
+    fn clearances_to_the_surface() {
+        let flat: Vec<SurveyPoint> = [(-10.0, -20.0), (110.0, -20.0), (110.0, 20.0), (-10.0, 20.0)]
+            .iter()
+            .map(|&(x, y)| SurveyPoint {
+                x,
+                y,
+                z: 0.0,
+                code: String::new(),
+                line: String::new(),
+            })
+            .collect();
+        let terrain = Terrain::from_points(&flat, None).unwrap();
+        let thick = |w: Wire, r: f64, e: f64| Wire {
+            surface_radius: r,
+            polyline_error: e,
+            ..w
+        };
+        // Conductor radius 15 mm, iced by 10 mm: 25 mm; 2 mm polyline bound.
+        let a = thick(
+            straight("A", "L1", [0.0, 0.0, 10.0], [100.0, 0.0, 10.0]),
+            0.025,
+            0.002,
+        );
+        assert!((a.allowance() - 0.027).abs() < 1e-12);
+        let g = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0\nradial = 9.0");
+        let res = &ground_check(&g, std::slice::from_ref(&a), &terrain)[0];
+        assert!((res.vertical.unwrap().distance - (10.0 - 0.027)).abs() < 1e-9);
+        let radial = res.radial.unwrap().distance;
+        assert!((radial - (sampled_floor(10.0, 0.5) - 0.027)).abs() < 1e-9);
+        // A point 3 m to the side: 3 − 0.027.
+        let pr = rule(
+            "[[rule]]\nname = \"p\"\ntarget = \"points\"\nclasses = [5]\nradial = 2.99\nvertical = 2.99",
+        );
+        let set = WireSet::new(vec![a.clone()], 10.0);
+        let mut pc = PointCheck::new(&pr, &[5], &set);
+        pc.visit(&set, 50.0, 3.0, 10.0, 5);
+        pc.visit(&set, 50.0, 0.0, 7.0, 5);
+        let r = &pc.results[0];
+        assert!((r.radial.unwrap().distance - 2.973).abs() < 1e-9);
+        assert!((r.vertical.unwrap().distance - 2.973).abs() < 1e-9);
+        assert!(r.violates());
+        // Another wire 4 m away, radius 10 mm: 4 − 0.027 − 0.010.
+        let b = thick(
+            straight("B", "L2", [0.0, 4.0, 10.0], [100.0, 4.0, 10.0]),
+            0.010,
+            0.0,
+        );
+        let pp = rule("[[rule]]\nname = \"pp\"\ntarget = \"other_lines\"\nradial = 4.0");
+        let other = WireSet::new(vec![b], 10.0);
+        let pairs = wire_pairs(&pp, &[a], &other, PairMode::OtherLines);
+        let d = pairs[0].result.radial.unwrap().distance;
+        assert!((d - (4.0 - 0.037)).abs() < 1e-9, "{d}");
+        assert!(pairs[0].result.violates());
     }
 
     #[test]
@@ -1126,6 +1273,8 @@ mod tests {
             let t = ((0.0 - 4.0) * dy + 15.0 * dz) / (dy * dy + dz * dz);
             (4.0 + t * dy).hypot(t * dz - 15.0)
         };
+        // Less the sampling's bound (pieces of 1.6 m sampled 0.4 m apart).
+        let expected = sampled_floor(expected, 0.4);
         assert!((radial - expected).abs() < 1e-6, "{radial} vs {expected}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
     }
@@ -1156,7 +1305,7 @@ mod tests {
         let g = rule("[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 9.0\nradial = 9.0");
         let res = &ground_check(&g, std::slice::from_ref(&bundle), &terrain)[0];
         assert!((res.vertical.unwrap().distance - 9.8).abs() < 1e-9);
-        assert!((res.radial.unwrap().distance - 9.8).abs() < 1e-9);
+        assert!((res.radial.unwrap().distance - sampled_floor(9.8, 0.4)).abs() < 1e-9);
         // A point 3 m to the right (across, y < 0 looking along +x) at the
         // centre line's height: 2.8 m from the nearest subconductors.
         let pr = rule("[[rule]]\nname = \"p\"\ntarget = \"points\"\nclasses = [5]\nradial = 2.9");

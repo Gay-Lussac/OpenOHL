@@ -326,6 +326,13 @@ pub struct JumperShape {
     /// Its largest tension over its cable's rated tensile strength (above
     /// 1: more than the cable takes).
     pub strength_use: f64,
+    /// Radius of a subconductor's surface in the weather case (iced), m;
+    /// clearances are measured to it.
+    pub surface_radius: f64,
+    /// The most the jumper lies off the polyline `points`, m
+    /// ([`crate::solve::polyline_error`] for a catenary; 0 for a rigid or
+    /// stiff jumper, whose model is the straight pieces themselves).
+    pub polyline_error: f64,
 }
 
 /// The share of its length from `from` a jumper point is at: a fraction;
@@ -1312,6 +1319,8 @@ pub fn solve_jumper_in(
             supports: Vec::new(),
             taut: false,
             strength_use: 0.0,
+            surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
+            polyline_error: 0.0,
         });
     }
     if d.xy().norm() < 0.1 {
@@ -1438,6 +1447,8 @@ pub fn solve_jumper_in(
             point_positions: point_positions(jumper, &shape.points, l0),
             taut,
             strength_use: shape.max_tension / rts,
+            surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
+            polyline_error: 0.0,
         });
     }
     // The pull at an end: its tension there along the jumper.
@@ -1449,7 +1460,7 @@ pub fn solve_jumper_in(
             Vector3::zeros()
         }
     };
-    let (points, max_tension, supports, end_forces) = match &support {
+    let (points, max_tension, supports, end_forces, off) = match &support {
         None => {
             let state = props
                 .solve(d, None, &default_element_budget())
@@ -1464,11 +1475,13 @@ pub fn solve_jumper_in(
                 pull(points[0], points[1], state.tension_i),
                 pull(points[n - 1], points[n - 2], state.tension_j),
             ];
+            let off = crate::solve::polyline_error(&points, state.horizontal / props.load.norm());
             (
                 points,
                 state.tension_i.max(state.tension_j),
                 Vec::new(),
                 ends,
+                off,
             )
         }
         Some(s) => {
@@ -1507,6 +1520,7 @@ pub fn solve_jumper_in(
             let mut points: Vec<Vector3<f64>> = Vec::new();
             let mut max_tension: f64 = 0.0;
             let mut at_clamp = 0;
+            let mut off: f64 = 0.0;
             for (e, element) in model.cables.iter().enumerate() {
                 if e == 1 {
                     at_clamp = points.len() - 1;
@@ -1515,14 +1529,12 @@ pub fn solve_jumper_in(
                 max_tension = max_tension.max(state.tension_i).max(state.tension_j);
                 let d = pos[element.j] - pos[element.i];
                 let skip = usize::from(!points.is_empty());
-                points.extend(
-                    element
-                        .properties
-                        .shape(d, state, 64)
-                        .into_iter()
-                        .skip(skip)
-                        .map(|q| pos[element.i] + q),
-                );
+                let samples = element.properties.shape(d, state, 64);
+                off = off.max(crate::solve::polyline_error(
+                    &samples,
+                    state.horizontal / element.properties.load.norm(),
+                ));
+                points.extend(samples.into_iter().skip(skip).map(|q| pos[element.i] + q));
             }
             // The jumper's direction through the clamp: between its
             // neighbouring points.
@@ -1550,6 +1562,7 @@ pub fn solve_jumper_in(
                     }],
                 }],
                 ends,
+                off,
             )
         }
     };
@@ -1569,6 +1582,8 @@ pub fn solve_jumper_in(
         supports,
         taut,
         strength_use: max_tension / rts,
+        surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
+        polyline_error: off,
     })
 }
 

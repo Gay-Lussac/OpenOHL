@@ -22,7 +22,10 @@ case checked on its own, both conductors always from the same case):
    (3D). The measurement is made in the vertical plane through P and Q
    (not square to the span: with large line angles a square section
    would compare points far apart along the other conductor).
-3. **Distance** d = |PQ|.
+3. **Distance** d = |PQ| less both conductors' radii (iced in a case
+   with ice) and their polylines' bounds: the distance between the
+   conductors' **surfaces** ([Clearance](../user-guide/terrain.md#clearance));
+   P and Q are on the axes.
 4. **Local sag** of each conductor at its point: the vertical distance
    from its chord (the straight line between its clamps) down to the
    conductor — 0 at the clamps.
@@ -45,10 +48,11 @@ other conductor.
 
 How exact the measuring is (labels as in the [theory manual](../theory/conventions.md#conservative-assumptions-and-simplifications)):
 
-- **Simplification:** d is measured between the conductors' axes, not
-  their surfaces: it is high by the two conductors' radii (unsafe, unless
-  the plugin's required distance is defined between axes). Exact: d less
-  the two radii.
+- **Conservative:** d is between the conductors' surfaces, less both
+  polylines' bounds (a few millimetres). A plugin whose code defines the
+  required distance between the axes is on the safe side by the two radii
+  (until 2026-10 d was between the axes). Exact: d between the surfaces of
+  the catenaries themselves.
 - **Simplification:** stations every Δs: the closest approach between two
   stations is not measured, but the second conductor's closest point is
   searched continuously at each station, so the error is that of the first

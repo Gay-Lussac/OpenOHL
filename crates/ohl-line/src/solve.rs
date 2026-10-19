@@ -85,6 +85,39 @@ pub struct SpanShape {
     pub low_point: Point,
     /// Largest vertical distance below the clamp-to-clamp chord, m.
     pub sag: f64,
+    /// Radius of a subconductor's surface in the weather case, m: half the
+    /// cable's iced diameter ([`WeatherCase::iced_diameter`]). Clearances
+    /// are measured to this surface.
+    pub surface_radius: f64,
+    /// The most the wire lies off the polyline `points`, m
+    /// ([`polyline_error`]).
+    pub polyline_error: f64,
+}
+
+/// The most a catenary through `points` lies off their polyline, m: the
+/// largest sagitta \\( R - \sqrt{R^2 - L^2/4} \\) of a piece of chord
+/// length \\( L \\) on a circle of radius `radius`, the catenary's smallest
+/// radius of curvature \\( R = H/w \\) (its curvature
+/// \\( 1/(C \cosh^2(x/C)) \\) is at most \\( 1/C = w/H \\), at its low
+/// point; an elastic catenary curves less). A curve of curvature at most
+/// \\( 1/R \\) between two points stays within that sagitta of their chord.
+pub fn polyline_error(points: &[Vector3<f64>], radius: f64) -> f64 {
+    if !(radius > 0.0 && radius.is_finite()) {
+        return 0.0;
+    }
+    points
+        .windows(2)
+        .map(|w| {
+            let half = (w[1] - w[0]).norm() / 2.0;
+            if half >= radius {
+                // A piece longer than the circle's diameter: no bound
+                // tighter than half the piece.
+                half
+            } else {
+                radius - (radius * radius - half * half).sqrt()
+            }
+        })
+        .fold(0.0, f64::max)
 }
 
 /// Solved geometry of a section.
@@ -1894,12 +1927,14 @@ fn solve_rs(
             .min_by(|p, q| p.z.total_cmp(&q.z))
             .expect("points");
         out.push(SpanShape {
+            polyline_error: polyline_error(&points, h / q),
             points: points.iter().map(|q| p(*q)).collect(),
             horizontal_tension: h,
             max_tension: sol.tension_left().si().max(sol.tension_right().si()),
             mid_point: p(points[n / 2]),
             low_point: p(low),
             sag,
+            surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
         });
     }
     let n = clamps.len();
@@ -2123,12 +2158,18 @@ fn solve_fe(
         let horizontal = chord.xy().norm();
         let mut points: Vec<Vector3<f64>> = Vec::new();
         let mut max_tension: f64 = 0.0;
+        let mut off: f64 = 0.0;
         for &e in elements {
             let element = &built.model.cables[e];
             let state = &solution.cables[e];
             max_tension = max_tension.max(state.tension_i).max(state.tension_j);
             let d = pos[element.j] - pos[element.i];
             let samples = element.properties.shape(d, state, 64);
+            // Each element a catenary of its own H and load.
+            off = off.max(polyline_error(
+                &samples,
+                state.horizontal / element.properties.load.norm(),
+            ));
             let skip = usize::from(!points.is_empty());
             points.extend(samples.into_iter().skip(skip).map(|q| pos[element.i] + q));
         }
@@ -2154,6 +2195,8 @@ fn solve_fe(
             .expect("points");
         let sag = crate::jumper::sag_below_chord(&points, a, b);
         spans.push(SpanShape {
+            surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
+            polyline_error: off,
             points: points.iter().map(|q| p(*q)).collect(),
             horizontal_tension: solution.cables[elements[0]].horizontal,
             max_tension,

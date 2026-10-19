@@ -1,0 +1,32 @@
+# Clearances to the conductor's surface (ohl_clearance::checks): a level
+# span, catenary constant C = H/w = 1500 m, 300 m long, its clamps 20 m
+# above flat ground, sampled as 64 pieces even in x (a vertex at the low
+# point); a 28.14 mm conductor with 10 mm of radial glaze ice; a point 5 m
+# across the low point at its height.
+#
+# Hand calculation (benchmarks/clearance/reference_clearance.py):
+#   sag = C (cosh(L / 2C) - 1) = 7.506252 m, low point 12.493748 m up;
+#   surface radius r = d/2 + t = 14.07 + 10 = 24.07 mm;
+#   polyline bound e = max over the pieces of R - sqrt(R^2 - l^2/4),
+#     R = C, l the chord of a piece (longest at the ends): 1.848856 mm
+#     (the catenary's true largest distance from the polyline, sampled
+#     densely: 1.840 mm — within the bound);
+#   ground, vertical: 12.493748 - r - e = 12.467829 m;
+#   ground, radial: the wire sampled every s = l/10 = 0.468751 m (l the
+#     chord of a piece at the low point): sqrt(12.493748^2 - (s/2)^2) - r
+#     - e = 12.465630 m;
+#   point 5 m across: 5 - r - e = 4.974081 m.
+# Measured to the axis without the bound (before 2026-10) they were
+# 12.493748, 12.493748 and 5 m.
+
+[[case]]
+id = "clearance-surface-001"
+title = "Level span with 10 mm ice: clearances to the iced surface, less the polyline's bound"
+calculation = "clearance.surface"
+reference = "Hand calculation (this file; benchmarks/clearance/reference_clearance.py)"
+inputs = { span = "300 m", catenary = "1500 m", height = "20 m", diameter = "28.14 mm", ice_thickness = "10 mm", point_offset = "5 m" }
+expected.surface_radius_m = { value = 0.02407, rel_tol = 1e-12 }
+expected.polyline_error_m = { value = 0.0018488560, rel_tol = 1e-6 }
+expected.ground_vertical_m = { value = 12.46782906, abs_tol = 1e-6 }
+expected.ground_radial_m = { value = 12.46563050, abs_tol = 1e-6 }
+expected.point_radial_m = { value = 4.974081144, abs_tol = 1e-6 }

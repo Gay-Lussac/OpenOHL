@@ -23,8 +23,9 @@ use crate::geometry::P3;
 pub struct RowResult {
     /// Index of the wire.
     pub wire: usize,
-    /// Largest offset to the right of the centreline (outer subconductor),
-    /// m (negative: the wire stays left of it), and where.
+    /// Largest offset to the right of the centreline (the outer
+    /// subconductor's surface), m (negative: the wire stays left of it),
+    /// and where (the centre line's point).
     pub right: (f64, P3),
     /// Largest offset to the left, m, and where.
     pub left: (f64, P3),
@@ -63,7 +64,9 @@ fn structure_of(key: &str) -> &str {
 /// `right` m either side of its route's centreline: the routes holding
 /// both structures the wire hangs between (all routes for a wire on none,
 /// each point then measured to the nearest). Bundles reach out by their
-/// radius. Wires without points have no result.
+/// radius, and every wire by its surface ([`Wire::outer_radius`]: the
+/// outer envelope of the subconductors' surfaces). Wires without points
+/// have no result.
 ///
 /// Cost: wire points × centreline segments.
 pub fn row_check(
@@ -74,7 +77,7 @@ pub fn row_check(
 ) -> Vec<RowResult> {
     let mut out = Vec::new();
     for (k, w) in wires.iter().enumerate() {
-        let r = w.bundle_radius();
+        let r = w.outer_radius();
         let on = |c: &&Centreline| {
             w.ends.len() == 2
                 && w.ends
@@ -135,6 +138,8 @@ mod tests {
                 })
                 .collect(),
             ends: vec![],
+            surface_radius: 0.0,
+            polyline_error: 0.0,
         }
     }
 

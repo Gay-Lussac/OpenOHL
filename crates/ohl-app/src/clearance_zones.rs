@@ -1088,6 +1088,7 @@ impl ZoneWindow {
             });
         }
         notes.extend(report.zone.notes.iter().cloned());
+        notes.push(crate::app::SURFACE_NOTE.to_owned());
         notes.extend(report.failed.iter().map(|f| format!("not solved: {f}")));
         crate::menu::message(
             ui,
@@ -1111,7 +1112,7 @@ impl ZoneWindow {
                             "span",
                             "rule",
                             "required m",
-                            "found m",
+                            "to surface m",
                             "wind",
                             "target",
                             "too close",

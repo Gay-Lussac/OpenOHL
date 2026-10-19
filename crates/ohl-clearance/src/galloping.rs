@@ -45,9 +45,14 @@
 //! each station, `right` being to the right looking from the span's first
 //! to its last structure of the first wire of the pair.
 //!
-//! Accuracy: ellipses are compared as inscribed 72-sided polygons — the
-//! distance is high by at most A·(1 − cos 2.5°)/2 ≈ 0.05 % of A; wires of
-//! one span are taken to be parallel (their cross-section planes the same).
+//! Accuracy: ellipses are compared as circumscribed 72-sided polygons
+//! (each holds its ellipse), so the distance is never higher than between
+//! the true ellipses — low by at most about A·(1/cos 2.5° − 1) ≈ 0.1 % of
+//! A; wires of one span are taken to be parallel (their cross-section
+//! planes the same). The ellipses are of the wires' centre lines: the
+//! distance is to the wires' surfaces, less each wire's outer radius
+//! ([`Wire::outer_radius`]: bundle radius, conductor radius — iced in a
+//! case with ice — and the polyline's error).
 
 use std::path::Path;
 
@@ -177,9 +182,19 @@ impl Ellipse {
         }
     }
 
+    /// A polygon holding the ellipse: the regular polygon circumscribed
+    /// about the unit circle (vertices at radius 1/cos(π/n)) mapped onto
+    /// the ellipse, which is the circle stretched — so its edges touch the
+    /// ellipse from outside.
     fn polygon(&self) -> Vec<[f64; 2]> {
+        let out = 1.0 / (std::f64::consts::PI / POLYGON as f64).cos();
+        let grown = Self {
+            semi_major: self.semi_major * out,
+            semi_minor: self.semi_minor * out,
+            ..*self
+        };
         (0..POLYGON)
-            .map(|k| self.point(std::f64::consts::TAU * k as f64 / POLYGON as f64))
+            .map(|k| grown.point(std::f64::consts::TAU * k as f64 / POLYGON as f64))
             .collect()
     }
 }
@@ -432,9 +447,10 @@ pub struct GallopingPair {
     pub b: usize,
     /// Method (index in the parameters).
     pub method: usize,
-    /// Smallest distance between the ellipses, m (0: they overlap).
+    /// Smallest distance between the swept surfaces, m: between the
+    /// ellipses less both wires' outer radii (0: they overlap).
     pub distance: f64,
-    /// The ellipses overlap somewhere.
+    /// The swept surfaces overlap somewhere.
     pub overlap: bool,
     /// Where: fraction of the span along the first wire.
     pub at: f64,
@@ -523,8 +539,8 @@ fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
     d1 * d2 < 0.0 && d3 * d4 < 0.0
 }
 
-/// The distance between two ellipses (as inscribed polygons), m; 0 when
-/// they overlap.
+/// The distance between two ellipses (as circumscribed polygons: never
+/// more than the true distance), m; 0 when they overlap.
 pub fn ellipse_distance(a: &Ellipse, b: &Ellipse) -> f64 {
     let (pa, pb) = (a.polygon(), b.polygon());
     let degenerate = |e: &Ellipse| e.semi_major <= 0.0 || e.semi_minor <= 0.0;
@@ -609,6 +625,8 @@ pub fn check(
                     .ellipse(w.sag, span, w.diameter, 0.5);
                     [2.0 * e.semi_major, 2.0 * e.semi_minor]
                 };
+                // To the wires' surfaces (bundles: their outer envelope).
+                let off = wa.wire.outer_radius() + wb.wire.outer_radius();
                 let mut best: Option<GallopingPair> = None;
                 for k in 1..params.stations {
                     let t = k as f64 / params.stations as f64;
@@ -620,14 +638,17 @@ pub fn check(
                         rb[2] - ra[2],
                     ];
                     let eb = method.ellipse(wb.sag, span_b, wb.diameter, t).moved(offset);
-                    // Quick bound: centres apart by more than both ellipses.
+                    // Quick bound: centres apart by more than both polygons
+                    // (their vertices out to 1/cos(π/n) of the semi-major
+                    // axis) and the surfaces.
                     let apart = (eb.centre[0] - ea.centre[0]).hypot(eb.centre[1] - ea.centre[1])
-                        - ea.semi_major
-                        - eb.semi_major;
+                        - (ea.semi_major + eb.semi_major)
+                            / (std::f64::consts::PI / POLYGON as f64).cos()
+                        - off;
                     if best.as_ref().is_some_and(|b| apart >= b.distance) {
                         continue;
                     }
-                    let d = ellipse_distance(&ea, &eb);
+                    let d = (ellipse_distance(&ea, &eb) - off).max(0.0);
                     if best.as_ref().is_none_or(|b| d < b.distance) {
                         best = Some(GallopingPair {
                             a: i,
@@ -658,6 +679,11 @@ mod tests {
         GallopingParams::parse(text).unwrap()
     }
 
+    /// How far a circumscribed polygon's vertices reach out: 1/cos(π/72).
+    fn out() -> f64 {
+        1.0 / (std::f64::consts::PI / 72.0).cos()
+    }
+
     const CIRCLE: &str = "[[method]]\nname = \"c\"\nloops = 1\nmajor = { constant = \"2 m\" }\nminor = { major = 1.0 }\nalong = \"constant\"\n";
 
     fn level(section: &str, y: f64, z: f64, sag: f64) -> GallopingWire {
@@ -679,6 +705,8 @@ mod tests {
                     })
                     .collect(),
                 ends: vec![format!("T1:1:{section}"), format!("T2:1:{section}")],
+                surface_radius: 0.0,
+                polyline_error: 0.0,
             },
             sag,
             diameter: 0.03,
@@ -729,8 +757,12 @@ mod tests {
                 .ellipse(5.0, 400.0, 0.03, 0.5)
                 .moved([5.0, 0.0]),
         );
-        // Radius 1 m each, 5 m apart: 3 m.
-        assert!((ellipse_distance(&a, &b) - 3.0).abs() < 1e-9);
+        // Radius 1 m each, 5 m apart: 3 m between the circles; the
+        // circumscribed polygons' vertices face each other at 1/cos 2.5°
+        // of the radius: 5 − 2/cos 2.5° = 2.998 094 m, never above 3 m.
+        let d = ellipse_distance(&a, &b);
+        assert!((d - (5.0 - 2.0 * out())).abs() < 1e-9, "{d}");
+        assert!(d <= 3.0);
         assert_eq!(ellipse_distance(&a, &a.moved([1.5, 0.0])), 0.0);
         // Two thin ellipses crossing: no vertex inside the other.
         let thin = |tilt: f64| Ellipse {
@@ -761,8 +793,22 @@ mod tests {
         assert_eq!(pairs.len(), 1);
         let p = &pairs[0];
         assert_eq!((p.a, p.b), (0, 1));
-        assert!((p.distance - 3.0).abs() < 1e-9, "{p:?}");
+        assert!((p.distance - (5.0 - 2.0 * out())).abs() < 1e-9, "{p:?}");
         assert!(p.violates());
+        // To the surfaces: each wire's outer radius off (here a 15 mm
+        // conductor radius and 2 mm of polyline error each).
+        let mut thick = wires.clone();
+        for w in &mut thick[..2] {
+            w.wire.surface_radius = 0.015;
+            w.wire.polyline_error = 0.002;
+        }
+        let q = &check(
+            &params(&format!("required = \"3.5 m\"\n{CIRCLE}")),
+            &thick,
+            &Budget::new(),
+        )
+        .unwrap()[0];
+        assert!((p.distance - q.distance - 0.034).abs() < 1e-9, "{q:?}");
         // Vertical arrangement, 8 m apart, single loop A = D: the upper
         // ellipse's lower end on its wire, the lower one 8 m below with
         // its top 10 m above its wire at mid-span — 2 m overlap.
@@ -772,12 +818,13 @@ mod tests {
         let wires = vec![level("U", 0.0, 38.0, 10.0), level("L", 0.0, 30.0, 10.0)];
         let p = &check(&vertical, &wires, &Budget::new()).unwrap()[0];
         assert!(p.overlap && p.distance == 0.0);
-        // 12 m apart: at mid-span 2 m; nearer the towers the ellipses
-        // shrink with sin(πt) and the gap grows.
+        // 12 m apart: at mid-span 2 m (less the polygons' vertices out
+        // by 1/cos 2.5° of each 5 m semi-major axis); nearer the towers
+        // the ellipses shrink with sin(πt) and the gap grows.
         let wires = vec![level("U", 0.0, 42.0, 10.0), level("L", 0.0, 30.0, 10.0)];
         let p = &check(&vertical, &wires, &Budget::new()).unwrap()[0];
         assert!(
-            (p.distance - 2.0).abs() < 1e-9 && (p.at - 0.5).abs() < 1e-12,
+            (p.distance - (2.0 - 10.0 * (out() - 1.0))).abs() < 1e-9 && (p.at - 0.5).abs() < 1e-12,
             "{p:?}"
         );
         // Exit clause.
