@@ -29,6 +29,9 @@ pub enum Look {
     Whole3d,
     /// The 3D view at this distance from the middle structure's top, m.
     Near3d(f64),
+    /// The 3D view this many metres behind the middle structure, looking
+    /// along the x axis past it, low (a line along x seen down its length).
+    Along3d(f64),
     /// The plan view fitted to the line.
     WholePlan,
     /// The plan view this many metres wide around the middle structure.
@@ -40,6 +43,7 @@ impl Look {
         match self {
             Look::Whole3d => "3D whole line".into(),
             Look::Near3d(d) => format!("3D {d:.0} m from a structure"),
+            Look::Along3d(d) => format!("3D {d:.0} m behind, along the line"),
             Look::WholePlan => "plan whole line".into(),
             Look::Plan(w) => format!("plan {w:.0} m wide"),
         }
@@ -157,6 +161,17 @@ fn set_look(app: &mut App, look: Look) -> Tab {
             }));
             Tab::View3d
         }
+        Look::Along3d(d) => {
+            r.view3d.camera = Some(ohl_render::Camera {
+                target: [mid[0], mid[1], mid[2] + 20.0],
+                distance: d,
+                yaw: std::f64::consts::PI,
+                pitch: 5f64.to_radians(),
+                fov_y: 45f64.to_radians(),
+                exaggeration: 1.0,
+            });
+            Tab::View3d
+        }
         Look::Near3d(d) => {
             r.view3d.camera = Some(ohl_render::Camera {
                 target: [mid[0], mid[1], mid[2] + 30.0],
@@ -242,11 +257,23 @@ fn median(v: &mut [f64]) -> f64 {
 
 /// Measures `looks` on `model`, `frames` frames each.
 pub fn measure(model: Model, looks: &[Look], frames: usize) -> Vec<Measured> {
+    measure_with(model, looks, frames, |_| {})
+}
+
+/// [`measure`] with the app set up by `setup` first (its level-of-detail
+/// settings, …).
+pub fn measure_with(
+    model: Model,
+    looks: &[Look],
+    frames: usize,
+    setup: impl FnOnce(&mut App),
+) -> Vec<Measured> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1600.0, 1000.0))
         .with_max_steps(10_000)
         .wgpu()
         .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    setup(harness.state_mut());
     harness.step();
     let mut out = Vec::new();
     for &look in looks {
@@ -375,7 +402,7 @@ fn frame_benchmark() {
 }
 
 /// A GPU, else (unless one is required) nothing to test.
-fn gpu() -> bool {
+pub(crate) fn gpu() -> bool {
     if ohl_render::headless_device().is_ok() {
         return true;
     }

@@ -4,7 +4,8 @@
 
 //! Level-of-detail settings of the 3D view: per chunked layer, the render
 //! distance, the distances from which levels 1 and 2 are drawn, and what
-//! each level keeps (the Level of detail table), and for a point cloud
+//! each level keeps (the Level of detail table), the distance up to which
+//! member and pole solids are drawn (its own setting), and for a point cloud
 //! streamed by node ([`crate::octree`]) the point budget and the error
 //! allowed on the screen — remembered per user. Display only:
 //! calculations always use the full model.
@@ -87,7 +88,7 @@ impl DetailKind {
                 "every point, bundles as subconductors, clamps and bodies to their shape".into()
             }
             (DetailKind::Structure, 0) => {
-                "members (with profiles: solids), arms and strings".into()
+                "members, arms and strings (solids: up to the solids distance below)".into()
             }
             (DetailKind::Tolerance, 0) => "every vertex and point".into(),
             (DetailKind::Tolerance, _) => format!(
@@ -205,10 +206,23 @@ impl PointBudget {
     }
 }
 
-/// The table: a row per chunked layer, and the point budget.
+/// Member and pole solids are drawn up to this distance by default, m
+/// (docs/development/performance.md, "Member and pole solids").
+pub const DEFAULT_SOLIDS_DISTANCE: f64 = 400.0;
+
+/// The solids distance allowed, m (0: no solids).
+pub const SOLIDS_RANGE: (f64, f64) = (0.0, 50_000.0);
+
+/// The table: a row per chunked layer, the solids distance and the point
+/// budget.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LodSettings {
     rows: BTreeMap<&'static str, LodRow>,
+    /// Members with a library profile and poles at levels 2 and 3 are
+    /// drawn as solids in the chunks this close to the eye, m (their lines
+    /// as their layer's levels say, at every distance); its own setting,
+    /// apart from the structures' level 0.
+    pub solids: f64,
     /// The point budget of a cloud streamed by node.
     pub points: PointBudget,
 }
@@ -234,6 +248,7 @@ impl Default for LodSettings {
                 .iter()
                 .map(|l| (key(*l), LodRow::default_for(*l)))
                 .collect(),
+            solids: DEFAULT_SOLIDS_DISTANCE,
             points: PointBudget::default(),
         }
     }
@@ -255,11 +270,35 @@ impl LodSettings {
         Ok(())
     }
 
+    /// The rule of the member and pole solids of a layer: drawn (at its
+    /// level 0) to the solids distance, never beyond the layer's render
+    /// distance.
+    pub fn solids_rule(&self, layer: Layer) -> LodRule {
+        LodRule {
+            render_distance: self.solids.min(self.row(layer).render_distance),
+            from: [f64::INFINITY; 2],
+        }
+    }
+
+    /// Sets the solids distance when it is in [`SOLIDS_RANGE`]; the error
+    /// otherwise.
+    pub fn set_solids(&mut self, distance: f64) -> Result<(), String> {
+        if !(distance.is_finite() && (SOLIDS_RANGE.0..=SOLIDS_RANGE.1).contains(&distance)) {
+            return Err(format!(
+                "solids distance: {} to {} m",
+                SOLIDS_RANGE.0, SOLIDS_RANGE.1
+            ));
+        }
+        self.solids = distance;
+        Ok(())
+    }
+
     /// Saved as JSON (per user, with the window layout).
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
         if let Ok(text) = serde_json::to_string(&self.rows) {
             storage.set_string("lod", text);
         }
+        storage.set_string("lod-solids", format!("{}", self.solids));
         if let Ok(text) = serde_json::to_string(&self.points) {
             storage.set_string("lod-points", text);
         }
@@ -276,6 +315,13 @@ impl LodSettings {
             if let Some(row) = saved.get(key(layer)) {
                 let _ = s.set(layer, *row);
             }
+        }
+        // Settings saved before the solids distance had one: the default.
+        if let Some(d) = storage
+            .get_string("lod-solids")
+            .and_then(|t| t.trim().parse::<f64>().ok())
+        {
+            let _ = s.set_solids(d);
         }
         if let Some(p) = storage
             .get_string("lod-points")
@@ -387,6 +433,25 @@ impl LodSettings {
                     }
                 }
             });
+        ui.horizontal(|ui| {
+            ui.label("Member and pole solids up to");
+            let mut d = self.solids;
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut d)
+                        .range(SOLIDS_RANGE.0..=SOLIDS_RANGE.1)
+                        .speed((self.solids * 0.01).max(1.0))
+                        .suffix(" m"),
+                )
+                .on_hover_text(
+                    "Members with a library profile and poles at levels 2 and 3 are drawn as \
+                     solids in the chunks this close to the eye (0: never); their lines as the \
+                     Structures row says. Apart from the Structures row's level 0.",
+                );
+            if r.changed() && d != self.solids && self.set_solids(d).is_ok() {
+                changed = true;
+            }
+        });
         ui.separator();
         changed |= self.points_ui(ui, streamed);
         if ui.button("Defaults").clicked() {
@@ -505,5 +570,57 @@ mod tests {
             ..s.points
         };
         assert!(tiny.check().is_err());
+    }
+
+    /// A storage in memory.
+    #[derive(Default)]
+    struct Memory(BTreeMap<String, String>);
+
+    impl eframe::Storage for Memory {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_owned(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+
+    /// The solids distance: its default, saved and read again, its own
+    /// rule (capped by the layer's render distance), settings saved before
+    /// it existed read with the default, values out of range refused.
+    #[test]
+    fn the_solids_distance_is_its_own_setting() {
+        let mut s = LodSettings::default();
+        assert_eq!(s.solids, DEFAULT_SOLIDS_DISTANCE);
+        // Apart from the structures' level 0 (2 km).
+        assert!(s.solids < s.row(Layer::Structures).from[0]);
+        let rule = s.solids_rule(Layer::Structures);
+        assert_eq!(rule.level(DEFAULT_SOLIDS_DISTANCE - 1.0), Some(0));
+        assert_eq!(rule.level(DEFAULT_SOLIDS_DISTANCE + 1.0), None);
+        s.set_solids(150.0).unwrap();
+        assert!(s.set_solids(-1.0).is_err());
+        assert!(s.set_solids(f64::NAN).is_err());
+        assert_eq!(s.solids, 150.0);
+        let mut row = s.row(Layer::Structures);
+        row.render_distance = 100.0;
+        row.from = [50.0, 80.0];
+        s.set(Layer::Structures, row).unwrap();
+        assert_eq!(s.solids_rule(Layer::Structures).render_distance, 100.0);
+        let mut m = Memory::default();
+        s.save(&mut m);
+        assert_eq!(LodSettings::load(&m), s);
+        // Saved before: the table only.
+        m.0.remove("lod-solids");
+        assert_eq!(LodSettings::load(&m).solids, DEFAULT_SOLIDS_DISTANCE);
+        assert_eq!(LodSettings::load(&m).row(Layer::Structures), row);
+        // Not a number, or out of range: the default.
+        m.0.insert("lod-solids".into(), "far".into());
+        assert_eq!(LodSettings::load(&m).solids, DEFAULT_SOLIDS_DISTANCE);
+        m.0.insert("lod-solids".into(), "1e9".into());
+        assert_eq!(LodSettings::load(&m).solids, DEFAULT_SOLIDS_DISTANCE);
     }
 }

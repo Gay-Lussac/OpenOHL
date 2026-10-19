@@ -90,7 +90,18 @@ pub struct View3d {
 struct Chunked {
     index: crate::chunks::ChunkIndex,
     set: ChunkSet<Tile>,
+    /// Its member and pole solids, by chunk, drawn within the solids
+    /// distance ([`crate::lod::LodSettings::solids`]): level 0 only.
+    near: ChunkSet<Tile>,
     row: crate::lod::LodRow,
+}
+
+impl Chunked {
+    /// What it draws in this frame: its chunks at their levels, and the
+    /// solids within the solids distance.
+    fn drawn(&self) -> impl Iterator<Item = &GpuScene> {
+        self.set.drawn().chain(self.near.drawn())
+    }
 }
 
 /// A point cloud streamed by node: its nodes on the GPU, those drawn.
@@ -123,7 +134,7 @@ impl View3d {
         }
         self.chunks
             .get(&layer)
-            .map_or(0, |c| c.set.drawn().map(|g| g.counts().1).sum())
+            .map_or(0, |c| c.drawn().map(|g| g.counts().1).sum())
     }
 
     /// Segments, points and triangles drawn in the last frame, every
@@ -145,7 +156,7 @@ impl View3d {
                         .filter_map(|&i| p.cache.peek(i))
                         .for_each(&mut add);
                 }
-                (Some(c), _) => c.set.drawn().for_each(&mut add),
+                (Some(c), _) => c.drawn().for_each(&mut add),
                 (None, _) => self.gpu.get(l).into_iter().for_each(&mut add),
             }
         }
@@ -157,7 +168,7 @@ impl View3d {
     pub fn pending(&self) -> usize {
         self.chunks
             .values()
-            .map(|c| c.set.stats.pending)
+            .map(|c| c.set.stats.pending + c.near.stats.pending)
             .sum::<usize>()
             + self.points.as_ref().map_or(0, |p| p.octree.stats.pending)
     }
@@ -807,11 +818,14 @@ impl View3d {
                 let index = crate::chunks::ChunkIndex::new(model, layer, case);
                 let mut set = ChunkSet::default();
                 set.reset(index.keys());
+                let mut near = ChunkSet::default();
+                near.reset(index.near_keys());
                 self.chunks.insert(
                     layer,
                     Chunked {
                         index,
                         set,
+                        near,
                         row: lod.row(layer),
                     },
                 );
@@ -837,6 +851,7 @@ impl View3d {
             };
             if !visible.contains(&layer) {
                 c.set.stats = Default::default();
+                c.near.stats = Default::default();
                 continue;
             }
             let row = lod.row(layer);
@@ -846,24 +861,35 @@ impl View3d {
             }
             c.row = row;
             for w in c.set.plan(&frustum, &row.rule()) {
-                wanted.push((layer, w));
+                wanted.push((layer, false, w));
+            }
+            // The solids by their own distance.
+            if !c.near.is_empty() {
+                for w in c.near.plan(&frustum, &lod.solids_rule(layer)) {
+                    wanted.push((layer, true, w));
+                }
             }
         }
-        wanted.sort_by(|a, b| a.1.distance.total_cmp(&b.1.distance));
+        wanted.sort_by(|a, b| a.2.distance.total_cmp(&b.2.distance));
         drop(planning);
         let building = crate::perf::span("3d chunk build");
         let started = std::time::Instant::now();
         let mut built = HashSet::new();
         let mut n_built = 0;
-        for (layer, w) in &wanted {
+        for (layer, near, w) in &wanted {
             if n_built > 0 && started.elapsed() > BUILD_BUDGET {
                 break;
             }
             let Some(c) = self.chunks.get_mut(layer) else {
                 continue;
             };
-            let s = c.index.build(model, *layer, &w.key, w.level, &c.row);
-            c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
+            if *near {
+                let s = c.index.build_near(model, &w.key);
+                c.near.insert(&w.key, 0, GpuScene::new(device, &s));
+            } else {
+                let s = c.index.build(model, *layer, &w.key, w.level, &c.row);
+                c.set.insert(&w.key, w.level, GpuScene::new(device, &s));
+            }
             built.insert(*layer);
             n_built += 1;
             #[cfg(test)]
@@ -879,6 +905,7 @@ impl View3d {
             if let Some(c) = self.chunks.get_mut(layer) {
                 let rule = c.row.rule();
                 c.set.plan(&frustum, &rule);
+                c.near.plan(&frustum, &lod.solids_rule(*layer));
             }
         }
         if wanted.len() > n_built {
@@ -918,7 +945,7 @@ impl View3d {
                 (_, Some(p)) if *l == Layer::Points => {
                     layers.extend(p.drawn.iter().filter_map(|&i| p.cache.peek(i)));
                 }
-                (Some(c), _) => layers.extend(c.set.drawn()),
+                (Some(c), _) => layers.extend(c.drawn()),
                 (None, _) => layers.extend(self.gpu.get(l)),
             }
         }
