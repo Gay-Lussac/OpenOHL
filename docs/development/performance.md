@@ -12,6 +12,8 @@ The CI workflow is started by hand (GitHub Actions › CI › Run workflow); wit
 
 Example: `units/total_load_typed_10k` vs `units/total_load_raw_10k` check that typed quantities cost nothing compared with plain `f64`.
 
+`drawn/bodies_load_example` and `drawn/place_lattice_tower_100x` (`ohl-structures-fe`) time the structure bodies drawn at levels 2 and 3: made once per type and extension, then only moved to each placed structure (a tower of 178 members with their solids, placed 100 times). The app test `member_tests::many_lattice_towers_stay_fast` builds the structures layer of 400 such towers under a lenient 5 s, debug builds included.
+
 ## Frame benchmark (desktop application)
 
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):
@@ -53,7 +55,7 @@ Display only: calculations, checks and picking always use the full model; nothin
 |---|---|---|---|
 | Terrain, other surfaces | every TIN triangle (1.5 km) | 8 m grid (5 km) | 32 m grid (30 km) |
 | LiDAR | streamed by node under the point budget (5 million) and the error on the screen (1.5 px), to 3 km | | |
-| Structures | lattice members, arms, strings (2 km) | mast line, arms, strings (8 km) | mast line (50 km) |
+| Structures | members of levels 2 and 3 (else the stick drawing), members with a library profile also as solids, arms, strings (2 km) | mast line, arms, strings (8 km) | mast line (50 km) |
 | Wires, other cases, project lines | subconductors and yokes, clamps and bodies to their shape, bare points' marks, jumpers' support clamps, line codes in 1.5 m units (1.5 km) | one line per bundle, 16 points per span, dashes × 4, bodies as 4 px dots, spreads, spacers, arrows (6 km) | 5 points per span, dashes × 16 (50 km) |
 | Sections not solved | dashed red, 1.5 m units | dashes × 4 | dashes × 16 |
 | Drawings (DXF) | every vertex (1 km) | simplified to 0.5 m (4 km) | 2 m (10 km) |

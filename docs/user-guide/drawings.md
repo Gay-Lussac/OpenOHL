@@ -48,6 +48,33 @@ dash pattern, named in the title block).
 `ohl line --drawings DIR` still writes what it always did: an SVG (or SVG
 sheets with `--page`) and the profile CSV of every route.
 
+## Structures
+
+A structure whose type is at level 1 (a stick figure,
+[detail levels](structure-library.md#detail-levels)) is drawn with its
+**symbol**: a mast line from its foot to its highest attachment point in
+the profile, a small square in the plan, and its stick drawing (mast and
+arms) as before. A structure whose type is at **level 2 or 3** (members,
+or a separate `.ohlfe` model) is drawn with its **members** instead of the
+symbol, placed as the line places the type (position, orientation,
+extension, height adjustment), as lines at the sheet scale on their own
+layer `OHL_MEMBERS`:
+
+- in the **profile**, the members projected on the profile plane: the
+  structure's silhouette along the route;
+- in the **plan**, the members seen from above: the footprint and the
+  crossarms;
+- in the plan in model space (`R-plan-model.dxf`), the same in project
+  coordinates.
+
+The name, station and attachment points stay on `OHL_STRUCTURES` (the
+name above the highest member). In SVG the members carry
+`class="OHL_MEMBERS"`. The members' profiles (their sections) are not
+drawn on the sheets: at the usual scales they are thinner than the pen.
+`ohl drawing` reads the section library from `--sections` or the
+`Sections` folder next to the line (only for a type with a separate
+model, whose members it needs to read).
+
 ## Sheets
 
 With `--page`, each route (or its station range) is split **at
@@ -107,14 +134,16 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **DXF** (release 12, `AC1009`, ASCII): a format most CAD programs read; not tried
   in a given program yet (no DWG file is written). Entities are LINE,
   POLYLINE, TEXT and CIRCLE on layers `OHL_GROUND`, `OHL_WIRES`,
-  `OHL_STRUCTURES`, `OHL_CLEARANCE`, `OHL_GRID`, `OHL_TITLE`… Colours are
+  `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_CLEARANCE`, `OHL_GRID`,
+  `OHL_TITLE`… Colours are
   the nearest of DXF's indexed colours; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
   only and logos are left out. Three kinds of file:
   - the **sheets** in mm, as printed (what lies outside the panels is cut
     away);
   - `R-plan-model.dxf`: the plan in **project coordinates**, metres —
-    centreline, structures (a square and the name), wires and markers;
+    centreline, structures (a square and the name; the members at
+    levels 2 and 3), wires and markers;
   - `R-profile-model.dxf`: the profile in model space, **x = station,
     y = height × exaggeration**, metres, with its grid and labels. Line
     type scale and text heights follow the horizontal scale.

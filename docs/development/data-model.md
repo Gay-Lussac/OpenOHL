@@ -732,6 +732,27 @@ level 3; the pole check runs on a level 3 pole. The meaning of the
 levels decided for the structure application (capacities derived only at
 level 3) is in [Building structures](structure-building.md).
 
+**Drawn bodies** (display only, never stored; `ohl_structures_fe::drawn`):
+`Bodies::load(types, sections)` makes, per type at level 2 or 3 and per
+extension, a `DrawnBody` — its members as lines in the structure's axes
+as placed (`StructureType::stick_parts`: `StructureType::stick` with each
+line's member id, the lines `Line::resolve` writes into a structure's
+`members`; a type naming a separate `model` takes that model's members,
+raised by `StructureType::lift`) and, for a member whose section has a
+library profile (`ohl_structures_fe::Section::profile`), a solid: the
+profile's outline (`drawn::outline`, fillets left out, round shapes 16
+sides, tubes closed) about its centroid, swept along the member in the
+finite-element element axes (`reference`, `roll`). `DrawnBody::placed_lines`
+/ `placed_triangles` move it to a structure (`to_global` at the position
+raised by `height_adjust`, turned by `orientation_deg`). A level 1 type
+has none. The desktop app keeps one `Bodies` per model (`Model::bodies`,
+made with the libraries) for the 3D view, picking and the drawings; `ohl
+drawing` makes its own. In the drawings a structure's members are
+`ohl_drawing::Mark::members` (station, offset, z) and `members_xy`,
+filled by `RouteDrawing::set_members` and drawn on the layer
+`OHL_MEMBERS` (`ohl_drawing::model::Layer::Members`) instead of the
+symbol.
+
 **Editing a structure file** (`apps/structure/ohl-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
 of `ohl-app`'s structure screen is a function on the file's text
