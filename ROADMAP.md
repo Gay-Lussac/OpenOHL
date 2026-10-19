@@ -252,7 +252,15 @@ memory.
   structure, or the sheet runs on to the next free one with a warning.
   Profile first, sheets on top (owner, 2026-10-19): the app's profile view
   stays continuous; sheet format, scales and breaks belong to the drawing
-  exports. A sheet preview in the app is not built yet.
+  exports. *Follow-up built 2026-10-19, in active development (not
+  approved yet)*: the break clearance is an export setting (default 2 mm
+  on paper, 0 to 20 mm: `--break-clearance`, the export window); a
+  structure counts as on the line, and may end a sheet, when it stands
+  within the line width (the drawings' plan half width, `--plan-width`,
+  default ±40 m), breaks stay at structures only; a sheet preview (off by
+  default) shows the export's sheets, match lines, numbers and warnings
+  over the continuous profile and the plan, laid out by the export's own
+  code with the export window's settings.
 - **U4. OHL-Structure**: *built, in active development (not approved
   yet)*: the Results tab solves on the chosen extension, with the line's
   pole check; wind bands rise with an extension (line and app, one rule);
@@ -377,7 +385,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Bundled conductors: `bundle` subconductors on a circle with `bundle_spacing` (e.g. 4 × 400 mm) and optional rotation; insulator weight shared by the subconductors in the solve; clearances to the nearest subconductor
 - [x] Electrical cable data in the wire library (`[cable.electrical]`: AC resistance by temperature, DC resistance, geometric mean radius, emissivity, solar absorptivity; resistance units) — filled by a local importer from another program's files until an importer is decided
 - [ ] Rule editor tool (per LiDAR class)
-- [x] Plan & profile views per route (`ohl-drawing`, `ohl line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures (never at one away from the alignment nor within 2 mm on paper of another structure; with no free break the sheet runs on, warned), title block with logos, separate plan scale across the line *(DXF, PDF, PNG and XML since Phase 5, `ohl drawing`; layout templates as plugins still to come)*
+- [x] Plan & profile views per route (`ohl-drawing`, `ohl line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures (only at one within the line width, `--plan-width`, and the break clearance, `--break-clearance`, default 2 mm on paper, from every other structure; with no free break the sheet runs on, warned; a sheet preview over the app's profile and plan), title block with logos, separate plan scale across the line *(DXF, PDF, PNG and XML since Phase 5, `ohl drawing`; layout templates as plugins still to come)*
 - [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
 - [x] Jumpers connecting sections at dead-ends or taps (slack catenary between solved clamps, length or sag input, optional support string, weather loads, ground clearance; DESIGN_GOALS §12) *(clearance to the structure body still to come)*
