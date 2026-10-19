@@ -75,8 +75,10 @@ fn tower() -> DocumentMut {
                         top,
                         bracing: Bracing::X,
                         horizontal: true,
+                        ..Default::default()
                     })
                     .collect(),
+                ..Default::default()
             }),
         },
     )
