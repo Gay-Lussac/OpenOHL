@@ -22,7 +22,10 @@
 //!   marked with its source ([`CaseSource`]) and, per case, the wires at
 //!   the structure that did not solve ([`missing_wires`]).
 //! - [`analyse_cases`]: cases of a [`LoadTable`] solved on the
-//!   structure's model, the results as plain data ([`CaseResult`]).
+//!   structure's model, the results as plain data ([`CaseResult`]);
+//!   [`analyse_structure`]: the same on an extension, with the pole
+//!   check ([`StructureRun`]: what the results panel and the structure
+//!   report show).
 //! - [`SectionAreas`]: the members' areas from the section library, for
 //!   the surface loads of the recipes
 //!   ([`ohl_structure_loads::evaluate_with_areas`]); [`section_library`]
@@ -32,10 +35,15 @@
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
 mod export;
+mod run;
 
 pub use export::{
     ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportSection, ExportStructure, LoadPlace, export_structure, member_axes,
+};
+pub use run::{
+    CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
+    analyse_structure, cases_to_run, has_model,
 };
 
 use std::path::Path;
@@ -577,14 +585,17 @@ pub fn analyse_cases(
     let model = model_of(structure, text, dir, sections)?;
     Ok(cases
         .iter()
-        .map(|c| (c.name.clone(), analyse_one(&model, table, c, budget)))
+        .map(|c| (c.name.clone(), analyse_one(&model, table, c, &[], budget)))
         .collect())
 }
 
+/// One case solved; `extra`: loads added to the table's (the surface
+/// loads on an extension's piece).
 fn analyse_one(
     model: &Model,
     table: &LoadTable,
     case: &CaseToRun,
+    extra: &[NodalLoad],
     budget: &Budget,
 ) -> Result<CaseResult, String> {
     let self_weight = if model.analysis.self_weight {
@@ -592,7 +603,8 @@ fn analyse_one(
     } else {
         0.0
     };
-    let loads = fe_loads(model, table, &case.name, self_weight)?;
+    let mut loads = fe_loads(model, table, &case.name, self_weight)?;
+    loads.nodal.extend_from_slice(extra);
     let mut notes = Vec::new();
     let left_out = table
         .case(&case.name)
