@@ -72,7 +72,8 @@ All examples on this page are invented (structures `T1`, `T2`, sections
                         earth[], strings ─► builds a level-1 .ohls
    .ohlsec SectionLibrary: material[], section[] (shape, dimensions,
                         material ─► material id) ◄── member section
-                        (.ohls / .ohlfe; the library first, then [[section]])
+                        (.ohls / .ohlfe; the library first, then [[section]]),
+                        wind (drag per shape name, face drag, shielding)
 ```
 
 Arrows point from the referring field to what it names. Everything inside
@@ -819,6 +820,7 @@ Format `ohl-sections`, version 1 (constants `SECTION_FILE_FORMAT`,
 | `[[material]]` | `id`, `name`, `description`, `elasticity`, `shear_modulus?` (default E / 2.6), `density?` (0), `yield?`, `ultimate?`, `partial_factors?` (name → number) | Pa, kg/m³ | `ohl_sections::Material` |
 | `[[section]]` | `id`, `name`, `description`, `shape`, `material?`, dimensions of the shape (`h`, `b`, `t`, `tw`, `tf`, `r`, `d`, `sides`) | m | `ohl_sections::Section` (`Shape`) |
 | section, given | `area`, `iy`, `iz`, `iu`, `iv`, `it`, `wel_y`, `wel_z`, `wpl_y`, `wpl_z`, `gyration_y/z/u/v`, `shear_area_y/z` | m², m⁴ (`SecondMoment`), m³ (`SectionModulus`), m | replace the computed values (`Given`) |
+| `[wind]` (optional, one per library) | `source?`, `drag?` (shape name → factor > 0), `face_drag?` { `solidity` (rising, 0–1, ≥ 2 values), `factor` (> 0, one per solidity) }, `shielding?` { `solidity`, `spacing?` (rising, ≥ 0), `factor` (0–1: a flat row, or a row per spacing) } | — (factors, ratios) | `ohl_sections::StructureWind` (`Curve`, `Shielding`; `SectionLibrary::wind`): wind factors for structures as **data** (from a design-code plugin's `structure-wind` or typed; none shipped), linear / bilinear, nothing outside the table's range; a second `[wind]` in a folder is an error (`merge` reports `WIND_TABLE`) |
 
 Shapes: `equal_angle`, `unequal_angle`, `channel`, `i_section`,
 `rectangular_hollow`, `circular_hollow`, `round_bar`, `polygonal_hollow`,
@@ -830,6 +832,15 @@ the section's plane (body wind from the profiles, decision 10 of
 [Building structures](structure-building.md)). Several files merge in
 order (`merge`: project first, then user; the earlier id wins);
 `missing_materials()` lists sections whose material is in none.
+
+The `[wind]` factors are used by `ohl_structures_fe::wind` (the member
+wind with lattice faces, their solidity ratios and shielding:
+`faces(model)`, `MemberWindSetup`, `Model::member_wind_with`; nothing
+stored, computed from the model's geometry; theory: [Wind on lattice
+structures](../theory/structure-wind.md)) in `ohl_loads`' structure check
+and `ohl structures fe`. Sections are typed in OHL-Structure
+(`ohl_structure_edit::section_library`: `SectionDraft`, `put_section`,
+`remove_section`, `toml_edit` on the library file's text).
 
 **Referred to by structures** (structure-building §1.3, §4.2): a
 member's `section = "<id>"` (of a `.ohls` full design or an `.ohlfe`)
@@ -1178,6 +1189,7 @@ above**.
 | `terrain-plugin` (`terrain`) | file bytes | surfaces: `name`, `points` (x, y, z flat, m), `triangles` (indices) |
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in the project's `library` objects |
 | `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2) |
+| `code-wind-plugin` (`design-code`; optional export `structure-wind`, looked for by the host: a 0.3 plugin without it unchanged) | the same parameter file | `option<string>`: a section library's text with only a `[wind]` table (drag per shape, face drag and shielding by solidity), checked as the section library reads it and written as `<plugin>-wind.ohlsec` into the section library; none: no factors (the member wind keeps its generic drag, no shielding) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:
