@@ -39,8 +39,10 @@ fn frustum(tops: &[(f64, Bracing, bool)]) -> Generator {
                     top,
                     bracing,
                     horizontal,
+                    ..Default::default()
                 })
                 .collect(),
+            ..Default::default()
         }),
     }
 }
@@ -160,6 +162,7 @@ fn crossarms_and_peak() {
         kind: Kind::Crossarm(Crossarm {
             points: vec!["A1".into()],
             shape: ArmShape::Triangular,
+            ..Default::default()
         }),
     };
     let b = generate(&t, &arm).unwrap();
@@ -175,6 +178,7 @@ fn crossarms_and_peak() {
         kind: Kind::Crossarm(Crossarm {
             points: vec!["A1".into()],
             shape: ArmShape::Rectangular,
+            ..Default::default()
         }),
     };
     let r = generate(&t, &rect).unwrap();
@@ -219,6 +223,7 @@ fn a_rectangular_arm_at_the_top_and_a_peak() {
         kind: Kind::Crossarm(Crossarm {
             points: vec!["A1".into()],
             shape: ArmShape::Rectangular,
+            ..Default::default()
         }),
     };
     let r = generate(&t, &rect).unwrap();
@@ -502,6 +507,7 @@ fn generator_records_round_trip() {
         kind: Kind::Crossarm(Crossarm {
             points: vec!["A1".into()],
             shape: ArmShape::Rectangular,
+            ..Default::default()
         }),
     };
     body::set_generator(&mut doc, &arm);
@@ -526,4 +532,268 @@ fn generator_records_round_trip() {
             "{bad}"
         );
     }
+}
+
+/// `frustum` with options on panel `k` (1-based).
+fn with(mut g: Generator, k: usize, set: impl Fn(&mut Panel)) -> Generator {
+    if let Kind::Panels(p) = &mut g.kind {
+        set(&mut p.panels[k - 1]);
+    }
+    g
+}
+
+fn count(b: &Body, group: &str) -> usize {
+    b.members
+        .iter()
+        .filter(|m| m.group.as_deref() == Some(group))
+        .count()
+}
+
+/// X with one level of redundants: a joint at each face's crossing (the
+/// diagonals cut there), braced to the legs' middles (the legs cut
+/// there). One panel, 6 m → 2 m over 4 m: on the x+ face the diagonals
+/// (3, −3, 0)–(1, 1, 4) and (3, 3, 0)–(1, −1, 4) cross at y = 0, a
+/// quarter of the way down from the top: (1.5, 0, 3).
+#[test]
+fn x_with_one_level_of_redundants() {
+    let t = read(&EMPTY.parse().unwrap());
+    let g = with(frustum(&[(4.0, Bracing::X, true)]), 1, |p| {
+        p.redundants = Redundants::One;
+    });
+    let b = generate(&t, &g).unwrap();
+    // 8 corners, 4 leg middles, 4 crossings; 8 half legs, 4 horizontals,
+    // 16 half diagonals, 8 redundants.
+    assert_eq!((b.joints.len(), b.members.len()), (16, 36));
+    assert_eq!(joint(&b, "body-R1-F1-C"), [1.5, 0.0, 3.0]);
+    assert_eq!(joint(&b, "body-P1-4"), [2.0, -2.0, 2.0]);
+    assert!(joined(&b, "body-L0-4", "body-R1-F1-C") && joined(&b, "body-R1-F1-C", "body-L1-1"));
+    assert!(!joined(&b, "body-L0-4", "body-L1-1"));
+    assert!(joined(&b, "body-R1-F1-C", "body-P1-4") && joined(&b, "body-R1-F1-C", "body-P1-1"));
+    assert_eq!(count(&b, "body-redundant-1"), 8);
+    assert_eq!(count(&b, "body-leg"), 8);
+    assert_eq!(count(&b, "body-bracing-1"), 16);
+    // The pieces are named after the member cut: the others keep their
+    // names (the first leg is body-M1 without redundants).
+    assert!(b.members.iter().any(|m| m.id == "body-M1-1"));
+    assert!(b.members.iter().any(|m| m.id == "body-M1-2"));
+    assert!(b.members.iter().all(|m| m.id != "body-M1"));
+}
+
+/// Two levels: single diagonals, K and diamond, counted by hand.
+#[test]
+fn two_levels_of_redundants() {
+    let t = read(&EMPTY.parse().unwrap());
+    let two = |bracing: Bracing, horizontal: bool, level: Redundants| {
+        let g = with(frustum(&[(4.0, bracing, horizontal)]), 1, |p| {
+            p.redundants = level;
+        });
+        let b = generate(&t, &g).unwrap();
+        (
+            b.joints.len(),
+            b.members.len(),
+            count(&b, "body-redundant-1"),
+        )
+    };
+    // Single, two levels: per face the middle and the halves' middles (3
+    // joints), the diagonal in 4 pieces, 6 redundants (the middle to both
+    // legs' middles, a secondary diagonal in each quadrilateral, the
+    // halves' middles to the legs' middles); legs in 2 pieces.
+    assert_eq!(two(Bracing::Single, false, Redundants::Two), (24, 48, 24));
+    // Single, one level: 1 joint, 2 pieces and 4 redundants per face.
+    assert_eq!(two(Bracing::Single, false, Redundants::One), (16, 32, 16));
+    // K, one level: the diagonals' middles (2 per face) braced to the leg
+    // middle and the top corner on their side.
+    assert_eq!(two(Bracing::K, false, Redundants::One), (24, 48, 16));
+    // K, two levels: and the 4 halves' middles per face.
+    assert_eq!(two(Bracing::K, false, Redundants::Two), (40, 80, 32));
+    // Diamond, one level: each side's middle braced to the corner it
+    // faces (4 per face).
+    assert_eq!(two(Bracing::Diamond, true, Redundants::One), (36, 72, 16));
+    // X, two levels: the crossing and the 4 halves' middles per face.
+    assert_eq!(two(Bracing::X, true, Redundants::Two), (32, 68, 24));
+}
+
+/// Plan bracing: X across the plan (no joint at the centre), a diamond
+/// between the horizontals' middles (cut there) with a cross to a joint
+/// at the centre; at a level without
+/// horizontals they are written too.
+#[test]
+fn plan_bracing() {
+    let t = read(&EMPTY.parse().unwrap());
+    let two = [(5.0, Bracing::X, true), (10.0, Bracing::X, true)];
+    let x = generate(&t, &with(frustum(&two), 1, |p| p.plan = Plan::X)).unwrap();
+    assert_eq!((x.joints.len(), x.members.len()), (12, 34));
+    assert!(joined(&x, "body-L1-1", "body-L1-3") && joined(&x, "body-L1-2", "body-L1-4"));
+    assert_eq!(count(&x, "body-plan-1"), 2);
+    let d = generate(&t, &with(frustum(&two), 1, |p| p.plan = Plan::Diamond)).unwrap();
+    assert_eq!((d.joints.len(), d.members.len()), (17, 44));
+    assert_eq!(joint(&d, "body-L1-F2"), [0.0, 2.0, 5.0]);
+    assert!(joined(&d, "body-L1-F1", "body-L1-F2") && joined(&d, "body-L1-F4", "body-L1-F1"));
+    assert_eq!(count(&d, "body-horizontal-1"), 8);
+    let bare = [(5.0, Bracing::X, false), (10.0, Bracing::X, true)];
+    let f = generate(&t, &with(frustum(&bare), 1, |p| p.plan = Plan::X)).unwrap();
+    assert_eq!(f.members.len(), 34);
+    assert_eq!(count(&f, "body-horizontal-1"), 4);
+    assert!(f.members.iter().any(|m| m.id == "body-H1-E1"));
+}
+
+/// A width per panel: the slope changes there (6 m → 3 m over the first
+/// 4 m, then 3 m → 2 m over 8 m: 2.5 m at 8 m). `plan_auto` puts plan
+/// bracing there and at the levels a crossarm starts from (a point at
+/// x = 6 m, z = 9 m: the 8 m and 12 m levels).
+#[test]
+fn widths_per_panel_and_plan_bracing_where_needed() {
+    let mut doc: DocumentMut = EMPTY.parse().unwrap();
+    let mut g = with(
+        frustum(&[
+            (4.0, Bracing::X, true),
+            (8.0, Bracing::X, true),
+            (12.0, Bracing::X, true),
+        ]),
+        1,
+        |p| p.width = Some([3.0, 3.0]),
+    );
+    let b = generate(&read(&doc), &g).unwrap();
+    assert_eq!(joint(&b, "body-L1-1"), [1.5, 1.5, 4.0]);
+    assert_eq!(joint(&b, "body-L2-1"), [1.25, 1.25, 8.0]);
+    assert_eq!(count(&b, "body-plan-1"), 0);
+    if let Kind::Panels(p) = &mut g.kind {
+        p.plan_auto = Plan::X;
+    }
+    let b = generate(&read(&doc), &g).unwrap();
+    assert_eq!(count(&b, "body-plan-1"), 2);
+    assert_eq!(count(&b, "body-plan-2") + count(&b, "body-plan-3"), 0);
+    let t = read(&doc);
+    edits::add_point(&mut doc, &t, [6.0, 0.0, 9.0]);
+    let arm = Generator {
+        id: "arm".into(),
+        kind: Kind::Crossarm(Crossarm {
+            points: vec!["A1".into()],
+            ..Default::default()
+        }),
+    };
+    body::set_generator(&mut doc, &arm);
+    let b = generate(&read(&doc), &g).unwrap();
+    for (level, n) in [(1, 2), (2, 2), (3, 2)] {
+        assert_eq!(count(&b, &format!("body-plan-{level}")), n, "{level}");
+    }
+    // A panel's own choice goes first.
+    let g = with(g, 2, |p| p.plan = Plan::Diamond);
+    let b = generate(&read(&doc), &g).unwrap();
+    assert_eq!(count(&b, "body-plan-2"), 8);
+    // Written only when on, read back.
+    applied(&mut doc, &g);
+    let t = read(&doc);
+    assert_eq!(body::generators(&t).unwrap()[1], g);
+    let text = doc.to_string();
+    assert!(text.contains("width = \"3 m\""), "{text}");
+    assert!(text.contains("plan_auto = \"x\""), "{text}");
+    assert!(text.contains("plan = \"diamond\""), "{text}");
+    assert!(!text.contains("redundants"), "{text}");
+    // The last panel's width is the waist.
+    let bad = with(g, 3, |p| p.width = Some([2.0, 2.0]));
+    assert!(bad.check().is_err());
+}
+
+/// Turning redundants on cuts members in pieces: the pieces take what was
+/// set on the member (its section); turned off again, the member takes
+/// the first piece's.
+#[test]
+fn pieces_keep_what_was_set() {
+    let mut doc: DocumentMut = EMPTY.parse().unwrap();
+    let g = frustum(&[(4.0, Bracing::X, true)]);
+    applied(&mut doc, &g);
+    edits::add_item(
+        &mut doc,
+        "section",
+        "L90",
+        &[("material", "S235"), ("area", "15 cm2")],
+    );
+    edits::set_member_section(&mut doc, "body-M1", Some("L90"));
+    let on = with(g.clone(), 1, |p| p.redundants = Redundants::One);
+    applied(&mut doc, &on);
+    let t = read(&doc);
+    let section = |t: &StructureType, id: &str| {
+        t.members
+            .iter()
+            .find(|m| m.id == id)
+            .unwrap_or_else(|| panic!("no member {id}"))
+            .section
+            .clone()
+    };
+    assert_eq!(section(&t, "body-M1-1").as_deref(), Some("L90"));
+    assert_eq!(section(&t, "body-M1-2").as_deref(), Some("L90"));
+    assert_eq!(section(&t, "body-M2-1"), None);
+    applied(&mut doc, &g);
+    let t = read(&doc);
+    assert_eq!(section(&t, "body-M1").as_deref(), Some("L90"));
+    assert_eq!(t.members.len(), 16);
+}
+
+/// Several points on one arm. A body 6 m → 2 m over 10 m; points at
+/// x = 6 m and 4 m, both at 7.5 m: one arm from the 5 m level (x = 2,
+/// y = ±2) and the 10 m level (x = 1, y = ±1). Triangular: the chords
+/// meet at the outer point; at x = 4 m the bottom chords are half-way
+/// (4, ±1, 6.25), the top chords at 3/5 (4, ±0.4, 8.5).
+#[test]
+fn several_points_on_one_arm() {
+    let mut doc: DocumentMut = EMPTY.parse().unwrap();
+    applied(
+        &mut doc,
+        &frustum(&[(5.0, Bracing::X, true), (10.0, Bracing::X, true)]),
+    );
+    for at in [[6.0, 0.0, 7.5], [4.0, 0.0, 7.5]] {
+        let t = read(&doc);
+        edits::add_point(&mut doc, &t, at);
+    }
+    let t = read(&doc);
+    let arm = |shape: ArmShape, one_arm: bool| Generator {
+        id: "arm".into(),
+        kind: Kind::Crossarm(Crossarm {
+            points: vec!["A1".into(), "A2".into()],
+            shape,
+            one_arm,
+        }),
+    };
+    // Without the option: an arm to each point.
+    let each = generate(&t, &arm(ArmShape::Triangular, false)).unwrap();
+    assert_eq!((each.joints.len(), each.members.len()), (2, 8));
+    let b = generate(&t, &arm(ArmShape::Triangular, true)).unwrap();
+    assert_eq!((b.joints.len(), b.members.len()), (6, 19));
+    assert_eq!(joint(&b, "arm-A2-bottom-1"), [4.0, -1.0, 6.25]);
+    assert_eq!(joint(&b, "arm-A2-top-2"), [4.0, 0.4, 8.5]);
+    // The bottom chord in two pieces through the section.
+    assert!(joined(&b, "body-L1-1", "arm-A2-bottom-2") && joined(&b, "arm-A2-bottom-2", "arm-A1"));
+    assert!(!joined(&b, "body-L1-1", "arm-A1"));
+    // The inner point braced to its section and back to the roots.
+    for j in [
+        "arm-A2-bottom-1",
+        "arm-A2-bottom-2",
+        "arm-A2-top-1",
+        "arm-A2-top-2",
+        "body-L1-1",
+        "body-L1-4",
+    ] {
+        assert!(joined(&b, "arm-A2", j), "{j}");
+    }
+    assert_eq!(b.points.len(), 2);
+    // Rectangular: the other chord to a tip 5 m above the outer point.
+    let r = generate(&t, &arm(ArmShape::Rectangular, true)).unwrap();
+    assert_eq!((r.joints.len(), r.members.len()), (7, 22));
+    assert_eq!(joint(&r, "arm-A2-top-1"), [4.0, -0.4, 11.5]);
+    assert!(joined(&r, "arm-A1", "arm-A1-top"));
+    // Applied: both points on the arm's joints; read back.
+    applied(&mut doc, &arm(ArmShape::Triangular, true));
+    let t = read(&doc);
+    assert_eq!(t.point_local("A2", None), Some([4.0, 0.0, 7.5]));
+    assert!(doc.to_string().contains("one_arm = true"));
+    // Two points as far out: refused.
+    let t = read(&doc);
+    edits::add_point(&mut doc, &t, [6.0, 0.5, 7.5]);
+    let t = read(&doc);
+    let mut three = arm(ArmShape::Triangular, true);
+    if let Kind::Crossarm(c) = &mut three.kind {
+        c.points.push("A3".into());
+    }
+    assert!(generate(&t, &three).is_err());
 }

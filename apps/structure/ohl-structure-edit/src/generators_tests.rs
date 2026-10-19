@@ -16,7 +16,8 @@ use toml_edit::DocumentMut;
 
 use crate::rebuild::rebuild_all;
 
-const HEAD: &str = "format = \"ohl-structure\"\nversion = 3\nid = \"G\"\nname = \"g\"\nkind = \"lattice\"\n";
+const HEAD: &str =
+    "format = \"ohl-structure\"\nversion = 3\nid = \"G\"\nname = \"g\"\nkind = \"lattice\"\n";
 
 /// Files with generator records (and points), built in file order.
 fn cases() -> Vec<(&'static str, String)> {

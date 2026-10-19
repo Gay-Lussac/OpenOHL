@@ -35,7 +35,7 @@ pub mod symmetry;
 
 pub use body::{
     ArmShape, Bracing, CopyFace, Crossarm, Face, Generator, Kind, Mirror, Panel, Panels, Peak,
-    Symmetry,
+    Plan, Redundants, Symmetry,
 };
 pub use edits::{
     LIMITS_VERSION, LimitField, MEMBER_KINDS, Removal, StringChange, TENSION_VERSION, add_item,
