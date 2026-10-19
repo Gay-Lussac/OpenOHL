@@ -84,8 +84,17 @@ From the review of 2026-10-18 (quick wins are being done now):
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;
-  left-click selects). Default unchanged.
-- **A searchable coordinate-system picker** (EPSG list).
+  left-click selects). Default unchanged. *Built (in active development,
+  not approved yet): a tick in the Tools menu and Help › Controls; on, a
+  left-click uses the tool held (Select held: it selects) and a
+  right-click selects, in the 3D, plan and profile views; drags unchanged
+  (mapping table in the user guide's Controls).*
+- **A searchable coordinate-system picker** (EPSG list). *Built (in
+  active development, not approved yet): search by code, name, area or
+  unit; rows show code, name, unit and the area of use where the
+  registry's definition gives it; only systems the projection library can
+  compute (geocentric ones left out); in Define, Calculator, Reproject,
+  new project and Import LAS/LAZ.*
 > **Owner:** (2026-10-19)
 > 1. 3D and Plan: leave as is, the layout is fine.
 > 2. One name per object: yes, same object same name everywhere; unify.
@@ -430,6 +439,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Spatial chunk index (ADR-0008): fixed quadtree tile grid (`ohl_core::grid`), loose home tiles, index in the project file kept up to date by every command, area/tile queries (`ohl project tiles`, `ohl project query`), point blocks selected by area and counted per tile (basis for streaming and LOD)
 - [x] Routes (DESIGN_GOALS §9): several alignments per line, structures shared between routes (Y pylons, parallel routes rejoining), stationing, offsets and line angles per route
 - [x] Coordinate systems (`ohl-crs`, pure Rust proj4rs + EPSG registry): points and whole lines (`ohl crs`), LV95 ↔ WGS84 matching swisstopo REFRAME to < 1 mm *(grid-based datum shifts via a PROJ plugin later)*
+- [x] Searchable coordinate-system picker in the app (`ohl_crs::search`): by EPSG code, name, area of use or unit; code, name, unit and area per row; only the registry's systems the projection library computes (geocentric left out)
 - [x] `ohl-terrain`: survey point import (CSV/XYZ, named columns incl. PNEZD), feature codes, breaklines, constrained-Delaunay TIN, ground heights, exact profiles along segments (route centreline and side profiles in the drawings)
 - [x] Structure library v1 (`.ohls`, DESIGN_GOALS §10): one file per type, local attachment points, default insulator per set, extensions, placement (position, rotation, extension), derive types from an existing line
 - [x] Insulator library basics (`.ohli`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver (V-strings solved in lines with tension-only legs and slack-leg reporting)
@@ -463,6 +473,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Live update while editing (Move window: the shown case re-solves the touched sections as values change; one command on Apply)
 - [x] Tools as a Minecraft-style hotbar (1–9, wheel when captured) with an inventory (E, drag and drop), remembered
 - [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
+- [x] Option "Tools act on left-click" (Tools menu, Help › Controls; remembered): a left-click uses the tool held, a right-click selects, in the 3D (both schemes), plan and profile views; drags unchanged; off by default
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
 - [x] Structures and strings in the app: Add structure (on the ground, type from the library), Add string, Edit (structure, string in the structure's axes, override of a type's string) and Delete (structures, strings, sections, jumpers) tools, one session command each *(spotting by hand on the profile still open; automatic spotting: Phase 5)*
