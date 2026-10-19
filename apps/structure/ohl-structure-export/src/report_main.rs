@@ -15,9 +15,17 @@
 //!     --loads tower-loads.csv --extension +3 -o tower-report.html --date
 //! ```
 //!
-//! A tool of its own (not a subcommand of `ohl`), as
-//! `ohl-structure-export`: the command line (`ohl-cli`) is a core crate
-//! and core crates never depend on the structure application's crates.
+//! A tool of its own, as `ohl-structure-export`: the command line
+//! (`ohl-cli`) is a core crate and core crates never depend on the
+//! structure application's crates. `ohl structure analyse|report` starts
+//! this tool with `--request -` and talks to it in JSON
+//! ([`ohl_structure_export::request`]): the request on its input, the
+//! reply on its output.
+//!
+//! ```bash
+//! echo '{"format": "ohl-structure-request", "version": 1, "action": "analyse",
+//!        "structure": "tower.ohls"}' | ohl-structure-report --request -
+//! ```
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -32,7 +40,13 @@ use ohl_structure_loads::LoadTable;
 #[command(name = "ohl-structure-report", version)]
 struct Args {
     /// Structure file (.ohls).
-    file: PathBuf,
+    #[arg(required_unless_present = "request")]
+    file: Option<PathBuf>,
+    /// Answer a JSON request (a file, or `-` for the input) with a JSON
+    /// reply on the output, instead of the other arguments
+    /// (`ohl-structure-request`, version 1; how `ohl structure` asks).
+    #[arg(long, conflicts_with_all = ["file", "output"])]
+    request: Option<PathBuf>,
     /// Section library files (.ohlsec) or folders; the first one giving
     /// an id wins (default: the `Sections` folder beside the file, if
     /// there is one).
@@ -51,18 +65,49 @@ struct Args {
     case: Option<String>,
     /// Report file (.html); the members' CSV is written beside it as
     /// `<stem>.members.csv`.
-    #[arg(short, long)]
-    output: PathBuf,
+    #[arg(short, long, required_unless_present = "request")]
+    output: Option<PathBuf>,
     /// Write today's date into the report (else none, so that reports of
     /// the same file are identical).
     #[arg(long)]
     date: bool,
 }
 
+/// The tool and its version, as the reports and replies name it.
+fn software() -> String {
+    format!("ohl-structure-report {}", env!("CARGO_PKG_VERSION"))
+}
+
+/// `--request`: the reply on the output; success when it went through.
+fn answer(from: &std::path::Path) -> ExitCode {
+    use std::io::Read as _;
+    let text = if from.as_os_str() == "-" {
+        let mut s = String::new();
+        std::io::stdin()
+            .read_to_string(&mut s)
+            .map(|_| s)
+            .map_err(|e| format!("request: {e}"))
+    } else {
+        std::fs::read_to_string(from).map_err(|e| format!("{}: {e}", from.display()))
+    };
+    let reply = match text {
+        Ok(t) => ohl_structure_export::request::answer(&t, &software()),
+        Err(e) => ohl_structure_export::request::Reply::failed(&software(), e),
+    };
+    println!("{}", reply.to_json());
+    if reply.ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn run(args: &Args) -> Result<(), String> {
-    let text =
-        std::fs::read_to_string(&args.file).map_err(|e| format!("{}: {e}", args.file.display()))?;
-    let dir = args.file.parent();
+    let (Some(file), Some(output)) = (&args.file, &args.output) else {
+        return Err("give the structure file and -o (or --request)".into());
+    };
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let dir = file.parent();
     let paths: Vec<PathBuf> = if args.sections.is_empty() {
         dir.map(|d| d.join("Sections"))
             .filter(|p| p.exists())
@@ -85,7 +130,7 @@ fn run(args: &Args) -> Result<(), String> {
             .join(", ")
     };
     let (own, recipes) = ohl_structure_export::own_load_table(&text, &library)
-        .map_err(|e| format!("{}: {e}", args.file.display()))?;
+        .map_err(|e| format!("{}: {e}", file.display()))?;
     let table = match &args.loads {
         Some(p) => std::fs::read_to_string(p)
             .map_err(|e| format!("{}: {e}", p.display()))
@@ -93,9 +138,10 @@ fn run(args: &Args) -> Result<(), String> {
         None => own,
     };
     let date = args.date.then(today);
+    let software = software();
     let report = from_text(&FromText {
         text: &text,
-        file: &args.file.display().to_string(),
+        file: &file.display().to_string(),
         dir,
         sections: &library,
         sections_from: &sections_from,
@@ -104,23 +150,26 @@ fn run(args: &Args) -> Result<(), String> {
         extension: args.extension.as_deref(),
         case: args.case.as_deref(),
         incomplete: &[],
-        software: &format!("ohl-structure-report {}", env!("CARGO_PKG_VERSION")),
+        software: &software,
         date: date.as_deref(),
     })
-    .map_err(|e| format!("{}: {e}", args.file.display()))?;
-    let csv = args.output.with_extension("members.csv");
+    .map_err(|e| format!("{}: {e}", file.display()))?;
+    let csv = output.with_extension("members.csv");
     let io = |p: &PathBuf, e: std::io::Error| format!("{}: {e}", p.display());
-    std::fs::write(&args.output, &report.html).map_err(|e| io(&args.output, e))?;
+    std::fs::write(output, &report.html).map_err(|e| io(output, e))?;
     std::fs::write(&csv, &report.csv).map_err(|e| io(&csv, e))?;
     for line in &report.summary {
         println!("{line}");
     }
-    println!("→ {}, {}", args.output.display(), csv.display());
+    println!("→ {}, {}", output.display(), csv.display());
     Ok(())
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
+    if let Some(from) = &args.request {
+        return answer(from);
+    }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

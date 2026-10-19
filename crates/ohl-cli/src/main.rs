@@ -18,6 +18,7 @@ mod cost_run;
 mod io_run;
 mod project;
 mod sagtension_job;
+mod structure_app_run;
 mod structure_fe;
 mod surface;
 mod thermal_run;
@@ -74,7 +75,8 @@ enum Command {
     /// station range at chosen scales. Takes every option of `ohl line`.
     Drawing(Box<DrawingArgs>),
     /// Structure and insulator libraries; structure analysis (finite
-    /// elements, poles).
+    /// elements, poles); a structure's results from OHL-Structure
+    /// (`analyse`, `report`: its headless tool, a program of its own).
     #[command(alias = "structure")]
     Structures {
         #[command(subcommand)]
@@ -503,6 +505,15 @@ enum StructuresCommand {
     /// the pole from the loads at a structure type's attachments, wind,
     /// P-Delta.
     Pole(structure_fe::PoleArgs),
+    /// A structure's results as OHL-Structure gives them (its load cases
+    /// solved on an extension, the pole check), from its headless tool
+    /// `ohl-structure-report` (next to ohl, on the PATH or named by
+    /// OHL_STRUCTURE_REPORT), asked in JSON.
+    #[command(alias = "analyze")]
+    Analyse(structure_app_run::StructureRunArgs),
+    /// The same, and OHL-Structure's structure report (HTML) with the
+    /// members' results (CSV) beside it.
+    Report(structure_app_run::StructureReportArgs),
 }
 
 #[derive(Subcommand)]
@@ -672,6 +683,12 @@ fn main() -> ExitCode {
         Some(Command::Structures {
             command: StructuresCommand::Pole(args),
         }) => report(structure_fe::pole(&args)),
+        Some(Command::Structures {
+            command: StructuresCommand::Analyse(args),
+        }) => structure_app_run::analyse(&args),
+        Some(Command::Structures {
+            command: StructuresCommand::Report(args),
+        }) => structure_app_run::report(&args),
         Some(Command::Plugin {
             command: PluginCommand::Info { dir },
         }) => plugin_info(&dir),
