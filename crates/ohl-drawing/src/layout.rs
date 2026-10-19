@@ -482,6 +482,7 @@ fn whole_range(d: &RouteDrawing, o: &Options) -> (f64, f64) {
 /// The route (or its station range) as one continuous drawing, with its
 /// frame.
 pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame) {
+    let d = &d.shown(o.plan_half_width);
     let (s0, s1) = whole_range(d, o);
     let (z0, z1, z_step) = height_range(d, s0, s1);
     let (h, v) = (1000.0 / o.horizontal_scale, 1000.0 / o.vertical_scale);
@@ -549,8 +550,8 @@ pub struct Sheet {
     pub from: f64,
     /// End station.
     pub to: f64,
-    /// First and last structure on the sheet (or the station where a
-    /// station range starts or ends).
+    /// Where the sheet starts and ends: a structure, a free alignment
+    /// point, or the station where a station range starts or ends.
     pub structures: (String, String),
     /// The sheet.
     pub drawing: Drawing,
@@ -569,8 +570,8 @@ const SHEET_MARGIN: f64 = 10.0;
 const TITLE_BLOCK: f64 = 32.0;
 const AXIS_ROOM: f64 = 14.0;
 
-/// A place a sheet may start or end: a structure, or the end of a station
-/// range.
+/// A place a sheet may start or end: a structure, a free alignment
+/// point, or the end of a station range.
 struct Stop {
     station: f64,
     label: String,
@@ -589,56 +590,76 @@ fn extent(m: &crate::Mark) -> (f64, f64) {
         .fold((m.station, m.station), |(a, b), s| (a.min(s), b.max(s)))
 }
 
-/// Where sheets may start and end, in station order: every structure (the
-/// first and last always), or the ends of the station range. A break
-/// inside is **free** at a structure on the line — its offset from the
-/// alignment within the line width ([`Options::plan_half_width`]) — whose
-/// station is at least `clear` m (the clearance on paper) from what is
-/// drawn of every other structure, one outside the line width included.
+/// Where sheets may start and end, in station order: every structure
+/// drawn (the first and last always) and every free alignment point
+/// between them, or the ends of the station range. `d` is what is drawn
+/// ([`RouteDrawing::shown`]). A break inside is **free**
+///
+/// - at a structure **on the line**: one of the run along the alignment
+///   (tied to an alignment point, or standing on the alignment), never
+///   one beside it (a connection away from the alignment, however near),
+/// - or at an alignment point **without a structure** (an angle point
+///   without a pylon),
+///
+/// whose station is at least `clear` m (the clearance on paper) from what
+/// is drawn of every other structure.
 fn stops(d: &RouteDrawing, o: &Options, clear: f64) -> Vec<Stop> {
     let extents: Vec<(f64, f64)> = d.structures.iter().map(extent).collect();
-    let width = o.plan_half_width;
+    // The first structure (other than structure `own`) whose drawing is
+    // within the clearance of `station`.
+    let near = |station: f64, own: Option<usize>| {
+        d.structures
+            .iter()
+            .zip(&extents)
+            .enumerate()
+            .find(|&(j, (_, &(a, b)))| Some(j) != own && station > a - clear && station < b + clear)
+            .map(|(_, (other, _))| other)
+    };
+    let too_near = |id: &str, other: &crate::Mark| {
+        format!(
+            "{id} is within {clear:.1} m of {} ({})",
+            other.id,
+            format_station(other.station)
+        )
+    };
     let mut stops: Vec<Stop> = d
         .structures
         .iter()
         .enumerate()
-        .map(|(k, m)| {
-            // (NaN offsets count as outside.)
-            let within = m.offset.abs() <= width;
-            let blocked = if !within {
+        .map(|(k, m)| Stop {
+            station: m.station,
+            label: m.id.clone(),
+            blocked: if m.away {
                 Some(format!(
-                    "{} stands {:.1} m {} of the alignment, outside the line width ±{:.1} m",
+                    "{} stands beside the line, {:.1} m {} of the alignment (not on it)",
                     m.id,
                     m.offset.abs(),
                     if m.offset > 0.0 { "right" } else { "left" },
-                    width
                 ))
             } else {
-                d.structures
-                    .iter()
-                    .zip(&extents)
-                    .enumerate()
-                    .find(|&(j, (_, &(a, b)))| {
-                        j != k && m.station > a - clear && m.station < b + clear
-                    })
-                    .map(|(_, (other, _))| {
-                        format!(
-                            "{} is within {:.1} m of {} ({})",
-                            m.id,
-                            clear,
-                            other.id,
-                            format_station(other.station)
-                        )
-                    })
-            };
-            Stop {
-                station: m.station,
-                label: m.id.clone(),
-                blocked,
-            }
+                near(m.station, Some(k)).map(|other| too_near(&m.id, other))
+            },
         })
         .collect();
     stops.sort_by(|a, b| a.station.total_cmp(&b.station));
+    // Free alignment points between the first and the last structure.
+    if let (Some(first), Some(last)) = (stops.first(), stops.last()) {
+        let (s0, s1) = (first.station, last.station);
+        let free: Vec<Stop> = d
+            .alignment
+            .iter()
+            .filter(|p| p.structure.is_none() && p.station > s0 + 1e-6 && p.station < s1 - 1e-6)
+            .map(|p| Stop {
+                station: p.station,
+                label: p.id.clone(),
+                blocked: near(p.station, None).map(|other| too_near(&p.id, other)),
+            })
+            .collect();
+        if !free.is_empty() {
+            stops.extend(free);
+            stops.sort_by(|a, b| a.station.total_cmp(&b.station));
+        }
+    }
     if let Some([a, b]) = o.stations {
         let (a, b) = (a.min(b), a.max(b));
         stops.retain(|s| s.station > a + 1e-6 && s.station < b - 1e-6);
@@ -669,8 +690,8 @@ pub struct SheetLayout {
     /// (from `from`): its frame, longer than `to` − `from` when the
     /// stretch is shorter, shorter when the sheet runs on (warned).
     pub reach: f64,
-    /// First and last structure on the sheet (or the station where a
-    /// station range starts or ends).
+    /// Where the sheet starts and ends: a structure, a free alignment
+    /// point, or the station where a station range starts or ends.
     pub structures: (String, String),
     /// Problems: no free break within reach (the sheet runs on), a span
     /// longer than the sheet, a profile taller than it.
@@ -729,16 +750,23 @@ impl Paper {
 /// Where the route splits over sheets of `page`, **at structures**, and
 /// the warnings of each sheet: what [`sheets`] draws, without drawing it.
 /// Each sheet holds as many whole spans as fit at the horizontal scale,
-/// and the structure where it ends starts the next sheet (match line). A
-/// sheet only breaks at a structure on the line (its offset within the
-/// line width [`Options::plan_half_width`] of the alignment) that stands
-/// at least [`Options::break_clearance`] on paper from what is drawn of
-/// every other structure (one outside the line width included):
-/// otherwise the break moves back to the last free structure that fits,
-/// and when none fits the sheet runs on to the next free one (drawn
-/// anyway, with a warning). With a station range in the options, the
-/// first sheet starts and the last ends at the range.
+/// and the place where it ends starts the next sheet (match line), never
+/// in the middle of a span. A sheet only ends at a structure **on the
+/// line** (of the run along the alignment; never at one beside it, such
+/// as a connection, however near) or at an alignment point **without a
+/// structure**, at least [`Options::break_clearance`] on paper from what
+/// is drawn of every other structure ([`RouteDrawing::shown`]: those
+/// beside the line within the line width): otherwise the break moves
+/// back to the last free place that fits, and when none fits the sheet
+/// runs on to the next free one (drawn anyway, with a warning). With a
+/// station range in the options, the first sheet starts and the last
+/// ends at the range.
 pub fn sheet_layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
+    layout(&d.shown(o.plan_half_width), o, page)
+}
+
+/// [`sheet_layout`] of `d`, what is drawn of the route.
+fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
     let paper = Paper::new(o, page);
     let (h, usable) = (paper.h, paper.usable);
     let reach = usable / h; // metres per sheet
@@ -834,7 +862,8 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         available,
         ..
     } = Paper::new(o, page);
-    let layout = sheet_layout(d, o, page);
+    let d = &d.shown(o.plan_half_width);
+    let layout = layout(d, o, page);
     let n = layout.len();
     layout
         .into_iter()
@@ -1037,6 +1066,7 @@ pub(crate) fn station_runs<const N: usize>(
 /// structures (a square and the name), wires and markers, within the
 /// options' station range.
 pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
+    let d = &d.shown(o.plan_half_width);
     let k = o.horizontal_scale / 1000.0; // m per mm on the sheet
     let (a, b) = o
         .stations

@@ -21,9 +21,11 @@
 //! [`build`] collects the drawing data. The layout makes format-free
 //! [`model::Drawing`]s from it: [`drawing`] the whole route (or a station
 //! range) as one continuous drawing; [`sheets`] split **at structures**
-//! within the line width, clear of every other structure drawn
-//! ([`sheet_layout`]: where, without drawing them), over sheets of a standard format (A0–A4 or custom) with a title block
-//! and logos; [`profile_model`] and [`plan_model`] in model space. Writers:
+//! on the line (or free alignment points), clear of every other
+//! structure drawn ([`sheet_layout`]: where, without drawing them), over
+//! sheets of a standard format (A0–A4 or custom) with a title block and
+//! logos; what is drawn along the line is limited by the line width
+//! ([`RouteDrawing::shown`]); [`profile_model`] and [`plan_model`] in model space. Writers:
 //! SVG ([`model::Drawing::svg`]), [`dxf`], [`pdf`], [`png`]; the numbers
 //! as CSV and XML ([`profile_csv`], [`profile_xml`]). [`export`] writes a
 //! route's files in the formats chosen. Scales: horizontal (along the
@@ -62,9 +64,11 @@ pub struct Options {
     /// Required vertical clearance drawn above the ground, m.
     pub clearance: Option<f64>,
     /// Half width of the plan view, m: the **line width** of the drawings
-    /// (`--plan-width`). A structure whose offset from the alignment is
-    /// within it is on the line and may end a sheet; one outside it never
-    /// does.
+    /// (`--plan-width`, in the desktop app the one line width of the
+    /// profile and the drawings). It decides what is drawn along the line
+    /// ([`RouteDrawing::shown`]): a structure beside the line (away from
+    /// the alignment) is drawn only within it, wires are cut at it. Where
+    /// sheets may break does not depend on it (see [`sheet_layout`]).
     pub plan_half_width: f64,
     /// Title lines (line name, weather case…).
     pub title: Vec<String>,
@@ -168,8 +172,8 @@ pub struct Mark {
     pub offset: f64,
     /// Away from the alignment (not on the run along it, such as a
     /// connection beside the line; the route's rule,
-    /// `AlignmentView::away`). Sheets do not use it: they break only at a
-    /// structure within the line width ([`Options::plan_half_width`]).
+    /// `AlignmentView::away`): a sheet never ends at it, and it is drawn
+    /// only within the line width ([`Options::plan_half_width`]).
     pub away: bool,
     /// Position in project coordinates (x, y).
     pub xy: [f64; 2],
@@ -187,6 +191,18 @@ pub struct Mark {
     pub members: Vec<Vec<[f64; 3]>>,
     /// The same members in project coordinates (x, y).
     pub members_xy: Vec<Vec<[f64; 2]>>,
+}
+
+/// A point of the route's alignment, by station.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignmentMark {
+    /// Point id, e.g. `P3`.
+    pub id: String,
+    /// Station along the alignment, m.
+    pub station: f64,
+    /// The structure tied to it; `None`: a free point (an angle point
+    /// without a structure), where a sheet may end too.
+    pub structure: Option<String>,
 }
 
 /// Ground profile runs: (station, z) points; a run ends where there is no
@@ -216,6 +232,8 @@ pub struct RouteDrawing {
     pub wires: Vec<Trace>,
     /// Markers: station, offset, z, label.
     pub markers: Vec<([f64; 3], String)>,
+    /// The alignment's points, in station order.
+    pub alignment: Vec<AlignmentMark>,
 }
 
 fn polyline_length(p: &[Point]) -> f64 {
@@ -375,10 +393,21 @@ pub fn build(
         .map(|(p, label)| (to_route(p), label.clone()))
         .filter(|(q, _)| q[1].abs() <= options.plan_half_width.max(100.0))
         .collect();
+    let mut alignment: Vec<AlignmentMark> = route
+        .alignment
+        .iter()
+        .map(|p| AlignmentMark {
+            id: p.id.clone(),
+            station: project(&centre, p.position).0,
+            structure: p.structure.clone(),
+        })
+        .collect();
+    alignment.sort_by(|a, b| a.station.total_cmp(&b.station));
     Ok(RouteDrawing {
         route: route.id.clone(),
         name: route.name.clone(),
         length: polyline_length(&centre),
+        alignment,
         centreline: centre,
         stations,
         structures,
@@ -390,6 +419,28 @@ pub fn build(
 }
 
 impl RouteDrawing {
+    /// What is drawn of it along the line with line width `width` (m, the
+    /// half width [`Options::plan_half_width`]): every structure of the run
+    /// along the alignment; a structure beside the line (away from the
+    /// alignment, such as a connection) only when its offset is within
+    /// the width; wires cut where they leave the width (the crossing
+    /// interpolated); markers within it. The plan and the profile of the
+    /// drawings and sheets show this; the profile's CSV and XML keep
+    /// everything.
+    pub fn shown(&self, width: f64) -> RouteDrawing {
+        // (NaN counts as outside.)
+        let within = |offset: f64| offset.abs() <= width;
+        let mut d = self.clone();
+        d.structures.retain(|m| !m.away || within(m.offset));
+        d.markers.retain(|(p, _)| within(p[1]));
+        d.wires = self
+            .wires
+            .iter()
+            .flat_map(|w| cut_trace(w, width))
+            .collect();
+        d
+    }
+
     /// Gives each structure the members `of` it returns (polylines in
     /// project coordinates, as the structure is placed; none: a type at
     /// level 1, drawn with its symbol), along the route.
@@ -414,6 +465,76 @@ impl RouteDrawing {
                 .collect();
         }
     }
+}
+
+/// The runs of `w` within `width` of the alignment, each ending where the
+/// wire crosses the edge of the width (interpolated linearly between its
+/// points).
+fn cut_trace(w: &Trace, width: f64) -> Vec<Trace> {
+    let n = w.points.len();
+    let inside = |k: usize| w.points[k][1].abs() <= width;
+    if (0..n).all(inside) {
+        return vec![w.clone()];
+    }
+    let has_xy = w.xy.len() == n;
+    // The point of segment k → k + 1 at offset `edge`.
+    let at_edge = |k: usize, edge: f64| -> ([f64; 3], Option<[f64; 2]>) {
+        let (a, b) = (w.points[k], w.points[k + 1]);
+        let t = ((edge - a[1]) / (b[1] - a[1])).clamp(0.0, 1.0);
+        let p = [0, 1, 2].map(|i| a[i] + t * (b[i] - a[i]));
+        let xy = has_xy.then(|| [0, 1].map(|i| w.xy[k][i] + t * (w.xy[k + 1][i] - w.xy[k][i])));
+        (p, xy)
+    };
+    // Where segment k → k + 1 crosses the edge on the side of point `out`.
+    let crossing = |k: usize, out: usize| at_edge(k, w.points[out][1].signum() * width);
+    let mut runs: Vec<Trace> = Vec::new();
+    let mut push = |points: Vec<[f64; 3]>, xy: Vec<[f64; 2]>| {
+        if points.len() > 1 {
+            runs.push(Trace {
+                label: w.label.clone(),
+                color: w.color.clone(),
+                points,
+                xy,
+                dash: w.dash.clone(),
+            });
+        }
+    };
+    // The run within the width so far: points, project coordinates.
+    type Run = (Vec<[f64; 3]>, Vec<[f64; 2]>);
+    let mut run: Option<Run> = None;
+    for k in 0..n {
+        if inside(k) {
+            let (points, xy) = run.get_or_insert_with(|| {
+                let mut start = (Vec::new(), Vec::new());
+                if k > 0 {
+                    // Entered the width between k − 1 and k.
+                    let (p, q) = crossing(k - 1, k - 1);
+                    start.0.push(p);
+                    start.1.extend(q);
+                }
+                start
+            });
+            points.push(w.points[k]);
+            if has_xy {
+                xy.push(w.xy[k]);
+            }
+        } else if let Some((mut points, mut xy)) = run.take() {
+            // Left it between k − 1 and k.
+            let (p, q) = crossing(k - 1, k);
+            points.push(p);
+            xy.extend(q);
+            push(points, xy);
+        } else if k > 0 && !inside(k - 1) && w.points[k - 1][1] * w.points[k][1] < 0.0 {
+            // Across it from one side to the other between two points.
+            let (p0, q0) = crossing(k - 1, k - 1);
+            let (p1, q1) = crossing(k - 1, k);
+            push(vec![p0, p1], q0.into_iter().chain(q1).collect());
+        }
+    }
+    if let Some((points, xy)) = run {
+        push(points, xy);
+    }
+    runs
 }
 
 /// Station as `km+m`, e.g. `1+250.0`.
@@ -559,6 +680,7 @@ pub fn drawing(d: &RouteDrawing, o: &Options) -> model::Drawing {
 pub(crate) mod tests {
     use super::*;
     use ohl_core::units::Temperature;
+    use ohl_line::AlignmentPoint;
     use ohl_line::route::point_at;
     use ohl_weather::WeatherCase;
     use std::path::Path;
@@ -998,10 +1120,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn sheets_never_break_at_or_near_a_structure_outside_the_line_width() {
-        // Main route: T1 0, T2 310, T3 640, T4 940, T5 1260 m. A3 at
-        // 1:2000 holds (420 − 34) mm × 2 m/mm = 772 m; the clearance of
-        // 2 mm on paper is 4 m. Profile at 1:500 so the height fits.
+    fn sheets_never_end_at_or_near_a_connection_beside_the_line() {
+        // Main route: T1 0, T2 310, T3 640, T4 940, T5 1260 m (T3 on the
+        // alignment point P2; T2 and T4 on the alignment between its
+        // points). A3 at 1:2000 holds (420 − 34) mm × 2 m/mm = 772 m; the
+        // clearance of 2 mm on paper is 4 m. Profile at 1:500 so the
+        // height fits.
         let o = Options {
             vertical_scale: 500.0,
             ..Options::default()
@@ -1010,27 +1134,32 @@ pub(crate) mod tests {
         let plain = sheets(&main_route(&o), &o, &a3);
         assert_eq!(ends(&plain), [("T1", "T3"), ("T3", "T5")]);
 
-        // The old fault: C1 60 m right of the line at 0+700 is the last
-        // structure within 772 m of T1, so the greedy break fell at C1 —
-        // a match line through the span T3–T4. Now the break stays at T3
-        // and the sheets are those without C1.
-        let s = sheets(&main_with_away(700.0, 60.0), &o, &a3);
-        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
-        assert!(
-            s.iter().all(|s| s.warnings.is_empty()),
-            "{:?}",
-            warnings(&s)
-        );
-        assert_eq!(
-            s.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>(),
-            plain.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>()
-        );
+        // C1 at 0+700 beside the line is the last structure within 772 m
+        // of T1, so a greedy break would fall at C1 — a match line through
+        // the span T3–T4. A connection never ends a sheet, wherever it
+        // stands beside the line: within the line width (±40 m, drawn)
+        // left or right, or outside it. The break stays at T3 and the
+        // sheets are those without C1.
+        for offset in [10.0, 20.0, 39.9, -39.9, 60.0] {
+            let s = sheets(&main_with_away(700.0, offset), &o, &a3);
+            assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")], "{offset}");
+            assert!(
+                s.iter().all(|s| s.warnings.is_empty()),
+                "{offset}: {:?}",
+                warnings(&s)
+            );
+            assert_eq!(
+                s.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>(),
+                plain.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>()
+            );
+        }
 
-        // C1 2 m past T3 (inside the 4 m): a break at T3 would cut C1's
-        // drawing, so it moves back to T2 (the last free structure within
-        // reach); from T2 (reach to 1082 m) T3 and C1 are skipped, T4 (940)
-        // fits; T4–T5 ends the route. No warnings: every sheet fits.
-        let s = sheets(&main_with_away(642.0, 60.0), &o, &a3);
+        // C1 20 m beside the line, 2 m past T3 (inside the 4 m): drawn
+        // (within the line width), so a break at T3 would cut C1's
+        // drawing; it moves back to T2 (the last free structure within
+        // reach); from T2 (reach to 1082 m) T3 and C1 are skipped, T4
+        // (940) fits; T4–T5 ends the route. No warnings: every sheet fits.
+        let s = sheets(&main_with_away(642.0, 20.0), &o, &a3);
         assert_eq!(ends(&s), [("T1", "T2"), ("T2", "T4"), ("T4", "T5")]);
         assert!(
             s.iter().all(|s| s.warnings.is_empty()),
@@ -1043,18 +1172,22 @@ pub(crate) mod tests {
                 assert!((at - c1).abs() >= 4.0, "break at {at}");
             }
         }
+        // 60 m beside it, outside the line width: not drawn, so it keeps
+        // no break away: the sheets are those without C1.
+        let s = sheets(&main_with_away(642.0, 60.0), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
 
         // No free break fits: A4 holds (297 − 34) × 2 = 526 m; C1 2 m
         // past T2 blocks T2 and T3 (640) lies beyond the reach. The sheet
         // runs on to T3 (640 m) and says so; the others are as before.
         let a4 = page_format("A4").unwrap();
-        let s = sheets(&main_with_away(312.0, 60.0), &o, &a4);
+        let s = sheets(&main_with_away(312.0, 20.0), &o, &a4);
         assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T4"), ("T4", "T5")]);
         let w = &s[0].warnings;
         assert!(
             w.iter().any(|w| w.starts_with("no free sheet break")
                 && w.contains(
-                    "C1 stands 60.0 m right of the alignment, outside the line width ±40.0 m"
+                    "C1 stands beside the line, 20.0 m right of the alignment (not on it)"
                 )
                 && w.contains("T2 is within 4.0 m of C1")
                 && w.contains("runs on to T3 (640 m)")),
@@ -1075,7 +1208,7 @@ pub(crate) mod tests {
             stations: Some([100.0, 1100.0]),
             ..o.clone()
         };
-        let s = sheets(&main_with_away(642.0, 60.0), &range, &a3);
+        let s = sheets(&main_with_away(642.0, 20.0), &range, &a3);
         assert_eq!(s[0].structures.0, "0+100.0");
         assert_eq!(s.last().unwrap().structures.1, "1+100.0");
         assert!(
@@ -1084,36 +1217,153 @@ pub(crate) mod tests {
         );
     }
 
+    /// The main route of the synthetic line with an invented free
+    /// alignment point `P9` (no structure) on its alignment at `station`
+    /// (on the straight between P1 and P2, or P2 and P3: the stations do
+    /// not change).
+    fn main_with_free_point(station: f64) -> RouteDrawing {
+        let (mut line, shapes, jumpers, terrain) = solved();
+        let centre = line.alignment_views()[0].centreline(&line);
+        let xy = point_at(&centre, station, 0.0);
+        line.alignment_points
+            .push(AlignmentPoint::free("P9", [xy[0], xy[1], 500.0]));
+        let points = &mut line.alignments[0].points;
+        let p2 = points.iter().position(|p| p == "P2").unwrap();
+        points.insert(if station < 640.0 { p2 } else { p2 + 1 }, "P9".into());
+        let views = line.alignment_views();
+        build(
+            &line,
+            &views[0],
+            &shapes,
+            &jumpers,
+            Some(&terrain),
+            &[],
+            &Options::default(),
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn a_structure_within_the_line_width_may_end_a_sheet() {
-        // As above: A3 at 1:2000 holds 772 m from T1 (0); C1 at 0+700 is
-        // the last structure within reach, 60 m from T3 (640) and 240 m
-        // from T4 (940): free of every other structure's drawing.
+    fn a_sheet_ends_at_a_structure_on_the_line_or_a_free_alignment_point() {
         let o = Options {
             vertical_scale: 500.0,
             ..Options::default()
         };
         let a3 = page_format("A3").unwrap();
-        // Just inside the line width (±40 m by default): on the line, the
-        // sheet ends at C1 and the next one starts there (C1 at 700 holds
-        // to 1472 m: T5 at 1260 ends it).
-        let s = sheets(&main_with_away(700.0, 39.9), &o, &a3);
-        assert_eq!(ends(&s), [("T1", "C1"), ("C1", "T5")]);
+        // The alignment's points: P1 (0, at T1, free), P2 (640, T3), P3
+        // (the end, at T5, free). A free point at either end of the
+        // structures is no break of its own: the sheets start at T1 and
+        // end at T5.
+        let d = main_route(&o);
+        let points: Vec<(&str, Option<&str>)> = d
+            .alignment
+            .iter()
+            .map(|p| (p.id.as_str(), p.structure.as_deref()))
+            .collect();
+        assert_eq!(points, [("P1", None), ("P2", Some("T3")), ("P3", None)]);
+        // T3 stands on the alignment point P2: the first sheet ends there.
+        assert_eq!(ends(&sheets(&d, &o, &a3)), [("T1", "T3"), ("T3", "T5")]);
+        // A free alignment point (an angle point without a pylon) at 0+700
+        // is the last place within the 772 m of T1, 60 m from T3 and
+        // 240 m from T4: the sheet ends there, the next one starts there
+        // (700 + 772 = 1472 m holds T5 at 1260).
+        let s = sheets(&main_with_free_point(700.0), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "P9"), ("P9", "T5")]);
         assert!((s[0].to - 700.0).abs() < 1e-6, "{}", s[0].to);
-        // Just outside: away, the sheets are those without C1.
-        let s = sheets(&main_with_away(700.0, 40.1), &o, &a3);
+        assert!(
+            s.iter().all(|s| s.warnings.is_empty()),
+            "{:?}",
+            warnings(&s)
+        );
+        // 3 m past T3 it is within the 4 m of T3's drawing: no break there;
+        // T3 ends the sheet (a free point blocks no structure).
+        let s = sheets(&main_with_free_point(643.0), &o, &a3);
         assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
-        // Left of the alignment the same.
-        let s = sheets(&main_with_away(700.0, -39.9), &o, &a3);
-        assert_eq!(ends(&s), [("T1", "C1"), ("C1", "T5")]);
-        // The line width is the drawings' (the plan's half width): at ±30 m
-        // the same C1 39.9 m beside the alignment is outside it.
-        let narrow = Options {
-            plan_half_width: 30.0,
-            ..o.clone()
+        // On A4 (526 m from T1) the free point at 0+500 ends the first
+        // sheet instead of T2 (310); from it T4 (940) fits, then T5.
+        let a4 = page_format("A4").unwrap();
+        let s = sheets(&main_with_free_point(500.0), &o, &a4);
+        assert_eq!(ends(&s), [("T1", "P9"), ("P9", "T4"), ("T4", "T5")]);
+        // Its reason when blocked is named in a run-on warning: C1 20 m
+        // beside the line at 0+312 blocks T2, the free point at 0+315
+        // likewise; T3 lies beyond the 526 m.
+        let mut d = main_with_free_point(315.0);
+        let with_c1 = main_with_away(312.0, 20.0);
+        d.structures = with_c1.structures;
+        let s = sheets(&d, &o, &a4);
+        assert_eq!(s[0].structures, ("T1".to_owned(), "T3".to_owned()));
+        let w = &s[0].warnings;
+        assert!(
+            w.iter().any(|w| w.contains("P9 is within 4.0 m of C1")
+                && w.contains("T2 is within 4.0 m of C1")),
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn the_line_width_decides_what_is_drawn() {
+        // A connection beside the line is drawn within the line width
+        // (±40 m by default), not outside it; the structures of the run
+        // always are.
+        let ids = |d: &RouteDrawing| -> Vec<String> {
+            d.structures.iter().map(|m| m.id.clone()).collect()
         };
-        let s = sheets(&main_with_away(700.0, 39.9), &narrow, &a3);
-        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
+        // The synthetic example has no structure beside the line and no
+        // wire beyond ±40 m: every route is drawn whole, as before (its
+        // free alignment points P1 and P3 lie at its first and last
+        // structure: no breaks of their own, its sheets unchanged).
+        let (line, shapes, jumpers, terrain) = solved();
+        for route in line.alignment_views() {
+            let o = Options::default();
+            let d = build(&line, &route, &shapes, &jumpers, Some(&terrain), &[], &o).unwrap();
+            assert_eq!(d.shown(o.plan_half_width), d, "{}", route.id);
+        }
+        let d = main_with_away(700.0, 39.9);
+        assert!(ids(&d.shown(40.0)).contains(&"C1".to_owned()));
+        assert!(!ids(&d.shown(30.0)).contains(&"C1".to_owned()));
+        let d = main_with_away(700.0, -40.1);
+        assert!(!ids(&d.shown(40.0)).contains(&"C1".to_owned()));
+        // (Everything is kept in the drawing data itself.)
+        assert!(ids(&d).contains(&"C1".to_owned()));
+        assert_eq!(
+            ids(&d.shown(0.5)),
+            ["T1", "T2", "T3", "T4", "T5"].map(String::from)
+        );
+        // Wires are cut where they leave the width, the crossing
+        // interpolated: a wire out to 60 m and back at width 40 gives two
+        // runs ending at ±40 m, one across the width from −60 to +60 m
+        // its part from −40 to +40 m.
+        let trace = |pts: &[[f64; 3]]| Trace {
+            label: "w".into(),
+            color: "#000000".into(),
+            points: pts.to_vec(),
+            xy: pts.iter().map(|p| [p[0], p[1]]).collect(),
+            dash: None,
+        };
+        let w = trace(&[
+            [0.0, 0.0, 10.0],
+            [10.0, 20.0, 12.0],
+            [20.0, 60.0, 16.0],
+            [30.0, 20.0, 12.0],
+            [40.0, 0.0, 10.0],
+        ]);
+        let runs = cut_trace(&w, 40.0);
+        assert_eq!(runs.len(), 2);
+        // 20 → 60 m between stations 10 and 20: 40 m at 15, z 14.
+        assert_eq!(
+            runs[0].points,
+            [[0.0, 0.0, 10.0], [10.0, 20.0, 12.0], [15.0, 40.0, 14.0]]
+        );
+        assert_eq!(runs[0].xy.last(), Some(&[15.0, 40.0]));
+        assert_eq!(
+            runs[1].points,
+            [[25.0, 40.0, 14.0], [30.0, 20.0, 12.0], [40.0, 0.0, 10.0]]
+        );
+        let across = cut_trace(&trace(&[[0.0, -60.0, 0.0], [12.0, 60.0, 12.0]]), 40.0);
+        assert_eq!(across.len(), 1);
+        assert_eq!(across[0].points, [[2.0, -40.0, 2.0], [10.0, 40.0, 10.0]]);
+        assert!(cut_trace(&trace(&[[0.0, 50.0, 0.0], [1.0, 60.0, 0.0]]), 40.0).is_empty());
+        assert_eq!(cut_trace(&w, 60.0), [w.clone()]);
     }
 
     #[test]
@@ -1123,9 +1373,10 @@ pub(crate) mod tests {
             ..Options::default()
         };
         let a3 = page_format("A3").unwrap();
-        // C1 (outside the line width) 2 m past T3 (640). At the default
-        // 2 mm on paper (4 m at 1:2000) T3 is blocked: T1–T2, T2–T4, T4–T5.
-        let d = main_with_away(642.0, 60.0);
+        // C1 (beside the line, within the line width) 2 m past T3 (640).
+        // At the default 2 mm on paper (4 m at 1:2000) T3 is blocked:
+        // T1–T2, T2–T4, T4–T5.
+        let d = main_with_away(642.0, 20.0);
         assert_eq!(o.break_clearance, BREAK_CLEARANCE_MM);
         assert_eq!(
             ends(&sheets(&d, &o, &a3)),
@@ -1176,7 +1427,7 @@ pub(crate) mod tests {
             ..Options::default()
         };
         let a4 = page_format("A4").unwrap();
-        let d = main_with_away(312.0, 60.0);
+        let d = main_with_away(312.0, 20.0);
         let layout = sheet_layout(&d, &o, &a4);
         let drawn = sheets(&d, &o, &a4);
         assert_eq!(layout.len(), drawn.len());
