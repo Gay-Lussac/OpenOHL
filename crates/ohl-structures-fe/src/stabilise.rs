@@ -20,17 +20,35 @@
 //!   held. Joints with truss members only have no rotations at all
 //!   (the solver gives them none).
 //!
-//! A direction along a structure axis is held **exactly**: that degree of
-//! freedom is removed, as a support would remove it. A skew one gets a
-//! **spring** along it as stiff as the joint's stiffest member (EA/L, or
-//! GJ/L for a rotation) — numerically harmless, and, since nothing else
-//! acts in that direction, as good as a restraint. Either way the held
-//! direction carries only what is loaded along it (a load the joint could
-//! not carry anyway); the solver reports that force per stabilisation and
-//! refuses one that carries a real share of the loads
-//! ([`crate::solve::HELD_SHARE`]). The stabilisation is used only after a
-//! solve without it found a zero pivot (or buckling): a model that solves
-//! as it is never sees it, and its results stay the same bit for bit.
+//! A translation of a joint that lies on straight lines of members whose
+//! ends are held by the structure (a joint in a face of a tower, on a
+//! member cut there — a redundant's, a K's or a plan bracing's joint) is
+//! held **relative to those ends** ([`Stabilisation::relative`]): the
+//! joint follows, along its free direction, the point of each line where
+//! it lies (interpolated between the line's ends), as the continuous
+//! member it cuts would carry it; with several lines, their mean. A
+//! line's ends are the first joints along it, through joints that
+//! continue it straight, that are not held themselves, or are held
+//! relative to others already (so a chain of such holds ends at held
+//! joints, never in a loop). Other free translations, and every
+//! rotation, are held **to the ground**: a direction along a structure
+//! axis exactly (that degree of freedom is removed, as a support would
+//! remove it), a skew one by a **spring** along it as stiff as the
+//! joint's stiffest member (EA/L, or GJ/L for a rotation) — numerically
+//! harmless, and, since nothing else acts in that direction, as good as a
+//! restraint. A relative hold is a spring of the same stiffness on the
+//! joint's motion less its lines' (k·(n·u_J − Σ w n·u_e)²/2), so what it
+//! takes at the joint goes to the lines' ends, not to the ground: in
+//! first order the load along the direction (to the ends, as the cut
+//! member would carry it), with P-Delta also the pull of its members'
+//! geometric stiffness (N/L), which is ~0 when the joint follows its
+//! face. Either way the held direction carries only what is loaded along
+//! it (a load the joint could not carry anyway); the solver reports that
+//! force per stabilisation and refuses one that carries a real share of
+//! the loads ([`crate::solve::HELD_SHARE`]). The stabilisation is used
+//! only after a solve without it found a zero pivot (or buckling): a
+//! model that solves as it is never sees it, and its results stay the
+//! same bit for bit.
 
 use nalgebra::{Matrix3, SymmetricEigen, Vector3};
 
@@ -43,6 +61,11 @@ const FREE: f64 = 1e-6;
 /// A unit direction this close to a structure axis (1 − cos) is that
 /// axis.
 const ON_AXIS: f64 = 1e-9;
+/// Members at a joint whose directions differ by less than this (the
+/// sine of the angle, about 0.6°) continue one straight line (a member
+/// cut there; the joints of generated bodies are rounded to the
+/// millimetre, a few tenths of a millimetre off the line over a metre).
+const STRAIGHT: f64 = 1e-2;
 
 /// A direction of a joint held by the solver.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,11 +78,17 @@ pub struct Stabilisation {
     /// structure axes.
     pub direction: [f64; 3],
     /// The structure axis (0 x, 1 y, 2 z) when the direction is along
-    /// one: that degree of freedom is removed. None: a spring.
+    /// one: held to the ground, that degree of freedom is removed. None:
+    /// a spring.
     pub axis: Option<usize>,
-    /// Stiffness of the spring along a skew direction, N/m or N·m/rad (0
-    /// for an axis).
+    /// Stiffness of the spring, N/m or N·m/rad (0 for an axis held to the
+    /// ground).
     pub stiffness: f64,
+    /// Held relative to these joints (index, weight; the weights sum to
+    /// 1): the spring acts on the joint's motion along the direction less
+    /// the weighted motion of the joints — the ends of the straight lines
+    /// of members it lies on (module docs). Empty: held to the ground.
+    pub relative: Vec<(usize, f64)>,
 }
 
 impl Stabilisation {
@@ -134,6 +163,7 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
                         direction,
                         axis: Some(d),
                         stiffness: 0.0,
+                        relative: Vec::new(),
                     });
                 }
             }
@@ -164,6 +194,7 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
                 direction,
                 axis,
                 stiffness: if axis.is_some() { 0.0 } else { stiffest },
+                relative: Vec::new(),
             });
         }
     }
@@ -225,11 +256,133 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
                 direction,
                 axis,
                 stiffness: if axis.is_some() { 0.0 } else { stiffest },
+                relative: Vec::new(),
             });
         }
     }
     out.sort_by_key(|s| (s.node, s.rotation));
+    hold_relative(model, &at_node, &mut out);
     out
+}
+
+/// Turns the ground holds of free translations into holds relative to the
+/// ends of the straight lines of members through their joint, where those
+/// ends are held (module docs). Rounds: a joint whose every line reaches
+/// joints held at the start of the round is held relative to them; the
+/// joints of a round count as held in the next ones.
+fn hold_relative(model: &Model, at_node: &[Vec<usize>], out: &mut [Stabilisation]) {
+    let n_nodes = model.nodes.len();
+    let mut free = vec![false; n_nodes];
+    for h in out.iter().filter(|h| !h.rotation) {
+        free[h.node] = true;
+    }
+    if !free.iter().any(|&f| f) {
+        return;
+    }
+    // Candidates: joints with free translations and no support or spring
+    // on a translation (a support holds them to the ground already).
+    let candidate = |n: usize| {
+        let node = &model.nodes[n];
+        free[n] && !at_node[n].is_empty() && (0..3).all(|d| !node.fixed[d] && node.spring[d] <= 0.0)
+    };
+    let point = |n: usize| Vector3::from(model.nodes[n].point);
+    let other = |k: usize, n: usize| {
+        let m = &model.members[k];
+        if m.i == n { m.j } else { m.i }
+    };
+    let toward = |n: usize, a: usize| (point(a) - point(n)).normalize();
+    let straight =
+        |a: Vector3<f64>, b: Vector3<f64>| cross_norm(a, b) <= STRAIGHT && a.dot(&b) > 0.0;
+    // Along the line from `n` through member `k`: the first joint held
+    // (`held`), through joints that continue the line straight; none when
+    // the line stops at a joint that is not held.
+    let walk = |n: usize, k: usize, held: &[bool]| -> Option<usize> {
+        let dir = toward(n, other(k, n));
+        let mut at = other(k, n);
+        for _ in 0..n_nodes {
+            if held[at] {
+                return Some(at);
+            }
+            let next = at_node[at]
+                .iter()
+                .map(|&q| other(q, at))
+                .find(|&b| straight(toward(at, b), dir))?;
+            at = next;
+        }
+        None
+    };
+    let mut held: Vec<bool> = (0..n_nodes).map(|n| !free[n]).collect();
+    let mut weights: Vec<Option<Vec<(usize, f64)>>> = vec![None; n_nodes];
+    loop {
+        let mut round = Vec::new();
+        for n in (0..n_nodes).filter(|&n| candidate(n) && !held[n]) {
+            // The lines through n: pairs of its members pointing opposite
+            // ways, each line once.
+            let members = &at_node[n];
+            let mut lines = Vec::new();
+            for (x, &p) in members.iter().enumerate() {
+                for &q in &members[x + 1..] {
+                    let (a, b) = (toward(n, other(p, n)), toward(n, other(q, n)));
+                    if straight(a, -b)
+                        && !lines
+                            .iter()
+                            .any(|&(l, _)| straight(toward(n, other(l, n)), a))
+                    {
+                        lines.push((p, q));
+                    }
+                }
+            }
+            if lines.is_empty() {
+                continue;
+            }
+            let mut w: Vec<(usize, f64)> = Vec::new();
+            let mut all = true;
+            for &(p, q) in &lines {
+                let (Some(a), Some(b)) = (walk(n, p, &held), walk(n, q, &held)) else {
+                    all = false;
+                    break;
+                };
+                let (la, lb) = ((point(a) - point(n)).norm(), (point(b) - point(n)).norm());
+                let share = 1.0 / lines.len() as f64;
+                for (e, v) in [(a, lb / (la + lb)), (b, la / (la + lb))] {
+                    match w.iter_mut().find(|(x, _)| *x == e) {
+                        Some(x) => x.1 += share * v,
+                        None => w.push((e, share * v)),
+                    }
+                }
+            }
+            if all {
+                round.push((n, w));
+            }
+        }
+        if round.is_empty() {
+            break;
+        }
+        for (n, w) in round {
+            held[n] = true;
+            weights[n] = Some(w);
+        }
+    }
+    for h in out.iter_mut().filter(|h| !h.rotation) {
+        if let Some(w) = &weights[h.node] {
+            h.relative = w.clone();
+            if h.stiffness == 0.0 {
+                h.stiffness = stiffest(model, &at_node[h.node]);
+            }
+        }
+    }
+}
+
+/// The largest EA/L of the members `members`.
+fn stiffest(model: &Model, members: &[usize]) -> f64 {
+    members
+        .iter()
+        .map(|&k| {
+            let m = &model.members[k];
+            let sec = &model.sections[m.section];
+            sec.e * sec.area / model.length(m)
+        })
+        .fold(0.0, f64::max)
 }
 
 fn cross_norm(a: Vector3<f64>, b: Vector3<f64>) -> f64 {

@@ -392,3 +392,107 @@ fn a_stable_model_is_untouched() {
         assert_eq!(with, without);
     }
 }
+
+/// A tripod (three legs from feet on a 3 m circle to an apex 10 m up)
+/// with one leg cut at its middle by a joint `M` with nothing else: `M`
+/// has no stiffness across the leg's line (two directions). It is held
+/// relative to the leg's ends (half each), so it follows the leg: with
+/// P-Delta as in first order the tripod solves as the one with the leg
+/// whole (the halves' geometric stiffness, with `M` on the line, is the
+/// whole leg's), the holds take nothing, and the reactions balance the
+/// loads. Held to the ground instead, `M` would pull the compressed leg
+/// with its geometric stiffness N/(L/2) times its ends' sway.
+#[test]
+fn a_joint_on_a_line_follows_its_ends() {
+    let section = Section::elastic("s", E, 1.2e-3, 0.0);
+    let feet = [[3.0, 0.0, 0.0], [-1.5, 2.598, 0.0], [-1.5, -2.598, 0.0]];
+    let apex = [0.0, 0.0, 10.0];
+    let mut whole = Model {
+        sections: vec![section],
+        ..Model::default()
+    };
+    for (k, f) in feet.iter().enumerate() {
+        whole.nodes.push(Node::pinned(&format!("F{k}"), *f));
+    }
+    whole.nodes.push(Node::free("A", apex));
+    for k in 0..3 {
+        whole
+            .members
+            .push(Member::new(&format!("leg{k}"), MemberKind::Truss, k, 3, 0));
+    }
+    let mut cut = whole.clone();
+    let mid = [0, 1, 2].map(|c| (feet[0][c] + apex[c]) / 2.0);
+    cut.nodes.push(Node::free("M", mid));
+    cut.members[0] = Member::new("leg0a", MemberKind::Truss, 0, 4, 0);
+    cut.members
+        .push(Member::new("leg0b", MemberKind::Truss, 4, 3, 0));
+    let load = [20e3, 5e3, -200e3];
+    let size = load.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let loads = nodal(vec![force(3, load)], 0.0);
+    let mut apex_moves = Vec::new();
+    for nonlinear in [false, true] {
+        let o = Options {
+            nonlinear,
+            ..first_order(true)
+        };
+        let w = solved(&whole, &loads, &o);
+        let c = solved(&cut, &loads, &o);
+        assert!(w.stabilised.is_empty());
+        assert_eq!(c.stabilised.len(), 2);
+        for h in &c.stabilised {
+            assert_eq!(h.at.node, 4);
+            assert_eq!(h.at.relative, vec![(0, 0.5), (3, 0.5)]);
+            assert!(h.force.abs() < 1e-9 * size, "{nonlinear}: {}", h.force);
+        }
+        for d in 0..3 {
+            let (a, b) = (w.displacements[3][d], c.displacements[3][d]);
+            assert!((a - b).abs() < 1e-9 * a.abs().max(1e-6), "{d}: {a} {b}");
+            // M on the line between its ends.
+            let m = (c.displacements[0][d] + c.displacements[3][d]) / 2.0;
+            assert!((c.displacements[4][d] - m).abs() < 1e-12, "{d}");
+        }
+        for (k, n) in [(0, 0), (0, 3), (1, 1), (2, 2)] {
+            let (a, b) = (w.members[k].axial, c.members[n].axial);
+            assert!((a - b).abs() < 1e-9 * size, "{k}: {a} {b}");
+        }
+        let sum: [f64; 3] = [0, 1, 2].map(|k| c.reactions.iter().map(|r| r.force[k]).sum());
+        for k in 0..3 {
+            assert!((sum[k] + load[k]).abs() < 1e-6 * size, "{sum:?}");
+        }
+        apex_moves.push(c.displacements[3][0]);
+    }
+    // P-Delta moves the apex further than first order.
+    assert!(
+        apex_moves[1].abs() > apex_moves[0].abs() * 1.001,
+        "{apex_moves:?}"
+    );
+    // A small load on M across the leg (first order): the hold reports it
+    // and passes it to the leg's ends, half each, as the whole leg would
+    // carry it — the reactions balance all the loads.
+    let across = [0.0, 100.0, 0.0];
+    let mut with_m = loads.clone();
+    with_m.nodal.push(force(4, across));
+    let c = solved(&cut, &with_m, &first_order(true));
+    let held: f64 = c
+        .stabilised
+        .iter()
+        .map(|h| h.force * h.force)
+        .sum::<f64>()
+        .sqrt();
+    assert!((held - 100.0).abs() < 1e-6, "{held}");
+    let mut halves = loads.clone();
+    halves.nodal.push(force(0, [0.0, 50.0, 0.0]));
+    halves.nodal.push(force(3, [0.0, 50.0, 0.0]));
+    let w = solved(&whole, &halves, &first_order(true));
+    for (k, n) in [(0, 0), (1, 1), (2, 2)] {
+        let (a, b) = (w.members[k].axial, c.members[n].axial);
+        assert!((a - b).abs() < 1e-9 * size, "{k}: {a} {b}");
+    }
+    let sum: [f64; 3] = [0, 1, 2].map(|k| c.reactions.iter().map(|r| r.force[k]).sum());
+    for k in 0..3 {
+        assert!(
+            (sum[k] + load[k] + across[k]).abs() < 1e-6 * size,
+            "{sum:?}"
+        );
+    }
+}
