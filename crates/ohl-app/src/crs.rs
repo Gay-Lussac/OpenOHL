@@ -37,14 +37,18 @@ impl Category {
     }
 }
 
-/// Chooses a coordinate system: from the EPSG list (filtered), as a proj4
+/// Chooses a coordinate system: from the EPSG list (searched), as a proj4
 /// string or from a `.prj` file. `spec` is what [`Crs::parse`] takes.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Picker {
     /// How it is given.
     pub category: Category,
-    /// Show only EPSG systems whose code or name contains this.
+    /// The search typed: an EPSG code (with or without `EPSG:`) or words
+    /// of the name, area of use or unit ([`ohl_crs::search`]).
     pub filter: String,
+    /// The systems found for the search (query, rows): searched again
+    /// only when the search changes.
+    found: Option<(String, Vec<&'static ohl_crs::Known>)>,
     /// The proj4 string typed.
     pub proj4: String,
     /// The system chosen.
@@ -100,24 +104,36 @@ impl Picker {
             });
         match self.category {
             Category::Epsg => {
-                ui.horizontal(|ui| {
-                    ui.label("Show only systems containing");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.filter)
-                            .id_salt(format!("{id}-filter"))
-                            .hint_text("e.g. LV95, UTM 32N, 2056")
-                            .desired_width(160.0),
-                    );
-                });
-                let wanted = self.filter.trim().to_lowercase();
-                let rows: Vec<&ohl_crs::Known> = ohl_crs::known()
-                    .iter()
-                    .filter(|k| {
-                        wanted.is_empty()
-                            || k.name.to_lowercase().contains(&wanted)
-                            || k.code.to_string().contains(&wanted)
+                let search = ui
+                    .horizontal(|ui| {
+                        ui.label("Search");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.filter)
+                                .id_salt(format!("{id}-filter"))
+                                .hint_text("code, name, area or unit: 2056, LV95, UTM 32N")
+                                .desired_width(240.0),
+                        )
+                        .on_hover_text(
+                            "An EPSG code (typed whole, it is chosen), or words of the name, \
+                             area of use or unit in any order; Enter takes the first row",
+                        )
                     })
-                    .collect();
+                    .inner;
+                let rows = self.rows().to_vec();
+                // A code typed whole is chosen; Enter takes the first row.
+                if search.changed()
+                    && let Some(k) = rows
+                        .first()
+                        .filter(|k| Some(k.code) == typed_code(&self.filter))
+                {
+                    self.spec = k.spec();
+                }
+                if search.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && let Some(k) = rows.first()
+                {
+                    self.spec = k.spec();
+                }
                 let chosen = self.spec.to_ascii_uppercase();
                 egui::Frame::group(ui.style()).show(ui, |ui| {
                     egui::ScrollArea::vertical()
@@ -128,24 +144,29 @@ impl Picker {
                         .show_rows(ui, 18.0, rows.len(), |ui, range| {
                             for k in &rows[range] {
                                 let spec = k.spec();
-                                let text = format!(
-                                    "{k}{}",
-                                    if k.geographic {
-                                        "  (longitude, latitude)"
-                                    } else {
-                                        ""
-                                    }
-                                );
-                                if ui.selectable_label(chosen == spec, text).clicked() {
+                                if ui
+                                    .selectable_label(chosen == spec, row_text(k))
+                                    .on_hover_text(row_hover(k))
+                                    .clicked()
+                                {
                                     self.spec = spec;
                                 }
                             }
                         });
                 });
                 ui.label(
-                    egui::RichText::new(format!("{} systems listed", rows.len()))
-                        .small()
-                        .weak(),
+                    egui::RichText::new(format!(
+                        "{} systems listed: code, name, unit{} — the systems this program can \
+                         transform (geocentric ones left out)",
+                        rows.len(),
+                        if rows.iter().any(|k| k.area.is_some()) {
+                            ", area of use where the registry gives it"
+                        } else {
+                            ""
+                        }
+                    ))
+                    .small()
+                    .weak(),
                 );
             }
             Category::Proj4 => {
@@ -185,20 +206,35 @@ impl Picker {
             egui::RichText::new("Chosen: none").weak()
         } else {
             match Crs::parse(&self.spec) {
-                Ok(c) => egui::RichText::new(format!(
-                    "Chosen: {}{}",
-                    ohl_crs::describe(&self.spec),
-                    if c.is_geographic() {
-                        " — geographic (degrees)"
-                    } else {
-                        ""
-                    }
-                ))
-                .strong(),
+                Ok(c) => {
+                    let known = typed_code(&self.spec).and_then(ohl_crs::known_code);
+                    egui::RichText::new(format!(
+                        "Chosen: {}{}{}",
+                        ohl_crs::describe(&self.spec),
+                        match known {
+                            Some(k) if k.geographic => format!(" — geographic ({})", k.unit),
+                            Some(k) => format!(" — {}", k.unit),
+                            None if c.is_geographic() => " — geographic (degrees)".into(),
+                            None => String::new(),
+                        },
+                        known
+                            .and_then(|k| k.area)
+                            .map_or(String::new(), |a| format!(" — {a}"))
+                    ))
+                    .strong()
+                }
                 Err(e) => egui::RichText::new(e).color(ui.visuals().error_fg_color),
             }
         };
         ui.label(shown);
+    }
+
+    /// The systems found for the search typed ([`ohl_crs::search`]).
+    pub fn rows(&mut self) -> &[&'static ohl_crs::Known] {
+        if self.found.as_ref().is_none_or(|(q, _)| *q != self.filter) {
+            self.found = Some((self.filter.clone(), ohl_crs::search(&self.filter)));
+        }
+        &self.found.as_ref().expect("searched").1
     }
 
     /// Takes the system of a `.prj` file.
@@ -214,6 +250,43 @@ impl Picker {
             Err(e) => self.prj_error = Some(e),
         }
     }
+}
+
+/// The EPSG code typed (`2056`, `EPSG:2056`), if the search is one.
+fn typed_code(search: &str) -> Option<u16> {
+    let lower = search.trim().to_ascii_lowercase();
+    lower
+        .strip_prefix("epsg:")
+        .unwrap_or(&lower)
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// A row of the list: code, name, unit, area of use (when known).
+pub fn row_text(k: &ohl_crs::Known) -> String {
+    let mut text = format!("{:>5}  {}  ·  {}", k.code, k.name, k.unit);
+    if let Some(a) = k.area {
+        text.push_str("  ·  ");
+        text.push_str(a);
+    }
+    text
+}
+
+/// A row's hover text: the same, spelled out.
+fn row_hover(k: &ohl_crs::Known) -> String {
+    format!(
+        "EPSG:{} — {}\nCoordinates: {} in {}\nArea of use: {}",
+        k.code,
+        k.name,
+        if k.geographic {
+            "longitude, latitude"
+        } else {
+            "easting, northing"
+        },
+        k.unit,
+        k.area.unwrap_or("not given by the registry's definition")
+    )
 }
 
 /// Terrain › Coordinate system › Define: the system the project's
