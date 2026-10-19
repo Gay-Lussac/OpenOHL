@@ -28,7 +28,10 @@
 //!   buckling load) uses 0 ("slack"). One kept active because the active
 //!   set did not settle ([`Solution::kept_active`], the last resort) is
 //!   checked as a truss (compression too) and marked [`KEPT_ACTIVE`]:
-//!   approximate.
+//!   approximate. One that bends (`bending = true`) is checked as a frame
+//!   while it is in the model (its moments too).
+//! - **Modelling members** (`check = false`, a tower program's fictitious
+//!   members): solved, not checked ([`NOT_CHECKED`], no usage).
 
 use crate::model::{MemberKind, Model};
 use crate::solve::Solution;
@@ -55,6 +58,10 @@ pub const KEPT_ACTIVE: &str = "kept active (did not settle)";
 /// `bowed: carries its buckling load 0.83 kN`.
 pub const BOWED: &str = "bowed: carries its buckling load";
 
+/// What governs a member not design-checked (`check = false`: a
+/// modelling member): no usage.
+pub const NOT_CHECKED: &str = "not checked (modelling member)";
+
 /// Euler buckling load of a member, N (none without a second moment).
 pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
@@ -75,6 +82,14 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
         .map(|(idx, m)| {
             let s = &model.sections[m.section];
             let f = &solution.members[idx];
+            if !m.check {
+                // A modelling member: solved, not checked.
+                return MemberUsage {
+                    member: idx,
+                    usage: None,
+                    governs: NOT_CHECKED.into(),
+                };
+            }
             if m.kind == MemberKind::Tension && f.slack {
                 return MemberUsage {
                     member: idx,
@@ -156,7 +171,7 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
                     )
                 })
             };
-            if m.kind != MemberKind::Frame {
+            if !m.is_frame() {
                 return MemberUsage {
                     member: idx,
                     usage: axial.as_ref().map(|a| a.0),

@@ -529,7 +529,14 @@ pub(crate) fn rounds<S>(
                 // Last resort: the members going round kept active.
                 let copy = kept_model.get_or_insert_with(|| model.clone());
                 for &k in &indices {
-                    copy.members[k].kind = MemberKind::Truss;
+                    // Kept active: a truss, or a frame when it bends.
+                    let m = &mut copy.members[k];
+                    m.kind = if m.bending {
+                        MemberKind::Frame
+                    } else {
+                        MemberKind::Truss
+                    };
+                    m.bending = false;
                     kept.push(k);
                 }
                 kept.sort_unstable();
@@ -924,15 +931,23 @@ fn solve_with(
 ) -> Result<Solution, FeError> {
     model.check().map_err(FeError::Invalid)?;
     let n_nodes = model.nodes.len();
+    // Members with a frame's stiffness in this solve: frames, and the
+    // tension-only members that bend while they are in the model.
+    let bends: Vec<bool> = model
+        .members
+        .iter()
+        .enumerate()
+        .map(|(k, m)| m.is_frame() && !inactive.get(k).copied().unwrap_or(false))
+        .collect();
     // Rotations exist at nodes with a frame member; nodes without a
     // member have no equations.
     let mut has_frame = vec![false; n_nodes];
     let mut connected = vec![false; n_nodes];
     let mut adjacent = vec![Vec::new(); n_nodes];
-    for m in &model.members {
+    for (k, m) in model.members.iter().enumerate() {
         connected[m.i] = true;
         connected[m.j] = true;
-        if m.kind == MemberKind::Frame {
+        if bends[k] {
             has_frame[m.i] = true;
             has_frame[m.j] = true;
         }
@@ -1004,7 +1019,8 @@ fn solve_with(
     let prepared: Vec<Prepared> = model
         .members
         .iter()
-        .map(|m| {
+        .zip(&bends)
+        .map(|(m, &bends)| {
             let s = &model.sections[m.section];
             let l = model.length(m);
             let r = axes(model, m);
@@ -1012,7 +1028,7 @@ fn solve_with(
             eqs[..6].copy_from_slice(&eq[m.i]);
             eqs[6..].copy_from_slice(&eq[m.j]);
             let w = s.weight() * model.dead_load_factor(m) * loads.self_weight;
-            let weight_local = if m.kind == MemberKind::Frame {
+            let weight_local = if bends {
                 frame_uniform_load(l, r * Vector3::new(0.0, 0.0, -w))
             } else {
                 [0.0; 12]
@@ -1021,7 +1037,7 @@ fn solve_with(
                 l,
                 r,
                 t: transformation(&r),
-                ke: if m.kind == MemberKind::Frame {
+                ke: if bends {
                     frame_elastic(l, s)
                 } else {
                     Mat12::zeros()
@@ -1032,8 +1048,8 @@ fn solve_with(
             }
         })
         .collect();
-    for (m, p) in model.members.iter().zip(&prepared) {
-        if m.kind == MemberKind::Frame {
+    for ((m, p), &bends) in model.members.iter().zip(&prepared).zip(&bends) {
+        if bends {
             let g = p.t.transpose() * SMatrix::<f64, 12, 1>::from_column_slice(&p.weight_local);
             for k in 0..6 {
                 f_ext[m.i][k] += g[k];
@@ -1212,7 +1228,7 @@ fn solve_with(
             let d = local_displacements(p, &u);
             let n = axial[idx];
             let mut end = [0.0; 12];
-            if m.kind == MemberKind::Frame {
+            if bends[idx] {
                 let mut kt = p.ke;
                 if options.nonlinear {
                     kt += frame_geometric(p.l, n);
@@ -1523,48 +1539,49 @@ fn assemble(
 ) {
     k.clear();
     for (idx, (m, p)) in model.members.iter().zip(prepared).enumerate() {
-        match m.kind {
-            MemberKind::Frame => {
-                let mut kl = p.ke;
-                if nonlinear {
-                    kl += frame_geometric(p.l, axial[idx]);
-                }
-                let kg = p.t.transpose() * kl * p.t;
-                for a in 0..12 {
-                    let Some(qa) = p.eq[a] else { continue };
-                    for b in a..12 {
-                        if let Some(qb) = p.eq[b] {
-                            // Each unordered pair once: the matrix is
-                            // stored symmetric.
-                            let v = kg[(a, b)];
-                            if v != 0.0 {
-                                k.add(qa, qb, v);
-                            }
+        // A member that bends in this solve (a frame, or a tension-only
+        // member that bends and is in the model): its frame stiffness.
+        if m.is_frame() && !slack[idx] {
+            let mut kl = p.ke;
+            if nonlinear {
+                kl += frame_geometric(p.l, axial[idx]);
+            }
+            let kg = p.t.transpose() * kl * p.t;
+            for a in 0..12 {
+                let Some(qa) = p.eq[a] else { continue };
+                for b in a..12 {
+                    if let Some(qb) = p.eq[b] {
+                        // Each unordered pair once: the matrix is
+                        // stored symmetric.
+                        let v = kg[(a, b)];
+                        if v != 0.0 {
+                            k.add(qa, qb, v);
                         }
                     }
                 }
             }
-            MemberKind::Truss | MemberKind::Cable | MemberKind::Tension => {
-                let n_l = if nonlinear { axial[idx] / p.l } else { 0.0 };
-                // Left out: no stiffness of its own; a bowed member's
-                // constant force still turns with its chord (P-Delta).
-                let ea_l = if slack[idx] { 0.0 } else { p.ea_l };
-                if slack[idx] && n_l == 0.0 {
-                    continue;
-                }
-                let e = p.r.row(0).transpose();
-                let b = axial_block(&e, ea_l, n_l);
-                for (oa, sa) in [(0, 1.0), (6, -1.0)] {
-                    for (ob, sb) in [(0, 1.0), (6, -1.0)] {
-                        for r in 0..3 {
-                            for c in 0..3 {
-                                let (Some(qa), Some(qb)) = (p.eq[oa + r], p.eq[ob + c]) else {
-                                    continue;
-                                };
-                                // Each unordered pair once.
-                                if (oa + r) <= (ob + c) {
-                                    k.add(qa, qb, sa * sb * b[(r, c)]);
-                                }
+        } else {
+            // Trusses, cables, tension-only members (one that bends, left
+            // out or bowed: as a truss — no bending of its own).
+            let n_l = if nonlinear { axial[idx] / p.l } else { 0.0 };
+            // Left out: no stiffness of its own; a bowed member's
+            // constant force still turns with its chord (P-Delta).
+            let ea_l = if slack[idx] { 0.0 } else { p.ea_l };
+            if slack[idx] && n_l == 0.0 {
+                continue;
+            }
+            let e = p.r.row(0).transpose();
+            let b = axial_block(&e, ea_l, n_l);
+            for (oa, sa) in [(0, 1.0), (6, -1.0)] {
+                for (ob, sb) in [(0, 1.0), (6, -1.0)] {
+                    for r in 0..3 {
+                        for c in 0..3 {
+                            let (Some(qa), Some(qb)) = (p.eq[oa + r], p.eq[ob + c]) else {
+                                continue;
+                            };
+                            // Each unordered pair once.
+                            if (oa + r) <= (ob + c) {
+                                k.add(qa, qb, sa * sb * b[(r, c)]);
                             }
                         }
                     }

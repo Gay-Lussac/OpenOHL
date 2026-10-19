@@ -216,6 +216,8 @@ pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
 }
 
 #[cfg(test)]
+mod bending_tests;
+#[cfg(test)]
 mod member_tests;
 #[cfg(test)]
 mod pole_extension_tests;
