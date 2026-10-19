@@ -162,14 +162,28 @@ fn tower(arms: bool) -> DocumentMut {
     )
 }
 
+/// What the stabilisation of a solve held: the directions (those held to
+/// the ground), and the
+/// resultant of their forces and the largest one, over the size of the
+/// loads' resultant.
+#[derive(Debug, Clone, Copy)]
+struct Held {
+    count: usize,
+    ground: usize,
+    share: f64,
+    largest: f64,
+}
+
 /// Solves the tower under a sideways and a vertical load at the outermost
 /// joints of its top and at the joints carrying a point, with its own
 /// weight times `weight`, with P-Delta (the default) and in first order:
-/// never refused, and the reactions with what the stabilisation holds
-/// balance the loads. Returns the joint directions held (no stiffness of
-/// their own: the redundants' and plan bracing's joints across their
-/// plane) and the share of the loads they take with P-Delta.
-fn solve_with(doc: &DocumentMut, weight: f64) -> (usize, f64) {
+/// never refused, and the reactions with what the stabilisation holds to
+/// the ground balance the loads (a hold relative to other joints passes
+/// its force to them: it is the structure's). Returns, with P-Delta and in
+/// first order, the joint directions held (no stiffness of their own: the
+/// redundants' and plan bracing's joints across their plane) and the
+/// share of the loads they take.
+fn solve_with(doc: &DocumentMut, weight: f64) -> [Held; 2] {
     let t = read(doc);
     assert_eq!(t.detail(), Detail::Design);
     let mut model = Model::from_structure_type(&doc.to_string()).unwrap();
@@ -204,21 +218,24 @@ fn solve_with(doc: &DocumentMut, weight: f64) -> (usize, f64) {
     };
     let applied: [f64; 3] = [0, 1, 2].map(|k| loads.nodal.iter().map(|l| l.force[k]).sum::<f64>());
     let size = applied.iter().map(|v| v * v).sum::<f64>().sqrt();
-    let mut shares = Vec::new();
+    let mut held_out = Vec::new();
     for nonlinear in [true, false] {
         model.analysis.nonlinear = nonlinear;
         let (s, _) =
             ohl_structures_fe::analyse(&model, &loads, 1.0, &ohl_structures_fe::default_budget())
                 .unwrap_or_else(|e| panic!("{e}"));
-        let held: [f64; 3] = [0, 1, 2].map(|k| {
-            s.stabilised
-                .iter()
-                .filter(|h| !h.at.rotation)
-                .map(|h| h.force * h.at.direction[k])
-                .sum::<f64>()
-        });
+        let resultant = |ground: bool| -> [f64; 3] {
+            [0, 1, 2].map(|k| {
+                s.stabilised
+                    .iter()
+                    .filter(|h| !h.at.rotation && h.at.relative.is_empty() == ground)
+                    .map(|h| h.force * h.at.direction[k])
+                    .sum::<f64>()
+            })
+        };
+        let ground = resultant(true);
         let sum: [f64; 3] =
-            [0, 1, 2].map(|k| s.reactions.iter().map(|r| r.force[k]).sum::<f64>() + held[k]);
+            [0, 1, 2].map(|k| s.reactions.iter().map(|r| r.force[k]).sum::<f64>() + ground[k]);
         for k in 0..2 {
             assert!(
                 (sum[k] + applied[k]).abs() < 1e-3 * applied[k].abs().max(1.0),
@@ -234,20 +251,45 @@ fn solve_with(doc: &DocumentMut, weight: f64) -> (usize, f64) {
             // The weight is carried too: the vertical reactions are larger.
             assert!(sum[2] > -applied[2], "{sum:?} {applied:?}");
         }
-        let share = held.iter().map(|v| v * v).sum::<f64>().sqrt() / size;
-        if !nonlinear && weight == 0.0 {
-            // In first order nothing loads a held direction (but
-            // for the joints a millimetre off their plane, rounded).
-            assert!(share < 1e-3, "{share}");
+        let all: [f64; 3] = {
+            let r = resultant(false);
+            [0, 1, 2].map(|k| ground[k] + r[k])
+        };
+        let held = Held {
+            count: s.stabilised.len(),
+            ground: s
+                .stabilised
+                .iter()
+                .filter(|h| h.at.relative.is_empty())
+                .count(),
+            share: all.iter().map(|v| v * v).sum::<f64>().sqrt() / size,
+            largest: s
+                .stabilised
+                .iter()
+                .filter(|h| !h.at.rotation)
+                .map(|h| h.force.abs())
+                .fold(0.0, f64::max)
+                / size,
+        };
+        if weight == 0.0 {
+            // Nothing loads a held direction (but for the joints a
+            // millimetre off their plane, rounded): in first order, and
+            // with P-Delta, where the held joints follow their faces.
+            assert!(held.share < HELD && held.largest < HELD, "{held:?}");
         }
-        shares.push((s.stabilised.len(), share));
+        held_out.push(held);
     }
-    shares[0]
+    <[Held; 2]>::try_from(held_out).unwrap()
 }
 
+/// The bound on what the stabilisation holds without the weight, as a
+/// share of the loads (each held direction, and their resultant), with
+/// P-Delta and in first order.
+const HELD: f64 = 5e-4;
+
 fn solve(doc: &DocumentMut) {
-    let (held, _) = solve_with(doc, 0.0);
-    assert_eq!(held, 0);
+    let held = solve_with(doc, 0.0);
+    assert_eq!(held[0].count, 0);
 }
 
 #[test]
@@ -262,9 +304,12 @@ fn crossarms_and_a_peak_on_the_body_solve() {
 
 /// Redundants, one and two levels, in every bracing pattern: no
 /// mechanism (each face stays triangulated); only the directions out of
-/// a face of the redundants' own joints are held: in first order they
-/// carry nothing (without the weight), with P-Delta a small share of the
-/// sway (printed).
+/// a face of the redundants' own joints are held, relative to the ends of
+/// the members they cut: without the weight they carry nothing, with
+/// P-Delta as in first order (below [`HELD`], 5·10⁻⁴ of the loads; the
+/// most, about 4·10⁻⁴, with two levels in X panels, the same in both — the
+/// joints rounded a millimetre off their plane; held to the ground they
+/// took up to 1.1 % with P-Delta). Printed.
 #[test]
 fn redundants_in_every_pattern_solve() {
     for bracing in Bracing::ALL {
@@ -274,14 +319,26 @@ fn redundants_in_every_pattern_solve() {
                 panel.redundants = level;
             }
             let doc = build(p, None);
-            let (held, share) = solve_with(&doc, 0.0);
-            assert!(held > 0);
+            let [p_delta, first] = solve_with(&doc, 0.0);
+            assert!(p_delta.count > 0);
+            assert_eq!(p_delta.count, first.count);
+            assert_eq!(p_delta.ground, 0, "{p_delta:?}");
+            // P-Delta adds next to nothing to what is held.
+            assert!(
+                (p_delta.share - first.share).abs() < 2e-4,
+                "{p_delta:?} {first:?}"
+            );
             solve_with(&doc, 1.0);
             eprintln!(
-                "{} {}: {held} direction(s) held, {:.2} % of the loads with P-Delta",
+                "{} {}: {} direction(s) held ({} to the ground), {:.2e} of the loads with P-Delta \
+                 (largest {:.2e}), {:.2e} in first order",
                 bracing.key(),
                 level.key(),
-                100.0 * share
+                p_delta.count,
+                p_delta.ground,
+                p_delta.share,
+                p_delta.largest,
+                first.share,
             );
         }
     }
@@ -298,7 +355,8 @@ fn plan_bracing_solves() {
             panel.plan = plan;
             panel.horizontal = false;
         }
-        solve_with(&build(p.clone(), None), 0.0);
+        let [held, _] = solve_with(&build(p.clone(), None), 0.0);
+        assert_eq!(held.ground, 0, "{held:?}");
         solve_with(&build(p, None), 1.0);
     }
     let mut p = body(Bracing::K);

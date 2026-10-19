@@ -939,11 +939,26 @@ fn solve_with(
         adjacent[m.i].push(m.j);
         adjacent[m.j].push(m.i);
     }
+    // A hold relative to other joints couples them all.
+    for h in held.iter().filter(|h| !h.relative.is_empty()) {
+        let nodes: Vec<usize> = std::iter::once(h.node)
+            .chain(h.relative.iter().map(|r| r.0))
+            .collect();
+        for &a in &nodes {
+            for &b in &nodes {
+                if a != b && !adjacent[a].contains(&b) {
+                    adjacent[a].push(b);
+                }
+            }
+        }
+    }
     let order = reverse_cuthill_mckee(&adjacent);
     // Degrees of freedom the stabilisation removes.
     let mut removed = vec![[false; 6]; n_nodes];
     for h in held {
-        if let Some(a) = h.axis {
+        if let Some(a) = h.axis
+            && h.relative.is_empty()
+        {
             removed[h.node][a + if h.rotation { 3 } else { 0 }] = true;
         }
     }
@@ -1043,6 +1058,14 @@ fn solve_with(
     let mut first: Vec<usize> = (0..n_eq).collect();
     for p in &prepared {
         let eqs: Vec<usize> = p.eq.iter().flatten().copied().collect();
+        if let Some(&low) = eqs.iter().min() {
+            for &e in &eqs {
+                first[e] = first[e].min(low);
+            }
+        }
+    }
+    for h in held {
+        let eqs: Vec<usize> = relative_terms(h, &eq).iter().map(|t| t.0).collect();
         if let Some(&low) = eqs.iter().min() {
             for &e in &eqs {
                 first[e] = first[e].min(low);
@@ -1233,17 +1256,39 @@ fn solve_with(
         .collect();
     // What each stabilisation holds: the out-of-balance of its joint along
     // its direction (its spring's force, or the reaction of the degree of
-    // freedom it removed).
+    // freedom it removed); held relative to other joints, its spring's
+    // force −k·(c·u) — the same, to the solve's residual, but not changed
+    // by the share of another relative hold that ends at the joint.
     let mut held_force = vec![[0.0; 6]; n_nodes];
     let stabilised: Vec<Stabilised> = held
         .iter()
         .map(|h| {
             let base = if h.rotation { 3 } else { 0 };
-            let force: f64 = (0..3)
-                .map(|c| h.direction[c] * (internal[h.node][base + c] - f_ext[h.node][base + c]))
-                .sum();
-            for c in 0..3 {
-                held_force[h.node][base + c] += force * h.direction[c];
+            let force: f64 = if h.relative.is_empty() {
+                (0..3)
+                    .map(|c| {
+                        h.direction[c] * (internal[h.node][base + c] - f_ext[h.node][base + c])
+                    })
+                    .sum()
+            } else {
+                -h.stiffness
+                    * relative_terms(h, &eq)
+                        .iter()
+                        .map(|&(q, v)| v * u[q])
+                        .sum::<f64>()
+            };
+            if h.relative.is_empty() {
+                for c in 0..3 {
+                    held_force[h.node][base + c] += force * h.direction[c];
+                }
+            } else {
+                // Held relative to other joints: the spring takes it to
+                // them (on them, the share `w` of it).
+                for &(e, w) in &h.relative {
+                    for c in 0..3 {
+                        internal[e][base + c] += force * w * h.direction[c];
+                    }
+                }
             }
             Stabilised {
                 at: h.clone(),
@@ -1441,6 +1486,31 @@ fn local_displacements(p: &Prepared, u: &[f64]) -> SMatrix<f64, 12, 1> {
     p.t * g
 }
 
+/// The equations and coefficients of a hold relative to other joints
+/// (none for one to the ground): the vector c with c·u the joint's motion
+/// along its direction less the weighted motion of the others, each
+/// equation once.
+fn relative_terms(h: &Stabilisation, node_eq: &[[Option<usize>; 6]]) -> Vec<(usize, f64)> {
+    let mut c: Vec<(usize, f64)> = Vec::new();
+    if h.relative.is_empty() || h.rotation {
+        return c;
+    }
+    for (n, w) in std::iter::once((h.node, 1.0)).chain(h.relative.iter().map(|&(e, w)| (e, -w))) {
+        for (eq, dir) in node_eq[n].iter().zip(h.direction) {
+            let v = w * dir;
+            if let Some(q) = *eq
+                && v != 0.0
+            {
+                match c.iter_mut().find(|t| t.0 == q) {
+                    Some(t) => t.1 += v,
+                    None => c.push((q, v)),
+                }
+            }
+        }
+    }
+    c
+}
+
 /// Assembles the tangent stiffness at axial forces `axial`.
 fn assemble(
     model: &Model,
@@ -1513,7 +1583,10 @@ fn assemble(
         }
     }
     // Stabilisation springs along skew directions: k·n·nᵀ.
-    for h in held.iter().filter(|h| h.axis.is_none()) {
+    for h in held
+        .iter()
+        .filter(|h| h.axis.is_none() && h.relative.is_empty())
+    {
         let base = if h.rotation { 3 } else { 0 };
         let eqs = &node_eq[h.node];
         for a in 0..3 {
@@ -1523,6 +1596,19 @@ fn assemble(
                     if v != 0.0 {
                         k.add(qa, qb, v);
                     }
+                }
+            }
+        }
+    }
+    // Holds relative to other joints: k·c·cᵀ, c the joint's direction less
+    // the others' weighted.
+    for h in held.iter().filter(|h| !h.relative.is_empty()) {
+        let c = relative_terms(h, node_eq);
+        for (x, &(qa, va)) in c.iter().enumerate() {
+            for &(qb, vb) in &c[x..] {
+                let v = h.stiffness * va * vb;
+                if v != 0.0 {
+                    k.add(qa, qb, v);
                 }
             }
         }
