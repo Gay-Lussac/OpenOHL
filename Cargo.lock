@@ -3928,6 +3928,7 @@ dependencies = [
 name = "ohl-structures-fe"
 version = "0.0.1"
 dependencies = [
+ "criterion",
  "nalgebra",
  "ohl-core",
  "ohl-sections",

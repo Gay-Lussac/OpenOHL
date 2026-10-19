@@ -1049,6 +1049,11 @@ pub fn to_global(position: [f64; 3], rotation_deg: f64, local: [f64; 3]) -> [f64
     ]
 }
 
+/// A line of a structure's stick drawing ([`StructureType::stick_parts`]):
+/// the member's id (none: a `body` polyline, the mast or a crossarm) and
+/// its points in the structure's axes.
+pub type StickPart = (Option<String>, Vec<[f64; 3]>);
+
 /// Global → local (inverse of [`to_global`]).
 pub fn to_local(position: [f64; 3], rotation_deg: f64, global: [f64; 3]) -> [f64; 3] {
     let (s, c) = rotation_deg.to_radians().sin_cos();
@@ -1742,6 +1747,17 @@ impl StructureType {
     /// leg extensions lower their joints ([`StructureType::extended`]; an
     /// extension that does not resolve is drawn without its body).
     pub fn stick(&self, extension: Option<&str>) -> Result<Vec<Vec<[f64; 3]>>, String> {
+        Ok(self
+            .stick_parts(extension)?
+            .into_iter()
+            .map(|(_, l)| l)
+            .collect())
+    }
+
+    /// [`StructureType::stick`] with each line's member id (none: a `body`
+    /// polyline, the mast or a crossarm), in the same order: what the line
+    /// application and the drawings draw a member with.
+    pub fn stick_parts(&self, extension: Option<&str>) -> Result<Vec<StickPart>, String> {
         let dz = self.lift(extension)?;
         if !self.body.is_empty() || !self.members.is_empty() {
             let foot = self.foot_level();
@@ -1770,8 +1786,17 @@ impl StructureType {
             return Ok(extended
                 .members
                 .iter()
-                .filter_map(|m| Some(vec![joint(&m.nodes[0])?, joint(&m.nodes[1])?]))
-                .chain(self.body.iter().map(|o| o.points.iter().map(up).collect()))
+                .filter_map(|m| {
+                    Some((
+                        Some(m.id.clone()),
+                        vec![joint(&m.nodes[0])?, joint(&m.nodes[1])?],
+                    ))
+                })
+                .chain(
+                    self.body
+                        .iter()
+                        .map(|o| (None, o.points.iter().map(up).collect())),
+                )
                 .collect());
         }
         let points: Vec<[f64; 3]> = self
@@ -1783,9 +1808,9 @@ impl StructureType {
             .collect();
         let highest = points.iter().map(|p| p[2]).fold(0.0, f64::max);
         let top = self.height.map_or(highest, |h| (h.si() + dz).max(highest));
-        let mut lines = vec![vec![[0.0, 0.0, 0.0], [0.0, 0.0, top]]];
+        let mut lines = vec![(None, vec![[0.0, 0.0, 0.0], [0.0, 0.0, top]])];
         for p in points {
-            let arm = vec![[0.0, 0.0, p[2]], p];
+            let arm = (None, vec![[0.0, 0.0, p[2]], p]);
             if p[0].hypot(p[1]) > 1e-9 && !lines.contains(&arm) {
                 lines.push(arm);
             }
