@@ -46,6 +46,22 @@ use ohl_structure_loads::{LineValues, LoadCaseRecipe, LoadTable, StructureLoadCa
 
 pub use step::{guid, hash128, uuid};
 
+/// What a member's kind does not say, as text for a format without a
+/// field for it (IFC4's analysis member `Description`, SAF's `Layer`):
+/// `tension only, bending` for a tension-only member that also bends
+/// (exported as a frame), `not checked` for a modelling member, joined by
+/// `; `; empty for any other member.
+pub fn member_note(m: &ExportMember) -> String {
+    let mut parts = Vec::new();
+    if m.kind == ExportKind::Tension && m.bending {
+        parts.push("tension only, bending");
+    }
+    if !m.check {
+        parts.push("not checked");
+    }
+    parts.join("; ")
+}
+
 /// An export format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
