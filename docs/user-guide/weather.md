@@ -54,6 +54,8 @@ On a bare wire of diameter *d* and weight *w*:
 
 The vertical load is w + ice weight, the wind load q·D, and the wire hangs in the plane of their resultant.
 
+**Simplification:** an ice load given without a density takes the wind on the bare diameter: the iced wire's larger wind area is missing (unsafe). Exact: give the ice density, or the thickness. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
+
 ## Choosing cases
 
 ```bash
