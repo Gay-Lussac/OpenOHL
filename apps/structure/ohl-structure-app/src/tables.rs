@@ -1368,7 +1368,8 @@ impl StructureApp {
                 (
                     "kind",
                     "truss (axial only), frame (bending too), cable (tension only, a guy) or \
-                     tension (a truss in tension only: slack when compressed)",
+                     tension (a truss in tension only: in compression up to its own buckling \
+                     load, bowed beyond it; slack without a second moment)",
                 ),
                 ("k", "Effective length factor for buckling (none: 1)"),
             ]

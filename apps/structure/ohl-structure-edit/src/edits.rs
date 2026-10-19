@@ -381,7 +381,8 @@ pub const MEMBER_KINDS: [(&str, &str); 4] = [
     ("cable", "tension only, may be pretensioned: guys"),
     (
         "tension",
-        "a truss in tension only: slack, left out, when compressed (T-only bracing)",
+        "a truss in tension only (T-only bracing): in compression up to its own buckling \
+         load, bowed beyond it; slack without a second moment",
     ),
 ];
 
