@@ -398,9 +398,27 @@ struct DrawingArgs {
     /// Resolution of PNG images, dots per inch.
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
+    /// Structures' elevations on the plan: off, above or below the line
+    /// (each structure seen along the line at the horizontal scale, a
+    /// leader from where it stands; layer OHL_ELEVATIONS).
+    #[arg(long, default_value = "off", value_parser = elevation_place)]
+    elevations: ohl_drawing::ElevationPlace,
+    /// From the line to the elevations' base, mm on paper.
+    #[arg(long, default_value_t = 10.0)]
+    elevation_offset: f64,
+    /// Angle between the line and the elevations' height, degrees (90:
+    /// standing perpendicular to the line).
+    #[arg(long, default_value_t = 90.0, allow_hyphen_values = true)]
+    elevation_rotation: f64,
     /// Output directory (created).
     #[arg(long)]
     out: PathBuf,
+}
+
+/// Where the elevations go: off, above or below.
+fn elevation_place(text: &str) -> Result<ohl_drawing::ElevationPlace, String> {
+    ohl_drawing::ElevationPlace::parse(text)
+        .ok_or_else(|| format!("{text}: write off, above or below"))
 }
 
 /// A scale denominator from `1:2000` or `2000`.
@@ -435,6 +453,8 @@ struct DrawingSpec {
     to: Option<f64>,
     /// The profile alone.
     profile_only: bool,
+    /// The structures' elevations on the plan.
+    elevations: ohl_drawing::Elevations,
     /// Output directory.
     out: PathBuf,
 }
@@ -467,6 +487,11 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
         from: args.from,
         to: args.to,
         profile_only: args.profile_only,
+        elevations: ohl_drawing::Elevations {
+            place: args.elevations,
+            offset_mm: args.elevation_offset,
+            rotation_deg: args.elevation_rotation,
+        },
         out: args.out.clone(),
     };
     line(&args.line, Some(&spec))
@@ -1754,6 +1779,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             from: None,
             to: None,
             profile_only: false,
+            elevations: Default::default(),
             out: dir.clone(),
         });
         // Structures at levels 2 and 3: their members on their own layer
@@ -1783,7 +1809,18 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 st.position[1],
                 st.position[2] + st.height_adjust,
             ];
-            Some(b.placed_lines(at, st.orientation_deg))
+            Some(b.placed_lines(at, st.orientation_deg)).filter(|l| !l.is_empty())
+        };
+        // Poles at levels 2 and 3: their outline on the same layer.
+        let poles = |line: &ohl_line::Line, id: &str| {
+            let st = line.structure(id)?;
+            let b = bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())?;
+            let at = [
+                st.position[0],
+                st.position[1],
+                st.position[2] + st.height_adjust,
+            ];
+            Some(b.placed_pole_rings(at, st.orientation_deg)).filter(|r| !r.is_empty())
         };
         for spec in legacy.iter().chain(drawing_spec) {
             let logos = logo
@@ -1837,6 +1874,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 stations: None,
                 plan: !spec.profile_only,
                 break_clearance: *break_clearance,
+                elevations: spec.elevations,
             };
             let target = ohl_drawing::export::Export {
                 page: page.clone(),
@@ -1863,6 +1901,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     &options,
                 )?;
                 d.set_members(|id| members(&line, id));
+                d.set_poles(|id| poles(&line, id));
                 // The other cases' wires, dashed (the envelope of positions).
                 for (k, (case, case_shapes, case_jumpers)) in
                     solved_cases.iter().enumerate().skip(1)

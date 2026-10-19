@@ -42,5 +42,65 @@ fn level_3_structures_are_drawn_with_their_members() {
     assert_eq!(members, 2 * 2 * 178, "{members}");
     let entities = dxf.matches("\n  8\nOHL_MEMBERS\n").count();
     assert!(entities >= members, "{entities}");
+    // No elevations unless asked for.
+    assert!(!svg.contains("OHL_ELEVATIONS"));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// T6 (type-05) names the example's `.ohlp` pole (level 3): on the branch
+/// it is drawn with its outline on OHL_MEMBERS (the silhouette in the
+/// profile, the outlines at the ground line and the top in the plan);
+/// `--elevations above` adds every structure's elevation on
+/// OHL_ELEVATIONS.
+#[test]
+fn a_pole_is_drawn_with_its_outline_and_elevations_on_request() {
+    let dir = std::env::temp_dir().join(format!("ohl-drawing-pole-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("drawing")
+        .arg(example("synthetic-line-typed.ohl.json"))
+        .arg("--structures")
+        .arg(example("Structures"))
+        .arg("--route")
+        .arg("branch")
+        .arg("--format")
+        .arg("svg,dxf")
+        .arg("--elevations")
+        .arg("above")
+        .arg("--elevation-offset")
+        .arg("8")
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let svg = std::fs::read_to_string(dir.join("branch.svg")).unwrap();
+    let dxf = std::fs::read_to_string(dir.join("branch.dxf")).unwrap();
+    // The pole: its silhouette titled T6 and two outlines in the plan.
+    let pole = svg
+        .lines()
+        .filter(|l| l.contains(r#"class="OHL_MEMBERS""#))
+        .count();
+    assert!(pole >= 3, "{pole}");
+    assert!(svg.contains("<title>T6</title>"));
+    // Elevations: one per structure of the route, titled.
+    assert!(
+        svg.contains("<title>T6 elevation</title>"),
+        "no T6 elevation"
+    );
+    assert!(dxf.contains("\n  8\nOHL_ELEVATIONS\n"));
+    // A bad place is refused.
+    let bad = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("drawing")
+        .arg(example("synthetic-line-typed.ohl.json"))
+        .arg("--elevations")
+        .arg("sideways")
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("off, above or below"));
     std::fs::remove_dir_all(&dir).ok();
 }
