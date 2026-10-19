@@ -706,7 +706,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ohl_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ohl-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
-| `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself |
+| `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself; heights above the ground of the structure as written, raised by a placed structure's extension `dz` |
 | `model` | path? | — | separate `.ohlfe` model, relative to this file |
 | `pole` | `PoleRef`: a string (`File`: a `.ohlp` id, or a file name ending in `.ohlp`, in the same folder) **or** a `[pole]` table (`Inline(InlinePole)`, version 3) | m, Pa, kg/m³ | the pole: `shape` (`round`/`polygon`), `sides?`, `embedment?`, `[[pole.outline]]` (`z`, `diameter` **or** `circumference`; rising z; a polygon across flats), level 3 `material` (`wood`/`steel`/`concrete`/`other`), `section?` (section library), `wall?` (`PoleWall`: a length, or `"solid"` — no hollow; another word refused naming `wall`; absent: not given, level 3 lacks it; a `.ohlp`'s `wall` reads the same, absent there still solid in the check; typed wins over a section's `t`), `fibre_stress?`, `moment_capacity?`, `[[pole.capacity]]` (`height`, `moment`), `elasticity?`, `density?`, `drag?` — the `.ohlp` fields; read into one `ohl_structures_fe::Pole` by `pole::structure_pole` (`Pole::from_inline` for a table; `Pole::profile`, `Pole::sides`) |
 
@@ -978,6 +978,19 @@ library first) and gives the members' areas from the section library
 (`SectionAreas`: `Model::projected_area` — the profile's width for the
 pressure's direction in the member's y–z plane × length × sin θ; a
 member whose section is not in the library has no area).
+`analyse_structure` (`RunInput` → `StructureRun`) solves them on an
+extension (`Model::from_structure_type_extended`; a case's pressure on
+`members = "all"` put on the extension's own members too) and runs the
+pole check (`check_pole`, the case's point rows at the points as
+written, its horizontal pressures on all members as the wind on the
+pole): `StructureRun` holds `extension` and `dz`, run `notes`, the
+`sections` used (`SectionUse`: id, material, A, E, f<sub>y</sub>, weight per
+metre, members, length), the `pole` (`PoleInfo`) and per case
+`StructureCase` (`fe`: `CaseResult`, `pole`: `PoleResult` — usage,
+height, moment, capacity, ground and wind moments, P-Delta factor, wind,
+governs, notes); `checks()` gives per check (`members`, `pole`) the
+largest usage and its case. Plain data in memory; nothing new in any
+file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
@@ -1003,6 +1016,17 @@ structure application marks those cases incomplete:
 `PlacedValues::incomplete(case)` → `incomplete: S12 not solved`).
 Derived data, rewritten when the line changes; never stored in the
 project.
+
+### Structure report (HTML, members CSV)
+
+Written by `ohl_structure_export::report` (Results › Structure report…
+of the structure application, tool `ohl-structure-report`) from a
+`StructureRun`; nothing is read back. One HTML page with no external
+resource (styles inline, no scripts, images or fonts) and
+`<name>.members.csv`: `case,member,axial_n,usage,governs,slack` (N,
+tension positive; usage as a share, empty without a capacity), every
+member of every case solved by the FE model, the fields as
+`MemberResult` gives them.
 
 ### Structure exports (IFC, SAF, CSV)
 

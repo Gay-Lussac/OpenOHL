@@ -222,9 +222,13 @@ published reference data (no tables typed from memory).
   Profile first, sheets on top (owner, 2026-10-19): the app's profile view
   stays continuous; sheet format, scales and breaks belong to the drawing
   exports. A sheet preview in the app is not built yet.
-- **U4. OHL-Structure**: the Results tab solves the structure as written
-  (not on the chosen extension); no pole check in the app; wind bands not
-  raised by an extension; no structure report yet.
+- **U4. OHL-Structure**: *built, in active development (not approved
+  yet)*: the Results tab solves on the chosen extension, with the line's
+  pole check; wind bands rise with an extension (line and app, one rule);
+  the structure report (HTML and members CSV, menu and
+  `ohl-structure-report`). Still open: a PDF of its own, the input hashes
+  in the report; the pole's wind in the app taken from the case's
+  pressure on all members (owner to confirm).
 - **U5. Section library**: sections typed in OHL-Structure, shielding and
   code drag factors still to come.
 - **U6. Body generators**: no redundants, plan bracing, or several points
@@ -431,7 +435,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] Structure type workspace in the app: its own 3D view in local axes, tables (joints, members, points, strings, wire points), select / edit / drag with snaps, add members, string presets; used-by count; the line follows on save *(base: I and V presets — TAK and V + string by hand; ids renamed in Fields; drag handles in the line's 3D view built since 2026-10-19 (U7): points and wire points; joints shown only. Since 2026-10-17 OHL-Design's structure screen edits only the basics — points, strings, wire points — and the body and design are edited in OHL-Structure)*
 - [x] **Body generators** (format version 3): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group *(not yet: redundants in the panels, plan bracing, a crossarm with several points on one arm)*
-- [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(not yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension)*
+- [x] **Poles with levels and extension bodies**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`)*
 - [ ] Level 2 and 3 drawn with their members in 3D and on plan & profile sheets
 - [x] **Replace structure** tool: a new structure put in place of another, with its strings; wire points (sets) that match are rewired automatically, for the others the user says which goes where; with no match the replacement still runs after the model shows what will be removed and the user confirms
 - [ ] Tower geometry from another program's XML export (joints, members, sections) into levels 2 and 3 (local importer)

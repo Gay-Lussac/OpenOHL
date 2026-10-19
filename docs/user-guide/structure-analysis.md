@@ -205,6 +205,8 @@ A placed structure standing on an extension that has a **piece** (its own joints
 
 `ohl structures fe structure.ohls --extension "+3"` solves the model standing on extension `+3`.
 
+OHL-Structure's FE results solve the same model on the extension chosen in the panel, and the structure report (`ohl-structure-report --extension "+3"`) too ([Structure application](structure-app.md#results)). On an extension the type's wind bands rise by its `dz` (the same force, acting higher; [Structure loads](loads.md)); the pole check is the same on every extension (the pole and its points rise together).
+
 ## In the application and the line run
 
 The **Structure loads › Usage** page and `ohl line … --usage-csv` show the two checks as **fe** and **pole** next to the spans and loads methods; the structure's usage is the largest. What governs names the member (`member m174 compression 7.9 kN of 23.5 kN (buckling)`) or the pole section (`moment 267.3 kN m of 900.0 kN m × 1 at 0.0 m (P-Delta × 1.022)`). A model that does not solve (mechanism, buckling, exit clause) counts as not allowed, with the reason.

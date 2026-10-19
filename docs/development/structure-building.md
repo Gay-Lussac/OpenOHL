@@ -154,9 +154,10 @@ An `[[extension]]` has a `name` and a `dz`. A placed structure may name
 one (`extension = "+3"`). The body is then longer below the reference
 level z = 0, so every point above the feet rises by `dz`. Extensions are
 also used by automatic spotting (candidates by structure and extension)
-and by the bill of materials (a price per extension); the wind bands are
-not raised ("Height extensions are not added to the bands yet",
-`loads.md`).
+and by the bill of materials (a price per extension). *Built* (U4): the
+wind bands rise with the extension (`ohl_loads::add_structure_wind`: the
+band's heights plus `dz`; the force unchanged), the rule `loads.md`
+states.
 
 *Built* (phase 3, decisions 17 and 20): an extension may carry its own
 piece (`[[extension.node]]`, `[[extension.member]]`) and leg extensions
@@ -173,9 +174,12 @@ extension without a piece or legs behaves as before.
 
 1. ~~**No computation of a structure in the app.**~~ *Built* (phase
    4): OHL-Structure's FE results panel solves the load table's cases
-   (`ohl_structure_link::analyse_cases`). The pole check runs only per
-   placed structure, from the line; OHL-Design's structure desk edits but
-   does not compute.
+   (`ohl_structure_link::analyse_cases`); *built* (U4): on the extension
+   chosen and with the line's pole check
+   (`ohl_structure_link::analyse_structure`), and the structure report
+   (`ohl_structure_export::report`, **Results › Structure report…** and
+   the tool `ohl-structure-report`). OHL-Design's structure desk edits
+   but does not compute.
 2. ~~**One load set per structure.**~~ *Built* (phase 4): load-case
    recipes (`[[load_case]]`); the old `[[load]]` nodal forces are read as
    one case named `model`.
@@ -205,8 +209,15 @@ extension without a piece or legs behaves as before.
     stick polylines only, `ohl-io/src/ifc.rs`) — *export built*: a level
     3 structure as IFC4, IFC2x3, SAF and CSV ([Structure
     exports](structure-exports.md)).
-11. **No report of a structure**: results are console text or one usage
-    line per placed structure.
+11. ~~**No report of a structure**: results are console text or one usage
+    line per placed structure.~~ *Built* (U4): the structure report — one
+    HTML page without external resources (identity, level, extension,
+    sections and materials, the pole, load cases, usage per check with
+    the governing case, members by their largest usage, reactions, the
+    pole check, notes and flags, the software version, the pre-alpha
+    warning) and the members' results as CSV, from **Results › Structure
+    report…** and `ohl-structure-report` (`ohl_structure_export::report`).
+    Not yet: a PDF of its own (the page prints), the input hashes of §3.
 12. ~~**Poles are text files** (`.ohlp`), not edited in the app, and
     have no level.~~ *Built* (phase 3): a `[pole]` table in the structure
     file (outline by height, round or polygonal; the `.ohlp` fields), its
@@ -583,9 +594,9 @@ Each phase is a deliverable of its own, checked and committed.
    hand or built in one go, legs, the view standing on an extension)
    ([user guide](../user-guide/structure-app.md#poles-and-extensions)).
    Not yet: redundants in the panels, plan bracing, a crossarm with
-   several points on one arm; the FE results panel solving on an extension;
-   the pole check in the structure application's FE results panel; wind bands
-   raised by an extension.
+   several points on one arm. *Built* (U4): the FE results panel solving
+   on an extension, the pole check in it, wind bands raised by an
+   extension.
 4. **Load-case recipes**: `[[load_case]]` (format version 3), evaluation
    in the core from the line values at each placed structure, the load
    table (editable, CSV / XLSX import and export), surface loads; the

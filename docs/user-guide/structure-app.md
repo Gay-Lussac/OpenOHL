@@ -190,7 +190,7 @@ colour; Load cases: *Store the line's cases in the file…*, *Take the
 line's load cases as they are*, *Add a load case*, *Load cases from a
 design code…* ([Plugins](#plugins)), *Import / Export load
 recipes…*, *Import a load table…*, *Export the load table…*; Results:
-*Run the cases*, *Cancel the run*; In the line: *Read the line's values
+*Run the cases*, *Cancel the run*, *Structure report…*; In the line: *Read the line's values
 again*); an action brings its panel to the front.
 
 Under the menus, the **panels**, docked as in the line application:
@@ -257,7 +257,7 @@ their menu or from View.
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's section, kind (truss, frame, cable or tension — a truss in tension only, slack when compressed, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Sections and Materials (their fields typed with units, e.g. `1500 mm2`) | — |
 | **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
-| **Results** (level 3): **FE results** | Per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage | **▶ Run** (one case or every case), **Cancel**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
+| **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
 ## The Body panels
@@ -401,8 +401,9 @@ their point (a member's at its middle), **m per kN** long.
 ## Results
 
 At level 3 (every member with a section and a joint with a `support`,
-or a `model = "….ohlfe"`) **▶ Run** solves the cases of the load table with the
-finite-element model: the case chosen, or every case. Rows without a
+or a `model = "….ohlfe"`, or a pole the pole check can read) **▶ Run**
+solves the cases of the load table with the finite-element model (and
+the pole check, below): the case chosen, or every case. Rows without a
 value are left out (and said); the case's strength factor and
 self-weight factor come from its recipe (1 for `model` and typed cases).
 The run goes on in the background: the window stays usable, **Cancel**
@@ -420,6 +421,76 @@ without a capacity —, the deformed shape is drawn **Deformed ×** larger
 (set from the largest displacement when a run ends) and the reactions
 as the loads on the foundations. Results of an earlier file or table are
 marked; run again.
+
+**On an extension.** A structure with height extensions has an
+**Extension** choice in the panel's header (the same as the 3D view's,
+Body › Extensions): the cases are solved on the structure standing on
+it — the model the line uses for a placed structure on that extension:
+the extension's piece added, the body joints it reaches without their
+supports, legs lowered. Choosing another extension solves again; the
+header says what was solved (*Solved as written*, *Solved on extension
++3 (the structure 3 m higher)*). An extension without a piece or legs
+leaves the model as written (said in a note: standing higher changes no
+force); a `model = "….ohlfe"` has no extensions and is solved as written
+(said too). A case's **pressure on all members** acts on the
+extension's own members as well (the load table lists the body as
+written): pressure × the member's area × the load's factor, half to each
+joint, the total said in the case's notes. The band wind of the line
+(`[[wind.band]]`) rises with the extension in the same way ([Structure
+loads](loads.md)); it is never in the model.
+
+**Pole check.** A structure with a pole (`pole = "…"` or a `[pole]`
+table the check can read) gets the line's pole check
+([Structure analysis](structure-analysis.md)) in every case: the case's
+point rows at the structure's points as written (on an extension the
+pole and its points rise together, so the moments about the pole's own
+ground line are the same; the piece below the feet is not checked), the
+horizontal pressures of the case's surface loads on **all members** as
+the wind pressure on the pole (times the pole's drag), the case's
+strength factor, P-Delta when the pole gives its modulus. Rows on
+joints or members are not on the pole (said). The case shows **Pole
+check** with the usage, what governs (moment against capacity at a
+height), the ground-line moment with its wind part, the P-Delta factor
+and the wind used. A pole structure without members has the pole check
+only.
+
+**Usage per check.** Over the cases the panel lists each check —
+*members (FE)* and *pole* — with its largest usage, the case governing
+it and what governs; cases that did not solve are listed under it. Each
+case's line shows its usage over its checks.
+
+**Structure report…** (in the header and the Results menu, once the
+cases of the file and table as they are have run) writes the results
+as a printable HTML page — one file, no external resources, it prints
+from any browser — and the members' results beside it as
+`<name>.members.csv` (`case,member,axial_n,usage,governs,slack`). The
+page holds the structure's id, name, kind, file, level, the extension
+solved on and the section library; the sections and materials used
+(area, E, f<sub>y</sub>, weight, members, length) and the pole; the load
+cases (description, strength and self-weight factors, rows and rows
+without a value, Σ loads, status); the usage per check with its
+governing case; every member's largest usage with the case governing it
+and its axial force there; the reactions per case; the pole check per
+case; the notes and flags (incomplete line values, what was left out,
+out of balance); the software and its version, the date, and the
+warning *Pre-alpha software: results must be verified by a qualified
+engineer.*
+
+The same report from the command line, with the tool
+`ohl-structure-report` (a tool of its own, as `ohl-structure-export`:
+the `ohl` command line never depends on the structure application):
+
+```bash
+ohl-structure-report tower.ohls -o tower-report.html
+ohl-structure-report tower.ohls --sections libraries/sections \
+    --loads tower-loads.csv --extension +3 --case wind -o tower-report.html --date
+```
+
+`--sections` (default: the `Sections` folder beside the file), `--loads`
+a load table CSV (default: the file's own recipes without line values),
+`--extension`, `--case` (default: every case), `--date` (default: no
+date, so that reports of the same file are identical). It prints the
+usage per check and writes `<name>.members.csv` beside the page.
 
 ## Undo, saving, closing
 
