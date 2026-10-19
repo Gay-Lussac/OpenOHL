@@ -13692,7 +13692,7 @@ fn load_types_are_the_templates_and_the_projects_own() {
 
 /// The example's typed line as a project, its types (and one more, a copy
 /// of type-02 with two extensions, `ext-02`) copied into it.
-fn typed_project(name: &str) -> model::Model {
+pub(crate) fn typed_project(name: &str) -> model::Model {
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ohl-app-{}-{name}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();

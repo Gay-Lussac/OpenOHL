@@ -63,6 +63,8 @@ pub struct View3d {
     /// its alignments or the ground: fitted again when the first
     /// structures come).
     fitted_on_line: bool,
+    /// Drag handles of the structure being edited ([`crate::handles`]).
+    pub handles: crate::handles::Handles,
     /// Chunks built so far (tests: none while the camera stands still).
     #[cfg(test)]
     pub chunks_built: usize,
@@ -245,6 +247,104 @@ impl View3d {
         self.dirty.insert(Layer::Points);
     }
 
+    /// Draws the handles of the structure being edited ([`View3d::ui`]).
+    fn paint_handles(
+        handles: &crate::handles::Handles,
+        painter: &egui::Painter,
+        spots: &[crate::handles::Spot],
+        structure: Option<&ohl_line::Structure>,
+        screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+    ) {
+        use ohl_structure_edit::Handle;
+        let dark = egui::Color32::from_black_alpha(200);
+        let drag = handles.drag.as_ref();
+        let global = |s: &ohl_line::Structure, p: [f64; 3]| {
+            ohl_structures::structures::to_global(s.position, s.orientation_deg, p)
+        };
+        for spot in spots {
+            let dragged = drag.is_some_and(|d| d.handle == spot.handle);
+            let at = match (dragged, drag, structure) {
+                (true, Some(d), Some(s)) => global(s, d.at),
+                _ => spot.global,
+            };
+            let Some(p) = screen(at) else { continue };
+            let hot = handles.hovered.as_ref() == Some(&spot.handle);
+            let fill = match spot.handle {
+                Handle::Point(_) => egui::Color32::from_rgb(255, 150, 60),
+                Handle::Wire(_) => egui::Color32::from_rgb(90, 200, 255),
+                _ => egui::Color32::from_rgb(170, 170, 180),
+            };
+            let r = if hot { 7.0 } else { 4.5 };
+            let outline = egui::Stroke::new(
+                if hot { 2.5 } else { 1.5 },
+                if hot { egui::Color32::WHITE } else { dark },
+            );
+            if matches!(spot.handle, Handle::Joint(_)) {
+                let rect = egui::Rect::from_center_size(p, egui::vec2(2.0 * r, 2.0 * r) * 0.85);
+                painter.rect_filled(rect, 1.0, fill);
+                painter.rect_stroke(rect, 1.0, outline, egui::StrokeKind::Outside);
+            } else {
+                painter.circle(p, r, fill, outline);
+            }
+            if hot && drag.is_none() {
+                let tip = match &spot.fixed {
+                    Some(_) => format!("{} (part of the body)", spot.handle.describe()),
+                    None => format!(
+                        "{}: x {:.3}  y {:.3}  z {:.3} m — drag to move",
+                        spot.handle.describe(),
+                        spot.local[0],
+                        spot.local[1],
+                        spot.local[2]
+                    ),
+                };
+                Self::label(painter, p + egui::vec2(10.0, -10.0), tip);
+            }
+        }
+        let (Some(d), Some(s)) = (drag, structure) else {
+            return;
+        };
+        let (from, to) = (global(s, d.from), global(s, d.at));
+        // The axis held to, through where it was, in its colour.
+        if let crate::handles::Constraint::Axis(k) = d.constraint {
+            let e = crate::handles::axis(s.orientation_deg, k);
+            let reach = 1000.0;
+            let a = [0, 1, 2].map(|i| from[i] - reach * e[i]);
+            let b = [0, 1, 2].map(|i| from[i] + reach * e[i]);
+            // Long lines: drawn between their points in front of the eye.
+            let samples: Vec<egui::Pos2> = (0..=200)
+                .filter_map(|n| {
+                    let t = f64::from(n) / 200.0;
+                    screen([0, 1, 2].map(|i| a[i] + t * (b[i] - a[i])))
+                })
+                .collect();
+            let color = [
+                egui::Color32::from_rgb(230, 70, 70),
+                egui::Color32::from_rgb(80, 200, 90),
+                egui::Color32::from_rgb(80, 130, 255),
+            ][k];
+            painter.add(egui::Shape::line(samples, egui::Stroke::new(1.5, color)));
+        }
+        if let (Some(p), Some(q)) = (screen(from), screen(to)) {
+            painter.line_segment([p, q], egui::Stroke::new(2.0, egui::Color32::WHITE));
+            painter.circle_stroke(p, 4.0, egui::Stroke::new(1.5, egui::Color32::WHITE));
+            if let Some(text) = handles.readout() {
+                Self::label(painter, q + egui::vec2(12.0, 12.0), text);
+            }
+        }
+    }
+
+    /// A line of text on a dark box.
+    fn label(painter: &egui::Painter, at: egui::Pos2, text: String) {
+        let galley =
+            painter.layout_no_wrap(text, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+        painter.rect_filled(
+            egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+            3.0,
+            egui::Color32::from_black_alpha(190),
+        );
+        painter.galley(at, galley, egui::Color32::WHITE);
+    }
+
     /// Marks every layer for rebuilding.
     pub fn rebuild_all(&mut self) {
         self.dirty.extend(Layer::ALL);
@@ -313,6 +413,136 @@ impl View3d {
                 Self::set_captured(&mut self.captured, ui.ctx(), false);
             }
         }
+        // Drag handles of the structure being edited: the one under the
+        // pointer, a drag started on it, followed and ended.
+        let structure = self
+            .handles
+            .target
+            .as_ref()
+            .and_then(|t| model.line.structure(&t.structure));
+        let spots = match (&self.handles.target, self.captured) {
+            (Some(t), false) => crate::handles::spots(model, &t.structure),
+            _ => Vec::new(),
+        };
+        let still = *camera;
+        let project_handle = still.projector(size);
+        let on_handle = |at: [f64; 2], skip: Option<&ohl_structure_edit::Handle>| {
+            spots
+                .iter()
+                .filter(|s| Some(&s.handle) != skip)
+                .filter_map(|s| {
+                    let (q, _) = project_handle(s.global)?;
+                    let d = (q[0] - at[0]).hypot(q[1] - at[1]);
+                    Some((d, s))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(d, s)| (d, s.clone()))
+        };
+        let pointer = ui
+            .input(|i| i.pointer.latest_pos())
+            .filter(|p| rect.contains(*p));
+        let primary_down = ui.input(|i| i.pointer.primary_down());
+        self.handles.hovered = match (&self.handles.drag, pointer) {
+            (Some(d), _) => Some(d.handle.clone()),
+            (None, Some(p)) if response.hovered() => on_handle(local(p), None)
+                .filter(|(d, _)| *d <= crate::handles::RADIUS)
+                .map(|(_, s)| s.handle),
+            _ => None,
+        };
+        let pressed_on_handle = !self.captured
+            && self.handles.hovered.is_some()
+            && self.handles.drag.is_none()
+            && response.hovered()
+            && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+        if pressed_on_handle
+            && let (Some(t), Some(h), Some(s)) = (
+                self.handles.target.clone(),
+                self.handles.hovered.clone(),
+                structure,
+            )
+        {
+            let spot = on_handle(local(pointer.unwrap_or(rect.center())), None)
+                .map(|(_, s)| s)
+                .filter(|s| s.handle == h);
+            match (spot, &t.blocked) {
+                (Some(spot), _) if spot.fixed.is_some() => {
+                    self.handles.done = Some(crate::handles::Done::Refused(
+                        spot.fixed.clone().unwrap_or_default(),
+                    ));
+                    self.handles.swallow = true;
+                }
+                (Some(_), Some(why)) => {
+                    self.handles.done = Some(crate::handles::Done::Refused(why.clone()));
+                    self.handles.swallow = true;
+                }
+                (Some(spot), None) => {
+                    log::info!("3D view: drag {} of {}", h.describe(), s.id);
+                    self.handles.drag = Some(crate::handles::Drag {
+                        structure: s.id.clone(),
+                        handle: h,
+                        from: spot.local,
+                        at: spot.local,
+                        constraint: crate::handles::Constraint::Free,
+                        snapped: None,
+                    });
+                    response.request_focus();
+                }
+                (None, _) => {}
+            }
+        }
+        if let Some(d) = self.handles.drag.as_mut()
+            && let Some(s) = structure.filter(|s| s.id == d.structure)
+        {
+            // X, Y, Z: on that axis; with Shift, in the plane across it.
+            ui.input_mut(|i| {
+                use egui::{Key, Modifiers};
+                for (k, key) in [Key::X, Key::Y, Key::Z].into_iter().enumerate() {
+                    if i.consume_key(Modifiers::SHIFT, key) {
+                        d.constraint = d.constraint.toggled(k, true);
+                    } else if i.consume_key(Modifiers::NONE, key) {
+                        d.constraint = d.constraint.toggled(k, false);
+                    }
+                }
+            });
+            if let Some(p) = pointer
+                && let Some((a, dir)) = camera.ray(local(p), size)
+            {
+                let eye = camera.eye();
+                let n = [0, 1, 2].map(|k| eye[k] - camera.target[k]);
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
+                let facing = n.map(|v| v / len);
+                if let Some(at) = crate::handles::drag_to(s, d.from, d.constraint, facing, a, dir) {
+                    let unsnapped = ui.input(|i| i.modifiers.alt);
+                    let onto = on_handle(local(p), Some(&d.handle))
+                        .filter(|(dist, _)| *dist <= crate::handles::SNAP_RADIUS)
+                        .map(|(_, s)| s);
+                    let grid = self.handles.target.as_ref().map_or(0.0, |t| t.grid);
+                    (d.at, d.snapped) = if unsnapped {
+                        (at, None)
+                    } else {
+                        crate::handles::snap(at, d.constraint, grid, onto.as_ref())
+                    };
+                }
+            }
+            if !primary_down {
+                let d = self.handles.drag.take().expect("dragging");
+                if d.at != d.from {
+                    self.handles.done = Some(crate::handles::Done::Moved {
+                        structure: d.structure,
+                        handle: d.handle,
+                        at: d.at,
+                    });
+                }
+            }
+            ui.ctx().request_repaint();
+        } else if self.handles.drag.is_some() {
+            // Its structure went (or is no longer edited).
+            self.handles.drag = None;
+        }
+        if self.handles.swallow && !primary_down {
+            self.handles.swallow = false;
+        }
+        let handle_drag = self.handles.drag.is_some() || self.handles.swallow;
         let mut pick_at: Option<([f64; 2], bool)> = None;
         // A right-click uses the held tool on what is there.
         let mut use_at: Option<[f64; 2]> = None;
@@ -391,7 +621,7 @@ impl View3d {
                     self.controls.capture
                 );
             }
-            if self.controls.capture && pressed_here {
+            if self.controls.capture && pressed_here && !pressed_on_handle && !handle_drag {
                 Self::set_captured(&mut self.captured, ui.ctx(), true);
                 // Swallow its release, unless it came in the same frame.
                 self.swallow_release =
@@ -409,7 +639,9 @@ impl View3d {
             {
                 use_at = Some(local(pos));
             }
-            if response.dragged() {
+            if response.dragged()
+                && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
+            {
                 let d = response.drag_delta();
                 let (dx, dy) = (f64::from(d.x), f64::from(d.y));
                 let action = [
@@ -434,7 +666,8 @@ impl View3d {
                 }
             }
         }
-        if self.captured || response.hovered() || response.has_focus() {
+        // Not flying while a handle is dragged (Shift + Z holds a plane).
+        if !handle_drag && (self.captured || response.hovered() || response.has_focus()) {
             let (v, sprint, dt) = ui.input(|i| {
                 let (v, sprint) = self.controls.held(i);
                 (v, sprint, f64::from(i.stable_dt).min(0.1))
@@ -792,6 +1025,12 @@ impl View3d {
                 egui::FontId::proportional(14.0),
                 egui::Color32::WHITE,
             );
+        }
+        // The handles: over everything, the one under the pointer (or
+        // dragged) larger and outlined; a drag's way from where it was,
+        // the axis it is held to and its coordinates.
+        if !spots.is_empty() {
+            Self::paint_handles(&self.handles, &painter, &spots, structure, screen);
         }
         if self.captured {
             let c = rect.center();
