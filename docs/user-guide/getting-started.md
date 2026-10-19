@@ -57,7 +57,8 @@ See [Routes and alignments](desktop-app.md#routes-and-alignments).
 cargo run -p ohl-cli -- info               # version information
 cargo run -p ohl-cli -- validate           # run all validation cases in benchmarks/
 cargo run -p ohl-cli -- validate --list    # calculations available to cases
-cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm
+(cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
+cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm   # the example plugin, built first
 ```
 
 `ohl validate` exits with a non-zero code if any case fails or exceeds its time limit, and `--report report.md` writes a Markdown report.
