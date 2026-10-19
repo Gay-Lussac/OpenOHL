@@ -235,8 +235,14 @@ published reference data (no tables typed from memory).
   of its axes, snapped, one command each; a point of the type becomes the
   structure's own. Joints are shown but not dragged (the body is edited
   in OHL-Structure; a placed structure has no joints of its own).
-- **U8. Level 2 and 3 members** not yet drawn in 3D of the line nor on the
-  plan and profile sheets.
+- **U8. Level 2 and 3 members**: now drawn (built, in active development,
+  not approved yet) in the line's 3D view — as lines, and close by as
+  solids of their library profile; a member clicked selects its structure
+  and, in the open structure screen, the member — and on the plan and
+  profile sheets on their own layer `OHL_MEMBERS` instead of the symbol.
+  Left: members with a `[[section]]` table of their own (no profile) stay
+  lines; no GPU instancing (the geometry is shared per type and moved on
+  the CPU); poles at levels 2 and 3 are still drawn as a mast line.
 
 > **Owner:**
 
@@ -435,6 +441,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Levels as decided: 1 attachment points only (stick figure, not verifiable); 2 the real geometry (no code check); 3 every part and joint detail, computed (FE) and code-checked (e.g. SIA 263). **Poles** the same: 1 points without body, 2 outside lines, 3 detailed engineering (a wall thickness, or solid). `[[body]]` polylines give level 2 only in 3D. At levels 1 and 2 maximum loads only on the strings, never for the structure itself (its capacity only at level 3) *(the level derived from the content; the code check of level 3 waits for the code-check plugins below)*
 - [x] A structure file as a pylon family: body and leg extensions chosen per position adapt it to the ground; each placed structure unique to its position (its own name, loads, model, results) — OHL-Structure started for a placed structure works on its own loads and extension
 - [x] Structure picker window: table of structures (name, description, level, extensions, uses) with a filter and a preview, instead of the drop-downs
+- [x] **Members of levels 2 and 3 drawn with the line** (U8): in the line's 3D view as placed by the line (position, orientation, extension, height adjustment), as lines and close by as solids of their library profile turned as the FE model turns them (`ohl_structures_fe::drawn`, the geometry made once per type and extension); a click on a member selects its structure and the member in the structure screen; on the plan and profile sheets (SVG, DXF, PDF, PNG) on the layer `OHL_MEMBERS` instead of the symbol, level 1 unchanged *(not yet: profiles of `[[section]]` tables, GPU instancing, poles' outlines)*
 - [x] Weather and load cases at the suspension points from level 1, exported for a structure designed in another program — the load cases and weather cases the line sends to placed structures, as the load table (CSV)
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported
 - [x] **Section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads. Later: typed sections edited in OHL-Structure, shielding and code drag factors)*
