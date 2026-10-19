@@ -18,8 +18,12 @@ approved as finished: everything is built and in active development
   the Euler term, and k depending on the joint type: open point O12.
 - **Tension-only members that bend** (`bending = true`): act as a frame
   while in the model, as a truss when bowed or slack; members can be
-  solved without a check (`check = false`). Inferred from another
-  program's "tension-only beam" for the imported towers (to confirm).
+  solved without a check (`check = false`). Read from another program's
+  "tension-only beam" for the imported towers; the reading confirmed by
+  the owner. The structure exports keep the bending.
+- **Relaxed refusal accepted:** a truss rod may carry load across itself
+  through a relative hold (flagged "LARGE", not refused). Rebuilding an
+  imported tower's rounded primary joints: later.
 - **Joint stabilisation:** a free joint on a straight line of members is
   held relative to the line's ends (its load goes through the structure;
   with P-Delta it follows its face); others are held to the ground. A
