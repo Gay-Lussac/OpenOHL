@@ -138,7 +138,17 @@ reads the rest); the line file is always written at the current version.
 A new value counts as a new field: the member kind `tension` (a truss in
 tension only) made `.ohls` **5** and `.ohlfe` **2**; the structure
 application raises a file to 5 when it makes a member `tension`
-(`ohl_structure_edit::set_member_kind`), and only then. The export
+(`ohl_structure_edit::set_member_kind`), and only then. The body
+generators' options (`[[generator]]`: a panel's `width`, `redundants`,
+`plan`, a body's `plan_auto`, a crossarm's `one_arm`) made `.ohls`
+**6**, though the core keeps those tables unread: an older structure
+application would refuse them as unknown fields. The structure
+application raises a file to 6 when it writes a generator using one
+(`ohl_structure_edit::body::set_generator`, `Generator::uses_options`,
+`body::OPTIONS_VERSION`), and only then; a file without a `version`
+stays without, and a version is never lowered. Version 6 is one
+unreleased raise: it also covers anything else added to `.ohls` before
+the next release (another new field then needs no 7). The export
 model's member `kind` (CSV, IFC `TENSION_MEMBER`, SAF "Tension only")
 takes the value `tension` too.
 The export model JSON stays version 1 (keys only added: `strings` per
@@ -694,7 +704,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 5 (`STRUCTURE_FILE_VERSION`; 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 6 (`STRUCTURE_FILE_VERSION`; 6 adds the body generators' options in `[[generator]]` — and anything else added before the next release —, written only when a generator uses one (`ohl_structure_edit::body::OPTIONS_VERSION`); 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name`, `description` | string | — | unique id (referred to by `Structure.type`), display name, free text |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | mast top for the default stick drawing |
@@ -708,7 +718,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
 | `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | pylon joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`; version 5, `.ohlfe` version 2: `tension`, a truss in tension and in compression up to its own buckling load — `MemberKind::Tension`, `solve::buckling_loads` (π²EI_min/L_k², L_k = `lk` or `k`·L; 0 without a second moment), beyond it bowed (`MemberForces::bowed`, axial −N_cr) or, with 0, slack (`MemberForces::slack`) by the solver's active-set iterations, `Solution::passes`; kept active as a truss only as the last resort when the set does not settle even with its ties split, `Solution::kept_active`, approximate), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | pylon members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ohl_structures_fe` leaves `group` and `made_by` out of the model |
-| `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ohl-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`, `width?` (not the last panel; `Panel::width`), `redundants?` (`none`/`one`/`two`, `body::Redundants`), `plan?` (`none`/`x`/`diamond`, `body::Plan`)}], `plan_auto?` (`body::Plan`; slope changes and crossarm levels); crossarm `points`, `shape` (`triangular`/`rectangular`), `one_arm?` (bool); the optional fields are written only when on and read as off when absent (older files read as before, built the same: `generators_tests.rs` keeps a reference); the format version is not raised for them (tables the core does not read; an older structure application refuses them as unknown fields — whether `.ohls` goes to 6 for them is open); peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
+| `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ohl-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`, `width?` (not the last panel; `Panel::width`), `redundants?` (`none`/`one`/`two`, `body::Redundants`), `plan?` (`none`/`x`/`diamond`, `body::Plan`)}], `plan_auto?` (`body::Plan`; slope changes and crossarm levels); crossarm `points`, `shape` (`triangular`/`rectangular`), `one_arm?` (bool); the optional fields are written only when on and read as off when absent (older files read as before, built the same: `generators_tests.rs` keeps a reference); version 6: the structure application raises the file to 6 when it writes a generator using one (`Generator::uses_options`), so an older one says "newer" instead of refusing them as unknown fields; peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ohl_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ohl-structure-loads`; below) |
@@ -877,8 +887,11 @@ stabilise` (default true; `Options::stabilise`), a solve that fails as a
 mechanism or unstable is repeated with the joint directions no member
 stiffens held (`ohl_structures_fe::stabilise::Stabilisation`: node,
 translation or rotation, unit direction, a structure axis removed exactly
-or a spring's stiffness); `Solution::stabilised` lists them with the force
-each took (`Stabilised`), `stabilisation_note` puts them in words for the
+or a spring's stiffness, `relative`: the joints and weights it is held
+relative to — the ends of the straight lines of members through it —,
+empty when held to the ground); `Solution::stabilised` lists them with the
+force each took (`Stabilised`; a relative hold passes it to those joints,
+the share `w` each), `stabilisation_note` puts them in words for the
 usage notes, the structure application's results and `ohl structures fe`.
 A stabilisation carrying load (above `HELD_SHARE` of the loads and
 `HELD_JOINT_SHARE` of its joint's) fails as `FeError::Held`; a remaining
@@ -888,8 +901,9 @@ mechanism is `FeError::Mechanism` with the joints that move (`joints`,
 one entry per joint with a support or a spring (`Node::is_support`): a
 fixed direction gives the support's force, a sprung one the spring's
 force −k·u (a direction both fixed and sprung: the support's, the spring
-carrying nothing), less a stabilisation's share at that joint; Σ reactions
-balance the loads with the self-weight.
+carrying nothing), less the share a hold to the ground takes at that
+joint, with the share a relative hold passes to it; Σ reactions balance the loads
+with the self-weight, less what the holds to the ground took.
 
 Tension-only members (`MemberKind::Tension`): `MemberForces::bowed` marks
 one shortened beyond its own buckling load (`solve::buckling_loads`), its
