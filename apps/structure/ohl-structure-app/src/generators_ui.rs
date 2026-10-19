@@ -9,8 +9,8 @@
 use eframe::egui;
 use ohl_structure_edit::body::generators;
 use ohl_structure_edit::{
-    ArmShape, Bracing, CopyFace, Crossarm, Face, Generator, Kind, Panel, Panels, Peak, Report,
-    apply, generate, next_id, rebuild, rebuild_all, remove_generator,
+    ArmShape, Bracing, CopyFace, Crossarm, Face, Generator, Kind, Panel, Panels, Peak, Plan,
+    Redundants, Report, apply, generate, next_id, rebuild, rebuild_all, remove_generator,
 };
 use ohl_structures::StructureType;
 
@@ -46,6 +46,7 @@ fn default_kind(t: &StructureType, key: &str) -> Kind {
                 .map(|p| p.label.clone())
                 .collect(),
             shape: ArmShape::Triangular,
+            one_arm: false,
         }),
         "peak" => Kind::Peak(Peak {
             points: Vec::new(),
@@ -83,8 +84,10 @@ fn default_kind(t: &StructureType, key: &str) -> Kind {
                         top: round3(foot + (top - foot) * f64::from(k) / 4.0),
                         bracing: Bracing::X,
                         horizontal: true,
+                        ..Default::default()
                     })
                     .collect(),
+                ..Default::default()
             })
         }
     }
@@ -163,13 +166,26 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                     length(ui, b);
                 }
             });
+            ui.horizontal_wrapped(|ui| {
+                ui.label("plan bracing where the slope changes and at the crossarms' levels:");
+                plan_combo(ui, "plan-auto", &mut p.plan_auto);
+            })
+            .response
+            .on_hover_text(
+                "At the levels where a panel's width changes the slope, and at the two levels \
+                 each crossarm generator of the file starts from (Rebuild all after adding a \
+                 crossarm). A panel's own plan bracing goes first.",
+            );
             let mut drop = None;
             egui::Grid::new("panels-form").striped(true).show(ui, |ui| {
                 for (h, tip) in [
                     ("panel", ""),
                     ("top", "Level of the panel's top (z)"),
+                    ("width", "The body's width at the panel's top, across and along (none: on the line between the widths below and above; the last panel's is the waist). The slope can change there."),
                     ("bracing", "single diagonal, X, K (to the middle of the top), diamond, Warren (alternating)"),
                     ("horizontals", "Horizontals at the panel's top (K and diamond write those they need)"),
+                    ("redundants", "Secondary members in the faces: none, one level (the main diagonals cut at their middle or crossing, braced to the legs' middles) or two (the halves cut again)"),
+                    ("plan", "Plan bracing at the panel's top: X (corner to corner) or diamond (between the horizontals' middles, with a cross to the centre)"),
                     ("", ""),
                 ] {
                     ui.strong(h).on_hover_text(tip);
@@ -179,6 +195,20 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                 for (k, panel) in p.panels.iter_mut().enumerate() {
                     ui.label((k + 1).to_string());
                     length(ui, &mut panel.top);
+                    if k + 1 < n {
+                        ui.horizontal(|ui| {
+                            let mut own = panel.width.is_some();
+                            if ui.checkbox(&mut own, "").changed() {
+                                panel.width = own.then_some([2.0, 2.0]);
+                            }
+                            if let Some(w) = &mut panel.width {
+                                length(ui, &mut w[0]).on_hover_text("across");
+                                length(ui, &mut w[1]).on_hover_text("along");
+                            }
+                        });
+                    } else {
+                        ui.label("waist");
+                    }
                     egui::ComboBox::from_id_salt(("bracing", k))
                         .selected_text(panel.bracing.key())
                         .width(80.0)
@@ -188,6 +218,15 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                             }
                         });
                     ui.checkbox(&mut panel.horizontal, "");
+                    egui::ComboBox::from_id_salt(("redundants", k))
+                        .selected_text(panel.redundants.key())
+                        .width(60.0)
+                        .show_ui(ui, |ui| {
+                            for r in Redundants::ALL {
+                                ui.selectable_value(&mut panel.redundants, r, r.key());
+                            }
+                        });
+                    plan_combo(ui, ("plan", k), &mut panel.plan);
                     if ui
                         .add_enabled(n > 1, egui::Button::new("×"))
                         .on_hover_text("Remove this panel")
@@ -217,8 +256,10 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                     top: below,
                     bracing: Bracing::X,
                     horizontal: true,
+                    ..Default::default()
                 });
                 panel.top += (panel.top - below).max(1.0);
+                panel.width = None;
                 p.panels.push(panel);
             }
         }
@@ -232,7 +273,16 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                     });
                 }
             });
-            ui.label("an arm to each point ticked, from the body face on its side:");
+            ui.checkbox(&mut c.one_arm, "several points on one arm")
+                .on_hover_text(
+                    "The points on one side that start from the same body joints make one arm: \
+                     the outermost at its tip, the others each on a section along it",
+                );
+            ui.label(if c.one_arm {
+                "the points ticked, one arm per side and level, from the body face:"
+            } else {
+                "an arm to each point ticked, from the body face on its side:"
+            });
             points_ui(ui, t, &mut c.points);
         }
         Kind::Peak(pk) => {
@@ -272,6 +322,18 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
             }
         }
     }
+}
+
+/// A choice of plan bracing.
+fn plan_combo(ui: &mut egui::Ui, salt: impl egui::AsIdSalt, plan: &mut Plan) {
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(plan.key())
+        .width(70.0)
+        .show_ui(ui, |ui| {
+            for p in Plan::ALL {
+                ui.selectable_value(plan, p, p.key());
+            }
+        });
 }
 
 /// What was clicked in the Generators table.
