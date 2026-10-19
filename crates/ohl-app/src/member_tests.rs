@@ -20,9 +20,33 @@ fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }
 
+/// Invented angles for type-02's legs, braces and arms (the members'
+/// sections are looked up in the section library first).
+const ALL_ANGLES: &str = "format = \"ohl-sections\"\nversion = 1\nname = \"t\"\n\
+     default_material = \"s\"\n\
+     [[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
+     yield = \"355 MPa\"\n\
+     [[section]]\nid = \"leg\"\nshape = \"equal_angle\"\nh = \"100 mm\"\nt = \"10 mm\"\nr = \"0 mm\"\n\
+     [[section]]\nid = \"brace\"\nshape = \"equal_angle\"\nh = \"60 mm\"\nt = \"6 mm\"\nr = \"0 mm\"\n\
+     [[section]]\nid = \"arm\"\nshape = \"equal_angle\"\nh = \"80 mm\"\nt = \"8 mm\"\nr = \"0 mm\"\n";
+
 /// The typed example in a folder of its own (`dir`), with a section
 /// library holding a profile for type-02's `leg` section when `profile`.
 fn typed_in(dir: &Path, profile: bool) -> Model {
+    typed_with(dir, profile.then_some(LEGS))
+}
+
+/// An invented angle 100 × 10 for the legs.
+const LEGS: &str = "format = \"ohl-sections\"\nversion = 1\nname = \"t\"\n\
+     default_material = \"s\"\n\
+     [[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
+     yield = \"355 MPa\"\n\
+     [[section]]\nid = \"leg\"\nshape = \"equal_angle\"\nh = \"100 mm\"\n\
+     t = \"10 mm\"\nr = \"0 mm\"\n";
+
+/// The typed example in a folder of its own (`dir`), with `sections` as
+/// its section library (none: no library).
+fn typed_with(dir: &Path, sections: Option<&str>) -> Model {
     let ex = root().join("examples/synthetic-line");
     let structures = dir.join("Structures");
     std::fs::create_dir_all(&structures).unwrap();
@@ -32,20 +56,9 @@ fn typed_in(dir: &Path, profile: bool) -> Model {
     }
     let file = dir.join("synthetic-line-typed.ohl.json");
     std::fs::copy(ex.join("synthetic-line-typed.ohl.json"), &file).unwrap();
-    if profile {
-        // An invented angle 100 × 10 for the legs (the members' section
-        // is looked up in the section library first).
+    if let Some(text) = sections {
         std::fs::create_dir_all(dir.join("Sections")).unwrap();
-        std::fs::write(
-            dir.join("Sections/legs.ohlsec"),
-            "format = \"ohl-sections\"\nversion = 1\nname = \"t\"\n\
-             default_material = \"s\"\n\
-             [[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\
-             yield = \"355 MPa\"\n\
-             [[section]]\nid = \"leg\"\nshape = \"equal_angle\"\nh = \"100 mm\"\n\
-             t = \"10 mm\"\nr = \"0 mm\"\n",
-        )
-        .unwrap();
+        std::fs::write(dir.join("Sections/legs.ohlsec"), text).unwrap();
     }
     model::load(
         Sources {
@@ -96,6 +109,9 @@ fn the_3d_view_draws_the_members_of_levels_2_and_3() {
     let solids: Vec<&&Prim> = at.iter().filter(|p| p.filled).collect();
     assert_eq!(solids.len(), 1);
     assert_eq!(solids[0].levels, (0, 0));
+    // Drawn by the solids distance, not by the structures' levels.
+    assert!(solids[0].near);
+    assert!(at.iter().filter(|p| !p.filled).all(|p| !p.near));
     assert_eq!(solids[0].points.len(), 40 * 20 * 3);
     // Within the tower: 2.5 m and the angle from the centre at most, from
     // the ground to the top of the legs (30 m).
@@ -107,16 +123,111 @@ fn the_3d_view_draws_the_members_of_levels_2_and_3() {
     // From afar the mast line (levels 1 and 2), as before.
     assert!(at.iter().any(|p| p.levels == (1, 2)));
     // T1 (type-01, level 1): drawn as before — the same primitives with no
-    // body drawn at all.
+    // body drawn at all. (T6's pole: below.)
     let mut bare = typed_in(&dir, true);
     bare.bodies = Default::default();
     let before = scene::prims(&bare, Layer::Structures, 0);
-    for id in ["T1", "T3", "T5", "T6", "T7"] {
+    for id in ["T1", "T3", "T5", "T7"] {
         let a: Vec<&Prim> = prims_at(&m, &prims, id);
         let b: Vec<&Prim> = prims_at(&bare, &before, id);
         assert_eq!(a, b, "{id}");
         assert!(a.iter().all(|p| !p.filled), "{id}");
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T6 (type-05) names the example's `.ohlp` pole (700 mm at the ground
+/// line, 300 mm at 27 m, wall 8 mm): drawn as a hollow tube by the solids
+/// distance, its lines as before (the mast and arm of its stick drawing);
+/// a click inside it on the screen selects T6; the drawings get its
+/// outline.
+#[test]
+fn a_pole_at_level_3_is_drawn_with_its_outline() {
+    let dir = scratch("members-pole");
+    let m = typed_in(&dir, false);
+    let prims = scene::prims(&m, Layer::Structures, 0);
+    let t6 = m.line.structure("T6").unwrap().clone();
+    let at = prims_at(&m, &prims, "T6");
+    let solids: Vec<&&Prim> = at.iter().filter(|p| p.filled).collect();
+    assert_eq!(solids.len(), 1);
+    assert!(solids[0].near);
+    // 4 × 32 triangles (outer and inner faces, the rings at both ends).
+    assert_eq!(solids[0].points.len(), 128 * 3);
+    // At T6, from its foot (raised by its height adjustment) up 27 m,
+    // within 350 mm of its axis.
+    let o = scene::type_origin(&t6);
+    for p in &solids[0].points {
+        assert!((p[0] - o[0]).hypot(p[1] - o[1]) <= 0.35 + 1e-9);
+        assert!(p[2] >= o[2] - 1e-9 && p[2] <= o[2] + 27.0 + 1e-9);
+    }
+    // Its lines unchanged.
+    let mut bare = typed_in(&dir, false);
+    bare.bodies = Default::default();
+    let before = scene::prims(&bare, Layer::Structures, 0);
+    let lines: Vec<&Prim> = at.iter().copied().filter(|p| !p.filled).collect();
+    assert_eq!(lines, prims_at(&bare, &before, "T6"));
+    // A click inside the pole, away from its axis and lines: T6. Looking
+    // from the side (x across, z up), 100 px per metre: 0.25 m from the
+    // axis at 2 m up.
+    let project = |p: [f64; 3]| Some([100.0 * (p[0] - o[0]), -100.0 * (p[2] - o[2])]);
+    let inside = [25.0, -200.0];
+    assert_eq!(
+        crate::selection::pole_at(&m, inside, &project).as_deref(),
+        Some("T6")
+    );
+    let snaps = crate::selection::Snaps::default();
+    assert_eq!(
+        crate::selection::pick_in_model(&m, 0, &snaps, inside, 3.0, project),
+        crate::selection::Selection::Structure("T6".into())
+    );
+    // Outside it (0.5 m off the axis at 2 m): not the pole.
+    assert_eq!(
+        crate::selection::pole_at(&m, [50.0, -200.0], &project),
+        None
+    );
+    // The drawings: the pole's two outlines along the branch route.
+    let m = solved(m);
+    let routes = m.line.alignment_views();
+    let branch = routes.iter().find(|r| r.id == "branch").unwrap();
+    let mut d = ohl_drawing::build(
+        &m.line,
+        branch,
+        &m.shapes_shown(0),
+        &m.cases[0].jumpers,
+        None,
+        &[],
+        &ohl_drawing::Options::default(),
+    )
+    .unwrap();
+    scene::set_drawn_members(&mut d, &m.line, &m.bodies);
+    let mark = d.structures.iter().find(|s| s.id == "T6").unwrap();
+    assert_eq!(mark.pole.len(), 2);
+    assert!(mark.members.is_empty() && mark.has_body());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The structures layer's chunks: the solids apart (built by the solids
+/// distance), the lines in the levels.
+#[test]
+fn solids_are_chunked_apart_from_the_levels() {
+    let dir = scratch("members-near");
+    let m = typed_in(&dir, true);
+    let index = crate::chunks::ChunkIndex::new(&m, Layer::Structures, 0);
+    let row = crate::lod::LodRow::default_for(Layer::Structures);
+    let near: Vec<_> = index.near_keys().collect();
+    // T2 and T4 (profiled legs) and T6 (its pole).
+    assert!(!near.is_empty());
+    let (mut solid, mut level0) = (0, 0);
+    for (tile, _) in index.keys() {
+        level0 += index
+            .build(&m, Layer::Structures, &tile, 0, &row)
+            .counts()
+            .2;
+        solid += index.build_near(&m, &tile).counts().2;
+    }
+    assert_eq!(level0, 0, "no solid in the levels");
+    // Two towers' 40 legs of 20 triangles, and the pole's 128.
+    assert_eq!(solid, 2 * 40 * 20 + 128);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -262,5 +373,102 @@ fn many_lattice_towers_stay_fast() {
         took.as_secs_f64() < 5.0,
         "400 towers built in {took:.1?} ({triangles} triangles)"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A line of `n` type-02 towers `spacing` m apart, every member a library
+/// angle (178 solids of 20 triangles each per tower).
+fn tower_line(dir: &Path, n: u32, spacing: f64) -> Model {
+    let mut m = typed_with(dir, Some(ALL_ANGLES));
+    let t2 = m.line.structure("T2").unwrap().clone();
+    let mut line = m.line.clone();
+    line.structures.clear();
+    line.sections.clear();
+    line.jumpers.clear();
+    for k in 0..n {
+        let mut s = t2.clone();
+        s.id = format!("X{k}");
+        s.position = [spacing * f64::from(k), 0.0, 500.0];
+        s.strings.clear();
+        line.structures.push(s);
+    }
+    m.line = line;
+    m.cases.clear();
+    m
+}
+
+/// The 3D view draws the solids within the solids distance only: 80 m from
+/// a tower of a line of towers 400 m apart, the default (400 m) draws its
+/// solids and its neighbours' at most; 0 draws none, the lines the same.
+#[test]
+fn the_3d_view_draws_solids_within_their_distance() {
+    if !crate::bench::gpu() {
+        return;
+    }
+    let dir = scratch("members-solids-3d");
+    let looks = [crate::bench::Look::Near3d(80.0)];
+    let with = |d: f64| {
+        crate::bench::measure_with(tower_line(&dir, 21, 400.0), &looks, 1, |app| {
+            app.lod.set_solids(d).unwrap();
+        })[0]
+            .drawn
+    };
+    let (none, near) = (with(0.0), with(crate::lod::DEFAULT_SOLIDS_DISTANCE));
+    let per_tower = 178 * 20;
+    let solids = near[2] - none[2];
+    assert!(
+        solids >= per_tower && solids <= 3 * per_tower && solids % per_tower == 0,
+        "{none:?} {near:?}"
+    );
+    assert_eq!(none[0], near[0], "the lines drawn the same");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The solids distance's benchmark (docs/development/performance.md):
+/// 400 towers 400 m apart, every member a library angle (1.42 million
+/// triangles in all), the 3D view looking down the line from 80 m and
+/// 600 m behind the middle tower, at 80 m and 600 m from it obliquely and
+/// the whole line, for solids distances from 0 to 2 km.
+///
+/// ```bash
+/// OHL_REQUIRE_GPU_TESTS=1 cargo test --release -p ohl-app solids_distance_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn solids_distance_benchmark() {
+    use crate::bench::Look;
+    if !crate::bench::gpu() {
+        return;
+    }
+    let dir = scratch("members-solids-bench");
+    let looks = [
+        Look::Along3d(80.0),
+        Look::Along3d(600.0),
+        Look::Near3d(80.0),
+        Look::Near3d(600.0),
+        Look::Whole3d,
+    ];
+    for d in [0.0, 200.0, 400.0, 800.0, 1200.0, 2000.0] {
+        let rows = crate::bench::measure_with(tower_line(&dir, 400, 400.0), &looks, 20, |app| {
+            app.lod.set_solids(d).unwrap();
+        });
+        for r in &rows {
+            let build: f64 = r
+                .phases
+                .iter()
+                .filter(|(n, _)| *n == "3d chunk build")
+                .map(|(_, ms)| ms)
+                .sum();
+            eprintln!(
+                "solids {d:>6.0} m  {:<28} frame {:>7.2} ms (max {:>7.2}), {:>8} triangles, \
+                 settled in {} frames, chunk build {build:.2} ms/frame",
+                format!("{:?}", r.look),
+                r.frame_ms,
+                r.max_ms,
+                r.drawn[2],
+                r.settle_frames,
+            );
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

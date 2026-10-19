@@ -17,7 +17,9 @@
 //!   and points smaller left out. Lines are cut where they cross tiles.
 //! - **Structures, wires, other cases, project lines**: the layers'
 //!   primitives ([`crate::scene::Prim`]) by anchor, each drawn at the
-//!   levels it belongs to; wires thinned at levels 1 and 2.
+//!   levels it belongs to; wires thinned at levels 1 and 2. The solids of
+//!   members and poles (`near`) are built apart, drawn within the solids
+//!   distance whatever the level.
 //!
 //! An index is made when its layer changes (an edit, another weather
 //! case); chunks are built from it when the view needs them.
@@ -308,6 +310,24 @@ impl ChunkIndex {
         self.chunks.len()
     }
 
+    /// The chunks holding solids drawn by the solids distance (members
+    /// with a library profile, poles at levels 2 and 3), and their bounds.
+    pub fn near_keys(&self) -> impl Iterator<Item = (Tile, Bounds)> + '_ {
+        self.chunks.iter().filter_map(|(k, (b, c))| {
+            matches!(c, Content::Prims(p) if p.iter().any(|p| p.near)).then_some((*k, *b))
+        })
+    }
+
+    /// The solids of chunk `tile` drawn within the solids distance
+    /// ([`Prim::near`]), at their own level 0; empty for other layers.
+    pub fn build_near(&self, model: &Model, tile: &Tile) -> Scene {
+        let mut s = Scene::new(model.origin);
+        if let Some((_, Content::Prims(prims))) = self.chunks.get(tile) {
+            scene::draw_prims(&mut s, prims.iter().filter(|p| p.near), 0, usize::MAX);
+        }
+        s
+    }
+
     /// The geometry of chunk `tile` at `level`, as `row` says.
     pub fn build(
         &self,
@@ -329,7 +349,8 @@ impl ChunkIndex {
                 } else {
                     detail(level).round() as usize
                 };
-                scene::draw_prims(&mut s, prims, level, per_span);
+                // Solids go by the solids distance ([`Self::build_near`]).
+                scene::draw_prims(&mut s, prims.iter().filter(|p| !p.near), level, per_span);
             }
             Content::Lines(lines, points) => {
                 for (pts, c) in lines {

@@ -827,6 +827,58 @@ pub fn pick_in_model(
     pick_in_model_case(model, case, snaps, at, radius, project).0
 }
 
+/// The structure whose pole (levels 2 and 3) covers `at` on the screen:
+/// between two of its outline's heights, inside the convex hull of both
+/// outlines as projected.
+pub fn pole_at(
+    model: &Model,
+    at: [f64; 2],
+    project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
+) -> Option<String> {
+    model.line.structures.iter().find_map(|s| {
+        let rings = crate::scene::placed_pole(&model.bodies, s);
+        rings
+            .windows(2)
+            .any(|w| {
+                let pts: Option<Vec<[f64; 2]>> = w.iter().flatten().map(|p| project(*p)).collect();
+                pts.is_some_and(|p| inside_hull(at, &p))
+            })
+            .then(|| s.id.clone())
+    })
+}
+
+/// Whether `at` lies inside the convex hull of `points` (monotone chain).
+fn inside_hull(at: [f64; 2], points: &[[f64; 2]]) -> bool {
+    let mut p = points.to_vec();
+    p.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    p.dedup();
+    if p.len() < 3 {
+        return false;
+    }
+    let turn = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    };
+    let mut hull: Vec<[f64; 2]> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &[f64; 2]>> = if pass == 0 {
+            Box::new(p.iter())
+        } else {
+            Box::new(p.iter().rev())
+        };
+        for q in iter {
+            while hull.len() >= start + 2
+                && turn(hull[hull.len() - 2], hull[hull.len() - 1], *q) <= 0.0
+            {
+                hull.pop();
+            }
+            hull.push(*q);
+        }
+        hull.pop();
+    }
+    hull.len() >= 3 && (0..hull.len()).all(|k| turn(hull[k], hull[(k + 1) % hull.len()], at) >= 0.0)
+}
+
 /// [`pick_in_model`], also in every other weather case drawn: what was
 /// picked, and the case of the copy clicked where it is not the one shown
 /// (`None`: the case shown, or nothing case-bound).
@@ -847,6 +899,14 @@ pub fn pick_in_model_case(
     {
         best = Some((score, pieces[i].0.clone()));
         picked_case = Some(others[i].1);
+    }
+    // Inside a pole's outline on the screen (a pole at level 2 or 3 drawn
+    // as a solid): its structure, when no line is near.
+    if best.is_none()
+        && snaps.on(Snap::Structure)
+        && let Some(id) = pole_at(model, at, &project)
+    {
+        best = Some((-Snap::Structure.priority(), Selection::Structure(id)));
     }
     let found = best.as_ref().map(|b| b.1.clone());
     if snaps.on(Snap::SurveyPoint)

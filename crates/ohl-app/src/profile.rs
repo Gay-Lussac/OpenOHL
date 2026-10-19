@@ -223,6 +223,7 @@ fn shifted(mut b: Built, ds: f64) -> Built {
             .iter_mut()
             .chain(m.sticks.iter_mut().flatten())
             .chain(m.members.iter_mut().flatten())
+            .chain(m.pole.iter_mut().flatten())
         {
             p[0] += ds;
         }
@@ -818,6 +819,28 @@ impl ProfileView {
                         egui::Stroke::new(if selected { 2.0 } else { 1.0 }, col),
                     ));
                 }
+            }
+            // A pole (levels 2 and 3): its silhouette by height.
+            if m.pole.len() >= 2 {
+                let sides: Vec<(f64, f64, f64)> = m
+                    .pole
+                    .iter()
+                    .filter(|r| !r.is_empty())
+                    .map(|r| {
+                        let lo = r.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+                        let hi = r.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
+                        (lo, hi, r[0][2])
+                    })
+                    .collect();
+                let pts: Vec<egui::Pos2> = sides
+                    .iter()
+                    .map(|s| to_screen(s.0, s.2))
+                    .chain(sides.iter().rev().map(|s| to_screen(s.1, s.2)))
+                    .collect();
+                painter.add(egui::Shape::closed_line(
+                    pts,
+                    egui::Stroke::new(if selected { 2.0 } else { 1.0 }, col),
+                ));
             }
             // Kept inside the view at its ends.
             let mut at = to_screen(m.station, m.top) + egui::vec2(0.0, -6.0);

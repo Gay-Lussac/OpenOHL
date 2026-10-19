@@ -64,6 +64,8 @@ pub struct DrawingsWindow {
     /// Clearance on paper between a sheet break and every other
     /// structure's drawing, mm.
     pub break_clearance: f64,
+    /// The structures' elevations on the plan (off by default).
+    pub elevations: ohl_drawing::Elevations,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -87,6 +89,7 @@ impl Default for DrawingsWindow {
             dpi: 150.0,
             line_width: DEFAULT_LINE_WIDTH,
             break_clearance: ohl_drawing::BREAK_CLEARANCE_MM,
+            elevations: ohl_drawing::Elevations::default(),
             out: None,
             error: None,
         }
@@ -416,6 +419,7 @@ impl Input {
                 plan: !w.profile_only,
                 plan_half_width: w.line_width,
                 break_clearance,
+                elevations: w.elevations,
                 ..Default::default()
             },
             range: w.range.then_some([w.from.min(w.to), w.from.max(w.to)]),
@@ -652,6 +656,47 @@ impl DrawingsWindow {
                                     .speed(0.1),
                             );
                             self.clearance = on.then_some(c);
+                        });
+                        ui.end_row();
+
+                        ui.label("Elevations");
+                        ui.horizontal(|ui| {
+                            let e = &mut self.elevations;
+                            egui::ComboBox::from_id_salt("drawings-elevations")
+                                .selected_text(e.place.key())
+                                .show_ui(ui, |ui| {
+                                    for p in ohl_drawing::ElevationPlace::ALL {
+                                        ui.selectable_value(&mut e.place, p, p.key());
+                                    }
+                                })
+                                .response
+                                .on_hover_text(
+                                    "Each structure seen along the line on the plan, at the \
+                                     horizontal scale, a leader from where it stands \
+                                     (layer OHL_ELEVATIONS)",
+                                );
+                            let on = e.place != ohl_drawing::ElevationPlace::Off;
+                            ui.label("base");
+                            ui.add_enabled(
+                                on,
+                                egui::DragValue::new(&mut e.offset_mm)
+                                    .range(0.0..=500.0)
+                                    .suffix(" mm")
+                                    .speed(0.5),
+                            )
+                            .on_hover_text("From the line to the elevation's base, on paper");
+                            ui.label("at");
+                            ui.add_enabled(
+                                on,
+                                egui::DragValue::new(&mut e.rotation_deg)
+                                    .range(-180.0..=180.0)
+                                    .suffix("°")
+                                    .speed(1.0),
+                            )
+                            .on_hover_text(
+                                "Angle between the line and the elevation's height \
+                                 (90°: standing perpendicular to the line)",
+                            );
                         });
                         ui.end_row();
 

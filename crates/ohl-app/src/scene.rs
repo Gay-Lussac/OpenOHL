@@ -127,8 +127,9 @@ pub fn placed_members(
         .collect()
 }
 
-/// Gives the structures of drawing `d` (of `line`) their members at levels
-/// 2 and 3 (`bodies`): drawn on their own layer instead of the symbol.
+/// Gives the structures of drawing `d` (of `line`) their members and
+/// poles' outlines at levels 2 and 3 (`bodies`): drawn on their own layer
+/// instead of the symbol.
 pub fn set_drawn_members(
     d: &mut ohl_drawing::RouteDrawing,
     line: &ohl_line::Line,
@@ -136,8 +137,27 @@ pub fn set_drawn_members(
 ) {
     d.set_members(|id| {
         let st = line.structure(id)?;
-        drawn_body(bodies, st).map(|b| b.placed_lines(type_origin(st), st.orientation_deg))
+        drawn_body(bodies, st)
+            .map(|b| b.placed_lines(type_origin(st), st.orientation_deg))
+            .filter(|l| !l.is_empty())
     });
+    d.set_poles(|id| {
+        let st = line.structure(id)?;
+        drawn_body(bodies, st)
+            .map(|b| b.placed_pole_rings(type_origin(st), st.orientation_deg))
+            .filter(|r| !r.is_empty())
+    });
+}
+
+/// The pole of a structure at level 2 or 3 as placed: its outer outline
+/// at each height (closed), bottom to top; empty without one.
+pub fn placed_pole(
+    bodies: &ohl_structures_fe::drawn::Bodies,
+    st: &ohl_line::Structure,
+) -> Vec<Vec<[f64; 3]>> {
+    drawn_body(bodies, st).map_or_else(Vec::new, |b| {
+        b.placed_pole_rings(type_origin(st), st.orientation_deg)
+    })
 }
 
 /// The lines a structure is drawn with (and picked by): its members
@@ -281,6 +301,10 @@ pub struct Prim {
     /// A dot `width` px round at its first point, not a polyline (a body
     /// seen from afar).
     pub dot: bool,
+    /// Drawn only within the solids distance
+    /// ([`crate::lod::LodSettings::solids`]), whatever its level: the
+    /// solids of members with a library profile and of poles.
+    pub near: bool,
 }
 
 impl Prim {
@@ -294,6 +318,7 @@ impl Prim {
             thinned: false,
             filled: false,
             dot: false,
+            near: false,
         }
     }
 
@@ -309,7 +334,9 @@ impl Prim {
 /// hang as given. `tint`: one colour for everything (a project line).
 ///
 /// Levels of detail: 0 everything; 1 mast and arms (a lattice: a mast line
-/// up to its top attachment) and strings; 2 the mast line.
+/// up to its top attachment) and strings; 2 the mast line. The solids of
+/// members with a library profile and of poles at levels 2 and 3 are
+/// `near`: drawn within the solids distance only.
 pub fn structures(
     out: &mut Vec<Prim>,
     model: &Model,
@@ -380,10 +407,11 @@ pub fn structures(
         let blue = pick(tint.map_or([120, 180, 255, 255], |c| rgba(c, 230)));
         let at = st.position;
         let body = drawn_body(&model.bodies, st);
-        let lattice = !st.members.is_empty() || body.is_some();
-        // Members with a profile (level 3): their solids when close
-        // (level 0), under the lines they are drawn with from afar. The
-        // type's geometry is shared, only moved here.
+        let lattice = !st.members.is_empty() || body.is_some_and(|b| b.has_members());
+        // Members with a profile (level 3) and poles at levels 2 and 3:
+        // their solids within the solids distance (`near`), over the lines
+        // they are drawn with from afar. The type's geometry is shared,
+        // only moved here.
         if let Some(b) = body.filter(|b| b.triangles() > 0) {
             let mut s = Prim::new(
                 at,
@@ -393,6 +421,7 @@ pub fn structures(
             )
             .at(0, 0);
             s.filled = true;
+            s.near = true;
             out.push(s);
         }
         for (part, pts) in structure_lines(&model.bodies, st) {
