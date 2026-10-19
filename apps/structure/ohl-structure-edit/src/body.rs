@@ -59,10 +59,13 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 /// The format version that has what this module writes.
 pub const BODY_VERSION: i64 = 3;
 
-/// The format version that has the generators' options (a panel's
-/// `width`, `redundants` and `plan`, a body's `plan_auto`, a crossarm's
-/// `one_arm`): a file is raised to it only when a generator using one is
-/// written ([`Generator::uses_options`]).
+/// Format version 6: it has the generators' options (a panel's `width`,
+/// `redundants` and `plan`, a body's `plan_auto`, a crossarm's `one_arm`)
+/// and the recipes' pressures of the line (`structure_wind`,
+/// `structure_wind_factored`). A file is raised to it only when it uses
+/// one: a generator using an option is written
+/// ([`Generator::uses_options`]), or a recipe's load takes such a
+/// pressure ([`crate::raise_for_line_pressures`], after every edit).
 pub const OPTIONS_VERSION: i64 = 6;
 
 /// A bracing pattern of a panel's faces.

@@ -14,8 +14,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// `format` of a structure load-case file.
 pub const STRUCTURE_LOAD_CASE_FILE_FORMAT: &str = "ohl-structure-load-cases";
-/// Newest format version read.
-pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 1;
+/// Newest format version read. Version 2 adds the line quantities
+/// `structure_wind` and `structure_wind_factored` (a surface load taking
+/// the line case's wind on the structure body); a file is written at 2
+/// only when a load uses one ([`StructureLoadCases::new`]).
+pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 2;
 /// File extension of structure load-case files.
 pub const STRUCTURE_LOAD_CASE_FILE_EXTENSION: &str = "ohlslc";
 /// The case today's `[[load]]` (nodal forces) is read as.
@@ -31,7 +34,9 @@ fn is_one(x: &f64) -> bool {
 
 /// A value the line gives at a point of the placed structure, in one of
 /// the line's load cases. Forces in the structure's axes (transverse to
-/// the right, longitudinal ahead, vertical down), N.
+/// the right, longitudinal ahead, vertical down), N — except the two
+/// structure wind pressures (Pa), which act on members as a surface load
+/// ([`LineQuantity::is_pressure`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LineQuantity {
@@ -57,11 +62,20 @@ pub enum LineQuantity {
     WireWind,
     /// The ice on the wires, down.
     Ice,
+    /// The wind pressure on the structure's own body in the line's case,
+    /// Pa, unfactored (the case's `[case.structure]` pressure, else its
+    /// weather case's): a surface load on members, blowing as the line
+    /// case's wind unless a direction is given.
+    StructureWind,
+    /// The same times the case's structure wind factor (its
+    /// `[case.structure]` factor, else its transverse factor): the
+    /// pressure the line's own structure checks put on the body.
+    StructureWindFactored,
 }
 
 impl LineQuantity {
     /// Every quantity.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::Transverse,
         Self::Longitudinal,
         Self::Vertical,
@@ -73,6 +87,8 @@ impl LineQuantity {
         Self::TensionMax,
         Self::WireWind,
         Self::Ice,
+        Self::StructureWind,
+        Self::StructureWindFactored,
     ];
 
     /// The name in files.
@@ -89,12 +105,20 @@ impl LineQuantity {
             Self::TensionMax => "tension_max",
             Self::WireWind => "wire_wind",
             Self::Ice => "ice",
+            Self::StructureWind => "structure_wind",
+            Self::StructureWindFactored => "structure_wind_factored",
         }
     }
 
     /// From its name in files.
     pub fn parse(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|q| q.as_str() == name)
+    }
+
+    /// A pressure on the structure body (Pa, a surface load on members),
+    /// not a force at a point.
+    pub fn is_pressure(self) -> bool {
+        matches!(self, Self::StructureWind | Self::StructureWindFactored)
     }
 
     /// A wire tension (acts along the line, towards its span).
@@ -109,7 +133,11 @@ impl LineQuantity {
     /// (0 transverse, 1 longitudinal, 2 vertical down), signed as given.
     pub(crate) fn axis(self) -> usize {
         match self {
-            Self::Transverse | Self::TransverseFactored | Self::WireWind => 0,
+            Self::Transverse
+            | Self::TransverseFactored
+            | Self::WireWind
+            | Self::StructureWind
+            | Self::StructureWindFactored => 0,
             Self::Longitudinal
             | Self::LongitudinalFactored
             | Self::TensionBack
@@ -316,7 +344,8 @@ pub struct LoadRecipe {
     )]
     pub value: Option<f64>,
     /// …or a pressure on the members' area, Pa (a surface load; needs
-    /// members and a direction).
+    /// members and a direction). (A pressure the line gives is a `what`:
+    /// `structure_wind`, `structure_wind_factored`.)
     #[serde(
         default,
         deserialize_with = "ohl_core::units::si::de_opt::<_, Stress>",
@@ -395,9 +424,21 @@ impl LoadRecipe {
             return Err("give one of what, value or pressure".into());
         }
         let on_points = self.points.is_some() || !self.sets.is_empty() || !self.phases.is_empty();
-        match (self.pressure.is_some(), self.members.is_some()) {
+        let line_pressure = self.what.is_some_and(LineQuantity::is_pressure);
+        match (
+            self.pressure.is_some() || line_pressure,
+            self.members.is_some(),
+        ) {
+            (true, false) if line_pressure => {
+                return Err(format!(
+                    "{} is a pressure: it needs members (a surface load)",
+                    self.what.map_or("", LineQuantity::as_str)
+                ));
+            }
             (true, false) => return Err("a pressure needs members".into()),
-            (false, true) => return Err("members take a pressure (a surface load)".into()),
+            (false, true) => {
+                return Err("members take a pressure or structure_wind (a surface load)".into());
+            }
             (true, true) if on_points || self.side.is_some() => {
                 return Err(
                     "a surface load is on members, not points, sets, phases or a side".into(),
@@ -505,6 +546,20 @@ impl LoadCaseRecipe {
     }
 }
 
+/// The version a structure load-case file holding `cases` is written at:
+/// 2 when a load takes a structure wind of the line, else 1.
+pub fn written_version(cases: &[LoadCaseRecipe]) -> u32 {
+    if cases
+        .iter()
+        .flat_map(|c| &c.loads)
+        .any(|l| l.what.is_some_and(LineQuantity::is_pressure))
+    {
+        2
+    } else {
+        1
+    }
+}
+
 /// Checks a list of cases: each, and their names unique.
 pub(crate) fn check_cases(cases: &[LoadCaseRecipe]) -> Result<(), String> {
     let mut names = BTreeSet::new();
@@ -537,11 +592,13 @@ pub struct StructureLoadCases {
 }
 
 impl StructureLoadCases {
-    /// The cases, with this format's header.
+    /// The cases, with this format's header: version 2 when a load takes
+    /// a structure wind of the line ([`LineQuantity::is_pressure`]), else
+    /// 1 (an older program still reads it).
     pub fn new(name: &str, cases: Vec<LoadCaseRecipe>) -> Self {
         Self {
             format: Some(STRUCTURE_LOAD_CASE_FILE_FORMAT.into()),
-            version: Some(STRUCTURE_LOAD_CASE_FILE_VERSION),
+            version: Some(written_version(&cases)),
             name: name.to_owned(),
             cases,
         }

@@ -9,13 +9,18 @@
 //! ```json
 //! {
 //!   "format": "ohl-structure-line-values",
-//!   "version": 3,
+//!   "version": 4,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
 //!   "cases": ["everyday", "wind", "weather: glaze ice"],
 //!   "sources": ["load_case", "load_case", "weather_case"],
-//!   "values": { "points": [...], "values": [...] },
+//!   "values": {
+//!     "points": [...], "values": [...],
+//!     "structure_wind": [
+//!       { "case": "wind", "pressure": 600.0, "factor": 1.4, "towards": "-x" }
+//!     ]
+//!   },
 //!   "others": [{ "structure": "T5", "values": {...} }],
 //!   "note": null,
 //!   "missing": [
@@ -28,7 +33,12 @@
 //! `cases`); a version 1 file has none: every case a load case. Version 3
 //! added `missing` (also on each of `others`): per case, the sections and
 //! jumpers at the structure that did not solve — the values of that case
-//! lack their forces (incomplete); older files have none.
+//! lack their forces (incomplete); older files have none. Version 4 added
+//! `structure_wind` in `values` (and in each of `others`): per line case
+//! the wind on the structure's own body — pressure (Pa), factor, where it
+//! blows, and `origin` when the case gives its own values for the
+//! structures; older files have none (a recipe taking it gets "no line
+//! value").
 
 use std::path::{Path, PathBuf};
 
@@ -39,9 +49,9 @@ use crate::table::LineValues;
 
 /// `format` of a line-values file.
 pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
-/// `version` of a line-values file (2: `sources`; 3: `missing`; older
-/// files are read too).
-pub const LINE_VALUES_FILE_VERSION: u32 = 3;
+/// `version` of a line-values file (2: `sources`; 3: `missing`; 4:
+/// `structure_wind` in the values; older files are read too).
+pub const LINE_VALUES_FILE_VERSION: u32 = 4;
 
 /// A section or jumper at the placed structure that did not solve in one
 /// of the line's cases: the values of that case lack its forces.

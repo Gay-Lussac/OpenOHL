@@ -54,7 +54,7 @@ use ohl_line::{Line, StructureLoads};
 use ohl_loads::{CaseLoads, LoadCase};
 pub use ohl_sections::SectionLibrary;
 use ohl_structure_loads::{
-    At, CaseSource, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable,
+    At, CaseSource, CaseWind, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable,
     MemberAreas, MissingWire, OtherPlace, PlacedValues,
 };
 use ohl_structures::StructureType;
@@ -63,13 +63,29 @@ use ohl_structures_fe::{Loads, Model, NodalLoad};
 /// The values the line gives at placed structure `structure`: per point,
 /// its sets and phases (the phase labels of the sections hanging there)
 /// and, per load case, the wires' force unfactored and factored
-/// (transverse, longitudinal, vertical down). The wind on the structure
-/// body (no point) is left out; tensions per span, wind on the wires and
-/// ice on their own are not given by the line's structure loads yet (the
-/// recipes using them get "no line value").
+/// (transverse, longitudinal, vertical down), and the wind on the
+/// structure's own body (`ohl_loads::CaseLoads::structure_wind`: pressure,
+/// factor, side — the case's `[case.structure]` values or its weather
+/// case's pressure and transverse factor). The wind bands' loads (no
+/// point) are left out: the structure application puts the body wind on
+/// the members; tensions per span, wind on the wires and ice on their own
+/// are not given by the line's structure loads yet (the recipes using
+/// them get "no line value").
 pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineValues {
     let mut out = LineValues::default();
     for case in loads {
+        let w = case.structure_wind;
+        out.structure_wind.push(CaseWind {
+            case: case.case.name.clone(),
+            pressure: w.pressure,
+            factor: w.factor,
+            towards: if w.towards < 0.0 {
+                Direction::Left
+            } else {
+                Direction::Right
+            },
+            origin: w.origin().to_owned(),
+        });
         for l in case
             .loads
             .iter()

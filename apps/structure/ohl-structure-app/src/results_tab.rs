@@ -283,7 +283,10 @@ impl StructureApp {
         };
         let structure = f.structure().clone();
         let table = self.loads.table().clone();
-        let recipes: Vec<LoadCaseRecipe> = self.loads.recipes().unwrap_or_default().to_vec();
+        // The recipes and the line cases' wind on the body, the line's
+        // pressures written in (surface loads on the extension's piece, the
+        // wind on a pole).
+        let recipes: Vec<LoadCaseRecipe> = self.loads.run_recipes().to_vec();
         let key = self.loads.key();
         let only = (!self.results.case.is_empty()).then_some(self.results.case.as_str());
         let run = cases_to_run(&table, &recipes, only);

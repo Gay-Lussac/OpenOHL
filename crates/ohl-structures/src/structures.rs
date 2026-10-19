@@ -187,7 +187,10 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// Newest format version read. Version 6 adds the body generators'
 /// options in `[[generator]]` (a panel's `width`, `redundants`, `plan`; a
 /// body's `plan_auto`; a crossarm's `one_arm` — tables the core keeps
-/// unread, read by the structure application) and anything else added
+/// unread, read by the structure application), the load quantities
+/// `structure_wind` and `structure_wind_factored` in
+/// `[[load_case.load]]` (a surface load taking the line case's wind on the
+/// body; the recipes are raw tables here too) and anything else added
 /// before the next release; a file is written at 6 only when it uses one.
 /// Version 5 adds the member kind `tension`
 /// (a truss in tension only, slack in compression). Version 4 adds a

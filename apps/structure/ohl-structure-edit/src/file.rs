@@ -115,7 +115,9 @@ impl StructureFile {
 
     /// Makes an edit (`what`, in words): `f` changes the file given the
     /// structure as last read. One undo step when the text changed (none
-    /// inside a group); the redo is dropped.
+    /// inside a group); the redo is dropped. A file whose recipes take a
+    /// pressure of the line after the edit is raised to version 6
+    /// ([`crate::raise_for_line_pressures`]).
     pub fn edit<R>(
         &mut self,
         what: &str,
@@ -123,6 +125,7 @@ impl StructureFile {
     ) -> R {
         let before = self.doc.to_string();
         let r = f(&mut self.doc, &self.read);
+        crate::raise_for_line_pressures(&mut self.doc);
         let after = self.doc.to_string();
         if after != before {
             if self.group.is_none() {
