@@ -192,6 +192,7 @@ fn shifted(mut b: Built, ds: f64) -> Built {
             .attachments
             .iter_mut()
             .chain(m.sticks.iter_mut().flatten())
+            .chain(m.members.iter_mut().flatten())
         {
             p[0] += ds;
         }
@@ -403,7 +404,8 @@ impl ProfileView {
                     &options,
                 );
                 match d {
-                    Ok(d) => {
+                    Ok(mut d) => {
+                        crate::scene::set_drawn_members(&mut d, &model.line, &model.bodies);
                         let mut b = corridor(model, &d.centreline, d.length, depth);
                         b.drawing = d;
                         parts.push((format!("alignment {}", routes[k].id), b));
@@ -675,13 +677,20 @@ impl ProfileView {
             } else {
                 egui::Color32::from_gray(190)
             };
-            if m.sticks.is_empty() {
+            // Members (levels 2 and 3), else the stick drawing, else a
+            // mast line.
+            let lines = if m.members.is_empty() {
+                &m.sticks
+            } else {
+                &m.members
+            };
+            if lines.is_empty() {
                 painter.line_segment(
                     [to_screen(m.station, m.base), to_screen(m.station, m.top)],
                     egui::Stroke::new(if selected { 3.0 } else { 1.5 }, col),
                 );
             } else {
-                for st in &m.sticks {
+                for st in lines {
                     let pts: Vec<egui::Pos2> = st.iter().map(|p| to_screen(p[0], p[2])).collect();
                     painter.add(egui::Shape::line(
                         pts,

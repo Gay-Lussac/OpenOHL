@@ -26,6 +26,10 @@ pub struct View3d {
     /// The weather case of the copy picked by the last click (`Some(None)`:
     /// the case shown); taken by the app.
     pub picked_case: Option<Option<usize>>,
+    /// The member clicked by the last click on a structure at level 2 or 3
+    /// (structure id, member id); taken by the app (the structure screen
+    /// selects it).
+    pub picked_member: Option<(String, String)>,
     /// Camera (set when a model is shown).
     pub camera: Option<Camera>,
     /// Navigation controls.
@@ -709,6 +713,13 @@ impl View3d {
                     project(p).map(|(q, _)| q)
                 });
             self.picked_case = Some(picked_case);
+            self.picked_member = match &picked {
+                Selection::Structure(id) => {
+                    selection::picked_member(model, id, at, radius, |p| project(p).map(|(q, _)| q))
+                        .map(|m| (id.clone(), m))
+                }
+                _ => None,
+            };
             log::info!(
                 "3D view: picked {} in {:.1?}",
                 picked.describe(),

@@ -486,6 +486,9 @@ pub struct Model {
         ohl_structures::StructureLibrary,
         ohl_structures::InsulatorLibrary,
     )>,
+    /// The types' bodies as drawn (levels 2 and 3), shared by their
+    /// structures ([`drawn_bodies`]); made again with the libraries.
+    pub bodies: std::sync::Arc<ohl_structures_fe::drawn::Bodies>,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
     /// The project's session when it is read-only for this user (a
@@ -673,6 +676,30 @@ fn load_types(
     let insulators = ohl_structures::InsulatorLibrary::load_dir(&insulators_dir(sources))
         .map_err(|e| e.to_string())?;
     Ok(Some((structures, insulators)))
+}
+
+/// The structure types' bodies as drawn in the 3D view and the drawings
+/// (levels 2 and 3: members, their profiles from the section library in
+/// `sections`; [`ohl_structures_fe::drawn`]): made once per type and
+/// extension, shared by the structures of a type. A section library that
+/// does not read leaves the members as lines.
+///
+/// Expected cost: reading each designed type's model (milliseconds).
+pub fn drawn_bodies(
+    types: Option<&(
+        ohl_structures::StructureLibrary,
+        ohl_structures::InsulatorLibrary,
+    )>,
+    sections: &Path,
+) -> std::sync::Arc<ohl_structures_fe::drawn::Bodies> {
+    let Some((structures, _)) = types else {
+        return Default::default();
+    };
+    let library = ohl_sections::SectionLibrary::load(sections).unwrap_or_else(|e| {
+        log::warn!("section library not read for the drawn members: {e}");
+        Default::default()
+    });
+    std::sync::Arc::new(ohl_structures_fe::drawn::Bodies::load(structures, &library))
 }
 
 /// A LiDAR class of up to this many points is loaded whole (larger ones
@@ -1769,6 +1796,7 @@ impl Model {
         let others: Vec<String> = self.other_lines.drain(..).map(|o| o.name).collect();
         self.line = line;
         self.library = library;
+        self.bodies = drawn_bodies(types.as_ref(), &self.sections_folder());
         self.types = types;
         let failed: usize = self.cases.iter().map(|c| c.failed.len()).sum();
         for name in others {
@@ -2180,6 +2208,16 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map(|v| v.shown_lines.clone())
         .unwrap_or_default();
+    // The types' bodies as drawn, their profiles from the section library
+    // the structure models read ([`Model::sections_folder`]).
+    let bodies = drawn_bodies(
+        types.as_ref(),
+        &library_dir
+            .as_ref()
+            .map(|w| w.join(library_folder("sections")))
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| sections_dir(&sources)),
+    );
     let mut model = Model {
         plugin_columns: Vec::new(),
         check_plugins: Vec::new(),
@@ -2205,6 +2243,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         scheme,
         log,
         library,
+        bodies,
         types,
         editing,
         display_cases: Default::default(),

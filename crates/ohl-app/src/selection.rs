@@ -622,7 +622,7 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         if snaps.on(Snap::Structure) {
             let sel = Selection::Structure(s.id.clone());
             out.push((sel.clone(), s.position, s.position));
-            for (part, pts) in crate::scene::structure_lines(s) {
+            for (part, pts) in crate::scene::structure_lines(&model.bodies, s) {
                 if part == Part::Insulator {
                     continue;
                 }
@@ -689,6 +689,35 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         }
     }
     out
+}
+
+/// The member of structure `id` (levels 2 and 3) nearest to `at` on the
+/// screen within `radius` pixels: its id (none: no member there, or a
+/// structure at level 1). Structures are drawn once, not per weather case:
+/// every member drawn is this one.
+pub fn picked_member(
+    model: &Model,
+    id: &str,
+    at: [f64; 2],
+    radius: f64,
+    project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
+) -> Option<String> {
+    let st = model.line.structure(id)?;
+    crate::scene::placed_members(&model.bodies, st)
+        .into_iter()
+        .filter_map(|(m, pts)| {
+            let m = m?;
+            let d = pts
+                .windows(2)
+                .filter_map(|w| {
+                    let (a, b) = (project(w[0])?, project(w[1])?);
+                    Some(ohl_core::geometry::distance_to_segment(at, a, b))
+                })
+                .fold(f64::INFINITY, f64::min);
+            (d <= radius).then_some((d, m))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, m)| m)
 }
 
 /// The weather cases drawn: those shown for the line, and every
