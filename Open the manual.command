@@ -19,10 +19,10 @@ fi
 
 echo "Opening the manual…"
 mdbook serve --open
-status=$?
+rc=$?
 
-if [ $status -ne 0 ]; then
+if [ $rc -ne 0 ]; then
     echo
-    echo "The manual stopped with an error (exit code $status) — see the messages above."
+    echo "The manual stopped with an error (exit code $rc) — see the messages above."
     read -k 1 "?Press any key to close this window."
 fi

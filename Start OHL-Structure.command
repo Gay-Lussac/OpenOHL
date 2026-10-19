@@ -10,10 +10,10 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 echo "Building and starting OHL-Structure…"
 cargo build --release -p ohl-structure-app && cargo run --release -p ohl-structure-app --bin ohl-structure
-status=$?
+rc=$?
 
-if [ $status -ne 0 ]; then
+if [ $rc -ne 0 ]; then
     echo
-    echo "OHL-Structure stopped with an error (exit code $status) — see the messages above."
+    echo "OHL-Structure stopped with an error (exit code $rc) — see the messages above."
     read -k 1 "?Press any key to close this window."
 fi
