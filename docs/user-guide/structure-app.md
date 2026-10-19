@@ -612,7 +612,7 @@ members with sections, a supported joint.
 | **SAF (xlsx) — analysis model with load cases (analysis programs)** | `.xlsx` | analysis programs reading the Structural Analysis Format |
 | **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads` |
 
-Pre-alpha, in active development: no exported file has been imported into another program yet.
+Pre-alpha, in active development: the exports are checked with free tools (IfcOpenShell's IFC validation, a reader of the SAF workbook; [Structure exports › Checks with free tools](../development/structure-exports.md#checks-with-free-tools)), but no exported file has been imported into another program yet. Sample files to try in other programs are in `examples/exports/`.
 
 File-format plugins turned on are listed under the entries, greyed: they
 write the line's export model, not a structure.

@@ -168,9 +168,13 @@ converge. Order and timing to decide.
 > structures.
 
 ### O8. Exports tried in other programs
-IFC4, IFC2x3 and SAF are written from the public specifications but have
-not been imported into the target programs yet. A test file opened by
-someone with those programs would confirm them.
+IFC4, IFC2x3 and SAF are written from the public specifications and
+checked with free tools (2026-10-19: IfcOpenShell's schema and rule
+validation, geometry and content checks; the SAF workbook read back with
+its references; `tools/check_structure_exports.py`, one rule fixed in
+IFC2x3). They have not been imported into the target programs yet: the
+sample files in `examples/exports/` are for someone with those programs
+(what to look at: its README).
 > **Owner:** (2026-10-19) Both: check the files now with free open-source
 > tools (IfcOpenShell for IFC, the SAF schema), and have a test file opened
 > in the real programs when someone can.
@@ -508,7 +512,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Weather and load cases at the suspension points from level 1, exported for a structure designed in another program — the load cases and weather cases the line sends to placed structures, as the load table (CSV)
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported
 - [x] **Section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads; sections typed in OHL-Structure (Sections & materials › Section library: the library's shapes, properties computed as typed, what is wrong said, each change an undo step in order with the structure's edits; members pick them); wind factors for structures as data (`[wind]`: drag per shape, a lattice face's drag and shielding by solidity ratio and spacing) from a design-code plugin's optional `structure-wind` (WIT `code-wind-plugin`, interface 0.3 unchanged for older plugins; the code plugins' stubs give none) or typed, with the faces, solidity ratios and shielding computed from the geometry (`docs/theory/structure-wind.md`, validation cases structwind-001/002). Later: the codes' factors in their plugins (O9), the factors on OHL-Structure's surface loads, materials typed in the editor)*
-- [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for steel-detailing programs, SAF 2.2 (xlsx) for analysis programs, CSV tables *(not yet: the imports tried in another program; other tower programs)*
+- [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for steel-detailing programs, SAF 2.2 (xlsx) for analysis programs, CSV tables; checked with free tools (IfcOpenShell validation with the schema's rules, geometry and content; SAF sheets, columns and references; `tools/check_structure_exports.py`, test run when `OHL_IFC_PYTHON` is set) and sample files in `examples/exports/` *(not yet: the imports tried in another program; other tower programs)*
 - [ ] Code checks of members and joints as plugins (e.g. SIA 263), interface agreed with the project owner first
 - [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the pylon, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike *(base: OHL-Structure, with poles in Body › Pole and Design › Pole; still to come: typed sections and materials, checks per level, the use in the line)*
 

@@ -1091,8 +1091,14 @@ them, length, k, pretension) and `load_cases` (`self_weight` factor,
 loads at a joint, at a point along a member, or uniform per metre along
 one; structure axes, z up). Formats: IFC4 (members and the structural
 analysis model), IFC2x3 Coordination View 2.0 (members only, for
-programs that read that view), SAF 2.2.0 xlsx, CSV tables. Mapping and what is lost:
-[Structure exports](structure-exports.md).
+programs that read that view; its owner history's `IfcPerson` has the
+family name `Unknown`, as the schema's rule WR1 needs a name), SAF 2.2.0
+xlsx, CSV tables. Mapping and what is lost:
+[Structure exports](structure-exports.md); checks with free tools
+(`tools/check_structure_exports.py`) and sample files
+(`examples/exports/`, made from the invented `every-profile.ohls`; a test
+keeps them equal to what the exporter writes):
+[Structure exports › Checks with free tools](structure-exports.md#checks-with-free-tools).
 
 ## Where data lives
 

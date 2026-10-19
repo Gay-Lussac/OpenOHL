@@ -1,6 +1,6 @@
 # Structure exports: IFC, SAF, CSV
 
-Status: **built, in active development (not approved yet)**; pre-alpha (first written 2026-10-17; no export has been imported into another program yet), phase 7 of [Building structures](structure-building.md)
+Status: **built, in active development (not approved yet)**; pre-alpha (first written 2026-10-17; checked with free tools on 2026-10-19 — IfcOpenShell for IFC, a standard-library reader for SAF, [below](#checks-with-free-tools); no export has been imported into another program yet), phase 7 of [Building structures](structure-building.md)
 (decision 12: export to IFC and to analysis and steel-detailing programs; other tower programs later). Crate
 `apps/structure/ohl-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).
@@ -100,7 +100,7 @@ instead.
 ### IFC2x3 (steel detailing)
 
 The members only, as above, with the differences of the older schema:
-an owner history on every object, the members in a building storey
+an owner history on every object (its person: family name `Unknown`, since IFC2x3's `IfcPerson` needs a name, rule WR1, and nobody's name is written), the members in a building storey
 (site, building, storey), profile `Position` always given, fillet radii
 left out when 0 (they must be positive there), `IfcMaterial` by name
 associated with the members, no `IfcProfileDef` by name (a section
@@ -176,15 +176,17 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 
 ## Open points
 
-- **No external validator ran**: IfcOpenShell and the SAF SDK are not
-  installed here. The tests check the STEP structure (header, numbering
+- **Checked with free tools only** ([below](#checks-with-free-tools)).
+  The unit tests also check the STEP structure (header, numbering
   without gaps, every reference resolving, balanced quotes), the number
   of attributes of **every** entity against the IFC4 ADD2 TC1 and IFC2x3
   TC1 EXPRESS schemas, unique GlobalIds, the expected counts for
   `examples/synthetic-line/Structures/type-02.ohls`, the profile mapping
   per shape, the SAF sheets and columns read back, and that two exports
   are identical. An import into an analysis program and a
-  steel-detailing program is still to be tried by someone with licences.
+  steel-detailing program is still to be tried by someone with licences,
+  with the sample files of `examples/exports/` (its README says what to
+  look at in each program).
 - **SAF version**: written as 2.2.0 (the sheets used are unchanged since
   1.0.5 except two optional columns of `StructuralCurveAction` added in
   2.0.0 [S5]); the analysis program was listed with 1.0.5 in 2022 [S1].
@@ -198,6 +200,99 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - Exports for other tower programs: later (decision 12).
 - A structure whose model is a separate `.ohlfe` (`model = "…"`) is not
   exported yet (the export builds the model from the `.ohls` itself).
+
+## Checks with free tools
+
+`tools/check_structure_exports.py` checks exported files; the test
+`exports_pass_the_free_tools` (`apps/structure/ohl-structure-tests/tests/exports_checked.rs`)
+writes the IFC4 (with and without the analysis model), IFC2x3 and SAF
+exports of three structures — the example lattice
+`examples/synthetic-line/Structures/type-02.ohls` (`[[section]]` tables:
+no shapes), the invented `examples/exports/every-profile.ohls` (every
+profile of the example section library, a spring support, a load along a
+member) and a body built by the generators (X panels with horizontals,
+triangular crossarms, a peak; library angles) — and runs the script on
+them. The test runs only when `OHL_IFC_PYTHON` names a Python with
+IfcOpenShell; otherwise it says so and passes:
+
+```bash
+OHL_IFC_PYTHON=/path/to/venv/bin/python cargo test -p ohl-structure-tests \
+    --test exports_checked -- --nocapture
+# or on any exported files or folders:
+/path/to/venv/bin/python -I tools/check_structure_exports.py out/tower.ifc out/tower.xlsx
+```
+
+Nothing is downloaded: IfcOpenShell (0.9.0 tried) is installed by the
+person running the check. The example pole (`type-05.ohls`) is a pole
+check structure without joints and members, so it has no level 3 model to
+export; the polygonal pole profile is checked through `every-profile`.
+
+**IFC, per file:**
+
+- `ifcopenshell.validate.validate(f, logger, express_rules=True)`: the
+  schema (attribute types, counts, enumerations, inverse cardinalities)
+  and the schema's where-rules and global rules. IfcOpenShell's rule runner
+  imports pytest only to rewrite `assert` statements into readable
+  messages; the script gives it a stand-in that uses each rule's own
+  expression as the message, so pytest is not needed (the rules are
+  IfcOpenShell's, unchanged).
+- Units (metre, radian, newton, pascal, kilogram), the counts of members,
+  profiles by type, materials and structural analysis entities, GlobalIds
+  unique and 22 characters.
+- Every `IfcMember`: a local placement with orthonormal, right-handed
+  axes; its `Axis` line's ends, placed, at its analysis member's joints
+  (IFC4 with the analysis model); `OHL_Member` (IFC4); its `Body` built by
+  IfcOpenShell's geometry kernel with a positive volume, the solid's
+  centroid on the member's axis (a warning beyond 1 mm), and in IFC4 the
+  volume against A × L of the section (a warning beyond 3 %).
+- Every profile with geometry has `OHL_Section` (IFC4).
+
+**SAF, per file** (the standard library only; the published SAF
+specification and its SDK are not used, so only what the exporter states
+is checked, no rule of the specification is invented): the workbook
+opens (zip, SpreadsheetML parts), every sheet's column headers equal the
+lists in `saf.rs` (`columns`), the `Model` sheet's SAF Version is
+`SAF_VERSION` and its units Metric, names unique per sheet, `Id`s are
+UUIDs; members → cross-sections → materials, cross-sections →
+`CompositeShapeDef`, members' `Nodes`, supports' `Node`, actions →
+joints, members and load cases, load cases → load group all resolve;
+numbers are numbers, A, E, G and the unit mass positive, a member's LCS
+vector of length 1, parametric parameters numbers, contour 1 counter-
+clockwise and contour 2 clockwise, relative positions within 0–1; a
+warning for an E outside 100 MPa–1000 GPa or an A outside 10⁻⁷–1 m²
+(units), and for Iy, Iz or It = 0.
+
+**Results (2026-10-19, IfcOpenShell 0.9.0.post1).** Before: every IFC2x3
+file failed one rule, `IfcPerson` WR1 (a person needs a family or a given
+name; the owner history's person had none) — fixed (family name
+`Unknown`). IFC4 had no finding. After: 12 files, 0 errors. Body solids
+of all 84 shaped members built; centroids at most 0.008 mm off the axis;
+volume / (A × L) 0.990–1.001 (the round bar and the circular tube are
+below 1 because the geometry kernel draws circles as polygons; the others
+within 0.1 % of the library's area). Warnings left: the SAF export of
+`type-02` has Iy, Iz and It = 0 for its three `[[section]]` tables, which
+give the area only (its members are truss members, which need only A); an
+analysis program may refuse zero bending stiffness for a frame member —
+give such sections in the section library.
+
+**What the free tools cannot confirm** (only the target programs can):
+
+- IFC: the **model view definitions** — Structural Analysis View, Reference
+  View and IFC2x3 Coordination View 2.0 — are not checked by IfcOpenShell
+  (no MVD checker); whether an analysis program creates its analytical
+  members, supports and load cases from the IFC4 file; whether a
+  steel-detailing program converts the IFC2x3 members into native parts,
+  and how it maps the profile names (the section ids) and the material
+  names to its catalogues; the profile orientation (roll) a program
+  shows.
+- SAF: every rule of the specification itself (no schema or SDK here):
+  required columns and allowed values per sheet (enumerations such as
+  `Type`, `Shape`, `Behaviour in analysis`, `Force action`), the
+  parameter order of the parametric shapes (`t` and `s` of `I rolled`,
+  `Channel`, `Tube`; see the open points), the `Project` and `Model`
+  sheets' layout (rows or columns), `National code` values, the units an
+  importer assumes, and whether an importer accepts version 2.2.0 or
+  needs an older one.
 
 ## Sources
 
