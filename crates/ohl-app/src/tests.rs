@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui;
 use egui_kittest::Harness;
@@ -606,7 +606,10 @@ pub(crate) fn synthetic_project(name: &str) -> model::Model {
 }
 
 /// [`synthetic_project`] with its line changed first.
-fn synthetic_project_with(name: &str, edit: impl FnOnce(&mut ohl_line::Line)) -> model::Model {
+pub(crate) fn synthetic_project_with(
+    name: &str,
+    edit: impl FnOnce(&mut ohl_line::Line),
+) -> model::Model {
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ohl-app-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -13693,6 +13696,12 @@ fn load_types_are_the_templates_and_the_projects_own() {
 /// The example's typed line as a project, its types (and one more, a copy
 /// of type-02 with two extensions, `ext-02`) copied into it.
 pub(crate) fn typed_project(name: &str) -> model::Model {
+    typed_project_with(name, |_| {})
+}
+
+/// [`typed_project`] with its structure files (the folder given) changed
+/// first.
+pub(crate) fn typed_project_with(name: &str, edit: impl FnOnce(&Path)) -> model::Model {
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ohl-app-{}-{name}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
@@ -13722,6 +13731,7 @@ pub(crate) fn typed_project(name: &str) -> model::Model {
         ),
     )
     .unwrap();
+    edit(&dir.join("Structures"));
     let file = dir.join("p.ohl");
     let line = ohl_line::Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
     ohl_session::Session::open(&file)
