@@ -933,8 +933,11 @@ empty when held to the ground); `Solution::stabilised` lists them with the
 force each took (`Stabilised`; a relative hold passes it to those joints,
 the share `w` each), `stabilisation_note` puts them in words for the
 usage notes, the structure application's results and `ohl structures fe`.
-A stabilisation carrying load (above `HELD_SHARE` of the loads and
-`HELD_JOINT_SHARE` of its joint's) fails as `FeError::Held`; a remaining
+A stabilisation held to the ground carrying load (above `HELD_SHARE` of
+the loads and `HELD_JOINT_SHARE` of its joint's) fails as
+`FeError::Held`; a relative one above the same limits does not (owner,
+2026-10-19): `Solution::relative_over` lists it (indices into
+`stabilised`) and `stabilisation_note` flags it (`LARGE: …`); a remaining
 mechanism is `FeError::Mechanism` with the joints that move (`joints`,
 `moving`). Nothing is stored: it is worked out per solve.
 `Solution::reactions` (`Reaction`, force and moment on the structure) has
