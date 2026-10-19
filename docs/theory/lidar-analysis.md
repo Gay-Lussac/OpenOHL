@@ -36,6 +36,12 @@ last band high noise (18); below the ground, low noise (7). Buildings,
 poles and wires above the ground get vegetation classes too: telling them
 apart (planarity, linearity, returns) is not part of this base.
 
+**Conservative:** for the vegetation analysis, a building, pole or wire
+point classified as vegetation is checked as a tree: more points reported,
+none missed. Not for other rules: a building rule finds no point the
+classification gave to vegetation. Exact: a classification that tells
+them apart (or classes edited by hand).
+
 Throughput (release build, one core): 4 million points over \\( 10^6 \\)
 cells in 1.2 s, about 3 million points a second. Points are held in memory
 (32 bytes each; `--max-points`, default 200 million); grids over
@@ -54,12 +60,21 @@ a windy one for blowout — every point of the vegetation classes (by role):
   subconductor) is below the required clearance plus the growth until the
   next cut, \\( g = \text{growth per year} \times \text{years} \\) — the
   tree grown by \\( g \\) in every direction.
+
+  **Conservative:** every point grows by \\( g \\) in every direction,
+  also sideways and down, where trees mostly grow up and out at their
+  tips. Exact: growth by species and direction (not modelled).
 - **Fall-in**: with the ground below it, a point of height \\( h \\) above
   the ground (at least 2 m) is taken as a tree top on a trunk straight
   below; falling about its base \\( P_b \\), the top sweeps a sphere of
   radius \\( h + g \\). The tree can reach the wire when
   \\( \min_{q \in \text{wire}} |q - P_b| < h + g \\); the margin is the
   difference. Leaning trees and crown widths are not modelled.
+
+  **Simplification:** a straight trunk below each point. A leaning tree
+  falls further one way, and a crown's width adds to its reach; both
+  reach further than computed (unsafe). Exact: the tree's stem and crown
+  segmented from the points.
 
 Per wire: the counts, the nearest point, the tree with the smallest fall-in
 margin, and the worst points by margin (the smaller of the clearance margin
@@ -96,6 +111,12 @@ until the step is below \\( 10^{-10} C \\) (about ten iterations; exit
 clause 500). Points further than three RMS (at least 5 cm) from the first
 fit are dropped (birds, other wires inside the window) and the fit repeated
 once.
+
+**Simplification:** the span's points are taken in the vertical plane
+through its chord (still air at the survey). A wire blown sideways at the
+survey is fitted by its sag's vertical part, smaller than its true sag,
+so the temperature found is too low. Exact: a 3D catenary fit with the
+plane's swing as an unknown.
 
 **Sag** of the fitted wire: the largest vertical distance below the chord
 from \\( s = 0 \\) to \\( s = L \\) — the model's definition. Where the

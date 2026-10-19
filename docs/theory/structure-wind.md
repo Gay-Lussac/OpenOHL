@@ -22,6 +22,11 @@ OpenOHL ships no such values. Without them the member wind is the one of
 [Structure analysis](structures-fe.md#member-wind): one generic drag
 factor, nothing shielded — and the results say so.
 
+**Conservative:** without shielding factors nothing is shielded: every
+member takes its full wind, as if it stood alone. Exact: the code's
+shielding factors as data. (The generic drag factor 1 is a
+**Simplification**, see [Member wind](structures-fe.md#member-wind).)
+
 ## Member force
 
 For a member with a profile from the section library, the wind of
@@ -43,6 +48,11 @@ at each joint. Two factors:
   else the drag of the profile's shape (`drag.<shape>`), else the
   model's generic `drag` (default 1). A face whose solidity is outside the
   face drag table falls back the same way, and the notes count it.
+
+  **Simplification:** that fallback. The shape's drag or the generic 1 can
+  be lower than the face drag the table would give at that solidity
+  (unsafe); the notes say how many members it concerns. Exact: a face
+  drag table covering the solidity ratios of the structure.
 - **shielding** \\( \eta \\): 1, unless the member stands behind another
   face (below), then the data's shielding factor
   \\( \eta(\varphi_{front}, e/b) \\).
@@ -84,6 +94,19 @@ lowers \\( \varphi \\); members overlapping at the joints are counted
 twice and gusset plates not at all; a crossarm whose face is not flush
 with the body's is a face of its own.
 
+**Conservative:** the convex-hull outline, which lowers the solidity ratio
+of a face that is not convex. A lower \\( \varphi_{front} \\) shelters
+less (a shielding factor nearer 1), on the safe side; for the face drag it
+is on the safe side where the data's face drag falls as the solidity grows,
+and not where it rises. Exact: the face's own outline (a polygon round its
+members).
+
+**Simplification:** members overlapping at the joints counted twice
+(raises \\( \varphi \\): more shelter behind the face, unsafe by a
+little) and gusset plates left out (their own wind area missing, unsafe;
+\\( \varphi \\) a little low, safe for the shielding). Exact: the
+face's true silhouette, overlaps once and plates included.
+
 ## Which members are shielded
 
 For a wind direction \\( \hat{\mathbf w} \\), a face **faces the wind**
@@ -102,13 +125,30 @@ data's table (bilinear with a spacing axis). Outside the table's range
 nothing is shielded (\\( \eta = 1 \\)) and the notes say how many members
 that left out.
 
+**Conservative:** no factor outside the table's range: such a member takes
+its full wind (\\( \eta = 1 \\)) instead of an extrapolated shielding
+factor. Exact: a table covering the structure's solidity and spacing
+ratios.
+
+**Conservative:** a member behind several faces takes the factor of the
+nearest one only, not the shelter of all of them. Exact: the code's rule
+for several faces in a row, as data.
+
+**Simplification:** a member is shielded, or not, as a whole, by the ray
+from its middle. A member partly behind the front face's outline takes
+the factor all along or not at all (either way). Exact: the shielded share
+of its length.
+
 So, for a square lattice body under a wind normal to two of its faces,
 the far face is shielded by the near one and the two side faces (edge-on)
 are not; at 45°, the two far faces are shielded, the far corner leg too
 (it lies only in far faces), the other legs not (each lies in a near
 face). Members in no face (plan bracing, hip bracing) are never shielded.
-This is conservative where a code would also shelter members inside the
-body.
+
+**Conservative:** members inside the body (in no face: plan and hip
+bracing, inner diagonals) are never shielded and take their full wind,
+where a code would also shelter them behind the windward face. Exact: the
+code's rule for inner members, as data.
 
 A code that gives one force coefficient for a whole lattice section
 (windward and leeward faces together) is expressed as a face drag by
@@ -131,6 +171,14 @@ force, the far ones none.
 - Not (yet) the surface loads of OHL-Structure's load recipes (a
   `pressure` on members takes the members' projected areas without
   factors, as before).
+
+  **Conservative:** that `pressure` acts along its direction with the
+  area width × length × \\( \sin\theta \\) — more than the cross-flow
+  force above (\\( \sin^2\theta \\)) for a member at an angle to the
+  wind — and nothing is shielded. **Simplification:** no drag factor (1),
+  which can be lower than a code's (unsafe); a member whose section is not
+  in the library has no area (said in its row). Exact: the member wind
+  above, with the code's factors.
 
 ## Validation
 

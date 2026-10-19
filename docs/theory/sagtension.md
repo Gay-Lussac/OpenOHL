@@ -41,6 +41,8 @@ OpenOHL combines thermal and elastic strain in two ways, depending on the calcul
 
 **How large the difference is.** Expanding both: \\( e^{\alpha\Delta t}(1+\varepsilon_e) - (1 + \alpha\Delta t + \varepsilon_e) \approx (\alpha\Delta t)^2/2 + \alpha\Delta t\\,\varepsilon_e \\). For an ACSR at 80 °C strung at 20 °C (\\( \alpha\Delta t \approx 1.2\times10^{-3} \\)) and an elastic strain of \\( 10^{-3} \\), that is about \\( 2\times10^{-6} \\): 0.6 mm on a 300 m span, a few millimetres of sag. In hot cases the FE and RS results of a section whose cable has no curves therefore differ by up to about 0.1–0.2 % in tension for this reason alone (the validation compares them within 0.2 %). In cold cases \\( \Delta t < 0 \\) and the difference changes sign.
 
+**Simplification:** two thermal strain forms, as above. The additive form gives a slightly shorter cable when hot (less sag, more tension) and a slightly longer one when cold; about 10⁻⁶ of strain, a few millimetres of sag. Exact: the multiplicative form everywhere (planned once comparisons say which to keep).
+
 **Choosing.** The FE and RS methods of a section are both available in the Sections table (*Initial/Creep/Load/Max Sag × FE/RS*); the difference above is part of the difference between them, alongside what really differs (strings swinging and unequal span tensions in FE). Unifying the two forms is planned once comparisons with other programs on real lines say which to keep.
 
 ## Tension sections
@@ -53,15 +55,23 @@ The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also repor
 
 *Validation:* `section-001`. *Not yet modelled:* insulator string length changing the effective span lengths.
 
+**Simplification:** one horizontal tension for the whole section, the strings plumb and of no length (the ruling-span model). Unequal spans, inclined spans and swinging strings make the span tensions and sags differ; the error goes either way per span. Exact: the finite-element section ([Finite-element wire systems](wirefe.md)), available as the *FE* calculations.
+
 ## Tension criteria
 
 Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w \\)) apply in given load states. Raising the stringing tension raises the tension in every state, so each limit gives one maximum stringing tension; the governing one is the smallest. Nested bisection, exit clauses at both levels.
+
+**Simplification:** the criteria in `ohl sagtension` use the linear-elastic cable (no creep or permanent set from the stress-strain curves). For a cable whose final state is longer than its elastic one, the final tensions are lower and the sags larger than computed here. Exact: the criteria on the non-linear model in each state.
 
 *Validation:* `criteria-001`.
 
 ## Weather loads
 
-Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \\): \\( w_i = \rho_i g \frac{\pi}{4}[(d+2t)^2 - d^2] \\). Wind pressure \\( q \\) on the iced diameter: \\( w_h = q(d + 2t) \\). Resultant \\( \sqrt{(w_c + w_i)^2 + w_h^2} \\), in a plane swung by \\( \arctan(w_h / w_v) \\). Sag-tension uses the resultant in the span plane (exact for level spans). No design-code factors are applied here: load factors belong to the load cases ([Load cases](../user-guide/loads.md)), and design-code plugins generate weather and load cases ([Design codes](../user-guide/design-codes.md)).
+Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \\): \\( w_i = \rho_i g \frac{\pi}{4}[(d+2t)^2 - d^2] \\). Wind pressure \\( q \\) on the iced diameter: \\( w_h = q(d + 2t) \\). Resultant \\( \sqrt{(w_c + w_i)^2 + w_h^2} \\), in a plane swung by \\( \arctan(w_h / w_v) \\). Sag-tension uses the resultant in the span plane (exact for level spans).
+
+**Simplification:** in an inclined span the swung plane of the resultant is not the plane through the chord, so the plane-curve solution is approximate there; the error grows with the incline and the wind, either way. Exact: the 3D finite-element span (`ohl-wirefe`), which solves any load direction.
+
+**Simplification:** ice as a concentric cylinder of uniform thickness along the whole span. Real ice is often eccentric (on the windward or top side) and uneven along the span; the weight is what the case gives, but the wind area and the twist of the wire differ. Exact: an ice shape per case (not modelled); uneven ice along a span can be given as distributed loads (below). No design-code factors are applied here: load factors belong to the load cases ([Load cases](../user-guide/loads.md)), and design-code plugins generate weather and load cases ([Design codes](../user-guide/design-codes.md)).
 
 *Validation:* `weather-001`.
 
@@ -86,6 +96,12 @@ A section keeps one unstressed length (zero strain, curves' reference temperatur
 \\[ \sum_i \frac{L_i(H)}{1 + \varepsilon(\bar T_i(H), t, s)} = L_0 \\]
 
 **Final condition.** The cable is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; the final state is the one leaving the cable longer, elastic along the final modulus (and back onto the initial curve if loaded beyond). "Longer" is compared at a working tension (the creep case's), and the permanent stretch passed to the FE model is measured at the stringing tension — not at zero tension, where outer strands that take no compression are slack and only the core's set would count (about half the stretch of the synthetic test cable). At the governing heaviest case, final and initial tensions are therefore equal — a consistency check used in the validation.
+
+**Conservative:** the final state takes the larger of the two permanent sets (after creep, after the heaviest load), not their combination over time. The longer cable gives the larger sag: on the safe side for clearances (and a section's *Max Sag* calculation takes, per weather case, whichever of the two states sags more); for tensions the shorter cable of the initial state gives the higher values, and that state is solved on its own. Exact: a time-based history of loads and creep (not modelled).
+
+**Simplification:** creep is the creep curve's (typically 10-year) set at one creep weather case. Creep goes on beyond the curve's period and depends on the tension history; the curve's period must match the line's life. Exact: a time-based creep law (not modelled).
+
+**Simplification:** the linear cable models of the [wire library](../user-guide/wire-library.md#cable-models) (`linear_creep_tension`, `linear_creep_temperature`) take creep as an equivalent temperature rise and have no permanent set after load. After a heavy ice or wind load the real cable is longer: sags are underestimated and tensions overestimated. Exact: the non-linear model with the cable's curves.
 
 Curves are cable **data**: OpenOHL ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** cable (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
 
