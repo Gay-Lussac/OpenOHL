@@ -14,6 +14,10 @@
 //!   generator) or carrying a point, a member a point lies along. Those
 //!   stay, become hand-made (no `made_by`) and are reported.
 //! - Joints and members made by hand are never touched.
+//! - A member it now makes in pieces (`body-M3` cut into `body-M3-1`,
+//!   `body-M3-2` by a redundant's joint) gives the pieces what was set on
+//!   it (section, kind, group…); pieces made whole again give it the
+//!   first piece's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -219,7 +223,20 @@ pub fn write(
         n.insert("made_by", toml_edit::value(id));
         array(doc, "node").push(n);
     }
-    // Members: the same.
+    // Members: the same. What was set on a member that goes, for the
+    // pieces it is now made in (or the whole made of its pieces).
+    let mut gone: BTreeMap<String, Table> = BTreeMap::new();
+    if let Some(a) = doc.get("member").and_then(Item::as_array_of_tables) {
+        for m in a.iter() {
+            let mid = m.get("id").and_then(Item::as_str).unwrap_or_default();
+            if m.get("made_by").and_then(Item::as_str) == Some(id)
+                && !new_members.contains_key(mid)
+                && !keep_members.contains_key(mid)
+            {
+                gone.insert(mid.to_owned(), m.clone());
+            }
+        }
+    }
     let mut have = BTreeSet::new();
     if let Some(a) = doc.get_mut("member").and_then(Item::as_array_of_tables_mut) {
         let before = a.len();
@@ -258,7 +275,22 @@ pub fn write(
         if let Some(g) = &m.group {
             x.insert("group", toml_edit::value(g.clone()));
         }
+        let whole =
+            m.id.rsplit_once('-')
+                .filter(|(_, n)| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
+                .map(|(w, _)| w.to_owned());
+        let from = whole
+            .and_then(|w| gone.get(&w))
+            .or_else(|| gone.get(&format!("{}-1", m.id)));
+        if let Some(from) = from {
+            for (k, v) in from.iter() {
+                if !matches!(k, "id" | "nodes" | "made_by") {
+                    x.insert(k, v.clone());
+                }
+            }
+        }
         x.insert("made_by", toml_edit::value(id));
+
         array(doc, "member").push(x);
     }
     // Points put on the tips.

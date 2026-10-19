@@ -19,12 +19,20 @@
 //!   { top = "8 m", bracing = "x", horizontal = true },
 //!   { top = "14 m", bracing = "k" },
 //! ]
+//! # Options (none written: off). Per panel: `width = "3 m"` (or [across,
+//! # along]) at its top, the body's slope changing there; `redundants =
+//! # "one"` or `"two"` (secondary members in its faces); `plan = "x"` or
+//! # `"diamond"` (plan bracing at its top). For the whole body:
+//! # plan_auto = "x"          # plan bracing where the slope changes and
+//! #                          # at the crossarms' root levels
 //!
 //! [[generator]]
 //! id = "arm1"
 //! kind = "crossarm"          # from a body face to points of the structure
 //! points = ["A1", "A2"]
 //! shape = "triangular"       # or "rectangular"
+//! # one_arm = true           # the points on one side at one level make
+//! #                          # one arm (the outermost at its tip)
 //!
 //! [[generator]]
 //! id = "peak"
@@ -93,8 +101,72 @@ impl Bracing {
     }
 }
 
+/// Redundants (secondary members) in a panel's faces: they split the
+/// main diagonals (and the legs at mid-panel) into shorter buckling
+/// lengths, each new joint braced to joints already held so the face
+/// stays triangulated (no mechanism in its plane). The patterns per
+/// bracing are in the user guide and [`crate::generators`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Redundants {
+    /// None (as before).
+    #[default]
+    None,
+    /// One level: the main diagonals split at their middle (X: at the
+    /// crossing), braced to the legs' middles.
+    One,
+    /// Two levels: also the halves split at their middle, braced to a
+    /// leg middle or a corner.
+    Two,
+}
+
+impl Redundants {
+    /// Every choice, in the order offered.
+    pub const ALL: [Redundants; 3] = [Redundants::None, Redundants::One, Redundants::Two];
+
+    /// As written in files.
+    pub fn key(self) -> &'static str {
+        match self {
+            Redundants::None => "none",
+            Redundants::One => "one",
+            Redundants::Two => "two",
+        }
+    }
+}
+
+/// Plan bracing: horizontal bracing across the body at a level (the
+/// level's horizontals written too).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Plan {
+    /// None (as before).
+    #[default]
+    None,
+    /// Both diagonals of the plan, corner to corner (crossing without a
+    /// joint).
+    X,
+    /// A diamond between the middles of the four horizontals (joints
+    /// there, the horizontals split) and a cross from them to a joint at
+    /// the centre (without it the diamond turns in plan).
+    Diamond,
+}
+
+impl Plan {
+    /// Every choice, in the order offered.
+    pub const ALL: [Plan; 3] = [Plan::None, Plan::X, Plan::Diamond];
+
+    /// As written in files.
+    pub fn key(self) -> &'static str {
+        match self {
+            Plan::None => "none",
+            Plan::X => "x",
+            Plan::Diamond => "diamond",
+        }
+    }
+}
+
 /// One panel of a panels body: from the level below to its `top`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Panel {
     /// Level of its top, m.
     pub top: f64,
@@ -102,10 +174,19 @@ pub struct Panel {
     pub bracing: Bracing,
     /// Horizontals at its top (K and diamond write those they need).
     pub horizontal: bool,
+    /// The body's width at its top, across and along, m (none: on the
+    /// straight line between the widths given below and above; the last
+    /// panel's is the waist). Where one is given the slope may change.
+    pub width: Option<[f64; 2]>,
+    /// Redundants in its faces.
+    pub redundants: Redundants,
+    /// Plan bracing at its top.
+    pub plan: Plan,
 }
 
-/// Legs and panels: the body as a frustum, square or rectangular in plan.
-#[derive(Debug, Clone, PartialEq)]
+/// Legs and panels: the body as a frustum, square or rectangular in plan
+/// (or frustums on each other, with widths given per panel).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Panels {
     /// Level of the feet, m (none: the file's `foot`).
     pub bottom: Option<f64>,
@@ -115,6 +196,10 @@ pub struct Panels {
     pub waist: [f64; 2],
     /// The panels, bottom to top.
     pub panels: Vec<Panel>,
+    /// Plan bracing at the levels where the body's slope changes and at
+    /// the levels a crossarm's roots are on (a panel's own `plan` goes
+    /// first).
+    pub plan_auto: Plan,
 }
 
 /// The shape of a crossarm.
@@ -140,12 +225,17 @@ impl ArmShape {
 }
 
 /// Crossarms from a face of the body to points of the structure.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Crossarm {
     /// The points (labels) at the arms' tips.
     pub points: Vec<String>,
     /// Their shape.
     pub shape: ArmShape,
+    /// The points on one side of the body whose arms would start from the
+    /// same root joints make one arm: the outermost at its tip, the others
+    /// on joints along it (a section of the arm at each). Off: an arm to
+    /// each point.
+    pub one_arm: bool,
 }
 
 /// A peak (earth-wire peak) on the top of the body.
@@ -284,6 +374,12 @@ struct PanelFile {
     bracing: Bracing,
     #[serde(default = "yes")]
     horizontal: bool,
+    #[serde(default)]
+    width: Option<WidthFile>,
+    #[serde(default)]
+    redundants: Redundants,
+    #[serde(default)]
+    plan: Plan,
 }
 
 #[derive(Deserialize)]
@@ -294,6 +390,8 @@ struct PanelsFile {
     feet: WidthFile,
     waist: WidthFile,
     panel: Vec<PanelFile>,
+    #[serde(default)]
+    plan_auto: Plan,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +400,8 @@ struct CrossarmFile {
     points: Vec<String>,
     #[serde(default)]
     shape: ArmShape,
+    #[serde(default)]
+    one_arm: bool,
 }
 
 #[derive(Deserialize)]
@@ -357,8 +457,12 @@ impl Generator {
                             top: p.top.si(),
                             bracing: p.bracing,
                             horizontal: p.horizontal,
+                            width: p.width.as_ref().map(WidthFile::get),
+                            redundants: p.redundants,
+                            plan: p.plan,
                         })
                         .collect(),
+                    plan_auto: f.plan_auto,
                 })
             }
             "crossarm" => {
@@ -366,6 +470,7 @@ impl Generator {
                 Kind::Crossarm(Crossarm {
                     points: f.points,
                     shape: f.shape,
+                    one_arm: f.one_arm,
                 })
             }
             "peak" => {
@@ -420,6 +525,17 @@ impl Generator {
                         ));
                     }
                     below = panel.top;
+                    if panel
+                        .width
+                        .is_some_and(|w| w.iter().any(|v| v.is_nan() || *v <= 0.0))
+                    {
+                        return Err(format!("panel {}: its width must be more than 0", k + 1));
+                    }
+                }
+                if p.panels.last().is_some_and(|x| x.width.is_some()) {
+                    return Err(
+                        "the last panel's width is the waist: give the waist instead".into(),
+                    );
                 }
             }
             Kind::Crossarm(c) => {
@@ -468,6 +584,19 @@ impl Generator {
                     it.insert("top", len(panel.top));
                     it.insert("bracing", Value::from(panel.bracing.key()));
                     it.insert("horizontal", Value::from(panel.horizontal));
+                    // The options only when on (a body without them is
+                    // written as before).
+                    if let Some(w) = panel.width
+                        && let Item::Value(v) = width(w)
+                    {
+                        it.insert("width", v);
+                    }
+                    if panel.redundants != Redundants::None {
+                        it.insert("redundants", Value::from(panel.redundants.key()));
+                    }
+                    if panel.plan != Plan::None {
+                        it.insert("plan", Value::from(panel.plan.key()));
+                    }
                     a.push(Value::InlineTable(it));
                 }
                 // One panel per line.
@@ -477,10 +606,16 @@ impl Generator {
                 a.set_trailing("\n");
                 a.set_trailing_comma(true);
                 t.insert("panel", Item::Value(Value::Array(a)));
+                if p.plan_auto != Plan::None {
+                    t.insert("plan_auto", toml_edit::value(p.plan_auto.key()));
+                }
             }
             Kind::Crossarm(c) => {
                 t.insert("points", labels(&c.points));
                 t.insert("shape", toml_edit::value(c.shape.key()));
+                if c.one_arm {
+                    t.insert("one_arm", toml_edit::value(true));
+                }
             }
             Kind::Peak(p) => {
                 if !p.points.is_empty() {
