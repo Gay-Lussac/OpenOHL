@@ -252,7 +252,8 @@ impl StructureApp {
         let Some(f) = &mut self.file else {
             return;
         };
-        let sections: Vec<String> = edit::item_ids(f.doc(), "section");
+        // The section library's first (looked up first), then the file's.
+        let sections = crate::section_editor::section_choices(&self.loads.sections, f.doc());
         let all = groups(t);
         if all.is_empty() {
             ui.label(
@@ -369,7 +370,9 @@ impl StructureApp {
         if sections.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No [[section]] yet: add sections and their materials (Sections, Materials).",
+                    "No section yet: type them in the section library (Sections & materials › \
+                     Section library), or add [[section]] tables and their materials (Sections, \
+                     Materials).",
                 )
                 .weak(),
             );

@@ -120,10 +120,86 @@ member, the projected area is that width × 1 m
 Approximation: the silhouette of the whole outline. An angle's two legs
 do not shield each other (at 45° the width is the diagonal extent of the
 legs), a tube's width is its diameter in every direction, and no drag
-factor is applied here — the structure model's `drag` is the one factor
-the member wind applies; shielding and the solidity rules of a lattice
-face from a code are a later step. A `general` section's width is that of
-its outline box.
+factor is applied here — the member wind applies the drag factor: the
+structure model's `drag`, or the library's wind factors below. A
+`general` section's width is that of its outline box.
+
+## Wind factors for structures (`[wind]`)
+
+A library file may hold one `[wind]` table: the **drag and shielding
+factors** of a design code for the member wind of lattice structures. They
+are **data** — from a design-code plugin (its `structure-wind`, written as
+`<plugin>-wind.ohlsec` into the section library, see [Design
+codes](design-codes.md#wind-factors-for-structures)) or typed from your
+standard. OpenOHL ships none.
+
+```toml
+[wind]
+source = "my code, parameter file of 2026-10"   # shown with the results
+drag = { equal_angle = 2.0, circular_hollow = 1.2 }   # per shape (invented)
+
+[wind.face_drag]                  # a lattice face's drag by its solidity ratio
+solidity = [0.1, 0.3, 0.5]        # rising, 0–1
+factor = [3.0, 2.6, 2.2]          # invented
+
+[wind.shielding]                  # factor on the members of a face behind another
+solidity = [0.1, 0.3, 0.5]        # of the face in front, rising, 0–1
+spacing = [0.5, 2.0]              # optional: distance between the faces / breadth
+factor = [[0.9, 0.7, 0.5], [1.0, 0.8, 0.6]]   # a row per spacing (one flat row without)
+```
+
+Every part is optional. `drag` keys are the shapes of the table above.
+Values between the table's points are interpolated linearly (bilinear with
+`spacing`); **outside the table's range nothing is taken**: a face's
+solidity outside `face_drag` falls back to the shape's drag, a member
+behind a face outside `shielding` is not shielded, and the notes count
+them. Shielding factors are 0–1 (0: a code that puts the whole force on
+the near faces, with a face drag for the whole section). A folder holds one
+`[wind]` table at most: a second one in another file is an error naming
+it.
+
+What the member wind does with them — the faces of the lattice found from
+the geometry, their solidity ratios, which face is in front of which
+member — is in [Wind on lattice structures](../theory/structure-wind.md).
+Without a `[wind]` table the member wind keeps one generic drag factor and
+no shielding, and the results say so.
+
+## Typing sections in OHL-Structure
+
+**Design › Sections & materials…**, tab **Section library**, lists the
+sections of the library the structure reads (`--sections`, else
+`Sections/` beside the structure file; started from the line application,
+the project line's library, which OHL-Design keeps in the project when a
+file there changes) with their shape, material, area, file and how many
+members of the structure use them; one line says which wind factors the
+library has.
+
+- **+ New section** opens the form: id, name, description, **shape** (the
+  shapes above), **material** (the library's materials, or the file's
+  `default_material`) and the shape's dimensions typed with their units
+  (`61 mm`; `sides` a number); a `general` section takes its area and
+  second moments. The **properties** are computed as you type — area,
+  second moments about y, z and the principal axes, torsion constant,
+  elastic and plastic moduli, radii of gyration, centroid, and the weight
+  per metre (area × the material's density) — by the section library
+  itself, so they are the values the checks use. What is wrong is said in
+  the library's words (a missing dimension, plates that do not fit, a
+  length without its unit, an id another file of the library has); a
+  material the library lacks is a warning. **Save** writes the section
+  into its file (new sections go into the file chosen, the first by
+  default; with no file yet, `sections.ohlsec` is made).
+- **✏** edits a section in place (its other keys — properties given,
+  comments — kept; dimensions the new shape does not take removed),
+  **copy** duplicates it (a free id, `L-61x7-copy`), **🗑** deletes it after
+  asking (saying how many members of the structure use it).
+- Each change is written at once and is **one step of Edit › Undo**, in
+  order with the structure file's edits (a change made outside since is
+  not undone, and said).
+- Members then pick the section in **Design › Member sections** and
+  **Groups**: their section lists hold the library's sections first, then
+  the file's own `[[section]]` tables.
+
+Materials are not typed here: add a `[[material]]` to a library file.
 
 ## Several files
 
