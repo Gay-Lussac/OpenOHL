@@ -35,8 +35,10 @@ ohl clearance galloping synthetic-line.ohl.json \
 
 Every pair of wires between the same two structures, by every method of the
 parameter file, in each weather case the file applies to: the smallest
-distance between their ellipses along the span, where, and the ellipses'
-sizes; worst first. The parameter file holds **all** coefficients — copy
+distance between their ellipses along the span — to the wires' surfaces
+(the ellipses are of the wires' axes; each wire's bundle radius and
+conductor radius, iced in a case with ice, are taken off) — where, and the
+ellipses' sizes; worst first. The parameter file holds **all** coefficients — copy
 them from the method you design to; the example's are invented:
 
 ```toml
@@ -84,7 +86,8 @@ ohl clearance row synthetic-line.ohl.json --weather weather-cases.ohlwc \
 
 How far each wire swings to the right and to the left of its route's
 centreline (alignment, or the line through the structures) in each case,
-bundles included, and how far it goes beyond the right of way (`--left`,
+to its outer surface (bundle radius and conductor radius, iced in a case
+with ice, included), and how far it goes beyond the right of way (`--left`,
 `--right` for different widths each side). Clearances of the blown-out wires
 to buildings, trees and other wires are the radial clearances of a rule file
 run in the windy case (`ohl line --rules`, the Clearances tab).

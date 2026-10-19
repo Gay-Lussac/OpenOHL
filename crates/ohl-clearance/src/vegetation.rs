@@ -6,6 +6,9 @@
 //! case for sag, a windy one for blowout), now and after they have grown,
 //! and trees that could reach a wire when they fall.
 //!
+//! Distances are to the conductor's surface (iced in a case with ice),
+//! as every clearance ([`crate::checks`]).
+//!
 //! - **Encroaching**: a vegetation point closer to the wire (radially, to
 //!   the nearest subconductor) than the required clearance plus the growth
 //!   until the next cut (`growth_per_year × years`, grown in every
@@ -77,14 +80,15 @@ pub struct VegPoint {
     pub point: P3,
     /// Its class.
     pub class: u8,
-    /// Radial distance to the wire, m (`INFINITY`: beyond the search).
+    /// Radial distance to the wire's surface, m (`INFINITY`: beyond the
+    /// search).
     pub distance: f64,
-    /// Nearest point of the wire.
+    /// Nearest point of the wire (its axis).
     pub wire_point: P3,
     /// Height above the ground, m (none: no ground below it).
     pub height: Option<f64>,
-    /// Fall-in margin: distance from the tree's base to the wire minus the
-    /// grown tree's height, m (negative: it can reach the wire).
+    /// Fall-in margin: distance from the tree's base to the wire's surface
+    /// minus the grown tree's height, m (negative: it can reach the wire).
     pub fall_margin: Option<f64>,
 }
 
@@ -186,19 +190,22 @@ impl VegetationCheck {
             let (a, b) = self.set.segment(w, k);
             let wire = &self.set.wires[w];
             let radius = self.set.radii[w];
+            // To the surface.
+            let off = self.set.allowances[w];
             let (q, _) = closest_on_segment(p, a, b);
             let mut d = (f64::INFINITY, q);
-            if distance(p, q) - radius <= near_reach {
+            if distance(p, q) - radius - off <= near_reach {
                 d = if radius > 0.0 {
                     wire.nearest(p, a, b)
                 } else {
                     (distance(p, q), q)
                 };
+                d.0 -= off;
             }
             let mut db = f64::INFINITY;
             if tree {
                 let (qb, _) = closest_on_segment(base, a, b);
-                db = distance(base, qb) - radius;
+                db = distance(base, qb) - radius - off;
             }
             match self.touched.iter_mut().find(|t| t.0 == w) {
                 Some(t) => {
@@ -318,6 +325,8 @@ mod tests {
             bundle: vec![],
             points: (0..=50).map(|k| [k as f64 * 6.0, 0.0, 20.0]).collect(),
             ends: vec![],
+            surface_radius: 0.0,
+            polyline_error: 0.0,
         }
     }
 

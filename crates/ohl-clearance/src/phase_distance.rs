@@ -11,8 +11,10 @@
 //! OpenOHL measures: it pairs the conductors hanging between the same
 //! two structures (and, asked, those coming near elsewhere); along each,
 //! every `spacing` of its length, it takes the closest point on the
-//! other and there the distance, the system angle β (of the line joining
-//! the points, from the vertical), each conductor's local sag f
+//! other and there the distance between their surfaces (the axes'
+//! distance less both radii, iced in a case with ice, and the polylines'
+//! error), the system angle β (of the line joining the axis points, from
+//! the vertical), each conductor's local sag f
 //! (vertically below its chord) and l_k (the suspension string's length,
 //! linear between its ends). For conductors joined by interphase spacers
 //! in the span it gives each one's largest sag between its spacer
@@ -32,8 +34,9 @@ use crate::checks::{Wire, wires_of};
 
 type P3 = [f64; 3];
 
-/// Numbers per station handed to the [`Evaluator`]: the distance (m),
-/// β (°), the local sag of each conductor (m), l_k of each (m).
+/// Numbers per station handed to the [`Evaluator`]: the distance between
+/// the conductors' surfaces (m; iced in a case with ice, less both wires'
+/// [`Wire::allowance`]), β (°), the local sag of each conductor (m), l_k of each (m).
 pub const STATION_VALUES: usize = 6;
 
 /// How the measuring runs.
@@ -130,7 +133,7 @@ pub struct Station {
     /// Where along each conductor, m of its length from its first point
     /// (near 0 or its length: at a clamp, where f is about 0).
     pub along: [f64; 2],
-    /// Distance between them, m.
+    /// Distance between their surfaces, m (`at` are the axis points).
     pub distance: f64,
     /// Required, m.
     pub required: f64,
@@ -663,7 +666,9 @@ pub fn check<E: Evaluator>(
                         } else {
                             ([p, q], [sp, sq], [fp, fq], [lp, lq])
                         };
-                        rows.extend([d, beta, f[0], f[1], l[0], l[1]]);
+                        // To the surfaces of both (iced in a case with ice).
+                        let surface = d - cf.wire.allowance() - cs.wire.allowance();
+                        rows.extend([surface, beta, f[0], f[1], l[0], l[1]]);
                         measured.push(Measured {
                             group: (swap, n, k),
                             weight,
@@ -889,6 +894,8 @@ pub(crate) mod tests {
                 bundle: Vec::new(),
                 points,
                 ends: vec![format!("T1:{set}"), format!("T2:{set}")],
+                surface_radius: 0.0,
+                polyline_error: 0.0,
             },
             diameter_mm: 30.0,
             mass_kg_m: 3.0,

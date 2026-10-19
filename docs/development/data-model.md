@@ -676,8 +676,9 @@ ends (I: its length; V, tension, clamped: 0; the string below a V: its
 length; a TAK: its suspension string's), and the plugin columns of
 their sections; the settings (the plugin's choices, station spacing,
 circuits ticked, nearby pairs and their distance) are not in the file.
-Results per pair: the worst station (points, where along each
-conductor, d, the required distance and the plugin's values) and the
+Results per pair: the worst station (points on the axes, where along
+each conductor, d — between the conductors' surfaces since 2026-10, see
+below — the required distance and the plugin's values) and the
 length of conductor below it; conductors joined by spacers in the
 span: each one's largest sag between its clamps. A run's parameters
 keep the plugin's name and version and its choices. See [Distance
@@ -711,6 +712,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   rule's `vertical_band`; none: the window's `Zone.width`); the window's
   `Zone.search` is `[check] search_distance`. Rules refer to LiDAR
   classes by number (`.ohlc` schemes) and to weather cases by name.
+- **Results are to the conductor's surface** (derived, never stored):
+  `ohl_clearance::Hit::distance` (the CSVs' clearance columns, the
+  windows, the sheets), the vegetation distances and fall-in margins,
+  galloping gaps, right-of-way offsets and the phase-distance stations'
+  d are the distance from the axis less `Wire::allowance` — the
+  subconductor's `surface_radius` (half the iced diameter in the case,
+  `WeatherCase::iced_diameter`) and the `polyline_error` bound — of each
+  wire (`Hit::wire` stays the axis point). Both come from the solve:
+  `SpanShape` and `JumperShape` (`ohl-line`) carry `surface_radius` and
+  `polyline_error` (`ohl_line::solve::polyline_error`: the largest
+  sagitta of a piece on a circle of radius H/w; 0 for a rigid or stiff
+  jumper). The radial ground clearance is the samples' shortest
+  distance lowered by `checks::sampled_floor`. Until 2026-10 every
+  clearance was to the axis, without these.
 - **Clearance presets** of design-code plugins are such rule files,
   `<plugin>-<name>.ohlr` among the project's rule files, each with a
   weather case file of the same name among its weather case files (the
@@ -741,7 +756,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
 | `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ohl_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1 —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ohl-structure-loads`; below) |
-| `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
+| `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`; between two angles interpolated linearly in sin(θ/2), `Capacity::spans_at` — linearly in θ until 2026-10), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself; heights above the ground of the structure as written, raised by a placed structure's extension `dz` |
 | `model` | path? | — | separate `.ohlfe` model, relative to this file |
 | `pole` | `PoleRef`: a string (`File`: a `.ohlp` id, or a file name ending in `.ohlp`, in the same folder) **or** a `[pole]` table (`Inline(InlinePole)`, version 3) | m, Pa, kg/m³ | the pole: `shape` (`round`/`polygon`), `sides?`, `embedment?`, `[[pole.outline]]` (`z`, `diameter` **or** `circumference`; rising z; a polygon across flats), level 3 `material` (`wood`/`steel`/`concrete`/`other`), `section?` (section library), `wall?` (`PoleWall`: a length, or `"solid"` — no hollow; another word refused naming `wall`; absent: not given, level 3 lacks it; a `.ohlp`'s `wall` reads the same, absent there still solid in the check; typed wins over a section's `t`), `fibre_stress?`, `moment_capacity?`, `[[pole.capacity]]` (`height`, `moment`), `elasticity?`, `density?`, `drag?` — the `.ohlp` fields; read into one `ohl_structures_fe::Pole` by `pole::structure_pole` (`Pole::from_inline` for a table; `Pole::profile`, `Pole::sides`) |
@@ -968,8 +983,12 @@ Source: `crates/ohl-structures/src/insulators.rs`.
 
 `WeatherCase` (`ohl-weather`): `name` (the key other files use),
 `description`, `tags`, `temperature` (cable), `ice_thickness` or
-`ice_load`, `ice_density`, `wind_pressure`, `wind_from` (`right`/`left`,
-looking ahead), `air_density_factor`, `ambient_temperature`.
+`ice_load`, `ice_density` (none: glaze ice, `GLAZE_ICE_DENSITY` 913
+kg/m³ — for a thickness its weight, for a load its iced diameter
+`WeatherCase::iced_diameter`; until 2026-10 a load without a density
+left the wind on the bare diameter), `wind_pressure`, `wind_from`
+(`right`/`left`, looking ahead), `air_density_factor`,
+`ambient_temperature`.
 
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors

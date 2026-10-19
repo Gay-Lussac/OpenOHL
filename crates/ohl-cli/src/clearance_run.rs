@@ -390,7 +390,7 @@ fn rule_header(rule: &Rule, p: &Prepared) -> String {
         r.as_ref().map_or("-".to_owned(), |v| v.to_string())
     };
     format!(
-        "rule \"{}\" ({}): required vertical {}, radial {}",
+        "rule \"{}\" ({}): required vertical {}, radial {} (to the conductor's surface)",
         rule.name,
         match &rule.target {
             Target::Ground => "ground".to_owned(),

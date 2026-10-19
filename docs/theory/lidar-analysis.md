@@ -54,10 +54,13 @@ point cloud in the project file.
 ## Vegetation
 
 For each wire (a span of a section) of a weather case — a hot case for sag,
-a windy one for blowout — every point of the vegetation classes (by role):
+a windy one for blowout — every point of the vegetation classes (by role).
+Distances are to the conductor's surface, as every clearance (its radius,
+iced in a case with ice, and the polyline's bound off the distance to its
+axis: [Clearance](../user-guide/terrain.md#clearance)):
 
 - **Encroaching**: its radial distance to the wire (the nearest
-  subconductor) is below the required clearance plus the growth until the
+  subconductor's surface) is below the required clearance plus the growth until the
   next cut, \\( g = \text{growth per year} \times \text{years} \\) — the
   tree grown by \\( g \\) in every direction.
 
@@ -68,7 +71,8 @@ a windy one for blowout — every point of the vegetation classes (by role):
   the ground (at least 2 m) is taken as a tree top on a trunk straight
   below; falling about its base \\( P_b \\), the top sweeps a sphere of
   radius \\( h + g \\). The tree can reach the wire when
-  \\( \min_{q \in \text{wire}} |q - P_b| < h + g \\); the margin is the
+  \\( \min_{q \in \text{wire}} |q - P_b| - r < h + g \\) (\\( r \\): the
+  conductor's radius and the polyline's bound); the margin is the
   difference. Leaning trees and crown widths are not modelled.
 
   **Simplification:** a straight trunk below each point. A leaning tree

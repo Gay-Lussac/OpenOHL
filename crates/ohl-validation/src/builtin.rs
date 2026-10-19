@@ -45,6 +45,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(StructureWindRule));
     registry.register(Box::new(GallopingEllipses));
     registry.register(Box::new(CatenaryFit));
+    registry.register(Box::new(ClearanceSurface));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -325,27 +326,44 @@ impl Calculation for WeatherWireLoad {
     }
 
     fn description(&self) -> &'static str {
-        "Ice and wind load on a wire (inputs: diameter, weight, temperature, ice_thickness, \
-         ice_density, wind_pressure)"
+        "Ice and wind load on a wire (inputs: diameter, weight, temperature, ice_thickness \
+         or ice_load, ice_density (optional: glaze ice), wind_pressure); outputs the loads \
+         and iced_diameter_mm"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let optional = |k: &str| inputs.contains_key(k);
         let case = WeatherCase {
-            ice_thickness: quantity_input::<Length>(inputs, "ice_thickness")?,
-            ice_density: Some(quantity_input::<Density>(inputs, "ice_density")?),
+            ice_thickness: if optional("ice_thickness") {
+                quantity_input::<Length>(inputs, "ice_thickness")?
+            } else {
+                Length::ZERO
+            },
+            ice_load: optional("ice_load")
+                .then(|| quantity_input::<ForcePerLength>(inputs, "ice_load"))
+                .transpose()?,
+            ice_density: optional("ice_density")
+                .then(|| quantity_input::<Density>(inputs, "ice_density"))
+                .transpose()?,
             wind_pressure: quantity_input::<Stress>(inputs, "wind_pressure")?,
             ..WeatherCase::still(
                 "validation",
                 quantity_input::<Temperature>(inputs, "temperature")?,
             )
         };
+        case.validate()?;
         let weight = quantity_input::<MassPerLength>(inputs, "weight")?.weight();
-        let load = case.wire_load(quantity_input::<Length>(inputs, "diameter")?, weight);
+        let diameter = quantity_input::<Length>(inputs, "diameter")?;
+        let load = case.wire_load(diameter, weight);
         Ok(outputs([
             ("vertical_n_per_m", load.vertical.newtons_per_meter()),
             ("horizontal_n_per_m", load.horizontal.newtons_per_meter()),
             ("resultant_n_per_m", load.resultant().newtons_per_meter()),
             ("swing_angle_deg", load.swing_angle().degrees()),
+            (
+                "iced_diameter_mm",
+                case.iced_diameter(diameter).millimeters(),
+            ),
         ]))
     }
 }
@@ -1133,6 +1151,98 @@ impl Calculation for CatenaryFit {
             ("low_point_z_m", fit.curve.z0),
             ("sag_m", fit.curve.sag(0.0, len("span")?)),
             ("rms_m", fit.rms),
+        ]))
+    }
+}
+
+/// `clearance.surface`: clearances of a level span to its conductor's
+/// surface. The wire is a catenary of `span`, constant `catenary` (H/w)
+/// and attachments `height` above flat ground, as 64 pieces even in x (a
+/// vertex at the low point), of a conductor of `diameter` with
+/// `ice_thickness` (radial, glaze ice). Outputs: the surface radius and
+/// the polyline's bound (`ohl_line::solve::polyline_error`), the vertical
+/// and radial clearance to the ground and the radial clearance to a point
+/// `point_offset` across the low point at its height — each to the
+/// surface, less the bound.
+struct ClearanceSurface;
+
+impl Calculation for ClearanceSurface {
+    fn id(&self) -> &'static str {
+        "clearance.surface"
+    }
+
+    fn description(&self) -> &'static str {
+        "Clearances of a level span to the conductor's surface (inputs: span, catenary, height, \
+         diameter, ice_thickness, point_offset); outputs surface_radius_m, polyline_error_m, \
+         ground_vertical_m, ground_radial_m, point_radial_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::checks::{PointCheck, WireSet, ground_check};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (span, c, height) = (len("span")?, len("catenary")?, len("height")?);
+        let offset = len("point_offset")?;
+        if !(span > 0.0 && c > 0.0 && height > 0.0 && offset > 0.0) {
+            return Err("span, catenary, height and point_offset must be above 0".into());
+        }
+        let case = WeatherCase {
+            ice_thickness: quantity_input::<Length>(inputs, "ice_thickness")?,
+            ..WeatherCase::still("validation", Temperature::from_celsius(0.0))
+        };
+        let radius = case.iced_diameter(quantity_input(inputs, "diameter")?).si() / 2.0;
+        let sag = c * ((span / (2.0 * c)).cosh() - 1.0);
+        let points: Vec<Vector3<f64>> = (0..=64)
+            .map(|k| {
+                let x = span * k as f64 / 64.0;
+                let z = height - sag + c * (((x - span / 2.0) / c).cosh() - 1.0);
+                Vector3::new(x, 0.0, z)
+            })
+            .collect();
+        let error = ohl_line::solve::polyline_error(&points, c);
+        let wire = ohl_clearance::Wire {
+            section: "S".into(),
+            span: 0,
+            circuit: String::new(),
+            phase: String::new(),
+            potential: None,
+            bundle: Vec::new(),
+            points: points.iter().map(|p| [p.x, p.y, p.z]).collect(),
+            ends: Vec::new(),
+            surface_radius: radius,
+            polyline_error: error,
+        };
+        let flat = |x: f64, y: f64| ohl_terrain::SurveyPoint {
+            x,
+            y,
+            z: 0.0,
+            code: String::new(),
+            line: String::new(),
+        };
+        let ground = ohl_terrain::Terrain::from_points(
+            &[
+                flat(-10.0, -50.0),
+                flat(span + 10.0, -50.0),
+                flat(span + 10.0, 50.0),
+                flat(-10.0, 50.0),
+            ],
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+        let rules = ohl_clearance::RuleSet::parse(&format!(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = {height}\nradial = {height}\n\
+             [[rule]]\nname = \"p\"\ntarget = \"points\"\nclasses = [1]\nradial = {offset}\n"
+        ))?;
+        let g = &ground_check(&rules.rules[0], std::slice::from_ref(&wire), &ground)[0];
+        let set = WireSet::new(vec![wire], offset + 10.0);
+        let mut points_check = PointCheck::new(&rules.rules[1], &[1], &set);
+        points_check.visit(&set, span / 2.0, offset, height - sag, 1);
+        let hit = |h: Option<ohl_clearance::Hit>| h.map_or(f64::NAN, |h| h.distance);
+        Ok(outputs([
+            ("surface_radius_m", radius),
+            ("polyline_error_m", error),
+            ("ground_vertical_m", hit(g.vertical)),
+            ("ground_radial_m", hit(g.radial)),
+            ("point_radial_m", hit(points_check.results[0].radial)),
         ]))
     }
 }

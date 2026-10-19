@@ -20,9 +20,14 @@
 //! at every TIN edge crossing ([`Terrain::profile`]), where both the ground
 //! (exactly) and the wire piece (to within its chord sag) are linear, so
 //! the minimum of their difference is at one of those points. The wire's
-//! chord sag over a piece is \\( L^2 / (8C) \\) for a piece of length L and
-//! catenary constant C — about 3 mm for 6 m pieces at C = 1500 m — and the
-//! wire lies below its chords, so clearances are high by at most that.
+//! chord sag over a piece is about \\( L^2 / (8C) \\) for a piece of length
+//! L and catenary constant C — about 3 mm for 6 m pieces at C = 1500 m.
+//!
+//! Every clearance is to the conductor's **surface**: its radius (iced in
+//! a case with ice) and the bound of that chord sag
+//! ([`ohl_line::solve::polyline_error`]) are taken off the distance to its
+//! axis ([`Wire::allowance`]), so a clearance is never more than the exact
+//! one.
 //!
 //! [`Terrain::profile`]: ohl_terrain::Terrain::profile
 
@@ -196,11 +201,13 @@ mod tests {
         assert_eq!(all.len(), spans.clone().count());
         for ((w, r), span) in all.iter().zip(spans) {
             let lowest = r.vertical.unwrap().distance;
-            let expected = span.low_point[2] + bundle_low(w) - 480.0;
+            // To the surface: the conductor's radius off the axis.
+            let expected = span.low_point[2] + bundle_low(w) - 480.0 - w.surface_radius;
+            assert!(w.surface_radius > 0.005 && w.polyline_error > 0.0);
             // Over flat ground the lowest clearance is at the wire's low
-            // point (within the polyline chord sag, mm).
+            // point, less the polyline's bound (mm): never above it.
             assert!(
-                (lowest - expected).abs() < 5e-3,
+                (lowest - expected).abs() <= w.polyline_error + 5e-3,
                 "{w:?}: {lowest} vs {expected}"
             );
             assert!(lowest <= expected + 1e-9);
@@ -309,7 +316,14 @@ mod tests {
         let rule = &RuleSet::ground(0.0).rules[0];
         let r = &checks::ground_check(rule, &wires[..1], &flat(480.0))[0];
         let expected = jumpers[0].low_point[2] + bundle_low(&wires[0]) - 480.0;
-        assert!((r.vertical.unwrap().distance - expected).abs() < 5e-3);
+        let got = r.vertical.unwrap().distance;
+        // To the surface (the jumper's radius off its axis).
+        assert!(wires[0].surface_radius > 0.005);
+        assert!(
+            (got - (expected - wires[0].allowance())).abs() < 5e-3,
+            "{got}"
+        );
+        assert!(got <= expected - wires[0].surface_radius + 1e-9);
     }
 
     #[test]

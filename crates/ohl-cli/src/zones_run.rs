@@ -573,7 +573,7 @@ fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
     }
     println!(
         "  {:<9} {:<28} {:<16} {:<44} {:<26} {:>9} {:>10} {:>8}",
-        "status", "rule", "span", "case & wind", "target", "found m", "required m", "count"
+        "status", "rule", "span", "case & wind", "target", "surface m", "required m", "count"
     );
     for (status, f) in rows {
         let unit = match (f.class, f.count) {

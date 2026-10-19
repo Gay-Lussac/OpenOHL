@@ -14,3 +14,23 @@ expected.vertical_n_per_m = { value = 30.5560495, rel_tol = 1e-9 }
 expected.horizontal_n_per_m = { value = 10.25464913, rel_tol = 1e-9 }
 expected.resultant_n_per_m = { value = 32.23088565, rel_tol = 1e-9 }
 expected.swing_angle_deg = { value = 18.55181821, rel_tol = 1e-9 }
+
+# An ice load without a density is glaze ice (913 kg/m3, the program's
+# default): its iced diameter carries the wind, never the bare diameter.
+#   A_ice = wi / (913 g), D = sqrt(d^2 + 4 A_ice / pi), wh = q D,
+#   wv = wc + wi.
+#   d = 1.108 in = 28.1432 mm, wi = 10 N/m: D = 47.054247 mm;
+#   q = 4 psf = 191.521036 Pa: wh = 9.011878 N/m (on the bare diameter, as
+#   before 2026-10, it was 5.390 N/m).
+
+[[case]]
+id = "weather-002"
+title = "Drake with a 10 N/m ice load without a density (glaze ice) and 4 psf wind"
+calculation = "weather.wire_load"
+reference = "Hand calculation from first principles (see comment above)"
+inputs = { diameter = "1.108 in", weight = "1.094 lbm/ft", temperature = "0 °F", ice_load = "10 N/m", wind_pressure = "4 psf" }
+expected.iced_diameter_mm = { value = 47.05424683, rel_tol = 1e-9 }
+expected.vertical_n_per_m = { value = 25.96572981, rel_tol = 1e-9 }
+expected.horizontal_n_per_m = { value = 9.011878098, rel_tol = 1e-9 }
+expected.resultant_n_per_m = { value = 27.48514274, rel_tol = 1e-9 }
+expected.swing_angle_deg = { value = 19.14025975, rel_tol = 1e-9 }
