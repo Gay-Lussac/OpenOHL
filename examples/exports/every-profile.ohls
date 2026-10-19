@@ -2,7 +2,7 @@
 # (libraries/sections/example-sections.ohlsec), for trying the structure
 # exports in other programs (examples/exports/README.md). Not a design.
 format = "ohl-structure"
-version = 2
+version = 6
 id = "every-profile"
 name = "Every profile (invented)"
 kind = "other"
@@ -61,6 +61,8 @@ reference = [0, 1, 0]
 id = "m-RHS"
 nodes = ["N1", "N3"]
 section = "RHS-121x79x5"
+kind = "tension"
+bending = true
 
 [[member]]
 id = "m-CHS"
@@ -84,6 +86,7 @@ kind = "frame"
 id = "m-GEN"
 nodes = ["N0", "N3"]
 section = "GEN-1"
+check = false
 
 [[load]]
 node = "N3"

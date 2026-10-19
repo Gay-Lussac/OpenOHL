@@ -211,6 +211,20 @@ fn row(columns: &[&str], values: Vec<(&str, Cell)>) -> Vec<Cell> {
     out
 }
 
+/// A member's `Layer`: what its behaviour does not say
+/// ([`crate::member_note`]: a tension-only member that bends, a member not
+/// design-checked); empty for any other member. SAF has no comment column
+/// on a member and its `Name` is what the actions refer to, so the free
+/// text goes in the layer, which also groups such members in a program.
+fn layer(m: &ohl_structure_link::ExportMember) -> Cell {
+    let note = crate::member_note(m);
+    if note.is_empty() {
+        Cell::Empty
+    } else {
+        format!("OHL: {note}").into()
+    }
+}
+
 /// A number in millimetres, as SAF's parameter lists give them.
 fn mm(x: f64) -> String {
     let v = (x * 1000.0 * 1e6).round() / 1e6;
@@ -428,13 +442,18 @@ pub fn sheets(s: &ExportStructure) -> Vec<Sheet> {
                 ("Analysis Z Eccentricity of End Node [mm]", 0.0.into()),
                 (
                     "Behaviour in analysis",
+                    // A tension-only member that bends is a beam
+                    // (Standard): SAF's "Tension only" is axial force
+                    // only; its tension-only behaviour goes in `Layer`.
                     match m.kind {
+                        _ if m.is_frame() => "Standard",
                         ExportKind::Truss => "Axial force only",
                         ExportKind::Frame => "Standard",
                         ExportKind::Cable | ExportKind::Tension => "Tension only",
                     }
                     .into(),
                 ),
+                ("Layer", layer(m)),
                 ("Id", scope("member", &m.id).into()),
             ],
         ));

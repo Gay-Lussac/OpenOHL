@@ -910,3 +910,133 @@ fn the_structure_report_of_a_pole() {
     assert!(e.unwrap_err().contains("+3"));
     assert_eq!(report::today().len(), 10);
 }
+
+/// The shapes frame with `m-RHS` a tension-only member that bends and
+/// `m-GEN` a modelling member (not design-checked).
+fn bending_and_unchecked() -> ExportStructure {
+    let text = SHAPES
+        .replace("version = 2", "version = 6")
+        .replace(
+            "section = \"RHS-121x79x5\"\n",
+            "section = \"RHS-121x79x5\"\nkind = \"tension\"\nbending = true\n",
+        )
+        .replace(
+            "section = \"GEN-1\"\n",
+            "section = \"GEN-1\"\ncheck = false\n",
+        );
+    structure(&text, &example_library(), None).unwrap()
+}
+
+#[test]
+fn a_tension_member_keeps_its_bending() {
+    let s = bending_and_unchecked();
+    let m = |id: &str| s.members.iter().find(|m| m.id == id).unwrap();
+    assert_eq!(m("m-RHS").kind, ExportKind::Tension);
+    assert!(m("m-RHS").bending && m("m-RHS").is_frame() && m("m-RHS").check);
+    assert!(!m("m-GEN").check && !m("m-GEN").bending && !m("m-GEN").is_frame());
+    assert_eq!(member_note(m("m-RHS")), "tension only, bending");
+    assert_eq!(member_note(m("m-GEN")), "not checked");
+    assert_eq!(member_note(m("m-EA")), "");
+
+    // IFC4 analysis view: a rigid-jointed analysis member with the note;
+    // OHL_Member keeps the kind, Bending and Check where set.
+    let text = ifc::ifc(&s, &IfcOptions::default()).unwrap();
+    let p = parse_step(&text);
+    p.check_attributes(Schema::Ifc4);
+    let curve = |id: &str| {
+        p.of("IFCSTRUCTURALCURVEMEMBER")
+            .into_iter()
+            .find(|a| a[2] == format!("'{id}'"))
+            .unwrap()
+    };
+    let rhs = curve("m-RHS");
+    assert_eq!(rhs[3], "'tension only, bending'");
+    assert_eq!(rhs[7], ".RIGID_JOINED_MEMBER.");
+    let unchecked = curve("m-GEN");
+    assert_eq!(unchecked[3], "'not checked'");
+    assert_eq!(unchecked[7], ".PIN_JOINED_MEMBER.");
+    assert_eq!(curve("m-EA")[3], "$");
+    let props = p.of("IFCPROPERTYSINGLEVALUE");
+    let named = |n: &str| {
+        props
+            .iter()
+            .filter(|a| a[0] == format!("'{n}'"))
+            .map(|a| a[2].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(named("Bending"), ["IFCBOOLEAN(.T.)"]);
+    assert_eq!(named("Check"), ["IFCBOOLEAN(.F.)"]);
+    assert!(named("Kind").contains(&"IFCLABEL('tension')".to_owned()));
+    // The IfcMember's object type stays the kind.
+    assert!(
+        p.of("IFCMEMBER")
+            .iter()
+            .any(|a| a[2] == "'m-RHS'" && a[4] == "'tension'")
+    );
+
+    // IFC4 members only and IFC2x3: the same property values.
+    for schema in [Schema::Ifc4, Schema::Ifc2x3] {
+        let text = ifc::ifc(
+            &s,
+            &IfcOptions {
+                schema,
+                analysis: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let p = parse_step(&text);
+        p.check_attributes(schema);
+        let props = p.of("IFCPROPERTYSINGLEVALUE");
+        let values: Vec<(&str, &str)> = props
+            .iter()
+            .map(|a| (a[0].as_str(), a[2].as_str()))
+            .filter(|(n, _)| *n == "'Bending'" || *n == "'Check'")
+            .collect();
+        assert_eq!(
+            values,
+            [
+                ("'Bending'", "IFCBOOLEAN(.T.)"),
+                ("'Check'", "IFCBOOLEAN(.F.)")
+            ],
+            "{schema:?}"
+        );
+    }
+
+    // SAF: a beam (Standard) with the tension-only behaviour in Layer.
+    let back = xlsx::read(&saf::workbook(&s).unwrap()).unwrap();
+    let cm = back
+        .iter()
+        .find(|x| x.name == "StructuralCurveMember")
+        .unwrap();
+    let row = |id: &str| {
+        (1..cm.rows.len())
+            .find(|r| cm.get(*r, "Name") == Some(&Cell::from(id)))
+            .unwrap()
+    };
+    let r = row("m-RHS");
+    assert_eq!(
+        cm.get(r, "Behaviour in analysis"),
+        Some(&Cell::from("Standard"))
+    );
+    assert_eq!(
+        cm.get(r, "Layer"),
+        Some(&Cell::from("OHL: tension only, bending"))
+    );
+    let r = row("m-GEN");
+    assert_eq!(
+        cm.get(r, "Behaviour in analysis"),
+        Some(&Cell::from("Axial force only"))
+    );
+    assert_eq!(cm.get(r, "Layer"), Some(&Cell::from("OHL: not checked")));
+    let r = row("m-EA");
+    assert!(matches!(cm.get(r, "Layer"), None | Some(Cell::Empty)));
+
+    // CSV: bending and check columns.
+    let t = csv::tables(&s);
+    let members = &t.iter().find(|(x, _)| *x == "members.csv").unwrap().1;
+    assert!(members.starts_with("id,node_i,node_j,section,kind,bending,check,length_m,"));
+    assert!(members.contains("\nm-RHS,N1,N3,RHS-121x79x5,tension,1,1,"));
+    assert!(members.contains("\nm-GEN,N0,N3,GEN-1,truss,0,0,"));
+    assert!(members.contains("\nm-EA,N0,N1,EA-61x7,frame,0,1,"));
+}

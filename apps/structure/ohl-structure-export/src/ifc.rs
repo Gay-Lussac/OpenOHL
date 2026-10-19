@@ -637,7 +637,10 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
             );
             let shape = topology(&mut f, "Edge", &edge);
             let axis = f.direction(m.axes[2]);
+            // A tension-only member that bends is a frame here (its
+            // tension-only behaviour in OHL_Member and the Description).
             let kind = match m.kind {
+                _ if m.is_frame() => "RIGID_JOINED_MEMBER",
                 ExportKind::Truss => "PIN_JOINED_MEMBER",
                 ExportKind::Frame => "RIGID_JOINED_MEMBER",
                 ExportKind::Cable => "CABLE",
@@ -647,8 +650,9 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
             let c = f.add(
                 "IFCSTRUCTURALCURVEMEMBER",
                 &format!(
-                    "{g},$,{},$,$,{shared},{shape},.{kind}.,{axis}",
-                    string(&m.id)
+                    "{g},$,{},{},$,{shared},{shape},.{kind}.,{axis}",
+                    string(&m.id),
+                    opt_string(&crate::member_note(m))
                 ),
             );
             for (end, n) in m.nodes.iter().enumerate() {
@@ -875,23 +879,32 @@ fn member(
             if ifc4 { ",.MEMBER." } else { "" }
         ),
     );
+    let mut values = vec![
+        ("Section", label(&section.id)),
+        ("Kind", label(m.kind.as_str())),
+        ("EffectiveLengthFactor", format!("IFCREAL({})", real(m.k))),
+        (
+            "Pretension",
+            format!("IFCFORCEMEASURE({})", real(m.pretension)),
+        ),
+        ("From", label(&s.nodes[m.nodes[0]].id)),
+        ("To", label(&s.nodes[m.nodes[1]].id)),
+    ];
+    // Where set: a tension-only member that also bends, a member not
+    // design-checked.
+    if m.bending {
+        values.push(("Bending", "IFCBOOLEAN(.T.)".into()));
+    }
+    if !m.check {
+        values.push(("Check", "IFCBOOLEAN(.F.)".into()));
+    }
     properties(
         f,
         oh,
         &format!("member:{}", m.id),
         std::slice::from_ref(&e),
         "OHL_Member",
-        &[
-            ("Section", label(&section.id)),
-            ("Kind", label(m.kind.as_str())),
-            ("EffectiveLengthFactor", format!("IFCREAL({})", real(m.k))),
-            (
-                "Pretension",
-                format!("IFCFORCEMEASURE({})", real(m.pretension)),
-            ),
-            ("From", label(&s.nodes[m.nodes[0]].id)),
-            ("To", label(&s.nodes[m.nodes[1]].id)),
-        ],
+        &values,
     );
     e
 }

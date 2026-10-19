@@ -138,6 +138,22 @@ pub struct ExportMember {
     pub k: f64,
     /// Pretension of a cable, N.
     pub pretension: f64,
+    /// A tension-only member ([`ExportKind::Tension`]) that also bends
+    /// and twists, as a frame, while it is in the model (the model's
+    /// `bending`); false for every other kind.
+    pub bending: bool,
+    /// Design-checked; false: a modelling member (the model's
+    /// `check = false`), exported like any other.
+    pub check: bool,
+}
+
+impl ExportMember {
+    /// Whether it bends at its joints (a frame, or a tension-only member
+    /// with [`Self::bending`]): exported with rigid ends and a beam's
+    /// behaviour.
+    pub fn is_frame(&self) -> bool {
+        self.kind == ExportKind::Frame || (self.kind == ExportKind::Tension && self.bending)
+    }
 }
 
 /// Where a load acts.
@@ -395,6 +411,8 @@ pub fn export_structure(
                 length: model.length(m),
                 k: m.k,
                 pretension: m.pretension,
+                bending: m.bending,
+                check: m.check,
             }
         })
         .collect();

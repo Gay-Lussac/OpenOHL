@@ -20,10 +20,11 @@ a rotational spring of 2000 N·m/rad about z, N3 (4, 3, 5). Members:
 `m-EA` equal angle EA-61x7 (N0–N1), `m-UA` unequal angle UA-83x52x6
 (N1–N2, rolled 30°), `m-CH` channel CH-157 (N2–N3), `m-IS` I section
 IS-213 (N0–N2, reference along y), `m-RHS` rectangular hollow
-RHS-121x79x5 (N1–N3), `m-CHS` circular hollow CHS-167x7 (N0–N3), `m-RB`
+RHS-121x79x5 (N1–N3, a tension-only member that bends: exported as a
+frame with its tension-only behaviour as information), `m-CHS` circular hollow CHS-167x7 (N0–N3), `m-RB`
 round bar RB-23 (N3–N1, a cable with 1 kN pretension), `m-POLE`
 12-sided polygonal tube POLE-12-430 (N2–N1), `m-GEN` a general section
-GEN-1 (N0–N3, no shape). Load cases: `model` with (1, 2, −3) kN at N3;
+GEN-1 (N0–N3, no shape; `check = false`, a member not design-checked). Load cases: `model` with (1, 2, −3) kN at N3;
 `along` with self-weight × 1.35 and 4 kN in x at a quarter of `m-EA`.
 
 ## `every-profile-ifc4.ifc` — IFC4, Structural Analysis View
@@ -34,6 +35,11 @@ For an analysis program reading IFC (and any BIM viewer). Check:
   `m-GEN` has none), the supports at N0 (fixed) and N2 (x, y, z held,
   spring about z), the two load cases with their loads (the 4 kN at a
   quarter of `m-EA`, the self-weight factor of `along`);
+- `m-RHS` comes in as a frame (rigid-jointed), its tension-only
+  behaviour shown as information (`OHL_Member`: Kind `tension`, Bending
+  true; the analysis member's description), and `m-GEN`'s `Check` false
+  and description "not checked" (structure-exports.md, Tension-only
+  members that bend);
 - profiles and materials are recognised or offered for mapping (names
   are the section ids; materials `steel-example`, `alloy-example`), and
   each member's profile orientation matches the 30° roll of `m-UA` and
@@ -64,4 +70,7 @@ For an analysis program reading SAF. Check:
 - the parametric shapes' dimensions come in right (flange and web
   thickness of the channel and the I section, the tube's wall), and the
   members' local axes (LCS "z by vector") match the IFC4 file;
+- `m-RHS` is a beam (Behaviour in analysis Standard) and the layers
+  "OHL: tension only, bending" (`m-RHS`) and "OHL: not checked"
+  (`m-GEN`) are kept;
 - the units: m, mm for the shapes' parameters, MPa, kN.
