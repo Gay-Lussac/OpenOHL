@@ -148,3 +148,13 @@ level 3 structure takes the code's drag and shielding factors only when
 the plugin gives them, which these plugins do not yet); the NESC constant k (the notes give
 its value to add by hand); per-wire ice loads that depend on the conductor
 diameter (one reference diameter per parameter file).
+
+**The structures' own wind.** A load case may give the structures a wind
+pressure and factor of their own, apart from the wires'
+(`[case.structure]`, [Load cases](loads.md#wind-on-the-structures-apart-from-the-wires-casestructure)).
+A plugin supplies them in the load case file it generates — the
+interface is unchanged (the `.ohllc` text carries them; the shared
+`ohl-code-common` crate writes them with `Load::structure_wind` and
+raises the file to version 2 only then). The example plugins give none
+yet: their structures take the weather case's pressure and the
+transverse factor.

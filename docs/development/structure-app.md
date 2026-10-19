@@ -175,6 +175,17 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   ones), source `line`, no recipe needed; a line case with the name of a
   recipe is called "NAME (line)". The recipes evaluated follow. The
   results and the exports take them like any case.
+- **The line's wind on the body** (`load_cases_tab::line_wind_recipes`):
+  per line case whose `LineValues::structure_wind` has a pressure, a
+  recipe of the case's table name taking `structure_wind_factored` on
+  every member (evaluated with the recipes on a structure with members,
+  rows of source `line`); the run takes the recipes and these with the
+  line's pressures written in (`LoadCasesTab::run_recipes`,
+  `resolve_line_pressures`), so a pole gets the same wind. Stored from
+  the line, the wind is a `pressure` on all members (`GivenCase::wind`);
+  taken from the line, a `structure_wind_factored` load
+  (`add_body_wind_load`). Every edit raises a file with such a load to
+  version 6 (`raise_for_line_pressures`, in `StructureFile::edit`).
 - **Store in the structure file** (`StructureApp::store_line_cases`,
   `ohl_structure_edit::store_given_cases`): the line's cases ticked
   written as `[[load_case]]` of given values (a `value` and `direction`
@@ -212,6 +223,12 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   a case that does not solve is listed with the solver's reason
   (mechanism, unstable, stopped by a limit with the residual). Results
   computed from another table or file are marked as such.
+- **Headless, for `ohl`**: `ohl-structure-report --request -` answers a
+  JSON request with a JSON reply (`ohl_structure_export::request`;
+  [data model](data-model.md#structure-request-and-reply-json)); `ohl
+  structure analyse|report` starts it as a program of its own (never a
+  crate dependency of the core). Tested end to end, both programs built,
+  in `ohl-structure-tests/tests/ohl_structure_cli.rs`.
 - **The view** draws the overlay of the area worked in (`ViewInput::overlay`, a `Scene`
   with a key; uploaded again only when the key changes): load arrows of
   the case shown, or the deformed shape coloured by usage (red above

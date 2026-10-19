@@ -75,13 +75,27 @@ The structure application (`apps/structure/`, [its crates](development/structure
 is kept apart from the core: its crates depend on core crates, never the
 other way round, and its tests run on their own.
 
+**The boundary between the programs.** Where a core program needs the
+structure side, the programs talk instead of the crates depending on each
+other: OHL-Design starts OHL-Structure (`ohl-structure`, found through
+`OHL_STRUCTURE_APP`, next to `ohl-design`, or on the `PATH`) with a
+line-values file (JSON) and watches the files it saves; `ohl structure
+analyse|report` starts the structure side's headless tool
+`ohl-structure-report --request -` (found through `OHL_STRUCTURE_REPORT`,
+next to `ohl`, or on the `PATH`), writes a JSON request on its input and
+reads a JSON reply on its output (`ohl-structure-request` /
+`ohl-structure-reply`, [data model](development/data-model.md#structure-request-and-reply-json)).
+The JSON formats are the contract; each side has its own types for them,
+and `apps/structure/ohl-structure-tests/tests/ohl_structure_cli.rs` builds
+both programs and runs them together.
+
 | Crate | Responsibility |
 |---|---|
 | `ohl-structure-loads` | A structure's load-case recipes (`[[load_case]]`, `.ohlslc`), their evaluation into the load table, CSV of both; plain data, no line |
 | `ohl-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
 | `ohl-structure-tests` | Tests of the application with the core (test-only) |
 | `ohl-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ohl-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
-| `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](development/structure-exports.md)): IFC4, IFC2x3, SAF, CSV tables; the tool `ohl-structure-export` |
+| `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](development/structure-exports.md)): IFC4, IFC2x3, SAF, CSV tables; the tool `ohl-structure-export`; the structure report and the tool `ohl-structure-report`, which also answers `ohl`'s JSON requests (`--request`) |
 | `ohl-structure-app` | OHL-Structure, the structure application `ohl-structure` (egui): a `.ohls` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
 
 ## Session & collaboration
@@ -129,5 +143,5 @@ WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plug
 - **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ohl-py`), WASM runtime (`wasmtime`) for plugins.
 - **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
-- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 70 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
+- **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 74 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
 - **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).

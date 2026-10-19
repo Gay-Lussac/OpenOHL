@@ -70,7 +70,7 @@ cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm   # the example 
 | `ohl zones` | vertical and radial clearances to the ground and LiDAR classes in the wind, by a rule file (the desktop clearance windows' check); given a project, with the libraries it keeps | [Terrain and ground clearance](terrain.md#vertical-and-radial-clearances-without-the-window-ohl-zones) |
 | `ohl plugin info` | loads a plugin of any kind (design code, check, file format, terrain, project, minimal) and prints what it describes: name, version, world, formats or checks | [Plugins](../development/plugins.md) |
 | `ohl drawing` | plan and profile sheets and profile exports | [Drawings](drawings.md) |
-| `ohl structures` | derive structure types; frame/truss and pole analysis | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md) |
+| `ohl structures` (or `ohl structure`) | derive structure types; frame/truss and pole analysis; `analyse` / `report`: a structure's results and report from OHL-Structure's headless tool `ohl-structure-report` (asked in JSON, found next to `ohl`, on the `PATH` or through `OHL_STRUCTURE_REPORT`) | [Structure libraries](structure-library.md), [Structure analysis](structure-analysis.md), [OHL-Structure](structure-app.md#results) |
 | `ohl code` | weather and load cases from a design-code plugin | [Design codes](design-codes.md) |
 | `ohl thermal` | ampacity and clearance-limited temperature | [Thermal rating](thermal.md) |
 | `ohl bom` | bill of materials and cost estimate | [Bill of materials](bom-and-cost.md) |

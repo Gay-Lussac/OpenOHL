@@ -68,7 +68,7 @@ members = "all"
 
 | Load field | Notes |
 |---|---|
-| `what` | A value the line gives at the point (table below). |
+| `what` | A value the line gives at the point (table below), or the line case's wind on the body (`structure_wind`, `structure_wind_factored`: on `members`). |
 | `value` | Or a force of the case itself (`"2 kN"`); needs a `direction`. |
 | `pressure` | Or a pressure on the members' area (`"0.6 kPa"`); needs `members` and a `direction`. |
 | `line_case` | The line's load case for this load (default: the case's). |
@@ -99,6 +99,18 @@ longitudinal ahead, vertical down.
 | `tension_max` | The larger of the two | not yet: typed |
 | `wire_wind` | The wind on the wires, across the line | not yet: typed |
 | `ice` | The ice on the wires, down | not yet: typed |
+| `structure_wind` | A pressure (Pa) on `members`: the line case's wind on the structure body, unfactored | yes |
+| `structure_wind_factored` | The same × the case's structure wind factor: the pressure the line's own structure checks put on the body | yes |
+
+The two structure winds are the load case's own values for the
+structures when its `.ohllc` gives them (`[case.structure]`,
+[Load cases](loads.md#wind-on-the-structures-apart-from-the-wires-casestructure)),
+else its weather case's pressure and its transverse factor: one rule with
+the line's checks. They act on `members` like a `pressure` (× area, the
+total per member), blowing as the line case's wind (`-x` with the wind
+from the right) unless the load gives a `direction`. A structure file
+using one is version 6, a `.ohlslc` version 2 (OHL-Structure raises the
+file when a load takes one; older programs say "newer version").
 
 The line's [structure loads](loads.md#structure-loads) give the first six
 at every point, in each case the line sends (Criteria › Loads for

@@ -30,6 +30,32 @@ tags = ["ULS"]
 | `vertical`, `transverse`, `longitudinal` | no | 1 | Load factors, 0 to 100. |
 | `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
 | `tags` | no | | Code, limit state… |
+| `[case.structure]` | no | | Version 2: the wind on the structures' own bodies, when it differs from the wind on the wires (below). |
+
+### Wind on the structures apart from the wires (`[case.structure]`)
+
+Design codes often treat the wind on pylons differently from the wind on the conductors (another gust treatment, another partial factor). A load case may therefore give the structures their own values; each one given replaces, **for the structures only**, the line's value:
+
+```toml
+format = "ohl-load-cases"
+version = 2
+
+[[case]]
+name = "wind"
+weather = "high wind"      # 600 Pa: the wires and strings take it, × transverse
+transverse = 1.4
+
+[case.structure]
+wind_pressure = "900 Pa"   # the pressure on the structure bodies (default: the weather case's)
+wind_factor = 1.2          # the factor on it (default: the transverse factor)
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `wind_pressure` | the weather case's `wind_pressure` | Pa (or with a unit, `"0.9 kPa"`); 0 or more. |
+| `wind_factor` | the case's `transverse` | 0 to 100. |
+
+The wind side stays the weather case's (`wind_from`). The wires, strings and jumpers never take these values. Every check of the structures takes them — one rule (`ohl_loads::LoadCase::structure_wind`): the wind bands below, the member wind of the **fe** check, the wind on a pole, and the line cases in OHL-Structure ([Structure application](structure-app.md#the-lines-wind-on-the-structure-body)). A gust or structure factor of a code goes into the pressure or the factor; drag (force) coefficients stay with the structure (its bands' `drag`, its members' sections, its pole's `drag`). Without the table a case behaves as before. A file is written at version 2 only when a case has such a table (a design-code plugin does the same), so older programs still read the others; they refuse a version 2 file as "newer". In the Load cases library page the field `structure` is offered as `{ wind_pressure = …, wind_factor = … }`.
 
 Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.ohllc` only shows the format.
 
@@ -57,7 +83,7 @@ ohl line line.ohl.json --weather cases.ohlwc --load-cases loads.ohllc --loads-cs
 
 The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,factored_transverse,factored_longitudinal,factored_vertical` (`point`: the point's label, empty for the wind on the structure; `sets`: the wire ends hanging there, separated by spaces).
 
-**Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor. The capacity checks' load trees are per point and leave these out, and so does the **fe** check: it takes the member wind on the profiles instead, when the members' sections come from the [section library](section-library.md) (see [Member wind](structure-analysis.md#member-wind-body-wind-at-level-3)). A structure standing on a height extension stands its `dz` higher, and its bands with it: the band heights are above the ground of the structure as written, so on a +3 m extension a band 0–20 m acts at 3–23 m (its mid-height 13 m). The force does not change — the weather case's pressure is the same at every height — only where it acts (the `z` of the CSV, the label). The extension's own piece below the feet has no band: its members take the member wind of the **fe** check, and OHL-Structure's results put a case's pressure on all members on them too (the same rule, [Structure application](structure-app.md#results)).
+**Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor — or, when the load case gives the structures their own wind (`[case.structure]`), the pressure there × drag × area, factored by its `wind_factor`. The capacity checks' load trees are per point and leave these out, and so does the **fe** check: it takes the member wind on the profiles instead, when the members' sections come from the [section library](section-library.md) (see [Member wind](structure-analysis.md#member-wind-body-wind-at-level-3)). A structure standing on a height extension stands its `dz` higher, and its bands with it: the band heights are above the ground of the structure as written, so on a +3 m extension a band 0–20 m acts at 3–23 m (its mid-height 13 m). The force does not change — the pressure is the same at every height — only where it acts (the `z` of the CSV, the label). The extension's own piece below the feet has no band: its members take the member wind of the **fe** check, and OHL-Structure's results put a case's pressure on all members on them too (the same rule, [Structure application](structure-app.md#results)).
 
 **Jumpers:** the sections carry them at their clamps as Criteria › Calculation options says (an estimate by default — weight, ice and wind — or the jumper's own pull; line file `solver.jumper_loads`), and a jumper held by helping strings pulls on those strings, so on the structure holding them.
 
@@ -78,6 +104,8 @@ Two more checks come from an analysis, when the type names a structure model or 
 
 - **fe** — the type's finite-element model (its members when it is a full design, or `model = "….ohlfe"`) solved with the factored loads at its points (and the member wind on profiles from the section library); usage: the member using most of its capacity.
 - **pole** — the type's pole (`pole = "id"`): bending moment along the pole from the factored loads and the wind on the pole, P-Delta amplified, against its moment capacity.
+
+The wind on the structure in the **fe** and **pole** checks (and on the bands) is the weather case's pressure × the transverse factor, or the load case's own values for the structures (`[case.structure]`, above); a note on the structure names them when they are the case's own.
 
 A structure's usage is the largest of its checks. A structure without a type, or whose type gives nothing to check against, is listed as not checked.
 
