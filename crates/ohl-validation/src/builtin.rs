@@ -41,6 +41,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(SpottingLevel));
     registry.register(Box::new(StructureFe));
     registry.register(Box::new(StructurePole));
+    registry.register(Box::new(StructureMemberWind));
     registry.register(Box::new(GallopingEllipses));
     registry.register(Box::new(CatenaryFit));
 }
@@ -958,6 +959,52 @@ impl Calculation for GallopingEllipses {
             ("centre_right_m", e.centre[0]),
             ("centre_up_m", e.centre[1]),
             ("distance_m", ellipse_distance(&e, &other)),
+        ]))
+    }
+}
+
+/// `structures.member_wind`: the member wind on a structure model with
+/// the wind factors of a section library (drag per shape, face drag and
+/// shielding by solidity), and the faces it finds.
+struct StructureMemberWind;
+
+impl Calculation for StructureMemberWind {
+    fn id(&self) -> &'static str {
+        "structures.member_wind"
+    }
+
+    fn description(&self) -> &'static str {
+        "Member wind with faces, solidity and shielding (inputs: model = .ohlfe text, sections \
+         = .ohlsec text with its [wind] table or none, wind_pressure, wind_direction in degrees \
+         from x towards y); outputs fx, fy, fz (N, the sum), faces, shielded (members), \
+         solidity_max (of the faces), shielding_min (the smallest factor applied, 1: none)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let library = ohl_sections::SectionLibrary::parse(string_input(inputs, "sections")?)?;
+        let model = ohl_structures_fe::Model::parse_with(string_input(inputs, "model")?, &library)?;
+        let q = quantity_input::<Stress>(inputs, "wind_pressure")?.si();
+        let a = float_input(inputs, "wind_direction")?.to_radians();
+        let setup = ohl_structures_fe::wind::MemberWindSetup::new(&model, library.wind.as_ref());
+        let w = setup.wind(q, [a.cos(), a.sin(), 0.0]);
+        let total = w.total();
+        Ok(outputs([
+            ("fx", total[0]),
+            ("fy", total[1]),
+            ("fz", total[2]),
+            ("faces", setup.faces().len() as f64),
+            (
+                "shielded",
+                w.members.iter().filter(|r| r.shielded_by.is_some()).count() as f64,
+            ),
+            (
+                "solidity_max",
+                setup.faces().iter().map(|f| f.solidity).fold(0.0, f64::max),
+            ),
+            (
+                "shielding_min",
+                w.members.iter().map(|r| r.shielding).fold(1.0, f64::min),
+            ),
         ]))
     }
 }

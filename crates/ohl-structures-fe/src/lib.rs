@@ -20,6 +20,8 @@
 //!   held when a model would otherwise be a mechanism.
 //! - [`check`]: member usage (tension, compression with Euler buckling,
 //!   frame interaction N + M).
+//! - [`wind`]: wind on the members with lattice faces, their solidity
+//!   ratios and shielding, the factors given as data.
 //! - [`pole`]: pole library (`.ohlp`) and the ground-line / taper moment
 //!   check with wind on the pole and P-Delta amplification.
 //!
@@ -35,6 +37,7 @@ mod skyline;
 pub mod solve;
 pub mod stabilise;
 mod units;
+pub mod wind;
 
 pub use check::{MemberUsage, member_usage};
 pub use model::{Analysis, Member, MemberKind, MemberPoint, Model, NodalLoad, Node, Section};
@@ -224,3 +227,5 @@ mod stabilise_tests;
 mod tension_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wind_tests;

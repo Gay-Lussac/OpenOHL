@@ -1,0 +1,279 @@
+# Member wind on a lattice: the faces OpenOHL finds, their solidity
+# ratios, the drag per shape and the shielding of the face behind, with
+# wind factors given as data (the [wind] table of the section library).
+# Every factor here is INVENTED (no code's values): drag 1.2 for round
+# bars, shielding η = 1 − φ between φ = 0 and 0.5. The tower is invented:
+# a square panel 2 × 2 m, 4 m high, legs at its corners, a horizontal at
+# the top and an X in each face, every member a round bar of d = 50 mm.
+#
+# Hand derivation, wind q = 1000 Pa along +y (normal to the faces y = 0
+# and y = 2):
+# - a face (y = 0): 2 legs of 4 m, 1 horizontal of 2 m, 2 diagonals of
+#   √20 m: Σ L = 10 + 2√20 = 18.944272 m; members' area d Σ L = 0.947214
+#   m² over the outline 2 × 4 = 8 m²: φ = 0.1184017;
+# - the face in front (y = 0): q c d Σ L = 1000 · 1.2 · 0.05 · 18.944272
+#   = 1136.656 N along y;
+# - the face behind (y = 2), shielded: η = 1 − φ = 0.8815983, 1002.074 N;
+# - the 4 diagonals of the faces x = 0 and 2 (in planes along the wind,
+#   neither in front nor behind): sin²θ = 4/5, each force q c d L sin θ
+#   along the normal, its y part q c d √20 (4/5)^1.5 = 192 N: 768 N;
+# - the top horizontals of the side faces lie along the wind: none;
+# Σ Fy = 1136.656 (1 + η) + 768 = 2906.7306 N; Σ Fx = Σ Fz = 0 (the side
+# diagonals' vertical parts cancel in pairs).
+# Faces found: the 4 sides and the top (4 horizontals), 5; shielded: the 5
+# members of the face y = 2.
+# Without the [wind] table: the generic drag 1, no shielding:
+# 2 · 1000 · 0.05 · 18.944272 + 640 = 2534.4272 N.
+
+[[case]]
+id = "structwind-001"
+title = "Square lattice panel: the face behind shielded by the one in front (invented factors)"
+calculation = "structures.member_wind"
+reference = "Hand derivation above (cross-flow wind q·c·η·d·L·sin²θ per member; faces, solidity and the face in front by geometry)"
+notes = "Invented tower and factors (see the file's header); wind along +y"
+max_seconds = 1.0
+inputs.wind_pressure = "1000 Pa"
+inputs.wind_direction = 90.0
+inputs.sections = '''
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "B50"
+shape = "round_bar"
+material = "steel"
+d = "50 mm"
+[wind]
+source = "invented test values"
+drag = { round_bar = 1.2 }
+[wind.shielding]
+solidity = [0.0, 0.5]
+factor = [1.0, 0.5]
+'''
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+[[node]]
+id = "N00"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N01"
+point = ["0 m", "0 m", "4 m"]
+[[node]]
+id = "N10"
+point = ["2 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N11"
+point = ["2 m", "0 m", "4 m"]
+[[node]]
+id = "N20"
+point = ["2 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N21"
+point = ["2 m", "2 m", "4 m"]
+[[node]]
+id = "N30"
+point = ["0 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N31"
+point = ["0 m", "2 m", "4 m"]
+[[member]]
+id = "leg0"
+nodes = ["N00", "N01"]
+section = "B50"
+[[member]]
+id = "top0"
+nodes = ["N01", "N11"]
+section = "B50"
+[[member]]
+id = "x0a"
+nodes = ["N00", "N11"]
+section = "B50"
+[[member]]
+id = "x0b"
+nodes = ["N10", "N01"]
+section = "B50"
+[[member]]
+id = "leg1"
+nodes = ["N10", "N11"]
+section = "B50"
+[[member]]
+id = "top1"
+nodes = ["N11", "N21"]
+section = "B50"
+[[member]]
+id = "x1a"
+nodes = ["N10", "N21"]
+section = "B50"
+[[member]]
+id = "x1b"
+nodes = ["N20", "N11"]
+section = "B50"
+[[member]]
+id = "leg2"
+nodes = ["N20", "N21"]
+section = "B50"
+[[member]]
+id = "top2"
+nodes = ["N21", "N31"]
+section = "B50"
+[[member]]
+id = "x2a"
+nodes = ["N20", "N31"]
+section = "B50"
+[[member]]
+id = "x2b"
+nodes = ["N30", "N21"]
+section = "B50"
+[[member]]
+id = "leg3"
+nodes = ["N30", "N31"]
+section = "B50"
+[[member]]
+id = "top3"
+nodes = ["N31", "N01"]
+section = "B50"
+[[member]]
+id = "x3a"
+nodes = ["N30", "N01"]
+section = "B50"
+[[member]]
+id = "x3b"
+nodes = ["N00", "N31"]
+section = "B50"
+'''
+expected.fy = { value = 2906.7305898749055, rel_tol = 1e-9 }
+expected.fx = { value = 0.0, abs_tol = 1e-9 }
+expected.fz = { value = 0.0, abs_tol = 1e-9 }
+expected.faces = { value = 5.0, abs_tol = 1e-9 }
+expected.shielded = { value = 5.0, abs_tol = 1e-9 }
+expected.solidity_max = { value = 0.11840169943749475, rel_tol = 1e-9 }
+expected.shielding_min = { value = 0.8815983005625052, rel_tol = 1e-9 }
+
+[[case]]
+id = "structwind-002"
+title = "Square lattice panel without wind factors: the generic drag, nothing shielded"
+calculation = "structures.member_wind"
+reference = "Hand derivation above (cross-flow wind q·c·η·d·L·sin²θ per member; faces, solidity and the face in front by geometry)"
+notes = "The same tower without a [wind] table: today's member wind (drag 1, no shielding)"
+max_seconds = 1.0
+inputs.wind_pressure = "1000 Pa"
+inputs.wind_direction = 90.0
+inputs.sections = '''
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "B50"
+shape = "round_bar"
+material = "steel"
+d = "50 mm"
+'''
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+[[node]]
+id = "N00"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N01"
+point = ["0 m", "0 m", "4 m"]
+[[node]]
+id = "N10"
+point = ["2 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N11"
+point = ["2 m", "0 m", "4 m"]
+[[node]]
+id = "N20"
+point = ["2 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N21"
+point = ["2 m", "2 m", "4 m"]
+[[node]]
+id = "N30"
+point = ["0 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N31"
+point = ["0 m", "2 m", "4 m"]
+[[member]]
+id = "leg0"
+nodes = ["N00", "N01"]
+section = "B50"
+[[member]]
+id = "top0"
+nodes = ["N01", "N11"]
+section = "B50"
+[[member]]
+id = "x0a"
+nodes = ["N00", "N11"]
+section = "B50"
+[[member]]
+id = "x0b"
+nodes = ["N10", "N01"]
+section = "B50"
+[[member]]
+id = "leg1"
+nodes = ["N10", "N11"]
+section = "B50"
+[[member]]
+id = "top1"
+nodes = ["N11", "N21"]
+section = "B50"
+[[member]]
+id = "x1a"
+nodes = ["N10", "N21"]
+section = "B50"
+[[member]]
+id = "x1b"
+nodes = ["N20", "N11"]
+section = "B50"
+[[member]]
+id = "leg2"
+nodes = ["N20", "N21"]
+section = "B50"
+[[member]]
+id = "top2"
+nodes = ["N21", "N31"]
+section = "B50"
+[[member]]
+id = "x2a"
+nodes = ["N20", "N31"]
+section = "B50"
+[[member]]
+id = "x2b"
+nodes = ["N30", "N21"]
+section = "B50"
+[[member]]
+id = "leg3"
+nodes = ["N30", "N31"]
+section = "B50"
+[[member]]
+id = "top3"
+nodes = ["N31", "N01"]
+section = "B50"
+[[member]]
+id = "x3a"
+nodes = ["N30", "N01"]
+section = "B50"
+[[member]]
+id = "x3b"
+nodes = ["N00", "N31"]
+section = "B50"
+'''
+expected.fy = { value = 2534.427190999916, rel_tol = 1e-9 }
+expected.fx = { value = 0.0, abs_tol = 1e-9 }
+expected.fz = { value = 0.0, abs_tol = 1e-9 }
+expected.faces = { value = 0.0, abs_tol = 1e-9 }
+expected.shielded = { value = 0.0, abs_tol = 1e-9 }
+expected.shielding_min = { value = 1.0, abs_tol = 1e-9 }
