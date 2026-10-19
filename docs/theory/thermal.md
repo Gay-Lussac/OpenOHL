@@ -25,6 +25,9 @@ Per unit length of conductor, with a uniform conductor temperature
   coefficient and needs two temperatures. Holding a single value constant
   instead would understate the hot resistance by about a fifth for an
   aluminium conductor rated at 100 °C, and overstate the ampacity.
+  **Simplification:** the resistance is linear in temperature, also
+  extrapolated beyond the values given; either way, small within the
+  usual range. Exact: AC resistances given at the temperatures used.
 - **Solar heating** \\( P_S \\) (below).
 - **Convective cooling** \\( P_C \\): forced by the wind, or natural in still
   air — the larger governs.
@@ -53,6 +56,10 @@ temperature coefficients; steel outer wires for a steel wire, and rough
 typical values, 1000 J/(kg·K), for the composite core of ACCC; the cable's
 mass shared between them by area × density) unless given; for Drake this gives 1306 J/(m·K), against about
 1310 J/(m·K) in the IEEE example.
+**Simplification:** that estimate of the heat capacity (transient only).
+A lower heat capacity heats the conductor faster after a step of current;
+the estimate can be off either way for cores of other materials. Exact:
+the cable's heat capacity given.
 
 ## IEEE Std 738-2012
 
@@ -93,6 +100,10 @@ azimuth \\( Z_c = C + \arctan\chi \\),
 \\( \chi = \sin\omega/(\sin\varphi\cos\omega - \cos\varphi\tan\delta) \\), the
 constant C of IEEE's table being the quadrant `atan2` picks. Without a line
 azimuth the beam is taken across the conductor (θ = 90°, the most heating).
+**Conservative:** with no line azimuth, the sun shines square to the
+conductor, the most solar heating for its altitude: the ampacity is lower
+and the temperature higher than for any real line direction. Exact: the
+line's azimuth given.
 Instead of the sun's position, a case may give the irradiance on the
 conductor directly (`solar_flux`): \\( P_S = \alpha\\,S\\,D \\) by every method.
 
@@ -134,7 +145,9 @@ the light reflected by the ground over its lower half. Clear sky:
 \\( I_B = I_B(0)[1 + 1.4\cdot10^{-4}y(1367/I_B(0) - 1)] \\),
 \\( I_d = (430.5 - 0.3288\\,I_B)\sin H_s \\). The clearness ratio \\( N_s \\)
 is taken 1.0 for a clear and 0.8 for an industrial atmosphere unless a case
-gives one (that mapping is an assumption of OpenOHL). TB 207 is computed with
+gives one (that mapping is an assumption of OpenOHL). **Simplification:**
+that mapping; an industrial atmosphere with clearer air than 0.8 heats more
+than computed. Exact: the clearness ratio measured or given by the case. TB 207 is computed with
 the same solar model here.
 
 **What OpenOHL leaves out:** the radial temperature difference inside the
@@ -142,6 +155,28 @@ conductor (TB 601 section 4, IEEE 738 clause 4.5), magnetic heating of
 steel cores beyond what the AC resistance carries, corona and evaporative
 cooling, wind turbulence, and IEEE 738's dynamic/probabilistic variants. The
 temperature of the conductor is the same along each section.
+
+**Conservative:** corona and evaporative (rain) cooling left out: they only
+cool, so leaving them out gives a lower ampacity and a higher temperature.
+Exact: the cooling of the actual rain and corona, which design practice
+does not count on.
+
+**Simplification:** one uniform temperature in the conductor. The core of a
+heavily loaded conductor is hotter than its surface; the sag follows the
+mean (or the core) temperature, the cooling the surface's. Rated at a
+surface temperature, the core runs hotter and the sag is larger than at
+that temperature (unsafe for clearances, more so at high currents).
+Exact: the radial temperature difference (TB 601 section 4, IEEE 738
+clause 4.5).
+
+**Simplification:** magnetic heating of steel cores beyond what the AC
+resistance holds is left out: for a steel-cored conductor at high current
+the real heating can be higher (unsafe). Exact: the magnetic heating
+added to the Joule heating, or AC resistances that hold it.
+
+**Simplification:** the temperature is the same along each section. Where
+the wind is sheltered (a valley, trees) the conductor is hotter locally
+(unsafe there). Exact: a weather case per span.
 
 ## Maximum operating temperature from clearance
 
@@ -158,11 +193,29 @@ its temperature changed, and checked by the rules that apply to that case
 3. bisection between the last temperature that passed and the first that
    failed until they are 0.5 °C apart; the limit is the one that passed.
 
+**Conservative:** the limit is the last temperature that passed, up to
+0.5 °C below the exact one. Exact: the temperature where the governing
+clearance equals its requirement.
+
 The span and rule failing just above the limit are reported (the
 *governing* span). Clearance falls with temperature as the sag grows; the
 scan stops at the first failure on its grid, so a failure that appears and
 disappears again between two grid points is missed. Wire-to-wire rules are
 not checked (every section heated alike hardly changes their distances).
+
+**Simplification:** the 10 °C scan grid. A failure narrower than a step
+(a structure swinging, an object passed by) is missed, and the limit is
+then too high (unsafe). Exact: a finer step, at more cost.
+
+**Simplification:** wire-to-wire rules left out of the limit. Heating every
+section alike hardly changes those distances, but a section next to a cold
+one (another line, an earth wire) comes nearer to it (unsafe). Exact: the
+wire-to-wire rules in the limit, with the other wires at their own
+temperatures.
+
+**Conservative:** a section that passes over the whole range is given the
+range's top as its limit (*above the range*), and the ampacity there is
+printed as *at least*: the real limit and rating are higher.
 
 Cost and exit clauses: with the defaults (0–150 °C) at most 21 solutions and
 checks per section — milliseconds for a short section, about a second for a

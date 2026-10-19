@@ -35,6 +35,15 @@ and a wind pressure on a conductor diameter is a load per unit length:
 
 \\[ w_{wind} = q \\, d \qquad [\mathrm{N/m}] = [\mathrm{Pa}] \cdot [\mathrm{m}] \\]
 
+## Conservative assumptions and simplifications
+
+Where a calculation does not follow the physics exactly, the theory pages say so with one of two bold labels:
+
+- **Conservative:** the calculation deliberately errs on the safe side. The label says what is assumed, why it is on the safe side, and what the exact treatment would be.
+- **Simplification:** the calculation simplifies in a way that is not known to be on the safe side, or is on the unsafe side. The label says what is simplified, which way the error can go, and what the exact treatment would be.
+
+"Safe side" always refers to a named result (a clearance, a usage, a tension); an assumption can be conservative for one result and not for another, and the label then says which. Results must be verified by a qualified engineer either way.
+
 ## Numerical exit clauses
 
 Every iterative method documented in this manual states its convergence criterion and its iteration and time limits. When a limit is reached the calculation fails with an explanation instead of returning an unconverged value (see [Performance and time budgets](../development/performance.md)).
@@ -45,5 +54,11 @@ Every iterative method documented in this manual states its convergence criterio
 - **Stations and offsets**: stations are measured along a route's alignment (or its structures); offsets are positive to the right looking ahead ([Line files](../user-guide/line-file.md)).
 - **Structure axes**: origin at the structure's ground centre; x to the right of the line (transverse), y ahead (along the line), z up. `orientation_deg` is the direction of the local x axis, degrees counter-clockwise from east.
 - **Angles around a structure** as shown in the app (string directions, Structures › Angles around structures) turn **clockwise seen from above**, with *ahead* at the project's angle (the line's display setting `ahead_deg`, 0° by default; e.g. 270: ahead 270°, right 0°): right is ahead + 90°, back ahead + 180°, left ahead + 270°. This is a display convention only; stored positions do not depend on it.
-- **Wind** comes from the left or the right of the line, looking ahead along it: along its routes' alignments (the nearest segment), whichever way a section or a jumper was entered. A section whose points run against the line is solved with the side swapped, so all spans blow to the same side. The wind acts horizontally, perpendicular to each span. A jumper takes the line's wind across itself: the part normal to it, by \\( \cos^2 \\) of the angle between the wind and its normal, so all of it for a jumper along the line, little for one across it.
+- **Wind** comes from the left or the right of the line, looking ahead along it: along its routes' alignments (the nearest segment), whichever way a section or a jumper was entered. A section whose points run against the line is solved with the side swapped, so all spans blow to the same side. The wind acts horizontally, perpendicular to each span.
+
+  **Conservative:** every span takes the case's full pressure square to itself, whatever its direction. A real wind blows from one direction, so a span at an angle to it takes less (the part normal to it). On the safe side for the wind on the wires and the loads it puts on the structures; for clearances to the side it is the larger swing. Exact: one wind direction per case, each span loaded by the part of it normal to the span.
+
+  **Simplification:** one wind pressure per weather case, at every height and along every span. Real wind grows with the height above the ground and varies along a span. The error goes either way: the case's pressure must be chosen for the heights it stands for (a design code's height and span factors belong in the weather cases). Exact: a pressure by height (and a span factor) per wire point.
+
+  A jumper takes the line's wind across itself: the part normal to it, by \\( \cos^2 \\) of the angle between the wind and its normal, so all of it for a jumper along the line, little for one across it.
 - **Structure loads** are given in the line's axes (x, y, z) and in the structure's axes: transverse, longitudinal (ahead) and vertical (down) — see [Load cases](../user-guide/loads.md).

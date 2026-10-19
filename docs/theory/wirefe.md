@@ -35,6 +35,8 @@ A section (dead-end to dead-end, suspension I-strings or V-strings) is built as 
 
 In a line model (`ohl-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \\( H \\) under the case's load is found exactly, and \\( H \\) is the root of \\( \sum_i L_{0,i}(H) = L_0 \\) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
 
+**Simplification:** in the blocks, point loads do not take part in sharing the length between the spans. A loaded span would pull length from its neighbours through the blocks; leaving the loads out keeps its length as in still air, so its sag under the load can be a little larger or smaller than with the loads shared. Exact: point loads in the sharing.
+
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
 ## Point loads: marker balls and other bodies
@@ -46,9 +48,15 @@ A point load in a span is a weight at a fraction of the span, and may also be a 
 
 On a bundle the forces are shared by its subconductors. These loads can matter: a 0.6 m ball takes about 180 N of wind at 650 Pa and, with 16 mm of ice, about 170 N of ice, several times its own weight. A dozen of them on a long earth-wire span add a quarter or more to the wind on the wire. Without their wind area a long marked span swings metres less than it should.
 
+**Simplification:** a body's drag coefficient is 1 unless given, and its ice is the wire's radial thickness. Both are stand-ins: a code or the maker may give other values, either way. Exact: the body's own drag and ice from the data.
+
 ## Line sections: strain assemblies, bundles, jumpers
 
-In a line model the strings holding the wire at each point are built as the structure gives them ([line file](../user-guide/line-file.md#points-strings-and-wire-points)): its points are fixed nodes, its wire points free nodes, its strings bars. One string from the structure in the middle of the section, hanging below its top, is a **suspension string**; the section's ends, and middle points held by one string not below its top, are **strain assemblies**: a free clamp on a member from the fixed insulator point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. A point whose wire and insulator points coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's. **Jumpers** are solved separately, between the solved clamps, as inextensible elastic rods with bending stiffness (see [Jumpers](jumpers.md)).
+In a line model the strings holding the wire at each point are built as the structure gives them ([line file](../user-guide/line-file.md#points-strings-and-wire-points)): its points are fixed nodes, its wire points free nodes, its strings bars. One string from the structure in the middle of the section, hanging below its top, is a **suspension string**; the section's ends, and middle points held by one string not below its top, are **strain assemblies**: a free clamp on a member from the fixed insulator point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. A point whose wire and insulator points coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's.
+
+**Simplification:** the weight given to a strain string without one is fitted to the drawn geometry, not taken from the hardware; it is as good as the drawing (either way). Exact: the string's real weight in the insulator library.
+
+**Simplification:** the subconductors of a bundle are taken as hanging alike (one subconductor solved, times their number). Unequal ice or wind on the subconductors, and the bundle twisting, are not modelled; either way. Exact: each subconductor and the spacers in the model. **Jumpers** are solved separately, between the solved clamps, as inextensible elastic rods with bending stiffness (see [Jumpers](jumpers.md)).
 
 ## Strings hanging from strings
 
@@ -82,7 +90,7 @@ On a dead-end span with the wires fixed at the structures, FE and RS then agree 
 
 ## Not yet included
 
-- **Structure flexibility**: the structures' points are fixed in the wire solve; the structures are analysed separately ([Structure analysis](structures-fe.md)). Decided as the structure–line interaction levels: level 3 adds a stiffness at each structure's suspension points (from level 3 structures), level 4 iterates structures and line together — both planned, see the roadmap (open point O7).
+- **Structure flexibility** (**Simplification:** structures taken as rigid): the structures' points are fixed in the wire solve. A real structure gives under the wires' pull, which lowers the tensions (on the safe side for loads computed here) and raises the sags (on the unsafe side for clearances); the structures are analysed separately ([Structure analysis](structures-fe.md)). Decided as the structure–line interaction levels: level 3 adds a stiffness at each structure's suspension points (from level 3 structures), level 4 iterates structures and line together — both planned, see the roadmap (open point O7).
 - **Dynamic effects** (galloping is treated by ellipses, see [Galloping](galloping.md)).
 
 Linked insulator assemblies are built: strings hang from structure points or from other strings (a V with a string below it, TAKs coupling two sections), and jumper support clamps hang on a structure's strings.

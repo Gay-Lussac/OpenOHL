@@ -15,7 +15,11 @@ Each member has **local axes**: \\( x \\) from node *i* to node *j*; a reference
 - **Tension-only truss** (`tension`): a truss in tension and in compression up to its own elastic buckling load \\( N_{cr} \\); beyond it **bowed** — left out of the stiffness, carrying \\( N_{cr} \\) — and with \\( N_{cr} = 0 \\) (no second moment) slack, by the active-set iterations below. No pretension.
 - **Frame**: the 12×12 elastic stiffness of the 3D Euler–Bernoulli beam (axial \\( EA/L \\), torsion \\( GJ/L \\), bending \\( 12EI/L^3, 6EI/L^2, 4EI/L, 2EI/L \\) in both planes) — Przemieniecki, *Theory of Matrix Structural Analysis* (1968), ch. 5. Shear deformation is neglected.
 
+**Simplification:** no shear deformation (Euler–Bernoulli beams). Short deep members deflect more than computed, so deflections and P-Delta effects are slightly low (unsafe, small for slender members). Exact: Timoshenko beams with the sections' shear areas.
+
 **Self-weight**: \\( w = f_d\\,\rho A g \\) per metre — \\( f_d \\) the member's dead-load factor (its own, else the model's `dead_load_factor`, default 1: bolts, plates) — times the load case's vertical factor. On frames as consistent nodal loads (\\( wL/2 \\) and \\( wL^2/12 \\) end moments, in local axes), on trusses and cables half at each end. The reported member end forces of frames subtract the fixed-end part, so they are the true end forces.
+
+**Simplification:** the dead-load factor is 1 unless given: bolts, gusset plates and other connection steel are not in the self-weight (unsafe for the vertical loads by their share). Exact: a dead-load factor (or the parts' weight) from the design.
 
 ## Second order (P-Delta)
 
@@ -25,6 +29,8 @@ With `nonlinear = true` (the default), the tangent stiffness includes the **geom
 - frame: the consistent geometric stiffness of the cubic beam (terms \\( \frac{N}{L}\\{\tfrac65, \tfrac{L}{10}, \tfrac{2L^2}{15}, -\tfrac{L^2}{30}\\} \\) in both bending planes) — McGuire, Gallagher & Ziemian, *Matrix Structural Analysis* (2nd ed., 2000), ch. 9. The torsion–bending coupling terms are left out.
 
 This captures both P-Δ (sway of the member chords) and P-δ (bowing within a frame member, refined by more elements). Displacements remain small (no corotational update of the geometry); the analysis is a *second-order elastic* analysis in the sense of McGuire et al., ch. 9.
+
+**Simplification:** the torsion–bending coupling terms are left out of the geometric stiffness, and the geometry is not updated for large displacements. Flexural-torsional and lateral-torsional buckling of a frame member are therefore not found by the solve, and very flexible structures (a tall pole) are less exact (either way). Exact: the full 3D geometric stiffness with the Wagner terms, and a corotational large-displacement analysis.
 
 **Newton iterations**: the out-of-balance forces \\( \mathbf r = \mathbf F - \mathbf K_T(N)\\,\mathbf u \\) are solved with the tangent \\( \mathbf K_T = \mathbf K_e + \mathbf K_g(N) \\) (the change of \\( N \\) with \\( \mathbf u \\) is not in the tangent), \\( \mathbf u \mathrel{+}= \mathbf K_T^{-1}\mathbf r \\), the axial forces and slack cables updated, until \\( |\mathbf r| \le 10^{-9} \\) of the larger of \\( |\mathbf F| \\) and the largest pretension, and the slack set is stable. Where the axial forces are statically determinate (a cantilever column) the second iteration is final; otherwise the iterations converge linearly with the ratio of the loads to the buckling load. A negative pivot in the factorisation means the tangent stiffness is no longer positive definite: the loads are above an **elastic buckling** load, reported as such.
 
@@ -49,6 +55,8 @@ A free direction along a structure axis (within \\( 1 - \cos < 10^{-9} \\)) is h
 
 What is not a single joint's freedom (a rigid motion of a part of several joints: a missing support, a hinge chain) is not found by these rules and remains a zero pivot after the stabilisation: reported as a mechanism with the joints that move.
 
+**Simplification:** a stabilisation is refused only when it takes more than 1 % of the loads *and* more than a quarter of its joint's own load. Below that, the force it takes does not go through the members (unsafe by that force, reported per joint). Exact: a model whose joints are all held by members.
+
 ## Tension-only members: compression up to their buckling load
 
 A tension-only member (`kind = "tension"`) stands for light bracing that buckles under a small compression. It follows a **capped law**: a truss in tension and in compression up to its own elastic buckling load, and no more:
@@ -56,6 +64,8 @@ A tension-only member (`kind = "tension"`) stands for light bracing that buckles
 \\[ N = \max\left(\frac{EA}{L}\\,\delta,\\; -N_{cr}\right), \qquad N_{cr} = \frac{\pi^2 E I_{min}}{L_k^2}, \\]
 
 \\( \delta \\) its stretch, \\( L_k \\) its `lk`, else its `k` × its length — \\( k = 1 \\) by default: **pinned ends**, the member's own length between its joints (as for the compression check below). Shortened beyond \\( N_{cr} \\), the member is **bowed**: it carries \\( N_{cr} \\) and the further shortening costs nothing (an elastic strut after buckling keeps about its Euler load; the post-buckling rise and the bow's bending are left out). A member without a second moment (\\( I_{min} = 0 \\)) has \\( N_{cr} = 0 \\): **slack** in compression, as a rope — the earlier tension-only behaviour exactly. Not a sagging cable: a bowed member has no sag, no weight-dependent stiffness. This is the owner's decision of 2026-10-19 (ROADMAP, O5): it always solves, close to reality, where a member left out entirely could leave a part nearly free.
+
+**Simplification:** a bowed member keeps carrying \\( N_{cr} \\), the load of a perfect elastic strut. A real member, with its crookedness and yielding, carries less once bowed, and the rest of the structure then carries more than computed (unsafe for the other members). Exact: a post-buckling law of the member (falling with its shortening), or a design code's buckling resistance as the cap.
 
 The law is monotone (non-decreasing in \\( \delta \\)) and its energy convex — the elastic–perfectly-plastic law in compression, without unloading history. Solved as tower programs solve tension-only members, by a sequence of linear (or P-Delta) solves on a changing set of **active** members: a member out of the set (bowed, or slack) has no stiffness and carries the constant \\( N_{cr} \\) — a pair of forces pushing its ends apart, put with the loads like a cable's pretension, reported as its axial force. With \\( \mathcal S \\) the set left out, starting empty:
 
@@ -98,6 +108,16 @@ Against the section's capacity times the load case's strength factor \\( \phi \\
 
 The Euler load with an effective length factor \\( k \\) is a simple stand-in: a design code's column curve (imperfections, residual stresses, slenderness of angle sections, eccentric connections) is not modelled — the user can give the code's allowable compression per section instead. A structure's FE usage is its worst member.
 
+**Simplification:** the compression capacity \\( \min(A f_y, \pi^2 E I_{min}/L_k^2) \\) without a column curve. It is **not on the safe side**: at intermediate slenderness a real member buckles well below both terms (imperfections, residual stresses, eccentric connections). Exact: the design code's buckling resistance, given as the section's allowable compression or the member's `capacity_compression`.
+
+**Conservative / Simplification:** the buckling length \\( L_k = k L \\) with \\( k = 1 \\) by default: pinned ends, over the member's own length between its joints. On the safe side where the joints hold the member in every direction (end restraint would give \\( k < 1 \\)). Not on the safe side where a joint does not hold it sideways: a diagonal drawn in two halves through an unbraced crossing buckles out of its plane over its whole length, not each half (open point O12, owner: depends on the joint type, OK for now). Exact: the buckling length per direction from the bracing pattern and the joints (give `lk` or `k`).
+
+**Simplification:** a tension-only member in compression is checked against its compression capacity without the Euler term (its force is capped at \\( N_{cr} \\) by the solve). A bowed member therefore shows the usage of its cross-section, not that it has buckled; with the cap of a perfect strut (above) its real load-bearing is overstated. Decided with the owner as open point O12: OK for now, to be discussed again. Exact: a design code's rule for slender bracing in compression.
+
+**Simplification:** frames are checked with the largest end moments and a linear interaction. A moment larger inside the member (from its own weight or member wind, which this check does not see between the joints) is missed (unsafe for long members under their own load). Exact: the moment along the member, and the code's interaction with its amplification.
+
+**Simplification:** a member kept active as the last resort (above) is a truss whatever its force: it may carry compression beyond its buckling load. The usage is marked *approximate* and never a pass. Exact: a settled active set.
+
 ## Member wind
 
 A member whose section comes from the section library has a profile; the wind on it (`Model::member_wind`) follows the cross-flow principle: with the unit wind direction \\( \hat{\mathbf w} \\), the member's axis \\( \hat{\mathbf x} \\) and the wind's component normal to it \\( \mathbf w_n = \hat{\mathbf w} - (\hat{\mathbf w}\cdot\hat{\mathbf x})\hat{\mathbf x} \\) (length \\( \sin\theta \\)), the force on the member is
@@ -105,6 +125,10 @@ A member whose section comes from the section library has a profile; the wind on
 \\[ \mathbf F = q\, c_d\, d\, L \sin\theta \; \mathbf w_n \qquad (|\mathbf F| = q\, c_d\, d\, L \sin^2\theta), \\]
 
 \\( q \\) the wind pressure (times the load case's transverse factor), \\( c_d \\) the model's `drag` (default 1), \\( d \\) the profile's outline width across \\( \mathbf w_n \\) in the member's local y–z plane, \\( L \\) its length. Half of \\( \mathbf F \\) goes to each joint: statically equivalent for the rest of the structure (a cantilever's base moment is exactly \\( q d L^2/2 \\)), the member's own bending under the uniform load left out. The type's height-band wind (`[[wind.band]]`) is never put on the model, so the two are not added.
+
+**Simplification:** the member's own bending under its wind is left out (half the force to each joint). The rest of the structure is exact; the member itself is unsafe by its own bending (up to \\( F L/8 \\) for a pinned member, \\( F \\) its wind force; matters for long frame members). Exact: the load as consistent nodal loads with its fixed-end moments.
+
+**Simplification:** without wind factors, the generic drag factor 1 on every profile. A design code's drag factor for a profile or a lattice face can be higher, so the wind can be low (unsafe) — give the factors (below). Exact: the code's drag factors.
 
 Without wind factors in the section library that is all: one drag factor, no shielding. With them (a `[wind]` table, from a design-code plugin or the user) \\( c_d \\) becomes the drag of the profile's shape or of its lattice face by its solidity ratio, and the members of a face behind another take a shielding factor: see [Wind on lattice structures](structure-wind.md) for the faces, their solidity ratios and which members are shielded.
 
@@ -120,11 +144,17 @@ with the factored attachment loads \\( \mathbf F_i \\) at the type's attachment 
 
 **P-Delta amplification**: when the pole gives its modulus \\( E \\), a frame model of the pole above ground (12 tapered steps plus a node at every load, fixed at the ground line, solid or hollow, round or polygonal sections, its own weight when it gives a density) is solved first order and second order with the same loads (offsets as moments); the ratio of the ground-line moments multiplies the moment at every height — exact at the ground line, a simplification above.
 
+**Simplification:** that ratio above the ground line. The second-order share of the moment differs with the height (either way), so for a critical section above the ground line the amplified moment is approximate. Exact: the second-order moment at every height from the frame model.
+
+**Simplification:** without a modulus \\( E \\) there is no P-Delta amplification at all: the moments are first order (unsafe for a slender pole under vertical load). Exact: the pole's modulus given.
+
 **Capacity** at height \\( h \\): the table of the pole (linear between heights), else for wood \\( f_b \\) times the section modulus at \\( D(h) \\) (\\( \pi D(h)^3/32 \\) for a solid round pole) with the user's fibre stress \\( f_b \\), else the ground-line moment capacity. Usage: \\( \max_h M(h)/(\phi\\,M_c(h)) \\) — for a tapered wood pole the critical section can lie above the ground line.
 
 **The same check in OHL-Structure** (its FE results and the structure report): the loads are the load table's point rows of the case at the structure's points as written (\( \mathbf r_i \) above the feet), the wind pressure \( p\,\hat{\mathbf w} \) the sum of the horizontal parts of the case's surface loads on all members (pressure × factor × direction; times the pole's \( c_d \) as above), \( \phi \) the case's strength factor. On a height extension the pole and its points rise together by `dz`: every \( \mathbf r_i - h\hat{\mathbf z} \) about the pole's own ground line is unchanged, and so is the check (the line's pole check takes the points as written too); the piece below the feet is not checked.
 
 Not included: foundation (embedment) check, shear, deflection limits, guyed poles (use an `.ohlfe` model with cables), the wind on crossarms and equipment.
+
+**Simplification:** what is not included is not on the safe side: the wind on crossarms and equipment is missing from the moment (unsafe), and torsion, shear and the foundation are not checked. Exact: their loads at the attachment points, and the checks of the design code.
 
 ## Validation
 

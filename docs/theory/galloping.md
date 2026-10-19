@@ -64,6 +64,22 @@ Accuracy: the ellipses are 72-sided inscribed polygons, so a distance is
 high by at most \\( A(1-\cos 2.5°)/2 \\), about 0.05 % of the major
 axis; the wires of a span are taken as parallel (one cross-section plane).
 
+**Simplification:** the inscribed polygons lie inside the ellipses, so the
+gap found is high by at most that amount (unsafe, by about 0.05 % of the
+major axis). Exact: the distance between the true ellipses (or polygons
+circumscribed about them, which would be on the safe side).
+
+**Simplification:** both ellipses in the plane square to the first wire's
+chord, the wires taken as parallel there. Wires that are not parallel (a
+line angle between their spans, different attachment heights) are compared
+at slightly different places along the span (either way). Exact: the
+ellipses swept along each wire and their distance in 3D.
+
+**Simplification:** only wires between the same two structures are paired.
+Galloping of a span next to another line's span, or of adjacent spans
+near a structure, is not compared. Exact: pairs of every wire within
+reach.
+
 Cost: stations × 72² distances per pair and method, about 0.1 ms; one step
 of the exit clause (`Budget`) per pair and method.
 
@@ -87,6 +103,10 @@ checks use them:
   The largest offsets to the right and to the left are compared with the
   right-of-way widths each side; **encroachment** is how far the wire goes
   beyond the edge (negative: the margin inside).
+
+  **Simplification:** the offset is to the wire's axis plus the bundle
+  radius: the conductor's own radius is not added (unsafe by half its
+  diameter). Exact: the offset of the conductor's outer surface.
 
 ## Phase to phase and circuit to circuit
 

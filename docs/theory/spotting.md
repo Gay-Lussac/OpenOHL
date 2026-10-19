@@ -19,6 +19,12 @@ In the design (maximum sag) condition the wire is a catenary of horizontal tensi
 
 clamped to the piece. The smallest clearance of the span is the least of these values — exact, with one evaluation per profile piece. A span is rejected as soon as one piece falls below \\( c \\).
 
+**Conservative:** the wire hangs from the lowest wire point of each candidate (\\( h_k \\)): higher wires of the same structure clear the ground by more. Exact: each wire from its own point.
+
+**Simplification:** one catenary of the given \\( H \\) and \\( w \\) for every span (the ruling-span idea), in the vertical plane over the route's centreline, in still air. Real spans differ in tension with their lengths, the outer phases hang beside the centreline over side slopes, and wind swings the wires; each can lower the clearance (unsafe). Exact: the placement solved and checked as a line ([Sag-tension](sagtension.md), [Terrain and ground clearance](../user-guide/terrain.md)), which is what a spotted route is for next.
+
+**Simplification:** holes in the terrain along the route are bridged in a straight line (said in the notes). A hollow is then filled (safe), a hump in the hole missed (unsafe). Exact: terrain without holes.
+
 ## Dynamic programming
 
 The state is \\( (j, l, i) \\): a structure of candidate \\( l \\) at station \\( j \\) whose back span starts at station \\( i \\). Its value \\( V(j, l, i) \\) is the least cost of a chain of structures from the start to it:
@@ -28,6 +34,8 @@ The state is \\( (j, l, i) \\): a structure of candidate \\( l \\) at station \\
 over the candidates \\( k \\) at \\( i \\) and the back stations \\( h \\) of \\( i \\), for feasible spans only, and where the structure \\( (i, k) \\) keeps its wind span \\( (s_i - s_h + s_j - s_i)/2 \\) and weight span. The answer is the least \\( V(N-1, l, i) \\) whose end structure keeps its own limits; the placement follows back from it.
 
 Keeping the back station in the state makes every wind span exact. The weight span at \\( i \\) also needs the low point of the back span \\( h \to i \\), which depends on the candidate at \\( h \\): the state keeps the low point of its cheapest way in. A placement that is only feasible through a dearer structure at \\( h \\) (whose different height shifts the low point just enough) can therefore be missed. This is rare — extensions of one type move the low point little — and the tests compare the result with an exhaustive search on small hilly profiles.
+
+**Simplification:** that low point. It costs only optimality: the placement found keeps every limit with the low points of its own structures; a cheaper one may exist. Exact: the candidate at the back station in the state too (\\( K \\) times the states).
 
 ## Cost
 
