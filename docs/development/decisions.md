@@ -56,6 +56,17 @@ approved as finished: everything is built and in active development
 
 **Formats**
 
+- **Structure exports keep a tension member's bending** (owner): a
+  `tension` member with `bending = true` is exported as a frame
+  (IFC4 analysis view: `.RIGID_JOINED_MEMBER.` with rigid ends, as frame
+  members are; SAF: `Behaviour in analysis` Standard), its tension-only
+  behaviour kept as information (IFC `OHL_Member` Kind `tension`,
+  `Bending` true; the analysis member's `Description`; SAF `Layer`
+  "OHL: tension only, bending"; CSV `bending`). Members with
+  `check = false` are exported as any other, flagged (`OHL_Member`
+  `Check` false, `Description` / `Layer` "not checked", CSV `check`).
+  SAF's "Tension only" is not used for them: it carries axial force only.
+  ([exports](structure-exports.md))
 - `.ohls` version 6: body-generator options, recipe values of the
   structures' wind, bending/unchecked members (one unreleased raise).
 - `.ohllc` version 2 (structures' wind), `.ohlfe` version 3, the section

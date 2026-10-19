@@ -152,10 +152,16 @@ the next release (another new field then needs no 7): a member's
 `bending` (a `tension` member that also bends: a tower program's
 tension-only beam) and `check = false` (a modelling member, not checked)
 are such fields, and made `.ohlfe` **3**; nothing in OpenOHL writes them
-but importers (the export model still writes such a member as `tension`,
-without its bending). The export
+but importers. The export
 model's member `kind` (CSV, IFC `TENSION_MEMBER`, SAF "Tension only")
-takes the value `tension` too.
+takes the value `tension` too; `ohl_structure_link::ExportMember` carries
+`bending` and `check` (`ExportMember::is_frame`): a tension-only member
+that bends is exported as a frame (IFC4 `RIGID_JOINED_MEMBER`, SAF
+Standard) with the tension-only behaviour as information (IFC
+`OHL_Member` `Kind`, `Bending`; SAF `Layer`), a member not checked is
+flagged (`OHL_Member` `Check` false, SAF `Layer`), and `members.csv` has
+the columns `bending` and `check` (1/0) after `kind`
+([structure exports](structure-exports.md)).
 The export model JSON stays version 1 (keys only added: `strings` per
 case) and the plugin WIT is unchanged (no record passes strings).
 The structures' own wind in a load case (`[case.structure]`) made
