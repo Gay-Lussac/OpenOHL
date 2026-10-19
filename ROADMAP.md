@@ -244,10 +244,22 @@ memory.
   single members go round — no model tested reaches it; the
   energy-based active-set update that would always settle is for later
   (O5); no post-buckling rise or bending of a bowed member.
-- **U2. Imported lattice towers**: many towers imported from another program's export still fail
-  as mechanisms, mostly where a load acts in a direction no member holds;
-  the stabilisation reports them. Needs a look at how such joints are
-  modelled.
+- **U2. Imported lattice towers**: looked at (2026-10-19; built, in
+  active development, not approved yet). Most failures were the import:
+  the source program's tension-only *beams* (insulators hung from the
+  middle of such rods, X-bracing crossings) brought in as tension-only
+  trusses, and joints placed at coordinates rounded to four digits
+  (joints meant to be coplanar a little off: not held, nearly free,
+  "unstable"). The core now has tension-only members that bend
+  (`bending = true`) and members not checked (`check = false`, the
+  source's fictitious members); the private importer uses them and places
+  joints by their definitions. With U1 (compression up to the buckling
+  load) and the relative holds, all but two of the first line's imported
+  towers solve. A hold relative to its line is no longer refused above
+  the 1 % limit (owner, 2026-10-19), only flagged; holds to the ground
+  still are. *Still open:* two towers stay unstable — joints a little
+  off a plane by the export's rounding of their primary coordinates, and
+  a small frame group that turns about the line of its frame chain.
 - **U3. Profile sheets**: a sheet break can still fall at a structure that
   stands off the alignment. *Built 2026-10-19, in active development (not
   approved yet)*: sheets break only at structures of the run along the
@@ -498,8 +510,8 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 *Status: built as a base, in active development (not approved yet). Each item says what is simplified or left for later.*
 
 - [x] `ohl-structures-fe`: 3D frame/truss FE analysis of lattice towers and poles (geometric non-linearity, guys) — standalone module. *Base:* `.ohlfe` models (truss, 3D Euler–Bernoulli frame, tension-only cables with pretension, supports, springs), first order or P-Delta (geometric stiffness, Newton iterations with exit clauses), skyline LDLᵀ with RCM ordering (1000 members in milliseconds), member usage (tension, compression with Euler buckling, linear N + M interaction; a member's own capacities and effective length, angle legs by structure directions, a dead-load factor on the self-weight), attachment nodes fed with each load case's factored loads (`fe` check in the structure usage, `ohl structures fe`, the Results tab of OHL-Structure). *Simplified / later:* no corotational large rotations, wind on the tower body only on profiles from the section library (drag per shape, face drag by solidity and shielding of the faces behind only when the section library's `[wind]` gives them — from a design-code plugin or typed; else one drag factor, no shielding), no code column curves or angle-section eccentricities, no member-load cases beyond self-weight and the load-case recipes, no 3D view of the model in OHL-Design
-- [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused; true mechanisms are named with the joints that move *(since 2026-10-19, U6, not approved yet: a joint on a straight line of members is held relative to the line's ends, following its face with P-Delta; the others to the ground)*
-- [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): a truss in tension and in compression up to its own elastic buckling load π²EI_min/L_k² (L_k: `lk`, else `k` × length, k = 1 pinned), **bowed** beyond it carrying that load (slack without a second moment); solved by active-set iterations on that cap (members beyond it bowed, those loaded less put back, first order then P-Delta); members on one line through a joint switch as one tie, split into their members when the set goes round or a half hides compression; bowed members named in the notes, usage, `ohl structures fe` and OHL-Structure's results (benchmark `structfe-011`). *See Known limitations below:* the last resort
+- [x] **Joint stabilisation**: towers drawn as trusses solve — joint directions no member stiffens (coplanar or collinear trusses, a frame chain free to spin) are held when the model would otherwise be a mechanism, and the force they take is reported; a load no member holds is refused (a hold to the ground; a hold relative to its line is flagged above the limit, not refused — owner, 2026-10-19); true mechanisms are named with the joints that move *(since 2026-10-19, U6, not approved yet: a joint on a straight line of members is held relative to the line's ends, following its face with P-Delta; the others to the ground)*
+- [x] **Tension-only members** (`kind = "tension"`, the "tension-only" members of tower programs): a truss in tension and in compression up to its own elastic buckling load π²EI_min/L_k² (L_k: `lk`, else `k` × length, k = 1 pinned), **bowed** beyond it carrying that load (slack without a second moment); solved by active-set iterations on that cap (members beyond it bowed, those loaded less put back, first order then P-Delta); members on one line through a joint switch as one tie, split into their members when the set goes round or a half hides compression; bowed members named in the notes, usage, `ohl structures fe` and OHL-Structure's results (benchmark `structfe-011`); tension-only members that bend (`bending = true`, a tower program's tension-only beams: frames while in, trusses bowed or slack; benchmark `structfe-012`) and members not checked (`check = false`, its fictitious members), `.ohls` 6, `.ohlfe` 3. *See Known limitations below:* the last resort
 
 ### Structure analysis — known limitations (unfinished)
 - [ ] **Tension-only sets that do not settle — last resort** (recorded 2026-10-18; O5 decided 2026-10-19). Since the buckling-load cap and the splitting of ties (above), the case that used to go round (a pair of diagonals in halves through a joint slightly off a tie's line, the joint held otherwise only by a weak spring) settles. Kept as a flagged **last resort**: when single members still go taut and slack in turn (or after 1000 solves), they are **kept active as ordinary truss members**, the others iterated on, and the result is flagged — a note *"tension-only members kept active because the set did not settle: … — approximate (last resort)"*, those members marked *kept active (did not settle)*, the structure's usage **approximate** (never a plain pass). No tested model reaches it. Later (owner, O5): the energy-based (or damped) active-set update, which would always settle
