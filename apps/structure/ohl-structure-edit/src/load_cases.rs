@@ -464,6 +464,89 @@ pub fn take_line_load_cases(doc: &mut DocumentMut, line_cases: &[String]) -> Vec
     written
 }
 
+/// The line quantities that are a pressure on the structure body (a
+/// surface load on members): a structure file using one is raised to
+/// version 6 ([`raise_for_line_pressures`]).
+pub const LINE_PRESSURES: [&str; 2] = ["structure_wind", "structure_wind_factored"];
+
+/// The note of a load taking the line case's wind on the body.
+pub const BODY_WIND_NOTE: &str = "the line case's wind on the structure body";
+
+/// Adds to each recipe named in `cases` a load taking the line case's
+/// wind on the structure body on every member (`what =
+/// "structure_wind_factored"`, `members = "all"`), unless it has one
+/// already: a case taken from the line ([`take_line_load_cases`]) then
+/// loads the body as the line's checks do. The names of the recipes
+/// changed.
+pub fn add_body_wind_load(doc: &mut DocumentMut, cases: &[String]) -> Vec<String> {
+    let mut changed = Vec::new();
+    let Some(all) = cases_mut(doc) else {
+        return changed;
+    };
+    for c in all.iter_mut() {
+        let Some(name) = c.get("name").and_then(Item::as_str).map(str::to_owned) else {
+            continue;
+        };
+        if !cases.contains(&name) {
+            continue;
+        }
+        let has = c
+            .get("load")
+            .and_then(Item::as_array_of_tables)
+            .is_some_and(|loads| {
+                loads.iter().any(|l| {
+                    l.get("what")
+                        .and_then(Item::as_str)
+                        .is_some_and(|w| LINE_PRESSURES.contains(&w))
+                })
+            });
+        if has {
+            continue;
+        }
+        let mut t = Table::new();
+        t.insert("what", toml_edit::value("structure_wind_factored"));
+        t.insert("members", toml_edit::value("all"));
+        t.insert("note", toml_edit::value(BODY_WIND_NOTE));
+        match c.get_mut("load").and_then(Item::as_array_of_tables_mut) {
+            Some(loads) => loads.push(t),
+            None => {
+                let mut loads = ArrayOfTables::new();
+                loads.push(t);
+                c.insert("load", Item::ArrayOfTables(loads));
+            }
+        }
+        changed.push(name);
+    }
+    changed
+}
+
+/// Raises the file to version 6 ([`crate::body::OPTIONS_VERSION`], the
+/// version of the generators' options too) when a recipe's load takes a
+/// pressure of the line ([`LINE_PRESSURES`]; a file without a `version`
+/// stays so).
+/// Run after every edit ([`crate::StructureFile::edit`]).
+pub fn raise_for_line_pressures(doc: &mut DocumentMut) {
+    let uses = doc
+        .get("load_case")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|cases| {
+            cases.iter().any(|c| {
+                c.get("load")
+                    .and_then(Item::as_array_of_tables)
+                    .is_some_and(|loads| {
+                        loads.iter().any(|l| {
+                            l.get("what")
+                                .and_then(Item::as_str)
+                                .is_some_and(|w| LINE_PRESSURES.contains(&w))
+                        })
+                    })
+            })
+        });
+    if uses {
+        crate::edits::raise_version(doc, crate::body::OPTIONS_VERSION);
+    }
+}
+
 /// A case of given forces to store in the file: the line's forces at
 /// each point, written as values of the case itself (the file then needs
 /// no line).
@@ -478,6 +561,10 @@ pub struct GivenCase {
     /// Per point (or wire point) label: transverse (right), longitudinal
     /// (ahead), vertical (down), N.
     pub forces: Vec<(String, [f64; 3])>,
+    /// The line case's wind on the structure body: its pressure (Pa,
+    /// factored) and direction (`-x`, `x`), stored as a pressure on every
+    /// member (none: no wind on the body).
+    pub wind: Option<(f64, String)>,
 }
 
 /// The directions of the three components in a recipe: right, ahead,
@@ -517,6 +604,14 @@ pub fn store_given_cases(
                 l.insert("points", toml_edit::value(points));
                 loads.push(l);
             }
+        }
+        if let Some((p, direction)) = &c.wind {
+            let mut l = Table::new();
+            l.insert("pressure", toml_edit::value(format!("{p:.1} Pa")));
+            l.insert("direction", toml_edit::value(direction.as_str()));
+            l.insert("members", toml_edit::value("all"));
+            l.insert("note", toml_edit::value(BODY_WIND_NOTE));
+            loads.push(l);
         }
         if !loads.is_empty() {
             t.insert("load", Item::ArrayOfTables(loads));
@@ -738,6 +833,36 @@ points = "all"
         assert!(take_line_load_cases(&mut d, &["x".to_owned()]).is_empty());
     }
 
+    /// A case taken from the line gets the line case's wind on the body
+    /// (once); a file taking a pressure of the line is raised to version
+    /// 6, one without a version stays so.
+    #[test]
+    fn the_body_wind_is_added_and_the_file_raised() {
+        let mut d: DocumentMut = "format = \"ohl-structure\"\nversion = 5\nid = \"P\"\n\
+                                  name = \"p\"\nkind = \"lattice\"\n"
+            .parse()
+            .unwrap();
+        take_line_load_cases(&mut d, &["wind".to_owned(), "everyday".to_owned()]);
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(5));
+        assert_eq!(add_body_wind_load(&mut d, &["wind".to_owned()]), ["wind"]);
+        assert!(add_body_wind_load(&mut d, &["wind".to_owned()]).is_empty());
+        let cases = load_cases(&d);
+        assert_eq!(cases[0].loads.len(), 4);
+        assert_eq!(cases[0].load(3, "what"), "structure_wind_factored");
+        assert_eq!(cases[0].load(3, "members"), "all");
+        assert_eq!(cases[1].loads.len(), 3);
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(6));
+        let t = reads(&d);
+        assert_eq!(t.load_cases.len(), 2);
+        // No version: none written.
+        let mut d = doc();
+        add_body_wind_load(&mut d, &["wind".to_owned()]);
+        raise_for_line_pressures(&mut d);
+        assert!(d.get("version").is_none());
+    }
+
     /// The line's forces stored as given values: one load per point and
     /// component, read back as written; stored again, a case of the same
     /// name is replaced in its place.
@@ -752,6 +877,7 @@ points = "all"
                 ("A1".into(), [1500.0, 0.0, 6000.0]),
                 ("A11".into(), [-1500.5, 200.0, 0.0]),
             ],
+            wind: Some((840.0, "-x".into())),
         };
         let everyday = GivenCase {
             name: "everyday".into(),
@@ -766,17 +892,22 @@ points = "all"
         let cases = load_cases(&d);
         assert_eq!(cases[0].get("name"), "wind");
         assert_eq!(cases[0].get("description"), "stored from the line");
-        assert_eq!(cases[0].loads.len(), 4);
+        assert_eq!(cases[0].loads.len(), 5);
         assert_eq!(cases[0].load(0, "value"), "1500.0 N");
         assert_eq!(cases[0].load(1, "direction"), "-z");
         assert_eq!(cases[0].load(2, "value"), "-1500.5 N");
         assert_eq!(cases[0].load(3, "points"), "A11");
+        // The line case's wind on the body: a pressure on every member.
+        assert_eq!(cases[0].load(4, "pressure"), "840.0 Pa");
+        assert_eq!(cases[0].load(4, "direction"), "-x");
+        assert_eq!(cases[0].load(4, "members"), "all");
         assert_eq!(cases[2].get("name"), "everyday");
         let t = reads(&d);
         assert_eq!(t.load_cases.len(), 3);
         // Again with other values: replaced, nothing added.
         let mut again = wind;
         again.forces = vec![("A1".into(), [100.0, 0.0, 0.0])];
+        again.wind = None;
         assert_eq!(store_given_cases(&mut d, &[again]), Ok((0, 1)));
         let cases = load_cases(&d);
         assert_eq!(cases.len(), 3);

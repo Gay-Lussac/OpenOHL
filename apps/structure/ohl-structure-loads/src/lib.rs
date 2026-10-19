@@ -45,7 +45,17 @@
 //! pressure = "0.6 kPa"        # on the members' area
 //! direction = "-x"
 //! members = "all"
+//!
+//! [[load_case.load]]
+//! what = "structure_wind_factored"  # the line case's wind on the body
+//! members = "all"                   # (version 2), as the line's checks
 //! ```
+//!
+//! The wind on the structure's own body comes from the line case as
+//! a pressure ([`CaseWind`], [`LineValues::structure_wind`]): the case's
+//! own values for the structures (`[case.structure]` of the `.ohllc`)
+//! or its weather case's pressure and transverse factor — the rule of the
+//! line's structure checks (`ohl_loads::LoadCase::structure_wind`).
 //!
 //! [`evaluate`] takes the recipes, the structure and the values of the
 //! line ([`LineValues`], plain data) and gives the [`LoadTable`]: per case
@@ -74,11 +84,12 @@ pub use placed::{
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,
     STRUCTURE_LOAD_CASE_FILE_EXTENSION, STRUCTURE_LOAD_CASE_FILE_FORMAT,
-    STRUCTURE_LOAD_CASE_FILE_VERSION, Side, StructureLoadCases,
+    STRUCTURE_LOAD_CASE_FILE_VERSION, Side, StructureLoadCases, written_version,
 };
 pub use table::{
-    At, LinePoint, LineValue, LineValues, LoadRow, LoadTable, MemberAreas, NoAreas, Override,
-    Source, Target, evaluate, evaluate_with_areas, model_rows, targets,
+    At, CaseWind, LinePoint, LineValue, LineValues, LoadRow, LoadTable, MemberAreas, NoAreas,
+    Override, Source, Target, evaluate, evaluate_with_areas, line_pressure, model_rows,
+    resolve_line_pressures, targets,
 };
 
 #[cfg(test)]

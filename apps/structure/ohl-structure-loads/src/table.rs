@@ -45,6 +45,38 @@ pub struct LineValue {
     pub value: f64,
 }
 
+/// The wind on the structure's own body in one of the line's cases, as
+/// the line's structure checks take it (`ohl_loads::LoadCase::
+/// structure_wind`: the case's `[case.structure]` values, else its weather
+/// case's pressure and its transverse factor).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaseWind {
+    /// The line's load case.
+    pub case: String,
+    /// Pressure, Pa, unfactored.
+    pub pressure: f64,
+    /// The factor on it.
+    pub factor: f64,
+    /// Where it blows: `-x` (from the right of the line) or `x`.
+    pub towards: Direction,
+    /// Where the values come from when the case gives its own for the
+    /// structures (empty: the weather case's pressure, the transverse
+    /// factor).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin: String,
+}
+
+impl CaseWind {
+    /// The pressure of `quantity` (unfactored, or times the factor).
+    pub fn pressure_of(&self, quantity: LineQuantity) -> f64 {
+        if quantity == LineQuantity::StructureWindFactored {
+            self.pressure * self.factor
+        } else {
+            self.pressure
+        }
+    }
+}
+
 /// The values the line gives at one placed structure (plain input; empty
 /// for a structure opened on its own).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -55,9 +87,19 @@ pub struct LineValues {
     /// The values.
     #[serde(default)]
     pub values: Vec<LineValue>,
+    /// The wind on the structure's own body per line case (line-values
+    /// file version 4; none in older files).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structure_wind: Vec<CaseWind>,
 }
 
 impl LineValues {
+    /// The wind on the structure body in line case `case`, if the line
+    /// gives it.
+    pub fn structure_wind(&self, case: &str) -> Option<&CaseWind> {
+        self.structure_wind.iter().find(|w| w.case == case)
+    }
+
     /// The value of `quantity` in line case `case` at point `label`
     /// carrying `sets`: the point's own, else the sum over its sets (when
     /// every set has one). `tension_max` is also the larger of the back
@@ -517,7 +559,9 @@ pub fn evaluate_with_areas(
         for (k, load) in case.loads.iter().enumerate() {
             let number = Some(k + 1);
             if let Some(members) = &load.members {
-                rows.extend(surface_rows(case, number, load, members, structure, areas));
+                rows.extend(surface_rows(
+                    case, number, load, members, structure, line, areas,
+                ));
             } else {
                 rows.extend(point_rows(case, number, load, &targets, line));
             }
@@ -532,12 +576,72 @@ pub fn evaluate_with_areas(
     LoadTable { rows }
 }
 
+/// The pressure a load of `case` takes from the line (`structure_wind`,
+/// `structure_wind_factored`): the line case's ([`CaseWind`]) and its
+/// direction (the load's own, else the wind's). None: the load takes no
+/// pressure from the line; Err: the line gives none (why, as a row's
+/// "missing").
+pub fn line_pressure(
+    case: &LoadCaseRecipe,
+    load: &LoadRecipe,
+    line: &LineValues,
+) -> Option<Result<(f64, Direction, String), String>> {
+    let q = load.what.filter(|q| q.is_pressure())?;
+    let Some(lc) = load.line_case.as_ref().or(case.line_case.as_ref()) else {
+        return Some(Err(format!(
+            "no line value: {} (no line case named)",
+            q.as_str()
+        )));
+    };
+    Some(match line.structure_wind(lc) {
+        Some(w) => Ok((
+            w.pressure_of(q),
+            load.direction.unwrap_or(w.towards),
+            w.origin.clone(),
+        )),
+        None => Err(format!("no line value: {} in \"{lc}\"", q.as_str())),
+    })
+}
+
+/// `recipes` with every pressure the line gives (`structure_wind`,
+/// `structure_wind_factored`, [`line_pressure`]) written as the load's
+/// own `pressure` and `direction`, for what reads pressures from the
+/// recipes (the run on an extension, the pole's wind); a load the line
+/// gives no value for is left as it is (no pressure).
+pub fn resolve_line_pressures(
+    recipes: &[LoadCaseRecipe],
+    line: &LineValues,
+) -> Vec<LoadCaseRecipe> {
+    recipes
+        .iter()
+        .map(|c| {
+            let mut c = c.clone();
+            let loads = c
+                .loads
+                .iter()
+                .map(|l| match line_pressure(&c, l, line) {
+                    Some(Ok((p, d, _))) => LoadRecipe {
+                        what: None,
+                        pressure: Some(p),
+                        direction: Some(d),
+                        ..l.clone()
+                    },
+                    _ => l.clone(),
+                })
+                .collect();
+            c.loads = loads;
+            c
+        })
+        .collect()
+}
+
 fn surface_rows(
     case: &LoadCaseRecipe,
     number: Option<usize>,
     load: &LoadRecipe,
     members: &Pick,
     structure: &StructureType,
+    line: &LineValues,
     areas: &dyn MemberAreas,
 ) -> Vec<LoadRow> {
     let ids: Vec<&str> = match members {
@@ -549,12 +653,29 @@ fn surface_rows(
             LoadRow::new(&case.name, number, At::Member, "").missing("selects no member".into()),
         ];
     }
-    let p = load.pressure.unwrap_or_default();
-    let direction = load.direction.unwrap_or(Direction::Right);
+    let (p, direction, source, note) = match line_pressure(case, load, line) {
+        None => (
+            load.pressure.unwrap_or_default(),
+            load.direction.unwrap_or(Direction::Right),
+            Source::Recipe,
+            String::new(),
+        ),
+        Some(Ok((p, d, origin))) => (p, d, Source::Line, origin),
+        Some(Err(why)) => {
+            return ids
+                .into_iter()
+                .map(|id| LoadRow::new(&case.name, number, At::Member, id).missing(why.clone()))
+                .collect();
+        }
+    };
     let dir = direction.table_vector();
     ids.into_iter()
         .map(|id| {
-            let row = LoadRow::new(&case.name, number, At::Member, id);
+            let row = LoadRow {
+                source,
+                note: note.clone(),
+                ..LoadRow::new(&case.name, number, At::Member, id)
+            };
             if !structure.members.iter().any(|m| m.id == id) {
                 return row.missing(format!("no member \"{id}\""));
             }

@@ -140,6 +140,13 @@ fn line() -> LineValues {
             v(None, Some(1), LineQuantity::TensionAhead, -25_000.0),
             v(None, Some(2), LineQuantity::TensionMax, 30_000.0),
         ],
+        structure_wind: vec![CaseWind {
+            case: "everyday".into(),
+            pressure: 400.0,
+            factor: 1.5,
+            towards: Direction::Left,
+            origin: String::new(),
+        }],
     }
 }
 
@@ -466,7 +473,7 @@ fn line_values_files_mark_the_source_of_each_case() {
     new.cases = vec!["wind".into(), "weather: glaze ice".into()];
     new.sources = vec![CaseSource::LoadCase, CaseSource::WeatherCase];
     let text = new.to_json();
-    assert!(text.contains("\"version\": 3"), "{text}");
+    assert!(text.contains("\"version\": 4"), "{text}");
     assert!(text.contains("\"weather_case\""), "{text}");
     // Nothing missing: no `missing` written.
     assert!(!text.contains("missing"), "{text}");
@@ -474,7 +481,7 @@ fn line_values_files_mark_the_source_of_each_case() {
     assert_eq!(read, new);
     assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
     assert_eq!(read.source("wind").label(), "load case");
-    let newer = text.replace("\"version\": 3", "\"version\": 4");
+    let newer = text.replace("\"version\": 4", "\"version\": 5");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 
@@ -510,4 +517,107 @@ fn line_values_files_carry_the_wires_missing_per_case() {
         read.missing[0].describe(),
         "section S12 not solved (did not converge)"
     );
+}
+
+/// The line case's wind on the structure body as a surface load
+/// (`structure_wind`, `structure_wind_factored`): invented values, the
+/// line's case "everyday" giving 400 Pa × 1.5 to −x; member m1 of 2 m²:
+/// 400 × 2 = 800 N unfactored, 400 × 1.5 × 2 = 1 200 N factored, towards
+/// −x unless the load gives a direction; a line case without it is "no
+/// line value"; the file is written at version 2 only with such a load.
+#[test]
+fn the_line_cases_wind_on_the_body_is_a_surface_load() {
+    let text = r#"
+[[load_case]]
+name = "body wind"
+line_case = "everyday"
+
+[[load_case.load]]
+what = "structure_wind_factored"
+members = "all"
+
+[[load_case.load]]
+what = "structure_wind"
+direction = "x"
+members = ["m1"]
+
+[[load_case.load]]
+what = "structure_wind"
+line_case = "wind"
+members = ["m1"]
+"#;
+    let f = StructureLoadCases::parse(text).unwrap();
+    let areas = |id: &str| (id == "m1").then_some(2.0);
+    let t = evaluate_with_areas(&f.cases, &structure(), &line(), &areas);
+    let r = row(&t, "body wind", 1, "m1");
+    assert_eq!((r.force, r.source), ([-1200.0, 0.0, 0.0], Source::Line));
+    assert_eq!(r.area, Some(2.0));
+    assert_eq!(
+        row(&t, "body wind", 1, "m2").missing.as_deref(),
+        Some("no area")
+    );
+    assert_eq!(row(&t, "body wind", 2, "m1").force, [800.0, 0.0, 0.0]);
+    assert_eq!(
+        row(&t, "body wind", 3, "m1").missing.as_deref(),
+        Some("no line value: structure_wind in \"wind\"")
+    );
+    // Without the line (a structure on its own): no line value.
+    let alone = evaluate_with_areas(&f.cases, &structure(), &LineValues::default(), &areas);
+    assert!(
+        row(&alone, "body wind", 1, "m1")
+            .missing
+            .as_deref()
+            .is_some_and(|m| m.starts_with("no line value: structure_wind_factored"))
+    );
+    // Resolved for the run: the line's pressure and direction written in.
+    let resolved = resolve_line_pressures(&f.cases, &line());
+    let l = &resolved[0].loads;
+    assert_eq!(
+        (l[0].what, l[0].pressure, l[0].direction),
+        (None, Some(600.0), Some(Direction::Left))
+    );
+    assert_eq!(
+        (l[1].pressure, l[1].direction),
+        (Some(400.0), Some(Direction::Right))
+    );
+    assert_eq!(l[2], f.cases[0].loads[2], "no value: left as it is");
+    // Version 2 only with such a load.
+    assert_eq!(
+        StructureLoadCases::new("x", f.cases.clone()).version,
+        Some(2)
+    );
+    let plain = StructureLoadCases::parse(RECIPES).unwrap();
+    assert_eq!(StructureLoadCases::new("x", plain.cases).version, Some(1));
+    // A pressure of the line needs members, and only members.
+    for (bad, says) in [
+        (
+            text.replace("members = \"all\"", "points = \"all\""),
+            "needs members",
+        ),
+        (
+            text.replace("what = \"structure_wind_factored\"", "what = \"vertical\""),
+            "members take a pressure or structure_wind",
+        ),
+    ] {
+        let e = StructureLoadCases::parse(&bad).unwrap_err();
+        assert!(e.contains(says), "{says}: {e}");
+    }
+}
+
+/// Version 4 of the line-values file: the structure wind per case read
+/// back the same; a version 3 file has none.
+#[test]
+fn line_values_files_carry_the_structure_wind() {
+    let v3 = r#"{"format": "ohl-structure-line-values", "version": 3, "structure": "T2",
+        "cases": ["everyday"], "values": {"points": [], "values": []}}"#;
+    let old = PlacedValues::parse(v3).unwrap();
+    assert!(old.values.structure_wind.is_empty());
+    let mut new = PlacedValues::pending("T2", "line", "type-02", "");
+    new.cases = vec!["everyday".into()];
+    new.values = line();
+    new.values.structure_wind[0].origin = "the load case's own pressure".into();
+    let text = new.to_json();
+    assert!(text.contains("\"structure_wind\""), "{text}");
+    assert!(text.contains("\"towards\": \"-x\""), "{text}");
+    assert_eq!(PlacedValues::parse(&text).unwrap(), new);
 }

@@ -25,6 +25,14 @@
 //!
 //! Surface loads take the members' areas from the section library
 //! (`--sections`, else `Sections/` beside the file).
+//!
+//! **The line's wind on the structure body**: a line case that gives the
+//! wind on the structure's own body ([`LineValues::structure_wind`]: the
+//! case's own values for the structures, or its weather case's pressure
+//! and transverse factor) puts that pressure × factor on every member as
+//! surface rows of the case (source line, [`line_wind_recipes`]) and on a
+//! pole as its wind — the rule of the line's own structure checks
+//! (`ohl_loads::LoadCase::structure_wind`).
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -35,8 +43,9 @@ use ohl_render::Scene;
 use ohl_structure_edit::{self as edit, Geometry, StructureFile};
 use ohl_structure_link::{SectionAreas, SectionLibrary};
 use ohl_structure_loads::{
-    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRow, LoadTable, MissingWire, Override,
-    PlacedValues, Source, StructureLoadCases, evaluate_with_areas, incomplete_text,
+    At, LineQuantity, LineValues, LoadCaseRecipe, LoadRecipe, LoadRow, LoadTable, MissingWire,
+    Override, Pick, PlacedValues, Source, StructureLoadCases, evaluate_with_areas, incomplete_text,
+    resolve_line_pressures,
 };
 
 use crate::app::{StructureApp, error_label};
@@ -57,6 +66,10 @@ struct Evaluated {
     /// The line's cases in the table: (its name in the table, the line's
     /// case).
     line_cases: Vec<(String, String)>,
+    /// What a run solves with: the recipes, then the line cases' wind on
+    /// the body, every pressure of the line written in
+    /// ([`resolve_line_pressures`]).
+    run_recipes: Vec<LoadCaseRecipe>,
 }
 
 /// The state of the Load recipes and Load table panels.
@@ -170,17 +183,28 @@ impl LoadCasesTab {
         let order = self.info.as_ref().map_or(&[][..], |i| &i.cases[..]);
         let missing = self.info.as_ref().map_or(&[][..], |i| &i.missing[..]);
         let (mut evaluated, line_cases) = line_rows(&self.line, order, &names, missing);
+        // The line cases' wind on the body: on the members (rows) when
+        // there are some, on a pole (the run) in any case.
+        let line_wind = line_wind_recipes(&line_cases, &self.line);
+        let mut all: Vec<LoadCaseRecipe> = cases.to_vec();
+        if !t.members.is_empty() {
+            all.extend(line_wind.iter().cloned());
+        }
         // Member areas only when a load needs them (the model is built).
-        let surface = cases
+        let surface = all
             .iter()
             .any(|c| c.loads.iter().any(|l| l.members.is_some()));
         let of_recipes = if surface {
             let dir = f.path().and_then(Path::parent);
             let areas = SectionAreas::new(t, &f.text(), dir, &self.sections);
-            evaluate_with_areas(cases, t, &self.line, &areas)
+            evaluate_with_areas(&all, t, &self.line, &areas)
         } else {
-            evaluate_with_areas(cases, t, &self.line, &ohl_structure_loads::NoAreas)
+            evaluate_with_areas(&all, t, &self.line, &ohl_structure_loads::NoAreas)
         };
+        let run_recipes = resolve_line_pressures(
+            &cases.iter().cloned().chain(line_wind).collect::<Vec<_>>(),
+            &self.line,
+        );
         evaluated.rows.extend(of_recipes.rows);
         let mut table = evaluated.clone();
         table.apply(&self.overrides);
@@ -190,7 +214,15 @@ impl LoadCasesTab {
             evaluated,
             table,
             line_cases,
+            run_recipes,
         });
+    }
+
+    /// What a run solves with (as of the last [`LoadCasesTab::refresh`]):
+    /// the recipes and the line cases' wind on the body, the line's
+    /// pressures written in.
+    pub fn run_recipes(&self) -> &[LoadCaseRecipe] {
+        self.cache.as_ref().map_or(&[], |c| &c.run_recipes)
     }
 
     /// The load table (evaluated, the overrides applied), as of the last
@@ -1173,6 +1205,41 @@ pub fn line_rows(
     (table, names)
 }
 
+/// The note of the line cases' wind rows.
+pub const LINE_WIND_NOTE: &str = "the line case's wind on the structure body";
+
+/// The line cases' wind on the structure body as recipes of their own:
+/// per line case in the table (`line_cases`: its name there, the line's
+/// case) whose wind on the body ([`LineValues::structure_wind`]) has a
+/// pressure, a case of that name taking `structure_wind_factored` on
+/// every member (strength and self-weight factors 1, as the line's cases
+/// in the table). Evaluated, its rows join the line's forces of the case;
+/// in a run, its pressure is also the wind on a pole.
+pub fn line_wind_recipes(
+    line_cases: &[(String, String)],
+    line: &LineValues,
+) -> Vec<LoadCaseRecipe> {
+    line_cases
+        .iter()
+        .filter(|(_, case)| {
+            line.structure_wind(case)
+                .is_some_and(|w| w.pressure * w.factor != 0.0)
+        })
+        .map(|(name, case)| {
+            let mut r = LoadCaseRecipe::new(name);
+            r.description = LINE_WIND_NOTE.to_owned();
+            r.line_case = Some(case.clone());
+            r.loads.push(LoadRecipe {
+                what: Some(LineQuantity::StructureWindFactored),
+                members: Some(Pick::All),
+                note: LINE_WIND_NOTE.to_owned(),
+                ..LoadRecipe::default()
+            });
+            r
+        })
+        .collect()
+}
+
 /// The date of `secs` since 1970 (UTC), as YYYY-MM-DD.
 fn date(secs: i64) -> String {
     // Days to the civil date (Howard Hinnant's algorithm).
@@ -1407,9 +1474,21 @@ impl StructureApp {
     }
 
     /// Load cases › Take the line's load cases as they are: one recipe
-    /// per line case, its factored loads at every point (one edit).
+    /// per line case, its factored loads at every point and, on a
+    /// structure with members, the line case's wind on the body on every
+    /// member when the line gives one (one edit).
     pub fn take_line_cases(&mut self) {
         let cases: Vec<String> = self.loads.line_cases().into_iter().map(|c| c.1).collect();
+        let windy: Vec<String> = cases
+            .iter()
+            .filter(|c| {
+                self.loads
+                    .line
+                    .structure_wind(c)
+                    .is_some_and(|w| w.pressure * w.factor != 0.0)
+            })
+            .cloned()
+            .collect();
         let Some(f) = &mut self.file else {
             return;
         };
@@ -1417,8 +1496,18 @@ impl StructureApp {
             self.message = Some(("the line gives no load case".into(), true));
             return;
         }
+        let members = !f.structure().members.is_empty();
         let written = f.edit("take the line's load cases", |doc, _| {
-            edit::take_line_load_cases(doc, &cases)
+            let written = edit::take_line_load_cases(doc, &cases);
+            if members {
+                let new: Vec<String> = written
+                    .iter()
+                    .filter(|w| windy.contains(w))
+                    .cloned()
+                    .collect();
+                edit::add_body_wind_load(doc, &new);
+            }
+            written
         });
         self.message = Some(if written.is_empty() {
             (
@@ -1562,6 +1651,14 @@ impl StructureApp {
                     .filter(|r| r.load.is_none() && r.at == At::Point && r.missing.is_none())
                     .map(|r| (r.label.clone(), r.force))
                     .collect(),
+                // The line case's wind on the body, as the run takes it.
+                wind: self
+                    .loads
+                    .run_recipes()
+                    .iter()
+                    .filter(|r| r.name == name && r.description == LINE_WIND_NOTE)
+                    .flat_map(|r| &r.loads)
+                    .find_map(|l| Some((l.pressure?, l.direction?.as_str().to_owned()))),
             })
             .collect();
         if cases.is_empty() {
@@ -1745,5 +1842,41 @@ mod line_rows_tests {
         assert!(t.rows[3].note.contains("sets 11; phases L1; factored"));
         assert_eq!(date(0), "1970-01-01");
         assert_eq!(date(1_792_195_200), "2026-10-17");
+    }
+
+    /// The line cases' wind on the body (invented: wind 600 Pa × 1.4 to
+    /// −x, still air 0 Pa): a recipe for the windy case only, under its
+    /// name in the table, taking `structure_wind_factored` on every
+    /// member; resolved for a run, its pressure is 600 × 1.4 = 840 Pa to
+    /// −x.
+    #[test]
+    fn the_line_cases_wind_on_the_body_is_a_case_of_its_own() {
+        use ohl_structure_loads::{CaseWind, Direction};
+        let mut line = LineValues::default();
+        for (case, pressure) in [("wind", 600.0), ("everyday", 0.0)] {
+            line.structure_wind.push(CaseWind {
+                case: case.into(),
+                pressure,
+                factor: 1.4,
+                towards: Direction::Left,
+                origin: String::new(),
+            });
+        }
+        let cases = [
+            ("wind (line)".to_owned(), "wind".to_owned()),
+            ("everyday".to_owned(), "everyday".to_owned()),
+        ];
+        let r = line_wind_recipes(&cases, &line);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].name, "wind (line)");
+        assert_eq!(r[0].line_case.as_deref(), Some("wind"));
+        assert_eq!((r[0].strength, r[0].self_weight), (1.0, 1.0));
+        let l = &r[0].loads[0];
+        assert_eq!(l.what, Some(LineQuantity::StructureWindFactored));
+        assert_eq!(l.members, Some(Pick::All));
+        let resolved = resolve_line_pressures(&r, &line);
+        let l = &resolved[0].loads[0];
+        assert!((l.pressure.unwrap() - 840.0).abs() < 1e-9);
+        assert_eq!(l.direction, Some(Direction::Left));
     }
 }
