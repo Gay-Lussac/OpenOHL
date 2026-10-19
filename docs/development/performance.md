@@ -14,6 +14,27 @@ Example: `units/total_load_typed_10k` vs `units/total_load_raw_10k` check that t
 
 `drawn/bodies_load_example` and `drawn/place_lattice_tower_100x` (`ohl-structures-fe`) time the structure bodies drawn at levels 2 and 3: made once per type and extension, then only moved to each placed structure (a tower of 178 members with their solids, placed 100 times). The app test `member_tests::many_lattice_towers_stay_fast` builds the structures layer of 400 such towers under a lenient 5 s, debug builds included.
 
+### Member and pole solids
+
+Solids of members with a library profile and of poles at levels 2 and 3 are drawn in the chunks within the **solids distance** (`lod::LodSettings::solids`, its own value in the Level of detail page, default `lod::DEFAULT_SOLIDS_DISTANCE` = **400 m**), apart from the structures' level 0 (2 km), which keeps drawing the members as lines. The benchmark `member_tests::solids_distance_benchmark` measures it on 400 type-02 towers 400 m apart with every member a library angle (178 solids of 20 triangles, 3 560 triangles a tower, 1.4 million in all), with the frame benchmark's harness:
+
+```bash
+OHL_REQUIRE_GPU_TESTS=1 cargo test --release -p ohl-app solids_distance_benchmark -- --ignored --nocapture
+```
+
+Apple M-series, release, 1600 × 1000 window, median frame (other builds running on the machine, so the slowest frames are noise):
+
+| Solids distance | Down the line from 80 m behind a tower | from 600 m behind | 80 m from a tower, oblique | 600 m, oblique | whole line |
+|---|---|---|---|---|---|
+| 0 | 0.43 ms, 0 triangles | 0.28 ms, 0 | 0.45 ms, 0 | 0.24 ms, 0 | 0.28 ms, 0 |
+| 200 m | 0.25 ms, 3 560 | 0.32 ms, 3 560 | 0.24 ms, 3 560 | 0.24 ms, 0 | 0.28 ms, 0 |
+| 400 m | 0.29 ms, 3 560 | 0.44 ms, 3 560 | 0.26 ms, 3 560 | 0.24 ms, 0 | 0.40 ms, 0 |
+| 800 m | 0.28 ms, 7 120 | 0.36 ms, 7 120 | 0.29 ms, 3 560 | 0.25 ms, 3 560 | 0.24 ms, 0 |
+| 1 200 m | 0.27 ms, 10 680 | 0.28 ms, 10 680 | 0.24 ms, 3 560 | 0.26 ms, 7 120 | 0.24 ms, 0 |
+| 2 000 m | 0.49 ms, 17 800 | 0.38 ms, 17 800 | 0.24 ms, 3 560 | 0.24 ms, 7 120 | 0.32 ms, 0 |
+
+Every view settled in 4 frames. The frame time does not depend on the distance here: a few towers' solids are well within the 16 ms of a 60 Hz frame (the lines and the rest of the view cost the same at every distance). So the default is set by **what can be seen**, not by the frame time: at 1000 px for a 45° field of view a metre at distance *d* covers about 1200 / *d* px, so a single 60–100 mm angle is under a pixel beyond some 70–120 m (a tower's many members together still read as a lit mass a few hundred metres off) and a pole of 300–700 mm is 1–2 px at 400 m. Beyond that the solids only add triangles, GPU memory and chunk builds (their number grows with the distance: 5 towers at 2 km down a line of 400 m spans, many more on a line with short spans or several circuits side by side) for nothing seen, the lines drawn over them giving the shape. 400 m keeps the structure in front and its neighbour at usual spans (300–400 m) solid, where the profile and the pole's taper can be seen; the user raises it in the Level of detail page for close-up work along a line, or sets 0 for none. Display only: no computed number depends on it.
+
 ## Frame benchmark (desktop application)
 
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):
@@ -55,7 +76,7 @@ Display only: calculations, checks and picking always use the full model; nothin
 |---|---|---|---|
 | Terrain, other surfaces | every TIN triangle (1.5 km) | 8 m grid (5 km) | 32 m grid (30 km) |
 | LiDAR | streamed by node under the point budget (5 million) and the error on the screen (1.5 px), to 3 km | | |
-| Structures | members of levels 2 and 3 (else the stick drawing), members with a library profile also as solids, arms, strings (2 km) | mast line, arms, strings (8 km) | mast line (50 km) |
+| Structures | members of levels 2 and 3 (else the stick drawing), arms, strings (2 km); members with a library profile and poles at levels 2 and 3 also as solids within the solids distance (400 m, its own setting) | mast line, arms, strings (8 km) | mast line (50 km) |
 | Wires, other cases, project lines | subconductors and yokes, clamps and bodies to their shape, bare points' marks, jumpers' support clamps, line codes in 1.5 m units (1.5 km) | one line per bundle, 16 points per span, dashes × 4, bodies as 4 px dots, spreads, spacers, arrows (6 km) | 5 points per span, dashes × 16 (50 km) |
 | Sections not solved | dashed red, 1.5 m units | dashes × 4 | dashes × 16 |
 | Drawings (DXF) | every vertex (1 km) | simplified to 0.5 m (4 km) | 2 m (10 km) |

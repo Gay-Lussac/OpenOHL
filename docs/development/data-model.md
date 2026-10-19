@@ -816,6 +816,40 @@ filled by `RouteDrawing::set_members` and drawn on the layer
 `OHL_MEMBERS` (`ohl_drawing::model::Layer::Members`) instead of the
 symbol.
 
+A pole at level 2 or 3 adds `DrawnBody::pole` (a `DrawnPole`; a body
+with a pole and no members has `members` empty, `has_members()` false):
+`drawn::PoleOutline::of` reads the outline — a `[pole]`'s `rings()`
+(local z, diameter; `polygon_sides`; the wall typed, or a hollow
+`section`'s, else solid) or a `.ohlp` file's taper or `profile` from the
+feet up (`ohl_structures_fe::pole::structure_pole`) — and
+`DrawnPole::new` raises it by `StructureType::lift` per extension (cut at
+the ground line, the lowest diameter held down to it): `rings` (z,
+outer diameter) from z = 0, `sides`, `wall`, and the `solid` triangles
+(`placed_triangles` includes them). `DrawnBody::placed_pole_rings`
+gives the outer outline at each height, closed, as placed. In the
+drawings they are `Mark::pole` (station, offset, z) and `pole_xy`,
+filled by `RouteDrawing::set_poles`, on `OHL_MEMBERS`; `Mark::has_body`
+replaces the symbol for either.
+
+In the desktop app a `scene::Prim` with `near` set (the solids of
+members and poles) is built per chunk apart from the levels
+(`ChunkIndex::near_keys` / `build_near`) and drawn within
+`LodSettings::solids` (its own rule, `LodSettings::solids_rule`; default
+`lod::DEFAULT_SOLIDS_DISTANCE`, 400 m), saved per user under the storage
+key `lod-solids` (a number of metres; settings saved before it read the
+default). `selection::pole_at` picks a structure by its pole's outline
+on the screen.
+
+**Drawing options** (`ohl_drawing::Options`; the app stores them in `DrawingSettings`, below):
+`elevations: Elevations { place: ElevationPlace (Off | Above | Below),
+offset_mm, rotation_deg }`, default off, 10 mm, 90°: each structure's
+elevation on the plan on the layer `OHL_ELEVATIONS`
+(`model::Layer::Elevations`); `ohl_drawing::warnings` (and the export's
+warnings, per sheet) report elevations that overlap each other or reach
+into the profile. `ohl drawing --elevations --elevation-offset
+--elevation-rotation`; the app's Export drawings window
+(`DrawingsWindow::elevations`, stored with the drawing settings); `ohl_drawing::elevations` gives them in the route's (station, offset) for the sheet preview, of the structures `RouteDrawing::shown` keeps.
+
 **Editing a structure file** (`apps/structure/ohl-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
 of `ohl-app`'s structure screen is a function on the file's text
@@ -1229,7 +1263,7 @@ keeps them equal to what the exporter writes):
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `preview`; missing fields and values out of range take the defaults; absent: the defaults) |
+| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; missing fields and values out of range take the defaults; absent: the defaults) |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |

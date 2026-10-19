@@ -359,13 +359,23 @@ memory.
   edited in OHL-Structure only (a placed structure has no joints of its
   own).
 - **U8. Level 2 and 3 members**: now drawn (built, in active development,
-  not approved yet) in the line's 3D view — as lines, and close by as
-  solids of their library profile; a member clicked selects its structure
-  and, in the open structure screen, the member — and on the plan and
-  profile sheets on their own layer `OHL_MEMBERS` instead of the symbol.
-  Left: members with a `[[section]]` table of their own (no profile) stay
-  lines; no GPU instancing (the geometry is shared per type and moved on
-  the CPU); poles at levels 2 and 3 are still drawn as a mast line.
+  not approved yet) in the line's 3D view — as lines, and as solids of
+  their library profile within the **solids distance**, its own setting
+  in the Level of detail table (default 400 m, measured); a member
+  clicked selects its structure and, in the open structure screen, the
+  member — and on the plan and profile sheets on their own layer
+  `OHL_MEMBERS` instead of the symbol. **Poles at levels 2 and 3** are
+  drawn with their outline: in 3D a solid of their real outline by
+  height (round or polygonal, tapered, solid or hollow) within the solids
+  distance, a click inside it selecting the structure; on the sheets the
+  silhouette in the profile and the outline at the ground line and the
+  top in the plan, on `OHL_MEMBERS`. On request the plan sheets carry
+  each structure's **elevation** beside the line (off, above or below;
+  offset on paper; rotation, 90° by default) on the layer
+  `OHL_ELEVATIONS`, overlaps warned about, stored with the drawing
+  settings and shown by the sheet preview. Left: members with a
+  `[[section]]` table of their own (no profile) stay lines (decided); no
+  GPU instancing (the geometry is shared per type and moved on the CPU).
 
 > **Owner:**
 
@@ -566,7 +576,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] Levels as decided: 1 attachment points only (stick figure, not verifiable); 2 the real geometry (no code check); 3 every part and joint detail, computed (FE) and code-checked (e.g. SIA 263). **Poles** the same: 1 points without body, 2 outside lines, 3 detailed engineering (a wall thickness, or solid). `[[body]]` polylines give level 2 only in 3D. At levels 1 and 2 maximum loads only on the strings, never for the structure itself (its capacity only at level 3) *(the level derived from the content; the code check of level 3 waits for the code-check plugins below)*
 - [x] A structure file as a pylon family: body and leg extensions chosen per position adapt it to the ground; each placed structure unique to its position (its own name, loads, model, results) — OHL-Structure started for a placed structure works on its own loads and extension
 - [x] Structure picker window: table of structures (name, description, level, extensions, uses) with a filter and a preview, instead of the drop-downs
-- [x] **Members of levels 2 and 3 drawn with the line** (U8): in the line's 3D view as placed by the line (position, orientation, extension, height adjustment), as lines and close by as solids of their library profile turned as the FE model turns them (`ohl_structures_fe::drawn`, the geometry made once per type and extension); a click on a member selects its structure and the member in the structure screen; on the plan and profile sheets (SVG, DXF, PDF, PNG) on the layer `OHL_MEMBERS` instead of the symbol, level 1 unchanged *(not yet: profiles of `[[section]]` tables, GPU instancing, poles' outlines)*
+- [x] **Members of levels 2 and 3 drawn with the line** (U8): in the line's 3D view as placed by the line (position, orientation, extension, height adjustment), as lines and within the solids distance (its own level-of-detail setting, default 400 m) as solids of their library profile turned as the FE model turns them (`ohl_structures_fe::drawn`, the geometry made once per type and extension); poles at levels 2 and 3 as solids of their outline by height; a click on a member selects its structure and the member in the structure screen, a click on a pole its structure; on the plan and profile sheets (SVG, DXF, PDF, PNG) on the layer `OHL_MEMBERS` instead of the symbol (poles: the silhouette and the outlines at the ground and the top), level 1 unchanged; structures' elevations beside the line on the plan on request (`OHL_ELEVATIONS`) *(members of `[[section]]` tables stay lines; not yet: GPU instancing)*
 - [x] Weather and load cases at the suspension points from level 1, exported for a structure designed in another program — the load cases and weather cases the line sends to placed structures, as the load table (CSV)
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported
 - [x] **Section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads; sections typed in OHL-Structure (Sections & materials › Section library: the library's shapes, properties computed as typed, what is wrong said, each change an undo step in order with the structure's edits; members pick them); wind factors for structures as data (`[wind]`: drag per shape, a lattice face's drag and shielding by solidity ratio and spacing) from a design-code plugin's optional `structure-wind` (WIT `code-wind-plugin`, interface 0.3 unchanged for older plugins; the code plugins' stubs give none) or typed, with the faces, solidity ratios and shielding computed from the geometry (`docs/theory/structure-wind.md`, validation cases structwind-001/002). Later: the codes' factors in their plugins (O9), the factors on OHL-Structure's surface loads, materials typed in the editor)*
