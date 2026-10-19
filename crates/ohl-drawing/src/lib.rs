@@ -21,6 +21,7 @@
 //! [`build`] collects the drawing data. The layout makes format-free
 //! [`model::Drawing`]s from it: [`drawing`] the whole route (or a station
 //! range) as one continuous drawing; [`sheets`] split **at structures**
+//! of the run along the alignment, clear of every other structure drawn,
 //! over sheets of a standard format (A0–A4 or custom) with a title block
 //! and logos; [`profile_model`] and [`plan_model`] in model space. Writers:
 //! SVG ([`model::Drawing::svg`]), [`dxf`], [`pdf`], [`png`]; the numbers
@@ -46,7 +47,7 @@ pub mod pdf;
 pub mod png;
 mod table;
 
-pub use layout::{Sheet, plan_model, profile_model, sheets};
+pub use layout::{BREAK_CLEARANCE_MM, Sheet, plan_model, profile_model, sheets};
 pub use table::{profile_csv, profile_xml};
 
 /// Drawing options.
@@ -135,6 +136,9 @@ pub struct Mark {
     pub station: f64,
     /// Offset.
     pub offset: f64,
+    /// Away from the alignment (not on the run along it, such as a
+    /// connection beside the line): sheets never break at it.
+    pub away: bool,
     /// Position in project coordinates (x, y).
     pub xy: [f64; 2],
     /// Ground (base) height.
@@ -244,6 +248,7 @@ pub fn build(
                 id: s.id.clone(),
                 station,
                 offset,
+                away: route.is_away(&s.id),
                 xy: [s.position[0], s.position[1]],
                 base: s.position[2],
                 top: s
@@ -784,6 +789,129 @@ pub(crate) mod tests {
         assert!((s[0].from - 200.0).abs() < 1e-9 && (s[1].to - 900.0).abs() < 1e-9);
         let svg = s[0].svg();
         assert!(!svg.contains(">Plan<") && svg.contains("— profile"));
+    }
+
+    /// The main route of the synthetic line with an invented structure
+    /// `C1` on the route but away from its alignment, at `station` and
+    /// `offset` (more than 5 m: away), no points nor stick drawing.
+    fn main_with_away(station: f64, offset: f64) -> RouteDrawing {
+        let (mut line, shapes, jumpers, terrain) = solved();
+        let centre = line.alignment_views()[0].centreline(&line);
+        let xy = point_at(&centre, station, offset);
+        let mut c = line.structure("T1").unwrap().clone();
+        c.id = "C1".into();
+        c.position = [xy[0], xy[1], 490.0];
+        c.points.clear();
+        c.members.clear();
+        c.routes = vec!["main".into()];
+        line.structures.push(c);
+        let views = line.alignment_views();
+        assert_eq!(views[0].away, ["C1"]);
+        build(
+            &line,
+            &views[0],
+            &shapes,
+            &jumpers,
+            Some(&terrain),
+            &[],
+            &Options::default(),
+        )
+        .unwrap()
+    }
+
+    fn ends(s: &[Sheet]) -> Vec<(&str, &str)> {
+        s.iter()
+            .map(|s| (s.structures.0.as_str(), s.structures.1.as_str()))
+            .collect()
+    }
+
+    fn warnings(s: &[Sheet]) -> Vec<&Vec<String>> {
+        s.iter().map(|s| &s.warnings).collect()
+    }
+
+    #[test]
+    fn sheets_never_break_at_or_near_a_structure_off_the_alignment() {
+        // Main route: T1 0, T2 310, T3 640, T4 940, T5 1260 m. A3 at
+        // 1:2000 holds (420 − 34) mm × 2 m/mm = 772 m; the clearance of
+        // 2 mm on paper is 4 m. Profile at 1:500 so the height fits.
+        let o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        let a3 = page_format("A3").unwrap();
+        let plain = sheets(&main_route(&o), &o, &a3);
+        assert_eq!(ends(&plain), [("T1", "T3"), ("T3", "T5")]);
+
+        // The old fault: C1 40 m right of the line at 0+700 is the last
+        // structure within 772 m of T1, so the greedy break fell at C1 —
+        // a match line through the span T3–T4. Now the break stays at T3
+        // and the sheets are those without C1.
+        let s = sheets(&main_with_away(700.0, 40.0), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
+        assert!(
+            s.iter().all(|s| s.warnings.is_empty()),
+            "{:?}",
+            warnings(&s)
+        );
+        assert_eq!(
+            s.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>(),
+            plain.iter().map(|s| (s.from, s.to)).collect::<Vec<_>>()
+        );
+
+        // C1 2 m past T3 (inside the 4 m): a break at T3 would cut C1's
+        // drawing, so it moves back to T2 (the last free structure within
+        // reach); from T2 (reach to 1082 m) T3 and C1 are skipped, T4 (940)
+        // fits; T4–T5 ends the route. No warnings: every sheet fits.
+        let s = sheets(&main_with_away(642.0, 40.0), &o, &a3);
+        assert_eq!(ends(&s), [("T1", "T2"), ("T2", "T4"), ("T4", "T5")]);
+        assert!(
+            s.iter().all(|s| s.warnings.is_empty()),
+            "{:?}",
+            warnings(&s)
+        );
+        let c1 = 642.0;
+        for sheet in &s {
+            for at in [sheet.from, sheet.to] {
+                assert!((at - c1).abs() >= 4.0, "break at {at}");
+            }
+        }
+
+        // No free break fits: A4 holds (297 − 34) × 2 = 526 m; C1 2 m
+        // past T2 blocks T2 and T3 (640) lies beyond the reach. The sheet
+        // runs on to T3 (640 m) and says so; the others are as before.
+        let a4 = page_format("A4").unwrap();
+        let s = sheets(&main_with_away(312.0, 40.0), &o, &a4);
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T4"), ("T4", "T5")]);
+        let w = &s[0].warnings;
+        assert!(
+            w.iter().any(|w| w.starts_with("no free sheet break")
+                && w.contains("C1 stands off the alignment")
+                && w.contains("T2 is within 4.0 m of C1")
+                && w.contains("runs on to T3 (640 m)")),
+            "{w:?}"
+        );
+        assert!(!w.iter().any(|w| w.contains("is longer than")), "{w:?}");
+        // (On A4 the profile is taller than the sheet: those are warned.)
+        let others = |s: &Sheet| {
+            s.warnings
+                .iter()
+                .filter(|w| !w.contains("of height"))
+                .count()
+        };
+        assert!(s[1..].iter().all(|s| others(s) == 0), "{:?}", warnings(&s));
+
+        // A station range keeps its ends even beside C1.
+        let range = Options {
+            stations: Some([100.0, 1100.0]),
+            ..o.clone()
+        };
+        let s = sheets(&main_with_away(642.0, 40.0), &range, &a3);
+        assert_eq!(s[0].structures.0, "0+100.0");
+        assert_eq!(s.last().unwrap().structures.1, "1+100.0");
+        assert!(
+            s.iter()
+                .all(|s| s.structures.1 != "T3" && s.structures.1 != "C1")
+        );
     }
 
     #[test]
