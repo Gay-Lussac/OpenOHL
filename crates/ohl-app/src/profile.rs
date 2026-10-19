@@ -20,8 +20,6 @@ use crate::selection::Selection;
 pub struct ProfileView {
     /// What it shows (none yet: the route with most structures).
     pub(crate) show: Option<Show>,
-    /// The corridor's half width typed (the application keeps it).
-    pub(crate) new_corridor: Option<f64>,
     pub(crate) drawing: Option<(Key, Built)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
@@ -56,7 +54,7 @@ type ViewKey = [u64; 8];
 type WiresKey = (ViewKey, Selection, Option<u64>, bool);
 
 /// What the drawing was made for: the route (none: all), the weather
-/// case, the corridor's half width.
+/// case, the line width (the corridor's half width).
 type Key = (Show, usize, u64);
 
 /// What the profile shows.
@@ -79,6 +77,9 @@ pub(crate) struct Built {
     pub(crate) lines: Vec<(String, [u8; 3], Vec<[f64; 2]>)>,
     /// 3D drawing points in the corridor: drawing, colour, (station, z).
     pub(crate) points: Vec<(String, [u8; 3], [f64; 2])>,
+    /// LiDAR points shown (of the budget loaded) in the corridor:
+    /// (station, z), class; by station.
+    pub(crate) lidar: Vec<([f64; 2], u8)>,
     /// All alignments: where each begins, and its name.
     pub(crate) joints: Vec<(f64, String)>,
 }
@@ -86,8 +87,9 @@ pub(crate) struct Built {
 /// Most survey points drawn (more are thinned evenly).
 const MAX_SURVEY: usize = 200_000;
 
-/// What lies within `depth` of the centreline `centre` (`length` long):
-/// the ground surface's points, the 3D lines and points of the drawings.
+/// What lies within `depth` (the line width) of the centreline `centre`
+/// (`length` long): the ground surface's points, the LiDAR points loaded,
+/// the 3D lines and points of the drawings.
 fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Built {
     let mut out = Built {
         drawing: RouteDrawing {
@@ -101,10 +103,12 @@ fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Buil
             sides: Vec::new(),
             wires: Vec::new(),
             markers: Vec::new(),
+            alignment: Vec::new(),
         },
         survey: Vec::new(),
         lines: Vec::new(),
         points: Vec::new(),
+        lidar: Vec::new(),
         joints: Vec::new(),
     };
     if depth <= 0.0 || centre.len() < 2 {
@@ -140,6 +144,28 @@ fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Buil
             .filter_map(|p| inside(*p))
             .collect();
     }
+    // The LiDAR points loaded (thinned to the point budget), each class
+    // as in the other views.
+    let near_lidar: Vec<&crate::model::LidarPoint> = model
+        .points
+        .iter()
+        .filter(|(q, _)| {
+            let (x, y) = (
+                model.origin[0] + f64::from(q[0]) / 1000.0,
+                model.origin[1] + f64::from(q[1]) / 1000.0,
+            );
+            x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1]
+        })
+        .collect();
+    let stride = near_lidar.len().div_ceil(MAX_SURVEY).max(1);
+    out.lidar = near_lidar
+        .into_iter()
+        .step_by(stride)
+        .filter_map(|(q, c)| {
+            let p = [0, 1, 2].map(|k| model.origin[k] + f64::from(q[k]) / 1000.0);
+            Some((inside(p)?, *c))
+        })
+        .collect();
     for d in &model.backgrounds.drawings {
         let name = &d.info.name;
         for l in &d.drawing.lines {
@@ -211,8 +237,12 @@ fn shifted(mut b: Built, ds: f64) -> Built {
         .survey
         .iter_mut()
         .chain(b.points.iter_mut().map(|x| &mut x.2))
+        .chain(b.lidar.iter_mut().map(|x| &mut x.0))
     {
         p[0] += ds;
+    }
+    for p in &mut b.drawing.alignment {
+        p.station += ds;
     }
     for l in &mut b.lines {
         for p in &mut l.2 {
@@ -249,7 +279,9 @@ fn joined(parts: Vec<(String, Built)>) -> Option<Built> {
         }
         d.wires.extend(e.wires);
         d.markers.extend(e.markers);
+        d.alignment.extend(e.alignment);
         out.survey.extend(b.survey);
+        out.lidar.extend(b.lidar);
         out.lines.extend(b.lines);
         out.points.extend(b.points);
     }
@@ -358,30 +390,27 @@ impl ProfileView {
                      alignment alone",
                 );
             ui.separator();
-            ui.label("corridor ±");
-            let mut depth = model.profile_corridor;
+            ui.label("line width ±");
+            let mut width = drawings.line_width();
             if ui
                 .add(
-                    egui::DragValue::new(&mut depth)
-                        .range(0.0..=500.0)
+                    egui::DragValue::new(&mut width)
+                        .range(crate::drawings::LINE_WIDTHS)
                         .speed(0.5)
                         .max_decimals(1)
                         .suffix(" m"),
                 )
-                .on_hover_text(
-                    "How far left and right of the alignment the ground, the survey points and \
-                     the 3D drawings (DXF) are shown: the ground at both edges (thin, darker), the \
-                     points and lines inside projected on the profile. 0: the centreline only",
-                )
+                .on_hover_text(crate::drawings::LINE_WIDTH_HELP)
                 .changed()
             {
-                self.new_corridor = Some(depth.max(0.0));
+                drawings.set_line_width(width);
             }
             ui.separator();
             // Ticks keep it open.
             crate::menu::options_menu(ui, "Sheets", |ui| drawings.preview_menu(ui));
         });
-        let depth = self.new_corridor.unwrap_or(model.profile_corridor).max(0.0);
+        // The line width: the drawings' (one setting).
+        let depth = drawings.line_width();
         let key = (show.clone(), case, depth.to_bits());
         if self.drawing.as_ref().is_none_or(|(k, _)| *k != key) {
             let solved = model.cases.get(case);
@@ -416,7 +445,9 @@ impl ProfileView {
                     Ok(mut d) => {
                         crate::scene::set_drawn_members(&mut d, &model.line, &model.bodies);
                         let mut b = corridor(model, &d.centreline, d.length, depth);
-                        b.drawing = d;
+                        // What the drawings show along the line: a
+                        // connection beside it only within the width.
+                        b.drawing = d.shown(depth);
                         parts.push((format!("alignment {}", routes[k].id), b));
                     }
                     Err(e) => {
@@ -428,6 +459,7 @@ impl ProfileView {
             let mut built = joined(parts)?;
             // By station: those of the view found by bisection.
             built.survey.sort_by(|a, b| a[0].total_cmp(&b[0]));
+            built.lidar.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
             self.drawing = Some((key, built));
             self.extent = None;
             self.back = None;
@@ -629,6 +661,7 @@ impl ProfileView {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             model.hidden_backgrounds.hash(&mut h);
+            model.hidden_classes.hash(&mut h);
             h.finish()
         };
         if self
@@ -651,6 +684,28 @@ impl ProfileView {
                         q,
                         1.2,
                         egui::Color32::from_rgb(120, 150, 110),
+                    ));
+                }
+            }
+            // The LiDAR points (classes hidden in Terrain › LiDAR classes
+            // shown left out), one per pixel and class colour.
+            let lidar = &built.lidar;
+            let from = lidar.partition_point(|p| p.0[0] < s0);
+            let to = lidar.partition_point(|p| p.0[0] <= s1);
+            let mut dotted = PixelSet::new(rect);
+            for (p, c) in &lidar[from..to.max(from)] {
+                if model.hidden_classes.contains(c) {
+                    continue;
+                }
+                let Some(col) = crate::scene::class_color(&model.scheme, *c) else {
+                    continue;
+                };
+                let q = to_screen(p[0], p[1]);
+                if dotted.insert(q) {
+                    out.push(egui::Shape::circle_filled(
+                        q,
+                        1.0,
+                        egui::Color32::from_rgb(col[0], col[1], col[2]),
                     ));
                 }
             }

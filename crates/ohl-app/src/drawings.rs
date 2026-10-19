@@ -6,6 +6,13 @@
 //! the routes (SVG, DXF, PDF, PNG, CSV, XML) at chosen scales and station
 //! range, written in the background (a progress bar; the views stay
 //! usable). The same files as `ohl drawing`.
+//!
+//! The window's settings (formats, scales, sheets, line width, break
+//! clearance, options, the sheet preview on or off) are kept in the
+//! project, per project line ([`SETTING`]): there when the project is
+//! opened again; a project without them opens with the defaults. The
+//! **line width** is one setting for the drawings and the profile view:
+//! what is shown along the line in both.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,6 +23,7 @@ use ohl_line::jumper::JumperShape;
 use ohl_line::solve::SectionShape;
 use ohl_line::{AlignmentView, Line};
 use ohl_terrain::Terrain;
+use serde::{Deserialize, Serialize};
 
 use crate::model::Model;
 use crate::survey_io::Job;
@@ -50,8 +58,8 @@ pub struct DrawingsWindow {
     pub all_cases: bool,
     /// PNG resolution, dpi.
     pub dpi: f64,
-    /// Line width: half width of the plan, m. A structure within it of
-    /// the alignment is on the line and may end a sheet.
+    /// Line width: half width of the plan, m — what is shown along the
+    /// line in the drawings and in the profile view (one setting).
     pub line_width: f64,
     /// Clearance on paper between a sheet break and every other
     /// structure's drawing, mm.
@@ -77,11 +85,126 @@ impl Default for DrawingsWindow {
             clearance: None,
             all_cases: false,
             dpi: 150.0,
-            line_width: ohl_drawing::Options::default().plan_half_width,
+            line_width: DEFAULT_LINE_WIDTH,
             break_clearance: ohl_drawing::BREAK_CLEARANCE_MM,
             out: None,
             error: None,
         }
+    }
+}
+
+/// The line width by default, m (the drawings' plan half width).
+pub const DEFAULT_LINE_WIDTH: f64 = 40.0;
+
+/// The line widths accepted, m.
+pub const LINE_WIDTHS: std::ops::RangeInclusive<f64> = 1.0..=2000.0;
+
+/// The project setting keeping the drawing settings: one per project
+/// line, `app.drawings.<line>` ([`setting_key`]), a [`DrawingSettings`]
+/// as JSON. Like the project's other settings it is not undone and
+/// follows everyone on a server (a designer changes it).
+pub const SETTING: &str = "app.drawings";
+
+/// The key of project line `line`'s drawing settings.
+pub fn setting_key(line: &str) -> String {
+    format!("{SETTING}.{line}")
+}
+
+/// The drawing settings kept in the project ([`SETTING`]): the export
+/// window's, without the route, the output folder (this computer's) and
+/// the message. Missing values take the defaults.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DrawingSettings {
+    /// Formats ticked (`svg`, `dxf`, `pdf`, `png`, `csv`, `xml`).
+    pub formats: Vec<String>,
+    /// Sheet format, or "" for one continuous drawing.
+    pub page: String,
+    /// Horizontal scale denominator.
+    pub hscale: f64,
+    /// Vertical scale denominator.
+    pub vscale: f64,
+    /// Only a station range.
+    pub range: bool,
+    /// Its first station, m.
+    pub from: f64,
+    /// Its last station, m.
+    pub to: f64,
+    /// The profile alone.
+    pub profile_only: bool,
+    /// Required-clearance line above the ground, m.
+    pub clearance: Option<f64>,
+    /// The other solved weather cases dashed.
+    pub all_cases: bool,
+    /// PNG resolution, dpi.
+    pub dpi: f64,
+    /// Line width (half width), m: the drawings' and the profile's.
+    pub line_width: f64,
+    /// Sheet break clearance on paper, mm.
+    pub break_clearance: f64,
+    /// The sheet preview on.
+    pub preview: bool,
+}
+
+impl Default for DrawingSettings {
+    fn default() -> Self {
+        Self::of(&DrawingsWindow::default(), false)
+    }
+}
+
+impl DrawingSettings {
+    /// The settings of window `w`, the preview on or not.
+    pub fn of(w: &DrawingsWindow, preview: bool) -> Self {
+        Self {
+            formats: w.formats.iter().map(|f| f.name().to_owned()).collect(),
+            page: w.page.clone(),
+            hscale: w.hscale,
+            vscale: w.vscale,
+            range: w.range,
+            from: w.from,
+            to: w.to,
+            profile_only: w.profile_only,
+            clearance: w.clearance,
+            all_cases: w.all_cases,
+            dpi: w.dpi,
+            line_width: w.line_width,
+            break_clearance: w.break_clearance,
+            preview,
+        }
+    }
+
+    /// Puts them into window `w` (its route, folder and message kept);
+    /// a value out of range (a file edited by hand) takes the default.
+    pub fn apply(&self, w: &mut DrawingsWindow) {
+        let d = DrawingsWindow::default();
+        let ok = |v: f64, range: std::ops::RangeInclusive<f64>, default: f64| {
+            if range.contains(&v) { v } else { default }
+        };
+        w.formats = Format::ALL
+            .into_iter()
+            .filter(|f| self.formats.iter().any(|n| n == f.name()))
+            .collect();
+        w.page = if PAGES.contains(&self.page.as_str()) {
+            self.page.clone()
+        } else {
+            d.page.clone()
+        };
+        w.hscale = ok(self.hscale, 10.0..=100_000.0, d.hscale);
+        w.vscale = ok(self.vscale, 10.0..=100_000.0, d.vscale);
+        w.range = self.range;
+        w.from = if self.from.is_finite() {
+            self.from
+        } else {
+            d.from
+        };
+        w.to = if self.to.is_finite() { self.to } else { d.to };
+        w.profile_only = self.profile_only;
+        w.clearance = self.clearance.filter(|c| c.is_finite() && *c >= 0.0);
+        w.all_cases = self.all_cases;
+        w.dpi = ok(self.dpi, 10.0..=2400.0, d.dpi);
+        w.line_width = ok(self.line_width, LINE_WIDTHS, d.line_width);
+        w.break_clearance =
+            ohl_drawing::check_break_clearance(self.break_clearance).unwrap_or(d.break_clearance);
     }
 }
 
@@ -100,6 +223,10 @@ pub struct Drawings {
     pub preview_on: bool,
     /// The preview made, for what (the settings and the case).
     preview: Option<(PreviewKey, Result<Preview, String>)>,
+    /// The settings as last read from or written to the project: the
+    /// setting's key and the JSON ([`Drawings::save`] writes them again
+    /// when they differ).
+    saved: Option<(String, String)>,
 }
 
 /// What a preview was made for: the settings that shape the sheets and
@@ -472,15 +599,11 @@ impl DrawingsWindow {
                             ui.label("±");
                             ui.add(
                                 egui::DragValue::new(&mut self.line_width)
-                                    .range(1.0..=2000.0)
+                                    .range(LINE_WIDTHS)
                                     .suffix(" m")
                                     .speed(1.0),
                             )
-                            .on_hover_text(
-                                "Half width of the plan. A structure within it of the \
-                                 alignment is on the line and may end a sheet; one outside it \
-                                 never does",
-                            );
+                            .on_hover_text(LINE_WIDTH_HELP);
                         });
                         ui.end_row();
 
@@ -591,6 +714,89 @@ impl DrawingsWindow {
 }
 
 impl Drawings {
+    /// The drawing settings kept in `model`'s project for the project
+    /// line worked on (the defaults when there are none).
+    pub fn loaded(model: &Model) -> Self {
+        let mut d = Self::default();
+        d.load(model);
+        d
+    }
+
+    /// Reads the drawing settings of the project line worked on from the
+    /// project (after opening it, switching lines, or another user
+    /// changing them); a project without them gets the defaults.
+    pub fn load(&mut self, model: &Model) {
+        let Some(session) = model.session() else {
+            return;
+        };
+        let key = setting_key(session.current_line());
+        let stored: DrawingSettings = session
+            .setting(&key)
+            .ok()
+            .flatten()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        stored.apply(&mut self.last);
+        if let Some(w) = &mut self.window {
+            stored.apply(w);
+        }
+        self.preview_on = stored.preview;
+        self.preview = None;
+        self.saved = serde_json::to_string(&self.stored())
+            .ok()
+            .map(|json| (key, json));
+    }
+
+    /// The settings as they are kept in the project.
+    pub fn stored(&self) -> DrawingSettings {
+        DrawingSettings::of(self.settings(), self.preview_on)
+    }
+
+    /// Writes the drawing settings into the project when they changed
+    /// (each frame; not while a value is being dragged or typed). A
+    /// project this user cannot change keeps them for the session.
+    pub fn save(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let Some(line) = model.session().map(|s| s.current_line().to_owned()) else {
+            return;
+        };
+        let key = setting_key(&line);
+        if self.saved.as_ref().is_some_and(|(k, _)| *k != key) {
+            // Another project line worked on: its own settings.
+            self.load(model);
+            return;
+        }
+        let Ok(json) = serde_json::to_string(&self.stored()) else {
+            return;
+        };
+        if self.saved.as_ref().is_some_and(|(_, j)| *j == json)
+            || ctx.input(|i| i.pointer.any_down())
+            || ctx.memory(|m| m.focused().is_some())
+        {
+            return;
+        }
+        let op = ohl_server::Op::SetSetting {
+            key: key.clone(),
+            value: Some(json.clone()),
+        };
+        // (Read-only for this user: kept for the session.)
+        let _ = model.project_op("drawing settings", op);
+        self.saved = Some((key, json));
+    }
+
+    /// The line width, m: the drawings' and the profile view's.
+    pub fn line_width(&self) -> f64 {
+        self.settings().line_width
+    }
+
+    /// Sets the line width (from the profile view too).
+    pub fn set_line_width(&mut self, width: f64) {
+        let w = width.clamp(*LINE_WIDTHS.start(), *LINE_WIDTHS.end());
+        if let Some(win) = &mut self.window {
+            win.line_width = w;
+        }
+        self.last.line_width = w;
+    }
+
     /// The window (if open) and the job's window, each frame.
     pub fn show(&mut self, ctx: &egui::Context, model: &Model, case: usize) {
         if let Some(w) = &mut self.window {
@@ -690,6 +896,13 @@ impl Drawings {
         }
     }
 }
+
+/// What the line width is (the export window and the profile view).
+pub const LINE_WIDTH_HELP: &str = "How far left and right of the alignment the line is shown, \
+     in the drawings (the plan's half width) and in the profile view (one setting, kept with the \
+     project line): the ground at both edges, the survey and LiDAR points and the 3D drawings \
+     within it projected on the profile; structures beside the line (connections) only within \
+     it, wires cut at it. Where sheets end does not depend on it";
 
 /// The sheet preview's tick.
 pub const PREVIEW_TICK: &str = "Show the export's sheets over the profile and the plan";

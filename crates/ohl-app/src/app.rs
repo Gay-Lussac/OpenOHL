@@ -405,7 +405,8 @@ impl Ready {
             survey_import: None,
             survey_export: None,
             survey_job: None,
-            drawings: Default::default(),
+            // The drawing settings kept in the project.
+            drawings: crate::drawings::Drawings::loaded(&model),
             reopen: false,
             plugin_request: None,
             console: Default::default(),
@@ -1262,27 +1263,21 @@ impl TabViewer for Viewer<'_> {
                 &r.visible,
                 r.drawings.preview(&r.model, r.case),
             ),
-            Tab::Profile => {
-                let used = r
-                    .profile
-                    .ui(
-                        ui,
-                        &r.model,
-                        r.case,
-                        &mut r.selection,
-                        &snaps,
-                        &mut r.drawings,
-                    )
-                    .map(|target| crate::selection::Use {
-                        target,
-                        at: None,
-                        on: None,
-                    });
-                if let Some(depth) = r.profile.new_corridor.take() {
-                    r.model.profile_corridor = depth;
-                }
-                used
-            }
+            Tab::Profile => r
+                .profile
+                .ui(
+                    ui,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    &snaps,
+                    &mut r.drawings,
+                )
+                .map(|target| crate::selection::Use {
+                    target,
+                    at: None,
+                    on: None,
+                }),
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
                 let action = crate::properties::ui(
@@ -4697,6 +4692,10 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     r.drawings.show(ctx, &r.model, r.case);
+    if std::mem::take(&mut r.model.drawings_setting_changed) {
+        r.drawings.load(&r.model);
+    }
+    r.drawings.save(&mut r.model, ctx);
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
     bimetallic_window(ctx, r);

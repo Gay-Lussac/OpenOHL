@@ -220,6 +220,14 @@ impl Model {
                     self.check_surface = value.clone();
                     self.check_ground = None;
                 }
+                // The drawing settings of a project line, changed by
+                // someone else (read again: those of the line worked on).
+                if let Op::SetSetting { key, .. } = &op
+                    && key.starts_with(crate::drawings::SETTING)
+                    && me.as_deref() != Some(user.as_str())
+                {
+                    self.drawings_setting_changed = true;
+                }
                 if me.as_deref() != Some(user.as_str()) {
                     others.push(format!("{user}: {}", op.describe()));
                 }
