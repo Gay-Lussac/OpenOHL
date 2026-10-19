@@ -13,11 +13,12 @@
 //! - thickness: ice cross-section
 //!   \\( A_i = \frac{\pi}{4}\left[(d + 2t)^2 - d^2\right] \\), ice weight
 //!   \\( w_i = \rho_i g A_i \\), iced diameter \\( D = d + 2t \\);
-//! - load: \\( w_i \\) as given; with a density the ice area
+//! - load: \\( w_i \\) as given; the ice area
 //!   \\( A_i = w_i / (\rho_i g) \\) gives the iced diameter
 //!   \\( D = \sqrt{d^2 + 4 A_i / \pi} \\) (more wind area for light rime
-//!   than for dense glaze of the same weight); without one, wind acts on the
-//!   bare diameter;
+//!   than for dense glaze of the same weight), with the case's density or,
+//!   without one, glaze ice (913 kg/m³, the densest ice in use: the
+//!   smallest iced diameter the load can have, never the bare one);
 //! - vertical load \\( w_v = w_c + w_i \\);
 //! - wind load \\( w_h = q\,D \\) on the projected iced diameter;
 //! - resultant \\( w = \sqrt{w_v^2 + w_h^2} \\), acting in a plane swung by
@@ -60,8 +61,8 @@ pub struct WeatherCase {
     /// Or: ice load per length of wire (instead of a thickness).
     #[serde(default)]
     pub ice_load: Option<ForcePerLength>,
-    /// Ice density: with a thickness, default glaze ice (913 kg/m³); with a
-    /// load, gives the iced diameter for the wind (none: bare diameter).
+    /// Ice density (default glaze ice, 913 kg/m³): with a thickness, the
+    /// ice weight; with a load, the iced diameter for the wind.
     #[serde(default)]
     pub ice_density: Option<Density>,
     /// Wind pressure on the projected (iced) diameter (0 for no wind).
@@ -198,21 +199,35 @@ impl WeatherCase {
         Ok(())
     }
 
+    /// The ice density used: the case's, else glaze ice
+    /// ([`GLAZE_ICE_DENSITY`]).
+    pub fn ice_density_or_glaze(&self) -> Density {
+        self.ice_density.unwrap_or_else(default_ice_density)
+    }
+
     /// The radial ice on a wire of bare diameter `diameter`: its thickness
     /// and density, for icing other objects on it (marker balls…). None
-    /// without ice, and with an ice load but no density (a weight only,
-    /// no thickness).
+    /// without ice. An ice load without a density is glaze ice
+    /// ([`GLAZE_ICE_DENSITY`]).
     pub fn radial_ice(&self, diameter: Length) -> Option<(Length, Density)> {
         let d = diameter.si();
-        match (self.ice_load, self.ice_density) {
-            (Some(_), None) => None,
-            (Some(_), Some(rho)) => {
+        let rho = self.ice_density_or_glaze();
+        match self.ice_load {
+            Some(_) => {
                 let t = (self.ice(d).1 - d) / 2.0;
                 (t > 0.0).then(|| (Length::from_si(t), rho))
             }
-            (None, rho) => (self.ice_thickness.si() > 0.0)
-                .then(|| (self.ice_thickness, rho.unwrap_or_else(default_ice_density))),
+            None => (self.ice_thickness.si() > 0.0).then_some((self.ice_thickness, rho)),
         }
+    }
+
+    /// The iced diameter of a wire of bare diameter `diameter` in this
+    /// case: \\( d + 2t \\) for a thickness, \\( \sqrt{d^2 + 4 A_i/\pi} \\)
+    /// for a load (the case's density, else glaze ice), `diameter` without
+    /// ice. The wind acts on it, and clearances are measured to its
+    /// surface.
+    pub fn iced_diameter(&self, diameter: Length) -> Length {
+        Length::from_si(self.ice(diameter.si()).1)
     }
 
     /// Ice weight per length and iced diameter, m, on a bare diameter `d`
@@ -220,10 +235,11 @@ impl WeatherCase {
     fn ice(&self, d: f64) -> (f64, f64) {
         match self.ice_load {
             Some(w) => {
-                let iced = self.ice_density.map_or(d, |rho| {
-                    let area = w.si() / (rho.si() * ohl_core::units::STANDARD_GRAVITY);
-                    (d * d + 4.0 * area / std::f64::consts::PI).sqrt()
-                });
+                // Without a density, glaze ice: the densest ice in use,
+                // so the smallest iced diameter this load can have.
+                let rho = self.ice_density_or_glaze();
+                let area = w.si() / (rho.si() * ohl_core::units::STANDARD_GRAVITY);
+                let iced = (d * d + 4.0 * area / std::f64::consts::PI).sqrt();
                 (w.si(), iced)
             }
             None => {
@@ -250,12 +266,9 @@ impl WeatherCase {
         let mut parts = vec![format!("{:.1} °C", self.temperature.celsius())];
         match self.ice_load {
             Some(w) => parts.push(format!(
-                "ice {:.2} N/m{}",
+                "ice {:.2} N/m ({:.0} kg/m³)",
                 w.newtons_per_meter(),
-                self.ice_density.map_or(String::new(), |d| format!(
-                    " ({:.0} kg/m³)",
-                    d.kilograms_per_cubic_meter()
-                ))
+                self.ice_density_or_glaze().kilograms_per_cubic_meter()
             )),
             None if self.ice_thickness.si() > 0.0 => parts.push(format!(
                 "ice {:.1} mm ({:.0} kg/m³)",
@@ -444,11 +457,20 @@ mod tests {
             20.0,
             1e-12,
         );
+        // Without a density: glaze ice of that weight.
         let weight_only = WeatherCase {
             ice_density: None,
             ..by_load
         };
-        assert!(weight_only.radial_ice(Length::from_si(d)).is_none());
+        let (t, rho) = weight_only.radial_ice(Length::from_si(d)).unwrap();
+        close(rho.kilograms_per_cubic_meter(), GLAZE_ICE_DENSITY, 1e-12);
+        let t = t.si();
+        let area = std::f64::consts::FRAC_PI_4 * ((d + 2.0 * t).powi(2) - d * d);
+        close(
+            area * GLAZE_ICE_DENSITY * ohl_core::units::STANDARD_GRAVITY,
+            20.0,
+            1e-12,
+        );
         let by_thickness = WeatherCase {
             ice_thickness: Length::from_millimeters(10.0),
             ..still
@@ -560,14 +582,21 @@ mod tests {
             ..as_load.clone()
         };
         assert!(rime.wire_load(d, w).horizontal > reference.horizontal);
-        // Without a density: the weight only, wind on the bare diameter.
+        // Without a density: glaze ice (913 kg/m³), so the same iced
+        // diameter as the 12.7 mm glaze, never the bare one.
         let flat = WeatherCase {
             ice_density: None,
             ..as_load
         };
         let l = flat.wire_load(d, w);
         close(l.vertical.si(), reference.vertical.si(), 1e-12);
-        close(l.horizontal.si(), 200.0 * 0.02814, 1e-12);
+        close(l.horizontal.si(), reference.horizontal.si(), 1e-12);
+        close(
+            flat.iced_diameter(d).millimeters(),
+            28.14 + 2.0 * 12.7,
+            1e-12,
+        );
+        assert!(l.horizontal.si() > 200.0 * 0.02814);
         // Thickness and load together: refused.
         let both = WeatherCase {
             ice_thickness: Length::from_millimeters(5.0),

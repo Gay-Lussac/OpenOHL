@@ -37,7 +37,7 @@ wind_pressure = "200 Pa"
 | `temperature` | yes | Cable temperature. |
 | `ice_thickness` | no | Radial ice thickness. |
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
-| `ice_density` | no | With a thickness: the ice weight (default glaze ice, 913 kg/m³). With a load: the iced diameter for the wind; without it, wind acts on the bare diameter. |
+| `ice_density` | no | Default glaze ice, 913 kg/m³. With a thickness: the ice weight. With a load: the iced diameter, for the wind and the clearances. |
 | `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span. |
 | `air_density_factor` | no | Q, Pa/(m/s)²: the wind pressure of a wind velocity V is Q·V² (default 0.613, ½ρ of air at 15 °C at sea level). Only relates pressure and velocity (the Weather cases table shows and takes both); the loads use `wind_pressure`. |
 | `ambient_temperature` | no | Air temperature, e.g. `"35 °C"`, for ratings; the wires use `temperature`. |
@@ -50,11 +50,13 @@ Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).
 On a bare wire of diameter *d* and weight *w*:
 
 - **thickness *t***: ice area A = π/4 [(d + 2t)² − d²], ice weight ρ g A, iced diameter D = d + 2t;
-- **load *w*ᵢ**: ice weight as given; with a density ρ the ice area is A = wᵢ / (ρ g) and the iced diameter D = √(d² + 4A/π) — light rime of the same weight as dense glaze presents more area to the wind; without a density, D = d.
+- **load *w*ᵢ**: ice weight as given; with the density ρ the ice area is A = wᵢ / (ρ g) and the iced diameter D = √(d² + 4A/π) — light rime of the same weight as dense glaze presents more area to the wind. Without a density the ice is glaze, ρ = 913 kg/m³ (the same default as for a thickness).
 
-The vertical load is w + ice weight, the wind load q·D, and the wire hangs in the plane of their resultant.
+The vertical load is w + ice weight, the wind load q·D, and the wire hangs in the plane of their resultant. Clearances are measured to the iced surface, D/2 from the wire's axis ([Clearance](terrain.md#clearance)).
 
-**Simplification:** an ice load given without a density takes the wind on the bare diameter: the iced wire's larger wind area is missing (unsafe). Exact: give the ice density, or the thickness. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
+**Conservative** (compared with the bare diameter): an ice load given without a density is glaze ice of that weight, 913 kg/m³ (the program's default ice density, `GLAZE_ICE_DENSITY`). Its iced diameter is never the bare one, so the wind on the ice and the clearance lost to it are counted. Exact: the density of the ice the load stands for.
+
+**Simplification:** glaze is the densest ice, so of all ice of that weight it has the smallest iced diameter: for lighter ice (rime, wet snow) given only by its load the wind area and the iced radius are still low (unsafe for such ice). Exact: give the ice density, or the thickness. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
 
 ## Choosing cases
 

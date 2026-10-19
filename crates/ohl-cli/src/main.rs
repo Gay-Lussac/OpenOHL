@@ -238,8 +238,8 @@ struct LineArgs {
     /// Or: ice load, N/m (instead of a thickness).
     #[arg(long)]
     ice_load: Option<f64>,
-    /// Ice density, kg/m³ (with a thickness: default 913; with a load: the
-    /// iced diameter for the wind, none = bare diameter).
+    /// Ice density, kg/m³ (default 913, glaze ice): with a thickness, the
+    /// ice weight; with a load, the iced diameter for the wind.
     #[arg(long)]
     ice_density: Option<f64>,
     /// Weather case file (.ohlwc; for a project, also the name of one of
