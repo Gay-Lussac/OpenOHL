@@ -366,6 +366,65 @@ fn wind_on_the_structures() {
     );
 }
 
+/// A structure standing on a height extension: its wind bands rise by
+/// the extension's `dz` with it (one band 0–20 m on a +3 m extension acts
+/// at 3 + 10 = 13 m above the ground), the force unchanged (pressure ×
+/// drag × area, the same at every height); the other places of the type,
+/// as written, keep the band's mid-height (10 m).
+#[test]
+fn wind_bands_rise_with_the_extension() {
+    let (mut line, _) = typed(ohl_structures::Capacity::default());
+    let loaded = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut types = ohl_structures::StructureLibrary::default();
+    for t in loaded.iter() {
+        let mut t = t.clone();
+        if t.id == "type-02" {
+            t.wind = Some(
+                toml::from_str::<ohl_structures::StructureType>(
+                    "id = \"x\"\nname = \"x\"\nkind = \"other\"\n[[wind.band]]\nfrom = \"0 m\"\nto = \"20 m\"\narea = \"10 m²\"\ndrag = 3.0\n",
+                )
+                .unwrap()
+                .wind
+                .unwrap(),
+            );
+            t.extensions = vec![ohl_structures::Extension::plain("+3", 3.0)];
+        }
+        types
+            .insert(&PathBuf::from(format!("{}.ohls", t.id)), t)
+            .unwrap();
+    }
+    let k = line
+        .structures
+        .iter()
+        .position(|s| s.structure_type.as_deref() == Some("type-02"))
+        .unwrap();
+    line.structures[k].extension = Some("+3".into());
+    let raised = line.structures[k].id.clone();
+    let (_, library, weather, cases) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let mut loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    add_structure_wind(&mut loads, &line, &types, &weather);
+    let mut seen = 0;
+    for r in &loads {
+        let w = weather.iter().find(|w| w.name == r.case.weather).unwrap();
+        for l in r.loads.iter().filter(|l| l.point.is_empty()) {
+            let s = line.structure(&l.structure).unwrap();
+            if s.structure_type.as_deref() != Some("type-02") {
+                continue;
+            }
+            let f = w.wind_pressure.si() * 3.0 * 10.0;
+            assert!((l.local[0].abs() - f).abs() < 1e-9);
+            let mid = if l.structure == raised { 13.0 } else { 10.0 };
+            assert!((l.at[2] - (s.position[2] + mid)).abs() < 1e-9, "{l:?}");
+            if l.structure == raised {
+                assert_eq!(l.label, "wind on the structure (3–23 m)");
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen > 0);
+}
+
 /// The example line with its own structure folder: type-02 (T2, T4) has
 /// an invented lattice model, type-05 (T6) an invented steel pole; both
 /// are checked in every load case and the CSV carries their usage.

@@ -608,8 +608,14 @@ fn add(
 /// band — the load case's wind pressure × drag × area, across the line
 /// (the wind side of the weather case), at the band's mid-height on the
 /// structure's centre line — without a point, labelled "wind on the
-/// structure". Factored by the load case's transverse factor. Height
-/// extensions are not added to the bands.
+/// structure". Factored by the load case's transverse factor.
+///
+/// A structure standing on a height extension stands its `dz` higher:
+/// the bands (heights above the ground of the structure as written) rise
+/// by `dz` with it — the rule of the structure application's results.
+/// The force does not change (the pressure is the weather case's, the
+/// same at every height); the extension's own piece below the feet has
+/// no band (its members take the member wind of the `fe` check).
 pub fn add_structure_wind(
     results: &mut [CaseLoads],
     line: &Line,
@@ -625,17 +631,20 @@ pub fn add_structure_wind(
             continue;
         }
         for s in &line.structures {
-            let Some(bands) = s
-                .structure_type
-                .as_deref()
-                .and_then(|t| types.get(t))
-                .and_then(|t| t.wind.as_ref())
-            else {
+            let Some(t) = s.structure_type.as_deref().and_then(|t| types.get(t)) else {
                 continue;
             };
+            let Some(bands) = t.wind.as_ref() else {
+                continue;
+            };
+            let dz = s
+                .extension
+                .as_deref()
+                .and_then(|e| t.extension(e))
+                .map_or(0.0, |e| e.dz.si());
             let (right, _) = axes(s.orientation_deg);
             for b in &bands.bands {
-                let (from, to) = (b.from.si(), b.to.si());
+                let (from, to) = (b.from.si() + dz, b.to.si() + dz);
                 // Wind from the right blows towards the left (−x).
                 let f = q * b.drag * b.area.si() * w.wind_from.to_left();
                 let local = [-f, 0.0, 0.0];
