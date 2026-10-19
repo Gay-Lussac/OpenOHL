@@ -533,7 +533,10 @@ impl View3d {
             }
             if !primary_down {
                 let d = self.handles.drag.take().expect("dragging");
-                if d.at != d.from {
+                // A press and release without moving is a click: it
+                // selects, it never moves (or snaps) the point.
+                let click = ui.input(|i| i.pointer.could_any_button_be_click());
+                if d.at != d.from && !click {
                     self.handles.done = Some(crate::handles::Done::Moved {
                         structure: d.structure,
                         handle: d.handle,
