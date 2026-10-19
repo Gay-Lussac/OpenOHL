@@ -197,7 +197,10 @@ impl Panel {
             Panel::Supports => "Which joints are supported, and how",
             Panel::MemberSections => "Each member's section, kind and buckling factor",
             Panel::Groups => "A section and kind for every member of a group",
-            Panel::SectionsMaterials => "The [[section]] and [[material]] tables of the file",
+            Panel::SectionsMaterials => {
+                "The [[section]] and [[material]] tables of the file, and the section library's \
+                 sections"
+            }
             Panel::PoleDesign => {
                 "What the pole check needs: material, wall (or solid) or section, strength"
             }
@@ -290,6 +293,12 @@ impl Panel {
                     Sheet::Materials,
                     "Materials",
                     "The [[material]] tables of the file",
+                ),
+                (
+                    Sheet::Library,
+                    "Section library",
+                    "The section library's sections (the project line's): new, edit, \
+                     duplicate, delete, their properties computed as typed",
                 ),
             ],
             Panel::PoleDesign => &[(Sheet::PoleDesign, "Pole design", "")],

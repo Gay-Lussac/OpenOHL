@@ -209,6 +209,7 @@ impl StructureApp {
                 Sheet::Design => self.design_sheet(ui, &t),
                 Sheet::Sections => self.items_sheet(ui, "section"),
                 Sheet::Materials => self.items_sheet(ui, "material"),
+                Sheet::Library => self.section_library_sheet(ui),
                 Sheet::Pole => self.pole_sheet(ui, &t),
                 Sheet::PoleDesign => self.pole_design_sheet(ui, &t),
                 Sheet::Extensions => self.extensions_sheet(ui, &t),
@@ -1318,7 +1319,8 @@ impl StructureApp {
         let Some(f) = &mut self.file else {
             return;
         };
-        let sections: Vec<String> = edit::item_ids(f.doc(), "section");
+        // The section library's first (looked up first), then the file's.
+        let sections = crate::section_editor::section_choices(&self.loads.sections, f.doc());
         // The analysis settings ([analysis]) that go with the members.
         let analysis = t.analysis.clone().unwrap_or_default();
         ui.horizontal(|ui| {
@@ -1363,7 +1365,7 @@ impl StructureApp {
                 ("member", ""),
                 (
                     "section",
-                    "A [[section]] of the file (Sections); none: a stick",
+                    "A section of the section library, or a [[section]] of the file; none: a stick",
                 ),
                 (
                     "kind",
@@ -1464,7 +1466,9 @@ impl StructureApp {
         } else if sections.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No [[section]] yet: add sections and their materials (Sections, Materials).",
+                    "No section yet: type them in the section library (Sections & materials › \
+                     Section library), or add [[section]] tables and their materials (Sections, \
+                     Materials).",
                 )
                 .weak(),
             );

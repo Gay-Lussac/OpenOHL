@@ -13,7 +13,8 @@
 //! ([`body`], [`generators`], [`mod@rebuild`]), mirror symmetry
 //! ([`symmetry`]) and member groups ([`mod@groups`]); the pole's outline
 //! and design ([`mod@pole`]) and the extensions' bodies and legs
-//! ([`extension_edits`]).
+//! ([`extension_edits`]); the sections of the section library typed in
+//! the application ([`section_library`]).
 //!
 //! Axes are the structure's own: x right of the line, y ahead, z up,
 //! 0;0 at the centre.
@@ -29,6 +30,7 @@ pub mod load_cases;
 pub mod missing;
 pub mod pole;
 pub mod rebuild;
+pub mod section_library;
 pub mod symmetry;
 
 pub use body::{

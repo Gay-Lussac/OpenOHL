@@ -100,14 +100,13 @@ impl StructureApp {
 
     /// Undo, Redo and Save, right of the menus.
     fn quick_buttons(&mut self, ui: &mut egui::Ui) {
-        let undo_tip = self
-            .file
+        let undo_name = self.undo_name();
+        let undo_tip = undo_name
             .as_ref()
-            .and_then(|f| f.undo_name())
             .map_or("Nothing to undo".to_owned(), |w| {
                 format!("Undo {w} ({})", shortcut("Ctrl+Z"))
             });
-        let can_undo = self.file.as_ref().is_some_and(|f| f.undo_name().is_some());
+        let can_undo = undo_name.is_some();
         if ui
             .add_enabled(can_undo, egui::Button::new("Undo"))
             .on_hover_text(&undo_tip)
@@ -116,7 +115,7 @@ impl StructureApp {
         {
             self.undo();
         }
-        let can_redo = self.file.as_ref().is_some_and(|f| f.redo_name().is_some());
+        let can_redo = self.redo_name().is_some();
         if ui
             .add_enabled(can_redo, egui::Button::new("Redo"))
             .on_hover_text(format!(
@@ -196,12 +195,7 @@ impl StructureApp {
     }
 
     fn edit_menu(&mut self, ui: &mut egui::Ui) {
-        let (u, r) = self.file.as_ref().map_or((None, None), |f| {
-            (
-                f.undo_name().map(str::to_owned),
-                f.redo_name().map(str::to_owned),
-            )
-        });
+        let (u, r) = (self.undo_name(), self.redo_name());
         let label =
             |w: &str, n: &Option<String>| n.as_ref().map_or(w.to_owned(), |n| format!("{w} {n}"));
         if ui

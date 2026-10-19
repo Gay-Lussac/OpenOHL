@@ -58,6 +58,8 @@ pub enum Sheet {
     Sections,
     /// Materials.
     Materials,
+    /// The section library's sections, typed here.
+    Library,
     /// The pole's outline.
     Pole,
     /// The pole's design.
@@ -145,6 +147,9 @@ pub struct StructureApp {
     pub new_structure: Option<crate::start::NewStructure>,
     /// The plugins (Plugins menu).
     pub plugins: crate::plugins_ui::PluginsState,
+    /// The section library's sections typed (Design › Sections &
+    /// materials › Section library), their undo and redo.
+    pub section_editor: crate::section_editor::SectionEditor,
 }
 
 impl StructureApp {
@@ -189,6 +194,7 @@ impl StructureApp {
             recent: Default::default(),
             new_structure: None,
             plugins: Default::default(),
+            section_editor: Default::default(),
         }
     }
 
@@ -369,8 +375,17 @@ impl StructureApp {
         }
     }
 
-    /// Undo.
+    /// Undo: the last edit, of the structure file or of the section
+    /// library (in the order they were made).
     pub fn undo(&mut self) {
+        let steps = self.file.as_ref().map(|f| f.undo_steps());
+        if self.section_editor.undo_first(steps) {
+            self.message = Some(match self.undo_library() {
+                Ok(m) => (m, false),
+                Err(e) => (e, true),
+            });
+            return;
+        }
         if let Some(f) = &mut self.file {
             self.message = Some(match f.undo() {
                 Some(w) => (format!("undone: {w}"), false),
@@ -380,8 +395,47 @@ impl StructureApp {
         }
     }
 
-    /// Redo.
+    /// What undo would take back.
+    pub fn undo_name(&self) -> Option<String> {
+        let steps = self.file.as_ref().map(|f| f.undo_steps());
+        if self.section_editor.undo_first(steps) {
+            return self.section_editor.undo_name();
+        }
+        self.file
+            .as_ref()
+            .and_then(|f| f.undo_name())
+            .map(str::to_owned)
+    }
+
+    /// What redo would make again.
+    pub fn redo_name(&mut self) -> Option<String> {
+        let (steps, redo) = self
+            .file
+            .as_ref()
+            .map_or((None, 0), |f| (Some(f.undo_steps()), f.redo_steps()));
+        if self.section_editor.redo_first(steps, redo) {
+            return self.section_editor.redo_name();
+        }
+        self.file
+            .as_ref()
+            .and_then(|f| f.redo_name())
+            .map(str::to_owned)
+    }
+
+    /// Redo: what was undone last, of the structure file or the section
+    /// library.
     pub fn redo(&mut self) {
+        let (steps, redo) = self
+            .file
+            .as_ref()
+            .map_or((None, 0), |f| (Some(f.undo_steps()), f.redo_steps()));
+        if self.section_editor.redo_first(steps, redo) {
+            self.message = Some(match self.redo_library() {
+                Ok(m) => (m, false),
+                Err(e) => (e, true),
+            });
+            return;
+        }
         if let Some(f) = &mut self.file {
             self.message = Some(match f.redo() {
                 Some(w) => (format!("made again: {w}"), false),

@@ -97,6 +97,17 @@ impl StructureFile {
         self.error.as_deref()
     }
 
+    /// How many edits can be undone (the place of an edit made elsewhere,
+    /// e.g. in the section library, in the same history).
+    pub fn undo_steps(&self) -> usize {
+        self.undo.len()
+    }
+
+    /// How many undone edits can be redone.
+    pub fn redo_steps(&self) -> usize {
+        self.redo.len()
+    }
+
     /// Changes not saved.
     pub fn dirty(&self) -> bool {
         self.text() != self.saved

@@ -47,6 +47,7 @@ mod menus;
 mod plugins_ui;
 mod pole_panel;
 mod results_tab;
+mod section_editor;
 mod start;
 mod tables;
 mod view;
@@ -82,6 +83,8 @@ mod placed_tests;
 mod pole_extension_ui_tests;
 #[cfg(test)]
 mod results_ui_tests;
+#[cfg(test)]
+mod section_editor_tests;
 #[cfg(test)]
 mod self_sufficient_tests;
 #[cfg(test)]
