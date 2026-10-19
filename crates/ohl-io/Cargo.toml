@@ -16,6 +16,7 @@ ohl-crs.workspace = true
 ohl-line.workspace = true
 ohl-loads.workspace = true
 ohl-plugins.workspace = true
+ohl-sections.workspace = true
 ohl-session.workspace = true
 ohl-terrain.workspace = true
 ohl-weather.workspace = true

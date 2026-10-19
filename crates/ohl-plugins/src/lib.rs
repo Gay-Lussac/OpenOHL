@@ -87,6 +87,17 @@ pub use code_bindings::ohl::plugin::code_types::{
     ClearanceMeasure, ClearancePreset, CodeInfo, Generated,
 };
 
+mod code_wind_bindings {
+    wasmtime::component::bindgen!({
+        world: "code-wind-plugin",
+        path: "wit",
+    });
+}
+
+/// Export name of the optional `structure-wind` interface of design-code
+/// plugins.
+pub const STRUCTURE_WIND_EXPORT: &str = "ohl:plugin/structure-wind@0.1.0";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -910,11 +921,32 @@ impl WasmHost {
     /// Loads a design-code plugin (`code-plugin` world, extension point
     /// [`DESIGN_CODE`] in its manifest), with the limits its manifest asks
     /// for.
+    /// A plugin that also exports `structure-wind` (the
+    /// `code-wind-plugin` world) is loaded with it; one built without it
+    /// loads as before and gives no wind factors.
     pub fn load_code(&self, dir: &Path) -> Result<WasmCodePlugin, PluginError> {
         let mut p = self.prepare(dir, Some((DESIGN_CODE, "a design-code plugin")))?;
-        let instance =
-            code_bindings::CodePlugin::instantiate(&mut p.store, &p.component, &self.linker)
-                .map_err(|e| classify(e, &p.manifest.plugin.name, "instantiation", p.limits))?;
+        let fail =
+            |e, p: &Prepared| classify(e, &p.manifest.plugin.name, "instantiation", p.limits);
+        let instance = if p
+            .component
+            .get_export_index(None, STRUCTURE_WIND_EXPORT)
+            .is_some()
+        {
+            CodeInstance::Wind(
+                code_wind_bindings::CodeWindPlugin::instantiate(
+                    &mut p.store,
+                    &p.component,
+                    &self.linker,
+                )
+                .map_err(|e| fail(e, &p))?,
+            )
+        } else {
+            CodeInstance::Plain(
+                code_bindings::CodePlugin::instantiate(&mut p.store, &p.component, &self.linker)
+                    .map_err(|e| fail(e, &p))?,
+            )
+        };
         Ok(WasmCodePlugin {
             manifest: p.manifest,
             store: p.store,
@@ -924,11 +956,18 @@ impl WasmHost {
     }
 }
 
+/// A design-code plugin's instance: with the `structure-wind` export or
+/// without.
+enum CodeInstance {
+    Plain(code_bindings::CodePlugin),
+    Wind(code_wind_bindings::CodeWindPlugin),
+}
+
 /// A loaded design-code plugin.
 pub struct WasmCodePlugin {
     manifest: Manifest,
     store: Store<HostState>,
-    instance: code_bindings::CodePlugin,
+    instance: CodeInstance,
     limits: Limits,
 }
 
@@ -943,9 +982,11 @@ impl WasmCodePlugin {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
         let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
-        self.instance
-            .call_describe(&mut self.store)
-            .map_err(|e| classify(e, &name, "describe", limits))
+        match &self.instance {
+            CodeInstance::Plain(i) => i.call_describe(&mut self.store),
+            CodeInstance::Wind(i) => i.call_describe(&mut self.store).map(code_info),
+        }
+        .map_err(|e| classify(e, &name, "describe", limits))
     }
 
     /// Calls `generate` with a parameter file's text (inner `Err`: the
@@ -954,9 +995,70 @@ impl WasmCodePlugin {
         self.store.set_epoch_deadline(self.limits.deadline_ticks());
         let name = self.manifest.plugin.name.clone();
         let limits = self.limits;
-        self.instance
-            .call_generate(&mut self.store, parameters)
-            .map_err(|e| classify(e, &name, "generate", limits))
+        match &self.instance {
+            CodeInstance::Plain(i) => i.call_generate(&mut self.store, parameters),
+            CodeInstance::Wind(i) => i
+                .call_generate(&mut self.store, parameters)
+                .map(|r| r.map(generated)),
+        }
+        .map_err(|e| classify(e, &name, "generate", limits))
+    }
+
+    /// Whether the plugin exports `structure-wind` (built for it).
+    pub fn has_structure_wind(&self) -> bool {
+        matches!(self.instance, CodeInstance::Wind(_))
+    }
+
+    /// Calls `structure-wind` with a parameter file's text: the code's
+    /// wind factors for structures as a section library's text with a
+    /// `[wind]` table, or none (also for a plugin built without the
+    /// export). Inner `Err`: the plugin's own error, about the file.
+    pub fn structure_wind(
+        &mut self,
+        parameters: &str,
+    ) -> Result<Result<Option<String>, String>, PluginError> {
+        let CodeInstance::Wind(i) = &self.instance else {
+            return Ok(Ok(None));
+        };
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        i.ohl_plugin_structure_wind()
+            .call_structure_wind(&mut self.store, parameters)
+            .map_err(|e| classify(e, &name, "structure-wind", limits))
+    }
+}
+
+/// The types of the `code-wind-plugin` bindings are the same WIT types as
+/// those of `code-plugin`, generated twice: converted field by field.
+fn code_info(c: code_wind_bindings::ohl::plugin::code_types::CodeInfo) -> CodeInfo {
+    CodeInfo {
+        name: c.name,
+        version: c.version,
+        description: c.description,
+        parameters_template: c.parameters_template,
+    }
+}
+
+fn generated(g: code_wind_bindings::ohl::plugin::code_types::Generated) -> Generated {
+    use code_wind_bindings::ohl::plugin::code_types::ClearanceMeasure as M;
+    Generated {
+        weather_cases: g.weather_cases,
+        load_cases: g.load_cases,
+        notes: g.notes,
+        clearance_presets: g
+            .clearance_presets
+            .into_iter()
+            .map(|p| ClearancePreset {
+                name: p.name,
+                measure: match p.measure {
+                    M::Vertical => ClearanceMeasure::Vertical,
+                    M::Radial => ClearanceMeasure::Radial,
+                },
+                rules: p.rules,
+                weather_cases: p.weather_cases,
+            })
+            .collect(),
     }
 }
 

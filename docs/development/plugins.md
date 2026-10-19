@@ -189,6 +189,44 @@ standard**: it implements the code's method, every number comes from the
 parameter file, and the template's numbers are invented placeholders,
 marked as such.
 
+### Wind factors for structures
+
+A design-code plugin may also implement the optional `structure-wind`
+interface: the `code-wind-plugin` world (`include code-plugin; export
+structure-wind;`), extension point `design-code` as before.
+
+- `structure-wind(parameters)` reads the same parameter file and returns
+  **none** (the code gives no factors) or a section library's text
+  (`.ohlsec`, TOML) holding **only** a `[wind]` table: `source` (free
+  text, shown with the results), `drag` (a factor per profile shape:
+  `equal_angle`, `unequal_angle`, `channel`, `i_section`,
+  `rectangular_hollow`, `circular_hollow`, `round_bar`,
+  `polygonal_hollow`, `general`), `face_drag` (`solidity`, `factor`: a
+  lattice face's drag by its solidity ratio) and `shielding` (`solidity`,
+  optional `spacing`, `factor`: the factor on a face behind another by the
+  front face's solidity ratio and the spacing ratio), each optional — see
+  [Section library](../user-guide/section-library.md#wind-factors-for-structures-wind).
+  An error string is shown to the user, as for `generate`.
+- **OpenOHL measures, the plugin gives the numbers**: the faces of the
+  lattice, their solidity ratios, which face is in front of which member
+  and the spacing ratio are computed in OpenOHL ([Wind on lattice
+  structures](../theory/structure-wind.md)); the plugin returns its code's
+  tables, built from the parameter file (no values of a standard typed
+  into the plugin).
+- The host (`WasmHost::load_code`) looks for the export
+  (`ohl:plugin/structure-wind@0.1.0`): a plugin built without it loads
+  and runs as before and gives none (`WasmCodePlugin::structure_wind`
+  returns `None`). It checks the text as the section library reads it, a
+  `[wind]` table and nothing else (`ohl_io::codes::check_structure_wind`),
+  and `ohl code generate`, Criteria › Design code and OHL-Structure's Load
+  cases from a design code write it as `<plugin>-wind.ohlsec` into the
+  section library.
+- **Backwards compatible**: the interface version stays 0.3 (`sdk =
+  "0.3"`): nothing a plugin of 0.3 implements changed, the export is only
+  looked for. `plugins/codes/*` implement it as a stub returning none
+  (`ohl_code_common::no_structure_wind!()`), so they say so; a plugin that
+  has its code's factors replaces the stub with its own function.
+
 `plugins/codes/*` are such plugins (EN 50341 with a national annex overlay,
 IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
 `plugins/codes/common` (reading parameter files, writing the case files,

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OpenOHL design-code plugin (`code-plugin` world): CSA C22.3 No. 1,
+//! OpenOHL design-code plugin (`code-wind-plugin` world): CSA C22.3 No. 1,
 //! overhead systems (deterministic loading).
 //!
 //! Method: the line's loading zone gives the combined ice, wind and
@@ -16,7 +16,7 @@
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
-    world: "code-plugin",
+    world: "code-wind-plugin",
     path: "../../../crates/ohl-plugins/wit",
 });
 
@@ -158,3 +158,7 @@ ohl_code_common::code_plugin!(
     "CSA C22.3 No. 1: loading zone cases with the construction grade's overload factors",
     cases
 );
+
+// No wind factors for structures from this plugin yet: OpenOHL keeps its
+// generic drag factor and no shielding (the `structure-wind` stub).
+ohl_code_common::no_structure_wind!();

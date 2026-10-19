@@ -77,6 +77,25 @@ everything afterwards (see [Vertical and radial
 clearances](desktop-app.md#vertical-and-radial-clearances)). The plugins
 in `plugins/codes` give none.
 
+## Wind factors for structures
+
+A design-code plugin may also return the code's **wind factors for
+structures** (its optional `structure-wind`, from the same parameter
+file): the drag factor per profile shape, a lattice face's drag factor by
+its solidity ratio, and the shielding factor of a face behind another by
+the solidity ratio of the face in front (and the spacing ratio) — as a
+section library's `[wind]` table ([Section
+library](section-library.md#wind-factors-for-structures-wind)). OpenOHL
+checks it and writes it as `<plugin>-wind.ohlsec` into the **section
+library** (the project line's, else the `Sections` folder next to the
+line; `ohl code generate`: `--sections DIR`, default `Sections` beside the
+weather case file); the finite-element check's member wind then uses it
+([Wind on lattice structures](../theory/structure-wind.md)). OpenOHL finds
+the faces, their solidity and which face shelters which member; the
+numbers are the code's, from your parameter file. The plugins in
+`plugins/codes` give **none** yet (their notes and the window say so):
+the member wind keeps its one generic drag factor and no shielding.
+
 ## From the command line
 
 ```bash
@@ -90,7 +109,10 @@ ohl line line.ohl.json --weather my-line.ohlwc --load-cases my-line.ohllc --load
 
 `generate` checks both files as OpenOHL reads them (and that each load
 case names one of the weather cases) before writing them, writes the
-clearance presets next to the weather case file, and prints the notes.
+clearance presets next to the weather case file and the wind factors for
+structures, if the code gives them, into the section library (`--sections
+DIR`, default `Sections` beside the weather case file), and prints the
+notes (and that the code gives no wind factors, when it gives none).
 
 ## In the desktop application
 
@@ -107,8 +129,12 @@ project's libraries — kept in the project file like any library file —
 or next to a line file; a file of that name is replaced. The model then
 uses them: the weather cases are solved, and Structure loads uses the
 load cases. The code's clearance presets go into the project's rule and
-weather case files (for the clearance windows' Load preset…). The code's
-notes are shown in the window.
+weather case files (for the clearance windows' Load preset…), its wind
+factors for structures into the project line's section library. The
+code's notes are shown in the window. In OHL-Structure, **Load cases ›
+Load cases from a design code…** writes the wind factors into the section
+library the structure reads when the files are written (the tick), and
+says when the code gives none.
 
 ## What is not generated yet
 
@@ -117,6 +143,8 @@ security and failure-containment loads (broken wire, unbalanced ice) —
 use the broken-span solve and your own load cases; construction and
 maintenance loads; wind on structures by the code's own method (the
 structure loads apply each weather case's wind pressure to the structure
-types' height bands, see [Load cases](loads.md)); the NESC constant k (the notes give
+types' height bands, see [Load cases](loads.md); the member wind of a
+level 3 structure takes the code's drag and shielding factors only when
+the plugin gives them, which these plugins do not yet); the NESC constant k (the notes give
 its value to add by hand); per-wire ice loads that depend on the conductor
 diameter (one reference diameter per parameter file).

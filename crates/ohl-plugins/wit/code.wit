@@ -73,6 +73,33 @@ world code-plugin {
     export generate: func(parameters: string) -> result<generated, string>;
 }
 
+/// Wind factors for structures from a design code (optional for a
+/// design-code plugin: one built without it gives none, and OpenOHL keeps
+/// its generic drag factor and no shielding). Added in interface version
+/// 0.3 without changing anything else: plugins built before load as they
+/// are.
+interface structure-wind {
+    /// The code's wind factors for structures from the user's parameter
+    /// file (TOML, as `generate` reads it), as a section library file
+    /// (`.ohlsec`, TOML) holding only a `[wind]` table: `source`, `drag`
+    /// (a factor per profile shape: `equal_angle`, `circular_hollow`, …),
+    /// `face_drag` (a lattice face's drag factor by its solidity ratio)
+    /// and `shielding` (the factor on a face behind another by the
+    /// solidity ratio of the face in front, and the spacing ratio), each
+    /// optional. OpenOHL finds the faces, their solidity and which face is
+    /// behind which; the plugin gives only the numbers of its code, from
+    /// the parameter file. None: the code gives none. The error says what
+    /// is wrong with the parameter file.
+    structure-wind: func(parameters: string) -> result<option<string>, string>;
+}
+
+/// A design-code plugin that also gives wind factors for structures
+/// (extension point `design-code`).
+world code-wind-plugin {
+    include code-plugin;
+    export structure-wind;
+}
+
 /// A check run by a plugin (extension point `check`): OpenOHL measures
 /// the line (the conductors, their pairs, stations along them: the
 /// geometry), the plugin holds the values and the rules and says what is

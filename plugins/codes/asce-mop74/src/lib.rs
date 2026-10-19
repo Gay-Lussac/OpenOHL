@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OpenOHL design-code plugin (`code-plugin` world): ASCE Manual of
+//! OpenOHL design-code plugin (`code-wind-plugin` world): ASCE Manual of
 //! Practice 74, guidelines for electrical transmission line structural
 //! loading (reliability-based).
 //!
@@ -15,7 +15,7 @@
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
-    world: "code-plugin",
+    world: "code-wind-plugin",
     path: "../../../crates/ohl-plugins/wit",
 });
 
@@ -210,3 +210,7 @@ ohl_code_common::code_plugin!(
     "ASCE MOP 74: extreme wind and ice with concurrent wind on wires, with load factors",
     cases
 );
+
+// No wind factors for structures from this plugin yet: OpenOHL keeps its
+// generic drag factor and no shielding (the `structure-wind` stub).
+ohl_code_common::no_structure_wind!();

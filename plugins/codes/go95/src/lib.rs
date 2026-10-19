@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OpenOHL design-code plugin (`code-plugin` world): California Public
+//! OpenOHL design-code plugin (`code-wind-plugin` world): California Public
 //! Utilities Commission General Order 95, overhead line construction.
 //!
 //! Method: Rule 43 loading districts by elevation (ice, wind pressure on
@@ -15,7 +15,7 @@
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
-    world: "code-plugin",
+    world: "code-wind-plugin",
     path: "../../../crates/ohl-plugins/wit",
 });
 
@@ -156,3 +156,7 @@ ohl_code_common::code_plugin!(
     "CPUC GO 95: Rule 43 loading district by elevation, Rule 44 safety factors",
     cases
 );
+
+// No wind factors for structures from this plugin yet: OpenOHL keeps its
+// generic drag factor and no shielding (the `structure-wind` stub).
+ohl_code_common::no_structure_wind!();

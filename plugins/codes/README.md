@@ -4,6 +4,11 @@ One WebAssembly plugin per design code (`code-plugin` world, extension
 point `design-code`). Each reads **your parameter file** (TOML) and
 generates weather cases (`.ohlwc`) and load cases (`.ohllc`) with notes
 (and may give presets of the clearance windows; these plugins give none).
+They are built for the `code-wind-plugin` world: their optional
+`structure-wind` (wind factors for structures: drag per shape, a lattice
+face's drag and shielding by solidity) is a stub returning **none**
+(`no_structure_wind!()` in `common/`), so OpenOHL keeps its generic drag
+factor and no shielding and says so.
 
 | Plugin | Code | Units of the parameter file |
 | --- | --- | --- |
