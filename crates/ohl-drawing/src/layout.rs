@@ -7,7 +7,7 @@
 //! project coordinates, profile by station and exaggerated height).
 
 use crate::model::{Anchor, Circle, Clip, Color, Drawing, Image, Item, Layer, Path, Pen, Text};
-use crate::{Options, Page, RouteDrawing, format_station, nice_step};
+use crate::{ElevationPlace, Options, Page, RouteDrawing, format_station, nice_step};
 
 /// Where things go on a sheet (all mm, except stations and heights).
 pub(crate) struct Frame {
@@ -66,7 +66,7 @@ pub(crate) fn height_range(d: &RouteDrawing, s0: f64, s1: f64) -> (f64, f64, f64
     for m in &d.structures {
         see(m.station, m.base);
         see(m.station, m.top);
-        for p in m.sticks.iter().chain(&m.members).flatten() {
+        for p in m.sticks.iter().chain(&m.members).chain(&m.pole).flatten() {
             see(p[0], p[2]);
         }
     }
@@ -161,8 +161,15 @@ fn marker(centre: [f64; 2], radius: f64, label: &str) -> Item {
     })
 }
 
-/// Grids, panels and content of one frame (clipped to its panels).
-fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step: f64) {
+/// Grids, panels and content of one frame (clipped to its panels; the
+/// structures' elevations, when drawn, not clipped); what to warn about.
+fn draw(
+    items: &mut Vec<Item>,
+    d: &RouteDrawing,
+    o: &Options,
+    f: &Frame,
+    z_step: f64,
+) -> Vec<String> {
     let (s0, s1) = (f.s0, f.s1);
     let grid = pen("#ddd", 0.2);
     // Station grid in both panels, labels under the profile.
@@ -280,8 +287,8 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
         }
         for m in &d.structures {
             let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
-            // The symbol at level 1; members draw the others.
-            if m.members.is_empty() {
+            // The symbol at level 1; members and poles draw the others.
+            if !m.has_body() {
                 plan.push(rect(
                     Layer::Structures,
                     cx - 1.0,
@@ -314,6 +321,14 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
                     stick.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
                     pen("#555", 0.25),
                     None,
+                ));
+            }
+            // A pole's outline at the ground line and at its top.
+            for ring in pole_ends(&m.pole) {
+                plan.push(closed(
+                    Layer::Members,
+                    ring.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
+                    pen("#555", 0.25),
                 ));
             }
         }
@@ -356,9 +371,9 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
     }
     for m in &d.structures {
         let cx = f.x(m.station);
-        // The symbol at level 1; members draw the others (their names over
-        // the highest member).
-        if m.members.is_empty() {
+        // The symbol at level 1; members and poles draw the others (their
+        // names over the highest member or the pole's top).
+        if !m.has_body() {
             prof.push(path(
                 Layer::Structures,
                 vec![[cx, f.y(m.base)], [cx, f.y(m.top)]],
@@ -369,6 +384,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
         let top = m
             .members
             .iter()
+            .chain(&m.pole)
             .flatten()
             .map(|p| p[2])
             .fold(m.top, f64::max);
@@ -417,6 +433,17 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
                 Some(m.id.clone()),
             ));
         }
+        // A pole: its silhouette by height.
+        let outline = silhouette(&m.pole, 0);
+        if !outline.is_empty() {
+            prof.push(Item::Path(Path {
+                layer: Layer::Members,
+                points: outline.iter().map(|p| [f.x(p[0]), f.y(p[1])]).collect(),
+                closed: true,
+                pen: pen("#555", 0.3),
+                title: Some(m.id.clone()),
+            }));
+        }
     }
     for w in &d.wires {
         prof.push(path(
@@ -434,6 +461,176 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
         items: prof,
     }));
     items.extend(names);
+    if f.plan && o.elevations.place != ElevationPlace::Off {
+        elevations(items, d, o, f)
+    } else {
+        Vec::new()
+    }
+}
+
+/// A closed path.
+fn closed(layer: Layer, points: Vec<[f64; 2]>, pen: Pen) -> Item {
+    Item::Path(Path {
+        layer,
+        points,
+        closed: true,
+        pen,
+        title: None,
+    })
+}
+
+/// A pole's outline at the ground line and at its top (the lowest and the
+/// highest of its outlines), without the repeated closing point.
+fn pole_ends(pole: &[Vec<[f64; 3]>]) -> Vec<Vec<[f64; 3]>> {
+    let open = |r: &Vec<[f64; 3]>| r[..r.len().saturating_sub(1)].to_vec();
+    match pole {
+        [] => Vec::new(),
+        [one] => vec![open(one)],
+        [first, .., last] => vec![open(first), open(last)],
+    }
+}
+
+/// A pole's silhouette by height seen across axis `axis` of its outlines
+/// (0: along the route, the profile; 1: across it, an elevation): at each
+/// height the outline's least and greatest coordinate, up one side and
+/// down the other, as (coordinate, z); empty without a pole.
+fn silhouette(pole: &[Vec<[f64; 3]>], axis: usize) -> Vec<[f64; 2]> {
+    let spans: Vec<(f64, f64, f64)> = pole
+        .iter()
+        .filter(|r| !r.is_empty())
+        .map(|r| {
+            let (lo, hi) = r
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+                    (a.min(p[axis]), b.max(p[axis]))
+                });
+            (lo, hi, r[0][2])
+        })
+        .collect();
+    if spans.len() < 2 {
+        return Vec::new();
+    }
+    spans
+        .iter()
+        .map(|s| [s.0, s.2])
+        .chain(spans.iter().rev().map(|s| [s.1, s.2]))
+        .collect()
+}
+
+/// The structures' elevations on the plan ([`crate::Elevations`]), on
+/// their own layer, not clipped: each structure in the frame's station
+/// range seen along the line — its members, its pole's silhouette, else
+/// its stick drawing — at the horizontal scale, its base at the
+/// structure's station `offset_mm` above or below the line, its height at
+/// `rotation_deg` to the line pointing away from it (below: the same
+/// turned half a turn), a thin dashed leader from where it stands. What
+/// overlaps another elevation or reaches into the profile is kept and
+/// warned about.
+fn elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
+    let e = o.elevations;
+    let side = if e.place == ElevationPlace::Below {
+        -1.0
+    } else {
+        1.0
+    };
+    let (sin, cos) = e.rotation_deg.to_radians().sin_cos();
+    // On paper (y down): the height away from the line, the width across.
+    let up = [side * cos, -side * sin];
+    let across = [-up[1], up[0]];
+    let k = f.h; // mm per m, true shape
+    let end = f.content_end.min(f.s1);
+    let mut boxes: Vec<(&str, [f64; 4])> = Vec::new();
+    for m in d
+        .structures
+        .iter()
+        .filter(|m| m.station >= f.s0 - 1e-6 && m.station <= end + 1e-6)
+    {
+        let base = [f.x(m.station), f.plan_y(0.0) - side * e.offset_mm];
+        let at = |u: f64, z: f64| {
+            let (u, z) = (u * k, (z - m.base) * k);
+            [
+                base[0] + u * across[0] + z * up[0],
+                base[1] + u * across[1] + z * up[1],
+            ]
+        };
+        // Seen along the line: across it (the offset) and up.
+        let drawn = if m.members.is_empty() {
+            &m.sticks
+        } else {
+            &m.members
+        };
+        let mut lines: Vec<(Vec<[f64; 2]>, bool)> = drawn
+            .iter()
+            .map(|l| (l.iter().map(|p| at(p[1] - m.offset, p[2])).collect(), false))
+            .collect();
+        let outline = silhouette(&m.pole, 1);
+        if !outline.is_empty() {
+            lines.push((
+                outline.iter().map(|p| at(p[0] - m.offset, p[1])).collect(),
+                true,
+            ));
+        }
+        if lines.is_empty() {
+            // No drawing at all: a mast line to the top.
+            lines.push((vec![at(0.0, m.base), at(0.0, m.top)], false));
+        }
+        let mut bb = [base[0], base[1], base[0], base[1]];
+        for p in lines.iter().flat_map(|(l, _)| l) {
+            bb = [
+                bb[0].min(p[0]),
+                bb[1].min(p[1]),
+                bb[2].max(p[0]),
+                bb[3].max(p[1]),
+            ];
+        }
+        for (points, closed) in lines {
+            items.push(Item::Path(Path {
+                layer: Layer::Elevations,
+                points,
+                closed,
+                pen: pen("#555", 0.2),
+                title: Some(format!("{} elevation", m.id)),
+            }));
+        }
+        let stand = [f.x(m.station), f.plan_y(m.offset)];
+        if (stand[0] - base[0]).hypot(stand[1] - base[1]) > 0.5 {
+            items.push(path(
+                Layer::Elevations,
+                vec![stand, base],
+                pen("#888", 0.13).dashed("1 0.7"),
+                None,
+            ));
+        }
+        boxes.push((&m.id, bb));
+    }
+    let mut warnings = Vec::new();
+    let overlap =
+        |a: [f64; 4], b: [f64; 4]| a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    for (i, (a, ba)) in boxes.iter().enumerate() {
+        for (b, bb) in &boxes[i + 1..] {
+            if overlap(*ba, *bb) {
+                warnings.push(format!(
+                    "the elevations of {a} and {b} overlap (drawn anyway): a larger scale or \
+                     the other side may part them"
+                ));
+            }
+        }
+    }
+    let profile = [
+        f.left,
+        f.prof_top,
+        f.left + f.width(),
+        f.prof_top + f.prof_h,
+    ];
+    for (a, ba) in &boxes {
+        if overlap(*ba, profile) {
+            warnings.push(format!(
+                "the elevation of {a} reaches into the profile (drawn anyway): draw the \
+                 elevations above the line, or nearer to it"
+            ));
+        }
+    }
+    warnings
 }
 
 /// The scales as written on the drawings.
@@ -480,8 +677,8 @@ fn whole_range(d: &RouteDrawing, o: &Options) -> (f64, f64) {
 }
 
 /// The route (or its station range) as one continuous drawing, with its
-/// frame.
-pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame) {
+/// frame and what to warn about.
+pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<String>) {
     let d = &d.shown(o.plan_half_width);
     let (s0, s1) = whole_range(d, o);
     let (z0, z1, z_step) = height_range(d, s0, s1);
@@ -537,8 +734,8 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame) {
         Anchor::End,
         scales_text(o),
     ));
-    draw(items, d, o, &f, z_step);
-    (drawing, f)
+    let warnings = draw(items, d, o, &f, z_step);
+    (drawing, f, warnings)
 }
 
 /// One sheet of a paged drawing.
@@ -905,7 +1102,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 page.height - SHEET_MARGIN,
                 pen("#000", 0.5),
             ));
-            draw(items, d, o, &f, z_step);
+            let drawn_warnings = draw(items, d, o, &f, z_step);
             // Match lines at the sheet's ends.
             let top = if o.plan { f.plan_top } else { f.prof_top };
             for x in [f.x(s0), f.x(s1)] {
@@ -990,7 +1187,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 to: s1,
                 structures: sl.structures,
                 drawing,
-                warnings: sl.warnings,
+                warnings: sl.warnings.into_iter().chain(drawn_warnings).collect(),
             }
         })
         .collect()
@@ -1004,7 +1201,7 @@ pub fn profile_model(d: &RouteDrawing, o: &Options) -> Drawing {
         plan: false,
         ..o.clone()
     };
-    let (sheet, f) = continuous(d, &o);
+    let (sheet, f, _) = continuous(d, &o);
     let k = o.horizontal_scale / 1000.0; // m per mm
     let exaggeration = o.horizontal_scale / o.vertical_scale;
     sheet.to_model(k, [f.s0 - f.left * k, f.prof_top * k + exaggeration * f.z1])
@@ -1115,9 +1312,9 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
     {
         let [x, y] = m.xy;
         let r = k;
-        // The symbol at level 1; the members' footprint and crossarms at
-        // levels 2 and 3.
-        if m.members_xy.is_empty() {
+        // The symbol at level 1; the members' footprint and crossarms, a
+        // pole's outline at the ground line and the top, at levels 2 and 3.
+        if m.members_xy.is_empty() && m.pole_xy.is_empty() {
             items.push(Item::Path(Path {
                 layer: Layer::Structures,
                 points: vec![
@@ -1133,6 +1330,18 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
         }
         for l in &m.members_xy {
             items.push(path(Layer::Members, l.clone(), pen("#555", 0.25), None));
+        }
+        let ends: Vec<&Vec<[f64; 2]>> = match m.pole_xy.as_slice() {
+            [] => Vec::new(),
+            [one] => vec![one],
+            [first, .., last] => vec![first, last],
+        };
+        for r in ends {
+            items.push(closed(
+                Layer::Members,
+                r[..r.len().saturating_sub(1)].to_vec(),
+                pen("#555", 0.25),
+            ));
         }
         items.push(text(
             Layer::Structures,

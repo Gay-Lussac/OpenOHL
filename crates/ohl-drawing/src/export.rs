@@ -110,7 +110,7 @@ pub struct Written {
     /// Sheets per drawing format (1 for a continuous drawing).
     pub sheets: usize,
     /// Problems found (a span longer than the sheet, a profile taller than
-    /// it, a lower PNG resolution).
+    /// it, elevations overlapping, a lower PNG resolution).
     pub warnings: Vec<String>,
 }
 
@@ -155,7 +155,11 @@ pub fn write_route(
         format!("{route}-profile")
     };
     let drawings: Vec<crate::model::Drawing> = match &e.page {
-        None => vec![crate::drawing(d, o)],
+        None => {
+            let (drawing, _, warnings) = crate::layout::continuous(d, o);
+            written.warnings.extend(warnings);
+            vec![drawing]
+        }
         Some(page) => {
             let sheets = crate::sheets(d, o, page);
             for s in &sheets {

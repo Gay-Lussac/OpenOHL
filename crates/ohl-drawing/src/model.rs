@@ -70,9 +70,13 @@ pub enum Layer {
     Clearance,
     /// Structures: symbols, stick drawings, names, stations.
     Structures,
-    /// Structure members (types at levels 2 and 3): the silhouette in the
-    /// profile, the footprint and crossarms in the plan.
+    /// Structure members and pole outlines (types at levels 2 and 3): the
+    /// silhouette in the profile, the footprint and crossarms (a pole's
+    /// outline at the ground line and the top) in the plan.
     Members,
+    /// Structures' elevations on the plan and their leaders
+    /// ([`crate::Elevations`]).
+    Elevations,
     /// Wires and jumpers.
     Wires,
     /// Violation markers.
@@ -83,7 +87,7 @@ pub enum Layer {
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -96,6 +100,7 @@ impl Layer {
         Self::Clearance,
         Self::Structures,
         Self::Members,
+        Self::Elevations,
         Self::Wires,
         Self::Markers,
         Self::Match,
@@ -116,6 +121,7 @@ impl Layer {
             Self::Clearance => "OHL_CLEARANCE",
             Self::Structures => "OHL_STRUCTURES",
             Self::Members => "OHL_MEMBERS",
+            Self::Elevations => "OHL_ELEVATIONS",
             Self::Wires => "OHL_WIRES",
             Self::Markers => "OHL_MARKERS",
             Self::Match => "OHL_MATCH",
@@ -128,7 +134,7 @@ impl Layer {
             Self::Frame | Self::Title | Self::Logo | Self::Labels | Self::Structures => {
                 Color::BLACK
             }
-            Self::Members => Color(0x55, 0x55, 0x55),
+            Self::Members | Self::Elevations => Color(0x55, 0x55, 0x55),
             Self::Grid => Color(0xdd, 0xdd, 0xdd),
             Self::Panels => Color(0x88, 0x88, 0x88),
             Self::Centreline => Color(0x99, 0x99, 0x99),
@@ -440,8 +446,9 @@ fn svg_item(out: &mut String, item: &Item, clips: &mut usize) {
     match item {
         Item::Path(p) => {
             let title = svg_title(p.title.as_ref());
-            // Members on their own layer: a class to select them by.
-            let class = if p.layer == Layer::Members {
+            // Members and elevations on their own layers: a class to
+            // select them by.
+            let class = if matches!(p.layer, Layer::Members | Layer::Elevations) {
                 format!(r#" class="{}""#, p.layer.name())
             } else {
                 String::new()
