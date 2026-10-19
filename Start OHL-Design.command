@@ -11,10 +11,10 @@ echo "Building and starting OHL-Design…"
 # Both applications from the same code: Edit… on a structure starts the
 # structure application (ohl-structure), which must be next to ohl-design.
 cargo build --release -p ohl-app -p ohl-structure-app && cargo run --release -p ohl-app --bin ohl-design
-status=$?
+rc=$?
 
-if [ $status -ne 0 ]; then
+if [ $rc -ne 0 ]; then
     echo
-    echo "OHL-Design stopped with an error (exit code $status) — see the messages above."
+    echo "OHL-Design stopped with an error (exit code $rc) — see the messages above."
     read -k 1 "?Press any key to close this window."
 fi
