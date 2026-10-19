@@ -33,7 +33,9 @@ pub enum CodeCommand {
         out: Option<PathBuf>,
     },
     /// Generate weather cases (.ohlwc) and load cases (.ohllc) from a
-    /// parameter file; prints the plugin's notes.
+    /// parameter file, and the plugin's wind factors for structures when
+    /// it gives them (`<plugin>-wind.ohlsec` in the section library);
+    /// prints the plugin's notes.
     Generate {
         /// Design-code plugin directory.
         #[arg(long)]
@@ -47,6 +49,11 @@ pub enum CodeCommand {
         /// Load case file to write.
         #[arg(long = "load-cases")]
         load_cases: PathBuf,
+        /// Section library folder the wind factors for structures go
+        /// into, if the plugin gives them (default: `Sections` beside the
+        /// weather case file).
+        #[arg(long)]
+        sections: Option<PathBuf>,
     },
 }
 
@@ -60,7 +67,8 @@ pub fn run(command: CodeCommand) -> Result<(), String> {
             params,
             weather,
             load_cases,
-        } => generate(&plugin, &params, &weather, &load_cases),
+            sections,
+        } => generate(&plugin, &params, &weather, &load_cases, sections.as_deref()),
     }
 }
 
@@ -106,7 +114,13 @@ fn template(plugin: &Path, out: Option<&Path>) -> Result<(), String> {
     Ok(())
 }
 
-fn generate(plugin: &Path, params: &Path, weather: &Path, load_cases: &Path) -> Result<(), String> {
+fn generate(
+    plugin: &Path,
+    params: &Path,
+    weather: &Path,
+    load_cases: &Path,
+    sections: Option<&Path>,
+) -> Result<(), String> {
     let text = std::fs::read_to_string(params).map_err(|e| format!("{}: {e}", params.display()))?;
     let g = ohl_io::codes::generate(&host()?, plugin, &text)?;
     g.write(weather, load_cases)?;
@@ -126,6 +140,12 @@ fn generate(plugin: &Path, params: &Path, weather: &Path, load_cases: &Path) -> 
             rules.display(),
             cases.display()
         );
+    }
+    // Wind factors for structures into the section library.
+    let sections = sections.map_or_else(|| dir.join("Sections"), Path::to_path_buf);
+    match g.write_structure_wind(&sections)? {
+        Some(p) => println!("  wind factors for structures → {}", p.display()),
+        None => println!("  {}", g.structure_wind_note()),
     }
     for n in &g.notes {
         println!("  note: {n}");

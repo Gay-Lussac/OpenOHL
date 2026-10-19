@@ -183,6 +183,15 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
         _ => weather_dir.clone(),
     };
     let presets = g.write_presets(&rules_dir, &weather_dir)?;
+    // Wind factors for structures, when the code gives them: into the
+    // project line's section library (its working copies, kept in the
+    // project with the other files), else the Sections folder next to the
+    // line.
+    let sections_dir = match (&r.model.library_dir, &r.model.editing) {
+        (Some(work), Ok(_)) => work.join(crate::model::library_folder("sections")),
+        _ => r.model.sections_folder(),
+    };
+    let wind = g.write_structure_wind(&sections_dir)?;
     r.model.sources.load_cases = Some(loads);
     r.library_saved(
         LibraryKind::WeatherCases,
@@ -214,6 +223,14 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
             "; clearance presets {} (Vertical / Radial clearances… › Load preset…)",
             names.join(", ")
         ));
+    }
+    match wind {
+        Some(p) => done.push_str(&format!(
+            "; wind factors for structures in the section library ({})",
+            p.file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+        )),
+        None => done.push_str(&format!("; {}", g.structure_wind_note())),
     }
     Ok(done)
 }

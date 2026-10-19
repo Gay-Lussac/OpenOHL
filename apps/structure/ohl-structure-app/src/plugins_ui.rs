@@ -113,6 +113,9 @@ pub struct CodeResult {
     pub names: Vec<String>,
     /// What the plugin generated, assumed or left out.
     pub notes: Vec<String>,
+    /// Wind factors for structures (`structure-wind`: a section library's
+    /// text with only a `[wind]` table), when the plugin gives them.
+    pub structure_wind: Option<String>,
 }
 
 /// Runs design-code plugin `dir`'s `generate` on a parameter file's text
@@ -139,12 +142,26 @@ pub fn run_code(dir: &Path, parameters: &str) -> Result<CodeResult, String> {
     if names.is_empty() {
         return Err(format!("{plugin}: no load case generated"));
     }
+    // Optional (a plugin built without it gives none): checked as the
+    // section library reads it, a [wind] table and nothing else.
+    let structure_wind = p
+        .structure_wind(parameters)
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{plugin}: the parameter file: {e}"))?;
+    if let Some(text) = &structure_wind {
+        let bad = |e: String| format!("{plugin}: its wind factors for structures: {e}");
+        let lib = ohl_sections::SectionLibrary::parse(text).map_err(bad)?;
+        if lib.wind.is_none() || !lib.sections.is_empty() || !lib.materials.is_empty() {
+            return Err(bad("a [wind] table and nothing else expected".into()));
+        }
+    }
     Ok(CodeResult {
         plugin,
         weather: g.weather_cases,
         load_cases: g.load_cases,
         names,
         notes: g.notes,
+        structure_wind,
     })
 }
 
@@ -530,6 +547,35 @@ impl StructureApp {
                 weather.display(),
                 cases.display()
             ));
+        }
+        match &r.structure_wind {
+            // Into the section library (the project line's, when started
+            // from the line application: kept in the project).
+            Some(text) if save_files => {
+                let folders = self.folders().ok_or("save the structure first")?;
+                let dir = folders.import_into(crate::libraries::LibKind::Sections)?;
+                std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                let path = dir.join(format!(
+                    "{}-wind.{}",
+                    r.plugin,
+                    ohl_sections::SECTION_FILE_EXTENSION
+                ));
+                std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+                m.push_str(&format!(
+                    "; wind factors for structures written to the section library ({})",
+                    path.display()
+                ));
+                self.reload_libraries();
+            }
+            Some(_) => m.push_str(&format!(
+                "; {} gives wind factors for structures: tick writing the files to put them \
+                 into the section library",
+                r.plugin
+            )),
+            None => m.push_str(&format!(
+                "; {} gives no wind factors for structures (generic drag, no shielding)",
+                r.plugin
+            )),
         }
         Ok(m)
     }

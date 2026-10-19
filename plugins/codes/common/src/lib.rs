@@ -72,6 +72,25 @@ macro_rules! code_plugin {
     };
 }
 
+/// Implements the optional `structure-wind` interface (the
+/// `code-wind-plugin` world, after its `wit_bindgen::generate!`) giving
+/// **none**: the plugin does not supply wind factors for structures yet
+/// (drag per shape, a lattice face's drag and shielding by solidity), so
+/// OpenOHL keeps its generic drag factor and no shielding, and says so.
+/// A plugin that implements its code's factors replaces this with its own
+/// `structure_wind`, returning a section library's text with a `[wind]`
+/// table built from the parameter file (no values typed into the plugin).
+#[macro_export]
+macro_rules! no_structure_wind {
+    () => {
+        impl exports::ohl::plugin::structure_wind::Guest for Code {
+            fn structure_wind(_parameters: String) -> Result<Option<String>, String> {
+                Ok(None)
+            }
+        }
+    };
+}
+
 /// Reads a parameter file into `T` (unknown keys are errors when `T`
 /// says so).
 pub fn parse<T: DeserializeOwned>(text: &str) -> Result<T, String> {
