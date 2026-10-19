@@ -257,6 +257,10 @@ diagonal drawn in halves buckles at half length.
   plugins return none, so the generic drag stays and nothing is shielded),
   the factors not on OHL-Structure's surface loads, materials not typed in
   the editor; built, in active development (not approved yet).
+  *Owner, 2026-10-19:* the choices of U5 confirmed (factors on the FE
+  member wind only; only members in a face turned to the wind shielded;
+  the face outline as the convex hull of its joints; no factor outside a
+  table's range). **Materials typed in the section editor: planned.**
 - **U6. Body generators**: no redundants, plan bracing, or several points
   on one crossarm yet.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
