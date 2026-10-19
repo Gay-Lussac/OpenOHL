@@ -18,6 +18,14 @@
 //! the angle's `orientation`). A type at level 1 has none: it is drawn
 //! with its symbol.
 //!
+//! A pole at level 2 or 3 (a `[pole]` outline with diameters at two
+//! heights, or a `.ohlp` file, [`StructureType::pole_detail`]) is drawn
+//! with its outline ([`DrawnPole`]): its diameters by height (round as a
+//! 16-sided polygon, a polygon with its sides and a flat facing the
+//! structure's −y), tapered linearly between them, from the ground line
+//! to its top (the part in the ground left out), solid or hollow as its
+//! wall says (a `[pole]` at level 2 without a wall: drawn solid).
+//!
 //! The geometry is made once per type and extension ([`Bodies::load`]) and
 //! only moved to each placed structure ([`DrawnBody::placed_lines`],
 //! [`DrawnBody::placed_triangles`]): structures of one type share it.
@@ -27,7 +35,7 @@ use std::f64::consts::PI;
 
 use ohl_sections::{SectionLibrary, Shape};
 use ohl_structures::structures::to_global;
-use ohl_structures::{StructureLibrary, StructureType};
+use ohl_structures::{PoleRef, PoleWall, StructureLibrary, StructureType};
 
 use crate::model::{Member, Model, cross, norm, sub};
 
@@ -51,6 +59,8 @@ pub struct DrawnMember {
 pub struct DrawnBody {
     /// Its members and polylines.
     pub members: Vec<DrawnMember>,
+    /// Its pole's outline (levels 2 and 3 of the pole).
+    pub pole: Option<DrawnPole>,
 }
 
 impl DrawnBody {
@@ -91,7 +101,15 @@ impl DrawnBody {
             }
         }
         let has_members = members.iter().any(|m| m.id.is_some());
-        (has_members || t.body_is_3d()).then_some(Self { members })
+        (has_members || t.body_is_3d()).then_some(Self {
+            members,
+            pole: None,
+        })
+    }
+
+    /// Whether it has members or polylines (a pole alone has none).
+    pub fn has_members(&self) -> bool {
+        !self.members.is_empty()
     }
 
     /// The lines placed at `at` (the structure's position raised by its
@@ -109,18 +127,33 @@ impl DrawnBody {
             .collect()
     }
 
-    /// The solids' triangles placed the same way, three points each.
+    /// The solids' triangles (the members', then the pole's) placed the
+    /// same way, three points each.
     pub fn placed_triangles(&self, at: [f64; 3], rotation_deg: f64) -> Vec<[f64; 3]> {
         self.members
             .iter()
             .flat_map(|m| m.solid.iter().flatten())
+            .chain(self.pole.iter().flat_map(|p| p.solid.iter().flatten()))
             .map(|p| to_global(at, rotation_deg, *p))
             .collect()
     }
 
-    /// Triangles of all the solids.
+    /// Triangles of all the solids (the pole's too).
     pub fn triangles(&self) -> usize {
-        self.members.iter().map(|m| m.solid.len()).sum()
+        self.members.iter().map(|m| m.solid.len()).sum::<usize>()
+            + self.pole.as_ref().map_or(0, |p| p.solid.len())
+    }
+
+    /// The pole's outer outline at each of its heights placed the same way
+    /// (closed: the first point again at the end), bottom to top; empty
+    /// without a pole.
+    pub fn placed_pole_rings(&self, at: [f64; 3], rotation_deg: f64) -> Vec<Vec<[f64; 3]>> {
+        self.pole.as_ref().map_or_else(Vec::new, |p| {
+            p.outer_rings()
+                .into_iter()
+                .map(|r| r.iter().map(|q| to_global(at, rotation_deg, *q)).collect())
+                .collect()
+        })
     }
 }
 
@@ -311,6 +344,229 @@ fn ears(p: &[[f64; 2]]) -> Vec<[usize; 3]> {
     out
 }
 
+/// A pole's outline as described (before it is placed): diameters by
+/// local z of the structure, its shape and wall.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PoleOutline {
+    /// (local z, outer diameter), rising heights, m (a polygon: across
+    /// flats).
+    pub rings: Vec<(f64, f64)>,
+    /// A regular polygon's number of sides (none: round).
+    pub sides: Option<u32>,
+    /// Wall thickness of a hollow pole, m (none: solid).
+    pub wall: Option<f64>,
+}
+
+impl PoleOutline {
+    /// The pole of `t` at level 2 or 3 (none: no pole, a pole at level 1,
+    /// or a `.ohlp` file that does not read): a `[pole]` outline, its wall
+    /// typed or from its `section` in `sections`; a `.ohlp` file next to
+    /// the type (in `dir`), its taper (or profile) from the ground line
+    /// (the feet) up.
+    pub fn of(
+        t: &StructureType,
+        dir: Option<&std::path::Path>,
+        sections: &SectionLibrary,
+    ) -> Option<Self> {
+        if t.pole_detail()? < ohl_structures::Detail::Outline {
+            return None;
+        }
+        match t.pole.as_ref()? {
+            PoleRef::Inline(p) => {
+                let wall = match p.wall {
+                    Some(PoleWall::Thickness(w)) => Some(w.si()),
+                    Some(PoleWall::Solid) => None,
+                    None => {
+                        p.section
+                            .as_deref()
+                            .and_then(|id| sections.section(id))
+                            .and_then(|s| match s.shape {
+                                Shape::PolygonalHollow { t, .. }
+                                | Shape::CircularHollow { t, .. } => Some(t),
+                                _ => None,
+                            })
+                    }
+                };
+                Some(Self {
+                    rings: p.rings(),
+                    sides: p.polygon_sides(),
+                    wall,
+                })
+            }
+            PoleRef::File(_) => {
+                let pole = crate::pole::structure_pole(t, dir?, sections)?.ok()?;
+                let foot = t.foot_level();
+                let rings = if pole.profile.is_empty() {
+                    vec![
+                        (foot, pole.ground_diameter),
+                        (foot + pole.height(), pole.top_diameter),
+                    ]
+                } else {
+                    pole.profile.iter().map(|(h, d)| (foot + h, *d)).collect()
+                };
+                Some(Self {
+                    rings,
+                    sides: pole.sides,
+                    wall: pole.wall,
+                })
+            }
+        }
+    }
+}
+
+/// A pole as drawn on one extension: its outline by height, structure
+/// axes as placed (the ground line at z = 0), and its solid.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawnPole {
+    /// (z, outer diameter) from the ground line (z = 0) to the top, m.
+    pub rings: Vec<(f64, f64)>,
+    /// A regular polygon's number of sides (none: round).
+    pub sides: Option<u32>,
+    /// Wall thickness of a hollow pole, m (none: solid).
+    pub wall: Option<f64>,
+    /// Its solid (triangles): the outer faces, and the inner faces and the
+    /// rings at both ends of a hollow pole, or the end faces of a solid
+    /// one.
+    pub solid: Vec<[[f64; 3]; 3]>,
+}
+
+impl DrawnPole {
+    /// `p` raised by `lift` (the type's [`StructureType::lift`]): the part
+    /// below the ground line cut off, the lowest diameter held down to the
+    /// ground line when the pole stands raised (an extension, as the mast
+    /// of the stick drawing). None with fewer than two heights above the
+    /// ground.
+    pub fn new(p: &PoleOutline, lift: f64) -> Option<Self> {
+        let raised: Vec<(f64, f64)> = p.rings.iter().map(|(z, d)| (z + lift, *d)).collect();
+        let mut rings: Vec<(f64, f64)> = Vec::new();
+        for (k, r) in raised.iter().enumerate() {
+            if r.0 < 0.0 {
+                // Cut at the ground line where the next height is above.
+                if let Some(n) = raised.get(k + 1).filter(|n| n.0 > 0.0) {
+                    let t = -r.0 / (n.0 - r.0);
+                    rings.push((0.0, r.1 + (n.1 - r.1) * t));
+                }
+                continue;
+            }
+            rings.push(*r);
+        }
+        if let Some(first) = rings.first().copied()
+            && first.0 > 1e-3
+        {
+            rings.insert(0, (0.0, first.1));
+        }
+        let rising = rings.windows(2).all(|w| w[1].0 > w[0].0);
+        if rings.len() < 2 || !rising || rings.iter().any(|r| r.1.is_nan() || r.1 <= 0.0) {
+            return None;
+        }
+        // A wall of half the diameter or more somewhere: drawn solid.
+        let wall = p
+            .wall
+            .filter(|w| *w > 0.0 && rings.iter().all(|r| r.1 - 2.0 * w > 1e-6));
+        let mut out = Self {
+            rings,
+            sides: p.sides,
+            wall,
+            solid: Vec::new(),
+        };
+        out.solid = out.make_solid();
+        Some(out)
+    }
+
+    /// The outer outline at each height, closed (the first point again at
+    /// the end), bottom to top, structure axes as placed.
+    pub fn outer_rings(&self) -> Vec<Vec<[f64; 3]>> {
+        self.rings
+            .iter()
+            .map(|&(z, d)| {
+                let s = ring(d, self.sides);
+                s.iter().chain(s.first()).map(|q| [q[0], q[1], z]).collect()
+            })
+            .collect()
+    }
+
+    fn make_solid(&self) -> Vec<[[f64; 3]; 3]> {
+        type Rings = [(f64, Vec<[f64; 2]>)];
+        let at = |q: [f64; 2], z: f64| [q[0], q[1], z];
+        let outer: Vec<(f64, Vec<[f64; 2]>)> = self
+            .rings
+            .iter()
+            .map(|&(z, d)| (z, ring(d, self.sides)))
+            .collect();
+        // The faces between two outlines of the same corners.
+        let band = |out: &mut Vec<[[f64; 3]; 3]>,
+                    (za, a): (f64, &[[f64; 2]]),
+                    (zb, b): (f64, &[[f64; 2]])| {
+            let n = a.len();
+            for k in 0..n {
+                let j = (k + 1) % n;
+                out.push([at(a[k], za), at(a[j], za), at(b[j], zb)]);
+                out.push([at(a[k], za), at(b[j], zb), at(b[k], zb)]);
+            }
+        };
+        let sides = |out: &mut Vec<[[f64; 3]; 3]>, rings: &Rings| {
+            for w in rings.windows(2) {
+                band(out, (w[0].0, &w[0].1), (w[1].0, &w[1].1));
+            }
+        };
+        let mut out = Vec::new();
+        sides(&mut out, &outer);
+        let ends = [0, outer.len() - 1];
+        match self.wall {
+            None => {
+                // The end faces: convex polygons, a fan each.
+                for e in ends {
+                    let (z, s) = &outer[e];
+                    for k in 1..s.len() - 1 {
+                        out.push([at(s[0], *z), at(s[k], *z), at(s[k + 1], *z)]);
+                    }
+                }
+            }
+            Some(t) => {
+                let inner: Vec<(f64, Vec<[f64; 2]>)> = self
+                    .rings
+                    .iter()
+                    .map(|&(z, d)| (z, ring(d - 2.0 * t, self.sides)))
+                    .collect();
+                sides(&mut out, &inner);
+                // The ring at each end, from the outer to the inner edge.
+                for e in ends {
+                    band(
+                        &mut out,
+                        (outer[e].0, &outer[e].1),
+                        (inner[e].0, &inner[e].1),
+                    );
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A pole's cross-section at outer diameter `d` about its axis,
+/// counter-clockwise: round as a 16-sided polygon, a regular polygon of
+/// `sides` across flats `d` with a flat at the bottom (−y).
+pub fn ring(d: f64, sides: Option<u32>) -> Vec<[f64; 2]> {
+    match sides {
+        None => (0..ROUND_SIDES)
+            .map(|k| {
+                let a = 2.0 * PI * k as f64 / ROUND_SIDES as f64;
+                [d / 2.0 * a.cos(), d / 2.0 * a.sin()]
+            })
+            .collect(),
+        Some(n) => {
+            let n = n.max(3) as usize;
+            let r = d / 2.0 / (PI / n as f64).cos();
+            (0..n)
+                .map(|k| {
+                    let a = -PI / 2.0 + PI / n as f64 + 2.0 * PI * k as f64 / n as f64;
+                    [r * a.cos(), r * a.sin()]
+                })
+                .collect()
+        }
+    }
+}
+
 /// The drawn bodies of a structure library, by type and extension.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Bodies {
@@ -330,6 +586,7 @@ impl Bodies {
         let mut out = Self::default();
         for t in types.iter() {
             let path = types.path(&t.id);
+            let pole = PoleOutline::of(t, path.and_then(|p| p.parent()), sections);
             let read = |extension: Option<&str>| -> Option<Model> {
                 let path = path?;
                 if let Some(file) = &t.model {
@@ -342,21 +599,38 @@ impl Bodies {
                 Model::load_extended(path, sections, extension).ok()
             };
             let base = read(None);
-            out.add(t, None, base.as_ref());
+            out.add(t, None, base.as_ref(), pole.as_ref());
             for e in &t.extensions {
                 if e.changes_model() && t.model.is_none() {
                     let own = read(Some(&e.name));
-                    out.add(t, Some(&e.name), own.as_ref());
+                    out.add(t, Some(&e.name), own.as_ref(), pole.as_ref());
                 } else {
-                    out.add(t, Some(&e.name), base.as_ref());
+                    out.add(t, Some(&e.name), base.as_ref(), pole.as_ref());
                 }
             }
         }
         out
     }
 
-    fn add(&mut self, t: &StructureType, extension: Option<&str>, model: Option<&Model>) {
-        if let Some(b) = DrawnBody::of(t, extension, model) {
+    fn add(
+        &mut self,
+        t: &StructureType,
+        extension: Option<&str>,
+        model: Option<&Model>,
+        pole: Option<&PoleOutline>,
+    ) {
+        let pole = pole.and_then(|p| DrawnPole::new(p, t.lift(extension).ok()?));
+        let body = match DrawnBody::of(t, extension, model) {
+            Some(mut b) => {
+                b.pole = pole;
+                Some(b)
+            }
+            None => pole.map(|p| DrawnBody {
+                members: Vec::new(),
+                pole: Some(p),
+            }),
+        };
+        if let Some(b) = body {
             self.bodies
                 .insert((t.id.clone(), extension.map(str::to_owned)), b);
         }
@@ -406,6 +680,75 @@ mod tests {
         assert_eq!(b.triangles(), 0);
         // type-01 is a stick figure: its symbol.
         assert!(bodies.get("type-01", None).is_none());
+    }
+
+    /// type-05 names the example's `.ohlp` pole (30 m long, 3 m in the
+    /// ground, 700 mm at the ground line, 300 mm at the top, wall 8 mm):
+    /// drawn as a hollow tube from the ground line to 27 m, no members.
+    #[test]
+    fn a_named_pole_is_drawn_with_its_outline() {
+        let (types, sections) = example();
+        let bodies = Bodies::load(&types, &sections);
+        let b = bodies.get("type-05", None).unwrap();
+        assert!(!b.has_members());
+        let p = b.pole.as_ref().unwrap();
+        assert_eq!(p.rings.len(), 2);
+        for (r, want) in p.rings.iter().zip([(0.0, 0.7), (27.0, 0.3)]) {
+            assert!((r.0 - want.0).abs() < 1e-9 && (r.1 - want.1).abs() < 1e-9);
+        }
+        assert!((p.wall.unwrap() - 0.008).abs() < 1e-12);
+        assert_eq!(p.sides, None);
+        // 16 sides: outer and inner faces 2 × 16 triangles each, the two
+        // end rings 2 × 16 each.
+        assert_eq!(b.triangles(), 4 * 32);
+        // Every corner within the outline's radius at its height.
+        for q in p.solid.iter().flatten() {
+            let r = 0.35 + (0.15 - 0.35) * q[2] / 27.0;
+            assert!(q[0].hypot(q[1]) <= r + 1e-9, "{q:?}");
+            assert!(q[2] >= 0.0 && q[2] <= 27.0);
+        }
+        // Placed: at the structure's position, turned.
+        let rings = b.placed_pole_rings([100.0, 200.0, 50.0], 90.0);
+        assert_eq!(rings.len(), 2);
+        assert_eq!(rings[0].len(), 17);
+        assert_eq!(rings[0][0], rings[0][16]);
+        assert!((rings[1][0][2] - 77.0).abs() < 1e-9);
+        // Its extensions (none here) and the level 1 types: no pole.
+        assert!(bodies.get("type-01", None).is_none());
+    }
+
+    /// A `[pole]` at level 2 (an outline, no wall): a 12-sided solid,
+    /// across flats as given; on an extension raised, held down to the
+    /// ground; an outline below the feet cut at the ground line.
+    #[test]
+    fn an_inline_pole_outline_is_raised_and_cut() {
+        let text = "version = 3\nid = \"P\"\nname = \"p\"\nkind = \"pole\"\nfoot = \"1 m\"\n\
+             [pole]\nshape = \"polygon\"\nsides = 12\n\
+             [[pole.outline]]\nz = \"0 m\"\ndiameter = \"600 mm\"\n\
+             [[pole.outline]]\nz = \"2 m\"\ndiameter = \"500 mm\"\n\
+             [[pole.outline]]\nz = \"21 m\"\ndiameter = \"250 mm\"\n\
+             [[extension]]\nname = \"+3\"\ndz = \"3 m\"\n";
+        let t = StructureType::parse(Path::new("p.ohls"), text).unwrap();
+        assert_eq!(t.pole_detail(), Some(ohl_structures::Detail::Outline));
+        let o = PoleOutline::of(&t, None, &SectionLibrary::default()).unwrap();
+        assert_eq!(o.wall, None);
+        // As written: the feet at 1 m, the ring at 0 m below the ground
+        // cut at the ground line (half-way to 2 m: 550 mm).
+        let p = DrawnPole::new(&o, t.lift(None).unwrap()).unwrap();
+        assert_eq!(p.rings.len(), 3);
+        assert!((p.rings[0].0).abs() < 1e-12 && (p.rings[0].1 - 0.55).abs() < 1e-12);
+        assert!((p.rings[2].0 - 20.0).abs() < 1e-12);
+        // Solid: 2 bands of 12 × 2, two end faces of 10 each.
+        assert_eq!(p.solid.len(), 2 * 24 + 2 * 10);
+        // Across flats: the flat at −y lies at half the diameter.
+        let s = ring(0.6, Some(12));
+        let low = s.iter().map(|q| q[1]).fold(f64::INFINITY, f64::min);
+        assert!((low + 0.3).abs() < 1e-12);
+        // On the extension: raised 3 m, the lowest diameter held down.
+        let up = DrawnPole::new(&o, t.lift(Some("+3")).unwrap()).unwrap();
+        assert_eq!(up.rings[0], (0.0, 0.6));
+        assert!((up.rings[1].0 - 2.0).abs() < 1e-12);
+        assert!((up.rings.last().unwrap().0 - 23.0).abs() < 1e-12);
     }
 
     #[test]
