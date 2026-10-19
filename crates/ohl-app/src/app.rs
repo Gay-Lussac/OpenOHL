@@ -1237,16 +1237,22 @@ impl TabViewer for Viewer<'_> {
             _ => "tab other",
         });
         let used = match tab {
-            Tab::View3d => r.view3d.ui(
-                ui,
-                self.rs,
-                &r.model,
-                r.case,
-                &mut r.selection,
-                &r.visible,
-                &snaps,
-                self.lod,
-            ),
+            Tab::View3d => {
+                let used = r.view3d.ui(
+                    ui,
+                    self.rs,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    &r.visible,
+                    &snaps,
+                    self.lod,
+                );
+                if let Some(done) = r.view3d.handles.done.take() {
+                    r.handle_done(done);
+                }
+                used
+            }
             Tab::Plan => r
                 .plan
                 .ui(ui, &r.model, r.case, &mut r.selection, &snaps, &r.visible),
@@ -3105,6 +3111,106 @@ impl Ready {
         }
     }
 
+    /// The structure whose drag handles the 3D view shows: the selected
+    /// one (or that of the string, wire point or point selected) while its
+    /// structure screen is open (`open`: whether a page is) — a structure
+    /// without a type in the Structure editor, a typed one with its type on
+    /// the Structure types page; none when the project cannot be edited.
+    /// A drag waits while that editor, or an editor window on it, has
+    /// changes the drag would not keep.
+    pub fn handle_target(&self, open: impl Fn(&Tab) -> bool) -> Option<crate::handles::Target> {
+        use crate::library::LibraryKind;
+        self.model.can_edit().ok()?;
+        let id = match &self.selection {
+            Selection::Structure(id) => id,
+            Selection::Attachment { structure, .. }
+            | Selection::String { structure, .. }
+            | Selection::Point { structure, .. } => structure,
+            _ => return None,
+        };
+        let s = self.model.line.structure(id)?;
+        let mut blocked = None;
+        let grid = match &s.structure_type {
+            None => {
+                let p = self.placed.as_ref().filter(|p| &p.id == id)?;
+                if !open(&Tab::StructureEditor) {
+                    return None;
+                }
+                if p.dirty() {
+                    blocked = Some(format!(
+                        "the structure editor of {id} has changes not applied: apply or revert                          them before dragging its points"
+                    ));
+                }
+                p.workspace.grid
+            }
+            Some(t) => {
+                let kind = LibraryKind::StructureTypes;
+                let page = self.libraries.get(&kind)?;
+                let path = self.model.types.as_ref()?.0.path(t)?;
+                if !(page.workspace.on
+                    && page.file.as_deref() == Some(path)
+                    && open(&Tab::Library(kind)))
+                {
+                    return None;
+                }
+                page.workspace.grid
+            }
+        };
+        let window = match &self.editor {
+            Some(crate::editors::Form::String(f)) => f.structure == *id,
+            Some(crate::editors::Form::Structure(f)) => !f.new && f.id == *id,
+            _ => false,
+        };
+        if window && blocked.is_none() {
+            blocked = Some(format!(
+                "a window editing {id} is open: apply or cancel it before dragging its points"
+            ));
+        }
+        Some(crate::handles::Target {
+            structure: id.clone(),
+            grid,
+            blocked,
+        })
+    }
+
+    /// A drag of a handle in the 3D view ended: the point moved (one
+    /// command, as typed in its table), or why not.
+    pub fn handle_done(&mut self, done: crate::handles::Done) {
+        use crate::handles::Done;
+        match done {
+            Done::Moved {
+                structure,
+                handle,
+                at,
+            } => match crate::handles::command(&self.model, &structure, &handle, at) {
+                Ok((what, command)) => {
+                    log::info!("{what}");
+                    if self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    }) {
+                        self.status = Some((what, false));
+                        // The structure editor shows the structure as it is
+                        // now (it had no changes of its own: the drag waits
+                        // otherwise).
+                        if let Some(p) = self.placed.as_mut().filter(|p| p.id == structure)
+                            && let Some(s) = self.model.line.structure(&structure)
+                        {
+                            p.doc = crate::placed_editor::as_type(s);
+                            p.applied();
+                            p.workspace.redraw();
+                        }
+                    }
+                }
+                Err(e) => self.status = Some((e, true)),
+            },
+            Done::Refused(why) => self.status = Some((why, true)),
+            Done::Cancelled => {
+                self.status = Some(("drag cancelled: nothing changed".into(), false));
+            }
+        }
+    }
+
     /// Opens structure `id` (one without a type) in the pylon editor.
     pub fn edit_structure(&mut self, id: &str) {
         if self
@@ -4172,6 +4278,13 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     // points go; the tool stays held and the view keeps the mouse (the key
     // is taken: a second Escape frees the mouse). (The section window
     // opened by Enter: [`editor_window`].)
+    // A handle being dragged in the 3D view: Escape gives the drag up.
+    if r.view3d.handles.drag.is_some()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        r.view3d.handles.cancel();
+        r.status = Some(("drag cancelled: nothing changed".into(), false));
+    }
     let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
     if !r.chain.is_empty()
         && !windows
@@ -8109,6 +8222,9 @@ impl eframe::App for App {
                 }
                 drop(windows);
                 sync_docked(&ctx, &mut self.dock);
+                // The structure being edited: its handles in the 3D view.
+                let dock = &self.dock;
+                ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
                 let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)

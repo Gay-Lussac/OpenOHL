@@ -38,6 +38,7 @@ mod edit;
 mod editors;
 mod files;
 mod galloping;
+mod handles;
 mod help;
 mod icons;
 mod job;
@@ -95,6 +96,8 @@ pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
 mod bench;
 #[cfg(test)]
 mod glyph_tests;
+#[cfg(test)]
+mod handle_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

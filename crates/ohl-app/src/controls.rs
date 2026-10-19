@@ -249,6 +249,22 @@ impl Controls {
         out.push(("middle drag".into(), self.middle.name().into()));
         out.push(("scroll".into(), "zoom".into()));
         out.push(("double-click".into(), "fly to the object".into()));
+        // The drag handles of the structure being edited (its structure
+        // screen open: [`crate::handles`]).
+        out.push((
+            "drag a handle".into(),
+            "move a point of the structure being edited".into(),
+        ));
+        out.push((
+            "X / Y / Z (dragging)".into(),
+            "hold it on that axis of the structure (again: free)".into(),
+        ));
+        out.push((
+            "Shift + X / Y / Z (dragging)".into(),
+            "hold it in the plane across that axis".into(),
+        ));
+        out.push(("Alt (dragging)".into(), "no snapping".into()));
+        out.push(("Esc (dragging)".into(), "cancel the drag".into()));
         out
     }
 }
