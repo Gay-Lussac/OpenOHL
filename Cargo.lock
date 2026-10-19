@@ -3907,6 +3907,7 @@ dependencies = [
  "ohl-loads",
  "ohl-sections",
  "ohl-structure-edit",
+ "ohl-structure-export",
  "ohl-structure-link",
  "ohl-structure-loads",
  "ohl-structures",

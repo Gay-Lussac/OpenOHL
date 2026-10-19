@@ -1,0 +1,99 @@
+# An invented frame using every profile of the example section library
+# (libraries/sections/example-sections.ohlsec), for trying the structure
+# exports in other programs (examples/exports/README.md). Not a design.
+format = "ohl-structure"
+version = 2
+id = "every-profile"
+name = "Every profile (invented)"
+kind = "other"
+
+[[point]]
+label = "P1"
+member = "m-EA"
+at = 0.25
+
+[[node]]
+id = "N0"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "5 m"]
+
+[[node]]
+id = "N2"
+point = ["4 m", "0 m", "5 m"]
+support = ["x", "y", "z"]
+spring = [0, 0, 0, 0, 0, 2000]
+
+[[node]]
+id = "N3"
+point = ["4 m", "3 m", "5 m"]
+
+[[member]]
+id = "m-EA"
+nodes = ["N0", "N1"]
+section = "EA-61x7"
+kind = "frame"
+
+[[member]]
+id = "m-UA"
+nodes = ["N1", "N2"]
+section = "UA-83x52x6"
+kind = "frame"
+roll = "30 deg"
+
+[[member]]
+id = "m-CH"
+nodes = ["N2", "N3"]
+section = "CH-157"
+kind = "frame"
+
+[[member]]
+id = "m-IS"
+nodes = ["N0", "N2"]
+section = "IS-213"
+kind = "frame"
+reference = [0, 1, 0]
+
+[[member]]
+id = "m-RHS"
+nodes = ["N1", "N3"]
+section = "RHS-121x79x5"
+
+[[member]]
+id = "m-CHS"
+nodes = ["N0", "N3"]
+section = "CHS-167x7"
+
+[[member]]
+id = "m-RB"
+nodes = ["N3", "N1"]
+section = "RB-23"
+kind = "cable"
+pretension = "1 kN"
+
+[[member]]
+id = "m-POLE"
+nodes = ["N2", "N1"]
+section = "POLE-12-430"
+kind = "frame"
+
+[[member]]
+id = "m-GEN"
+nodes = ["N0", "N3"]
+section = "GEN-1"
+
+[[load]]
+node = "N3"
+force = ["1 kN", "2 kN", "-3 kN"]
+
+[[load_case]]
+name = "along"
+self_weight = 1.35
+
+[[load_case.load]]
+value = "4 kN"
+direction = "x"
+points = ["P1"]
