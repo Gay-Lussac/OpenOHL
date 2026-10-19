@@ -454,6 +454,9 @@ fn ifc_members_and_ifc2x3() {
     p.check_attributes(Schema::Ifc2x3);
     assert_eq!(p.count("IFCMEMBER"), 9);
     assert_eq!(p.count("IFCBUILDINGSTOREY"), 1);
+    // IfcPerson WR1: a family or a given name (IfcOpenShell's rule check).
+    let person = &p.of("IFCPERSON")[0];
+    assert!(person[1] != "$" || person[2] != "$", "{person:?}");
     // Every profile with geometry is a solid; "general" has none.
     assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 8);
     assert_eq!(p.count("IFCPROFILEDEF"), 0);

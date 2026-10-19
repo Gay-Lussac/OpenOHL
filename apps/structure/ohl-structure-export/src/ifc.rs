@@ -328,7 +328,9 @@ pub fn ifc(s: &ExportStructure, o: &IfcOptions) -> Result<String, String> {
     let oh = if ifc4 {
         "$".to_owned()
     } else {
-        let person = f.add("IFCPERSON", "$,$,$,$,$,$,$,$");
+        // IFC2x3's IfcPerson needs a family or a given name (rule WR1);
+        // nobody's name is written: a neutral placeholder.
+        let person = f.add("IFCPERSON", "$,'Unknown',$,$,$,$,$,$");
         let org = f.add("IFCORGANIZATION", "$,'OpenOHL',$,$,$");
         let user = f.add("IFCPERSONANDORGANIZATION", &format!("{person},{org},$"));
         let app = f.add(
