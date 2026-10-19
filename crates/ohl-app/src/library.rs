@@ -174,6 +174,25 @@ const LOAD_CASE: &[Field] = &[
         "[\"ULS\"]",
         "for choosing cases (code, limit state…)",
     ),
+    (
+        "structure",
+        "{ wind_pressure = \"700 Pa\", wind_factor = 1.0 }",
+        "the wind on the structures' own bodies when it differs from the wires' (file version \
+         2; absent: the weather case's pressure and the transverse factor)",
+    ),
+];
+
+const LOAD_CASE_STRUCTURE: &[Field] = &[
+    (
+        "wind_pressure",
+        "\"700 Pa\"",
+        "the wind pressure on the structure bodies (default: the weather case's)",
+    ),
+    (
+        "wind_factor",
+        "1.0",
+        "the factor on it (default: the transverse factor)",
+    ),
 ];
 
 const LOAD_FILE: &[Field] = &[
@@ -445,6 +464,7 @@ impl LibraryKind {
             (LibraryKind::WeatherCases, "case") => CASE,
             (LibraryKind::WeatherCases, "") => WEATHER_FILE,
             (LibraryKind::LoadCases, "case") => LOAD_CASE,
+            (LibraryKind::LoadCases, "structure") => LOAD_CASE_STRUCTURE,
             (LibraryKind::LoadCases, "") => LOAD_FILE,
             (LibraryKind::Insulators, "") => INSULATOR,
             (LibraryKind::StructureTypes, "") => STRUCTURE,
@@ -771,6 +791,7 @@ impl LibraryPage {
 
     /// Saves the file when it reads.
     pub fn save(&mut self) -> Result<PathBuf, String> {
+        self.raise_load_case_version();
         let (Some(path), Some(text)) = (self.file.clone(), self.text()) else {
             return Err("no file open".into());
         };
@@ -781,6 +802,30 @@ impl LibraryPage {
         std::fs::write(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
         self.saved = text;
         Ok(path)
+    }
+
+    /// A load case file giving the structures' own wind (`[case.structure]`)
+    /// is written at version 2 (`ohl_loads::LoadCases::written_version`):
+    /// its `version` raised when lower.
+    fn raise_load_case_version(&mut self) {
+        if self.kind != LibraryKind::LoadCases {
+            return;
+        }
+        let Some(text) = self.text() else {
+            return;
+        };
+        let Ok(cases) = ohl_loads::LoadCases::parse(&text) else {
+            return;
+        };
+        let want = i64::from(cases.written_version());
+        if let Some(doc) = &mut self.doc
+            && doc
+                .get("version")
+                .and_then(toml_edit::Item::as_integer)
+                .is_some_and(|v| v < want)
+        {
+            doc["version"] = toml_edit::value(want);
+        }
     }
 
     /// Creates a new file at `path` (anywhere), from the kind's template,
@@ -1982,6 +2027,47 @@ mod tests {
             k.check(&path, &k.template("new-one"))
                 .unwrap_or_else(|e| panic!("{k:?}: {e}"));
         }
+    }
+
+    /// A load case given the structures' own wind (`[case.structure]`) is
+    /// saved at version 2; without it the file keeps version 1.
+    #[test]
+    fn a_load_case_with_the_structures_wind_is_saved_at_version_2() {
+        let dir = temp("loadcases");
+        let path = dir.join("cases.ohllc");
+        std::fs::copy(
+            root().join("examples/synthetic-line/load-cases.ohllc"),
+            &path,
+        )
+        .unwrap();
+        let sources = Sources {
+            file: dir.join("line.ohl.json"),
+            load_cases: Some(path.clone()),
+            ..Sources::default()
+        };
+        let mut page = LibraryPage::new(LibraryKind::LoadCases, &sources);
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("version = 1\n"), "{text}");
+        let doc = page.doc.as_mut().unwrap();
+        let wind: toml_edit::DocumentMut =
+            "structure = { wind_pressure = \"900 Pa\", wind_factor = 1.2 }\n"
+                .parse()
+                .unwrap();
+        doc["case"]
+            .as_array_of_tables_mut()
+            .unwrap()
+            .get_mut(1)
+            .unwrap()["structure"] = wind["structure"].clone();
+        page.check();
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("version = 2\n"), "{text}");
+        let read = ohl_loads::LoadCases::parse(&text).unwrap();
+        assert_eq!(read.cases[1].structure.unwrap().wind_pressure, Some(900.0));
+        assert!(LibraryKind::LoadCases.fields("structure").len() == 2);
     }
 
     /// A weather case changed keeps the file's comments; a value that does
