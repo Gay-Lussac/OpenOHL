@@ -1721,6 +1721,35 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             profile_only: false,
             out: dir.clone(),
         });
+        // Structures at levels 2 and 3: their members on their own layer
+        // (profiles from the section library the checks read).
+        let bodies = if legacy.is_some() || drawing_spec.is_some() {
+            let sections = match sections_arg
+                .clone()
+                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+            {
+                // Drawn only: a library that does not read leaves models
+                // naming its sections unread (their members not drawn).
+                Some(p) => ohl_sections::SectionLibrary::load(&p).unwrap_or_else(|e| {
+                    eprintln!("warning: section library not read for the drawings: {e}");
+                    ohl_sections::SectionLibrary::default()
+                }),
+                None => ohl_sections::SectionLibrary::default(),
+            };
+            ohl_structures_fe::drawn::Bodies::load(&types, &sections)
+        } else {
+            ohl_structures_fe::drawn::Bodies::default()
+        };
+        let members = |line: &ohl_line::Line, id: &str| {
+            let st = line.structure(id)?;
+            let b = bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())?;
+            let at = [
+                st.position[0],
+                st.position[1],
+                st.position[2] + st.height_adjust,
+            ];
+            Some(b.placed_lines(at, st.orientation_deg))
+        };
         for spec in legacy.iter().chain(drawing_spec) {
             let logos = logo
                 .iter()
@@ -1797,6 +1826,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     &extras.markers,
                     &options,
                 )?;
+                d.set_members(|id| members(&line, id));
                 // The other cases' wires, dashed (the envelope of positions).
                 for (k, (case, case_shapes, case_jumpers)) in
                     solved_cases.iter().enumerate().skip(1)

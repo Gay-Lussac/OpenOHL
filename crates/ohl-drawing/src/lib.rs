@@ -149,6 +149,12 @@ pub struct Mark {
     pub attachments: Vec<[f64; 3]>,
     /// Stick drawing: polylines of (station, offset, z).
     pub sticks: Vec<Vec<[f64; 3]>>,
+    /// Members of a type at level 2 or 3 ([`RouteDrawing::set_members`]):
+    /// polylines of (station, offset, z), drawn on their own layer instead
+    /// of the symbol and the stick drawing; empty at level 1 (the symbol).
+    pub members: Vec<Vec<[f64; 3]>>,
+    /// The same members in project coordinates (x, y).
+    pub members_xy: Vec<Vec<[f64; 2]>>,
 }
 
 /// Ground profile runs: (station, z) points; a run ends where there is no
@@ -262,6 +268,8 @@ pub fn build(
                     .iter()
                     .map(|m| m.iter().map(to_route).collect())
                     .collect(),
+                members: Vec::new(),
+                members_xy: Vec::new(),
             }
         })
         .collect();
@@ -347,6 +355,33 @@ pub fn build(
         wires,
         markers,
     })
+}
+
+impl RouteDrawing {
+    /// Gives each structure the members `of` it returns (polylines in
+    /// project coordinates, as the structure is placed; none: a type at
+    /// level 1, drawn with its symbol), along the route.
+    pub fn set_members(&mut self, of: impl Fn(&str) -> Option<Vec<Vec<Point>>>) {
+        let centre = &self.centreline;
+        for m in &mut self.structures {
+            let lines = of(&m.id).unwrap_or_default();
+            m.members_xy = lines
+                .iter()
+                .map(|l| l.iter().map(|p| [p[0], p[1]]).collect())
+                .collect();
+            m.members = lines
+                .iter()
+                .map(|l| {
+                    l.iter()
+                        .map(|p| {
+                            let (s, o) = project(centre, *p);
+                            [s, o, p[2]]
+                        })
+                        .collect()
+                })
+                .collect();
+        }
+    }
 }
 
 /// Station as `km+m`, e.g. `1+250.0`.
@@ -606,6 +641,107 @@ pub(crate) mod tests {
         assert_eq!(to_c.len(), 1);
         let end = to_c[0].points.last().unwrap();
         assert!((end[0] - 150.0).abs() < 1e-6 && (end[1] - 80.0).abs() < 1e-6);
+    }
+
+    /// A square tower 4 m wide and 30 m tall at T2 (its four legs and a
+    /// crossarm 12 m across), in project coordinates.
+    fn tower(line: &Line, id: &str) -> Option<Vec<Vec<Point>>> {
+        let p = line.structure(id)?.position;
+        let at = |x: f64, y: f64, z: f64| [p[0] + x, p[1] + y, p[2] + z];
+        let mut lines: Vec<Vec<Point>> = [(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)]
+            .iter()
+            .map(|&(x, y)| vec![at(x, y, 0.0), at(0.3 * x, 0.3 * y, 30.0)])
+            .collect();
+        lines.push(vec![at(-6.0, 0.0, 30.0), at(6.0, 0.0, 30.0)]);
+        Some(lines)
+    }
+
+    #[test]
+    fn members_replace_the_symbol_on_their_own_layer() {
+        use crate::model::{Item, Layer};
+        let (line, shapes, jumpers, terrain) = solved();
+        let options = Options::default();
+        let routes = line.alignment_views();
+        let plain = build(
+            &line,
+            &routes[0],
+            &shapes,
+            &jumpers,
+            Some(&terrain),
+            &[],
+            &options,
+        )
+        .unwrap();
+        // Level 1 everywhere (no members given): the drawings as before.
+        let mut level1 = plain.clone();
+        level1.set_members(|_| None);
+        assert_eq!(level1, plain);
+        assert!(!svg(&plain, &options).contains("OHL_MEMBERS"));
+        // T2 with members: drawn on OHL_MEMBERS in the plan and the
+        // profile, its symbol (the mast line and the plan square) gone;
+        // the others unchanged.
+        let mut d = plain.clone();
+        d.set_members(|id| (id == "T2").then(|| tower(&line, id)).flatten());
+        let t2 = d.structures.iter().find(|m| m.id == "T2").unwrap();
+        assert_eq!(t2.members.len(), 5);
+        // Along the route: a leg's foot 2 m from T2 at its height.
+        let foot = t2.members[0][0];
+        assert!((foot[2] - t2.base).abs() < 1e-9);
+        assert!(((foot[0] - t2.station).hypot(foot[1] - t2.offset) - 8f64.sqrt()).abs() < 1e-6);
+        let flat = |dr: &model::Drawing| -> Vec<model::Item> {
+            let mut out = Vec::new();
+            let mut stack: Vec<Item> = dr.items.clone();
+            while let Some(i) = stack.pop() {
+                match i {
+                    Item::Clip(c) => stack.extend(c.items),
+                    other => out.push(other),
+                }
+            }
+            out
+        };
+        let paths = |dr: &model::Drawing, layer: Layer| {
+            flat(dr)
+                .into_iter()
+                .filter(|i| matches!(i, Item::Path(p) if p.layer == layer))
+                .count()
+        };
+        let before = drawing(&plain, &options);
+        let after = drawing(&d, &options);
+        // Five members in the plan and five in the profile.
+        assert_eq!(paths(&before, Layer::Members), 0);
+        assert_eq!(paths(&after, Layer::Members), 10);
+        // T2's stick drawing (its mast and arm in the example) and its
+        // symbols (the plan square, the profile mast) left out.
+        let sticks = 2 * t2.sticks.len() + 2;
+        assert_eq!(
+            paths(&after, Layer::Structures),
+            paths(&before, Layer::Structures) - sticks
+        );
+        let text = after.svg();
+        assert_eq!(text.matches(r#"class="OHL_MEMBERS""#).count(), 10);
+        // DXF: the layer in the table and the members' entities on it.
+        let dxf = crate::dxf::write(&after);
+        let pairs = crate::dxf::read_pairs(&dxf).unwrap();
+        let on: usize = pairs
+            .windows(2)
+            .filter(|w| w[0].0 == 0 && w[1] == (8, "OHL_MEMBERS".to_owned()))
+            .count();
+        assert!(on >= 10, "{on} entities on OHL_MEMBERS");
+        // The plan in project coordinates: the members' footprint.
+        let plan = plan_model(&d, &options);
+        let feet: Vec<[f64; 2]> = plan
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Path(p) if p.layer == Layer::Members => Some(p.points[0]),
+                _ => None,
+            })
+            .collect();
+        let p = line.structure("T2").unwrap().position;
+        assert_eq!(feet.len(), 5);
+        assert!(
+            (feet[0][0] - (p[0] - 2.0)).abs() < 1e-9 && (feet[0][1] - (p[1] - 2.0)).abs() < 1e-9
+        );
     }
 
     #[test]
