@@ -272,8 +272,10 @@ fn results_of_a_typed_case() {
     }
     h.run();
     let run = h.state().results.results.clone().unwrap().unwrap();
-    assert_eq!(run.len(), 1);
-    let r = run[0].1.as_ref().unwrap();
+    assert_eq!(run.cases.len(), 1);
+    assert_eq!(run.extension, None);
+    assert!(run.cases[0].pole.is_none());
+    let r = run.cases[0].fe.as_ref().unwrap().as_ref().unwrap();
     assert_eq!(r.case, "typed");
     // Σ loads: the typed (8 kN across, 1 kN ahead, 18 kN down) and the
     // weight; the reactions balance them.

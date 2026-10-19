@@ -3,14 +3,20 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! The FE results panel (Results menu): the cases of the load table
-//! solved by the finite-element model (through `ohl-structure-link`, on a thread of its
+//! solved on the structure standing on the extension chosen (the
+//! finite-element model of the line for a placed structure on that
+//! extension, and the line's pole check for a structure with a pole —
+//! through `ohl_structure_link::analyse_structure`, on a thread of its
 //! own, each case under a time budget), and per case the largest
 //! displacement, Σ loads against Σ reactions, the reactions, the members'
-//! forces and usage and the governing member; in the view the deformed
-//! shape and the members coloured by usage. A line case whose values lack
-//! a wire the line did not solve is marked incomplete ("not checked —
-//! incomplete: S12 not solved"), its usage only that of the loads there
-//! are.
+//! forces and usage and the governing member, the pole check; over the
+//! cases the usage per check and the case governing it; in the view the
+//! deformed shape and the members coloured by usage. Choosing another
+//! extension solves again. A line case whose values lack a wire the line
+//! did not solve is marked incomplete ("not checked — incomplete: S12 not
+//! solved"), its usage only that of the loads there are. **Structure
+//! report…** writes the run as a printable HTML page and the members'
+//! results as CSV (`ohl_structure_export::report`).
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
@@ -20,7 +26,10 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use ohl_core::budget::{Budget, CancelToken};
 use ohl_render::Scene;
-use ohl_structure_link::{CaseResult, CaseRun, CaseToRun, analyse_cases};
+use ohl_structure_link::{
+    CaseResult, PoleResult, RunInput, StructureRun, analyse_structure, cases_to_run,
+};
+use ohl_structure_loads::{LoadCaseRecipe, LoadTable};
 use ohl_structures::Detail;
 
 use crate::app::{StructureApp, error_label};
@@ -34,9 +43,9 @@ const CASE_TIME: Duration = Duration::from_secs(30);
 /// Usage page).
 const NEAR_FULL: f64 = 0.9;
 
-/// The answer of a run: per case its result or why it did not solve; Err:
-/// the model does not read.
-pub type Run = Result<Vec<CaseRun>, String>;
+/// The answer of a run: the cases solved, or why the run could not
+/// start (the model does not read, an extension not there).
+pub type Run = Result<StructureRun, String>;
 
 /// The state of the FE results panel.
 pub struct ResultsTab {
@@ -46,6 +55,10 @@ pub struct ResultsTab {
     pub results: Option<Run>,
     /// The load table's key it was computed from.
     pub ran_on: u64,
+    /// The extension of the last run started (none: as written).
+    pub ran_ext: Option<String>,
+    /// The table and the recipes of the last run (for the report).
+    ran_with: (LoadTable, Vec<LoadCaseRecipe>),
     /// How long the last run took.
     pub took: Option<Duration>,
     /// The case shown (its place in the results).
@@ -65,6 +78,8 @@ impl Default for ResultsTab {
             case: String::new(),
             results: None,
             ran_on: 0,
+            ran_ext: None,
+            ran_with: Default::default(),
             took: None,
             shown: 0,
             deformed: true,
@@ -99,18 +114,31 @@ fn kn(v: [f64; 3]) -> String {
     )
 }
 
+fn pct(u: Option<f64>) -> String {
+    match u {
+        Some(u) if u.is_finite() => format!("{:.0} %", u * 100.0),
+        Some(_) => "∞".into(),
+        None => "—".into(),
+    }
+}
+
+/// The extension's name in words.
+fn extension_text(e: Option<&str>) -> String {
+    e.map_or("as written".into(), |e| format!("on extension {e}"))
+}
+
 impl ResultsTab {
     /// A run is going on.
     pub fn running(&self) -> bool {
         self.running.is_some()
     }
 
-    /// Starts solving `cases` of the table on its own thread (unless one
-    /// runs).
+    /// Starts solving on its own thread (unless one runs).
     fn start(
         &mut self,
         ctx: &egui::Context,
         key: u64,
+        extension: Option<String>,
         work: impl FnOnce(&Budget) -> Run + Send + 'static,
     ) {
         if self.running.is_some() {
@@ -129,6 +157,7 @@ impl ResultsTab {
         });
         self.running = Some((Instant::now(), rx, cancel));
         self.ran_on = key;
+        self.ran_ext = extension;
     }
 
     /// Takes the answer of a run that ended.
@@ -145,10 +174,12 @@ impl ResultsTab {
         self.running = None;
         self.shown = 0;
         // A scale that shows the largest displacement as about 1 m.
-        if let Ok(v) = &r
-            && let Some(d) = v
+        if let Ok(run) = &r
+            && let Some(d) = run
+                .cases
                 .iter()
-                .filter_map(|(_, r)| r.as_ref().ok()?.largest_displacement().map(|d| d.1))
+                .filter_map(|c| c.fe.as_ref()?.as_ref().ok()?.largest_displacement())
+                .map(|d| d.1)
                 .reduce(f64::max)
             && d > 1e-9
         {
@@ -159,12 +190,20 @@ impl ResultsTab {
         self.results = Some(r);
     }
 
-    /// The case shown, solved.
+    /// The run, solved.
+    pub fn run(&self) -> Option<&StructureRun> {
+        self.results.as_ref()?.as_ref().ok()
+    }
+
+    /// The finite-element results of the case shown.
     pub fn shown(&self) -> Option<&CaseResult> {
-        match &self.results {
-            Some(Ok(v)) => v.get(self.shown)?.1.as_ref().ok(),
-            _ => None,
-        }
+        self.run()?
+            .cases
+            .get(self.shown)?
+            .fe
+            .as_ref()?
+            .as_ref()
+            .ok()
     }
 
     /// The deformed shape coloured by usage, and the reactions, of the
@@ -174,6 +213,7 @@ impl ResultsTab {
         let mut h = DefaultHasher::new();
         (
             self.ran_on,
+            &self.ran_ext,
             self.shown,
             self.deformed,
             self.scale.to_bits(),
@@ -223,47 +263,47 @@ impl StructureApp {
         !self.loads.table().cases().is_empty()
     }
 
+    /// The extension the structure stands on (the one the 3D view shows,
+    /// when the structure has it; none: as written).
+    pub fn results_extension(&self) -> Option<String> {
+        let t = self.file.as_ref()?.structure();
+        self.ext.shown.clone().filter(|n| t.extension(n).is_some())
+    }
+
     /// Results › Run (and ▶ Run): solves the case chosen (or every case) of
-    /// the load table on its own thread; false when it cannot start.
+    /// the load table on the extension chosen, on its own thread; false
+    /// when it cannot start.
     pub fn run_results(&mut self, ctx: &egui::Context) -> bool {
         if !self.can_run_results() {
             return false;
         }
+        let extension = self.results_extension();
         let Some(f) = &self.file else {
             return false;
         };
-        let t = f.structure();
+        let structure = f.structure().clone();
         let table = self.loads.table().clone();
+        let recipes: Vec<LoadCaseRecipe> = self.loads.recipes().unwrap_or_default().to_vec();
         let key = self.loads.key();
-        let run: Vec<CaseToRun> = table
-            .cases()
-            .into_iter()
-            .filter(|c| self.results.case.is_empty() || *c == self.results.case)
-            .map(|c| {
-                let recipe = self
-                    .loads
-                    .recipes()
-                    .ok()
-                    .and_then(|r| r.iter().find(|r| r.name == c));
-                CaseToRun {
-                    name: c.to_owned(),
-                    strength: recipe.map_or(1.0, |r| r.strength),
-                    self_weight: recipe.map_or(1.0, |r| r.self_weight),
-                }
-            })
-            .collect();
-        let structure = t.clone();
+        let only = (!self.results.case.is_empty()).then_some(self.results.case.as_str());
+        let run = cases_to_run(&table, &recipes, only);
         let text = f.text();
         let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
         let sections = self.loads.sections.clone();
-        self.results.start(ctx, key, move |budget| {
-            analyse_cases(
-                &structure,
-                &text,
-                dir.as_deref(),
-                &sections,
-                &table,
-                &run,
+        self.results.ran_with = (table.clone(), recipes.clone());
+        let ext = extension.clone();
+        self.results.start(ctx, key, extension, move |budget| {
+            analyse_structure(
+                &RunInput {
+                    structure: &structure,
+                    text: &text,
+                    dir: dir.as_deref(),
+                    sections: &sections,
+                    table: &table,
+                    recipes: &recipes,
+                    cases: &run,
+                    extension: ext.as_deref(),
+                },
                 budget,
             )
         });
@@ -277,17 +317,95 @@ impl StructureApp {
         }
     }
 
+    /// A report can be written: a run solved, of the file and table as
+    /// they are.
+    pub fn can_write_report(&self) -> bool {
+        self.results.run().is_some()
+            && !self.results.running()
+            && self.results.ran_on == self.loads.key()
+    }
+
+    /// Results › Structure report…: asks where, then writes the report.
+    pub(crate) fn report_dialog(&mut self) {
+        let stem = self
+            .file
+            .as_ref()
+            .and_then(|f| f.path())
+            .and_then(Path::file_stem)
+            .map_or("structure".into(), |n| n.to_string_lossy().into_owned());
+        if let Some(out) = rfd::FileDialog::new()
+            .add_filter("HTML", &["html"])
+            .set_file_name(format!("{stem}-report.html"))
+            .save_file()
+        {
+            self.message = Some(match self.write_report(&out.with_extension("html")) {
+                Ok(m) => (m, false),
+                Err(e) => (format!("report: {e}"), true),
+            });
+        }
+    }
+
+    /// Writes the report of the last run to `out` (HTML) and the members'
+    /// results beside it (`<stem>.members.csv`); what was written, or why
+    /// not.
+    pub fn write_report(&mut self, out: &Path) -> Result<String, String> {
+        let f = self.file.as_ref().ok_or("no structure open")?;
+        if !self.can_write_report() {
+            return Err(
+                "no results of the file and the load table as they are: run the cases first".into(),
+            );
+        }
+        let run = self.results.run().ok_or("no results")?;
+        let (table, recipes) = &self.results.ran_with;
+        let incomplete: Vec<(String, String)> = run
+            .cases
+            .iter()
+            .filter_map(|c| Some((c.name.clone(), self.loads.incomplete(&c.name)?)))
+            .collect();
+        let file = f.path().map_or(String::new(), |p| p.display().to_string());
+        let sections_from = self
+            .loads
+            .sections_note
+            .as_ref()
+            .map_or("none".to_owned(), |(n, _)| n.clone());
+        let software = format!("{} {}", crate::APP_NAME, crate::VERSION);
+        let date = ohl_structure_export::report::today();
+        let html =
+            ohl_structure_export::report::report_html(&ohl_structure_export::report::ReportInput {
+                structure: f.structure(),
+                file: &file,
+                sections_from: &sections_from,
+                table,
+                recipes,
+                run,
+                incomplete: &incomplete,
+                software: &software,
+                date: Some(&date),
+            });
+        let csv_path = out.with_extension("members.csv");
+        let io = |p: &Path, e: std::io::Error| format!("{}: {e}", p.display());
+        std::fs::write(out, html).map_err(|e| io(out, e))?;
+        std::fs::write(&csv_path, ohl_structure_export::report::members_csv(run))
+            .map_err(|e| io(&csv_path, e))?;
+        Ok(format!(
+            "report written: {}, {}",
+            out.display(),
+            csv_path.display()
+        ))
+    }
+
     /// The FE results panel.
     pub fn results_ui(&mut self, ui: &mut egui::Ui) {
         self.results.poll();
         let Some(f) = &self.file else {
             return;
         };
-        let t = f.structure();
+        let t = f.structure().clone();
         if t.detail() != Detail::Design {
             ui.label(
                 "Results need level 3: every member with a section and a supported joint (or a \
-                 model = \"….ohlfe\" file). What is still missing is listed in the header.",
+                 model = \"….ohlfe\" file), or a pole the pole check can read. What is still \
+                 missing is listed in the header.",
             );
             return;
         }
@@ -300,6 +418,7 @@ impl StructureApp {
         }
         let ctx = ui.ctx().clone();
         let mut run_now = false;
+        let mut report = false;
         ui.horizontal_wrapped(|ui| {
             ui.label("Case:");
             let text = if self.results.case.is_empty() {
@@ -315,12 +434,33 @@ impl StructureApp {
                         ui.selectable_value(&mut self.results.case, c.clone(), c);
                     }
                 });
+            if !t.extensions.is_empty() {
+                ui.label("Extension:").on_hover_text(
+                    "The structure solved standing on this extension (its piece and legs, as \
+                     the line's model of a placed structure); the 3D view shows the same. \
+                     Choosing another solves again.",
+                );
+                let mut chosen = self.ext.shown.clone().filter(|n| t.extension(n).is_some());
+                egui::ComboBox::from_id_salt("results-extension")
+                    .selected_text(chosen.as_deref().unwrap_or("as written"))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut chosen, None, "as written");
+                        for e in &t.extensions {
+                            ui.selectable_value(
+                                &mut chosen,
+                                Some(e.name.clone()),
+                                format!("{} (+{} m)", e.name, e.dz.si()),
+                            );
+                        }
+                    });
+                self.ext.shown = chosen;
+            }
             let running = self.results.running();
             if ui
                 .add_enabled(!running && !cases.is_empty(), egui::Button::new("▶ Run"))
                 .on_hover_text(format!(
-                    "Solve with the finite-element model (each case at most {} s and {ITERATIONS} \
-                     iterations)",
+                    "Solve with the finite-element model and the pole check (each case at most \
+                     {} s and {ITERATIONS} iterations)",
                     CASE_TIME.as_secs()
                 ))
                 .on_disabled_hover_text("No case in the load table, or a run is going on")
@@ -341,9 +481,27 @@ impl StructureApp {
                         .weak(),
                 );
             }
+            report = ui
+                .add_enabled(self.can_write_report(), egui::Button::new("Report…"))
+                .on_hover_text(
+                    "The structure report of these results: a printable HTML page and the \
+                     members' results as CSV",
+                )
+                .on_disabled_hover_text("Run the cases first (results of the file as it is)")
+                .clicked();
         });
+        // Another extension chosen: solve again.
+        if self.results.results.is_some()
+            && !self.results.running()
+            && self.results.ran_ext != self.results_extension()
+        {
+            run_now = true;
+        }
         if run_now {
             self.run_results(&ctx);
+        }
+        if report {
+            self.report_dialog();
         }
         let stale = self.results.results.is_some() && self.results.ran_on != key;
         if stale {
@@ -352,24 +510,70 @@ impl StructureApp {
                 "The file or the load table changed since: run again for results of them.",
             );
         }
-        let results = match &self.results.results {
+        let run = match &self.results.results {
             None => {
                 ui.label(
-                    "Run solves the cases of the load table (Load cases › Load table) on the structure's \
-                     finite-element model: a value typed there counts, rows without a value are \
-                     left out. Each case runs under a time budget; Cancel stops it.",
+                    "Run solves the cases of the load table (Load cases › Load table) on the \
+                     structure's finite-element model, and with the pole check for a pole: a \
+                     value typed there counts, rows without a value are left out. Each case runs \
+                     under a time budget; Cancel stops it.",
                 );
                 return;
             }
             Some(Err(e)) => {
-                error_label(ui, format!("the model does not read: {e}"));
+                error_label(ui, format!("not solved: {e}"));
                 return;
             }
             Some(Ok(v)) => v.clone(),
         };
+        ui.strong(format!(
+            "Solved {}{}",
+            extension_text(run.extension.as_deref()),
+            if run.extension.is_some() {
+                format!(" (the structure {} m higher)", run.dz)
+            } else {
+                String::new()
+            }
+        ));
+        for n in &run.notes {
+            ui.colored_label(ui.visuals().warn_fg_color, n);
+        }
+        // Per check: the largest usage and its case.
+        egui::Grid::new("results-checks")
+            .striped(true)
+            .show(ui, |ui| {
+                for h in ["check", "usage", "governing case", "what governs"] {
+                    ui.strong(h);
+                }
+                ui.end_row();
+                for s in run.checks() {
+                    ui.label(if s.check == "members" {
+                        "members (FE)"
+                    } else {
+                        "pole"
+                    });
+                    ui.colored_label(rgb(usage_colour(s.usage)), pct(s.usage));
+                    ui.label(&s.case);
+                    ui.label(&s.governs);
+                    ui.end_row();
+                    if !s.failed.is_empty() {
+                        ui.label("");
+                        ui.colored_label(ui.visuals().error_fg_color, "not solved");
+                        ui.label(
+                            s.failed
+                                .iter()
+                                .map(|(c, _)| c.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        );
+                        ui.label("");
+                        ui.end_row();
+                    }
+                }
+            });
         ui.horizontal_wrapped(|ui| {
             ui.label("Shown:");
-            let names: Vec<&str> = results.iter().map(|(c, _)| c.as_str()).collect();
+            let names: Vec<&str> = run.cases.iter().map(|c| c.name.as_str()).collect();
             let k = self.results.shown.min(names.len().saturating_sub(1));
             egui::ComboBox::from_id_salt("results-shown")
                 .selected_text(names.get(k).copied().unwrap_or(""))
@@ -390,17 +594,18 @@ impl StructureApp {
                     "Drawn as the loads on the foundations (arrows into the ground), the largest 4 m",
                 );
         });
-        // Every case at a glance: its governing member, or why not solved.
+        // Every case at a glance: its usage over the checks, or why not
+        // solved.
         egui::ScrollArea::vertical()
             .id_salt("results-cases")
             .max_height(70.0)
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                for (k, (name, r)) in results.iter().enumerate() {
-                    let incomplete = self.loads.incomplete(name);
+                for (k, c) in run.cases.iter().enumerate() {
+                    let incomplete = self.loads.incomplete(&c.name);
                     ui.horizontal(|ui| {
                         if ui
-                            .selectable_label(self.results.shown == k, name.as_str())
+                            .selectable_label(self.results.shown == k, c.name.as_str())
                             .clicked()
                         {
                             self.results.shown = k;
@@ -412,176 +617,208 @@ impl StructureApp {
                                 format!("not checked — {text}"),
                             );
                         }
-                        match r {
-                            Ok(r) if incomplete.is_some() => {
-                                if let Some(g) = r.governing() {
-                                    ui.weak(format!(
-                                        "({:.0} % of the loads there are — member {})",
-                                        g.usage.unwrap_or(0.0) * 100.0,
-                                        g.id
-                                    ));
-                                }
-                            }
-                            Ok(r) => match r.governing() {
-                                Some(g) => {
-                                    let u = g.usage.unwrap_or(0.0);
-                                    ui.colored_label(
-                                        rgb(usage_colour(g.usage)),
-                                        format!("{:.0} % — member {}", u * 100.0, g.id),
-                                    );
-                                }
-                                None => {
-                                    ui.label("no member has a capacity");
-                                }
-                            },
-                            Err(e) => {
-                                ui.colored_label(ui.visuals().error_fg_color, e);
-                            }
+                        let mut parts = Vec::new();
+                        match &c.fe {
+                            Some(Ok(r)) => parts.push(match r.governing() {
+                                Some(g) => format!("{} — member {}", pct(g.usage), g.id),
+                                None => "no member has a capacity".into(),
+                            }),
+                            Some(Err(e)) => parts.push(format!("members: {e}")),
+                            None => {}
+                        }
+                        match &c.pole {
+                            Some(Ok(p)) => parts.push(format!("pole {}", pct(Some(p.usage)))),
+                            Some(Err(e)) => parts.push(format!("pole: {e}")),
+                            None => {}
+                        }
+                        let text = parts.join(" · ");
+                        if incomplete.is_some() {
+                            ui.weak(format!("({text} of the loads there are)"));
+                        } else {
+                            ui.colored_label(rgb(usage_colour(c.usage())), text);
                         }
                     });
                 }
             });
         ui.separator();
-        let Some((name, r)) = results.get(self.results.shown.min(results.len().saturating_sub(1)))
+        let Some(c) = run
+            .cases
+            .get(self.results.shown.min(run.cases.len().saturating_sub(1)))
         else {
             return;
         };
-        let r = match r {
-            Ok(r) => r,
-            Err(e) => {
-                error_label(ui, format!("{name}: {e}"));
-                return;
-            }
-        };
-        if let Some(text) = self.loads.incomplete(name) {
+        if let Some(text) = self.loads.incomplete(&c.name) {
             ui.colored_label(
                 crate::load_cases_tab::INCOMPLETE,
                 format!(
-                    "{name}: {text} — the line's forces lack that wire: the results are \
-                     incomplete (too low), not checked"
+                    "{}: {text} — the line's forces lack that wire: the results are \
+                     incomplete (too low), not checked",
+                    c.name
                 ),
             );
         }
-        case_ui(ui, r);
+        egui::ScrollArea::vertical()
+            .id_salt("case-results")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                if let Some(p) = &c.pole {
+                    match p {
+                        Ok(p) => pole_ui(ui, p),
+                        Err(e) => error_label(ui, format!("{}: pole check: {e}", c.name)),
+                    }
+                }
+                match &c.fe {
+                    Some(Ok(r)) => case_ui(ui, r),
+                    Some(Err(e)) => error_label(ui, format!("{}: {e}", c.name)),
+                    None => {}
+                }
+            });
     }
 }
 
-/// One case's results.
-fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
-    egui::ScrollArea::vertical()
-        .id_salt("case-results")
-        .auto_shrink([false, true])
+/// One case's pole check.
+fn pole_ui(ui: &mut egui::Ui, p: &PoleResult) {
+    egui::CollapsingHeader::new(format!("Pole check — {}", pct(Some(p.usage))))
+        .id_salt("pole-check")
+        .default_open(true)
         .show(ui, |ui| {
-            egui::Grid::new("case-summary")
-                .num_columns(2)
-                .show(ui, |ui| {
-                    ui.strong("governing");
-                    match r.governing() {
-                        Some(g) => ui.colored_label(
-                            rgb(usage_colour(g.usage)),
-                            format!(
-                                "member {} — {:.0} % ({})",
-                                g.id,
-                                g.usage.unwrap_or(0.0) * 100.0,
-                                g.governs
-                            ),
-                        ),
-                        None => ui.label("no member has a capacity"),
-                    };
-                    ui.end_row();
-                    ui.strong("largest displacement");
-                    ui.label(r.largest_displacement().map_or("—".into(), |(j, d)| {
-                        format!("{:.1} mm at joint {j}", d * 1e3)
-                    }));
-                    ui.end_row();
-                    ui.strong("Σ loads (x; y; z up)")
-                        .on_hover_text("The table's loads and the self-weight, kN, structure axes");
-                    ui.label(format!("{} kN", kn(r.load_sum)));
-                    ui.end_row();
-                    ui.strong("Σ reactions");
-                    ui.label(format!("{} kN", kn(r.reaction_sum)));
-                    ui.end_row();
-                    let scale = r.load_sum.iter().map(|x| x.abs()).fold(1.0, f64::max);
-                    let ok = r.imbalance() <= 1e-6 * scale;
-                    ui.strong("equilibrium");
-                    ui.colored_label(
-                        if ok {
-                            crate::app::ok_color(ui)
-                        } else {
-                            ui.visuals().error_fg_color
-                        },
-                        format!("out of balance {:.3} N", r.imbalance()),
-                    );
-                    ui.end_row();
-                    ui.strong("solver");
-                    ui.label(format!(
-                        "{}, {} iteration(s), residual {:.1e}",
-                        if r.nonlinear {
-                            "P-Delta"
-                        } else {
-                            "first order"
-                        },
-                        r.iterations,
-                        r.residual
-                    ));
-                    ui.end_row();
+            egui::Grid::new("pole-grid").num_columns(2).show(ui, |ui| {
+                ui.strong("usage");
+                ui.colored_label(rgb(usage_colour(Some(p.usage))), &p.governs);
+                ui.end_row();
+                ui.strong("ground moment");
+                ui.label(format!(
+                    "{:.1} kN·m (of it wind {:.1} kN·m), first order",
+                    p.ground_moment / 1000.0,
+                    p.wind_moment / 1000.0
+                ));
+                ui.end_row();
+                ui.strong("P-Delta");
+                ui.label(if p.amplification == 1.0 {
+                    "not computed (the pole gives no modulus)".to_owned()
+                } else {
+                    format!("× {:.3}", p.amplification)
                 });
-            for n in &r.notes {
+                ui.end_row();
+                ui.strong("wind on the pole (x; y)");
+                ui.label(format!("{:.0}; {:.0} Pa", p.wind[0], p.wind[1]));
+                ui.end_row();
+            });
+            for n in &p.notes {
                 ui.colored_label(ui.visuals().warn_fg_color, n);
             }
-            egui::CollapsingHeader::new(format!("Reactions ({})", r.reactions.len()))
-                .id_salt("reactions")
-                .default_open(true)
+        });
+}
+
+/// One case's finite-element results.
+fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
+    egui::Grid::new("case-summary")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.strong("governing");
+            match r.governing() {
+                Some(g) => ui.colored_label(
+                    rgb(usage_colour(g.usage)),
+                    format!(
+                        "member {} — {:.0} % ({})",
+                        g.id,
+                        g.usage.unwrap_or(0.0) * 100.0,
+                        g.governs
+                    ),
+                ),
+                None => ui.label("no member has a capacity"),
+            };
+            ui.end_row();
+            ui.strong("largest displacement");
+            ui.label(r.largest_displacement().map_or("—".into(), |(j, d)| {
+                format!("{:.1} mm at joint {j}", d * 1e3)
+            }));
+            ui.end_row();
+            ui.strong("Σ loads (x; y; z up)")
+                .on_hover_text("The table's loads and the self-weight, kN, structure axes");
+            ui.label(format!("{} kN", kn(r.load_sum)));
+            ui.end_row();
+            ui.strong("Σ reactions");
+            ui.label(format!("{} kN", kn(r.reaction_sum)));
+            ui.end_row();
+            let scale = r.load_sum.iter().map(|x| x.abs()).fold(1.0, f64::max);
+            let ok = r.imbalance() <= 1e-6 * scale;
+            ui.strong("equilibrium");
+            ui.colored_label(
+                if ok {
+                    crate::app::ok_color(ui)
+                } else {
+                    ui.visuals().error_fg_color
+                },
+                format!("out of balance {:.3} N", r.imbalance()),
+            );
+            ui.end_row();
+            ui.strong("solver");
+            ui.label(format!(
+                "{}, {} iteration(s), residual {:.1e}",
+                if r.nonlinear {
+                    "P-Delta"
+                } else {
+                    "first order"
+                },
+                r.iterations,
+                r.residual
+            ));
+            ui.end_row();
+        });
+    for n in &r.notes {
+        ui.colored_label(ui.visuals().warn_fg_color, n);
+    }
+    egui::CollapsingHeader::new(format!("Reactions ({})", r.reactions.len()))
+        .id_salt("reactions")
+        .default_open(true)
+        .show(ui, |ui| {
+            egui::Grid::new("reactions-grid")
+                .striped(true)
                 .show(ui, |ui| {
-                    egui::Grid::new("reactions-grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for h in ["joint", "Fx kN", "Fy kN", "Fz kN", "M kN·m"] {
-                                ui.strong(h);
-                            }
-                            ui.end_row();
-                            for x in &r.reactions {
-                                ui.label(&x.joint);
-                                for f in x.force {
-                                    ui.monospace(format!("{:9.2}", f / 1000.0));
-                                }
-                                let m = x.moment.iter().map(|v| v * v).sum::<f64>().sqrt();
-                                ui.monospace(format!("{:9.2}", m / 1000.0));
-                                ui.end_row();
-                            }
-                        });
+                    for h in ["joint", "Fx kN", "Fy kN", "Fz kN", "M kN·m"] {
+                        ui.strong(h);
+                    }
+                    ui.end_row();
+                    for x in &r.reactions {
+                        ui.label(&x.joint);
+                        for f in x.force {
+                            ui.monospace(format!("{:9.2}", f / 1000.0));
+                        }
+                        let m = x.moment.iter().map(|v| v * v).sum::<f64>().sqrt();
+                        ui.monospace(format!("{:9.2}", m / 1000.0));
+                        ui.end_row();
+                    }
                 });
-            egui::CollapsingHeader::new(format!("Members ({}), most used first", r.members.len()))
-                .id_salt("members")
-                .default_open(true)
+        });
+    egui::CollapsingHeader::new(format!("Members ({}), most used first", r.members.len()))
+        .id_salt("members")
+        .default_open(true)
+        .show(ui, |ui| {
+            let mut members: Vec<_> = r.members.iter().collect();
+            members.sort_by(|a, b| b.usage.unwrap_or(-1.0).total_cmp(&a.usage.unwrap_or(-1.0)));
+            egui::Grid::new("members-grid")
+                .striped(true)
                 .show(ui, |ui| {
-                    let mut members: Vec<_> = r.members.iter().collect();
-                    members.sort_by(|a, b| {
-                        b.usage.unwrap_or(-1.0).total_cmp(&a.usage.unwrap_or(-1.0))
-                    });
-                    egui::Grid::new("members-grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for h in ["member", "axial kN", "usage", "governs"] {
-                                ui.strong(h);
-                            }
-                            ui.end_row();
-                            for m in members {
-                                ui.label(&m.id);
-                                ui.monospace(format!(
-                                    "{:9.2}{}",
-                                    m.axial / 1000.0,
-                                    if m.slack { " slack" } else { "" }
-                                ));
-                                ui.colored_label(
-                                    rgb(usage_colour(m.usage)),
-                                    m.usage
-                                        .map_or("—".into(), |u| format!("{:.0} %", u * 100.0)),
-                                );
-                                ui.label(&m.governs);
-                                ui.end_row();
-                            }
-                        });
+                    for h in ["member", "axial kN", "usage", "governs"] {
+                        ui.strong(h);
+                    }
+                    ui.end_row();
+                    for m in members {
+                        ui.label(&m.id);
+                        ui.monospace(format!(
+                            "{:9.2}{}",
+                            m.axial / 1000.0,
+                            if m.slack { " slack" } else { "" }
+                        ));
+                        ui.colored_label(
+                            rgb(usage_colour(m.usage)),
+                            m.usage
+                                .map_or("—".into(), |u| format!("{:.0} %", u * 100.0)),
+                        );
+                        ui.label(&m.governs);
+                        ui.end_row();
+                    }
                 });
         });
 }

@@ -545,6 +545,16 @@ impl StructureApp {
         ) {
             self.cancel_results();
         }
+        if item(
+            ui,
+            "Structure report…",
+            self.can_write_report(),
+            "The results as a printable HTML page (with the pre-alpha warning) and the \
+             members' results as CSV",
+            "Run the cases first (results of the file and the load table as they are)",
+        ) {
+            self.report_dialog();
+        }
     }
 
     /// The windows: the deletion asked first, About.

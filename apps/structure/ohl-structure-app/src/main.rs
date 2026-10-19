@@ -81,6 +81,8 @@ mod placed_tests;
 #[cfg(test)]
 mod pole_extension_ui_tests;
 #[cfg(test)]
+mod results_ui_tests;
+#[cfg(test)]
 mod self_sufficient_tests;
 #[cfg(test)]
 mod tests;
