@@ -258,10 +258,16 @@ away has 0 for both), and the profile's spans are those between
 consecutive structures of the run (`AlignmentView::consecutive`) plus
 those to a structure away (projected), so a connection whose station falls
 between two towers does not break the span between them. The drawings
-mark it too (`ohl_drawing::Mark::away`, computed): a plan and profile
-sheet never breaks at a structure away, nor within
-`BREAK_CLEARANCE_MM` (2 mm on paper) of what is drawn of any other
-structure.
+mark it too (`ohl_drawing::Mark::away`, computed), but their sheets use
+their own rule (`ohl_drawing::sheet_layout`, drawn by `sheets`): a plan and
+profile sheet breaks only at a structure whose offset from the alignment
+is within the **line width** (`Options::plan_half_width`, `--plan-width`,
+default 40 m), and never within `Options::break_clearance` (mm on paper,
+default `BREAK_CLEARANCE_MM` = 2, 0 to `MAX_BREAK_CLEARANCE_MM` = 20,
+`check_break_clearance`; `--break-clearance`) of what is drawn of any
+other structure. Both are export settings, not stored in the project (the
+app keeps its export window's settings for the session); the app's sheet
+preview calls `sheet_layout` with them.
 
 **Files of version 2** held `routes` that were their own alignment
 (`alignment`, `structures`) or followed their structures, and the line's

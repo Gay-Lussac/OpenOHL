@@ -13,7 +13,8 @@ drawing. **Sheets** are a separate, optional layer on top of it, for
 exports: the sheet format, the scales and where the sheets break belong
 to the export settings only (`ohl drawing … --page`, `ohl line --drawings
 … --page`, File › Export › Drawings… in the app) and never change the
-profile view or any computed number.
+profile view or any computed number. The app can show them over its views
+(the [sheet preview](#sheet-preview), off by default).
 
 ## From the command line
 
@@ -37,8 +38,10 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--hscale`, `--vscale` | horizontal and vertical scale, `1:2000` or `2000` (defaults 1:2000 and 1:200); the exaggeration is their ratio |
 | `--plan-scale` | the plan across the line (default the horizontal scale) |
 | `--page` | sheets `A0`–`A4` (landscape) or `WIDTHxHEIGHT` in mm; without it one continuous drawing |
+| `--break-clearance MM` | clearance on paper between a sheet break and what is drawn of every other structure, 0 to 20 mm (default 2; see [Sheets](#sheets)) |
+| `--plan-width M` | the **line width**: half width of the plan (default 40 m); a structure within it of the alignment may end a sheet |
 | `--profile-only` | the profile alone, without the plan |
-| `--side-offset`, `--plan-width`, `--clearance`, `--logo` | as for `ohl line --drawings` |
+| `--side-offset`, `--clearance`, `--logo` | as for `ohl line --drawings` |
 | `--dpi` | resolution of PNG images (default 150) |
 | `--out DIR` | output folder (created) |
 
@@ -89,29 +92,41 @@ and reported as a warning: change the scales or the format.
 **Where a sheet may break.** A match line never falls at, or cuts
 through, a structure drawn on the sheet:
 
-- a sheet breaks only at a structure of the **run along the alignment**.
-  A structure of the route that stands **away from the alignment** (such
-  as a connection beside the line: on the route because it gives the
-  route itself, more than 5 m from the alignment) is drawn at its station
-  but never ends a sheet: a match line there would cut through the span
-  of the line passing it;
-- the break structure must stand at least **2 mm on paper** (4 m at
-  1:2000, 1 m at 1:500) from what is drawn of **every other structure**
-  — its station, its attachment points and its stick drawing, along the
-  route — whether that structure is on the alignment or away from it;
+- a sheet breaks only at a structure **on the line**: one standing within
+  the **line width** of the alignment. The line width is the drawings'
+  plan half width (`--plan-width`, default 40 m each side; **Line width**
+  in the app's export window): the band the sheets' plan shows. A
+  structure of the route outside it (such as a connection or termination
+  well beside the line) is drawn at its station but never ends a sheet:
+  a match line there would cut through the span of the line passing it.
+  A structure within it may end a sheet even when the route counts it as
+  away from the alignment (more than 5 m beside it, see
+  [Desktop app](desktop-app.md)); a structure exactly at the line width
+  counts as within it;
+- breaks fall at structures only, never in the middle of a span;
+- the break structure must stand at least the **break clearance on
+  paper** — 2 mm by default (4 m at 1:2000, 1 m at 1:500), set with
+  `--break-clearance` (0 to 20 mm) or **Sheet breaks** in the export
+  window — from what is drawn of **every other structure** — its station,
+  its attachment points and its stick drawing, along the route — whether
+  that structure is within the line width or not;
 - when the structure where the sheet would end is not free, the break
   moves back to the last free structure that still fits on the sheet;
 - when no free structure fits, the sheet runs on to the next free one. It
   is drawn anyway (longer than the paper, like a span that is too long)
   and the warning names the structures it could not break at and why:
   `no free sheet break within the 526 m the sheet holds at 1:2000 (T2 is
-  within 4.0 m of C1 (0+312.0); C1 stands off the alignment): the sheet
-  runs on to T3 (640 m), drawn anyway`.
+  within 4.0 m of C1 (0+312.0); C1 stands 60.0 m right of the alignment,
+  outside the line width ±40.0 m): the sheet runs on to T3 (640 m), drawn
+  anyway`.
 
 The first sheet starts at the first structure and the last ends at the
 last, whichever they are; the ends of a station range are kept as given.
-Lines without structures away from the alignment or close to one another
+Lines without structures outside the line width or close to one another
 are split as before.
+
+The break clearance and the line width are export settings: they are not
+stored in the project (the app keeps them for the session).
 
 ## Files
 
@@ -198,15 +213,41 @@ A simple, open format for the same numbers (version 1):
 
 **File › Export › Drawings…** opens a window: route (or every route),
 formats, sheets (one continuous drawing, or A0–A4 split at structures),
-horizontal and vertical scale, station range, clearance line, PNG
-resolution, the profile alone, the other solved weather cases (dashed),
-and the output folder. **Export** writes the files in the background with a
-progress window; the views stay usable and the window stays open for the
-next export. It draws the weather case shown (solid). The sheet format and
-scales chosen here are for the export only: the Profile page stays one
-continuous view along the route, without sheet breaks. A preview of the
-sheets in the app (their frames over the profile, or a page of their own)
-is not built yet; the files written are the preview.
+horizontal and vertical scale, **line width** (± m, the plan's half
+width), **sheet breaks** (the break clearance, mm on paper), station
+range, clearance line, PNG resolution, the profile alone, the other solved
+weather cases (dashed), and the output folder. **Export** writes the files
+in the background with a progress window; the views stay usable and the
+window stays open for the next export. It draws the weather case shown
+(solid). The settings are kept for the session when the window closes
+(not in the project). The sheet format and scales chosen here are for the
+export only: the Profile page stays one continuous view along the route,
+without sheet breaks.
+
+### Sheet preview
+
+**Show the export's sheets over the profile and the plan** — a tick in
+the export window, in **View › Sheet preview** and in the Profile page's
+**Sheets** menu (a menu of ticks: it stays open; off by default) — shows
+the sheets the export would write now, over the continuous views:
+
+- **Profile**: a dashed match line across the view at each end of every
+  sheet, the sheets in a strip along the bottom with their numbers (the
+  alignment's id first when the profile shows several), and the export's
+  warnings above the view (a box that scrolls when they are many): a
+  sheet that runs on because no free break fits, a span longer than the
+  sheet, a profile taller than it. A warned sheet is amber, and the part
+  of a sheet beyond what its paper holds darker amber.
+- **Plan**: each sheet's band along its alignment (the line width each
+  side, as the sheets' plan shows it), its match lines across the band and
+  its number; when the export draws the profile alone, the plan says so
+  and shows no sheets.
+
+The preview is laid out by the export's own code with the window's
+settings (format, scales, line width, break clearance, station range, the
+profile alone, the other cases): nothing is computed a second way, and it
+follows the settings as they change. Without a sheet format it says that
+the export writes one continuous drawing.
 
 ## What is not there yet
 
