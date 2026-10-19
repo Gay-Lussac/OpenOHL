@@ -619,8 +619,8 @@ fn handles_drag_with_tools_on_left_click() {
         // the drag handles' own behaviour, the same with the option off.)
         let s = r.model.line.structure("T3").unwrap();
         let p = s.point(&label).unwrap().position;
-        let moved = (0..3).map(|k| (p[k] - before[k]).abs()).fold(0.0, f64::max);
-        assert!(moved < 0.05, "{before:?} ➡ {p:?}");
+        // A click is not a drag: the point is not moved, not even snapped.
+        assert_eq!(p, before, "a click on a handle moved the point");
     }
     // A drag on it moves the point; no tool either.
     drag(&mut h, at, egui::vec2(0.0, -60.0), &[(egui::Key::Z, false)]);
