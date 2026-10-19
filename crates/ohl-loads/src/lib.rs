@@ -35,6 +35,26 @@
 //! longitudinal = 1.0
 //! strength = 1.0
 //! ```
+//!
+//! **The structures' own wind** may differ from the wires' (design codes
+//! treat them apart): a case's optional `[case.structure]` table gives
+//! the wind pressure on the structure bodies (`wind_pressure`, instead of
+//! the weather case's) and the factor on it (`wind_factor`, instead of
+//! `transverse`), each on its own (version 2; [`StructureWind`],
+//! [`LoadCase::structure_wind`]). Absent, the structures take the weather
+//! case's pressure and the transverse factor, as before. The wires and
+//! strings always take the weather case's pressure and `transverse`.
+//!
+//! ```toml
+//! [[case]]
+//! name = "wind on the towers"
+//! weather = "high wind"
+//! transverse = 1.4
+//!
+//! [case.structure]
+//! wind_pressure = "900 Pa"   # on the structure bodies (the wires: the weather case's)
+//! wind_factor = 1.2          # on that pressure (the wires: transverse, 1.4)
+//! ```
 
 mod analysis;
 pub mod capacity;
@@ -50,8 +70,11 @@ use serde::Deserialize;
 
 /// `format` of a load case file.
 pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
-/// Newest format version read.
-pub const LOAD_CASE_FILE_VERSION: u32 = 1;
+/// Newest format version read. Version 2 adds a case's
+/// `[case.structure]` table ([`StructureWind`]), written only when a case
+/// has one ([`LoadCases::written_version`]); version 1 files read as
+/// before.
+pub const LOAD_CASE_FILE_VERSION: u32 = 2;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
@@ -125,6 +148,99 @@ pub struct LoadCase {
     /// Tags (code, limit state…).
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The wind on the structures' own bodies when it differs from the
+    /// wires' (version 2; none: the weather case's pressure and the
+    /// transverse factor).
+    #[serde(default)]
+    pub structure: Option<StructureWind>,
+}
+
+/// A load case's own values for the wind on the structure bodies
+/// (`[case.structure]`, version 2): each one given replaces the line's
+/// value for the structures only — the wires and strings keep the weather
+/// case's pressure and the transverse factor. A design code that treats
+/// the wind on pylons apart from the wind on the wires writes them (a
+/// design-code plugin in the `.ohllc` text it generates). A gust or
+/// structure factor of a code goes into the pressure or the factor;
+/// drag (force) coefficients stay with the structure (its wind bands,
+/// its members' sections, its pole).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructureWind {
+    /// The wind pressure on the structure bodies, Pa (none: the weather
+    /// case's `wind_pressure`).
+    #[serde(
+        default,
+        deserialize_with = "ohl_core::units::si::de_opt::<_, ohl_core::units::Stress>"
+    )]
+    pub wind_pressure: Option<f64>,
+    /// The factor on that pressure (none: the case's `transverse`
+    /// factor).
+    #[serde(default)]
+    pub wind_factor: Option<f64>,
+}
+
+impl StructureWind {
+    /// Neither value given.
+    pub fn is_empty(&self) -> bool {
+        self.wind_pressure.is_none() && self.wind_factor.is_none()
+    }
+}
+
+/// The wind on a structure's own body in a load case, as every structure
+/// check takes it ([`LoadCase::structure_wind`]): the wind bands of the
+/// usage, the member wind of the finite-element check, the wind on a
+/// pole, and the line cases in the structure application.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BodyWind {
+    /// Pressure, Pa (unfactored).
+    pub pressure: f64,
+    /// Factor on it.
+    pub factor: f64,
+    /// Where it blows, across the line in the structure's axes: −1 to the
+    /// left (−x, the wind from the right), +1 to the right.
+    pub towards: f64,
+    /// The pressure is the case's own (`[case.structure]`), not the
+    /// weather case's.
+    pub own_pressure: bool,
+    /// The factor is the case's own, not its transverse factor.
+    pub own_factor: bool,
+}
+
+impl Default for BodyWind {
+    /// No wind (pressure 0, factor 1, to the left).
+    fn default() -> Self {
+        Self {
+            pressure: 0.0,
+            factor: 1.0,
+            towards: -1.0,
+            own_pressure: false,
+            own_factor: false,
+        }
+    }
+}
+
+impl BodyWind {
+    /// Pressure × factor, Pa: the design pressure on the body.
+    pub fn factored(&self) -> f64 {
+        self.pressure * self.factor
+    }
+
+    /// The case gives a value of its own for the structures.
+    pub fn is_own(&self) -> bool {
+        self.own_pressure || self.own_factor
+    }
+
+    /// Where the values come from, for notes: empty when both are the
+    /// line's (the weather case's pressure, the transverse factor).
+    pub fn origin(&self) -> &'static str {
+        match (self.own_pressure, self.own_factor) {
+            (true, true) => "the load case's own pressure and factor for the structures",
+            (true, false) => "the load case's own pressure for the structures",
+            (false, true) => "the load case's own factor for the structures",
+            (false, false) => "",
+        }
+    }
 }
 
 /// The name of the load case of weather case `weather` on its own
@@ -152,6 +268,26 @@ impl LoadCase {
             longitudinal: 1.0,
             strength: 1.0,
             tags: vec![WEATHER_CASE_TAG.to_owned()],
+            structure: None,
+        }
+    }
+
+    /// The wind on the structures' own bodies in this case with weather
+    /// case `weather` (the one it names): the pressure of its
+    /// `[case.structure]` table, else the weather case's; the factor
+    /// there, else the transverse factor; the side from the weather case.
+    /// One rule for the line's structure checks and the structure
+    /// application.
+    pub fn structure_wind(&self, weather: &WeatherCase) -> BodyWind {
+        let own = self.structure.unwrap_or_default();
+        BodyWind {
+            pressure: own
+                .wind_pressure
+                .unwrap_or_else(|| weather.wind_pressure.si()),
+            factor: own.wind_factor.unwrap_or(self.transverse),
+            towards: -weather.wind_from.to_left(),
+            own_pressure: own.wind_pressure.is_some(),
+            own_factor: own.wind_factor.is_some(),
         }
     }
 
@@ -172,6 +308,24 @@ impl LoadCase {
         }
         if self.strength == 0.0 {
             return Err(format!("{}: strength factor 0", self.name));
+        }
+        if let Some(s) = &self.structure {
+            if let Some(p) = s.wind_pressure
+                && !(p.is_finite() && p >= 0.0)
+            {
+                return Err(format!(
+                    "{}: structure wind_pressure {p} Pa (0 or more)",
+                    self.name
+                ));
+            }
+            if let Some(f) = s.wind_factor
+                && !(f.is_finite() && (0.0..=100.0).contains(&f))
+            {
+                return Err(format!(
+                    "{}: structure wind_factor {f} (0 to 100)",
+                    self.name
+                ));
+            }
         }
         Ok(())
     }
@@ -221,6 +375,26 @@ impl LoadCases {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
+
+    /// The version a file of these cases is written at: 2 when a case has
+    /// a `[case.structure]` table with a value, else 1 (an older program
+    /// still reads it).
+    pub fn written_version(&self) -> u32 {
+        written_version(&self.cases)
+    }
+}
+
+/// The version a load case file holding `cases` is written at
+/// ([`LoadCases::written_version`]).
+pub fn written_version(cases: &[LoadCase]) -> u32 {
+    if cases
+        .iter()
+        .any(|c| c.structure.is_some_and(|s| !s.is_empty()))
+    {
+        2
+    } else {
+        1
+    }
 }
 
 /// The load at one point of a structure in a load case: a point strings
@@ -265,6 +439,9 @@ pub struct CaseLoads {
     /// (the loads given are those computed, nothing is made up for the
     /// missing wires).
     pub missing: Vec<MissingWire>,
+    /// The wind on the structures' own bodies in this case
+    /// ([`LoadCase::structure_wind`]).
+    pub structure_wind: BodyWind,
 }
 
 impl CaseLoads {
@@ -540,6 +717,7 @@ pub fn structure_loads(
             loads: at.into_values().collect(),
             failed,
             missing,
+            structure_wind: case.structure_wind(w),
         });
     }
     Ok(out)
@@ -605,10 +783,13 @@ fn add(
 
 /// Adds the wind on the structures themselves to `results`: for every
 /// structure whose type gives wind bands (`[[wind.band]]`), one load per
-/// band — the load case's wind pressure × drag × area, across the line
-/// (the wind side of the weather case), at the band's mid-height on the
-/// structure's centre line — without a point, labelled "wind on the
-/// structure". Factored by the load case's transverse factor.
+/// band — the structures' wind pressure of the load case × drag × area,
+/// across the line (the wind side of the weather case), at the band's
+/// mid-height on the structure's centre line — without a point, labelled
+/// "wind on the structure". Factored by the structures' wind factor. Both
+/// are [`LoadCase::structure_wind`]: the case's `[case.structure]` values
+/// where given, else the weather case's pressure and the transverse
+/// factor (as before).
 ///
 /// A structure standing on a height extension stands its `dz` higher:
 /// the bands (heights above the ground of the structure as written) rise
@@ -626,7 +807,8 @@ pub fn add_structure_wind(
         let Some(w) = weather.iter().find(|w| w.name == r.case.weather) else {
             continue;
         };
-        let q = w.wind_pressure.si();
+        let body = r.case.structure_wind(w);
+        let q = body.pressure;
         if q <= 0.0 {
             continue;
         }
@@ -646,7 +828,7 @@ pub fn add_structure_wind(
             for b in &bands.bands {
                 let (from, to) = (b.from.si() + dz, b.to.si() + dz);
                 // Wind from the right blows towards the left (−x).
-                let f = q * b.drag * b.area.si() * w.wind_from.to_left();
+                let f = -q * b.drag * b.area.si() * body.towards;
                 let local = [-f, 0.0, 0.0];
                 r.loads.push(AttachmentLoad {
                     structure: s.id.clone(),
@@ -661,7 +843,7 @@ pub fn add_structure_wind(
                     ],
                     force: [-f * right[0], -f * right[1], 0.0],
                     local,
-                    factored: [local[0] * r.case.transverse, 0.0, 0.0],
+                    factored: [local[0] * body.factor, 0.0, 0.0],
                 });
             }
         }

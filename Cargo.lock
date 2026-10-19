@@ -3868,6 +3868,8 @@ dependencies = [
  "ohl-structure-link",
  "ohl-structure-loads",
  "ohl-structures",
+ "serde",
+ "serde_json",
  "zip",
 ]
 
@@ -3914,6 +3916,7 @@ dependencies = [
  "ohl-structures-fe",
  "ohl-weather",
  "ohl-wirefe",
+ "serde_json",
  "toml 0.9.12+spec-1.1.0",
  "toml_edit",
 ]
@@ -3970,6 +3973,7 @@ dependencies = [
  "ohl-clearance",
  "ohl-core",
  "ohl-crs",
+ "ohl-loads",
  "ohl-sagtension",
  "ohl-sections",
  "ohl-spotting",

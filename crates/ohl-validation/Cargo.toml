@@ -21,6 +21,7 @@ ohl-thermal.workspace = true
 ohl-structures-fe.workspace = true
 ohl-sections.workspace = true
 ohl-clearance.workspace = true
+ohl-loads.workspace = true
 nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true
