@@ -14259,3 +14259,183 @@ fn the_usage_page_shows_structures_not_checked() {
         "not checked: a wire not solved"
     );
 }
+
+/// The sheet preview: off by default; ticked in the Profile page's Sheets
+/// menu (which stays open), it shows the export's sheets over the profile
+/// and the plan — exactly those File › Export › Drawings… writes, warnings
+/// included — and follows the export settings as they change.
+#[test]
+fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
+    let model = synthetic();
+    // On the GPU when there is one (images with OHL_RENDER_PNG).
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if ohl_render::headless_device().is_ok() {
+        builder = builder.wgpu();
+    }
+    let mut harness = builder.build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    // Off by default: nothing drawn, no preview made.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(!r.drawings.preview_on);
+        assert!(r.profile.sheets_drawn.is_empty());
+    }
+    assert!(harness.query_by_label_contains("Sheet preview:").is_none());
+    // Ticked in the Profile page's Sheets menu: the menu stays open.
+    harness.get_by_label("Sheets").click();
+    harness.run();
+    harness.get_by_label(crate::drawings::PREVIEW_TICK).click();
+    harness.run_steps(3);
+    harness.get_by_label(crate::drawings::PREVIEW_TICK);
+    assert!(harness.state_mut().ready().unwrap().drawings.preview_on);
+    crate::ux_tests::shot(&mut harness, "sheet-preview-profile");
+    // The sheets of the alignments shown, as the export lays them out (A3
+    // at 1:2000 / 1:200 by default).
+    let (shown, case) = {
+        let r = harness.state_mut().ready().unwrap();
+        let shown: Vec<(String, usize, f64, f64, bool)> = r.profile.sheets_drawn.clone();
+        (shown, r.case)
+    };
+    assert!(shown.len() >= 2, "{shown:?}");
+    let id = shown[0].0.clone();
+    harness.get_by_label_contains(&format!("Sheet preview: {} sheet(s) A3", shown.len()));
+    // The export writes the same sheets, with the same warnings.
+    let dir = std::env::temp_dir().join(format!("ohl-app-sheet-preview-{}", std::process::id()));
+    let (written, preview) = {
+        let r = harness.state_mut().ready().unwrap();
+        let routes = r.model.line.alignment_views();
+        let k = routes.iter().position(|a| a.id == id).unwrap();
+        let w = crate::drawings::DrawingsWindow {
+            route: Some(k),
+            formats: vec![ohl_drawing::export::Format::Svg],
+            out: Some(dir.clone()),
+            ..r.drawings.settings().clone()
+        };
+        let input = crate::drawings::Input::new(&r.model, case, &w).unwrap();
+        let report = crate::drawings::run(&input, &|_, _| {}).unwrap();
+        let preview = crate::drawings::preview(&r.model, case, &w).unwrap();
+        (report, preview)
+    };
+    let route = preview.route(&id).unwrap();
+    let sheet_files = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("-sheet-")
+        })
+        .count();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(sheet_files, route.sheets.len());
+    let profile_sheets: Vec<_> = shown.iter().filter(|s| s.0 == id).collect();
+    assert_eq!(profile_sheets.len(), route.sheets.len());
+    for (s, l) in profile_sheets.iter().zip(&route.sheets) {
+        // (One alignment shown first: no shift.)
+        assert_eq!((s.1, s.4), (l.number, !l.warnings.is_empty()));
+    }
+    let exported: Vec<&str> = written
+        .lines()
+        .filter_map(|l| l.strip_prefix("⚠ "))
+        .collect();
+    let previewed: Vec<String> = preview
+        .warnings()
+        .into_iter()
+        .filter(|w| w.starts_with(&format!("route {id}: ")))
+        .collect();
+    assert_eq!(exported, previewed);
+    // The settings change (A4, window closed: those it had): the
+    // preview follows.
+    harness.state_mut().ready().unwrap().drawings.last.page = "A4".into();
+    harness.run_steps(3);
+    let a4 = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .profile
+        .sheets_drawn
+        .iter()
+        .filter(|s| s.0 == id)
+        .count();
+    assert!(a4 > profile_sheets.len(), "{a4}");
+    // The window opened again starts from the settings kept.
+    harness.state_mut().ready().unwrap().drawings.open();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .drawings
+            .window
+            .as_ref()
+            .unwrap()
+            .page,
+        "A4"
+    );
+    // The plan shows them too.
+    harness.state_mut().show_tab(crate::app::Tab::Plan);
+    harness.run_steps(3);
+    assert!(harness.state_mut().ready().unwrap().plan.sheets_drawn > 0);
+    crate::ux_tests::shot(&mut harness, "sheet-preview-plan");
+    // One continuous drawing: no sheets, said so.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .drawings
+        .window
+        .as_mut()
+        .unwrap()
+        .page = String::new();
+    harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .profile
+            .sheets_drawn
+            .is_empty()
+    );
+    harness.get_by_label_contains("the export writes one continuous drawing");
+}
+
+/// File › Export › Drawings…: the line width and the break clearance are
+/// export settings, checked before anything is written.
+#[test]
+fn the_export_window_takes_the_line_width_and_break_clearance() {
+    let m = synthetic();
+    let w = crate::drawings::DrawingsWindow {
+        out: Some(std::env::temp_dir()),
+        line_width: 25.0,
+        break_clearance: 3.5,
+        ..Default::default()
+    };
+    let input = crate::drawings::Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.options.plan_half_width, 25.0);
+    assert_eq!(input.options.break_clearance, 3.5);
+    for bad in [
+        crate::drawings::DrawingsWindow {
+            break_clearance: 25.0,
+            ..w.clone()
+        },
+        crate::drawings::DrawingsWindow {
+            break_clearance: -1.0,
+            ..w.clone()
+        },
+        crate::drawings::DrawingsWindow {
+            line_width: 0.0,
+            ..w.clone()
+        },
+    ] {
+        assert!(crate::drawings::Input::new(&m, 0, &bad).is_err());
+    }
+    // The defaults: 2 mm, ±40 m.
+    let d = crate::drawings::DrawingsWindow::default();
+    assert_eq!((d.break_clearance, d.line_width), (2.0, 40.0));
+}

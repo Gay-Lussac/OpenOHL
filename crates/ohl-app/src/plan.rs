@@ -33,6 +33,99 @@ pub struct PlanView {
     styles: crate::wire_style::StyleCache,
     /// The alignments drawn.
     alignments: AlignmentViews,
+    /// The sheet preview's sheets drawn in the last frame.
+    pub sheets_drawn: usize,
+}
+
+/// The sheet preview on the plan: each sheet's band along its alignment
+/// (the line width each side, as the sheets' plan shows it), the match
+/// lines across it at the sheet's ends, its number; warned sheets amber.
+/// How many sheets were drawn.
+fn paint_sheets(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    to_screen: &impl Fn([f64; 3]) -> egui::Pos2,
+    sheets: Option<&Result<crate::drawings::Preview, String>>,
+) -> usize {
+    use ohl_line::route::point_at;
+    let note = |text: String| {
+        painter.text(
+            rect.left_top() + egui::vec2(10.0, 10.0),
+            egui::Align2::LEFT_TOP,
+            text,
+            egui::FontId::proportional(11.0),
+            egui::Color32::from_gray(170),
+        );
+    };
+    let p = match sheets {
+        None => return 0,
+        Some(Err(e)) => {
+            note(format!("Sheet preview: {e}"));
+            return 0;
+        }
+        Some(Ok(p)) => p,
+    };
+    if p.page.is_none() {
+        note("Sheet preview: the export writes one continuous drawing".into());
+        return 0;
+    }
+    if !p.plan {
+        note("Sheet preview: the sheets have no plan (the profile alone)".into());
+        return 0;
+    }
+    let blue = egui::Color32::from_rgb(70, 140, 230);
+    let warn = egui::Color32::from_rgb(230, 160, 50);
+    let w = p.line_width;
+    let mut drawn = 0;
+    for r in &p.routes {
+        let c = &r.centreline;
+        if c.len() < 2 {
+            continue;
+        }
+        let at = |s: f64, o: f64| {
+            let q = point_at(c, s, o);
+            to_screen([q[0], q[1], 0.0])
+        };
+        for s in &r.sheets {
+            let col = if s.warnings.is_empty() { blue } else { warn };
+            let n = 24;
+            let edge = |o: f64| -> Vec<egui::Pos2> {
+                (0..=n)
+                    .map(|k| at(s.from + (s.to - s.from) * k as f64 / n as f64, o))
+                    .collect()
+            };
+            let (left, right) = (edge(-w), edge(w));
+            let box_ = egui::Rect::from_points(&[left.clone(), right.clone()].concat());
+            if !box_.intersects(rect) {
+                continue;
+            }
+            drawn += 1;
+            let faint = col.gamma_multiply(0.6);
+            painter.add(egui::Shape::line(left, egui::Stroke::new(1.0, faint)));
+            painter.add(egui::Shape::line(right, egui::Stroke::new(1.0, faint)));
+            for end in [s.from, s.to] {
+                painter.extend(egui::Shape::dashed_line(
+                    &[at(end, -w), at(end, w)],
+                    egui::Stroke::new(1.5, blue),
+                    6.0,
+                    4.0,
+                ));
+            }
+            painter.text(
+                at(0.5 * (s.from + s.to), w),
+                egui::Align2::CENTER_BOTTOM,
+                format!(
+                    "{} sheet {}{}",
+                    r.id,
+                    s.number,
+                    if s.warnings.is_empty() { "" } else { " ⚠" }
+                ),
+                egui::FontId::proportional(11.0),
+                col,
+            );
+        }
+    }
+    drawn
 }
 
 /// Length of a unit of the phases' line codes on screen, px.
@@ -239,7 +332,8 @@ impl PlanView {
         self.centre = Some([p[0], p[1]]);
     }
 
-    /// Shows the view.
+    /// Shows the view (with the sheet preview's `sheets` when it is on).
+    #[allow(clippy::too_many_arguments)]
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -248,6 +342,7 @@ impl PlanView {
         selection: &mut Selection,
         snaps: &selection::Snaps,
         visible: &std::collections::HashSet<crate::scene::Layer>,
+        sheets: Option<&Result<crate::drawings::Preview, String>>,
     ) -> Option<selection::Use> {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -674,6 +769,7 @@ impl PlanView {
                 );
             }
         }
+        self.sheets_drawn = paint_sheets(&painter, rect, &to_screen, sheets);
         // Other users: a diamond where they look, their name.
         for (name, at) in &self.peers {
             let p = to_screen(*at);

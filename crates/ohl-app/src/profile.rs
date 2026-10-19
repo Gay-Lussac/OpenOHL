@@ -42,6 +42,10 @@ pub struct ProfileView {
     back: Option<((ViewKey, u64), Vec<egui::Shape>)>,
     /// the wires' shapes.
     wires: Option<(WiresKey, Vec<egui::Shape>)>,
+    /// The sheet preview's sheets drawn in the last frame: alignment,
+    /// sheet number, first and last station on the profile (shifted as
+    /// the alignment is), with warnings or not.
+    pub(crate) sheets_drawn: Vec<(String, usize, f64, f64, bool)>,
 }
 
 /// Where the view is: stations, heights, its rectangle (bits of each).
@@ -270,7 +274,9 @@ impl ProfileView {
         case: usize,
         selection: &mut Selection,
         snaps: &crate::selection::Snaps,
+        drawings: &mut crate::drawings::Drawings,
     ) -> Option<Selection> {
+        self.sheets_drawn.clear();
         let routes = self.alignments.get(&model.line).to_vec();
         if routes.is_empty() {
             ui.label(
@@ -371,6 +377,9 @@ impl ProfileView {
             {
                 self.new_corridor = Some(depth.max(0.0));
             }
+            ui.separator();
+            // Ticks keep it open.
+            crate::menu::options_menu(ui, "Sheets", |ui| drawings.preview_menu(ui));
         });
         let depth = self.new_corridor.unwrap_or(model.profile_corridor).max(0.0);
         let key = (show.clone(), case, depth.to_bits());
@@ -426,6 +435,60 @@ impl ProfileView {
         }
         let built = &self.drawing.as_ref().expect("built").1;
         let d = &built.drawing;
+        // The sheet preview: the export's sheets of the alignments shown,
+        // each moved as its alignment is on this profile.
+        let mut sheets: Vec<(f64, &str, &ohl_drawing::SheetLayout)> = Vec::new();
+        match drawings.preview(model, case) {
+            None => {}
+            Some(Err(e)) => {
+                crate::menu::message(
+                    ui,
+                    format!("Sheet preview: {e}"),
+                    Some(ui.visuals().warn_fg_color),
+                );
+            }
+            Some(Ok(p)) if p.page.is_none() => {
+                ui.label(
+                    egui::RichText::new(
+                        "Sheet preview: the export writes one continuous drawing (no sheet \
+                         format chosen in File › Export › Drawings…)",
+                    )
+                    .small()
+                    .weak(),
+                );
+            }
+            Some(Ok(p)) => {
+                for (at, name) in &built.joints {
+                    let id = name.strip_prefix("alignment ").unwrap_or(name);
+                    if let Some(r) = p.route(id) {
+                        sheets.extend(r.sheets.iter().map(|s| (*at, r.id.as_str(), s)));
+                    }
+                }
+                // Those of the alignments shown.
+                let warnings: Vec<String> = p
+                    .warnings()
+                    .into_iter()
+                    .filter(|w| {
+                        sheets
+                            .iter()
+                            .any(|(_, id, _)| w.starts_with(&format!("route {id}: ")))
+                    })
+                    .collect();
+                let page = p.page.as_ref().map_or("", |p| p.name.as_str());
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Sheet preview: {} sheet(s) {page}, {} warning(s) — as File › Export › \
+                         Drawings… writes them",
+                        sheets.len(),
+                        warnings.len()
+                    ))
+                    .small(),
+                );
+                if !warnings.is_empty() {
+                    crate::menu::message(ui, warnings.join("\n"), Some(ui.visuals().warn_fg_color));
+                }
+            }
+        }
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let range = self.range.get_or_insert([0.0, d.length.max(1.0)]);
@@ -796,6 +859,78 @@ impl ProfileView {
                 {
                     placer.paint(&painter, to_screen(m[0], m[2]), note);
                 }
+            }
+        }
+        // The sheet preview: match lines across the view at each sheet's
+        // ends, the sheets in a strip along the bottom (warned ones amber,
+        // the part beyond what the sheet holds darker), their numbers.
+        let match_line = egui::Color32::from_rgb(70, 140, 230);
+        let warn = egui::Color32::from_rgb(230, 160, 50);
+        let strip = rect.max.y - 18.0..=rect.max.y;
+        let several = built.joints.len() > 1;
+        for (k, (at, id, s)) in sheets.iter().enumerate() {
+            let (a, b) = (at + s.from, at + s.to);
+            if b < s0 || a > s1 {
+                continue;
+            }
+            let warned = !s.warnings.is_empty();
+            self.sheets_drawn
+                .push((id.to_string(), s.number, a, b, warned));
+            let (xa, xb) = (to_screen(a, z0).x, to_screen(b, z0).x);
+            let clip = |x: f32| x.clamp(rect.min.x, rect.max.x);
+            let fill = if warned {
+                egui::Color32::from_rgba_unmultiplied(230, 160, 50, 60)
+            } else if k % 2 == 0 {
+                egui::Color32::from_rgba_unmultiplied(70, 140, 230, 55)
+            } else {
+                egui::Color32::from_rgba_unmultiplied(70, 140, 230, 30)
+            };
+            painter.rect_filled(
+                egui::Rect::from_x_y_ranges(clip(xa)..=clip(xb), strip.clone()),
+                0.0,
+                fill,
+            );
+            if s.to - s.from > s.reach + 1e-6 {
+                let xr = to_screen(at + s.from + s.reach, z0).x;
+                painter.rect_filled(
+                    egui::Rect::from_x_y_ranges(clip(xr)..=clip(xb), strip.clone()),
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(230, 160, 50, 110),
+                );
+            }
+            for x in [xa, xb] {
+                if x >= rect.min.x && x <= rect.max.x {
+                    painter.extend(egui::Shape::dashed_line(
+                        &[egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
+                        egui::Stroke::new(1.0, match_line),
+                        6.0,
+                        4.0,
+                    ));
+                }
+            }
+            let label = format!(
+                "{}Sheet {}{}",
+                if several {
+                    format!("{id} · ")
+                } else {
+                    String::new()
+                },
+                s.number,
+                if warned { " ⚠" } else { "" }
+            );
+            let (l, r) = (clip(xa), clip(xb));
+            if r - l > 24.0 {
+                painter.text(
+                    egui::pos2(0.5 * (l + r), rect.max.y - 9.0),
+                    egui::Align2::CENTER_CENTER,
+                    if r - l > 90.0 {
+                        label
+                    } else {
+                        s.number.to_string()
+                    },
+                    egui::FontId::proportional(10.5),
+                    if warned { warn } else { match_line },
+                );
             }
         }
         painter.text(
