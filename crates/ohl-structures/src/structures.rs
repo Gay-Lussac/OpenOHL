@@ -192,8 +192,10 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// unread, read by the structure application), the load quantities
 /// `structure_wind` and `structure_wind_factored` in
 /// `[[load_case.load]]` (a surface load taking the line case's wind on the
-/// body; the recipes are raw tables here too) and anything else added
-/// before the next release; a file is written at 6 only when it uses one.
+/// body; the recipes are raw tables here too), a member's `bending` (a
+/// `tension` member that also bends, as a frame) and `check = false` (a
+/// modelling member, not design-checked), and anything else added before
+/// the next release; a file is written at 6 only when it uses one.
 /// Version 5 adds the member kind `tension`
 /// (a truss in tension only, slack in compression). Version 4 adds a
 /// string's optional limits,
@@ -383,7 +385,8 @@ pub struct TypeNode {
 /// A member of the pylon between two joints (levels 2 and 3). Without a
 /// section it is only a stick; the finite-element fields (`kind`,
 /// `reference`, `roll`, `orientation`, `k`, `lk`, `pretension`,
-/// `capacity_tension`, `capacity_compression`, `dead_load_factor`) are read by
+/// `capacity_tension`, `capacity_compression`, `dead_load_factor`, `bending`,
+/// `check`) are read by
 /// `ohl_structures_fe`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -430,6 +433,15 @@ pub struct TypeMember {
     /// dead_load_factor`.
     #[serde(default)]
     pub dead_load_factor: Option<toml::Value>,
+    /// Version 6: a `tension` member that also bends and twists, as a
+    /// frame, while it is in the model (a tower program's tension-only
+    /// beam).
+    #[serde(default)]
+    pub bending: Option<bool>,
+    /// Version 6: `false` — a modelling member (a tower program's
+    /// fictitious member): solved, not design-checked.
+    #[serde(default)]
+    pub check: Option<bool>,
     /// Its member group (`"body-leg"`, `"body-bracing-3"`…): sections set
     /// and results reported per group.
     #[serde(default)]

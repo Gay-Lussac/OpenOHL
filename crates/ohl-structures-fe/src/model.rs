@@ -56,6 +56,8 @@
 //! nodes = ["B1", "A1"]
 //! section = "L90x9"         # the section library's first, then [[section]]
 //! kind = "truss"            # truss (default) | frame | cable | tension
+//! # bending = true          # tension: also bends and twists, as a frame (version 3)
+//! # check = false           # not design-checked: a modelling member (version 3)
 //! reference = [0, 0, 1]     # frame: a direction in the local x–y plane
 //! roll = "0 deg"            # frame: turns the local y, z about x
 //! # orientation = "x+y-"    # instead: an angle's legs (local y, z) towards x+, y−
@@ -84,9 +86,13 @@ use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
-/// Newest format version read. Version 2 adds the member kind `tension`
-/// (a truss in tension only); version 1 files read as before.
-pub const MODEL_FILE_VERSION: u32 = 2;
+/// Newest format version read. Version 3 adds a member's `bending` (a
+/// tension-only member that also bends, as a frame: a tower program's
+/// tension-only beam) and `check = false` (a member not design-checked: a
+/// modelling member, a tower program's fictitious member). Version 2 adds
+/// the member kind `tension` (a truss in tension only); versions 1 and 2
+/// read as before.
+pub const MODEL_FILE_VERSION: u32 = 3;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
@@ -232,6 +238,10 @@ struct MemberFile {
     capacity_compression: Option<Force>,
     #[serde(default)]
     dead_load_factor: Option<f64>,
+    #[serde(default)]
+    bending: bool,
+    #[serde(default = "yes")]
+    check: bool,
 }
 
 #[derive(Deserialize)]
@@ -283,7 +293,9 @@ pub enum MemberKind {
     /// A truss in tension only (version 2; a tower program's "T-Only"
     /// bracing): removed from the model while it would be compressed, by
     /// the solver's active-set iterations ([`crate::solve()`]); no
-    /// pretension.
+    /// pretension. With [`Member::bending`] (version 3) it also bends and
+    /// twists as a frame while it is in the model (a tower program's
+    /// "T-Only Beam").
     Tension,
 }
 
@@ -487,6 +499,14 @@ pub struct Member {
     /// Factor on its self-weight (bolts, plates…), instead of the
     /// analysis's ([`Analysis::dead_load_factor`]).
     pub dead_load_factor: Option<f64>,
+    /// A tension-only member ([`MemberKind::Tension`]) that also takes
+    /// bending and torsion, as a frame, while it is in the model (a tower
+    /// program's tension-only beam); false for every other kind.
+    pub bending: bool,
+    /// Design-checked ([`crate::check::member_usage`]); false: a modelling
+    /// member (a tower program's fictitious member), its forces solved and
+    /// reported, its usage not.
+    pub check: bool,
 }
 
 impl Member {
@@ -507,7 +527,16 @@ impl Member {
             capacity_tension: None,
             capacity_compression: None,
             dead_load_factor: None,
+            bending: false,
+            check: true,
         }
+    }
+
+    /// Whether it has a frame's stiffness (bending, torsion, rotations at
+    /// its joints) while it is in the model: a frame, or a tension-only
+    /// member with [`Self::bending`].
+    pub fn is_frame(&self) -> bool {
+        self.kind == MemberKind::Frame || (self.kind == MemberKind::Tension && self.bending)
     }
 }
 
@@ -824,6 +853,8 @@ impl Model {
                 capacity_tension: m.capacity_tension.map(Force::si),
                 capacity_compression: m.capacity_compression.map(Force::si),
                 dead_load_factor: m.dead_load_factor,
+                bending: m.bending,
+                check: m.check,
             });
         }
         let loads = file
@@ -1089,6 +1120,12 @@ impl Model {
             if m.kind != MemberKind::Cable && m.pretension != 0.0 {
                 return Err(format!("member {}: only cables take a pretension", m.id));
             }
+            if m.bending && m.kind != MemberKind::Tension {
+                return Err(format!(
+                    "member {}: bending is for tension-only members (a frame always bends)",
+                    m.id
+                ));
+            }
             for (what, v) in [
                 ("lk", m.lk),
                 ("capacity_tension", m.capacity_tension),
@@ -1102,7 +1139,7 @@ impl Model {
                 }
             }
 
-            if m.kind == MemberKind::Frame {
+            if m.is_frame() {
                 if !(s.iy > 0.0 && s.iz > 0.0 && s.j > 0.0) {
                     return Err(format!(
                         "member {}: a frame needs iy, iz and torsion above 0 (section {})",

@@ -617,3 +617,61 @@ expected.r_B_x = { value = -663.2374157532049, rel_tol = 1e-9 }
 expected.r_A_z = { value = -7500.0, rel_tol = 1e-9 }
 expected.r_B_z = { value = 7500.0, rel_tol = 1e-9 }
 expected.passes = { value = 2.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "structfe-012"
+title = "Tension-only rod that bends, load across it at its middle: the fixed-end beam, PL³/192EI and end moments PL/8"
+calculation = "structures.fe"
+reference = "Euler–Bernoulli beam theory: a beam fixed at both ends with a load at its middle (e.g. Roark's Formulas for Stress and Strain, fixed–fixed beam, centre load); the pull by statics"
+notes = "A rod L = 4 m along x in two tension-only halves that bend (a tower program's tension-only beam), I = 2e-6 m4, A = 1000 mm2; A fixed, B fixed but along x; H = 10 kN pulls B along +x (both halves taut, N = H, B moves HL/EA), P = 1 kN down at the middle M: M moves PL³/(192EI) down, each end takes P/2 and a moment PL/8 (−PL/8 about y at A); first order (the pull does not stiffen it). As tension-only trusses nothing would hold M across the rod: refused (unit test)."
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "M"
+point = ["2 m", "0 m", "0 m"]
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = ["y", "z", "rx", "ry", "rz"]
+[[member]]
+id = "AM"
+nodes = ["A", "M"]
+section = "s"
+kind = "tension"
+bending = true
+[[member]]
+id = "MB"
+nodes = ["M", "B"]
+section = "s"
+kind = "tension"
+bending = true
+[[load]]
+node = "B"
+force = ["10 kN", "0 N", "0 N"]
+[[load]]
+node = "M"
+force = ["0 N", "0 N", "-1 kN"]
+'''
+expected.u_M_z = { value = -0.0007936507936507937, rel_tol = 1e-9 }
+expected.u_B_x = { value = 0.00019047619047619048, rel_tol = 1e-9 }
+expected.n_AM = { value = 10000.0, rel_tol = 1e-9 }
+expected.n_MB = { value = 10000.0, rel_tol = 1e-9 }
+expected.slack_AM = { value = 0.0, abs_tol = 1e-12 }
+expected.r_A_z = { value = 500.0, rel_tol = 1e-9 }
+expected.r_A_ry = { value = -500.0, rel_tol = 1e-9 }
+expected.r_B_ry = { value = 500.0, rel_tol = 1e-9 }

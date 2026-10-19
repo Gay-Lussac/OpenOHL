@@ -18,7 +18,9 @@
 //!   the torsion of the members holds them, and it holds them against
 //!   each other only (the chain spins freely). One joint of the chain is
 //!   held. Joints with truss members only have no rotations at all
-//!   (the solver gives them none).
+//!   (the solver gives them none). A tension-only member that bends
+//!   ([`crate::Member::bending`]) counts as a frame while it is in the
+//!   model, and as nothing while it is left out.
 //!
 //! A translation of a joint that lies on straight lines of members whose
 //! ends are held by the structure (a joint in a face of a tower, on a
@@ -52,7 +54,7 @@
 
 use nalgebra::{Matrix3, SymmetricEigen, Vector3};
 
-use crate::model::{MemberKind, Model, cross, norm, sub};
+use crate::model::{Model, cross, norm, sub};
 
 /// A direction with less than this share of a joint's largest stiffness
 /// (eigenvalue of Σ eeᵀ: the squared sine of the angle out of the plane
@@ -146,7 +148,7 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
         let l = norm(d);
         Vector3::new(d[0] / l, d[1] / l, d[2] / l)
     };
-    let frame = |k: usize| model.members[k].kind == MemberKind::Frame;
+    let frame = |k: usize| model.members[k].is_frame();
     let mut out = Vec::new();
     // Translations of joints without a frame.
     for (n, members) in at_node.iter().enumerate() {
