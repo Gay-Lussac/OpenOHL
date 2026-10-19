@@ -1,6 +1,6 @@
 [package]
 name = "ohl-structure-export"
-description = "OpenOHL structure application: a level 3 structure exported as IFC (IFC4, IFC2x3), SAF (xlsx) and CSV tables"
+description = "OpenOHL structure application: a level 3 structure exported as IFC (IFC4, IFC2x3), SAF (xlsx) and CSV tables, and its structure report"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,10 @@ authors.workspace = true
 [[bin]]
 name = "ohl-structure-export"
 path = "src/main.rs"
+
+[[bin]]
+name = "ohl-structure-report"
+path = "src/report_main.rs"
 
 [dependencies]
 ohl-core.workspace = true
