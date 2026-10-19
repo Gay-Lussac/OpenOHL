@@ -268,16 +268,25 @@ away has 0 for both), and the profile's spans are those between
 consecutive structures of the run (`AlignmentView::consecutive`) plus
 those to a structure away (projected), so a connection whose station falls
 between two towers does not break the span between them. The drawings
-mark it too (`ohl_drawing::Mark::away`, computed), but their sheets use
-their own rule (`ohl_drawing::sheet_layout`, drawn by `sheets`): a plan and
-profile sheet breaks only at a structure whose offset from the alignment
-is within the **line width** (`Options::plan_half_width`, `--plan-width`,
-default 40 m), and never within `Options::break_clearance` (mm on paper,
-default `BREAK_CLEARANCE_MM` = 2, 0 to `MAX_BREAK_CLEARANCE_MM` = 20,
-`check_break_clearance`; `--break-clearance`) of what is drawn of any
-other structure. Both are export settings, not stored in the project (the
-app keeps its export window's settings for the session); the app's sheet
-preview calls `sheet_layout` with them.
+mark it too (`ohl_drawing::Mark::away`, computed) and keep the
+alignment's points by station (`RouteDrawing::alignment`,
+`AlignmentMark`: id, station, the structure tied to it or none). What
+they draw along the line is limited by the **line width**
+(`Options::plan_half_width`, `--plan-width` / `--line-width`, default
+40 m; `RouteDrawing::shown`): every structure of the run, a structure
+away only within it, wires cut at it, markers within it (the profile CSV
+and XML keep everything). Their sheets (`ohl_drawing::sheet_layout`,
+drawn by `sheets`) end only at a structure of the run (never at one
+away, whatever its offset) or at an alignment point without a structure
+(between the first and the last structure), and never within
+`Options::break_clearance` (mm on paper, default `BREAK_CLEARANCE_MM` =
+2, 0 to `MAX_BREAK_CLEARANCE_MM` = 20, `check_break_clearance`;
+`--break-clearance`) of what is drawn of any other structure; never in a
+span. The app's sheet preview calls `sheet_layout` with the export
+window's settings, which the app keeps in the project per project line
+(below, `app.drawings.<line>`); its Profile page uses the same line width
+(no per-user profile corridor any more: an older `profile_corridor` in
+the remembered view settings is ignored).
 
 **Files of version 2** held `routes` that were their own alignment
 (`alignment`, `structures`) or followed their structures, and the line's
@@ -1116,7 +1125,7 @@ keeps them equal to what the exporter writes):
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … |
+| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `preview`; missing fields and values out of range take the defaults; absent: the defaults) |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
