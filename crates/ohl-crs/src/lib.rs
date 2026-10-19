@@ -102,8 +102,50 @@ impl Crs {
     }
 }
 
+/// The unit of a system's coordinates, as its proj4 definition gives it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Unit {
+    /// Degrees (longitude, latitude).
+    Degree,
+    /// A proj4 unit name (`+units=`: `m`, `ft`, `us-ft`, `link`…).
+    Named(&'static str),
+    /// A unit of this many metres (`+to_meter=`).
+    Metres(f64),
+}
+
+impl fmt::Display for Unit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Unit::Degree => write!(f, "degree"),
+            Unit::Named(n) => write!(f, "{n}"),
+            Unit::Metres(m) => write!(f, "{m} m"),
+        }
+    }
+}
+
+/// The value of `+key=` in a proj4 string.
+fn proj4_value(proj4: &'static str, key: &str) -> Option<&'static str> {
+    proj4
+        .split_whitespace()
+        .find_map(|t| t.strip_prefix('+')?.strip_prefix(key)?.strip_prefix('='))
+}
+
+/// The unit of a proj4 definition: degrees for longitude-latitude, else
+/// `+units=`, else `+to_meter=`, else metres (proj4's default).
+fn proj4_unit(proj4: &'static str) -> Unit {
+    if proj4_value(proj4, "proj") == Some("longlat") {
+        Unit::Degree
+    } else if let Some(u) = proj4_value(proj4, "units") {
+        Unit::Named(u)
+    } else if let Some(m) = proj4_value(proj4, "to_meter").and_then(|v| v.parse().ok()) {
+        Unit::Metres(m)
+    } else {
+        Unit::Named("m")
+    }
+}
+
 /// A coordinate system of the EPSG registry: its code and name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Known {
     /// EPSG code.
     pub code: u16,
@@ -111,6 +153,14 @@ pub struct Known {
     pub name: &'static str,
     /// Whether coordinates are longitude and latitude.
     pub geographic: bool,
+    /// Whether coordinates are geocentric (X, Y, Z from the earth's
+    /// centre): not offered for a project ([`search`] leaves them out).
+    pub geocentric: bool,
+    /// The unit of its coordinates.
+    pub unit: Unit,
+    /// Its area of use, when the registry's definition names one (most do
+    /// not).
+    pub area: Option<&'static str>,
 }
 
 impl Known {
@@ -133,20 +183,103 @@ fn wkt_name(wkt: &str) -> Option<&str> {
     Some(&wkt[start..start + len])
 }
 
-/// Every coordinate system of the EPSG registry this program knows, by
-/// code (about 6000; listed once, in a few milliseconds).
+/// The first `AREA["…"]` of a WKT 2 text: the system's area of use.
+fn wkt_area(wkt: &str) -> Option<&str> {
+    let start = wkt.find("AREA[\"")? + 6;
+    let len = wkt[start..].find('"')?;
+    Some(&wkt[start..start + len]).filter(|a| !a.is_empty())
+}
+
+/// Every coordinate system of the EPSG registry this program can
+/// transform, by code: those whose definition the projection library
+/// reads (listed once, in a fraction of a second). Codes of the registry
+/// it cannot compute (projections it does not have) are left out.
 pub fn known() -> &'static [Known] {
     static LIST: std::sync::OnceLock<Vec<Known>> = std::sync::OnceLock::new();
     LIST.get_or_init(|| {
         (0..=u16::MAX)
             .filter_map(crs_definitions::from_code)
-            .map(|d| Known {
-                code: d.code,
-                name: wkt_name(d.wkt).unwrap_or(""),
-                geographic: d.wkt.trim_start().starts_with("GEOGCS"),
+            .filter_map(|d| {
+                let proj = Proj::from_proj_string(d.proj4).ok()?;
+                Some(Known {
+                    code: d.code,
+                    name: wkt_name(d.wkt).unwrap_or(""),
+                    geographic: proj.is_latlong(),
+                    geocentric: proj4_value(d.proj4, "proj") == Some("geocent"),
+                    unit: proj4_unit(d.proj4),
+                    area: wkt_area(d.wkt),
+                })
             })
             .collect()
     })
+}
+
+/// Lower case, every character but letters, digits, `+`, `-` and `.` a space
+/// (`CH1903+_LV95` and `CH1903+ / LV95` read alike).
+fn normalized(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '+' | '-' | '.') {
+                c.to_lowercase().next().unwrap_or(c)
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The systems a project can use (geocentric ones left out) matching
+/// `query`, best first: words of the code, name, area of use or unit
+/// (every word must appear, in any order, case and punctuation ignored;
+/// `EPSG:` before a code is ignored). An exact code comes first, then
+/// an exact name, codes starting with the digits typed, names starting
+/// with the query, then the rest by code. An empty query lists them all
+/// by code.
+pub fn search(query: &str) -> Vec<&'static Known> {
+    let lower = query.trim().to_lowercase();
+    let q = normalized(lower.strip_prefix("epsg:").unwrap_or(&lower));
+    let words: Vec<&str> = q.split_whitespace().collect();
+    let digits = (!q.is_empty() && q.chars().all(|c| c.is_ascii_digit())).then_some(q.as_str());
+    let mut hits: Vec<(u8, &'static Known)> = known()
+        .iter()
+        .filter(|k| !k.geocentric)
+        .filter_map(|k| {
+            if words.is_empty() {
+                return Some((4, k));
+            }
+            let code = k.code.to_string();
+            if let Some(d) = digits {
+                if code == d {
+                    return Some((0, k));
+                }
+                if code.starts_with(d) {
+                    return Some((2, k));
+                }
+            }
+            let name = normalized(k.name);
+            let hay = format!(
+                "{code} {name} {} {}",
+                k.area.map(normalized).unwrap_or_default(),
+                normalized(&k.unit.to_string())
+            );
+            if !words.iter().all(|w| hay.contains(w)) {
+                return None;
+            }
+            let rank = if name == q {
+                1
+            } else if name.starts_with(&q) {
+                3
+            } else {
+                4
+            };
+            Some((rank, k))
+        })
+        .collect();
+    hits.sort_by_key(|(rank, k)| (*rank, k.code));
+    hits.into_iter().map(|(_, k)| k).collect()
 }
 
 /// The EPSG system with this code.
@@ -480,7 +613,9 @@ mod tests {
         let lv95 = known_code(2056).unwrap();
         assert_eq!(lv95.to_string(), "2056: CH1903+ / LV95");
         assert!(!lv95.geographic);
+        assert_eq!(lv95.unit, Unit::Named("m"));
         assert!(known_code(4326).unwrap().geographic);
+        assert_eq!(known_code(4326).unwrap().unit, Unit::Degree);
         assert_eq!(describe("epsg:2056"), "EPSG:2056 — CH1903+ / LV95");
         assert_eq!(describe(""), "not defined");
         assert_eq!(describe("+proj=utm +zone=32"), "+proj=utm +zone=32");
@@ -502,5 +637,76 @@ mod tests {
         );
         assert!(from_prj(r#"PROJCS["Invented grid",UNIT["Meter",1]]"#).is_err());
         assert!(from_prj("hello").is_err());
+    }
+
+    /// Every system listed is one the library computes: each parses.
+    #[test]
+    fn every_system_listed_parses() {
+        for k in known() {
+            let crs = Crs::parse(&k.spec()).unwrap_or_else(|e| panic!("{}: {e}", k.code));
+            assert_eq!(crs.is_geographic(), k.geographic, "{}", k.code);
+        }
+        // The library cannot compute every code of the registry: those
+        // are left out.
+        let all = (0..=u16::MAX)
+            .filter_map(crs_definitions::from_code)
+            .count();
+        assert!(known().len() <= all);
+        assert!(known().len() > all / 2, "{} of {all}", known().len());
+        eprintln!("{} of {all} systems listed", known().len());
+    }
+
+    #[test]
+    fn search_finds_by_code_name_words_and_unit() {
+        let codes = |q: &str| search(q).iter().map(|k| k.code).collect::<Vec<_>>();
+        // A code, with or without EPSG:, first.
+        assert_eq!(codes("2056")[0], 2056);
+        assert_eq!(codes("EPSG:2056")[0], 2056);
+        assert_eq!(codes(" epsg: 4326 ")[0], 4326);
+        // Codes starting with the digits next.
+        let c = codes("205");
+        assert!(c.contains(&2056));
+        assert!(c[..2].iter().all(|c| c.to_string().starts_with("205")));
+        // Words in any order, case and punctuation ignored.
+        assert!(codes("lv95").contains(&2056));
+        assert!(codes("LV95 ch1903+").contains(&2056));
+        assert!(codes("CH1903+_LV95").contains(&2056));
+        assert!(codes("utm 32n wgs").contains(&32632));
+        assert!(!codes("utm 33n wgs").contains(&32632));
+        // Names starting with the query before the rest.
+        let wgs = codes("wgs 84");
+        assert_eq!(wgs[0], 4326, "{:?}", &wgs[..5]);
+        // The unit is searchable too.
+        assert!(!search("us-ft").is_empty());
+        assert!(
+            search("us-ft")
+                .iter()
+                .all(|k| k.unit == Unit::Named("us-ft") || normalized(k.name).contains("us-ft"))
+        );
+        // Geocentric systems are not offered.
+        assert!(search("").iter().all(|k| !k.geocentric));
+        assert!(codes("no such system at all").is_empty());
+    }
+
+    #[test]
+    fn units_and_areas_come_from_the_definitions() {
+        assert_eq!(
+            proj4_unit("+proj=longlat +datum=WGS84 +no_defs"),
+            Unit::Degree
+        );
+        assert_eq!(
+            proj4_unit("+proj=utm +zone=32 +units=us-ft"),
+            Unit::Named("us-ft")
+        );
+        assert_eq!(proj4_unit("+proj=tmerc +to_meter=0.5"), Unit::Metres(0.5));
+        assert_eq!(proj4_unit("+proj=tmerc"), Unit::Named("m"));
+        assert_eq!(Unit::Metres(0.5).to_string(), "0.5 m");
+        assert_eq!(
+            wkt_area(r#"X["a",USAGE[SCOPE["s"],AREA["Somewhere"],BBOX[1,2,3,4]]]"#),
+            Some("Somewhere")
+        );
+        assert_eq!(wkt_area(r#"PROJCS["a"]"#), None);
+        // Some definitions of the registry carry an area of use.
+        assert!(known().iter().any(|k| k.area.is_some()));
     }
 }

@@ -27,9 +27,9 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
 ## In the desktop application: Terrain › Coordinate system
 
 - **Define…** says which system the project's coordinates are in — nothing
-  moves. Choose it from the **EPSG** list (about 6000 systems; *Show only
-  systems containing* filters by name or code, e.g. `LV95`, `UTM zone 32N`,
-  `2056`), type a **proj4 string**, or read a **PRJ file**: WKT that names
+  moves. Choose it from the **EPSG** list with the
+  [coordinate-system picker](#the-coordinate-system-picker), type a
+  **proj4 string**, or read a **PRJ file**: WKT that names
   its EPSG code (`AUTHORITY["EPSG","2056"]`, WKT 2 `ID["EPSG",2056]`), WKT
   whose name is that of an EPSG system (also written as `CH1903+_LV95`), or a
   proj4 string. Other WKT is not read: choose its EPSG system instead.
@@ -60,6 +60,34 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
   is a log entry of its own that cannot be undone (the terrain would not
   follow): reproject back instead. The history of versions stays in the
   old system.
+
+### The coordinate-system picker
+
+Wherever a coordinate system is chosen in the desktop application — **Define…**,
+both sides of the **calculator**, **Reproject project…**, a **new project**,
+and **Import LAS/LAZ** into a new point cloud (**Choose…** beside its field) —
+the **EPSG** choice is a searchable list:
+
+- **Search** by EPSG code (`2056` or `EPSG:2056`), or by words of the name,
+  the area of use or the unit, in any order, case and punctuation ignored
+  (`lv95`, `UTM 32N WGS`, `CH1903+_LV95`, `us-ft`). A code typed whole is
+  chosen at once; **Enter** takes the first row. An exact code is listed
+  first, then the codes starting with the digits typed, then the names
+  starting with the words typed, then the rest by code.
+- Each row shows the **code**, the **name**, the **unit** (`degree`, `m`,
+  `ft`, `us-ft`…, from the system's proj4 definition) and its **area of use**
+  where the registry's definition gives one (a few hundred do; for most only
+  the name tells where it is used, so a country name finds a system only
+  when it is in its name or area). Hovering a row spells it out; the line
+  under the list says what was chosen, with its unit.
+- Only systems this program can **compute** are listed: the codes of the
+  registry whose definition the projection library reads (a code of a
+  projection it does not have is left out, so none is offered that would
+  fail later). **Geocentric** systems (X, Y, Z from the earth's centre) are
+  left out too: a line is not designed in them.
+
+The command line (`--from`, `--to`, `ohl crs info`) takes codes and proj4
+strings as before.
 
 ## Accuracy
 

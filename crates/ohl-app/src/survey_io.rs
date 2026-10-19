@@ -23,6 +23,9 @@ pub struct ImportDialog {
     pub cloud: String,
     /// Coordinate system stored with a new cloud.
     pub crs: String,
+    /// The coordinate-system picker, when opened ("Choose…"): its choice
+    /// goes into `crs`.
+    pub crs_picker: Option<crate::crs::Picker>,
     /// Chunk size of a new cloud, m.
     pub chunk: f64,
     /// Class scheme (`.ohlc`) stored with a new cloud.
@@ -155,6 +158,7 @@ impl ImportDialog {
             files: Vec::new(),
             cloud: clouds.first().cloned().unwrap_or_else(|| "lidar".into()),
             crs: model.line.crs.clone(),
+            crs_picker: None,
             chunk: ohl_pointcloud::DEFAULT_CHUNK,
             // The class scheme this user uses (Class colours), if a file.
             scheme: model
@@ -222,7 +226,17 @@ impl ImportDialog {
                     ui.end_row();
                     if new {
                         ui.label("Coordinate system");
-                        ui.text_edit_singleline(&mut self.crs);
+                        ui.horizontal(|ui| {
+                            ui.add(egui::TextEdit::singleline(&mut self.crs).desired_width(180.0));
+                            let open = self.crs_picker.is_some();
+                            if ui
+                                .selectable_label(open, "Choose…")
+                                .on_hover_text("Search the coordinate systems: code, name, area or unit")
+                                .clicked()
+                            {
+                                self.crs_picker = (!open).then(|| crate::crs::Picker::new(&self.crs));
+                            }
+                        });
                         ui.end_row();
                         ui.label("Chunk size, m");
                         ui.add(egui::DragValue::new(&mut self.chunk).range(8.0..=1024.0))
@@ -242,6 +256,13 @@ impl ImportDialog {
                         ui.end_row();
                     }
                 });
+                if new && let Some(p) = self.crs_picker.as_mut() {
+                    let before = p.spec.clone();
+                    p.ui(ui, "import-las-crs");
+                    if !p.spec.is_empty() && p.spec != before {
+                        self.crs = p.spec.clone();
+                    }
+                }
                 ui.label(
                     egui::RichText::new(if new {
                         "A new point cloud of the project."
