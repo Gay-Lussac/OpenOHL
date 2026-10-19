@@ -10625,7 +10625,9 @@ fn the_profile_keeps_its_aspect_ratio_when_zooming() {
 
 /// A connection away from the alignment (80 m beside it between T1 and
 /// T2, on the route because it gives it) does not take T1–T2 out of the
-/// profile: its spans are drawn, the connection projected at its station.
+/// profile: its spans are drawn; the connection is shown, projected at
+/// its station, only within the line width (±40 m by default: not; at
+/// ±100 m: yes).
 #[test]
 fn the_profile_keeps_the_spans_along_the_alignment_past_a_connection() {
     let mut model = synthetic();
@@ -10639,6 +10641,14 @@ fn the_profile_keeps_the_spans_along_the_alignment_past_a_connection() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(3);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let d = &r.profile.drawing.as_ref().unwrap().1.drawing;
+        let ids: Vec<&str> = d.structures.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids[..2], ["T1", "T2"], "C1 outside ±40 m");
+        r.drawings.set_line_width(100.0);
+    }
     harness.run_steps(3);
     let r = harness.state_mut().ready().unwrap();
     let d = &r.profile.drawing.as_ref().unwrap().1.drawing;
@@ -10657,8 +10667,10 @@ fn the_profile_keeps_the_spans_along_the_alignment_past_a_connection() {
     }
 }
 
-/// The profile's corridor: at ±20 m the ground is drawn at both edges and
-/// the survey points within 20 m of the alignment are shown (none at 0);
+/// The profile's corridor is the line width of the drawings (one
+/// setting, ±40 m by default): the ground is drawn at both edges and the
+/// survey points and LiDAR points within it are shown; at ±20 m (typed in
+/// the profile) those within 20 m, and the export draws at ±20 m too.
 /// "All alignments, in order" draws the first, then the second, each
 /// starting where the one before ends.
 #[test]
@@ -10687,26 +10699,52 @@ fn the_profile_shows_a_corridor_and_every_alignment_in_order() {
                 .collect::<Vec<_>>(),
         )
     };
-    let (sides, survey, single, _, _) = built(&mut harness);
-    assert_eq!((sides, survey), (0, 0));
-    // ±20 m, typed in the profile's own field.
-    harness.state_mut().ready().unwrap().profile.new_corridor = Some(20.0);
-    harness.run_steps(3);
-    assert_eq!(
-        harness.state_mut().ready().unwrap().model.profile_corridor,
-        20.0
-    );
-    assert_eq!(
-        harness
-            .state_mut()
-            .ready()
-            .unwrap()
+    let (sides, wide, single, _, _) = built(&mut harness);
+    assert_eq!(sides, 2);
+    assert!(wide > 10, "{wide}");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.drawings.line_width(), 40.0);
+        let b = &r.profile.drawing.as_ref().unwrap().1;
+        assert_eq!(b.drawing.sides[0].0.abs(), 40.0);
+        // The LiDAR points loaded within ±40 m, projected (the synthetic
+        // model has none: the same count as found by hand).
+        let centre = b.drawing.centreline.clone();
+        let near = r
             .model
-            .view_prefs()
-            .profile_corridor,
-        20.0
-    );
+            .points
+            .iter()
+            .filter(|(q, _)| {
+                let p = [0, 1, 2].map(|k| r.model.origin[k] + f64::from(q[k]) / 1000.0);
+                let (st, off) = ohl_line::route::project(&centre, p);
+                let back = ohl_line::route::point_at(&centre, st, off);
+                off.abs() <= 40.0 && (back[0] - p[0]).hypot(back[1] - p[1]) < 0.4
+            })
+            .count();
+        assert_eq!(b.lidar.len(), near);
+    }
+    // ±20 m, typed in the profile's own field: the drawings' line width.
+    harness.get_by_label("line width ±");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .drawings
+        .set_line_width(20.0);
+    harness.run_steps(3);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.drawings.settings().line_width, 20.0);
+        assert_eq!(r.drawings.stored().line_width, 20.0);
+        let w = crate::drawings::DrawingsWindow {
+            out: Some(std::env::temp_dir()),
+            ..r.drawings.settings().clone()
+        };
+        let input = crate::drawings::Input::new(&r.model, r.case, &w).unwrap();
+        assert_eq!(input.options.plan_half_width, 20.0);
+    }
     let (sides, survey, _, _, _) = built(&mut harness);
+    assert!(survey < wide, "{survey} < {wide}");
     assert_eq!(sides, 2);
     assert!(survey > 10, "{survey}");
     let in_corridor = {
@@ -14448,4 +14486,133 @@ fn the_export_window_takes_the_line_width_and_break_clearance() {
     // The defaults: 2 mm, ±40 m.
     let d = crate::drawings::DrawingsWindow::default();
     assert_eq!((d.break_clearance, d.line_width), (2.0, 40.0));
+}
+
+/// The drawing settings are kept in the project, per project line: a
+/// project without them opens with the defaults (±40 m, 2 mm, A3, the
+/// preview off); changed (in the window or the profile), they are
+/// written as a project setting — not into the undo log — and are there
+/// when the project is opened again; another project line has its own.
+#[test]
+fn the_drawing_settings_are_kept_in_the_project_per_line() {
+    use crate::drawings::{DrawingSettings, Drawings, setting_key};
+    let model = synthetic_project("drawing-settings");
+    let sources = model.sources.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    // An old project: the defaults.
+    let seq = {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.drawings.stored(), DrawingSettings::default());
+        let d = r.drawings.settings();
+        assert_eq!(
+            (d.line_width, d.break_clearance, d.page.as_str()),
+            (40.0, 2.0, "A3")
+        );
+        assert!(!r.drawings.preview_on);
+        assert_eq!(
+            crate::drawings::DEFAULT_LINE_WIDTH,
+            ohl_drawing::Options::default().plan_half_width
+        );
+        let s = r.model.session().unwrap();
+        assert_eq!(s.setting(&setting_key("main")).unwrap(), None);
+        s.last_seq().unwrap()
+    };
+    // Changed: written into the project (the window closed, then the
+    // line width from the profile).
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.drawings.last;
+        w.page = "A1".into();
+        w.hscale = 1000.0;
+        w.vscale = 100.0;
+        w.break_clearance = 3.5;
+        w.profile_only = true;
+        w.formats = vec![
+            ohl_drawing::export::Format::Dxf,
+            ohl_drawing::export::Format::Csv,
+        ];
+        r.drawings.preview_on = true;
+        r.drawings.set_line_width(25.0);
+    }
+    harness.run_steps(2);
+    let kept = {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.session().unwrap();
+        let text = s.setting(&setting_key("main")).unwrap().unwrap();
+        // A setting, not an edit: nothing to undo.
+        assert_eq!(s.last_seq().unwrap(), seq);
+        serde_json::from_str::<DrawingSettings>(&text).unwrap()
+    };
+    assert_eq!(
+        (
+            kept.page.as_str(),
+            kept.hscale,
+            kept.vscale,
+            kept.line_width,
+            kept.break_clearance,
+            kept.profile_only,
+            kept.preview
+        ),
+        ("A1", 1000.0, 100.0, 25.0, 3.5, true, true)
+    );
+    assert_eq!(kept.formats, ["dxf", "csv"]);
+    // Opened again: there.
+    let again = model::load(sources.clone(), &|_| {}).unwrap();
+    let d = Drawings::loaded(&again);
+    assert_eq!(d.stored(), kept);
+    assert_eq!(d.settings().line_width, 25.0);
+    assert!(d.preview_on);
+    drop(again);
+    // Another project line has its own (the defaults at first); back on
+    // main, main's.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.project_op(
+            "phase",
+            ohl_server::Op::CreateLine {
+                name: "phase 1".into(),
+                from: "main".into(),
+            },
+        );
+        r.switch_line("phase 1");
+    }
+    harness.run_steps(2);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.session().unwrap().current_line(), "phase 1");
+        assert_eq!(r.drawings.stored(), DrawingSettings::default());
+        r.drawings.set_line_width(60.0);
+    }
+    harness.run_steps(2);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let s = r.model.session().unwrap();
+        assert!(s.setting(&setting_key("phase 1")).unwrap().is_some());
+        r.switch_line("main");
+    }
+    harness.run_steps(2);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.drawings.stored(), kept);
+        assert_eq!(r.drawings.line_width(), 25.0);
+    }
+    // Values out of range (a file edited by hand) take the defaults.
+    let odd = DrawingSettings {
+        line_width: -5.0,
+        break_clearance: 50.0,
+        page: "B9".into(),
+        hscale: f64::NAN,
+        formats: vec!["svg".into(), "doc".into()],
+        ..DrawingSettings::default()
+    };
+    let mut w = crate::drawings::DrawingsWindow::default();
+    odd.apply(&mut w);
+    assert_eq!(
+        (w.line_width, w.break_clearance, w.page.as_str(), w.hscale),
+        (40.0, 2.0, "A3", 2000.0)
+    );
+    assert_eq!(w.formats, [ohl_drawing::export::Format::Svg]);
 }
