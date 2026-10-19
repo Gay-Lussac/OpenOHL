@@ -66,7 +66,7 @@ pub(crate) fn height_range(d: &RouteDrawing, s0: f64, s1: f64) -> (f64, f64, f64
     for m in &d.structures {
         see(m.station, m.base);
         see(m.station, m.top);
-        for p in m.sticks.iter().flatten() {
+        for p in m.sticks.iter().chain(&m.members).flatten() {
             see(p[0], p[2]);
         }
     }
@@ -280,14 +280,17 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
         }
         for m in &d.structures {
             let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
-            plan.push(rect(
-                Layer::Structures,
-                cx - 1.0,
-                cy - 1.0,
-                2.0,
-                2.0,
-                pen("#333", 0.3),
-            ));
+            // The symbol at level 1; members draw the others.
+            if m.members.is_empty() {
+                plan.push(rect(
+                    Layer::Structures,
+                    cx - 1.0,
+                    cy - 1.0,
+                    2.0,
+                    2.0,
+                    pen("#333", 0.3),
+                ));
+            }
             let name = text(
                 Layer::Structures,
                 [cx, f.plan_top + f.plan_h - 1.5],
@@ -297,11 +300,17 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
             );
             label(&mut plan, name, plan_rect);
         }
-        // Stick drawings seen from above.
+        // Stick drawings seen from above; members (levels 2 and 3): the
+        // footprint and the crossarms.
         for m in &d.structures {
-            for stick in &m.sticks {
+            let (layer, lines) = if m.members.is_empty() {
+                (Layer::Structures, &m.sticks)
+            } else {
+                (Layer::Members, &m.members)
+            };
+            for stick in lines {
                 plan.push(path(
-                    Layer::Structures,
+                    layer,
                     stick.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
                     pen("#555", 0.25),
                     None,
@@ -347,15 +356,25 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
     }
     for m in &d.structures {
         let cx = f.x(m.station);
-        prof.push(path(
-            Layer::Structures,
-            vec![[cx, f.y(m.base)], [cx, f.y(m.top)]],
-            pen("#333", 0.6),
-            None,
-        ));
+        // The symbol at level 1; members draw the others (their names over
+        // the highest member).
+        if m.members.is_empty() {
+            prof.push(path(
+                Layer::Structures,
+                vec![[cx, f.y(m.base)], [cx, f.y(m.top)]],
+                pen("#333", 0.6),
+                None,
+            ));
+        }
+        let top = m
+            .members
+            .iter()
+            .flatten()
+            .map(|p| p[2])
+            .fold(m.top, f64::max);
         let name = text(
             Layer::Structures,
-            [cx, f.y(m.top) - 4.0],
+            [cx, f.y(top) - 4.0],
             2.5,
             Anchor::Middle,
             m.id.clone(),
@@ -363,7 +382,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
         label(&mut prof, name, prof_rect);
         if let Item::Text(mut t) = text(
             Layer::Structures,
-            [cx, f.y(m.top) - 1.5],
+            [cx, f.y(top) - 1.5],
             2.0,
             Anchor::Middle,
             format_station(m.station),
@@ -382,11 +401,17 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame, z_step:
             }));
         }
     }
-    // Stick drawings seen along the route.
+    // Stick drawings seen along the route; members (levels 2 and 3): the
+    // silhouette projected on the profile plane.
     for m in &d.structures {
-        for stick in &m.sticks {
+        let (layer, lines) = if m.members.is_empty() {
+            (Layer::Structures, &m.sticks)
+        } else {
+            (Layer::Members, &m.members)
+        };
+        for stick in lines {
             prof.push(path(
-                Layer::Structures,
+                layer,
                 stick.iter().map(|p| [f.x(p[0]), f.y(p[2])]).collect(),
                 pen("#555", 0.3),
                 Some(m.id.clone()),
@@ -957,18 +982,25 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
     {
         let [x, y] = m.xy;
         let r = k;
-        items.push(Item::Path(Path {
-            layer: Layer::Structures,
-            points: vec![
-                [x - r, y - r],
-                [x + r, y - r],
-                [x + r, y + r],
-                [x - r, y + r],
-            ],
-            closed: true,
-            pen: pen("#333", 0.3),
-            title: None,
-        }));
+        // The symbol at level 1; the members' footprint and crossarms at
+        // levels 2 and 3.
+        if m.members_xy.is_empty() {
+            items.push(Item::Path(Path {
+                layer: Layer::Structures,
+                points: vec![
+                    [x - r, y - r],
+                    [x + r, y - r],
+                    [x + r, y + r],
+                    [x - r, y + r],
+                ],
+                closed: true,
+                pen: pen("#333", 0.3),
+                title: None,
+            }));
+        }
+        for l in &m.members_xy {
+            items.push(path(Layer::Members, l.clone(), pen("#555", 0.25), None));
+        }
         items.push(text(
             Layer::Structures,
             [x + 1.5 * k, y + 1.5 * k],
