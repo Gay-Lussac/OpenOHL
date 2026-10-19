@@ -1,0 +1,6538 @@
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "single", horizontal = true },
+{ top = "9 m", bracing = "single", horizontal = true },
+{ top = "13 m", bracing = "single", horizontal = true },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L3-4", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L3-1", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L3-2", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L3-3", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "single", horizontal = false },
+{ top = "9 m", bracing = "single", horizontal = false },
+{ top = "13 m", bracing = "single", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "x", horizontal = true },
+{ top = "9 m", bracing = "x", horizontal = true },
+{ top = "13 m", bracing = "x", horizontal = true },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-L2-1", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-L2-2", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-L2-3", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-L2-4", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L3-4", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-L3-1", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L3-2", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-L3-3", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "x", horizontal = false },
+{ top = "9 m", bracing = "x", horizontal = false },
+{ top = "13 m", bracing = "x", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-2", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L2-3", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L2-4", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "k", horizontal = true },
+{ top = "9 m", bracing = "k", horizontal = true },
+{ top = "13 m", bracing = "k", horizontal = true },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F1"
+point = ["2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F2"
+point = ["0.000 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F3"
+point = ["-2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F4"
+point = ["0.000 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F1"
+point = ["1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F2"
+point = ["0.000 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F3"
+point = ["-1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F4"
+point = ["0.000 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F1"
+point = ["1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F2"
+point = ["0.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F3"
+point = ["-1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F4"
+point = ["0.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-F1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-F1", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-1", "body-L1-F2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-F2", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-2", "body-L1-F3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-F3", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L1-F4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-F4", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-4", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-1", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-1", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-2", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L1-2", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L1-3", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L1-3", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L1-4", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L2-4", "body-L2-F1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L2-F1", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L2-1", "body-L2-F2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L2-F2", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L2-2", "body-L2-F3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-L2-F3", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L2-3", "body-L2-F4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-L2-F4", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L2-4", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-L2-1", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L2-1", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-L2-2", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M49"
+nodes = ["body-L2-2", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M50"
+nodes = ["body-L2-3", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M51"
+nodes = ["body-L2-3", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M52"
+nodes = ["body-L2-4", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M53"
+nodes = ["body-L3-4", "body-L3-F1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M54"
+nodes = ["body-L3-F1", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M55"
+nodes = ["body-L3-1", "body-L3-F2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M56"
+nodes = ["body-L3-F2", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M57"
+nodes = ["body-L3-2", "body-L3-F3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M58"
+nodes = ["body-L3-F3", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M59"
+nodes = ["body-L3-3", "body-L3-F4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M60"
+nodes = ["body-L3-F4", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "k", horizontal = false },
+{ top = "9 m", bracing = "k", horizontal = false },
+{ top = "13 m", bracing = "k", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F1"
+point = ["2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F2"
+point = ["0.000 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F3"
+point = ["-2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F4"
+point = ["0.000 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F1"
+point = ["1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F2"
+point = ["0.000 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F3"
+point = ["-1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F4"
+point = ["0.000 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F1"
+point = ["1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F2"
+point = ["0.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F3"
+point = ["-1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F4"
+point = ["0.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-F1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-F1", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-1", "body-L1-F2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-F2", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-2", "body-L1-F3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-F3", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L1-F4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-F4", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-4", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-1", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-1", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-2", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L1-2", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L1-3", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L1-3", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L1-4", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L2-4", "body-L2-F1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L2-F1", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L2-1", "body-L2-F2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L2-F2", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L2-2", "body-L2-F3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-L2-F3", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L2-3", "body-L2-F4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-L2-F4", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L2-4", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-L2-1", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L2-1", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-L2-2", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M49"
+nodes = ["body-L2-2", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M50"
+nodes = ["body-L2-3", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M51"
+nodes = ["body-L2-3", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M52"
+nodes = ["body-L2-4", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M53"
+nodes = ["body-L3-4", "body-L3-F1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M54"
+nodes = ["body-L3-F1", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M55"
+nodes = ["body-L3-1", "body-L3-F2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M56"
+nodes = ["body-L3-F2", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M57"
+nodes = ["body-L3-2", "body-L3-F3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M58"
+nodes = ["body-L3-F3", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M59"
+nodes = ["body-L3-3", "body-L3-F4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M60"
+nodes = ["body-L3-F4", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "diamond", horizontal = true },
+{ top = "9 m", bracing = "diamond", horizontal = true },
+{ top = "13 m", bracing = "diamond", horizontal = true },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F1"
+point = ["3.500 m", "0.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F2"
+point = ["0.000 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F3"
+point = ["-3.500 m", "0.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F4"
+point = ["0.000 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-1"
+point = ["3.115 m", "2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-2"
+point = ["-3.115 m", "2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-3"
+point = ["-3.115 m", "-2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-4"
+point = ["3.115 m", "-2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F1"
+point = ["2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F2"
+point = ["0.000 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F3"
+point = ["-2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F4"
+point = ["0.000 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-1"
+point = ["2.250 m", "1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-2"
+point = ["-2.250 m", "1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-3"
+point = ["-2.250 m", "-1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-4"
+point = ["2.250 m", "-1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F1"
+point = ["1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F2"
+point = ["0.000 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F3"
+point = ["-1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F4"
+point = ["0.000 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-1"
+point = ["1.385 m", "1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-2"
+point = ["-1.385 m", "1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-3"
+point = ["-1.385 m", "-1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-4"
+point = ["1.385 m", "-1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F1"
+point = ["1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F2"
+point = ["0.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F3"
+point = ["-1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F4"
+point = ["0.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-4", "body-L0-F1"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-F1", "body-L0-1"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-1", "body-L0-F2"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-F2", "body-L0-2"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-2", "body-L0-F3"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-F3", "body-L0-3"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-3", "body-L0-F4"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-F4", "body-L0-4"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-1", "body-P1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-P1-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-2", "body-P1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-P1-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L0-3", "body-P1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-P1-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L0-4", "body-P1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-P1-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L0-F1", "body-P1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-P1-1", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-F1", "body-P1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-P1-4", "body-L0-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L0-F2", "body-P1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-P1-2", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-F2", "body-P1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-P1-1", "body-L0-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L0-F3", "body-P1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-P1-3", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-F3", "body-P1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-P1-2", "body-L0-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L0-F4", "body-P1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-P1-4", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L1-F4", "body-P1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-P1-3", "body-L0-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L1-4", "body-L1-F1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L1-F1", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L1-1", "body-L1-F2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L1-F2", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L1-2", "body-L1-F3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-L1-F3", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L1-3", "body-L1-F4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-L1-F4", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L1-1", "body-P2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-P2-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L1-2", "body-P2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-P2-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L1-3", "body-P2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-P2-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L1-4", "body-P2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-P2-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M49"
+nodes = ["body-L1-F1", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M50"
+nodes = ["body-P2-1", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M51"
+nodes = ["body-L2-F1", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M52"
+nodes = ["body-P2-4", "body-L1-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M53"
+nodes = ["body-L1-F2", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M54"
+nodes = ["body-P2-2", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M55"
+nodes = ["body-L2-F2", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M56"
+nodes = ["body-P2-1", "body-L1-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M57"
+nodes = ["body-L1-F3", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M58"
+nodes = ["body-P2-3", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M59"
+nodes = ["body-L2-F3", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M60"
+nodes = ["body-P2-2", "body-L1-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M61"
+nodes = ["body-L1-F4", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M62"
+nodes = ["body-P2-4", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M63"
+nodes = ["body-L2-F4", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M64"
+nodes = ["body-P2-3", "body-L1-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M65"
+nodes = ["body-L2-4", "body-L2-F1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M66"
+nodes = ["body-L2-F1", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M67"
+nodes = ["body-L2-1", "body-L2-F2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M68"
+nodes = ["body-L2-F2", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M69"
+nodes = ["body-L2-2", "body-L2-F3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M70"
+nodes = ["body-L2-F3", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M71"
+nodes = ["body-L2-3", "body-L2-F4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M72"
+nodes = ["body-L2-F4", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M73"
+nodes = ["body-L2-1", "body-P3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M74"
+nodes = ["body-P3-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M75"
+nodes = ["body-L2-2", "body-P3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M76"
+nodes = ["body-P3-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M77"
+nodes = ["body-L2-3", "body-P3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M78"
+nodes = ["body-P3-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M79"
+nodes = ["body-L2-4", "body-P3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M80"
+nodes = ["body-P3-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M81"
+nodes = ["body-L2-F1", "body-P3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M82"
+nodes = ["body-P3-1", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M83"
+nodes = ["body-L3-F1", "body-P3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M84"
+nodes = ["body-P3-4", "body-L2-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M85"
+nodes = ["body-L2-F2", "body-P3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M86"
+nodes = ["body-P3-2", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M87"
+nodes = ["body-L3-F2", "body-P3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M88"
+nodes = ["body-P3-1", "body-L2-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M89"
+nodes = ["body-L2-F3", "body-P3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M90"
+nodes = ["body-P3-3", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M91"
+nodes = ["body-L3-F3", "body-P3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M92"
+nodes = ["body-P3-2", "body-L2-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M93"
+nodes = ["body-L2-F4", "body-P3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M94"
+nodes = ["body-P3-4", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M95"
+nodes = ["body-L3-F4", "body-P3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M96"
+nodes = ["body-P3-3", "body-L2-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M97"
+nodes = ["body-L3-4", "body-L3-F1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M98"
+nodes = ["body-L3-F1", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M99"
+nodes = ["body-L3-1", "body-L3-F2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M100"
+nodes = ["body-L3-F2", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M101"
+nodes = ["body-L3-2", "body-L3-F3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M102"
+nodes = ["body-L3-F3", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M103"
+nodes = ["body-L3-3", "body-L3-F4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M104"
+nodes = ["body-L3-F4", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "diamond", horizontal = false },
+{ top = "9 m", bracing = "diamond", horizontal = false },
+{ top = "13 m", bracing = "diamond", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F1"
+point = ["3.500 m", "0.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F2"
+point = ["0.000 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F3"
+point = ["-3.500 m", "0.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-F4"
+point = ["0.000 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-1"
+point = ["3.115 m", "2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-2"
+point = ["-3.115 m", "2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-3"
+point = ["-3.115 m", "-2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P1-4"
+point = ["3.115 m", "-2.269 m", "2.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F1"
+point = ["2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F2"
+point = ["0.000 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F3"
+point = ["-2.731 m", "0.000 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F4"
+point = ["0.000 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-1"
+point = ["2.250 m", "1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-2"
+point = ["-2.250 m", "1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-3"
+point = ["-2.250 m", "-1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-4"
+point = ["2.250 m", "-1.750 m", "6.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F1"
+point = ["1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F2"
+point = ["0.000 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F3"
+point = ["-1.769 m", "0.000 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F4"
+point = ["0.000 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-1"
+point = ["1.385 m", "1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-2"
+point = ["-1.385 m", "1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-3"
+point = ["-1.385 m", "-1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P3-4"
+point = ["1.385 m", "-1.231 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F1"
+point = ["1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F2"
+point = ["0.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F3"
+point = ["-1.000 m", "0.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-F4"
+point = ["0.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-4", "body-L0-F1"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-F1", "body-L0-1"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-1", "body-L0-F2"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-F2", "body-L0-2"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-2", "body-L0-F3"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-F3", "body-L0-3"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-3", "body-L0-F4"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-F4", "body-L0-4"]
+group = "body-horizontal-0"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-1", "body-P1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-P1-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-2", "body-P1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-P1-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L0-3", "body-P1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-P1-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L0-4", "body-P1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-P1-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L0-F1", "body-P1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-P1-1", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-F1", "body-P1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-P1-4", "body-L0-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L0-F2", "body-P1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-P1-2", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-F2", "body-P1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-P1-1", "body-L0-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L0-F3", "body-P1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-P1-3", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-F3", "body-P1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-P1-2", "body-L0-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L0-F4", "body-P1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-P1-4", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L1-F4", "body-P1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-P1-3", "body-L0-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L1-4", "body-L1-F1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L1-F1", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L1-1", "body-L1-F2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L1-F2", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L1-2", "body-L1-F3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-L1-F3", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L1-3", "body-L1-F4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-L1-F4", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L1-1", "body-P2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-P2-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L1-2", "body-P2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-P2-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L1-3", "body-P2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-P2-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L1-4", "body-P2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-P2-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M49"
+nodes = ["body-L1-F1", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M50"
+nodes = ["body-P2-1", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M51"
+nodes = ["body-L2-F1", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M52"
+nodes = ["body-P2-4", "body-L1-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M53"
+nodes = ["body-L1-F2", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M54"
+nodes = ["body-P2-2", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M55"
+nodes = ["body-L2-F2", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M56"
+nodes = ["body-P2-1", "body-L1-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M57"
+nodes = ["body-L1-F3", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M58"
+nodes = ["body-P2-3", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M59"
+nodes = ["body-L2-F3", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M60"
+nodes = ["body-P2-2", "body-L1-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M61"
+nodes = ["body-L1-F4", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M62"
+nodes = ["body-P2-4", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M63"
+nodes = ["body-L2-F4", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M64"
+nodes = ["body-P2-3", "body-L1-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M65"
+nodes = ["body-L2-4", "body-L2-F1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M66"
+nodes = ["body-L2-F1", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M67"
+nodes = ["body-L2-1", "body-L2-F2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M68"
+nodes = ["body-L2-F2", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M69"
+nodes = ["body-L2-2", "body-L2-F3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M70"
+nodes = ["body-L2-F3", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M71"
+nodes = ["body-L2-3", "body-L2-F4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M72"
+nodes = ["body-L2-F4", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M73"
+nodes = ["body-L2-1", "body-P3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M74"
+nodes = ["body-P3-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M75"
+nodes = ["body-L2-2", "body-P3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M76"
+nodes = ["body-P3-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M77"
+nodes = ["body-L2-3", "body-P3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M78"
+nodes = ["body-P3-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M79"
+nodes = ["body-L2-4", "body-P3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M80"
+nodes = ["body-P3-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M81"
+nodes = ["body-L2-F1", "body-P3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M82"
+nodes = ["body-P3-1", "body-L3-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M83"
+nodes = ["body-L3-F1", "body-P3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M84"
+nodes = ["body-P3-4", "body-L2-F1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M85"
+nodes = ["body-L2-F2", "body-P3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M86"
+nodes = ["body-P3-2", "body-L3-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M87"
+nodes = ["body-L3-F2", "body-P3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M88"
+nodes = ["body-P3-1", "body-L2-F2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M89"
+nodes = ["body-L2-F3", "body-P3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M90"
+nodes = ["body-P3-3", "body-L3-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M91"
+nodes = ["body-L3-F3", "body-P3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M92"
+nodes = ["body-P3-2", "body-L2-F3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M93"
+nodes = ["body-L2-F4", "body-P3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M94"
+nodes = ["body-P3-4", "body-L3-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M95"
+nodes = ["body-L3-F4", "body-P3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M96"
+nodes = ["body-P3-3", "body-L2-F4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M97"
+nodes = ["body-L3-4", "body-L3-F1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M98"
+nodes = ["body-L3-F1", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M99"
+nodes = ["body-L3-1", "body-L3-F2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M100"
+nodes = ["body-L3-F2", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M101"
+nodes = ["body-L3-2", "body-L3-F3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M102"
+nodes = ["body-L3-F3", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M103"
+nodes = ["body-L3-3", "body-L3-F4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M104"
+nodes = ["body-L3-F4", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "warren", horizontal = true },
+{ top = "9 m", bracing = "warren", horizontal = true },
+{ top = "13 m", bracing = "warren", horizontal = true },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L3-4", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-L3-1", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L3-2", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-L3-3", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+### patterns
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = ["7 m", "5 m"]
+waist = "2 m"
+panel = [
+{ top = "4 m", bracing = "warren", horizontal = false },
+{ top = "9 m", bracing = "warren", horizontal = false },
+{ top = "13 m", bracing = "warren", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.500 m", "2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.500 m", "-2.500 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.731 m", "2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.731 m", "-2.038 m", "4.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.769 m", "1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.769 m", "-1.462 m", "9.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.000 m", "1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.000 m", "-1.000 m", "13.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+### mixed
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[generator]]
+id = "body"
+kind = "panels"
+feet = "8 m"
+waist = "2 m"
+panel = [
+{ top = "6 m", bracing = "k", horizontal = false },
+{ top = "11 m", bracing = "diamond" },
+{ top = "15 m", bracing = "x" },
+{ top = "18 m", bracing = "warren", horizontal = false },
+]
+
+[[node]]
+id = "body-L0-1"
+point = ["4.000 m", "4.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-4.000 m", "4.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-4.000 m", "-4.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["4.000 m", "-4.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["3.000 m", "3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-3.000 m", "3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-3.000 m", "-3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["3.000 m", "-3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F1"
+point = ["3.000 m", "0.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F2"
+point = ["0.000 m", "3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F3"
+point = ["-3.000 m", "0.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-F4"
+point = ["0.000 m", "-3.000 m", "6.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-1"
+point = ["2.583 m", "2.583 m", "8.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-2"
+point = ["-2.583 m", "2.583 m", "8.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-3"
+point = ["-2.583 m", "-2.583 m", "8.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-P2-4"
+point = ["2.583 m", "-2.583 m", "8.500 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["2.167 m", "2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-2.167 m", "2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-2.167 m", "-2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["2.167 m", "-2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F1"
+point = ["2.167 m", "0.000 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F2"
+point = ["0.000 m", "2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F3"
+point = ["-2.167 m", "0.000 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-F4"
+point = ["0.000 m", "-2.167 m", "11.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-1"
+point = ["1.500 m", "1.500 m", "15.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-2"
+point = ["-1.500 m", "1.500 m", "15.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-3"
+point = ["-1.500 m", "-1.500 m", "15.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L3-4"
+point = ["1.500 m", "-1.500 m", "15.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L4-1"
+point = ["1.000 m", "1.000 m", "18.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L4-2"
+point = ["-1.000 m", "1.000 m", "18.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L4-3"
+point = ["-1.000 m", "-1.000 m", "18.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L4-4"
+point = ["1.000 m", "-1.000 m", "18.000 m"]
+made_by = "body"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-F1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-F2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-F3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-F4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-F1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-F1", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-1", "body-L1-F2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-F2", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-2", "body-L1-F3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-F3", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L1-F4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-F4", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-1", "body-P2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-P2-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-2", "body-P2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-P2-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-3", "body-P2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-P2-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-4", "body-P2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-P2-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L1-F1", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-P2-1", "body-L2-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-F1", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-P2-4", "body-L1-F1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M33"
+nodes = ["body-L1-F2", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M34"
+nodes = ["body-P2-2", "body-L2-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M35"
+nodes = ["body-L2-F2", "body-P2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M36"
+nodes = ["body-P2-1", "body-L1-F2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M37"
+nodes = ["body-L1-F3", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M38"
+nodes = ["body-P2-3", "body-L2-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M39"
+nodes = ["body-L2-F3", "body-P2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M40"
+nodes = ["body-P2-2", "body-L1-F3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M41"
+nodes = ["body-L1-F4", "body-P2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M42"
+nodes = ["body-P2-4", "body-L2-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M43"
+nodes = ["body-L2-F4", "body-P2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M44"
+nodes = ["body-P2-3", "body-L1-F4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M45"
+nodes = ["body-L2-4", "body-L2-F1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M46"
+nodes = ["body-L2-F1", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M47"
+nodes = ["body-L2-1", "body-L2-F2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M48"
+nodes = ["body-L2-F2", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M49"
+nodes = ["body-L2-2", "body-L2-F3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M50"
+nodes = ["body-L2-F3", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M51"
+nodes = ["body-L2-3", "body-L2-F4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M52"
+nodes = ["body-L2-F4", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M53"
+nodes = ["body-L2-1", "body-L3-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M54"
+nodes = ["body-L2-2", "body-L3-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M55"
+nodes = ["body-L2-3", "body-L3-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M56"
+nodes = ["body-L2-4", "body-L3-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M57"
+nodes = ["body-L2-4", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M58"
+nodes = ["body-L2-1", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M59"
+nodes = ["body-L2-1", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M60"
+nodes = ["body-L2-2", "body-L3-1"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M61"
+nodes = ["body-L2-2", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M62"
+nodes = ["body-L2-3", "body-L3-2"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M63"
+nodes = ["body-L2-3", "body-L3-4"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M64"
+nodes = ["body-L2-4", "body-L3-3"]
+group = "body-bracing-3"
+made_by = "body"
+
+[[member]]
+id = "body-M65"
+nodes = ["body-L3-4", "body-L3-1"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M66"
+nodes = ["body-L3-1", "body-L3-2"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M67"
+nodes = ["body-L3-2", "body-L3-3"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M68"
+nodes = ["body-L3-3", "body-L3-4"]
+group = "body-horizontal-3"
+made_by = "body"
+
+[[member]]
+id = "body-M69"
+nodes = ["body-L3-1", "body-L4-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M70"
+nodes = ["body-L3-2", "body-L4-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M71"
+nodes = ["body-L3-3", "body-L4-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M72"
+nodes = ["body-L3-4", "body-L4-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M73"
+nodes = ["body-L3-1", "body-L4-4"]
+group = "body-bracing-4"
+made_by = "body"
+
+[[member]]
+id = "body-M74"
+nodes = ["body-L3-2", "body-L4-1"]
+group = "body-bracing-4"
+made_by = "body"
+
+[[member]]
+id = "body-M75"
+nodes = ["body-L3-3", "body-L4-2"]
+group = "body-bracing-4"
+made_by = "body"
+
+[[member]]
+id = "body-M76"
+nodes = ["body-L3-4", "body-L4-3"]
+group = "body-bracing-4"
+made_by = "body"
+
+### arms
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[point]]
+label = "A1"
+node = "arm-A1"
+[[point]]
+label = "A2"
+node = "arm-A2"
+[[point]]
+label = "A3"
+node = "arm-A3"
+[[point]]
+label = "A4"
+node = "arm-A4"
+[[point]]
+label = "E1"
+node = "peak-E1"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = "6 m"
+waist = "2 m"
+panel = [
+{ top = "5 m", bracing = "x" },
+{ top = "10 m", bracing = "x" },
+]
+[[generator]]
+id = "arm"
+kind = "crossarm"
+points = ["A1", "A2", "A3", "A4"]
+shape = "triangular"
+[[generator]]
+id = "peak"
+kind = "peak"
+points = ["E1"]
+[[generator]]
+id = "top"
+kind = "peak"
+height = "2 m"
+
+[[node]]
+id = "body-L0-1"
+point = ["3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "arm-A1"
+point = ["6.000 m", "0.000 m", "7.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A2"
+point = ["-6.000 m", "0.000 m", "10.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A3"
+point = ["4.000 m", "0.000 m", "7.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A4"
+point = ["0.000 m", "5.000 m", "6.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "peak-E1"
+point = ["0.500 m", "0.000 m", "13.000 m"]
+made_by = "peak"
+
+[[node]]
+id = "top-tip"
+point = ["0.000 m", "0.000 m", "12.000 m"]
+made_by = "top"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "arm-M1"
+nodes = ["body-L1-4", "arm-A1"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M2"
+nodes = ["body-L1-1", "arm-A1"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M3"
+nodes = ["body-L2-4", "arm-A1"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M4"
+nodes = ["body-L2-1", "arm-A1"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M5"
+nodes = ["body-L1-3", "arm-A2"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M6"
+nodes = ["body-L1-2", "arm-A2"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M7"
+nodes = ["body-L2-3", "arm-A2"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M8"
+nodes = ["body-L2-2", "arm-A2"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M9"
+nodes = ["body-L1-4", "arm-A3"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M10"
+nodes = ["body-L1-1", "arm-A3"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M11"
+nodes = ["body-L2-4", "arm-A3"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M12"
+nodes = ["body-L2-1", "arm-A3"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M13"
+nodes = ["body-L1-2", "arm-A4"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M14"
+nodes = ["body-L1-1", "arm-A4"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M15"
+nodes = ["body-L2-2", "arm-A4"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M16"
+nodes = ["body-L2-1", "arm-A4"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "peak-M1"
+nodes = ["body-L2-1", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M2"
+nodes = ["body-L2-2", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M3"
+nodes = ["body-L2-3", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M4"
+nodes = ["body-L2-4", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "top-M1"
+nodes = ["body-L2-1", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M2"
+nodes = ["body-L2-2", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M3"
+nodes = ["body-L2-3", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M4"
+nodes = ["body-L2-4", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+### arms
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[point]]
+label = "A1"
+node = "arm-A1"
+[[point]]
+label = "A2"
+node = "arm-A2"
+[[point]]
+label = "A3"
+node = "arm-A3"
+[[point]]
+label = "A4"
+node = "arm-A4"
+[[point]]
+label = "E1"
+node = "peak-E1"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = "6 m"
+waist = "2 m"
+panel = [
+{ top = "5 m", bracing = "x" },
+{ top = "10 m", bracing = "x" },
+]
+[[generator]]
+id = "arm"
+kind = "crossarm"
+points = ["A1", "A2", "A3", "A4"]
+shape = "rectangular"
+[[generator]]
+id = "peak"
+kind = "peak"
+points = ["E1"]
+[[generator]]
+id = "top"
+kind = "peak"
+height = "2 m"
+
+[[node]]
+id = "body-L0-1"
+point = ["3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "arm-A1"
+point = ["6.000 m", "0.000 m", "7.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A1-top"
+point = ["6.000 m", "0.000 m", "12.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A2"
+point = ["-6.000 m", "0.000 m", "10.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A2-bottom"
+point = ["-6.000 m", "0.000 m", "5.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A3"
+point = ["4.000 m", "0.000 m", "7.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A3-top"
+point = ["4.000 m", "0.000 m", "12.500 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A4"
+point = ["0.000 m", "5.000 m", "6.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "arm-A4-top"
+point = ["0.000 m", "5.000 m", "11.000 m"]
+made_by = "arm"
+
+[[node]]
+id = "peak-E1"
+point = ["0.500 m", "0.000 m", "13.000 m"]
+made_by = "peak"
+
+[[node]]
+id = "top-tip"
+point = ["0.000 m", "0.000 m", "12.000 m"]
+made_by = "top"
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "arm-M1"
+nodes = ["body-L1-4", "arm-A1"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M2"
+nodes = ["body-L1-1", "arm-A1"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M3"
+nodes = ["body-L2-4", "arm-A1-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M4"
+nodes = ["body-L2-1", "arm-A1-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M5"
+nodes = ["arm-A1", "arm-A1-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M6"
+nodes = ["body-L1-4", "arm-A1-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M7"
+nodes = ["body-L1-1", "arm-A1-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M8"
+nodes = ["body-L1-3", "arm-A2-bottom"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M9"
+nodes = ["body-L1-2", "arm-A2-bottom"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M10"
+nodes = ["body-L2-3", "arm-A2"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M11"
+nodes = ["body-L2-2", "arm-A2"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M12"
+nodes = ["arm-A2-bottom", "arm-A2"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M13"
+nodes = ["body-L1-3", "arm-A2"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M14"
+nodes = ["body-L1-2", "arm-A2"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M15"
+nodes = ["body-L1-4", "arm-A3"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M16"
+nodes = ["body-L1-1", "arm-A3"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M17"
+nodes = ["body-L2-4", "arm-A3-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M18"
+nodes = ["body-L2-1", "arm-A3-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M19"
+nodes = ["arm-A3", "arm-A3-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M20"
+nodes = ["body-L1-4", "arm-A3-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M21"
+nodes = ["body-L1-1", "arm-A3-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M22"
+nodes = ["body-L1-2", "arm-A4"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M23"
+nodes = ["body-L1-1", "arm-A4"]
+group = "arm-bottom"
+made_by = "arm"
+
+[[member]]
+id = "arm-M24"
+nodes = ["body-L2-2", "arm-A4-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M25"
+nodes = ["body-L2-1", "arm-A4-top"]
+group = "arm-top"
+made_by = "arm"
+
+[[member]]
+id = "arm-M26"
+nodes = ["arm-A4", "arm-A4-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M27"
+nodes = ["body-L1-2", "arm-A4-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "arm-M28"
+nodes = ["body-L1-1", "arm-A4-top"]
+group = "arm-bracing"
+made_by = "arm"
+
+[[member]]
+id = "peak-M1"
+nodes = ["body-L2-1", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M2"
+nodes = ["body-L2-2", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M3"
+nodes = ["body-L2-3", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "peak-M4"
+nodes = ["body-L2-4", "peak-E1"]
+group = "peak-peak"
+made_by = "peak"
+
+[[member]]
+id = "top-M1"
+nodes = ["body-L2-1", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M2"
+nodes = ["body-L2-2", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M3"
+nodes = ["body-L2-3", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+[[member]]
+id = "top-M4"
+nodes = ["body-L2-4", "top-tip"]
+group = "top-peak"
+made_by = "top"
+
+### copy
+format = "ohl-structure"
+version = 3
+id = "G"
+name = "g"
+kind = "lattice"
+[[node]]
+id = "N1"
+point = ["0 m", "-2 m", "5 m"]
+
+[[node]]
+id = "body-L0-1"
+point = ["3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-2"
+point = ["-3.000 m", "3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-3"
+point = ["-3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L0-4"
+point = ["3.000 m", "-3.000 m", "0.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-1"
+point = ["2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-2"
+point = ["-2.000 m", "2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-3"
+point = ["-2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L1-4"
+point = ["2.000 m", "-2.000 m", "5.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-1"
+point = ["1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-2"
+point = ["-1.000 m", "1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-3"
+point = ["-1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "body-L2-4"
+point = ["1.000 m", "-1.000 m", "10.000 m"]
+made_by = "body"
+
+[[node]]
+id = "front-N1"
+point = ["0.000 m", "2.000 m", "5.000 m"]
+made_by = "front"
+[[generator]]
+id = "body"
+kind = "panels"
+bottom = "0 m"
+feet = "6 m"
+waist = "2 m"
+panel = [
+{ top = "5 m", bracing = "x" },
+{ top = "10 m", bracing = "x" },
+]
+
+[[member]]
+id = "body-M1"
+nodes = ["body-L0-1", "body-L1-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M2"
+nodes = ["body-L0-2", "body-L1-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M3"
+nodes = ["body-L0-3", "body-L1-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M4"
+nodes = ["body-L0-4", "body-L1-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M5"
+nodes = ["body-L0-4", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M6"
+nodes = ["body-L0-1", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M7"
+nodes = ["body-L0-1", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M8"
+nodes = ["body-L0-2", "body-L1-1"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M9"
+nodes = ["body-L0-2", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M10"
+nodes = ["body-L0-3", "body-L1-2"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M11"
+nodes = ["body-L0-3", "body-L1-4"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M12"
+nodes = ["body-L0-4", "body-L1-3"]
+group = "body-bracing-1"
+made_by = "body"
+
+[[member]]
+id = "body-M13"
+nodes = ["body-L1-4", "body-L1-1"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M14"
+nodes = ["body-L1-1", "body-L1-2"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M15"
+nodes = ["body-L1-2", "body-L1-3"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M16"
+nodes = ["body-L1-3", "body-L1-4"]
+group = "body-horizontal-1"
+made_by = "body"
+
+[[member]]
+id = "body-M17"
+nodes = ["body-L1-1", "body-L2-1"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M18"
+nodes = ["body-L1-2", "body-L2-2"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M19"
+nodes = ["body-L1-3", "body-L2-3"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M20"
+nodes = ["body-L1-4", "body-L2-4"]
+group = "body-leg"
+made_by = "body"
+
+[[member]]
+id = "body-M21"
+nodes = ["body-L1-4", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M22"
+nodes = ["body-L1-1", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M23"
+nodes = ["body-L1-1", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M24"
+nodes = ["body-L1-2", "body-L2-1"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M25"
+nodes = ["body-L1-2", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M26"
+nodes = ["body-L1-3", "body-L2-2"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M27"
+nodes = ["body-L1-3", "body-L2-4"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M28"
+nodes = ["body-L1-4", "body-L2-3"]
+group = "body-bracing-2"
+made_by = "body"
+
+[[member]]
+id = "body-M29"
+nodes = ["body-L2-4", "body-L2-1"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M30"
+nodes = ["body-L2-1", "body-L2-2"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M31"
+nodes = ["body-L2-2", "body-L2-3"]
+group = "body-horizontal-2"
+made_by = "body"
+
+[[member]]
+id = "body-M32"
+nodes = ["body-L2-3", "body-L2-4"]
+group = "body-horizontal-2"
+made_by = "body"
+[[member]]
+id = "H1"
+nodes = ["N1", "body-L0-3"]
+[[member]]
+id = "H2"
+nodes = ["N1", "body-L0-4"]
+
+[[member]]
+id = "front-H1"
+nodes = ["front-N1", "body-L0-2"]
+made_by = "front"
+
+[[member]]
+id = "front-H2"
+nodes = ["front-N1", "body-L0-1"]
+made_by = "front"
+[[generator]]
+id = "front"
+kind = "copy_face"
+body = "body"
+face = "y-"
+
