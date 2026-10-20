@@ -602,7 +602,9 @@ pub enum Command {
     ChangePoints {
         /// The point cloud's name.
         cloud: String,
-        /// The points changed, in order.
+        /// The points changed, in order (at most [`points::MAX_POINTS`];
+        /// written packed from [`points::packed::PACK_FROM`] points on).
+        #[serde(with = "points::packed")]
         points: Vec<points::PointChange>,
     },
     /// Several commands applied together (all or none).

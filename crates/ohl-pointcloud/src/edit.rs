@@ -88,14 +88,102 @@ impl PointChange {
     }
 }
 
-/// A block decoded: absolute integer columns.
+/// A point of a block: absolute integer coordinates, intensity, returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Row {
+    x: i64,
+    y: i64,
+    z: i64,
+    intensity: u16,
+    returns: u8,
+}
+
+/// Points per run of [`Rows`] (a run is split beyond twice this).
+const RUN: usize = 256;
+
+/// A block's points in order, held in runs of a few hundred: taking a
+/// point out or putting one in moves at most a run, not the whole block
+/// (a change of 10⁶ points in blocks of 10⁵ takes seconds, not hours).
+#[derive(Debug, Default)]
+struct Rows {
+    runs: Vec<Vec<Row>>,
+    len: usize,
+}
+
+impl Rows {
+    fn of(rows: Vec<Row>) -> Self {
+        let len = rows.len();
+        Self {
+            runs: rows.chunks(RUN).map(<[Row]>::to_vec).collect(),
+            len,
+        }
+    }
+
+    /// The run and the place in it of point `i` (< len).
+    fn locate(&self, mut i: usize) -> (usize, usize) {
+        for (r, run) in self.runs.iter().enumerate() {
+            if i < run.len() {
+                return (r, i);
+            }
+            i -= run.len();
+        }
+        unreachable!("index within the rows")
+    }
+
+    fn get(&self, i: usize) -> Row {
+        let (r, k) = self.locate(i);
+        self.runs[r][k]
+    }
+
+    fn remove(&mut self, i: usize) {
+        let (r, k) = self.locate(i);
+        self.runs[r].remove(k);
+        if self.runs[r].is_empty() {
+            self.runs.remove(r);
+        }
+        self.len -= 1;
+    }
+
+    fn insert(&mut self, i: usize, row: Row) {
+        if self.runs.is_empty() {
+            self.runs.push(Vec::with_capacity(RUN));
+        }
+        let (r, k) = if i == self.len {
+            let r = self.runs.len() - 1;
+            (r, self.runs[r].len())
+        } else {
+            self.locate(i)
+        };
+        self.runs[r].insert(k, row);
+        if self.runs[r].len() > 2 * RUN {
+            let rest = self.runs[r].split_off(RUN);
+            self.runs.insert(r + 1, rest);
+        }
+        self.len += 1;
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Row> {
+        self.runs.iter().flatten()
+    }
+
+    /// The number of points before the first for which `before` is false
+    /// (`before` true for a prefix of the points, as a sorted order gives).
+    fn partition_point(&self, before: impl Fn(&Row) -> bool) -> usize {
+        let mut n = 0;
+        for run in &self.runs {
+            match run.last() {
+                Some(last) if before(last) => n += run.len(),
+                _ => return n + run.partition_point(&before),
+            }
+        }
+        n
+    }
+}
+
+/// A block decoded: absolute integer coordinates.
 struct Block {
     id: Option<i64>,
-    x: Vec<i64>,
-    y: Vec<i64>,
-    z: Vec<i64>,
-    intensity: Vec<u16>,
-    returns: Vec<u8>,
+    rows: Rows,
     /// Its intensities and returns were not stored (kept so while they
     /// stay 0).
     no_intensity: bool,
@@ -108,11 +196,7 @@ impl Block {
     fn empty() -> Self {
         Self {
             id: None,
-            x: vec![],
-            y: vec![],
-            z: vec![],
-            intensity: vec![],
-            returns: vec![],
+            rows: Rows::default(),
             no_intensity: false,
             no_returns: false,
             has_lod: false,
@@ -120,50 +204,53 @@ impl Block {
     }
 
     fn len(&self) -> usize {
-        self.x.len()
+        self.rows.len
     }
 
-    fn at(&self, i: usize, class: u8) -> StoredPoint {
+    fn point(r: &Row, class: u8) -> StoredPoint {
         StoredPoint {
-            xyz: [self.x[i], self.y[i], self.z[i]],
+            xyz: [r.x, r.y, r.z],
             class,
-            intensity: self.intensity[i],
-            returns: self.returns[i],
+            intensity: r.intensity,
+            returns: r.returns,
         }
     }
 
     fn remove(&mut self, i: usize) {
-        self.x.remove(i);
-        self.y.remove(i);
-        self.z.remove(i);
-        self.intensity.remove(i);
-        self.returns.remove(i);
+        self.rows.remove(i);
     }
 
     fn insert(&mut self, i: usize, p: &StoredPoint) {
-        self.x.insert(i, p.xyz[0]);
-        self.y.insert(i, p.xyz[1]);
-        self.z.insert(i, p.xyz[2]);
-        self.intensity.insert(i, p.intensity);
-        self.returns.insert(i, p.returns);
+        self.rows.insert(
+            i,
+            Row {
+                x: p.xyz[0],
+                y: p.xyz[1],
+                z: p.xyz[2],
+                intensity: p.intensity,
+                returns: p.returns,
+            },
+        );
     }
 
     /// The index of `p` (at `hint` when it is there).
     fn find(&self, p: &StoredPoint, hint: Option<u64>) -> Option<usize> {
-        let same = |i: usize| self.at(i, p.class) == *p;
         if let Some(h) = hint.and_then(|h| usize::try_from(h).ok())
             && h < self.len()
-            && same(h)
+            && Self::point(&self.rows.get(h), p.class) == *p
         {
             return Some(h);
         }
-        (0..self.len()).find(|&i| same(i))
+        self.rows.iter().position(|r| Self::point(r, p.class) == *p)
     }
 
     /// Where `p` goes: at `hint` when that keeps the (x, y) order, else
     /// after the points of the same or a lower (x, y).
     fn place(&self, p: &StoredPoint, hint: Option<u64>) -> usize {
-        let key = |i: usize| (self.x[i], self.y[i]);
+        let key = |i: usize| {
+            let r = self.rows.get(i);
+            (r.x, r.y)
+        };
         let k = (p.xyz[0], p.xyz[1]);
         if let Some(h) = hint.and_then(|h| usize::try_from(h).ok())
             && h <= self.len()
@@ -172,16 +259,7 @@ impl Block {
         {
             return h;
         }
-        let (mut lo, mut hi) = (0, self.len());
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            if key(mid) <= k {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        lo
+        self.rows.partition_point(|r| (r.x, r.y) <= k)
     }
 }
 
@@ -192,8 +270,8 @@ fn read_block(
     units: i64,
     (cx, cy, class): (i64, i64, u8),
 ) -> Result<Block, StoreError> {
-    type Row = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
-    let row: Option<Row> = conn
+    type Stored = (i64, i64, i64, Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+    let row: Option<Stored> = conn
         .query_row(
             "SELECT id, count, z0, xyz, intensity, returns FROM pointcloud_block
              WHERE cloud = ?1 AND cx = ?2 AND cy = ?3 AND class = ?4",
@@ -218,19 +296,26 @@ fn read_block(
     let has_lod = conn
         .prepare("SELECT 1 FROM pointcloud_lod WHERE block = ?1")?
         .exists(params![id])?;
+    let intensities = match &intensity {
+        Some(b) => Columns::decode_intensity(b, n).map_err(err)?,
+        None => vec![0; n],
+    };
+    let returnses = match &returns {
+        Some(b) => Columns::decode_returns(b, n).map_err(err)?,
+        None => vec![0; n],
+    };
+    let rows = (0..n)
+        .map(|i| Row {
+            x: cx * units + i64::from(x[i]),
+            y: cy * units + i64::from(y[i]),
+            z: z0 + i64::from(z[i]),
+            intensity: intensities[i],
+            returns: returnses[i],
+        })
+        .collect();
     Ok(Block {
         id: Some(id),
-        x: x.iter().map(|&v| cx * units + i64::from(v)).collect(),
-        y: y.iter().map(|&v| cy * units + i64::from(v)).collect(),
-        z: z.iter().map(|&v| z0 + i64::from(v)).collect(),
-        intensity: match &intensity {
-            Some(b) => Columns::decode_intensity(b, n).map_err(err)?,
-            None => vec![0; n],
-        },
-        returns: match &returns {
-            Some(b) => Columns::decode_returns(b, n).map_err(err)?,
-            None => vec![0; n],
-        },
+        rows: Rows::of(rows),
         no_intensity: intensity.is_none(),
         no_returns: returns.is_none(),
         has_lod,
@@ -254,8 +339,8 @@ fn write_block(
         }
         return Ok(());
     }
-    let z0 = b.z.iter().copied().min().unwrap_or(0);
-    let zmax = b.z.iter().copied().max().unwrap_or(0);
+    let z0 = b.rows.iter().map(|r| r.z).min().unwrap_or(0);
+    let zmax = b.rows.iter().map(|r| r.z).max().unwrap_or(0);
     if zmax - z0 > i64::from(u32::MAX) {
         return Err(err("height range of a block exceeds the integer range"));
     }
@@ -263,15 +348,16 @@ fn write_block(
         return Err(err("too many points of one class in one chunk"));
     }
     let columns = Columns {
-        x: b.x.iter().map(|&v| (v - cx * units) as u32).collect(),
-        y: b.y.iter().map(|&v| (v - cy * units) as u32).collect(),
-        z: b.z.iter().map(|&v| (v - z0) as u32).collect(),
-        intensity: b.intensity.clone(),
-        returns: b.returns.clone(),
+        x: b.rows.iter().map(|r| (r.x - cx * units) as u32).collect(),
+        y: b.rows.iter().map(|r| (r.y - cy * units) as u32).collect(),
+        z: b.rows.iter().map(|r| (r.z - z0) as u32).collect(),
+        intensity: b.rows.iter().map(|r| r.intensity).collect(),
+        returns: b.rows.iter().map(|r| r.returns).collect(),
     };
     let (xyz, intensity, returns) = columns.encode_in_order().map_err(err)?;
-    let intensity = (!(b.no_intensity && b.intensity.iter().all(|&v| v == 0))).then_some(intensity);
-    let returns = (!(b.no_returns && b.returns.iter().all(|&v| v == 0))).then_some(returns);
+    let intensity =
+        (!(b.no_intensity && columns.intensity.iter().all(|&v| v == 0))).then_some(intensity);
+    let returns = (!(b.no_returns && columns.returns.iter().all(|&v| v == 0))).then_some(returns);
     let count = b.len() as i64;
     let id = match b.id {
         Some(id) => {
@@ -337,7 +423,11 @@ fn units_of(cloud: &CloudInfo) -> i64 {
 /// whose block would exceed the integer ranges.
 ///
 /// Cost: decoding and encoding the blocks touched (a block of 10⁵ points
-/// in a few ms).
+/// in a few ms), and per change finding the point (at once at its
+/// `from_index`; else a look through its block) and moving at most a run
+/// of a few hundred points. Many points taken out of one block are found
+/// at once when listed from the highest index down (each index then still
+/// holds when its turn comes).
 pub fn change_points(
     conn: &Connection,
     cloud: &CloudInfo,
@@ -408,8 +498,8 @@ pub fn points_present(
     for (key, ps) in wanted {
         let b = read_block(conn, cloud, units, key)?;
         let mut have: BTreeMap<StoredPoint, usize> = BTreeMap::new();
-        for i in 0..b.len() {
-            let p = b.at(i, key.2);
+        for r in b.rows.iter() {
+            let p = Block::point(r, key.2);
             if ps.contains_key(&p) {
                 *have.entry(p).or_default() += 1;
             }
@@ -461,8 +551,8 @@ pub fn find_point(
     let mut best: Option<(f64, StoredPoint, u64)> = None;
     for key in keys {
         let b = read_block(conn, cloud, units, key)?;
-        for i in 0..b.len() {
-            let p = b.at(i, key.2);
+        for (i, r) in b.rows.iter().enumerate() {
+            let p = Block::point(r, key.2);
             let q = p.position(cloud);
             let d =
                 ((q[0] - at[0]).powi(2) + (q[1] - at[1]).powi(2) + (q[2] - at[2]).powi(2)).sqrt();
@@ -474,7 +564,48 @@ pub fn find_point(
     Ok(best.map(|(_, p, i)| (p, i)))
 }
 
+/// The block (chunk x, chunk y, class) of a point of class `class` at
+/// `at` (m) in `cloud`.
+pub fn block_of(cloud: &CloudInfo, at: [f64; 3], class: u8) -> (i64, i64, u8) {
+    StoredPoint {
+        xyz: StoredPoint::quantize(at, cloud),
+        class,
+        intensity: 0,
+        returns: 0,
+    }
+    .block(units_of(cloud))
+}
+
+/// The points of blocks `keys` (chunk x, chunk y, class) of `cloud` as
+/// stored, in their order (a missing block: none): many points found at
+/// once, as [`find_point`] finds one.
+///
+/// Cost: decoding the blocks (~10⁷ points a second).
+pub fn block_points(
+    conn: &Connection,
+    cloud: &CloudInfo,
+    keys: &[(i64, i64, u8)],
+) -> Result<Vec<Vec<StoredPoint>>, StoreError> {
+    let units = units_of(cloud);
+    keys.iter()
+        .map(|&key| {
+            let b = read_block(conn, cloud, units, key)?;
+            Ok(b.rows.iter().map(|r| Block::point(r, key.2)).collect())
+        })
+        .collect()
+}
+
 impl crate::Store {
+    /// [`block_points`] of cloud `name`.
+    pub fn block_points(
+        &self,
+        name: &str,
+        keys: &[(i64, i64, u8)],
+    ) -> Result<Vec<Vec<StoredPoint>>, StoreError> {
+        let cloud = cloud_named(&self.conn, name)?;
+        block_points(&self.conn, &cloud, keys)
+    }
+
     /// [`change_points`] on cloud `name`, in a transaction of its own.
     pub fn change_points(
         &mut self,

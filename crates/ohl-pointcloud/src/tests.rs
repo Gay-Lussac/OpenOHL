@@ -1346,3 +1346,70 @@ fn changed_points_read_back_and_undo_gives_every_byte_back() {
     drop(store);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Many points of several blocks given another class at once — listed
+/// from the highest index down in each block (found at once), and a share
+/// listed upwards (looked for) — read back; the inverses give every
+/// stored byte back. 64 000 points: a few seconds in a debug build.
+#[test]
+fn many_points_change_class_and_undo_gives_every_byte_back() {
+    use crate::edit::{PointChange, StoredPoint, block_of};
+    let dir = scratch("edit-many");
+    let db = dir.join("p.ohl");
+    std::fs::remove_file(&db).ok();
+    let x0 = 2_600_000.0;
+    let points = synthetic(x0, 200, 100);
+    let mut store = Store::open(&db).unwrap();
+    store
+        .import_points("c", "", None, 64.0, 0.001, points.clone(), &Budget::new())
+        .unwrap();
+    let before = snapshot(&db, "c");
+    let cloud = store.cloud(Some("c")).unwrap();
+    let mut keys: Vec<(i64, i64, u8)> = points
+        .iter()
+        .filter(|p| p.class == 2)
+        .map(|p| block_of(&cloud, [p.x, p.y, p.z], 2))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    assert!(keys.len() >= 4, "{keys:?}");
+    let blocks = store.block_points("c", &keys).unwrap();
+    let mut changes = Vec::new();
+    for (k, b) in blocks.iter().enumerate() {
+        let order: Vec<usize> = if k == 0 {
+            // Upwards: each index taken is one off once a point before it
+            // went (looked for in the block).
+            (0..b.len()).step_by(7).collect()
+        } else {
+            (0..b.len()).rev().collect()
+        };
+        for i in order {
+            changes.push(PointChange {
+                from: b[i],
+                from_index: Some(i as u64),
+                to: StoredPoint { class: 6, ..b[i] },
+                to_index: None,
+            });
+        }
+    }
+    let n = changes.len();
+    assert!(n > 50_000, "{n}");
+    let t = std::time::Instant::now();
+    let applied = store.change_points("c", &changes).unwrap();
+    let took = t.elapsed();
+    let after = store.cloud(Some("c")).unwrap();
+    assert_eq!(after.points, cloud.points);
+    let counts = store.class_counts(&after).unwrap();
+    let six = counts.iter().find(|c| c.0 == 6).map_or(0, |c| c.1);
+    assert_eq!(six, n as u64, "{counts:?}");
+    let back: Vec<PointChange> = applied.iter().rev().map(PointChange::inverse).collect();
+    let t = std::time::Instant::now();
+    store.change_points("c", &back).unwrap();
+    println!(
+        "{n} points: class changed in {took:.1?}, changed back in {:.1?}",
+        t.elapsed()
+    );
+    assert_eq!(snapshot(&db, "c"), before, "undo gives every byte back");
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
