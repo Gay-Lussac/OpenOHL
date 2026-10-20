@@ -28,10 +28,8 @@ pub enum Go {
     Library(LibraryKind),
     /// Terrain › Terrain surfaces.
     Surfaces,
-    /// Structures › New pylon from a template.
+    /// Tools › New pylon from a template.
     PylonBuilder,
-    /// Structures › Place on alignment points.
-    Placement,
     /// Checks › Ground clearances › Vertical clearances.
     VerticalClearances,
 }
@@ -119,20 +117,14 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             title: "Structures on the line",
             done: !line.structures.is_empty(),
             detail: if line.structures.is_empty() {
-                "a type on the alignment's points, or Add structure on the ground".into()
+                "Add structure: on an alignment point (also on its other points, one command), \
+                 or on the ground"
+                    .into()
             } else {
                 count(line.structures.len(), "structure", "structures")
             },
-            go: if line.alignments.is_empty() {
-                Go::Hold(Tool::AddStructure)
-            } else {
-                Go::Placement
-            },
-            link: if line.alignments.is_empty() {
-                "Hold Add structure"
-            } else {
-                "Place on alignment points…"
-            },
+            go: Go::Hold(Tool::AddStructure),
+            link: "Hold Add structure",
             optional: false,
         },
         Step {
@@ -266,9 +258,6 @@ pub fn go(r: &mut Ready, go: Go) {
         Go::Surfaces => r.surfaces.show(&r.model),
         Go::PylonBuilder => {
             r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
-        }
-        Go::Placement => {
-            r.placement = Some(crate::pylon_builder::Placement::new(&r.model));
         }
         Go::VerticalClearances => r.vertical_clearances.show(&r.model),
     }

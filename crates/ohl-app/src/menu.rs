@@ -138,6 +138,10 @@ pub enum Command {
     Table(crate::tables::TableKind),
     /// Hold a tool.
     Hold(Tool),
+    /// Open New pylon from a template (the pylon builder): Tools menu,
+    /// Structures group. A window building a structure type, not a tool
+    /// held (no click in a view).
+    NewPylon,
 }
 
 impl Command {
@@ -158,6 +162,7 @@ impl Command {
         out.extend(LibraryKind::ALL.map(Command::Library));
         out.extend(crate::tables::TableKind::ALL.map(Command::Table));
         out.extend(Tool::ALL.map(Command::Hold));
+        out.push(Command::NewPylon);
         out
     }
 
@@ -189,6 +194,7 @@ impl Command {
             Command::Library(k) => k.library_name(),
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => t.name().into(),
+            Command::NewPylon => "New pylon from a template…".into(),
         }
     }
 
@@ -201,6 +207,10 @@ impl Command {
                  points: Checks › Ground clearances",
             ),
             Command::FitViews => Some("Show the whole line in the 3D view and the plan"),
+            Command::NewPylon => Some(
+                "A structure type of level 1 from a pylon template: the face's dimensions, \
+                 suspension or strain",
+            ),
             Command::Save => {
                 Some("The project written through, the library pages with changes saved")
             }
@@ -246,6 +256,7 @@ impl Command {
             Command::Library(k) => format!("library-{}", k.extension()),
             Command::Table(k) => format!("table-{}", k.key()),
             Command::Hold(t) => format!("tool-{}", t.key_name()),
+            Command::NewPylon => "new-pylon".into(),
         }
     }
 
