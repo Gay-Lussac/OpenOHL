@@ -7,7 +7,8 @@ the way the code computes them, the partial and combination factors put
 on the vertical, transverse and longitudinal loads, and the strength
 factor. The plugin also returns **notes**: what it computed, assumed or
 left out, and may give **clearance presets** for the Vertical and Radial
-clearances windows ([below](#clearance-presets)).
+clearances windows ([below](#clearance-presets)) and **rule presets** for
+any clearance rule set ([below](#rule-presets)).
 
 **OpenOHL ships no code tables.** Standards are copyrighted, and their
 values change with editions and national annexes. Each plugin implements
@@ -77,6 +78,39 @@ everything afterwards (see [Vertical and radial
 clearances](desktop-app.md#vertical-and-radial-clearances)). The plugins
 in `plugins/codes` give none.
 
+## Rule presets
+
+A design-code plugin may also give **rule presets** (its optional
+`rule-presets`, from the same parameter file — or none, when the plugin
+takes its values from its own data): presets of **any clearance rule
+set** — the ground, objects (LiDAR classes), crossings with other lines,
+the line's own wires — each a rule file (`.ohlr`) with a description (what
+it holds, the articles of the code it follows) and, when its rules name
+weather cases, a weather case file. The distances use the forms of the
+rule files: one distance, a table by voltage, or a base plus an amount
+per kV ([Clearances by voltage](terrain.md#clearances-by-voltage)), so a
+preset covers every voltage. OpenOHL checks each preset like any rule file
+(at least one rule; each weather case a rule names among the preset's;
+names unique).
+
+In the desktop application the Clearances tab's **Edit rules › Load
+preset…** lists the rule presets of the design-code plugins turned on,
+read with the parameter file chosen in Criteria › Design code (none
+chosen: an empty one), shows one with its distances at the project's
+voltages, and **merges** it into the rule file chosen (a rule of the same
+name replaced, the others added) or **replaces** its rules — one command,
+undone by Undo ([Clearances](desktop-app.md#clearances)). From the
+command line:
+
+```bash
+ohl code rule-presets --plugin DIR [--params my-line.toml] [--out rules/]
+```
+
+lists each preset with its rules and their distances, and with `--out`
+writes them as `<plugin>-rules-<name>.ohlr` (and `.ohlwc` for their
+weather cases); `ohl code generate` writes them next to the weather case
+file too. The plugins in `plugins/codes` give none (a stub).
+
 ## Wind factors for structures
 
 A design-code plugin may also return the code's **wind factors for
@@ -109,7 +143,7 @@ ohl line line.ohl.json --weather my-line.ohlwc --load-cases my-line.ohllc --load
 
 `generate` checks both files as OpenOHL reads them (and that each load
 case names one of the weather cases) before writing them, writes the
-clearance presets next to the weather case file and the wind factors for
+clearance presets and the rule presets next to the weather case file and the wind factors for
 structures, if the code gives them, into the section library (`--sections
 DIR`, default `Sections` beside the weather case file), and prints the
 notes (and that the code gives no wind factors, when it gives none).
@@ -129,7 +163,8 @@ project's libraries — kept in the project file like any library file —
 or next to a line file; a file of that name is replaced. The model then
 uses them: the weather cases are solved, and Structure loads uses the
 load cases. The code's clearance presets go into the project's rule and
-weather case files (for the clearance windows' Load preset…), its wind
+weather case files (for the clearance windows' Load preset…; its rule
+presets are read when the Clearances tab's Load preset… opens), its wind
 factors for structures into the project line's section library. The
 code's notes are shown in the window. In OHL-Structure, **Load cases ›
 Load cases from a design code…** writes the wind factors into the section

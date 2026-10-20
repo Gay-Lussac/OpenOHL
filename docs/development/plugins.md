@@ -235,6 +235,52 @@ structure-wind;`), extension point `design-code` as before.
   (`ohl_code_common::no_structure_wind!()`), so they say so; a plugin that
   has its code's factors replaces the stub with its own function.
 
+### Rule presets
+
+A design-code plugin may also implement the optional `rule-presets`
+interface (added 2026-10-20, interface version still 0.3): presets of
+**any clearance rule set**, not only the two clearance windows'. Worlds:
+`code-rules-plugin` (`include code-wind-plugin; export rule-presets;`)
+and `code-check-rules-plugin` (`include code-check-plugin; export
+rule-presets;`); extension point `design-code` as before.
+
+- `rule-presets(parameters)` returns a list of **rule-preset** records,
+  or an error string. `parameters` is the user's parameter file (as
+  `generate` reads it) or **empty** when the user gave none (the app's
+  Load preset… without a parameter file chosen): a plugin whose presets
+  come from its own data gives them anyway, one that needs the file says
+  so in its error.
+- A **rule-preset**: `name` (unique among the plugin's rule presets),
+  `description` (what it holds and the articles of the code, shown before
+  it is loaded), `rules` — a clearance rule file's text (`.ohlr`, any
+  targets: `ground`, `points`, `same_line`, `other_lines`; each distance
+  a distance, `{ by_voltage = [[up to kV, distance], …] }` or `{ base =
+  …, per_kv = …, above_kv = … }`; `[wind]` and `[check]` optional) — and
+  `weather-cases`, an `.ohlwc` file's text with the cases its rules name
+  (empty when they name none).
+- The host (`WasmHost::load_code`) instantiates the component once and
+  looks for the export (`ohl:plugin/rule-presets@0.1.0`) apart from the
+  others (its own binding, world `rule-presets-export`): a plugin built
+  without it loads and generates as before, and
+  `WasmCodePlugin::rule_presets` gives an empty list;
+  `has_rule_presets()` says whether it is there (`ohl plugin info` lists
+  the optional exports). `ohl_io::codes::rule_presets` and
+  `check_rule_presets` check each preset as OpenOHL reads it (a rule file
+  with at least one rule; its weather cases, when given; every case a rule
+  or a case pair names among them; names unique).
+- Used by: the desktop application's Clearances tab, **Edit rules › Load
+  preset…** (the enabled design-code plugins, read on a worker thread with
+  the Design code window's parameter file; previewed; merged or replacing
+  the rules, one command); `ohl code rule-presets --plugin DIR [--params
+  FILE] [--out DIR]` (lists, writes `<plugin>-rules-<name>.ohlr` / `.ohlwc`);
+  `ohl code generate` (writes them next to the weather case file).
+- **Backwards compatible**: nothing of 0.3 changed; plugins built before
+  (any of `code-plugin`, `code-wind-plugin`, `code-check-plugin`) load
+  unchanged (test plugin `plugins/tests/code-old`). `plugins/codes/*`
+  are built for `code-rules-plugin` with a stub giving none
+  (`ohl_code_common::no_rule_presets!()`); `plugins/tests/code-presets`
+  gives one preset with invented values for the tests.
+
 `plugins/codes/*` are such plugins (EN 50341 with a national annex overlay,
 IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
 `plugins/codes/common` (reading parameter files, writing the case files,

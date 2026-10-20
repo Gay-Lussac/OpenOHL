@@ -123,7 +123,12 @@ search_distance = "30 m"        # LiDAR points farther from the wires are ignore
 ```
 
 Design-code plugins may give such rule files as **clearance presets**
-for those windows ([Design codes](design-codes.md#clearance-presets)).
+for those windows ([Design codes](design-codes.md#clearance-presets)),
+and **rule presets** for any rule set — ground, objects, crossings, wire
+to wire ([Design codes](design-codes.md#rule-presets)). In the desktop
+application the Clearances tab's **Edit rules** and the clearance windows
+set every distance in the three forms below
+([Distances by voltage](desktop-app.md#distances-by-voltage)).
 
 ### Clearances by voltage
 
@@ -140,7 +145,15 @@ vertical = { by_voltage = [[0, "5 m"], [150, "6 m"], [245, "6.5 m"], [420, "7.5 
 radial = { base = "5 m", per_kv = "0.01 m", above_kv = 50 }
 ```
 
-With one rule per group of LiDAR classes (vegetation, buildings, roads, railways…), each with its own voltage table, the requirement follows both the class and the voltage. Earthed sections (no system: earth wires, OPGW) are checked as 0 kV — give a `0` row for them. Between wires, `pair_voltage = "difference"` uses the voltage actually between the two conductors: two phases of a 380 kV system meet the 380 kV row, the same phase of two parallel systems the 0 kV row, a phase and an earth wire 219 kV. A voltage above a table's last row stops the run with an error naming the rule, before any check. The report prints the voltages found; the CSV's `required_m` and the envelope rows give the requirement of each wire or pair.
+With one rule per group of LiDAR classes (vegetation, buildings, roads, railways…), each with its own voltage table, the requirement follows both the class and the voltage. Earthed sections (no system: earth wires, OPGW) are checked as 0 kV — give a `0` row for them. Between wires, `pair_voltage = "difference"` uses the voltage actually between the two conductors: two phases of a 380 kV system meet the 380 kV row, the same phase of two parallel systems the 0 kV row, a phase and an earth wire 219 kV. A voltage above a table's last row stops the run with an error naming the rule, before any check (`ohl line`, `ohl zones` and the windows alike).
+
+How a requirement is evaluated for a nominal voltage U (kV; earthed wires U = 0; wire rules: the pair's voltage):
+
+- a distance d: d at every voltage;
+- a table of rows (U₁, d₁), (U₂, d₂), … with U₁ < U₂ < …: the d of the first row with U ≤ Uᵢ (a row "up to" its voltage, that voltage included); no row when U is above the last one — an error, not the last row's distance;
+- a formula: base + per_kv · max(0, U − above_kv). Example: base 7 m, per_kv 0.01 m, above_kv 0 gives 7 + 0.01 · 220 = 9.2 m at 220 kV, 10.8 m at 380 kV, 7 m for earth wires. `per_kv` is written as a length (`"0.01 m"`, meaning metres per kV).
+
+Nothing is interpolated between the rows of a table: a voltage between two rows takes the upper row's distance (the larger one when distances grow with the voltage). A requirement that cannot be written in these forms (a larger of two values, a term depending on something other than the voltage) needs two rules, each checked on its own. The report prints the voltages found; the CSV's `required_m` and the envelope rows give the requirement of each wire or pair.
 
 ### Envelopes over weather cases
 
@@ -189,8 +202,9 @@ solved 3 section(s) in 2 wind position(s) in 283.8ms; checked in 10.0ms; 0 LiDAR
 The rule file is read as the windows import it: its ground and point
 rules with a clearance of one measure — **vertical** or **radial**, the
 only one the file has (a file with both needs `--measure vertical` or
-`--measure radial`); a requirement by voltage gives one row per voltage of
-the line; roles become the classes of the class scheme; the first rule's
+`--measure radial`); a requirement by voltage stays one row, each wire
+checked with the distance of its voltage (a rule that lists `voltages`
+gives one row per voltage); roles become the classes of the class scheme; the first rule's
 `vertical_band` and `vertical_depth` are the zone's width and depth. The
 `[wind]` table sets the wind (default: the cases' own pressure from both
 sides), the `[check]` table the circuits, the calculation method and the

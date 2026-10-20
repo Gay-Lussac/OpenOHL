@@ -738,10 +738,38 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   jumper). The radial ground clearance is the samples' shortest
   distance lowered by `checks::sampled_floor`. Until 2026-10 every
   clearance was to the axis, without these.
+- **Requirements** (`ohl_clearance::rules::Requirement`): `vertical` /
+  `radial` are a distance (`"7 m"`, `Fixed`), a table
+  (`{ by_voltage = [[up to kV, "m"], …] }`, `ByVoltage`: voltages ≥ 0
+  and increasing, the first row the voltage does not exceed; above the
+  last row an error) or a formula
+  (`{ base = "m", per_kv = "m", above_kv = kV }`, `Formula`: base +
+  per_kv · max(0, U − above_kv); `per_kv` written as a length, m per kV).
+  `Requirement::to_toml` writes each form back exactly;
+  `Requirement::problem` is what an editor reports (distances above 0,
+  rows increasing). Since 2026-10-20 a window row's `distance`
+  (`ZoneRule::distance`) is such a `Requirement` too (was a distance in
+  m): a rule by voltage stays one row (imported and written as it is),
+  each wire checked with its voltage's distance (`WireResult::required`;
+  `ZoneFinding::required` is the wire's); a table not reaching a wire's
+  voltage is an error of `check_zones`.
+- The Clearances tab's rule editor (`ohl-app` `rule_editor`) edits a rule
+  file in place with `toml_edit` (names, `vertical`, `radial`, rules
+  added and removed, a value's trailing comment kept; an unchanged
+  requirement keeps its text); a project's rule file is written as one
+  `put_library_file` (one command, undone by Undo).
 - **Clearance presets** of design-code plugins are such rule files,
   `<plugin>-<name>.ohlr` among the project's rule files, each with a
   weather case file of the same name among its weather case files (the
   cases its rules name); the windows' Load preset… lists them.
+- **Rule presets** of design-code plugins (optional `rule-presets`
+  export, 2026-10-20) are rule files of any targets with a description and
+  optional weather cases (`ohl_io::codes::RulePresetChecked`); the app
+  reads them from the plugins when the Clearances tab's Load preset…
+  opens (merged into the chosen rule file or replacing its rules, the
+  preset's tables copied as written); `ohl code generate` and `ohl code
+  rule-presets --out` write them as `<plugin>-rules-<name>.ohlr` (and
+  `.ohlwc`).
 
 ### Structure type (`.ohls`)
 
@@ -1368,6 +1396,7 @@ above**.
 | `project-plugin` (`project`) | file bytes | `project { line: <line file JSON>, libraries: [{kind, name, text}], notes }`; `kind` as in the project's `library` objects |
 | `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2; the structures' own wind of a case travels in the `.ohllc` text as `[case.structure]`, interface unchanged) |
 | `code-wind-plugin` (`design-code`; optional export `structure-wind`, looked for by the host: a 0.3 plugin without it unchanged) | the same parameter file | `option<string>`: a section library's text with only a `[wind]` table (drag per shape, face drag and shielding by solidity), checked as the section library reads it and written as `<plugin>-wind.ohlsec` into the section library; none: no factors (the member wind keeps its generic drag, no shielding) |
+| `code-rules-plugin` / `code-check-rules-plugin` (`design-code`; optional export `rule-presets`, looked for by the host on its own: a 0.3 plugin without it unchanged) | the same parameter file, or an empty text when the user gave none | `result<list<rule-preset { name, description, rules: <.ohlr text>, weather-cases: <.ohlwc text or empty> }>, string>`: presets of any clearance rule set, checked as rule files (each named case among the preset's) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:
