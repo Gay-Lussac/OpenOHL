@@ -242,7 +242,10 @@ impl VegetationWindow {
                 &line,
                 &library,
                 &cases,
-                PositionOptions { swing_arc },
+                PositionOptions {
+                    swing_arc,
+                    ..PositionOptions::default()
+                },
                 &budget,
             )?;
             // The points, as whole millimetres from the model's origin.

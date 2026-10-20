@@ -114,7 +114,8 @@ pub fn rule_preset_stem(plugin: &str, name: &str) -> String {
 
 impl RulePresetChecked {
     /// Reads and checks a plugin's rule preset: a name, its rule file
-    /// read (at least one rule), its weather cases read when given, every
+    /// read (at least one rule, or a `[vegetation]` table: a preset of the
+    /// vegetation check), its weather cases read when given, every
     /// weather case its rules name among them.
     pub fn check(plugin: &str, p: RulePreset) -> Result<Self, String> {
         let bad = |what: &str, e: String| {
@@ -127,8 +128,9 @@ impl RulePresetChecked {
             return Err(bad("name", "empty".into()));
         }
         let rules = RuleSet::parse(&p.rules).map_err(|e| bad("rules", e))?;
-        if rules.rules.is_empty() {
-            return Err(bad("rules", "no rule".into()));
+        // A preset of the vegetation check ([vegetation]) may hold no rule.
+        if rules.rules.is_empty() && rules.vegetation.is_none() {
+            return Err(bad("rules", "no rule (and no [vegetation])".into()));
         }
         let weather = if p.weather_cases.trim().is_empty() {
             None
@@ -1058,5 +1060,60 @@ mod tests {
         assert!(WeatherCases::load(files[1].1.as_ref().unwrap()).is_ok());
         assert_eq!(RuleSet::load(&files[0].0).unwrap(), ok[0].rules);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A preset of the vegetation check: a `[vegetation]` table (and its
+    /// `[wind]`) without rules, its weather cases — what a design-code
+    /// plugin returns for it (invented test values; the classes 42 and 43
+    /// of a scheme's medium and high vegetation).
+    #[test]
+    fn a_vegetation_preset_is_a_rule_preset_with_a_vegetation_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"Danger trees\"\n";
+        let rules = format!(
+            "{head}[wind]\nsteps = true\nstep = \"100 Pa\"\n\n[vegetation]\nclasses = [42, 43]\n\
+             clearance = {{ by_voltage = [[0, \"2.5 m\"], [220, \"7 m\"], [380, \"9 m\"]] }}\n\
+             root_ball = 0.05\nfall_allowance = \"2 m\"\nmax_base_ground_distance = \"5 m\"\n\
+             search_distance = \"50 m\"\n"
+        );
+        let cases = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                     [[case]]\nname = \"hot\"\ntemperature = \"80 °C\"\n";
+        let ok = check_rule_presets(
+            "code",
+            vec![RulePreset {
+                name: "trees".into(),
+                description: "test".into(),
+                rules: rules.clone(),
+                weather_cases: cases.into(),
+            }],
+        )
+        .unwrap();
+        let v = ok[0].rules.vegetation.as_ref().unwrap();
+        assert_eq!(v.classes, [42, 43]);
+        assert_eq!(v.root_ball, Some(0.05));
+        assert_eq!(
+            v.fall_allowance,
+            Some(ohl_clearance::rules::Requirement::Fixed(2.0))
+        );
+        assert_eq!(v.max_base_ground_distance, Some(5.0));
+        assert_eq!(v.search_distance, Some(50.0));
+        assert_eq!(v.clearance.as_ref().unwrap().at(380.0), Ok(9.0));
+        assert!(ok[0].rules.rules.is_empty());
+        assert_eq!(ok[0].rules.wind.unwrap().step, 100.0);
+        // Written and read back the same.
+        assert_eq!(RuleSet::parse(&ok[0].rules.to_toml()).unwrap(), ok[0].rules);
+        // An unknown key: refused, as every rule file.
+        let bad = rules.replace("root_ball", "root_bal");
+        assert!(
+            check_rule_presets(
+                "code",
+                vec![RulePreset {
+                    name: "trees".into(),
+                    description: String::new(),
+                    rules: bad,
+                    weather_cases: String::new(),
+                }],
+            )
+            .is_err()
+        );
     }
 }

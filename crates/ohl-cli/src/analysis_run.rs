@@ -160,12 +160,19 @@ pub struct VegetationArgs {
     /// Role of the vegetation classes (repeatable; default vegetation).
     #[arg(long)]
     pub role: Vec<String>,
+    /// The vegetation classes by number, instead of by role (e.g.
+    /// `--classes 42,43`; repeatable).
+    #[arg(long, value_delimiter = ',')]
+    pub classes: Vec<u8>,
     /// Role of the ground classes (heights above the ground).
     #[arg(long, default_value = "ground")]
     pub ground_role: String,
-    /// Required clearance from the wires, m.
-    #[arg(long, default_value_t = 5.0)]
-    pub clearance: f64,
+    /// Required clearance from the wires: a distance (`5`, `"5 m"`), or by
+    /// the voltage of each wire's system as a rule file writes it
+    /// (`'{ by_voltage = [[220, 7], [380, 9]] }'`: up to kV, m;
+    /// `'{ base = 3, per_kv = 0.01, above_kv = 110 }'`). Default 5 m.
+    #[arg(long, value_parser = requirement)]
+    pub clearance: Option<ohl_clearance::rules::Requirement>,
     /// Growth per year, m.
     #[arg(long, default_value_t = 0.0)]
     pub growth: f64,
@@ -193,13 +200,22 @@ pub struct VegetationArgs {
     #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_ROOT_BALL)]
     pub root_ball: f64,
     /// Clearance allowance of a falling tree (flashover clearance,
-    /// buffers), m.
-    #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_FALL_ALLOWANCE)]
-    pub fall_allowance: f64,
+    /// buffers): a distance, or by voltage as --clearance. Default 2 m.
+    #[arg(long, value_parser = requirement)]
+    pub fall_allowance: Option<ohl_clearance::rules::Requirement>,
     /// Also check each span anywhere along its swing arc between its left
     /// and right blowout (windy cases).
     #[arg(long)]
     pub swing_arc: bool,
+    /// Step the wind of each windy case by this pressure, Pa: still air
+    /// and every pressure up to the case's are checked too (alongside or
+    /// instead of --swing-arc), as the desktop clearance windows step it.
+    #[arg(long)]
+    pub wind_step: Option<f64>,
+    /// The sides the stepped wind blows from: both, left or right (the
+    /// full pressure is checked from both sides in any case).
+    #[arg(long, default_value = "both", value_parser = ohl_clearance::rules::WindSides::parse)]
+    pub wind_sides: ohl_clearance::rules::WindSides,
     /// Unbalanced ice on each span with vegetation within reach, solved
     /// with its section on its own, the span in a weather case of its
     /// own: `case` (the case's ice on that span only), `thickness=m` (the
@@ -236,6 +252,11 @@ pub struct VegetationArgs {
     /// partial result).
     #[arg(long, default_value_t = 3600)]
     pub time_limit: u64,
+}
+
+/// A required clearance as a rule file writes it.
+fn requirement(text: &str) -> Result<ohl_clearance::rules::Requirement, String> {
+    ohl_clearance::rules::Requirement::parse(text)
 }
 
 /// `case`, `thickness=m`, `extra=N/m` or `load=N`.
@@ -719,7 +740,14 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     let (mut line, library) = load(&a.model)?;
     let chosen = cases(&a.cases, &mut line)?;
     let (source, scheme) = source(&a.points)?;
-    let classes = classes_of(&scheme, &a.role, &["vegetation"])?;
+    let classes = if a.classes.is_empty() {
+        classes_of(&scheme, &a.role, &["vegetation"])?
+    } else {
+        let mut c = a.classes.clone();
+        c.sort_unstable();
+        c.dedup();
+        c
+    };
     let ground_classes = scheme.codes_with_role(&a.ground_role);
     let mut wanted = classes.clone();
     wanted.extend(&ground_classes);
@@ -765,14 +793,23 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     if a.fall_in && terrain.is_none() {
         println!("  no ground points: the fall-in check is left out");
     }
+    use ohl_clearance::rules::Requirement;
+    let fixed = |r: &Option<Requirement>| match r {
+        Some(Requirement::Fixed(d)) => Some(*d),
+        _ => None,
+    };
+    let by_voltage = |r: &Option<Requirement>| r.clone().filter(Requirement::by_voltage);
     let params = VegetationParams {
-        clearance: a.clearance,
+        clearance: fixed(&a.clearance).unwrap_or(5.0),
+        clearance_by_voltage: by_voltage(&a.clearance),
+        allowance_by_voltage: by_voltage(&a.fall_allowance),
         growth_per_year: a.growth,
         years: a.years,
         buffer: a.buffer,
         fall_in: a.fall_in,
         root_ball: a.root_ball,
-        fall_allowance: a.fall_allowance,
+        fall_allowance: fixed(&a.fall_allowance)
+            .unwrap_or(ohl_clearance::vegetation::DEFAULT_FALL_ALLOWANCE),
         max_tree_height: a.max_tree_height,
         max_base_ground_distance: Some(a.max_base_ground_distance).filter(|d| d.is_finite()),
         ..VegetationParams::default()
@@ -786,6 +823,11 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         &chosen,
         ohl_clearance::positions::PositionOptions {
             swing_arc: a.swing_arc,
+            wind_steps: a.wind_step.map(|step| ohl_clearance::rules::WindSteps {
+                stepped: true,
+                step,
+                sides: a.wind_sides,
+            }),
         },
         &budget,
     )?;
@@ -821,13 +863,14 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     }
     let count = |k: PositionKind| positions.positions.iter().filter(|p| p.kind == k).count();
     println!(
-        "positions: {} spans, {} cases — {} as the case, {} left, {} right, {} swing arcs, {} with unbalanced ice ({:.1?})",
+        "positions: {} spans, {} cases — {} as the case, {} left, {} right, {} swing arcs, {} wind steps, {} with unbalanced ice ({:.1?})",
         positions.spans.len(),
         positions.cases.len(),
         count(PositionKind::Case),
         count(PositionKind::Left),
         count(PositionKind::Right),
         count(PositionKind::Arc),
+        count(PositionKind::Still) + count(PositionKind::StepLeft) + count(PositionKind::StepRight),
         count(PositionKind::Ice) + count(PositionKind::IceLeft) + count(PositionKind::IceRight),
         t.elapsed()
     );

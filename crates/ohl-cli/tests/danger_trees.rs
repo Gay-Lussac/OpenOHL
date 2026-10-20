@@ -155,5 +155,61 @@ fn danger_trees_with_swing_arc_ice_and_isoclearance_lines() {
             .unwrap()
             .starts_with(ohl_clearance::isoclearance::CSV_HEADER)
     );
+    // The same by voltage (one row up to 1000 kV: the same distances),
+    // the vegetation class by number, the wind stepped: the same span
+    // found, and the steps solved.
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["lidar", "vegetation"])
+        .arg(example("synthetic-line.ohl.json"))
+        .args(["--pointcloud", &cloud, "--weather"])
+        .arg(example("weather-cases.ohlwc"))
+        .args([
+            "--case",
+            "max temperature",
+            "--case",
+            "high wind",
+            "--clearance",
+            "{ by_voltage = [[1000, \"4 m\"]] }",
+            "--classes",
+            "5",
+            "--fall-in",
+            "--root-ball",
+            "0.1",
+            "--fall-allowance",
+            "{ by_voltage = [[1000, 1]] }",
+            "--wind-step",
+            "200",
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let steps = stdout
+        .lines()
+        .find(|l| l.starts_with("positions:"))
+        .and_then(|l| l.split(" swing arcs, ").nth(1))
+        .and_then(|l| l.split_whitespace().next())
+        .and_then(|n| n.parse::<usize>().ok())
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(steps > 0, "{stdout}");
+    let row = stdout
+        .lines()
+        .find(|l| l.trim_start().starts_with("S1 span 0"))
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let cols: Vec<&str> = row.split_whitespace().collect();
+    // Without the iced case: the tree under the span and one falling.
+    assert_eq!((cols[3], cols[4]), ("1", "1"), "{row}");
+    // A requirement that does not read: refused with the reason.
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["lidar", "vegetation"])
+        .arg(example("synthetic-line.ohl.json"))
+        .args(["--pointcloud", &cloud, "--clearance", "{ by_voltage = [] }"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
     std::fs::remove_dir_all(&dir).ok();
 }

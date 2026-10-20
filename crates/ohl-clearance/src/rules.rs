@@ -247,9 +247,23 @@ impl Requirement {
         }
     }
 
+    /// Reads a requirement as a rule file writes it ([`Requirement::to_toml`]):
+    /// `5` or `"5 m"`, `{ by_voltage = [[220, "7 m"], [380, "9 m"]] }`,
+    /// `{ base = "3 m", per_kv = "0.01 m", above_kv = 110 }`.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        struct Value {
+            v: RawRequirement,
+        }
+        let v: Value = toml::from_str(&format!("v = {}", text.trim()))
+            .map_err(|e| format!("{}: {}", text.trim(), e.message()))?;
+        v.v.resolve()
+    }
+
     /// As written in a rule file (`"7 m"`, `{ by_voltage = … }`,
     /// `{ base = …, per_kv = …, above_kv = … }`): read back by
-    /// [`RuleSet::parse`] as the same requirement.
+    /// [`RuleSet::parse`] (and [`Requirement::parse`]) as the same
+    /// requirement.
     pub fn to_toml(&self) -> String {
         match self {
             Self::Fixed(d) => length(*d),
@@ -687,6 +701,8 @@ struct RawRules {
     wind: Option<RawWind>,
     #[serde(default)]
     check: Option<RawCheck>,
+    #[serde(default)]
+    vegetation: Option<RawVegetation>,
     #[serde(rename = "rule", default)]
     rules: Vec<RawRule>,
 }
@@ -817,6 +833,178 @@ pub struct RuleSet {
     /// What the clearance windows of the desktop application solve
     /// (`[check]`).
     pub check: Option<CheckScope>,
+    /// Settings of the vegetation and danger-tree check (`[vegetation]`):
+    /// what a design code presets for it (with `[wind]` for its wind
+    /// steps).
+    pub vegetation: Option<VegetationPreset>,
+}
+
+/// The settings of the vegetation and danger-tree check a rule file
+/// carries (`[vegetation]`), each optional: those given replace the
+/// check's, the others stay. A design-code plugin's rule preset carrying
+/// it is a preset of the vegetation check (it may hold no `[[rule]]`).
+///
+/// ```toml
+/// [vegetation]
+/// classes = [42, 43]
+/// clearance = { by_voltage = [[110, "5 m"], [220, "7 m"], [380, "9 m"]] }
+/// root_ball = 0.05
+/// fall_allowance = "2 m"
+/// max_base_ground_distance = "5 m"
+/// search_distance = "50 m"
+/// swing_arc = false
+/// ```
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VegetationPreset {
+    /// The LiDAR classes checked as vegetation (empty: not set).
+    pub classes: Vec<u8>,
+    /// Required clearance from the wires (by voltage or not).
+    pub clearance: Option<Requirement>,
+    /// Growth per year, m.
+    pub growth_per_year: Option<f64>,
+    /// Years until the next cut.
+    pub years: Option<f64>,
+    /// Buffer b, m.
+    pub buffer: Option<f64>,
+    /// Look for trees falling in.
+    pub fall_in: Option<bool>,
+    /// Root-ball fraction k.
+    pub root_ball: Option<f64>,
+    /// Clearance allowance A of a falling tree (by voltage or not).
+    pub fall_allowance: Option<Requirement>,
+    /// Smallest tree height, m.
+    pub min_tree_height: Option<f64>,
+    /// Tallest tree height, m.
+    pub max_tree_height: Option<f64>,
+    /// Largest distance from a tree base to the nearest ground point, m.
+    pub max_base_ground_distance: Option<f64>,
+    /// Search distance: half width of the corridor read, m.
+    pub search_distance: Option<f64>,
+    /// Each span along its swing arc too.
+    pub swing_arc: Option<bool>,
+}
+
+impl VegetationPreset {
+    /// As written in a rule file (`[vegetation]` and its lines), read back
+    /// by [`RuleSet::parse`].
+    pub fn to_toml(&self) -> String {
+        let mut t = String::from("[vegetation]\n");
+        if !self.classes.is_empty() {
+            let c: Vec<String> = self.classes.iter().map(u8::to_string).collect();
+            t.push_str(&format!("classes = [{}]\n", c.join(", ")));
+        }
+        let mut req = |k: &str, r: &Option<Requirement>| {
+            if let Some(r) = r {
+                t.push_str(&format!("{k} = {}\n", r.to_toml()));
+            }
+        };
+        req("clearance", &self.clearance);
+        req("fall_allowance", &self.fall_allowance);
+        for (k, v) in [
+            (
+                "growth_per_year",
+                self.growth_per_year.map(|v| format!("\"{v} m\"")),
+            ),
+            ("years", self.years.map(|v| format!("{v:?}"))),
+            ("buffer", self.buffer.map(length)),
+            ("root_ball", self.root_ball.map(|v| format!("{v:?}"))),
+            ("min_tree_height", self.min_tree_height.map(length)),
+            ("max_tree_height", self.max_tree_height.map(length)),
+            (
+                "max_base_ground_distance",
+                self.max_base_ground_distance.map(length),
+            ),
+            ("search_distance", self.search_distance.map(length)),
+            ("fall_in", self.fall_in.map(|v| v.to_string())),
+            ("swing_arc", self.swing_arc.map(|v| v.to_string())),
+        ] {
+            if let Some(v) = v {
+                t.push_str(&format!("{k} = {v}\n"));
+            }
+        }
+        t
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawVegetation {
+    #[serde(default)]
+    classes: Vec<u8>,
+    #[serde(default)]
+    clearance: Option<RawRequirement>,
+    #[serde(default)]
+    growth_per_year: Option<Length>,
+    #[serde(default)]
+    years: Option<f64>,
+    #[serde(default)]
+    buffer: Option<Length>,
+    #[serde(default)]
+    fall_in: Option<bool>,
+    #[serde(default)]
+    root_ball: Option<f64>,
+    #[serde(default)]
+    fall_allowance: Option<RawRequirement>,
+    #[serde(default)]
+    min_tree_height: Option<Length>,
+    #[serde(default)]
+    max_tree_height: Option<Length>,
+    #[serde(default)]
+    max_base_ground_distance: Option<Length>,
+    #[serde(default)]
+    search_distance: Option<Length>,
+    #[serde(default)]
+    swing_arc: Option<bool>,
+}
+
+impl RawVegetation {
+    fn resolve(self) -> Result<VegetationPreset, String> {
+        let bad = |m: &str| Err(format!("[vegetation] {m}"));
+        let len = |l: Option<Length>| l.map(|l| l.si());
+        let non_negative = |v: Option<f64>| v.is_none_or(|v| v.is_finite() && v >= 0.0);
+        let p = VegetationPreset {
+            classes: self.classes,
+            clearance: self
+                .clearance
+                .map(RawRequirement::resolve)
+                .transpose()
+                .map_err(|e| format!("[vegetation] clearance: {e}"))?,
+            growth_per_year: len(self.growth_per_year),
+            years: self.years,
+            buffer: len(self.buffer),
+            fall_in: self.fall_in,
+            root_ball: self.root_ball,
+            fall_allowance: self
+                .fall_allowance
+                .map(RawRequirement::resolve)
+                .transpose()
+                .map_err(|e| format!("[vegetation] fall_allowance: {e}"))?,
+            min_tree_height: len(self.min_tree_height),
+            max_tree_height: len(self.max_tree_height),
+            max_base_ground_distance: len(self.max_base_ground_distance),
+            search_distance: len(self.search_distance),
+            swing_arc: self.swing_arc,
+        };
+        if ![
+            p.growth_per_year,
+            p.years,
+            p.buffer,
+            p.root_ball,
+            p.min_tree_height,
+            p.max_tree_height,
+            p.max_base_ground_distance,
+            p.search_distance,
+        ]
+        .into_iter()
+        .all(non_negative)
+        {
+            return bad("values must be ≥ 0");
+        }
+        if p.search_distance == Some(0.0) {
+            return bad("search_distance must be > 0 m");
+        }
+        Ok(p)
+    }
 }
 
 /// What a desktop clearance window solves (`[check]` of a rule file).
@@ -1061,11 +1249,13 @@ impl RuleSet {
                 })
             })
             .transpose()?;
+        let vegetation = raw.vegetation.map(RawVegetation::resolve).transpose()?;
         Ok(Self {
             name: raw.name,
             rules,
             wind,
             check,
+            vegetation,
         })
     }
 
@@ -1098,6 +1288,7 @@ impl RuleSet {
             }],
             wind: None,
             check: None,
+            vegetation: None,
         }
     }
 
@@ -1133,6 +1324,10 @@ impl RuleSet {
             if let Some(d) = c.search_distance {
                 let _ = writeln!(t, "search_distance = {}", length(d));
             }
+        }
+        if let Some(v) = &self.vegetation {
+            t.push_str("\n# The vegetation and danger-tree check.\n");
+            t.push_str(&v.to_toml());
         }
         for r in &self.rules {
             t.push_str(&r.to_toml());
