@@ -705,7 +705,6 @@ fn mark_of(s: &ohl_line::Structure, centre: &[Point], away: bool) -> Mark {
 /// The wire of `section`'s span `points` (or a jumper's) along `centre`:
 /// colour, circuit, phase, voltage and fields from the section.
 fn trace_of(
-    line: &Line,
     section: Option<&ohl_line::Section>,
     potentials: &std::collections::BTreeMap<String, Option<ohl_line::electrical::Potential>>,
     label: String,
@@ -713,7 +712,6 @@ fn trace_of(
     points: &[Point],
     centre: &[Point],
 ) -> Trace {
-    let _ = line;
     Trace {
         label,
         color,
@@ -784,7 +782,6 @@ pub fn build(
             );
             if consecutive(a, b) {
                 wires.push(trace_of(
-                    line,
                     Some(section),
                     &potentials,
                     format!(
@@ -814,7 +811,6 @@ pub fn build(
                 })
             });
             wires.push(trace_of(
-                line,
                 section,
                 &potentials,
                 format!("jumper {}", j.jumper),
@@ -916,7 +912,6 @@ impl RouteDrawing {
             let color = line.section_color(section);
             for (k, span) in shape.spans.iter().enumerate() {
                 let t = trace_of(
-                    line,
                     Some(section),
                     &potentials,
                     format!("{name}: {} span {k}", section.id),
@@ -934,7 +929,6 @@ impl RouteDrawing {
                 .find(|d| d.id == j.jumper)
                 .and_then(|d| line.jumper_section(d));
             let t = trace_of(
-                line,
                 section,
                 &potentials,
                 format!("{name}: jumper {}", j.jumper),
