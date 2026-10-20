@@ -3,7 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! `ohl code`: design-code plugins — list them, write a parameter file
-//! template, generate weather cases and load cases from a parameter file.
+//! template, generate weather cases and load cases from a parameter file,
+//! list and write a plugin's presets of clearance rules.
 
 use std::path::{Path, PathBuf};
 
@@ -55,6 +56,22 @@ pub enum CodeCommand {
         #[arg(long)]
         sections: Option<PathBuf>,
     },
+    /// List a plugin's presets of clearance rules (ground, objects,
+    /// crossings, wire to wire: the optional `rule-presets` export), with
+    /// each rule and its distances; `--out` writes them as
+    /// `<plugin>-rules-<name>.ohlr` (and `.ohlwc` for their weather cases).
+    RulePresets {
+        /// Design-code plugin directory.
+        #[arg(long)]
+        plugin: PathBuf,
+        /// Parameter file (TOML); none: the plugin gives what it can
+        /// without one.
+        #[arg(long)]
+        params: Option<PathBuf>,
+        /// Folder to write the presets into.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 /// Runs an `ohl code` command.
@@ -69,6 +86,11 @@ pub fn run(command: CodeCommand) -> Result<(), String> {
             load_cases,
             sections,
         } => generate(&plugin, &params, &weather, &load_cases, sections.as_deref()),
+        CodeCommand::RulePresets {
+            plugin,
+            params,
+            out,
+        } => rule_presets(&plugin, params.as_deref(), out.as_deref()),
     }
 }
 
@@ -141,6 +163,17 @@ fn generate(
             cases.display()
         );
     }
+    // Rule presets next to the weather cases too.
+    for (rules, cases) in g.write_rule_presets(dir, dir)? {
+        println!(
+            "  rule preset → {}{}",
+            rules.display(),
+            cases.map_or(String::new(), |c| format!(
+                " (weather cases {})",
+                c.display()
+            ))
+        );
+    }
     // Wind factors for structures into the section library.
     let sections = sections.map_or_else(|| dir.join("Sections"), Path::to_path_buf);
     match g.write_structure_wind(&sections)? {
@@ -149,6 +182,45 @@ fn generate(
     }
     for n in &g.notes {
         println!("  note: {n}");
+    }
+    Ok(())
+}
+
+/// The rule presets of `plugin` (from `params` if given), printed, and
+/// written into `out` if given.
+fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Result<(), String> {
+    let text = match params {
+        Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
+        None => String::new(),
+    };
+    let presets = ohl_io::codes::rule_presets(&host()?, plugin, &text)?;
+    let name = ohl_plugins::Manifest::load(plugin)
+        .map(|m| m.plugin.name)
+        .map_err(|e| e.to_string())?;
+    if presets.is_empty() {
+        println!("{name}: no rule presets");
+    }
+    for p in &presets {
+        println!("{} — {}", p.name, p.description);
+        for r in &p.rules.rules {
+            let mut parts = Vec::new();
+            if let Some(v) = &r.vertical {
+                parts.push(format!("vertical {v}"));
+            }
+            if let Some(v) = &r.radial {
+                parts.push(format!("radial {v}"));
+            }
+            println!("  {}: {}", r.name, parts.join("; "));
+        }
+    }
+    if let Some(dir) = out {
+        for (rules, cases) in ohl_io::codes::write_rule_presets(&name, &presets, dir, dir)? {
+            println!(
+                "wrote {}{}",
+                rules.display(),
+                cases.map_or(String::new(), |c| format!(", {}", c.display()))
+            );
+        }
     }
     Ok(())
 }

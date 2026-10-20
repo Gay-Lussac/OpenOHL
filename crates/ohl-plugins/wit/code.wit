@@ -106,6 +106,53 @@ world code-wind-plugin {
     export structure-wind;
 }
 
+/// Presets of any clearance rule set — ground, objects (LiDAR classes),
+/// crossings, wire to wire — from a design code (optional for a
+/// design-code plugin: one built without it gives none). Added in
+/// interface version 0.3 without changing anything else: plugins built
+/// before load as they are. The presets of the two clearance windows stay
+/// in `generated` (`clearance-presets`).
+interface rule-presets {
+    /// A preset of clearance rules.
+    record rule-preset {
+        /// Name, unique among the plugin's rule presets (e.g. "ground").
+        name: string,
+        /// What it holds and where its values come from, in words (the
+        /// articles of the code), shown before it is loaded.
+        description: string,
+        /// The rules, as a clearance rule file (.ohlr, TOML, format
+        /// `ohl-clearance-rules`): any targets (`ground`, `points`,
+        /// `same_line`, `other_lines`), each distance a distance, a table
+        /// by voltage (`{ by_voltage = [[up to kV, distance], …] }`) or a
+        /// base plus an amount per kV
+        /// (`{ base = …, per_kv = …, above_kv = … }`).
+        rules: string,
+        /// The weather cases its rules name, as a weather case file
+        /// (.ohlwc, TOML); empty when its rules name none (every case).
+        weather-cases: string,
+    }
+
+    /// The code's rule presets from the user's parameter file (TOML, as
+    /// `generate` reads it). `parameters` is empty when the user has
+    /// given none: a plugin whose presets come from its own data gives
+    /// them anyway, one that needs the file says so in the error. The
+    /// error says what is wrong with the parameter file.
+    rule-presets: func(parameters: string) -> result<list<rule-preset>, string>;
+}
+
+/// A design-code plugin that also gives wind factors for structures and
+/// rule presets (extension point `design-code`).
+world code-rules-plugin {
+    include code-wind-plugin;
+    export rule-presets;
+}
+
+/// The `rule-presets` export alone: how the host finds it in any
+/// design-code plugin (not a world to build plugins for).
+world rule-presets-export {
+    export rule-presets;
+}
+
 /// A check run by a plugin (extension point `check`): OpenOHL measures
 /// the line (the conductors, their pairs, stations along them: the
 /// geometry), the plugin holds the values and the rules and says what is
@@ -221,4 +268,10 @@ world check-plugin {
 world code-check-plugin {
     include code-plugin;
     export check;
+}
+
+/// A design-code plugin that also runs checks and gives rule presets.
+world code-check-rules-plugin {
+    include code-check-plugin;
+    export rule-presets;
 }

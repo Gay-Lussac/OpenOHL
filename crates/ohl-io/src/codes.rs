@@ -10,8 +10,11 @@
 //! checked here like any such file, and may give wind factors for
 //! structures (the optional `structure-wind` export: a section library
 //! with a `[wind]` table, written as `<plugin>-wind.ohlsec` into the
-//! section library). OpenOHL ships no code tables: every value of a code
-//! is in the parameter file.
+//! section library), and may give presets of any clearance rule set (the
+//! optional `rule-presets` export: ground, objects, crossings, wire to
+//! wire; [`RulePresetChecked`], written as `<plugin>-rules-<name>.ohlr`).
+//! OpenOHL ships no code tables: every value of a code is in the
+//! parameter file (or the plugin's own data).
 //!
 //! One generation is one plugin call (microseconds of arithmetic); the
 //! plugin's own limits (ADR-0003, default 5 s) are its exit clause.
@@ -21,7 +24,7 @@ use std::path::{Path, PathBuf};
 use ohl_clearance::RuleSet;
 use ohl_clearance::zone::Measure;
 use ohl_loads::LoadCases;
-use ohl_plugins::{ClearanceMeasure, ClearancePreset, Found, WasmHost};
+use ohl_plugins::{ClearanceMeasure, ClearancePreset, Found, RulePreset, WasmHost};
 use ohl_weather::WeatherCases;
 
 /// A design-code plugin found, for lists.
@@ -80,6 +83,121 @@ pub struct Generated {
     /// gives them: the section library text (a `[wind]` table only) and
     /// what it reads as.
     pub structure_wind: Option<(String, ohl_sections::StructureWind)>,
+    /// Presets of clearance rule sets (`rule-presets`; none from a plugin
+    /// built without it).
+    pub rule_presets: Vec<RulePresetChecked>,
+}
+
+/// A preset of clearance rules given by a design code (the optional
+/// `rule-presets` export), checked.
+#[derive(Debug, Clone)]
+pub struct RulePresetChecked {
+    /// Its name.
+    pub name: String,
+    /// What it holds, in words.
+    pub description: String,
+    /// Rule file text (`.ohlr`).
+    pub rules_text: String,
+    /// Weather case file text (`.ohlwc`; empty: its rules name no case).
+    pub weather_text: String,
+    /// The rules read.
+    pub rules: RuleSet,
+    /// The weather cases read (none: empty).
+    pub weather: Option<WeatherCases>,
+}
+
+/// The file name (without extension) of a plugin's rule preset:
+/// `<plugin>-rules-<name>` (apart from the window presets' names).
+pub fn rule_preset_stem(plugin: &str, name: &str) -> String {
+    preset_stem(plugin, &format!("rules-{name}"))
+}
+
+impl RulePresetChecked {
+    /// Reads and checks a plugin's rule preset: a name, its rule file
+    /// read (at least one rule), its weather cases read when given, every
+    /// weather case its rules name among them.
+    pub fn check(plugin: &str, p: RulePreset) -> Result<Self, String> {
+        let bad = |what: &str, e: String| {
+            format!(
+                "plugin {plugin} returned an invalid rule preset \"{}\" ({what}): {e}",
+                p.name
+            )
+        };
+        if p.name.trim().is_empty() {
+            return Err(bad("name", "empty".into()));
+        }
+        let rules = RuleSet::parse(&p.rules).map_err(|e| bad("rules", e))?;
+        if rules.rules.is_empty() {
+            return Err(bad("rules", "no rule".into()));
+        }
+        let weather = if p.weather_cases.trim().is_empty() {
+            None
+        } else {
+            Some(WeatherCases::parse(&p.weather_cases).map_err(|e| bad("weather cases", e))?)
+        };
+        for r in &rules.rules {
+            let named = r.cases.iter().chain(r.case_pairs.iter().flatten());
+            for c in named {
+                let found = weather.as_ref().is_some_and(|w| {
+                    w.cases
+                        .iter()
+                        .any(|x| ohl_core::pattern::matches(c, &x.name))
+                });
+                if !found {
+                    return Err(bad(
+                        "rules",
+                        format!("rule \"{}\": no weather case \"{c}\" in the preset", r.name),
+                    ));
+                }
+            }
+        }
+        Ok(Self {
+            name: p.name,
+            description: p.description,
+            rules_text: p.rules,
+            weather_text: p.weather_cases,
+            rules,
+            weather,
+        })
+    }
+}
+
+/// Checks a plugin's rule presets ([`RulePresetChecked::check`]), their
+/// names unique.
+pub fn check_rule_presets(
+    plugin: &str,
+    presets: Vec<RulePreset>,
+) -> Result<Vec<RulePresetChecked>, String> {
+    let out = presets
+        .into_iter()
+        .map(|p| RulePresetChecked::check(plugin, p))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (k, p) in out.iter().enumerate() {
+        if out[..k].iter().any(|q| q.name == p.name) {
+            return Err(format!(
+                "plugin {plugin} returned the rule preset \"{}\" twice",
+                p.name
+            ));
+        }
+    }
+    Ok(out)
+}
+
+/// The rule presets of the design-code plugin in `dir` from a parameter
+/// file's text (empty: none given), checked; none from a plugin built
+/// without the `rule-presets` export.
+pub fn rule_presets(
+    host: &WasmHost,
+    dir: &Path,
+    parameters: &str,
+) -> Result<Vec<RulePresetChecked>, String> {
+    let mut plugin = host.load_code(dir).map_err(|e| e.to_string())?;
+    let name = plugin.manifest().plugin.name.clone();
+    let list = plugin
+        .rule_presets(parameters)
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("plugin {name}: {e}"))?;
+    check_rule_presets(&name, list)
 }
 
 /// The file name (without extension) of a plugin's wind factors for
@@ -242,6 +360,7 @@ impl Generated {
             notes,
             presets,
             structure_wind: None,
+            rule_presets: Vec::new(),
         })
     }
 
@@ -319,6 +438,18 @@ impl Generated {
         Ok(out)
     }
 
+    /// Writes each rule preset as `<plugin>-rules-<name>.ohlr` in `rules`
+    /// and its weather cases (when it has any) as
+    /// `<plugin>-rules-<name>.ohlwc` in `weather` ([`rule_preset_stem`]);
+    /// returns the files written (rules, weather cases if any).
+    pub fn write_rule_presets(
+        &self,
+        rules: &Path,
+        weather: &Path,
+    ) -> Result<Vec<(PathBuf, Option<PathBuf>)>, String> {
+        write_rule_presets(&self.plugin, &self.rule_presets, rules, weather)
+    }
+
     /// Writes both files.
     pub fn write(&self, weather: &Path, load_cases: &Path) -> Result<(), String> {
         for (path, text) in [
@@ -367,6 +498,41 @@ pub fn generate(host: &WasmHost, dir: &Path, parameters: &str) -> Result<Generat
     if let Some(text) = wind {
         let w = check_structure_wind(&name, &text)?;
         out.structure_wind = Some((text, w));
+    }
+    // Optional too: a plugin built without `rule-presets` gives none.
+    let presets = plugin
+        .rule_presets(parameters)
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("plugin {name}: {e}"))?;
+    out.rule_presets = check_rule_presets(&name, presets)?;
+    Ok(out)
+}
+
+/// Writes rule presets of `plugin` as [`Generated::write_rule_presets`].
+pub fn write_rule_presets(
+    plugin: &str,
+    presets: &[RulePresetChecked],
+    rules: &Path,
+    weather: &Path,
+) -> Result<Vec<(PathBuf, Option<PathBuf>)>, String> {
+    let mut out = Vec::new();
+    for p in presets {
+        let stem = rule_preset_stem(plugin, &p.name);
+        let r = rules.join(format!(
+            "{stem}.{}",
+            ohl_clearance::rules::RULE_FILE_EXTENSION
+        ));
+        let w = (!p.weather_text.trim().is_empty())
+            .then(|| weather.join(format!("{stem}.{}", ohl_weather::WEATHER_FILE_EXTENSION)));
+        let files =
+            std::iter::once((&r, &p.rules_text)).chain(w.as_ref().map(|w| (w, &p.weather_text)));
+        for (path, text) in files {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        out.push((r, w));
     }
     Ok(out)
 }
@@ -741,6 +907,126 @@ mod tests {
         assert!(files[0].0.ends_with("rules/code-vertical-one.ohlr"));
         assert!(RuleSet::load(&files[0].0).is_ok());
         assert!(WeatherCases::load(&files[0].1).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A test plugin in `plugins/tests/<name>` if built, `None` to skip.
+    fn test_plugin(name: &str) -> Option<PathBuf> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../plugins/tests")
+            .join(name);
+        let m = ohl_plugins::Manifest::load(&dir).unwrap();
+        if m.entry_path().is_file() {
+            return Some(dir);
+        }
+        assert!(
+            ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "test plugin not built: {}",
+            m.entry_path().display()
+        );
+        eprintln!("skipping: {name} not built");
+        None
+    }
+
+    /// A plugin with the `rule-presets` export gives its preset (checked,
+    /// with its requirements by voltage), at generation too; its own
+    /// error comes back as such.
+    #[test]
+    fn a_plugin_gives_rule_presets() {
+        let Some(dir) = test_plugin("code-presets") else {
+            return;
+        };
+        let host = WasmHost::new().unwrap();
+        assert!(host.load_code(&dir).unwrap().has_rule_presets());
+        let list = rule_presets(&host, &dir, "").unwrap();
+        assert_eq!(list.len(), 1);
+        let p = &list[0];
+        assert_eq!(p.name, "ground");
+        // 6 m + 0.01 m/kV · 380 kV = 9.8 m; crossings at 220 kV: the
+        // 420 kV row, 4.5 m.
+        let ground = &p.rules.rules[0];
+        assert!((ground.required(Some(380.0)).vertical.unwrap() - 9.8).abs() < 1e-12);
+        assert_eq!(p.rules.rules[1].required(Some(220.0)).radial, Some(4.5));
+        assert_eq!(p.weather.as_ref().unwrap().cases[0].name, "Test hot");
+        let e = rule_presets(&host, &dir, "fail = true").unwrap_err();
+        assert!(
+            e.contains("plugin code-presets: the parameter file asks to fail"),
+            "{e}"
+        );
+        let g = generate(&host, &dir, "").unwrap();
+        assert_eq!(g.rule_presets.len(), 1);
+    }
+
+    /// Plugins built before the optional exports (the plain `code-plugin`
+    /// world) and the example codes (their stubs) load and generate as
+    /// before and give no rule presets.
+    #[test]
+    fn old_plugins_give_no_rule_presets() {
+        let host = WasmHost::new().unwrap();
+        if let Some(dir) = test_plugin("code-old") {
+            let mut p = host.load_code(&dir).unwrap();
+            assert!(!p.has_rule_presets() && !p.has_structure_wind());
+            assert_eq!(p.describe().unwrap().name, "code-old");
+            let g = generate(&host, &dir, "").unwrap();
+            assert_eq!(g.weather.cases[0].name, "Old");
+            assert!(g.rule_presets.is_empty() && g.structure_wind.is_none());
+            assert!(rule_presets(&host, &dir, "").unwrap().is_empty());
+        }
+        if let Some(dir) = built("en50341") {
+            assert!(host.load_code(&dir).unwrap().has_rule_presets());
+            assert!(rule_presets(&host, &dir, "").unwrap().is_empty());
+        }
+    }
+
+    /// Rule presets: any target, requirements by voltage, weather cases
+    /// optional (but every case a rule names among them), names unique;
+    /// written as `<plugin>-rules-<name>`.
+    #[test]
+    fn rule_presets_are_checked() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n";
+        let preset = |name: &str, rules: &str, weather: &str| RulePreset {
+            name: name.into(),
+            description: "test".into(),
+            rules: format!("{head}{rules}"),
+            weather_cases: weather.into(),
+        };
+        let ground = "[[rule]]\nname = \"g\"\ntarget = \"ground\"\n\
+                      vertical = { base = \"7 m\", per_kv = \"0.01 m\", above_kv = 0 }\n";
+        let wires = "[[rule]]\nname = \"x\"\ntarget = \"other_lines\"\n\
+                     radial = { by_voltage = [[150, \"3 m\"], [420, \"4 m\"]] }\ncases = [\"hot\"]\n";
+        let hot = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                   [[case]]\nname = \"hot\"\ntemperature = \"40 °C\"\n";
+        let ok = check_rule_presets(
+            "code",
+            vec![
+                preset("ground", ground, ""),
+                preset("crossings", wires, hot),
+            ],
+        )
+        .unwrap();
+        assert_eq!(ok.len(), 2);
+        assert!(ok[0].weather.is_none());
+        assert_eq!(
+            ok[0].rules.rules[0].required(Some(220.0)).vertical,
+            Some(9.2)
+        );
+        // A case named but not given.
+        let e = check_rule_presets("code", vec![preset("c", wires, "")]).unwrap_err();
+        assert!(e.contains("no weather case \"hot\""), "{e}");
+        let e = check_rule_presets("code", vec![preset("e", "", "")]).unwrap_err();
+        assert!(e.contains("no rule"), "{e}");
+        let e = check_rule_presets(
+            "code",
+            vec![preset("g", ground, ""), preset("g", ground, "")],
+        )
+        .unwrap_err();
+        assert!(e.contains("twice"), "{e}");
+        let dir = std::env::temp_dir().join(format!("ohl-rule-presets-{}", std::process::id()));
+        let files = write_rule_presets("code", &ok, &dir, &dir).unwrap();
+        assert!(files[0].0.ends_with("code-rules-ground.ohlr"));
+        assert!(files[0].1.is_none());
+        assert!(WeatherCases::load(files[1].1.as_ref().unwrap()).is_ok());
+        assert_eq!(RuleSet::load(&files[0].0).unwrap(), ok[0].rules);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

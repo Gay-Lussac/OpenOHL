@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! OpenOHL design-code plugin (`code-wind-plugin` world): IEC 60826, design
+//! OpenOHL design-code plugin (`code-rules-plugin` world): IEC 60826, design
 //! criteria of overhead transmission lines (reliability-based design).
 //!
 //! Method: the climatic loads have a return period set by the reliability
@@ -17,7 +17,7 @@
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
-    world: "code-wind-plugin",
+    world: "code-rules-plugin",
     path: "../../../crates/ohl-plugins/wit",
 });
 
@@ -263,3 +263,4 @@ ohl_code_common::code_plugin!(
 // No wind factors for structures from this plugin yet: OpenOHL keeps its
 // generic drag factor and no shielding (the `structure-wind` stub).
 ohl_code_common::no_structure_wind!();
+ohl_code_common::no_rule_presets!();
