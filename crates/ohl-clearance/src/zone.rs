@@ -205,6 +205,7 @@ pub fn to_rule_set(
             ..check.clone()
         })
         .filter(|c| !c.is_empty()),
+        vegetation: None,
     }
 }
 

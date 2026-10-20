@@ -93,6 +93,16 @@ pub struct VegetationParams {
     pub max_base_ground_distance: Option<f64>,
     /// Worst points kept per span.
     pub keep: usize,
+    /// The required clearance by the voltage of each wire's system (its
+    /// nominal voltage; an earthed wire: 0 kV), instead of `clearance`
+    /// (the largest over the wires is then kept there for the search).
+    pub clearance_by_voltage: Option<crate::rules::Requirement>,
+    /// The fall-in clearance allowance A by voltage, instead of
+    /// `fall_allowance`.
+    pub allowance_by_voltage: Option<crate::rules::Requirement>,
+    /// Keep every grow-in and every fall-in point found
+    /// ([`WireVegetation::all`]), not only the worst.
+    pub keep_all: bool,
 }
 
 // The danger-tree defaults (the owner, 2026-10-20): the utility
@@ -130,6 +140,9 @@ impl Default for VegetationParams {
             max_tree_height: 40.0,
             max_base_ground_distance: Some(DEFAULT_MAX_BASE_GROUND_DISTANCE),
             keep: 10,
+            clearance_by_voltage: None,
+            allowance_by_voltage: None,
+            keep_all: false,
         }
     }
 }
@@ -177,17 +190,37 @@ pub struct VegPoint {
     pub fall_position: Option<usize>,
     /// The wire point (axis) it falls towards.
     pub fall_point: Option<P3>,
+    /// The required clearance applied (its span's wire's), m.
+    pub required: f64,
     /// Its fall was found without the ground's resting angle: the margin
     /// is a lower bound (the tree's whole circle of radius L), worked out
     /// fully only for trees that count or are reported.
     bound_only: bool,
 }
 
+/// A grow-in or fall-in point found ([`WireVegetation::all`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Found {
+    /// The point.
+    pub point: P3,
+    /// It grows in: within the required clearance plus growth and buffer
+    /// of a position.
+    pub grows: bool,
+    /// It can fall onto a wire (a danger tree).
+    pub falls: bool,
+    /// The position it is nearest to (grow-in).
+    pub position: Option<usize>,
+    /// The position its fall comes nearest to (fall-in).
+    pub fall_position: Option<usize>,
+    /// The tree's base (its top straight above it), fall-in.
+    pub base: Option<P3>,
+}
+
 impl VegPoint {
     /// The smaller of the grow-in margin (distance − growth − buffer −
     /// required) and the fall-in margin, m.
     pub fn margin(&self, p: &VegetationParams) -> f64 {
-        let near = self.distance - p.growth() - p.buffer - p.clearance;
+        let near = self.distance - p.growth() - p.buffer - self.required;
         self.fall_margin.map_or(near, |f| near.min(f))
     }
 
@@ -223,6 +256,9 @@ pub struct WireVegetation {
     pub worst_fall: Option<VegPoint>,
     /// The worst points by margin (grow-in or fall-in), worst first.
     pub worst: Vec<VegPoint>,
+    /// Every grow-in and fall-in point, in the order of their places
+    /// (with [`VegetationParams::keep_all`]).
+    pub all: Vec<Found>,
 }
 
 impl WireVegetation {
@@ -245,6 +281,7 @@ impl WireVegetation {
                 self.worst_fall = Some(f);
             }
         }
+        self.all.extend(other.all);
         self.worst.extend(other.worst);
         if self.worst.len() >= 4 * p.keep.max(1) {
             self.worst.sort_by(|a, b| a.order(b, p));
@@ -387,6 +424,9 @@ pub struct VegetationCheck {
     pub work: Work,
     touched: Vec<Touched>,
     scratch: Vec<(f64, usize)>,
+    /// Per span: the required clearance and the fall-in allowance, m.
+    required: Arc<Vec<f64>>,
+    allowance: Arc<Vec<f64>>,
 }
 
 impl VegetationCheck {
@@ -407,6 +447,26 @@ impl VegetationCheck {
         for &c in classes {
             mask[c as usize] = true;
         }
+        // Per span by its wire's voltage; the largest kept for the search.
+        let mut params = params;
+        let by = |rule: &Option<crate::rules::Requirement>, fixed: f64| -> Vec<f64> {
+            positions
+                .spans
+                .iter()
+                .map(|s| {
+                    rule.as_ref()
+                        .map_or(fixed, |r| r.at_or_last(s.wire.kv().unwrap_or(0.0)))
+                })
+                .collect()
+        };
+        let required = by(&params.clearance_by_voltage, params.clearance);
+        let allowance = by(&params.allowance_by_voltage, params.fall_allowance);
+        if params.clearance_by_voltage.is_some() {
+            params.clearance = required.iter().copied().fold(0.0, f64::max);
+        }
+        if params.allowance_by_voltage.is_some() {
+            params.fall_allowance = allowance.iter().copied().fold(0.0, f64::max);
+        }
         let mut reach = params.near_reach();
         if params.fall_in {
             reach = reach.max(params.fall_reach());
@@ -425,7 +485,15 @@ impl VegetationCheck {
             work: Work::default(),
             touched: Vec::new(),
             scratch: Vec::new(),
+            required: Arc::new(required),
+            allowance: Arc::new(allowance),
         }
+    }
+
+    /// The required clearance applied to each span, m (by its wire's
+    /// voltage, or the one given).
+    pub fn required(&self) -> &[f64] {
+        &self.required
     }
 
     /// The positions checked.
@@ -472,23 +540,31 @@ impl VegetationCheck {
     }
 }
 
-/// What the fall-in search reads: the positions and the parameters.
+/// What the fall-in search reads: the positions, the parameters and the
+/// allowance of each span.
 #[derive(Clone, Copy)]
 struct Fixed<'a> {
     geo: &'a Positions,
     params: &'a VegetationParams,
+    allowance: &'a [f64],
 }
 
 impl Fixed<'_> {
+    /// The fall-in allowance A of position `k`'s span, m.
+    fn allowance_of(&self, k: usize) -> f64 {
+        self.allowance[self.geo.positions[k].span]
+    }
+
     /// The fall-in margin of `tree` against position `k` from the
     /// smallest centre-line distance `d` of its hinge circle.
     fn margin_from(&self, tree: &Tree, h: f64, k: usize, d: f64) -> f64 {
         let p = self.params;
         let db = self.geo.positions[k].shape.off_surface(d);
+        let a = self.allowance_of(k);
         if tree.root == 0.0 {
-            (db - h) - p.growth() - p.fall_allowance
+            (db - h) - p.growth() - a
         } else {
-            (db - tree.length) - p.fall_allowance
+            (db - tree.length) - a
         }
     }
 
@@ -518,9 +594,9 @@ impl Fixed<'_> {
         }
         let near = s.bands.lower(&pb, f64::INFINITY) - tree.root - s.outer;
         let span_bound = if tree.root == 0.0 {
-            (near - h) - self.params.growth() - self.params.fall_allowance
+            (near - h) - self.params.growth() - self.allowance[span]
         } else {
-            (near - tree.length) - self.params.fall_allowance
+            (near - tree.length) - self.allowance[span]
         };
         if span_bound >= cutoff {
             return Some(Fall {
@@ -670,9 +746,9 @@ impl Fixed<'_> {
     /// swing arc is taken by its circle value (**Conservative**: the
     /// ground's shelter is not credited on an arc).
     fn sheltered_fall(&self, ground: &Terrain, tree: &Tree, k: usize) -> Fall {
-        let p = self.params;
         let shape = &self.geo.positions[k].shape;
-        let margin = |d: f64| shape.off_surface(d) - p.fall_allowance;
+        let a = self.allowance_of(k);
+        let margin = |d: f64| shape.off_surface(d) - a;
         let Shape::Wire(w) = shape else {
             let span = &self.geo.spans[self.geo.positions[k].span];
             let (d, q) = shape.nearest_circle(
@@ -767,7 +843,12 @@ impl VegetationCheck {
         let geo: &Positions = &self.geometry;
         let index: &SpanIndex = &self.index;
         let params = &self.params;
-        let fixed = Fixed { geo, params };
+        let fixed = Fixed {
+            geo,
+            params,
+            allowance: &self.allowance,
+        };
+        let required: &[f64] = &self.required;
         let growth = params.growth();
         let near_reach = params.near_reach();
         let mut g = ground.and_then(|t| t.height(x, y));
@@ -845,7 +926,7 @@ impl VegetationCheck {
             }
         }
         for &mut (sp, (d, q, position), ref mut fall) in &mut touched {
-            let encroaching = d - growth - params.buffer < params.clearance;
+            let encroaching = d - growth - params.buffer < required[sp];
             let r = &self.results[sp];
             let becomes_nearest = d.is_finite() && r.nearest.is_none_or(|n| d < n.distance);
             let reported = becomes_nearest || (encroaching && params.keep > 0);
@@ -874,12 +955,23 @@ impl VegetationCheck {
                 fall_margin,
                 fall_position: fall.map(|f| f.position),
                 fall_point: fall.map(|f| f.point),
+                required: required[sp],
                 bound_only: fall.is_some_and(|f| f.bound_only),
             };
             let r = &mut self.results[sp];
             let falls = fall_margin.is_some_and(|f| f < 0.0);
             r.encroaching += u64::from(encroaching);
             r.fall_in += u64::from(falls);
+            if params.keep_all && (encroaching || falls) {
+                r.all.push(Found {
+                    point: p,
+                    grows: encroaching,
+                    falls,
+                    position: encroaching.then_some(position).flatten(),
+                    fall_position: falls.then(|| fall.map(|f| f.position)).flatten(),
+                    base: falls.then_some(base),
+                });
+            }
             if becomes_nearest {
                 r.nearest = Some(vp);
             }
@@ -971,6 +1063,13 @@ impl VegetationCheck {
         for r in &mut self.results {
             r.worst.sort_by(|a, b| a.order(b, p));
             r.worst.truncate(p.keep);
+            // The same order however the points were shared out.
+            r.all.sort_by(|a, b| {
+                (0..3)
+                    .map(|k| a.point[k].total_cmp(&b.point[k]))
+                    .find(|o| o.is_ne())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         self.results
     }
@@ -1100,6 +1199,70 @@ mod tests {
         assert_eq!(p.fall_allowance, 2.0);
         assert_eq!(p.max_base_ground_distance, Some(5.0));
         assert_eq!(DEFAULT_SEARCH_DISTANCE, 50.0);
+    }
+
+    /// The required clearance by voltage: two level wires 20 m up, of
+    /// 220 kV and 380 kV systems, each with a point 8 m below its middle;
+    /// a table 7 m up to 220 kV, 9 m up to 380 kV (a utility's practice)
+    /// — the 380 kV wire's point grows in (8 < 9), the 220 kV one's not
+    /// (8 > 7); every grow-in point kept in the full list. One value (5
+    /// m) as before: none.
+    #[test]
+    fn the_clearance_by_the_voltage_of_each_wire() {
+        use ohl_line::electrical::{Potential, SystemKind};
+        let at = |kv: f64, y: f64| {
+            let mut w = level_wire();
+            w.section = format!("{kv} kV");
+            w.points.iter_mut().for_each(|p| p[1] = y);
+            w.potential = Some(Potential {
+                nominal_kv: kv,
+                kind: SystemKind::Ac,
+                frequency_hz: None,
+                to_earth: [kv / 3f64.sqrt(), 0.0],
+            });
+            w
+        };
+        let wires = vec![at(220.0, 0.0), at(380.0, 100.0)];
+        let params = VegetationParams {
+            clearance_by_voltage: Some(crate::rules::Requirement::ByVoltage(vec![
+                (220.0, 7.0),
+                (380.0, 9.0),
+            ])),
+            keep_all: true,
+            ..plain()
+        };
+        let mut c = VegetationCheck::new(wires.clone(), &[5], params);
+        assert_eq!(c.required(), &[7.0, 9.0]);
+        for y in [0.0, 100.0] {
+            c.visit(None, 150.0, y, 12.0, 5);
+        }
+        let r = c.finish();
+        assert_eq!((r[0].encroaching, r[1].encroaching), (0, 1));
+        assert!(r[0].all.is_empty());
+        assert_eq!(r[1].all.len(), 1);
+        assert!(r[1].all[0].grows && !r[1].all[0].falls);
+        assert_eq!(r[1].all[0].point, [150.0, 100.0, 12.0]);
+        assert_eq!(r[1].worst[0].required, 9.0);
+        // One value: as before (and no list without keep_all).
+        let mut c = VegetationCheck::new(wires, &[5], plain());
+        for y in [0.0, 100.0] {
+            c.visit(None, 150.0, y, 12.0, 5);
+        }
+        let r = c.finish();
+        assert_eq!((r[0].encroaching, r[1].encroaching), (0, 0));
+        assert!(r[1].all.is_empty());
+        // The rule file's forms read back.
+        assert_eq!(
+            crate::rules::Requirement::parse("{ by_voltage = [[220, \"7 m\"], [380, 9]] }"),
+            Ok(crate::rules::Requirement::ByVoltage(vec![
+                (220.0, 7.0),
+                (380.0, 9.0)
+            ]))
+        );
+        assert_eq!(
+            crate::rules::Requirement::parse("6.5"),
+            Ok(crate::rules::Requirement::Fixed(6.5))
+        );
     }
 
     fn level_wire() -> Wire {
@@ -1370,6 +1533,7 @@ mod tests {
                 fall_margin,
                 fall_position: None,
                 fall_point: None,
+                required: params.clearance,
                 bound_only: false,
             };
             let encroaching = d - growth < params.clearance;

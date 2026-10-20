@@ -6,7 +6,9 @@
 //! analyses › Danger trees › Wire positions checked): each span of each
 //! section in each weather case — still air as the case is, a windy case
 //! blown to the left and to the right, the optional **swing arc** between
-//! them, and the optional **unbalanced ice** on the span alone.
+//! them, the optional **wind steps** (still air and every intermediate
+//! pressure from each side), and the optional **unbalanced ice** on the
+//! span alone.
 //!
 //! Distances are closed forms: to a solved wire (a polyline), the nearest
 //! of its pieces, looked for outward from the point's place along the
@@ -391,6 +393,13 @@ pub enum PositionKind {
     IceLeft,
     /// Unbalanced ice, blown to the right.
     IceRight,
+    /// Still air of a windy case (its wind stepped from 0).
+    Still,
+    /// Blown to the left at an intermediate wind pressure (its wind
+    /// stepped; [`Position::pressure`]).
+    StepLeft,
+    /// Blown to the right at an intermediate wind pressure.
+    StepRight,
 }
 
 impl PositionKind {
@@ -405,6 +414,9 @@ impl PositionKind {
             Self::Ice => "ice",
             Self::IceLeft => "ice left",
             Self::IceRight => "ice right",
+            Self::Still => "still",
+            Self::StepLeft => "left (step)",
+            Self::StepRight => "right (step)",
         }
     }
 }
@@ -1003,6 +1015,9 @@ pub struct Position {
     pub spread: f64,
     /// Its bands along the axis (lower bounds of distances to it).
     pub bands: Bands,
+    /// The wind pressure it was solved at when not the case's own (a
+    /// step of a stepped wind), Pa.
+    pub pressure: Option<f64>,
 }
 
 /// A span of a section, with every position checked.
@@ -1084,6 +1099,19 @@ impl Positions {
 
     /// Adds a position of span `span`.
     pub fn add(&mut self, span: usize, case: usize, kind: PositionKind, shape: Shape) {
+        self.add_at(span, case, kind, shape, None);
+    }
+
+    /// Adds a position of span `span` solved at wind pressure `pressure`
+    /// (Pa; none: the case's own).
+    pub fn add_at(
+        &mut self,
+        span: usize,
+        case: usize,
+        kind: PositionKind,
+        shape: Shape,
+        pressure: Option<f64>,
+    ) {
         let axis = self.spans[span].axis;
         let spread = match &shape {
             Shape::Wire(w) => w.spread(&axis),
@@ -1105,6 +1133,7 @@ impl Positions {
             shape,
             spread,
             bands,
+            pressure,
         });
     }
 
@@ -1118,7 +1147,10 @@ impl Positions {
     /// "case, position" of position `k`.
     pub fn describe(&self, k: usize) -> String {
         let p = &self.positions[k];
-        format!("{}, {}", self.cases[p.case], p.kind.name())
+        match p.pressure {
+            Some(q) => format!("{}, {} at {q:.0} Pa", self.cases[p.case], p.kind.name()),
+            None => format!("{}, {}", self.cases[p.case], p.kind.name()),
+        }
     }
 }
 
@@ -1127,6 +1159,12 @@ impl Positions {
 pub struct PositionOptions {
     /// The swing arc of each span of a windy case.
     pub swing_arc: bool,
+    /// The wind of each windy case stepped ([`crate::rules::WindSteps`],
+    /// as the clearance windows step it): still air and every
+    /// intermediate pressure from 0 up to the case's, from the sides it
+    /// names (the case's full pressure is checked from both sides in any
+    /// case). Alongside the swing arc or instead of it.
+    pub wind_steps: Option<crate::rules::WindSteps>,
 }
 
 /// The attachment of section point `i` of `shape` a span swings about:
@@ -1228,9 +1266,10 @@ pub(crate) fn parallel<T: Send>(
 }
 
 /// Solves every case of `cases` — a still case as it is, a windy one from
-/// the left and from the right (and in still air for the swing arc) — in
-/// parallel, and gathers the positions of every span. Sections that do
-/// not solve are left out (noted).
+/// the left and from the right (and in still air for the swing arc; with
+/// the wind stepped, in still air and at every intermediate pressure from
+/// the sides chosen) — in parallel, and gathers the positions of every
+/// span. Sections that do not solve are left out (noted).
 ///
 /// Cost: one line solve per case and side, each typically well under a
 /// second; exit clause: `budget` (its time limit, checked between
@@ -1242,32 +1281,52 @@ pub fn solve_positions(
     options: PositionOptions,
     budget: &Budget,
 ) -> Result<Positions, String> {
-    // Jobs: (case, kind, the case solved).
-    let mut jobs: Vec<(usize, PositionKind, WeatherCase)> = Vec::new();
+    // Jobs: (case, kind, the case solved, its pressure when stepped).
+    let mut jobs: Vec<(usize, PositionKind, WeatherCase, Option<f64>)> = Vec::new();
     for (c, case) in cases.iter().enumerate() {
         if is_windy(case) {
-            jobs.push((c, PositionKind::Left, blown(case, WindSide::Right)));
-            jobs.push((c, PositionKind::Right, blown(case, WindSide::Left)));
-            if options.swing_arc {
+            jobs.push((c, PositionKind::Left, blown(case, WindSide::Right), None));
+            jobs.push((c, PositionKind::Right, blown(case, WindSide::Left), None));
+            if let Some(steps) = &options.wind_steps {
+                // Still air (checked, and the arc's middle) and every
+                // pressure between 0 and the full one.
+                jobs.push((c, PositionKind::Still, still(case), Some(0.0)));
+                let full = case.wind_pressure.si();
+                for p in steps.pressures(full, crate::zone::MAX_STEPS) {
+                    if p <= 0.0 || p >= full {
+                        continue;
+                    }
+                    for &side in steps.sides.sides() {
+                        let kind = match side {
+                            WindSide::Right => PositionKind::StepLeft,
+                            WindSide::Left => PositionKind::StepRight,
+                        };
+                        let mut at = blown(case, side);
+                        at.wind_pressure = ohl_core::units::Stress::from_si(p);
+                        jobs.push((c, kind, at, Some(p)));
+                    }
+                }
+            } else if options.swing_arc {
                 // Still air: for the arc only.
-                jobs.push((c, PositionKind::Case, still(case)));
+                jobs.push((c, PositionKind::Case, still(case), None));
             }
         } else {
-            jobs.push((c, PositionKind::Case, case.clone()));
+            jobs.push((c, PositionKind::Case, case.clone(), None));
         }
     }
     let fe = ohl_wirefe::default_fe_budget();
     let solved = parallel(jobs.len(), budget, |k| {
-        let (_, _, case) = &jobs[k];
+        let (_, _, case, _) = &jobs[k];
         Ok(ohl_line::solve::solve_line_with(line, library, case, &fe))
     })?;
     let mut out = Positions {
         cases: cases.iter().map(|c| c.name.clone()).collect(),
         ..Positions::default()
     };
-    // Per case: its solved shapes by kind.
-    let mut by_case: Vec<Vec<(PositionKind, Vec<SectionShape>)>> = vec![Vec::new(); cases.len()];
-    for ((c, kind, case), results) in jobs.iter().zip(solved) {
+    // Per case: its solved shapes by kind (and pressure).
+    type Solved = (PositionKind, Option<f64>, Vec<SectionShape>);
+    let mut by_case: Vec<Vec<Solved>> = vec![Vec::new(); cases.len()];
+    for ((c, kind, case, pressure), results) in jobs.iter().zip(solved) {
         let mut shapes = Vec::new();
         for (section, r) in line.sections.iter().zip(results) {
             match r {
@@ -1280,17 +1339,18 @@ pub fn solve_positions(
                 )),
             }
         }
-        by_case[*c].push((*kind, shapes));
+        by_case[*c].push((*kind, *pressure, shapes));
     }
     for (c, variants) in by_case.iter().enumerate() {
         let windy = is_windy(&cases[c]);
         // Still air of a windy case: for the arc, not checked itself.
-        let mut kept: Vec<(PositionKind, Vec<Wire>, &Vec<SectionShape>)> = Vec::new();
-        for (kind, shapes) in variants {
-            kept.push((*kind, wires_of(line, shapes, &[]), shapes));
+        type Kept<'a> = (PositionKind, Vec<Wire>, &'a Vec<SectionShape>, Option<f64>);
+        let mut kept: Vec<Kept> = Vec::new();
+        for (kind, pressure, shapes) in variants {
+            kept.push((*kind, wires_of(line, shapes, &[]), shapes, *pressure));
         }
         let mut span_ids: Vec<Vec<Option<usize>>> = Vec::new();
-        for (kind, wires, shapes) in &kept {
+        for (kind, wires, shapes, pressure) in &kept {
             let mut ids = Vec::new();
             for w in wires {
                 let id = match out.span_of(&w.section, w.span) {
@@ -1307,17 +1367,23 @@ pub fn solve_positions(
                     continue;
                 }
                 let axis = out.spans[id].axis;
-                out.add(id, c, *kind, Shape::Wire(WireShape::new(w.clone(), &axis)));
+                out.add_at(
+                    id,
+                    c,
+                    *kind,
+                    Shape::Wire(WireShape::new(w.clone(), &axis)),
+                    *pressure,
+                );
             }
             span_ids.push(ids);
         }
         if !(windy && options.swing_arc) {
             continue;
         }
-        let find = |k: PositionKind| kept.iter().position(|(kind, _, _)| *kind == k);
+        let find = |k: PositionKind| kept.iter().position(|(kind, ..)| *kind == k);
         let (Some(l), Some(s), Some(r)) = (
             find(PositionKind::Left),
-            find(PositionKind::Case),
+            find(PositionKind::Case).or_else(|| find(PositionKind::Still)),
             find(PositionKind::Right),
         ) else {
             continue;
@@ -1701,7 +1767,10 @@ mod tests {
             &line,
             &library,
             &cases,
-            PositionOptions { swing_arc: true },
+            PositionOptions {
+                swing_arc: true,
+                ..PositionOptions::default()
+            },
             &budget,
         )
         .unwrap();
@@ -1842,6 +1911,101 @@ mod tests {
         let (p, s) = solve(UnbalancedIce::ExtraThickness(0.005));
         let (_, r_more) = out(&p, s, PositionKind::IceRight);
         assert!((r_more - r - 0.005).abs() < 1e-12, "{r_more} {r}");
+    }
+
+    /// The wind stepped (the example line's windy case, steps of a third
+    /// of its pressure P, both sides): still air, P/3 and 2P/3 from each
+    /// side, and the full pressure from each side — per span 1 + 4 + 2
+    /// positions. By hand: a wire hangs in the plane of its load, at
+    /// tan φ = q_wind / q_weight from the vertical about the chord between
+    /// its clamps, with the wind load q_wind = p · d ∝ p: so
+    /// tan φ(p) / tan φ(P) = p / P, 1/3 and 2/3 (to 0.02: the chord is
+    /// measured across the span's axis).
+    #[test]
+    fn wind_steps_of_the_example_line() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let cases = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .select(&["high wind".into()], &[])
+        .unwrap();
+        let full = cases[0].wind_pressure.si();
+        assert!(full > 0.0);
+        let steps = crate::rules::WindSteps {
+            stepped: true,
+            step: full / 3.0 + 1e-9,
+            sides: crate::rules::WindSides::Both,
+        };
+        let p = solve_positions(
+            &line,
+            &library,
+            &cases,
+            PositionOptions {
+                swing_arc: false,
+                wind_steps: Some(steps),
+            },
+            &Budget::new(),
+        )
+        .unwrap();
+        let n = p.spans.len();
+        let count = |k: PositionKind| p.positions.iter().filter(|x| x.kind == k).count();
+        assert_eq!(count(PositionKind::Still), n);
+        assert_eq!(count(PositionKind::StepLeft), 2 * n);
+        assert_eq!(count(PositionKind::StepRight), 2 * n);
+        assert_eq!(
+            (count(PositionKind::Left), count(PositionKind::Right)),
+            (n, n)
+        );
+        assert_eq!(
+            (count(PositionKind::Arc), count(PositionKind::Case)),
+            (0, 0)
+        );
+        // The blowout angle at mid-span of S1 span 1, by pressure.
+        let s = p.span_of("S1", 1).unwrap();
+        let axis = p.spans[s].axis;
+        let tan = |kind: PositionKind, pressure: Option<f64>| {
+            let x = p.spans[s]
+                .positions
+                .iter()
+                .map(|&i| &p.positions[i])
+                .find(|x| {
+                    x.kind == kind
+                        && pressure.is_none_or(|q| x.pressure.is_some_and(|v| (v - q).abs() < 1.0))
+                })
+                .unwrap();
+            let Shape::Wire(w) = &x.shape else { panic!() };
+            // About the chord between its clamps: the wire's own plane.
+            let (a, b) = (w.wire.points[0], *w.wire.points.last().unwrap());
+            let q = sub(w.at(0.5 * axis.length), lerp(a, b, 0.5));
+            dot(q, axis.right).abs() / dot(q, axis.down)
+        };
+        let t_full = tan(PositionKind::Left, None);
+        assert!(t_full > 0.1, "{t_full}");
+        for (k, kind) in [
+            (1.0, PositionKind::StepLeft),
+            (2.0, PositionKind::StepRight),
+        ] {
+            let ratio = tan(kind, Some(k * full / 3.0)) / t_full;
+            println!("tan φ at {k}/3 of the pressure: {ratio:.3} of the full one");
+            assert!((ratio - k / 3.0).abs() < 0.05, "{ratio}");
+        }
+        assert!(tan(PositionKind::Still, None) < 0.01 * t_full);
+        assert_eq!(
+            p.describe(
+                p.spans[s]
+                    .positions
+                    .iter()
+                    .copied()
+                    .find(|&i| p.positions[i].kind == PositionKind::StepLeft)
+                    .unwrap()
+            ),
+            format!("high wind, left (step) at {:.0} Pa", full / 3.0)
+        );
     }
 
     #[test]

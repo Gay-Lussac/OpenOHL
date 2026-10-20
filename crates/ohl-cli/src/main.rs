@@ -1926,6 +1926,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         &cases,
                         ohl_clearance::positions::PositionOptions {
                             swing_arc: *swing_arc,
+                            ..Default::default()
                         },
                         &budget,
                     )?;
