@@ -194,6 +194,16 @@ pub fn write_route(
                 }
             }
             Format::Dxf => {
+                let images = drawings
+                    .iter()
+                    .flat_map(|d| d.flat())
+                    .filter(|(i, _)| matches!(i, crate::model::Item::Image(_)))
+                    .count();
+                if images > 0 {
+                    written.warnings.push(format!(
+                        "DXF: {images} logo image(s) left out of the sheets (R12 has no images)"
+                    ));
+                }
                 for (k, drawing) in drawings.iter().enumerate() {
                     put(
                         name(k, "dxf"),

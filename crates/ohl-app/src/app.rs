@@ -7196,6 +7196,8 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
             )
             .clicked()
         {
+            let (rules, markers) = drawing_checks(r);
+            r.drawings.set_checks(rules, markers);
             r.drawings.open();
             ui.close();
         }
@@ -8558,4 +8560,50 @@ fn plugin_checks_menu(
         }
     }
     clicked
+}
+
+/// The project's ground clearance rules (Checks › Ground clearances ›
+/// Vertical clearances, else the rule file chosen in Checks ›
+/// Clearances) and the last clearance check's violations: what the
+/// drawings take for the clearance line and the markers.
+fn drawing_checks(r: &Ready) -> (Vec<ohl_clearance::Rule>, Vec<([f64; 3], String)>) {
+    let file = crate::clearance_zones::ZoneWindow::project_file(
+        &r.model,
+        ohl_clearance::zone::Measure::Vertical,
+    );
+    let ground = |rules: Vec<ohl_clearance::Rule>| -> Vec<ohl_clearance::Rule> {
+        rules
+            .into_iter()
+            .filter(|x| x.target == ohl_clearance::Target::Ground && x.vertical.is_some())
+            .collect()
+    };
+    let mut rules = if file.is_file() {
+        ohl_clearance::RuleSet::load_with(&file, &(&r.model.line.defaults).into())
+            .map(|s| ground(s.rules))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if rules.is_empty()
+        && let Some(Ok(chosen)) = &r.clearances.rules
+    {
+        rules = ground(chosen.clone());
+    }
+    let markers = match &r.clearances.report {
+        Some(Ok(report)) => report
+            .findings
+            .iter()
+            .map(|f| {
+                (
+                    f.at,
+                    format!(
+                        "{} {}: {:.2} m < {:.2} m",
+                        f.rule, f.measure, f.distance, f.required
+                    ),
+                )
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    (rules, markers)
 }

@@ -70,6 +70,24 @@ pub struct DrawingsWindow {
     /// on the plan (layer OHL_ISOCLEARANCE): (clearance, points), the top
     /// line.
     pub isoclearance: Option<Arc<IsoLines>>,
+    /// Side ground profiles at these offsets, m (right positive).
+    pub side_offsets: Vec<f64>,
+    /// Scale of the plan across the line (none: the horizontal scale).
+    pub plan_scale: Option<f64>,
+    /// Logos of the title block: file and width on paper, mm.
+    pub logos: Vec<(PathBuf, f64)>,
+    /// The clearance line from the project's ground rule (when there is
+    /// one), else [`DrawingsWindow::clearance`].
+    pub clearance_rule: bool,
+    /// The violations of the last clearance check drawn as markers.
+    pub markers_on: bool,
+    /// The project's clearance rules for the ground (Checks › Ground
+    /// clearances, else the rule file chosen), taken when the window
+    /// opens.
+    pub ground_rules: Arc<Vec<ohl_clearance::Rule>>,
+    /// The violations of the last clearance check (Checks › Clearances):
+    /// point and label, taken when the window opens.
+    pub markers: Arc<Vec<([f64; 3], String)>>,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -95,10 +113,30 @@ impl Default for DrawingsWindow {
             break_clearance: ohl_drawing::BREAK_CLEARANCE_MM,
             elevations: ohl_drawing::Elevations::default(),
             isoclearance: None,
+            side_offsets: Vec::new(),
+            plan_scale: None,
+            logos: Vec::new(),
+            clearance_rule: true,
+            markers_on: true,
+            ground_rules: Arc::default(),
+            markers: Arc::default(),
             out: None,
             error: None,
         }
     }
+}
+
+/// The required vertical clearance to the ground of `rules` for `line`:
+/// the largest of its ground rules over the line's voltages, with the
+/// rule's name (none: no ground rule with a vertical distance).
+pub fn ground_rule_clearance(rules: &[ohl_clearance::Rule], line: &Line) -> Option<(f64, String)> {
+    let kvs = ohl_clearance::zone::line_voltages(line);
+    rules
+        .iter()
+        .filter(|r| r.target == ohl_clearance::Target::Ground)
+        .filter_map(|r| Some((r.vertical.as_ref()?.largest(&kvs), r.name.clone())))
+        .filter(|(d, _)| d.is_finite() && *d > 0.0)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
 }
 
 /// Isoclearance lines: (clearance m, points on the ground), and the top
@@ -165,6 +203,25 @@ pub struct DrawingSettings {
     pub elevation_rotation: f64,
     /// The sheet preview on.
     pub preview: bool,
+    /// Side ground profiles at these offsets, m.
+    pub side_offsets: Vec<f64>,
+    /// Scale of the plan across the line (none: the horizontal scale).
+    pub plan_scale: Option<f64>,
+    /// Logos of the title block: file and width, mm.
+    pub logos: Vec<LogoSetting>,
+    /// The clearance line from the project's ground rule.
+    pub clearance_rule: bool,
+    /// The last clearance check's violations as markers.
+    pub markers: bool,
+}
+
+/// A logo of the drawing settings: its file and width on paper.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogoSetting {
+    /// The image file (SVG, PNG or JPEG) on this computer.
+    pub file: PathBuf,
+    /// Width on paper, mm.
+    pub width: f64,
 }
 
 impl Default for DrawingSettings {
@@ -194,6 +251,18 @@ impl DrawingSettings {
             elevation_offset: w.elevations.offset_mm,
             elevation_rotation: w.elevations.rotation_deg,
             preview,
+            side_offsets: w.side_offsets.clone(),
+            plan_scale: w.plan_scale,
+            logos: w
+                .logos
+                .iter()
+                .map(|(file, width)| LogoSetting {
+                    file: file.clone(),
+                    width: *width,
+                })
+                .collect(),
+            clearance_rule: w.clearance_rule,
+            markers: w.markers_on,
         }
     }
 
@@ -243,6 +312,21 @@ impl DrawingSettings {
                 d.elevations.rotation_deg,
             ),
         };
+        w.side_offsets = self
+            .side_offsets
+            .iter()
+            .copied()
+            .filter(|o| o.is_finite() && o.abs() <= *LINE_WIDTHS.end())
+            .collect();
+        w.plan_scale = self.plan_scale.filter(|s| (10.0..=100_000.0).contains(s));
+        w.logos = self
+            .logos
+            .iter()
+            .filter(|l| (1.0..=500.0).contains(&l.width))
+            .map(|l| (l.file.clone(), l.width))
+            .collect();
+        w.clearance_rule = self.clearance_rule;
+        w.markers_on = self.markers;
     }
 }
 
@@ -373,6 +457,8 @@ pub struct Input {
     pub export: Export,
     /// Isoclearance lines on the plan.
     pub isoclearance: Option<Arc<IsoLines>>,
+    /// Violation markers: point, label.
+    pub markers: Arc<Vec<([f64; 3], String)>>,
     /// Output folder.
     pub out: PathBuf,
 }
@@ -419,15 +505,23 @@ impl Input {
         if w.all_cases {
             order.extend((0..model.cases.len()).filter(|&k| k != case && model.cases[k].ready));
         }
+        // The case shown as the views show it (each section in its display
+        // cases); every other case from its own solution, both wind sides
+        // where both are shown.
         let cases: Vec<_> = order
             .into_iter()
-            .filter_map(|k| {
+            .enumerate()
+            .filter_map(|(i, k)| {
                 let solved = model.cases.get(k)?;
-                Some((
-                    solved.case.name.clone(),
-                    model.shapes_shown(k),
-                    solved.jumpers.clone(),
-                ))
+                let (shapes, jumpers) = if i == 0 {
+                    (model.shapes_shown(k), solved.jumpers.clone())
+                } else {
+                    (
+                        solved.drawn().flat_map(|c| c.shapes.clone()).collect(),
+                        solved.drawn().flat_map(|c| c.jumpers.clone()).collect(),
+                    )
+                };
+                Some((solved.case.name.clone(), shapes, jumpers))
             })
             .collect();
         let first = cases.first().ok_or("no solved weather case")?;
@@ -447,6 +541,15 @@ impl Input {
                 format!("Weather case: {}", first.0)
             },
         ];
+        let logos = w
+            .logos
+            .iter()
+            .map(|(file, width)| ohl_drawing::Logo::from_file(file, *width))
+            .collect::<Result<Vec<_>, _>>()?;
+        let clearance = match ground_rule_clearance(&w.ground_rules, &model.line) {
+            Some((d, _)) if w.clearance_rule => Some(d),
+            _ => w.clearance,
+        };
         Ok(Self {
             line: model.line.clone(),
             bodies: model.bodies.clone(),
@@ -455,13 +558,21 @@ impl Input {
             options: ohl_drawing::Options {
                 horizontal_scale: w.hscale,
                 vertical_scale: w.vscale,
-                clearance: w.clearance,
+                clearance,
                 title,
                 plan: !w.profile_only,
                 plan_half_width: w.line_width,
                 break_clearance,
                 elevations: w.elevations,
+                side_offsets: w.side_offsets.clone(),
+                plan_offset_scale: w.plan_scale,
+                logos,
                 ..Default::default()
+            },
+            markers: if w.markers_on {
+                w.markers.clone()
+            } else {
+                Arc::default()
             },
             range: w.range.then_some([w.from.min(w.to), w.from.max(w.to)]),
             export: Export {
@@ -485,7 +596,7 @@ impl Input {
             shapes,
             jumpers,
             self.ground.as_deref(),
-            &[],
+            &self.markers,
             &self.options,
         )?;
         crate::scene::set_drawn_members(&mut d, &self.line, &self.bodies);
@@ -691,16 +802,116 @@ impl DrawingsWindow {
                         ui.label("Clearance line");
                         ui.horizontal(|ui| {
                             let mut on = self.clearance.is_some();
-                            ui.checkbox(&mut on, "ground +");
+                            let rule = ground_rule_clearance(&self.ground_rules, &model.line);
+                            let from_rule = self.clearance_rule && rule.is_some();
+                            ui.add_enabled(!from_rule, egui::Checkbox::new(&mut on, "ground +"));
                             let mut c = self.clearance.unwrap_or(7.0);
                             ui.add_enabled(
-                                on,
+                                on && !from_rule,
                                 egui::DragValue::new(&mut c)
                                     .range(0.0..=100.0)
                                     .suffix(" m")
                                     .speed(0.1),
                             );
                             self.clearance = on.then_some(c);
+                            if let Some((d, name)) = rule {
+                                ui.checkbox(
+                                    &mut self.clearance_rule,
+                                    format!("from the ground rule \"{name}\" ({d} m)"),
+                                )
+                                .on_hover_text(
+                                    "The project's clearance rule for the ground (Checks › \
+                                     Ground clearances, else the rule file chosen): its largest \
+                                     vertical distance over the line's voltages",
+                                );
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.label("Side profiles");
+                        ui.horizontal_wrapped(|ui| {
+                            let mut gone = None;
+                            for (k, o) in self.side_offsets.iter_mut().enumerate() {
+                                ui.add(
+                                    egui::DragValue::new(o)
+                                        .range(-2000.0..=2000.0)
+                                        .suffix(" m")
+                                        .speed(0.5),
+                                )
+                                .on_hover_text("Offset from the axis, right positive");
+                                if ui.small_button("×").on_hover_text("Leave it out").clicked() {
+                                    gone = Some(k);
+                                }
+                            }
+                            if let Some(k) = gone {
+                                self.side_offsets.remove(k);
+                            }
+                            if ui
+                                .small_button("+")
+                                .on_hover_text("A ground profile beside the axis (dashed)")
+                                .clicked()
+                            {
+                                let next = self.side_offsets.last().map_or(10.0, |o| -o);
+                                self.side_offsets.push(next);
+                            }
+                        });
+                        ui.end_row();
+
+                        ui.label("Plan across");
+                        ui.horizontal(|ui| {
+                            let mut on = self.plan_scale.is_some();
+                            ui.checkbox(&mut on, "own scale 1:")
+                                .on_hover_text(
+                                    "The plan across the line at its own scale (along it the \
+                                     horizontal scale, to line up with the profile)",
+                                );
+                            let mut k = self.plan_scale.unwrap_or(self.hscale / 2.0);
+                            ui.add_enabled(
+                                on,
+                                egui::DragValue::new(&mut k)
+                                    .range(10.0..=100_000.0)
+                                    .speed(10.0),
+                            );
+                            self.plan_scale = on.then_some(k);
+                        });
+                        ui.end_row();
+
+                        ui.label("Logos");
+                        ui.vertical(|ui| {
+                            let mut gone = None;
+                            for (k, (file, width)) in self.logos.iter_mut().enumerate() {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        file.file_name()
+                                            .map_or(String::new(), |n| {
+                                                n.to_string_lossy().into_owned()
+                                            }),
+                                    )
+                                    .on_hover_text(file.display().to_string());
+                                    ui.add(
+                                        egui::DragValue::new(width)
+                                            .range(1.0..=500.0)
+                                            .suffix(" mm")
+                                            .speed(0.5),
+                                    );
+                                    if ui.small_button("×").clicked() {
+                                        gone = Some(k);
+                                    }
+                                });
+                            }
+                            if let Some(k) = gone {
+                                self.logos.remove(k);
+                            }
+                            if ui
+                                .button("Add a logo…")
+                                .on_hover_text("SVG, PNG or JPEG, in the title block")
+                                .clicked()
+                                && let Some(file) = rfd::FileDialog::new()
+                                    .add_filter("Images", &["svg", "png", "jpg", "jpeg"])
+                                    .pick_file()
+                            {
+                                self.logos.push((file, 30.0));
+                            }
                         });
                         ui.end_row();
 
@@ -758,6 +969,15 @@ impl DrawingsWindow {
                     &mut self.all_cases,
                     "the other solved weather cases too (dashed)",
                 );
+                if !self.markers.is_empty() {
+                    ui.checkbox(
+                        &mut self.markers_on,
+                        format!(
+                            "the violations of the last clearance check ({}) as markers",
+                            self.markers.len()
+                        ),
+                    );
+                }
                 ui.checkbox(preview_on, PREVIEW_TICK)
                     .on_hover_text(PREVIEW_HELP);
                 ui.horizontal(|ui| {
@@ -925,6 +1145,22 @@ impl Drawings {
     pub fn open(&mut self) {
         if self.window.is_none() {
             self.window = Some(self.last.clone());
+        }
+    }
+
+    /// Gives the drawings the project's ground rules and the last
+    /// clearance check's violations (when the window opens).
+    pub fn set_checks(
+        &mut self,
+        ground_rules: Vec<ohl_clearance::Rule>,
+        markers: Vec<([f64; 3], String)>,
+    ) {
+        let (rules, markers) = (Arc::new(ground_rules), Arc::new(markers));
+        self.last.ground_rules = rules.clone();
+        self.last.markers = markers.clone();
+        if let Some(w) = &mut self.window {
+            w.ground_rules = rules;
+            w.markers = markers;
         }
     }
 

@@ -1259,10 +1259,7 @@ pub(crate) mod tests {
         let m = d.structures.iter().find(|m| m.id == "T2").unwrap();
         let (_, f, warnings) = layout::continuous(&d, &options);
         assert!(warnings.is_empty(), "{warnings:?}");
-        let base = [
-            f.left + (m.station - f.s0) * f.h,
-            f.plan_top + f.plan_h / 2.0 - 10.0,
-        ];
+        let base = [f.left + (m.station - f.s0) * f.h, f.plan_axis - 10.0];
         let ys: Vec<f64> = t2
             .iter()
             .flat_map(|p| p.points.iter().map(|q| q[1]))
@@ -1283,16 +1280,20 @@ pub(crate) mod tests {
         // In every format's layer: DXF and SVG.
         assert!(crate::dxf::write(&sheet).contains("OHL_ELEVATIONS"));
         assert!(sheet.svg().contains(r#"class="OHL_ELEVATIONS""#));
-        // Below, far down: into the profile, kept, warned about.
+        // Below, far down: the plan panel grows to hold it (it reached
+        // into the profile before), no warning.
         options.elevations = Elevations {
             place: ElevationPlace::Below,
             offset_mm: 25.0,
             rotation_deg: 90.0,
         };
         let w = warnings_of(&d, &options);
+        assert!(w.is_empty(), "{w:?}");
+        let (_, f, _) = layout::continuous(&d, &options);
         assert!(
-            w.iter().any(|w| w.contains("reaches into the profile")),
-            "{w:?}"
+            f.plan_top + f.plan_h >= f.plan_axis + 25.0 + 15.0,
+            "{}",
+            f.plan_h
         );
         assert!(
             paths_on(&drawing(&d, &options), Layer::Elevations)
@@ -1513,7 +1514,7 @@ pub(crate) mod tests {
         assert_eq!(s[1].structures.1, "0+900.0");
         assert!((s[0].from - 200.0).abs() < 1e-9 && (s[1].to - 900.0).abs() < 1e-9);
         let svg = s[0].svg();
-        assert!(!svg.contains(">Plan<") && svg.contains("— profile"));
+        assert!(!svg.contains(">Plan<") && svg.contains("Route main — Main route: profile"));
     }
 
     /// The main route of the synthetic line with an invented structure
@@ -1874,6 +1875,220 @@ pub(crate) mod tests {
             assert!((l.reach - 526.0).abs() < 1e-9, "{}", l.reach);
         }
         assert!(layout[0].warnings[0].starts_with("no free sheet break"));
+    }
+
+    /// The sheets of the main route with `options` on `page`, with the
+    /// clearance line of 7 m and the five weather cases' worth of ground.
+    fn checked_sheets(options: &Options, page: &str) -> Vec<Sheet> {
+        let d = main_route(options);
+        sheets(&d, options, &page_format(page).unwrap())
+    }
+
+    /// The rectangle of the title block of a sheet `s` (left, top, width,
+    /// height): the frame's bottom 32 mm.
+    fn title_block(s: &Sheet) -> [f64; 4] {
+        let (w, h) = (s.drawing.width, s.drawing.height);
+        [5.0, h - 5.0 - 32.0, w - 10.0, 32.0]
+    }
+
+    /// Regression (D1, D2, D3, D4, D11): the ground is seen on every sheet
+    /// at the default scales (A3, 1:2000 / 1:200, where the profile does
+    /// not fit in one height range) and at 1:50 (the datum stepped); the
+    /// profile panel takes the whole height down to the station labels;
+    /// the height labels stay inside the panel; nothing but the title
+    /// block's texts in the title block; every item not clipped on the
+    /// page.
+    #[test]
+    fn the_ground_is_seen_on_every_sheet() {
+        use crate::model::{Item, Layer};
+        for vscale in [200.0, 50.0] {
+            let o = Options {
+                clearance: Some(7.0),
+                vertical_scale: vscale,
+                ..Options::default()
+            };
+            let s = checked_sheets(&o, "A3");
+            assert_eq!(s.len(), 2);
+            for sheet in &s {
+                let tb = title_block(sheet);
+                let flat = sheet.drawing.flat();
+                // The ground: at least half its points along the sheet
+                // within their clip region.
+                let (mut seen, mut all) = (0, 0);
+                for (item, clip) in &flat {
+                    if let (Item::Path(p), Some(r)) = (item, clip)
+                        && p.layer == Layer::Ground
+                    {
+                        let along: Vec<&[f64; 2]> = p
+                            .points
+                            .iter()
+                            .filter(|q| q[0] >= r[0] && q[0] <= r[0] + r[2])
+                            .collect();
+                        all += along.len();
+                        seen += along.iter().filter(|q| model::inside(***q, *r)).count();
+                    }
+                }
+                assert!(all > 0 && 2 * seen > all, "1:{vscale}: {seen} of {all}");
+                // The profile panel down to the labels above the title
+                // block (297 − 10 − 32 − 8 = 247 mm).
+                let panels: Vec<&model::Path> = flat
+                    .iter()
+                    .filter_map(|(i, _)| match i {
+                        Item::Path(p) if p.layer == Layer::Panels && p.closed => Some(p),
+                        _ => None,
+                    })
+                    .collect();
+                let profile = panels.last().unwrap();
+                assert!((profile.points[2][1] - 247.0).abs() < 1e-6, "{profile:?}");
+                let top = profile.points[0][1];
+                for (item, clip) in &flat {
+                    match item {
+                        Item::Text(t)
+                            if t.layer == Layer::Labels && t.anchor == model::Anchor::End =>
+                        {
+                            // Height labels at the left of the panel.
+                            assert!(t.at[1] > top && t.at[1] < 247.0 + 1e-6, "{t:?}");
+                        }
+                        Item::Text(t) if t.layer != Layer::Title => {
+                            assert!(!model::inside(t.at, tb), "{t:?} in the title block");
+                        }
+                        _ => {}
+                    }
+                    if clip.is_none() {
+                        let points: Vec<[f64; 2]> = match item {
+                            Item::Path(p) => p.points.clone(),
+                            Item::Text(t) => vec![t.at],
+                            Item::Circle(c) => vec![c.centre],
+                            Item::Image(i) => vec![i.at],
+                            Item::Clip(_) => Vec::new(),
+                        };
+                        for q in points {
+                            assert!(
+                                model::inside(q, [0.0, 0.0, 420.0, 297.0]),
+                                "{item:?} off the sheet"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // At 1:50 the datum is stepped at a structure, warned.
+        let o = Options {
+            clearance: Some(7.0),
+            vertical_scale: 50.0,
+            ..Options::default()
+        };
+        let s = checked_sheets(&o, "A3");
+        assert!(
+            s[0].warnings
+                .iter()
+                .any(|w| w.starts_with("datum stepped at T2")),
+            "{:?}",
+            s[0].warnings
+        );
+        assert!(s[0].svg().contains("datum step at 0+310.0"));
+        // At 1:500 everything fits: no warning, no step.
+        let o = Options {
+            vertical_scale: 500.0,
+            ..o
+        };
+        let s = checked_sheets(&o, "A3");
+        assert!(
+            s.iter().all(|s| s.warnings.is_empty()),
+            "{:?}",
+            s[0].warnings
+        );
+        assert!(!s[0].svg().contains("datum step"));
+    }
+
+    /// Regression (D7, D8, D9, D10): the panels and what they hold end at
+    /// the match lines; a structure at a sheet's end is drawn whole on
+    /// both sheets; the elevations are drawn over the match lines; a
+    /// station range's ends are no structures in the title.
+    #[test]
+    fn sheets_end_at_their_match_lines() {
+        use crate::model::{Item, Layer};
+        let (line, ..) = solved();
+        let mut o = Options {
+            vertical_scale: 500.0,
+            ..Options::default()
+        };
+        o.elevations.place = ElevationPlace::Above;
+        let mut d = main_route(&o);
+        d.set_members(|id| (id == "T3").then(|| tower(&line, id)).flatten());
+        let s = sheets(&d, &o, &page_format("A3").unwrap());
+        assert_eq!(ends(&s), [("T1", "T3"), ("T3", "T5")]);
+        for sheet in &s {
+            let flat = sheet.drawing.flat();
+            let matches: Vec<f64> = flat
+                .iter()
+                .filter_map(|(i, _)| match i {
+                    Item::Path(p) if p.layer == Layer::Match => Some(p.points[0][0]),
+                    _ => None,
+                })
+                .collect();
+            let (x0, x1) = (matches[0], matches[1]);
+            // Wires and ground clipped at the match lines.
+            for (item, clip) in &flat {
+                if let (Item::Path(p), Some(r)) = (item, clip)
+                    && matches!(p.layer, Layer::Wires | Layer::Ground)
+                {
+                    assert!(r[0] >= x0 - 1e-6 && r[0] + r[2] <= x1 + 1e-6, "{r:?}");
+                }
+            }
+            // T3's members whole: its clip reaches 2 m (1 mm) and more
+            // past the match line it stands on.
+            let at = if sheet.number == 1 { x1 } else { x0 };
+            let t3: Vec<[f64; 4]> = flat
+                .iter()
+                .filter_map(|(i, c)| match (i, c) {
+                    (Item::Path(p), Some(r)) if p.layer == Layer::Members => Some(*r),
+                    _ => None,
+                })
+                .collect();
+            assert!(!t3.is_empty());
+            assert!(
+                t3.iter().all(|r| r[0] < at - 1.0 && r[0] + r[2] > at + 1.0),
+                "{t3:?} at {at}"
+            );
+            // Elevations after the match lines.
+            let last_match = sheet
+                .drawing
+                .items
+                .iter()
+                .rposition(|i| matches!(i, Item::Path(p) if p.layer == Layer::Match))
+                .unwrap();
+            let first_elevation = sheet
+                .drawing
+                .items
+                .iter()
+                .position(|i| matches!(i, Item::Path(p) if p.layer == Layer::Elevations))
+                .unwrap();
+            assert!(first_elevation > last_match);
+        }
+        // A short station range: the panel 25 mm wide (50 m at 1:2000),
+        // the title without structures.
+        let range = Options {
+            stations: Some([100.0, 150.0]),
+            ..o
+        };
+        let s = sheets(&d, &range, &page_format("A3").unwrap());
+        assert_eq!(s.len(), 1);
+        let panel = s[0]
+            .drawing
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Path(p) if p.layer == Layer::Panels => Some(p.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert!((panel.points[1][0] - panel.points[0][0] - 25.0).abs() < 1e-6);
+        let svg = s[0].svg();
+        assert!(svg.contains("0+100.0 – 0+150.0<"), "the title");
+        assert!(!svg.contains("(0+100.0"));
+        // The heading: id and name apart.
+        assert!(svg.contains("Route main — Main route: plan and profile"));
     }
 
     #[test]

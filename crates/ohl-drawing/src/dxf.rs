@@ -82,17 +82,26 @@ fn hsv(h: f64, s: f64, v: f64) -> [u8; 3] {
     [byte(r), byte(g), byte(b)]
 }
 
-/// DXF text: ASCII as is, other characters as `\U+XXXX`.
-fn dxf_text(t: &str) -> String {
+/// DXF text in R12's own codes (the file's code page is ANSI_1252):
+/// ASCII as is (`%` as `%%%`), `°` `±` `⌀` as `%%d` `%%p` `%%c`, other
+/// Windows-1252 characters as `%%nnn` (their code, three digits), others
+/// `?`. (R12 knows no `\U+XXXX`.)
+pub(crate) fn dxf_text(t: &str) -> String {
     let mut out = String::new();
     for c in t.chars() {
         match c {
+            '%' => out.push_str("%%%"),
             ' '..='~' => out.push(c),
             '\n' | '\r' | '\t' => out.push(' '),
-            c if (c as u32) <= 0xffff => {
-                let _ = write!(out, "\\U+{:04X}", c as u32);
-            }
-            _ => out.push('?'),
+            '°' => out.push_str("%%d"),
+            '±' => out.push_str("%%p"),
+            '⌀' => out.push_str("%%c"),
+            c => match crate::pdf::win_ansi(c) {
+                b'?' => out.push('?'),
+                b => {
+                    let _ = write!(out, "%%{b:03}");
+                }
+            },
         }
     }
     out
@@ -450,7 +459,8 @@ mod tests {
         assert_eq!(values(&pairs, "LINE", 21), vec![vec![30.0]]);
         assert!(text.contains("OHL_DASH1") && text.contains("AC1009"));
         assert!(pairs.last().is_some_and(|p| p.1 == "EOF"));
-        assert_eq!(dxf_text("1+250 – T3 ×2"), "1+250 \\U+2013 T3 \\U+00D72");
+        assert_eq!(dxf_text("1+250 – T3 ×2"), "1+250 %%150 T3 %%2152");
+        assert_eq!(dxf_text("5° ±1 % Ω"), "5%%d %%p1 %%% ?");
     }
 
     #[test]

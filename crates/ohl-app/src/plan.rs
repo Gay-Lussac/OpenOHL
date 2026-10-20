@@ -192,9 +192,19 @@ fn paint_sheets(
                     4.0,
                 ));
             }
+            // The number outside the band, clear of the structures' names
+            // on the line (beyond its right edge, 14 px out on screen).
+            let mid = 0.5 * (s.from + s.to);
+            let (axis, edge) = (at(mid, 0.0), at(mid, w));
+            let out = (edge - axis).normalized();
+            let out = if out.x.is_finite() && out.y.is_finite() {
+                out
+            } else {
+                egui::vec2(0.0, 1.0)
+            };
             painter.text(
-                at(0.5 * (s.from + s.to), w),
-                egui::Align2::CENTER_BOTTOM,
+                edge + out * 14.0,
+                egui::Align2::CENTER_CENTER,
                 format!(
                     "{} sheet {}{}",
                     r.id,
