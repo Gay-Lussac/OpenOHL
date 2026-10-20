@@ -66,6 +66,10 @@ pub struct DrawingsWindow {
     pub break_clearance: f64,
     /// The structures' elevations on the plan (off by default).
     pub elevations: ohl_drawing::Elevations,
+    /// The isoclearance lines of the last Checks › Vegetation run, drawn
+    /// on the plan (layer OHL_ISOCLEARANCE): (clearance, points), the top
+    /// line.
+    pub isoclearance: Option<Arc<IsoLines>>,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -90,11 +94,16 @@ impl Default for DrawingsWindow {
             line_width: DEFAULT_LINE_WIDTH,
             break_clearance: ohl_drawing::BREAK_CLEARANCE_MM,
             elevations: ohl_drawing::Elevations::default(),
+            isoclearance: None,
             out: None,
             error: None,
         }
     }
 }
+
+/// Isoclearance lines: (clearance m, points on the ground), and the top
+/// line (for the colours).
+pub type IsoLines = (Vec<(f64, Vec<[f64; 3]>)>, f64);
 
 /// The line width by default, m (the drawings' plan half width).
 pub const DEFAULT_LINE_WIDTH: f64 = 40.0;
@@ -362,6 +371,8 @@ pub struct Input {
     pub range: Option<[f64; 2]>,
     /// Formats and sheets.
     pub export: Export,
+    /// Isoclearance lines on the plan.
+    pub isoclearance: Option<Arc<IsoLines>>,
     /// Output folder.
     pub out: PathBuf,
 }
@@ -459,6 +470,7 @@ impl Input {
                 dpi: w.dpi,
             },
             cases,
+            isoclearance: w.isoclearance.clone(),
             out,
         })
     }
@@ -477,6 +489,9 @@ impl Input {
             &self.options,
         )?;
         crate::scene::set_drawn_members(&mut d, &self.line, &self.bodies);
+        if let Some(lines) = &self.isoclearance {
+            d.set_isoclearance(&lines.0, lines.1);
+        }
         for (k, (name, shapes, jumpers)) in self.cases.iter().enumerate().skip(1) {
             let other =
                 ohl_drawing::build(&self.line, route, shapes, jumpers, None, &[], &self.options)?;
@@ -766,6 +781,21 @@ impl DrawingsWindow {
                     .small()
                     .weak(),
                 );
+                if let Some(lines) = &self.isoclearance {
+                    let mut keep = true;
+                    ui.horizontal(|ui| {
+                        ui.label(format!(
+                            "Isoclearance lines of Checks › Vegetation: {} on the plan (OHL_ISOCLEARANCE)",
+                            lines.0.len()
+                        ));
+                        if ui.button("Leave them out").clicked() {
+                            keep = false;
+                        }
+                    });
+                    if !keep {
+                        self.isoclearance = None;
+                    }
+                }
                 if let Some(e) = &self.error {
                     crate::menu::error_label(ui, e);
                 }
@@ -895,6 +925,15 @@ impl Drawings {
     pub fn open(&mut self) {
         if self.window.is_none() {
             self.window = Some(self.last.clone());
+        }
+    }
+
+    /// Gives the drawings the isoclearance lines of a vegetation run (none:
+    /// without them).
+    pub fn set_isoclearance(&mut self, lines: Option<Arc<IsoLines>>) {
+        self.last.isoclearance = lines.clone();
+        if let Some(w) = &mut self.window {
+            w.isoclearance = lines;
         }
     }
 

@@ -8237,6 +8237,8 @@ impl eframe::App for App {
                 }
                 // A new vegetation report: drawn on its layers.
                 if let Some(overlay) = ready.vegetation.take_overlay() {
+                    let lines = ready.vegetation.isoclearance_lines();
+                    ready.drawings.set_isoclearance(lines);
                     ready.view3d.vegetation = overlay.clone();
                     ready.plan.vegetation = overlay.clone();
                     ready.profile.vegetation = overlay;

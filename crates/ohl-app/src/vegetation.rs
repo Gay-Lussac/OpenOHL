@@ -120,7 +120,7 @@ pub struct VegetationWindow {
     /// Half width of the corridor read and drawn, m.
     corridor: f64,
     /// Isoclearance lines asked for, and how.
-    iso: (bool, IsoParams),
+    pub(crate) iso: (bool, IsoParams),
     job: Job<Report>,
     /// A new report for the views to draw.
     fresh: bool,
@@ -161,6 +161,18 @@ impl VegetationWindow {
     #[cfg(test)]
     pub fn result(&self) -> (Option<&Result<Report, String>>, bool) {
         (self.job.result.as_ref(), self.job.running())
+    }
+
+    /// The isoclearance lines of the last report, for the drawings.
+    pub fn isoclearance_lines(&self) -> Option<Arc<crate::drawings::IsoLines>> {
+        let Some(Ok(r)) = &self.job.result else {
+            return None;
+        };
+        let (lines, top) = r.lines.as_ref()?;
+        Some(Arc::new((
+            lines.iter().map(|c| (c.level, c.points.clone())).collect(),
+            *top,
+        )))
     }
 
     /// What to draw of a report that came since the last call.
