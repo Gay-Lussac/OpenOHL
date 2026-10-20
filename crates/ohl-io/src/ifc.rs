@@ -71,20 +71,20 @@ pub fn guid(v: u128) -> String {
 }
 
 /// The entities of a file being written.
-struct Step {
-    lines: Vec<String>,
-    seed: u64,
+pub(crate) struct Step {
+    pub(crate) lines: Vec<String>,
+    pub(crate) seed: u64,
 }
 
 impl Step {
     /// Adds `TYPE(args)`; returns its reference `#n`.
-    fn add(&mut self, entity: &str, args: &str) -> String {
+    pub(crate) fn add(&mut self, entity: &str, args: &str) -> String {
         self.lines.push(format!("{entity}({args})"));
         format!("#{}", self.lines.len())
     }
 
     /// A GlobalId, the same for the same line and entity number.
-    fn guid(&mut self) -> String {
+    pub(crate) fn guid(&mut self) -> String {
         let mut next = || {
             // splitmix64
             self.seed = self.seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
@@ -110,7 +110,7 @@ impl Step {
     }
 
     /// A property set on an element.
-    fn properties(&mut self, element: &str, name: &str, values: &[(&str, String)]) {
+    pub(crate) fn properties(&mut self, element: &str, name: &str, values: &[(&str, String)]) {
         let props: Vec<String> = values
             .iter()
             .filter(|(_, v)| !v.is_empty())
@@ -137,7 +137,7 @@ fn opt<T>(v: Option<T>, f: impl Fn(T) -> String) -> String {
     v.map(f).unwrap_or_default()
 }
 
-fn hash(text: &str) -> u64 {
+pub(crate) fn hash(text: &str) -> u64 {
     // FNV-1a: GlobalIds stay the same from one export to the next.
     text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)

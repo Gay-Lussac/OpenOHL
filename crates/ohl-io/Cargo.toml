@@ -27,3 +27,6 @@ zip = { version = "8", default-features = false, features = ["deflate-flate2-zli
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ohl-background.workspace = true
