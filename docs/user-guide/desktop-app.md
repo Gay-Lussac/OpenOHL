@@ -228,7 +228,7 @@ Checks run **on demand**: **Check wire clearances** (Checks › Wire clearances,
 
 Rules for other lines and rules across pairs of weather cases are run by `ohl line` only; the tab says so.
 
-The **Analyses** entries of the Checks menu open windows that compute on demand in the background, each with a results table (click a span to go to it) and CSV export — see [Galloping, blowout, vegetation and as-built wires](analyses.md): **Galloping ellipses** (a `.ohlg` parameter file and a weather case), **Vegetation** (the point cloud's vegetation classes near the wires of a case, growth, trees falling in), **As-built wires** (catenaries fitted to the wire points, the temperature at the survey).
+The **Analyses** entries of the Checks menu open windows that compute on demand in the background, each with a results table (click a span to go to it) and CSV export — see [Galloping, blowout, vegetation and as-built wires](analyses.md): **Galloping ellipses** (a `.ohlg` parameter file and a weather case), **Vegetation** (danger trees: the point cloud's vegetation classes near the wires of the cases ticked — blown left and right, along the swing arc, with unbalanced ice — growth, trees falling in about their root ball, isoclearance lines; drawn on the layers *Vegetation: grow-in*, *Vegetation: danger trees* and *Isoclearance lines*), **As-built wires** (catenaries fitted to the wire points, the temperature at the survey).
 
 ### Vertical and radial clearances
 

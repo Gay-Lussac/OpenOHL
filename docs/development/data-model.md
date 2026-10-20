@@ -758,6 +758,36 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   added and removed, a value's trailing comment kept; an unchanged
   requirement keeps its text); a project's rule file is written as one
   `put_library_file` (one command, undone by Undo).
+- **Danger trees** (2026-10-20; derived, never stored in the project):
+  `ohl_clearance::vegetation::VegetationParams` — `clearance`,
+  `growth_per_year`, `years`, `buffer` (b), `fall_in`, `root_ball` (k,
+  0 = as before; the application proposes `PROPOSED_ROOT_BALL` 0.1),
+  `fall_allowance` (A), `min_tree_height`, `max_tree_height`,
+  `max_base_ground_distance` (`Option`, m: a tree base only with a TIN
+  vertex within it in plan; none = no limit), `keep` — all inputs of a
+  run (command-line flags, the window's fields), not saved. The wire
+  positions are `ohl_clearance::positions::Positions`: `cases` (names),
+  `spans` (`Span`: the span's `Wire`, its `Axis` A₁A₂ through the
+  attachments, its positions, its capsule and `Bands`), `positions`
+  (`Position`: span, case, `PositionKind` — `case`, `left`, `right`,
+  `arc`, `ice`, `ice left`, `ice right` — and its `Shape`: a solved
+  `WireShape` or a `SwingArc` with its stations and the three wires'
+  points at each), `notes`. Results per span:
+  `vegetation::WireVegetation` (counts, `nearest`, `worst_fall`,
+  `worst`), each `VegPoint` with its `position`, `fall_position`,
+  `fall_point` (indices into `positions`). The danger CSV
+  (`vegetation::DANGER_CSV_HEADER`) has a row per kept point with its
+  case and position; the older per-case CSV (`vegetation::CSV_HEADER`,
+  `to_csv`) remains for a single case. Isoclearance lines:
+  `isoclearance::IsoParams` (`interval`, `max_level`, `spacing`,
+  `coarse`), `Contour` (`level`, `points` on the ground, `closed`);
+  written as GeoJSON (LineStrings, `level_m`, project coordinates, `crs`
+  when known), CSV (`level_m,line,vertex,x,y,z`) or DXF; on drawings
+  `ohl_drawing::RouteDrawing::isoclearance` (traces along the route) on
+  the layer `OHL_ISOCLEARANCE` (`ohl_drawing::model::Layer::Isoclearance`).
+  The application's layers `GrowIn`, `FallIn`, `Isoclearance`
+  (`ohl-app` `scene::Layer`) draw `vegetation::Overlay`; its drawings
+  export carries the last run's lines (`drawings::IsoLines`).
 - **Clearance presets** of design-code plugins are such rule files,
   `<plugin>-<name>.ohlr` among the project's rule files, each with a
   weather case file of the same name among its weather case files (the

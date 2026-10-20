@@ -194,7 +194,7 @@ replace one of that name). Points are held in memory: classify a corridor
 (`--line`) on large surveys. About 3 million points a second. Buildings,
 poles and wires get vegetation classes: check the result.
 
-## Vegetation
+## Vegetation and danger trees
 
 ```bash
 ohl lidar vegetation line.ohl.json --pointcloud project.ohl#scan \
@@ -202,19 +202,84 @@ ohl lidar vegetation line.ohl.json --pointcloud project.ohl#scan \
     --clearance 5 --growth 0.5 --years 3 --fall-in --csv vegetation.csv
 ```
 
-For each span of each case: points of the vegetation classes (`--role`,
-default `vegetation`) closer than the clearance plus the growth until the
-next cut, and with `--fall-in` trees that could reach a wire when falling
-(heights above the ground from the cloud's ground classes; `--max-tree-height`,
-default 40 m). The table lists the spans with findings: counts, the nearest
-point, the worst fall-in margin. The CSV holds, per span, the nearest point,
-the worst falling tree and the worst points by margin. `--lidar DIR` reads
-LAS/LAZ tiles instead of a project's cloud; `--lidar-classes` gives the
-class scheme.
+All the cases chosen are solved first — a case with wind **from the left
+and from the right** — and every vegetation point (classes of `--role`,
+default `vegetation`) is checked once against every position of every
+span (in parallel on every core):
 
-Desktop app: **Checks › Vegetation…** — clearance, growth per year, years,
-trees falling in, the weather case; the ground is the surface of the
-checks.
+- **Grow-in:** closer to a position's surface than the clearance plus the
+  growth until the next cut plus `--buffer` (default 0; e.g. the survey's
+  accuracy).
+- **Fall-in** (`--fall-in`): a point of height h above the ground (from
+  the cloud's ground classes, `--ground-role`) is a tree top; the tree,
+  grown, falls towards each wire point turning about the edge of its
+  **root ball** — a hinge `--root-ball` × its height from the trunk
+  (default 0: about its base, as before; the desktop application
+  proposes 0.1) — and rests on the ground along that direction (a ridge
+  between the tree and a low wire shelters it). A danger tree when the
+  swept trunk comes nearer the wire's surface than `--fall-allowance`
+  (default 0, e.g. the flashover clearance). `--max-tree-height` (40 m)
+  is the tallest tree looked for. `--max-base-ground-distance 5`: a
+  tree's base is taken from the ground only when a ground point lies
+  within 5 m in plan (no limit by default); the points left without a
+  base are counted, with the reason.
+- **Swing arc** (`--swing-arc`): each span of a windy case also anywhere
+  along its swing between the left and the right blowout (the span
+  swinging as one about the line through its attachment points, at the
+  largest of the three radii).
+- **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
+  within reach solved with its section on its own and more load on it
+  alone: `case` (the case's ice on that span only, cases with ice),
+  `extra=5` (5 N/m more on the span, the whole bundle's) or `load=2000`
+  (2000 N at mid-span).
+
+With the defaults (`--root-ball 0`, no allowance, no buffer) the results
+are those of the check before the danger trees. The table lists the spans
+with findings: grow-in and fall-in counts, the nearest point and the worst
+fall-in margin, each with its case and position (`case`, `left`,
+`right`, `arc`, `ice`, `ice left`, `ice right`). The CSV (`--csv`) holds
+per span its counts, its nearest point, its worst falling tree and its
+worst points (10), with the case and position of each:
+`section,span,circuit,phase,kind,grow_in,fall_in,class,x,y,z,distance_m,grow_case,grow_position,height_m,fall_margin_m,fall_case,fall_position,margin_m`.
+(Before 2026-10-20 the CSV had one block per case.) `--lidar DIR` reads
+LAS/LAZ tiles instead of a project's cloud; `--lidar-classes` gives the
+class scheme. A project file's own libraries are used, as `ohl line`
+does. `--time-limit` (3600 s) stops a run that takes longer, with an
+error.
+
+**Isoclearance lines** (`--isoclearance FILE`, repeatable: `.geojson`,
+`.dxf` or `.csv` by the extension): the ground's clearance to the nearest
+wire's surface over all the positions checked, contoured over the
+corridor (`--corridor`, ±60 m around the spans' chords) every
+`--iso-interval` metres (5) up to `--iso-max` (40; lines above are not
+drawn), on a `--iso-spacing` grid (1 m) refined from a `--iso-coarse` one
+(8 m) where lines can be. A tree of height h standing inside the h line
+can reach a wire when it falls (no root ball, level ground). GeoJSON:
+LineStrings with `level_m`, project coordinates; DXF: layer
+OHL_ISOCLEARANCE, the clearance written on each line; CSV:
+`level_m,line,vertex,x,y,z`. The drawings draw them too:
+`ohl drawing … --isoclearance-interval 5` (`--isoclearance-max`,
+`--isoclearance-spacing`, `--isoclearance-swing-arc`), over the line
+width, from the cases drawn and the ground.
+
+Desktop app: **Checks › Vegetation…** — clearance, growth per year,
+years, buffer; trees falling in with the root ball (× the height,
+proposed 0.1), the allowance, the tallest tree and the ground point
+distance of a tree base; the swing arc; unbalanced ice; the corridor and
+the points kept per span; isoclearance lines (interval, hide above,
+grid); the weather cases ticked (the list stays open while you tick). The
+ground is the surface of the checks. **Export CSV…** writes the table
+above, **Export lines (CSV)…** the isoclearance lines. What it finds is
+drawn on three layers of **View › Layers**: *Vegetation: grow-in* (cyan
+dots joined to the wire), *Vegetation: danger trees* (an orange trunk
+from base to top, a line to the wire point it falls to) — in the 3D view,
+the plan and the profile (within the line width) — and *Isoclearance
+lines* in the 3D view and the plan, in the colours of their clearance
+(red at 0 to green at the top line); File › Export drawings draws the
+lines on the plan (layer OHL_ISOCLEARANCE; **Leave them out** in its
+window). A cross-section view across a span is still to come.
+
+See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees-2026-10-20).
 
 ## As-built wires
 
