@@ -21,16 +21,19 @@ approved as finished: everything is built and in active development
   former command's table: ticks, All/None, a row's own type), and the
   base on the ground or at the point's own height there; the structures
   ticked are added with it in one command (one undo), each tied to its
-  point and turned along the line. Choices taken (conservative, the
-  owner may change them): the other points take the window's extension
+  point and turned along the line. Choices confirmed by the owner
+  (2026-10-20): the other points take the window's extension
   and height adjustment with its type, a row's own type its base (the old
   command gave every one the base); nothing is ticked at first (the old
-  command ticked every free point). **New pylon from a template…** is a
+  command ticked every free point); the other points are always turned
+  along the line; their routes and description are not copied from the
+  window. **New pylon from a template…** is a
   command in the Tools menu's Structures group (and on the quick bar,
   key `new-pylon`), not a tool: it opens a window that builds a library
   type, with no click in a view. No saved quick bar or shortcut named
   the removed entries (they were never quick-bar commands); the tool's
-  saved key `tool-add_structure` is unchanged.
+  saved key `tool-add_structure` is unchanged. New pylon gets no
+  keyboard shortcut (owner).
 - **Danger-tree defaults = the utility practice** (owner): root-ball
   fraction k = 0.05, clearance allowance A = 2 m, a ground point within
   5 m of a tree base, a 50 m search distance (the half width of the
