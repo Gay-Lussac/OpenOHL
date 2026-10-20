@@ -114,3 +114,82 @@ reference = "Hand calculation (this file)"
 inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "25 m", point_y = "-0.3420201433 m", point_z = "19.0603073792 m" }
 expected.arc_radius_m = { value = 3.75, abs_tol = 1e-12 }
 expected.distance_m = { value = 2.75, abs_tol = 1e-9 }
+
+# Vertical and radial clearance to the swing arc (the vertical and radial
+# clearance checks, 2026-10-20; ohl_clearance::positions::SwingArc::
+# vertical). The span of the swing-arc cases above: R = 5 m at mid-span
+# from -40 to +40 degrees ("right" is -y looking along +x). The vertical
+# clearance is to the arc's lowest point over the point's plan position
+# within the band across the line (its highest for a point above):
+#   arcclear-001: a point 8 m straight below the axis at mid-span, band
+#       1 m: the arc points within 1 m across have sin(phi) in [-0.2, 0.2],
+#       the lowest at phi = 0, 20 - 5 = 15 m: vertical 15 - 12 = 3 m; the
+#       radial distance |8 - 5| = 3 m.
+#   arcclear-002: a point 4 m to the right, at z = 10 m: sin(phi) in
+#       [3/5, 1] and phi <= 40 deg: phi from 36.8699 to 40 deg, the lowest
+#       at 36.8699 deg (cos = 0.8): 20 - 4 = 16 m, vertical 6 m; radially
+#       rho = sqrt(4^2 + 10^2) = 10.770330 at 21.8 deg (within the arc):
+#       10.770330 - 5 = 5.770330 m.
+#   arcclear-003: as 001 with a depth of 0.2 m: the lowest point at
+#       0.1 m either side, R linear between the stations 45 and 50 m
+#       (4.95 and 5 m, 0.01 m per m): 4.999 m, at 15.001 m; the bound
+#       over the slice 15 - max(0.001, 0.001) = 14.999 m: vertical
+#       2.999 m (the exact lowest point over the slice is 15 m: the bound
+#       is 1 mm low).
+#   arcclear-004: a point 2 m above the arc's lowest point (z = 18):
+#       above the arc's highest point within the band, at phi = 11.5370
+#       deg: 20 - 5 cos(11.5370) = 15.101021 m: vertical 18 - 15.101021 =
+#       2.898979 m.
+#   arcclear-005: the span inclined, its second end 30 m higher (axis
+#       u = (100, 0, 30)/104.403065, |u_h| = 0.957826, u_z = 0.287348).
+#       At mid-axis (s = 52.201533 m, R = 5 m) the arc's lowest point is
+#       R u_z = 1.436739 m further along in plan than the centre (x = 50)
+#       and R |u_h| = 4.789131 m below it (z = 35): over x = 51.436739 it
+#       is at z = 30.210869; a point there at z = 25: vertical
+#       5.210869 m (the point's own place along the axis, 50.704 m, would
+#       give 4.794 m: not where the arc passes over it).
+
+[[case]]
+id = "arcclear-001"
+title = "Swing arc, a point straight below at mid-span"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "12 m", band = "1 m", depth = "0 m" }
+expected.vertical_m = { value = 3.0, abs_tol = 1e-9 }
+expected.vertical_angle_deg = { value = 0.0, abs_tol = 1e-9 }
+expected.radial_m = { value = 3.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "arcclear-002"
+title = "Swing arc, a point under its swung part"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "-4 m", point_z = "10 m", band = "1 m", depth = "0 m" }
+expected.vertical_m = { value = 6.0, abs_tol = 1e-9 }
+expected.vertical_angle_deg = { value = 36.8698976458, abs_tol = 1e-7 }
+expected.radial_m = { value = 5.7703296143, abs_tol = 1e-9 }
+
+[[case]]
+id = "arcclear-003"
+title = "Swing arc, the depth of the slice along the line"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "12 m", band = "1 m", depth = "0.2 m" }
+expected.vertical_m = { value = 2.999, abs_tol = 1e-9 }
+
+[[case]]
+id = "arcclear-004"
+title = "Swing arc, a point above it"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "18 m", band = "1 m", depth = "0 m" }
+expected.vertical_m = { value = 2.8989794856, abs_tol = 1e-9 }
+
+[[case]]
+id = "arcclear-005"
+title = "Swing arc of an inclined span: the arc's point over the point's plan position"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "30 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "51.4367394278 m", point_y = "0 m", point_z = "25 m", band = "1 m", depth = "0 m" }
+expected.vertical_m = { value = 5.2108685739, abs_tol = 1e-8 }
+expected.vertical_angle_deg = { value = 0.0, abs_tol = 1e-9 }

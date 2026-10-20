@@ -468,14 +468,14 @@ impl WireResult {
         }
     }
 
-    fn vertical(&mut self, hit: Hit) -> bool {
+    pub(crate) fn vertical(&mut self, hit: Hit) -> bool {
         if self.vertical.is_none_or(|h| hit.distance < h.distance) {
             self.vertical = Some(hit);
         }
         self.required.vertical.is_some_and(|r| hit.distance < r)
     }
 
-    fn radial(&mut self, hit: Hit) -> bool {
+    pub(crate) fn radial(&mut self, hit: Hit) -> bool {
         if self.radial.is_none_or(|h| hit.distance < h.distance) {
             self.radial = Some(hit);
         }
@@ -509,20 +509,128 @@ impl WireResult {
     }
 }
 
+/// What one point did to one wire's result: a smaller clearance found
+/// (`hit`), and/or a requirement not met (`bad`) — so that points can be
+/// worked out on several cores and their results applied in their order
+/// ([`PointCheck::eval`], [`PointCheck::apply`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PointEvent {
+    /// The wire (or the arc, for the swing arcs' check).
+    pub item: u32,
+    /// 0 vertical, 1 radial.
+    pub measure: u8,
+    /// Below the requirement.
+    pub bad: bool,
+    /// Smaller than the smallest found before it.
+    pub hit: Option<Hit>,
+}
+
+/// What the point check knows of a wire while points are worked out: the
+/// smallest clearance found so far (vertical, radial; infinite before
+/// any) and the number of the last point found below the requirement.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Best {
+    /// Smallest clearance so far, m.
+    pub d: [f64; 2],
+    /// The last point (its number) below the requirement.
+    pub bad: [u64; 2],
+}
+
+impl Best {
+    const NONE: Best = Best {
+        d: [f64::INFINITY; 2],
+        bad: [0; 2],
+    };
+}
+
+/// The counts of a stretch of points worked out on one core: per wire and
+/// per group, the points below the requirement (vertical, radial), a
+/// point counted once per group (its number in `stamp`). Counts add up
+/// in any order: they are summed into the results after a block
+/// ([`PointCheck::take_tally`]).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Tally {
+    pub wire: Vec<[u64; 2]>,
+    pub group: Vec<[u64; 2]>,
+    stamp: Vec<[u64; 2]>,
+}
+
+impl Tally {
+    /// Empty counts for `wires` wires and `groups` groups.
+    pub fn new(wires: usize, groups: usize) -> Self {
+        Self {
+            wire: vec![[0; 2]; wires],
+            group: vec![[0; 2]; groups],
+            stamp: vec![[0; 2]; groups],
+        }
+    }
+
+    /// Point `stamp` is below the requirement in group `g` (measure `m`):
+    /// counted once per point.
+    pub fn group_bad(&mut self, g: usize, m: usize, stamp: u64) {
+        if let Some(s) = self.stamp.get_mut(g)
+            && s[m] != stamp
+        {
+            s[m] = stamp;
+            self.group[g][m] += 1;
+        }
+    }
+}
+
+/// The lower bound of the distance from `p` to any point of the segment
+/// `a`–`b`: the distance to its bounding box.
+pub(crate) fn box_distance(p: P3, a: P3, b: P3) -> f64 {
+    let mut s = 0.0;
+    for i in 0..3 {
+        let (lo, hi) = (a[i].min(b[i]), a[i].max(b[i]));
+        let d = if p[i] < lo {
+            lo - p[i]
+        } else if p[i] > hi {
+            p[i] - hi
+        } else {
+            0.0
+        };
+        s += d * d;
+    }
+    s.sqrt()
+}
+
 /// Clearances of every wire to points of chosen classes, for one rule;
 /// feed the points with [`PointCheck::visit`] (e.g. from a LiDAR reader).
+///
+/// Speed (2026-10-20; the numbers unchanged, bit for bit — the test
+/// `the_point_check_gives_the_results_of_before`): a wire piece is
+/// passed over without its exact distance when the distance to its
+/// bounding box (in plan and the zone's width, for the vertical) already
+/// shows it cannot give a smaller clearance nor one below the
+/// requirement; with [`PointCheck::only`], the measure a check does not
+/// need is not worked out; points may be worked out on several cores
+/// (`PointCheck::eval`) and applied in their order (`PointCheck::apply`,
+/// as the zone check does).
 #[derive(Debug, Clone)]
 pub struct PointCheck {
     rule: Rule,
     classes: [bool; 256],
     /// One result per wire of the set.
     pub results: Vec<WireResult>,
-    seen: Vec<usize>,
     groups: Option<Vec<usize>>,
+    /// The points taken so far (the current one's number).
+    taken: u64,
+    /// Per group: the number of the last point counted (vertical,
+    /// radial), so that a point counts once per group.
+    counted: Vec<[u64; 2]>,
     /// With groups ([`PointCheck::grouped`]): the points below the
     /// vertical and the radial requirement of any wire of each group (a
     /// point counted once per group).
     pub group_violations: Vec<[u64; 2]>,
+    /// The smallest clearance of each wire so far (vertical, radial):
+    /// that of its result, infinite before any.
+    pub(crate) best: Vec<Best>,
+    /// The points offered so far (taken or not): each point's number.
+    pub(crate) offered: u64,
+    /// The measures worked out (vertical, radial).
+    measures: [bool; 2],
+    scratch: Vec<PointEvent>,
 }
 
 impl PointCheck {
@@ -541,10 +649,22 @@ impl PointCheck {
                 .iter()
                 .map(|w| WireResult::with(rule.required(w.kv())))
                 .collect(),
-            seen: Vec::new(),
             groups: None,
             group_violations: Vec::new(),
+            taken: 0,
+            counted: Vec::new(),
+            best: vec![Best::NONE; wires.wires.len()],
+            offered: 0,
+            measures: [true, true],
+            scratch: Vec::new(),
         }
+    }
+
+    /// Works out only the vertical and/or the radial clearances (the
+    /// other is left empty in the results).
+    pub fn only(mut self, vertical: bool, radial: bool) -> Self {
+        self.measures = [vertical, radial];
+        self
     }
 
     /// Also counts the points too close per group of wires — `group[w]`
@@ -553,6 +673,7 @@ impl PointCheck {
     pub fn grouped(mut self, group: Vec<usize>) -> Self {
         let n = group.iter().max().map_or(0, |g| g + 1);
         self.group_violations = vec![[0, 0]; n];
+        self.counted = vec![[0, 0]; n];
         self.groups = Some(group);
         self
     }
@@ -562,75 +683,236 @@ impl PointCheck {
         &self.rule
     }
 
+    /// Counts the point last applied as too close in group `g` (measure
+    /// `k`: 0 vertical, 1 radial), once per point: also for what is
+    /// checked beside the wires of the set (a span's swing arc).
+    pub(crate) fn count_in_group(&mut self, g: usize, k: usize) {
+        if let Some(c) = self.counted.get_mut(g)
+            && c[k] != self.taken
+        {
+            c[k] = self.taken;
+            self.group_violations[g][k] += 1;
+        }
+    }
+
     /// Takes one point into account.
     pub fn visit(&mut self, wires: &WireSet, x: f64, y: f64, z: f64, class: u8) {
+        let mut events = std::mem::take(&mut self.scratch);
+        let mut best = std::mem::take(&mut self.best);
+        events.clear();
+        self.offered += 1;
+        let taken = self.eval(
+            wires,
+            &mut best,
+            None,
+            self.offered,
+            x,
+            y,
+            z,
+            class,
+            &mut events,
+        );
+        self.best = best;
+        if taken {
+            self.apply(&events);
+        }
+        self.scratch = events;
+    }
+
+    /// What the point (x, y, z) of `class`, number `stamp` (above every
+    /// number before it), does to the results, given the smallest
+    /// clearances found before it (`best`, updated): pushed on `out`, in
+    /// the order of the wire pieces, a wire's "below the requirement" once
+    /// per point — or, with a `tally`, counted there instead of pushed.
+    /// False when its class is not checked. Reads the check only: points can be worked out on
+    /// several cores, each with its own `best`, and applied in their
+    /// order ([`PointCheck::apply`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn eval(
+        &self,
+        wires: &WireSet,
+        best: &mut [Best],
+        mut tally: Option<&mut Tally>,
+        stamp: u64,
+        x: f64,
+        y: f64,
+        z: f64,
+        class: u8,
+        out: &mut Vec<PointEvent>,
+    ) -> bool {
         if !self.classes[class as usize] {
-            return;
+            return false;
         }
         let p = [x, y, z];
-        // Wires this point violates (each counted once per point).
-        let mut vertical_bad: Vec<usize> = Vec::new();
-        let mut radial_bad: Vec<usize> = Vec::new();
-        self.seen.clear();
+        let band = self.rule.vertical_band;
         for (w, k) in wires.near(x, y) {
             let (a, b) = wires.segment(w, k);
             let wire = &wires.wires[w];
-            let result = &mut self.results[w];
-            let reach = (result.required.largest() + self.rule.search_margin).min(wires.reach);
+            let required = self.results[w].required;
+            let reach = (required.largest() + self.rule.search_margin).min(wires.reach);
             // To the surface.
             let off = wires.allowances[w];
-            // The centre line first: subconductors only when within reach.
-            let (q, _) = closest_on_segment(p, a, b);
-            let near = distance(p, q) - wires.radii[w] - off <= reach;
-            let (d, sub) = if near && wires.radii[w] > 0.0 {
-                wire.nearest(p, a, b)
-            } else {
-                (distance(p, q), q)
-            };
-            let d = d - off;
-            if near && d <= reach {
-                let hit = Hit {
-                    distance: d,
-                    wire: sub,
-                    target: p,
-                    class: Some(class),
+            let radius = wires.radii[w];
+            let groups = self.groups.as_deref();
+            let mut record = |m: usize, hit: Hit, out: &mut Vec<PointEvent>, best: &mut [Best]| {
+                let b = &mut best[w];
+                let improved = hit.distance < b.d[m];
+                if improved {
+                    b.d[m] = hit.distance;
+                }
+                let req = if m == 0 {
+                    required.vertical
+                } else {
+                    required.radial
                 };
-                if result.radial(hit) && !radial_bad.contains(&w) {
-                    radial_bad.push(w);
+                // Once per point and wire.
+                let mut bad = b.bad[m] != stamp && req.is_some_and(|r| hit.distance < r);
+                if bad {
+                    b.bad[m] = stamp;
+                    if let Some(t) = tally.as_deref_mut() {
+                        t.wire[w][m] += 1;
+                        if let Some(g) = groups {
+                            t.group_bad(g[w], m, stamp);
+                        }
+                        bad = false;
+                    }
+                }
+                if improved || bad {
+                    out.push(PointEvent {
+                        item: w as u32,
+                        measure: m as u8,
+                        bad,
+                        hit: improved.then_some(hit),
+                    });
+                }
+            };
+            // Whether a piece with this lower bound can change nothing.
+            let idle = |m: usize, lower: f64, best: &[Best]| -> bool {
+                let req = if m == 0 {
+                    required.vertical
+                } else {
+                    required.radial
+                };
+                let b = &best[w];
+                lower >= b.d[m] && (b.bad[m] == stamp || req.is_none_or(|r| lower >= r))
+            };
+            if self.measures[1] {
+                let lower = box_distance(p, a, b) - radius - off;
+                if lower <= reach && !idle(1, lower, best) {
+                    // The centre line first: subconductors only when within
+                    // reach.
+                    let (q, _) = closest_on_segment(p, a, b);
+                    let near = distance(p, q) - radius - off <= reach;
+                    let (d, sub) = if near && radius > 0.0 {
+                        wire.nearest(p, a, b)
+                    } else {
+                        (distance(p, q), q)
+                    };
+                    let d = d - off;
+                    if near && d <= reach {
+                        record(
+                            1,
+                            Hit {
+                                distance: d,
+                                wire: sub,
+                                target: p,
+                                class: Some(class),
+                            },
+                            out,
+                            best,
+                        );
+                    }
                 }
             }
-            if let Some((q, _)) = over_in_plan(x, y, a, b, self.rule.vertical_band) {
-                // Vertical separation, above or below the wire (a tree
-                // overhanging a low wire, a line crossing over); with a
-                // depth, to the wire's lowest (highest) in the slice.
-                let gap =
-                    wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth) - off;
-                let hit = Hit {
-                    distance: gap.max(0.0),
-                    wire: q,
-                    target: p,
-                    class: Some(class),
-                };
-                if hit.distance <= reach && result.vertical(hit) && !vertical_bad.contains(&w) {
-                    vertical_bad.push(w);
+            if self.measures[0] {
+                // Within the zone's width in plan only (its bounding box
+                // first).
+                let outside = x < a[0].min(b[0]) - band
+                    || x > a[0].max(b[0]) + band
+                    || y < a[1].min(b[1]) - band
+                    || y > a[1].max(b[1]) + band;
+                if !outside && let Some((q, _)) = over_in_plan(x, y, a, b, band) {
+                    // Vertical separation, above or below the wire (a tree
+                    // overhanging a low wire, a line crossing over); with a
+                    // depth, to the wire's lowest (highest) in the slice.
+                    let gap =
+                        wire.vertical_gap(q, z) - slice_rise(a, b, self.rule.vertical_depth) - off;
+                    let hit = Hit {
+                        distance: gap.max(0.0),
+                        wire: q,
+                        target: p,
+                        class: Some(class),
+                    };
+                    if hit.distance <= reach {
+                        record(0, hit, out, best);
+                    }
                 }
             }
         }
-        if let Some(groups) = &self.groups {
-            for (k, bad) in [&vertical_bad, &radial_bad].into_iter().enumerate() {
-                let mut gs: Vec<usize> = bad.iter().map(|w| groups[*w]).collect();
+        true
+    }
+
+    /// Adds the counts of `tally` (points worked out with it) to the
+    /// results.
+    pub(crate) fn take_tally(&mut self, tally: &Tally) {
+        for (r, c) in self.results.iter_mut().zip(&tally.wire) {
+            r.vertical_violations += c[0];
+            r.radial_violations += c[1];
+        }
+        for (g, c) in self.group_violations.iter_mut().zip(&tally.group) {
+            g[0] += c[0];
+            g[1] += c[1];
+        }
+    }
+
+    /// The number of groups counted.
+    pub(crate) fn groups(&self) -> usize {
+        self.group_violations.len()
+    }
+
+    /// Applies one point's events ([`PointCheck::eval`]) to the results,
+    /// as [`PointCheck::visit`] does: a smaller clearance kept (the first
+    /// of equal ones), the point counted once per wire, and once per
+    /// group, below a requirement.
+    pub(crate) fn apply(&mut self, events: &[PointEvent]) {
+        self.taken += 1;
+        // Wires this point violates (each once per point: `eval` says it
+        // once).
+        let mut bad: [Vec<usize>; 2] = [Vec::new(), Vec::new()];
+        for e in events {
+            let (w, m) = (e.item as usize, e.measure as usize);
+            if let Some(h) = e.hit {
+                let r = &mut self.results[w];
+                let kept = if m == 0 {
+                    &mut r.vertical
+                } else {
+                    &mut r.radial
+                };
+                if kept.is_none_or(|k| h.distance < k.distance) {
+                    *kept = Some(h);
+                    self.best[w].d[m] = h.distance;
+                }
+            }
+            if e.bad {
+                bad[m].push(w);
+            }
+        }
+        if let Some(groups) = self.groups.take() {
+            for (k, list) in bad.iter().enumerate() {
+                let mut gs: Vec<usize> = list.iter().map(|w| groups[*w]).collect();
                 gs.sort_unstable();
                 gs.dedup();
                 for g in gs {
-                    self.group_violations[g][k] += 1;
+                    self.count_in_group(g, k);
                 }
             }
+            self.groups = Some(groups);
         }
-        for w in vertical_bad {
-            self.results[w].vertical_violations += 1;
+        for w in &bad[0] {
+            self.results[*w].vertical_violations += 1;
         }
-        for w in radial_bad {
-            self.results[w].radial_violations += 1;
+        for w in &bad[1] {
+            self.results[*w].radial_violations += 1;
         }
     }
 }
@@ -683,6 +965,82 @@ fn ground_under(terrain: &Terrain, a: P3, b: P3, band: f64) -> Vec<(f64, P3)> {
     out
 }
 
+/// Cell of the [`GroundMax`] raster, m.
+const GROUND_CELL: f64 = 5.0;
+
+/// Cells per side of a tile of the [`GroundMax`] raster.
+const TILE: i64 = 64;
+
+/// The highest ground over plan cells of 5 m: for every cell, the
+/// highest corner of the triangles whose bounding box touches it — an
+/// upper bound of the ground surface over any area (the cells it
+/// touches), for the lower bounds of the ground checks. Kept in tiles of
+/// 64 × 64 cells, only where there is ground.
+#[derive(Debug, Clone, Default)]
+pub struct GroundMax {
+    tiles: HashMap<(i64, i64), Box<[f64]>>,
+}
+
+fn ground_cell(v: f64) -> i64 {
+    (v / GROUND_CELL).floor() as i64
+}
+
+impl GroundMax {
+    /// The raster of `terrain`.
+    pub fn new(terrain: &Terrain) -> Self {
+        let pts = terrain.points();
+        let mut tiles: HashMap<(i64, i64), Box<[f64]>> = HashMap::new();
+        for t in terrain.triangles() {
+            let c = [pts[t[0] as usize], pts[t[1] as usize], pts[t[2] as usize]];
+            let top = c[0][2].max(c[1][2]).max(c[2][2]);
+            let (x0, x1) = (
+                c[0][0].min(c[1][0]).min(c[2][0]),
+                c[0][0].max(c[1][0]).max(c[2][0]),
+            );
+            let (y0, y1) = (
+                c[0][1].min(c[1][1]).min(c[2][1]),
+                c[0][1].max(c[1][1]).max(c[2][1]),
+            );
+            for i in ground_cell(x0)..=ground_cell(x1) {
+                for j in ground_cell(y0)..=ground_cell(y1) {
+                    let tile = tiles
+                        .entry((i.div_euclid(TILE), j.div_euclid(TILE)))
+                        .or_insert_with(|| {
+                            vec![f64::NEG_INFINITY; (TILE * TILE) as usize].into_boxed_slice()
+                        });
+                    let k = (j.rem_euclid(TILE) * TILE + i.rem_euclid(TILE)) as usize;
+                    tile[k] = tile[k].max(top);
+                }
+            }
+        }
+        Self { tiles }
+    }
+
+    /// The highest ground over the plan box `x0`–`x1`, `y0`–`y1` (at
+    /// least; −∞ with no ground there).
+    pub fn max_in(&self, x0: f64, x1: f64, y0: f64, y1: f64) -> f64 {
+        let mut m = f64::NEG_INFINITY;
+        let (i0, i1) = (ground_cell(x0), ground_cell(x1));
+        let (j0, j1) = (ground_cell(y0), ground_cell(y1));
+        for tj in j0.div_euclid(TILE)..=j1.div_euclid(TILE) {
+            for ti in i0.div_euclid(TILE)..=i1.div_euclid(TILE) {
+                let Some(tile) = self.tiles.get(&(ti, tj)) else {
+                    continue;
+                };
+                let (a0, a1) = ((i0 - ti * TILE).max(0), (i1 - ti * TILE).min(TILE - 1));
+                let (b0, b1) = ((j0 - tj * TILE).max(0), (j1 - tj * TILE).min(TILE - 1));
+                for b in b0..=b1 {
+                    let row = &tile[(b * TILE + a0) as usize..=(b * TILE + a1) as usize];
+                    for z in row {
+                        m = m.max(*z);
+                    }
+                }
+            }
+        }
+        m
+    }
+}
+
 /// Vertical and radial clearances of every wire to the ground surface.
 /// Vertical: under every wire piece at every TIN edge crossing (exact for
 /// the polyline) — with the rule's `vertical_band`, the highest ground
@@ -690,83 +1048,200 @@ fn ground_under(terrain: &Terrain, a: P3, b: P3, band: f64) -> Vec<(f64, P3)> {
 /// the wire's lowest in a slice of that depth. Radial: wire samples every [`GROUND_STEP`] to the
 /// triangles within the rule's reach (narrowed to the vertical clearance
 /// where that is smaller: the radial distance is never larger).
+///
+/// Speed (2026-10-20; the numbers unchanged, bit for bit — the test
+/// `the_ground_check_gives_the_results_of_before`): the wires are checked
+/// on every core; a wire piece (a sample, radially) is passed over when a
+/// lower bound from the highest ground near it ([`GroundMax`]) shows it
+/// cannot give a smaller clearance nor one below the requirement.
 pub fn ground_check(rule: &Rule, wires: &[Wire], terrain: &Terrain) -> Vec<WireResult> {
-    wires
-        .iter()
-        .map(|wire| {
-            let mut result = WireResult::with(rule.required(wire.kv()));
-            let reach = result.required.largest() + rule.search_margin;
-            // Bundles: the lowest subconductor for the vertical clearance.
-            let (lowest, _) = wire.vertical_extent();
-            // To the surface.
-            let off = wire.allowance();
-            for s in wire.points.windows(2) {
-                let (a, b) = (s[0], s[1]);
-                let (mut vertical_bad, mut radial_bad) = (false, false);
-                let rise = slice_rise(a, b, rule.vertical_depth);
-                for (t, g) in ground_under(terrain, a, b, rule.vertical_band) {
-                    let z = a[2] + (b[2] - a[2]) * t + lowest;
-                    let hit = Hit {
-                        distance: z - rise - g[2] - off,
-                        wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
-                        target: g,
-                        class: None,
+    ground_check_with(rule, wires, terrain, &GroundMax::new(terrain))
+}
+
+/// [`ground_check`] with the terrain's [`GroundMax`] made once.
+pub fn ground_check_with(
+    rule: &Rule,
+    wires: &[Wire],
+    terrain: &Terrain,
+    top: &GroundMax,
+) -> Vec<WireResult> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(wires.len())
+        .max(1);
+    if threads <= 1 {
+        return wires
+            .iter()
+            .map(|w| ground_wire(rule, w, terrain, top, [f64::INFINITY; 2], None))
+            .collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: std::sync::Mutex<Vec<Option<WireResult>>> =
+        std::sync::Mutex::new(vec![None; wires.len()]);
+    std::thread::scope(|s| {
+        for _ in 0..threads {
+            s.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(w) = wires.get(k) else {
+                        return;
                     };
-                    vertical_bad |= result.vertical(hit);
+                    let r = ground_wire(rule, w, terrain, top, [f64::INFINITY; 2], None);
+                    out.lock().expect("not poisoned")[k] = Some(r);
                 }
-                result.vertical_violations += u64::from(vertical_bad);
-                if result.required.radial.is_none() {
-                    continue;
-                }
-                let n = ((distance(a, b) / GROUND_STEP).ceil() as usize).max(1);
-                // The samples' spacing, at most GROUND_STEP.
-                let spacing = distance(a, b) / n as f64;
-                for i in 0..=n {
-                    let t = i as f64 / n as f64;
-                    let centre = [
-                        a[0] + (b[0] - a[0]) * t,
-                        a[1] + (b[1] - a[1]) * t,
-                        a[2] + (b[2] - a[2]) * t,
-                    ];
-                    // Each subconductor of a bundle (one point for a wire).
-                    // The ground straight below bounds the search (radial is
-                    // never larger than vertical); where it is far below or
-                    // missing (a hole), the ground beside may still be near:
-                    // searched over the whole reach.
-                    for p in wire.subconductors(centre, a, b) {
-                        let below = terrain.height(p[0], p[1]);
-                        let radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
-                        let mut best: Option<(f64, P3)> = None;
-                        terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
-                            let q = closest_on_triangle(p, ta, tb, tc);
-                            let d = distance(p, q);
-                            if best.is_none_or(|(bd, _)| d < bd) {
-                                best = Some((d, q));
-                            }
-                        });
-                        if let Some((d, q)) = best {
-                            // Between samples the wire may come nearer:
-                            // the lower bound, then to the surface.
-                            let d = if below.is_some_and(|g| p[2] < g) {
-                                -d
-                            } else {
-                                sampled_floor(d, spacing)
-                            } - off;
-                            let hit = Hit {
-                                distance: d,
-                                wire: p,
-                                target: q,
-                                class: None,
-                            };
-                            radial_bad |= result.radial(hit);
-                        }
+            });
+        }
+    });
+    out.into_inner()
+        .expect("not poisoned")
+        .into_iter()
+        .map(|r| r.expect("every wire checked"))
+        .collect()
+}
+
+/// One wire's [`ground_check`]. `bound`: clearances (vertical, radial)
+/// already found elsewhere (e.g. other wires of the same swing arc): a
+/// piece or sample that cannot come below them nor below the
+/// requirement is passed over (its own result may then miss a clearance
+/// at or above `bound`; the counts are exact). `vertical_extra`: per
+/// piece, what is taken off its vertical clearances besides the
+/// allowance (none: nothing).
+pub(crate) fn ground_wire(
+    rule: &Rule,
+    wire: &Wire,
+    terrain: &Terrain,
+    top: &GroundMax,
+    bound: [f64; 2],
+    vertical_extra: Option<&[f64]>,
+) -> WireResult {
+    let mut result = WireResult::with(rule.required(wire.kv()));
+    let reach = result.required.largest() + rule.search_margin;
+    // Bundles: the lowest subconductor for the vertical clearance.
+    let (lowest, _) = wire.vertical_extent();
+    let bundle = wire.bundle_radius();
+    // To the surface.
+    let off = wire.allowance();
+    let band = rule.vertical_band;
+    // The smallest clearances so far (with the bound).
+    let best = |r: &WireResult, m: usize| -> f64 {
+        let own = if m == 0 { r.vertical } else { r.radial };
+        own.map_or(bound[m], |h| h.distance.min(bound[m]))
+    };
+    for (piece, s) in wire.points.windows(2).enumerate() {
+        let (a, b) = (s[0], s[1]);
+        let extra = vertical_extra.map_or(0.0, |x| x[piece]);
+        let (mut vertical_bad, mut radial_bad) = (false, false);
+        let rise = slice_rise(a, b, rule.vertical_depth);
+        // The vertical: passed over when the piece's lowest point is
+        // high enough above the highest ground within the band.
+        let ground_top = top.max_in(
+            a[0].min(b[0]) - band,
+            a[0].max(b[0]) + band,
+            a[1].min(b[1]) - band,
+            a[1].max(b[1]) + band,
+        );
+        let lower = a[2].min(b[2]) + lowest - rise - ground_top - off - extra;
+        let skip = lower >= best(&result, 0) && result.required.vertical.is_none_or(|r| lower >= r);
+        if !skip {
+            for (t, g) in ground_under(terrain, a, b, band) {
+                let z = a[2] + (b[2] - a[2]) * t + lowest;
+                let hit = Hit {
+                    distance: z - rise - g[2] - off - extra,
+                    wire: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z],
+                    target: g,
+                    class: None,
+                };
+                vertical_bad |= result.vertical(hit);
+            }
+        }
+        result.vertical_violations += u64::from(vertical_bad);
+        if result.required.radial.is_none() {
+            continue;
+        }
+        let n = ((distance(a, b) / GROUND_STEP).ceil() as usize).max(1);
+        // The samples' spacing, at most GROUND_STEP.
+        let spacing = distance(a, b) / n as f64;
+        // Passed over: a piece (a sample) whose clearances cannot come
+        // below `t` — the smallest so far and, unless it is already
+        // below it, the requirement. A triangle whose nearest point q is
+        // within r of the sample p in plan lies under the highest ground
+        // there, so |p − q| ≥ p_z − that; one farther is more than r
+        // away. With r = √((t + allowance)² + (s/2)²) and the sample
+        // higher than r above that ground, its clearance (the sampled
+        // floor, less the allowance) is at least t.
+        let threshold = |r: &WireResult, bad: bool| -> f64 {
+            let b = best(r, 1);
+            match r.required.radial {
+                Some(q) if !bad => b.max(q),
+                _ => b,
+            }
+        };
+        let around = |t: f64| (t + off).hypot(spacing / 2.0);
+        let t = threshold(&result, false);
+        if t.is_finite() {
+            let r = around(t);
+            let high = top.max_in(
+                a[0].min(b[0]) - bundle - r,
+                a[0].max(b[0]) + bundle + r,
+                a[1].min(b[1]) - bundle - r,
+                a[1].max(b[1]) + bundle + r,
+            );
+            if a[2].min(b[2]) - bundle - high >= r {
+                continue;
+            }
+        }
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let centre = [
+                a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t,
+            ];
+            // Each subconductor of a bundle (one point for a wire).
+            // The ground straight below bounds the search (radial is
+            // never larger than vertical); where it is far below or
+            // missing (a hole), the ground beside may still be near:
+            // searched over the whole reach.
+            for p in wire.subconductors(centre, a, b) {
+                let t = threshold(&result, radial_bad);
+                if t.is_finite() {
+                    let r = around(t);
+                    let high = top.max_in(p[0] - r, p[0] + r, p[1] - r, p[1] + r);
+                    if p[2] - high >= r {
+                        continue;
                     }
                 }
-                result.radial_violations += u64::from(radial_bad);
+                let below = terrain.height(p[0], p[1]);
+                let radius = below.map_or(reach, |g| (p[2] - g).max(0.0).min(reach));
+                let mut nearest: Option<(f64, P3)> = None;
+                terrain.triangles_near(p[0], p[1], radius, |[ta, tb, tc]| {
+                    let q = closest_on_triangle(p, ta, tb, tc);
+                    let d = distance(p, q);
+                    if nearest.is_none_or(|(bd, _)| d < bd) {
+                        nearest = Some((d, q));
+                    }
+                });
+                if let Some((d, q)) = nearest {
+                    // Between samples the wire may come nearer:
+                    // the lower bound, then to the surface.
+                    let d = if below.is_some_and(|g| p[2] < g) {
+                        -d
+                    } else {
+                        sampled_floor(d, spacing)
+                    } - off;
+                    let hit = Hit {
+                        distance: d,
+                        wire: p,
+                        target: q,
+                        class: None,
+                    };
+                    radial_bad |= result.radial(hit);
+                }
             }
-            result
-        })
-        .collect()
+        }
+        result.radial_violations += u64::from(radial_bad);
+    }
+    result
 }
 
 /// Whether two wires share an end point (within 1 cm).
@@ -943,6 +1418,10 @@ pub fn wire_pairs(rule: &Rule, a: &[Wire], b: &WireSet, mode: PairMode) -> Vec<P
     out.sort_by_key(|p| (p.a, p.b));
     out
 }
+
+#[cfg(test)]
+#[path = "checks_reference.rs"]
+mod reference;
 
 #[cfg(test)]
 mod tests {
@@ -1168,6 +1647,44 @@ mod tests {
         let radial = res.radial.unwrap().distance;
         assert!((radial - (50.0f64 - 0.04).sqrt()).abs() < 1e-9, "{radial}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    /// The highest ground of the cells is at or above the surface
+    /// everywhere, over any box; none where there is no ground.
+    #[test]
+    fn the_highest_ground_bounds_the_surface() {
+        let pts: Vec<P3> = (0..400)
+            .map(|k| {
+                let (x, y) = ((k % 20) as f64 * 7.3, (k / 20) as f64 * 6.1);
+                [x, y, 10.0 * (x / 17.0).sin() + 4.0 * (y / 9.0).cos()]
+            })
+            .collect();
+        let t = Terrain::from_xyz(&pts, None).unwrap();
+        let top = GroundMax::new(&t);
+        for k in 0..2000 {
+            let (x, y) = ((k * 37 % 1390) as f64 / 10.0, (k * 53 % 1150) as f64 / 10.0);
+            if let Some(z) = t.height(x, y) {
+                for r in [0.0, 0.5, 3.0] {
+                    assert!(top.max_in(x - r, x + r, y - r, y + r) >= z - 1e-12);
+                }
+            }
+        }
+        assert_eq!(top.max_in(-500.0, -400.0, 0.0, 1.0), f64::NEG_INFINITY);
+    }
+
+    /// [`box_distance`] never exceeds the distance to the segment.
+    #[test]
+    fn the_box_distance_bounds_the_segment() {
+        let (a, b) = ([1.0, 2.0, 3.0], [9.0, -4.0, 7.0]);
+        for k in 0..500 {
+            let p = [
+                (k * 7 % 31) as f64 - 10.0,
+                (k * 11 % 29) as f64 - 14.0,
+                (k * 13 % 23) as f64 - 6.0,
+            ];
+            let (q, _) = closest_on_segment(p, a, b);
+            assert!(box_distance(p, a, b) <= distance(p, q) + 1e-12);
+        }
     }
 
     /// The sampling bound: never above the true distance of the piece,

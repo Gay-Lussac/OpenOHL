@@ -22,8 +22,8 @@ use ohl_terrain::Terrain;
 
 use crate::rules::CheckScope;
 use crate::zone::{
-    WindState, Zone, ZoneReport, ZoneRule, ZoneTargets, check_zones, jumpers_needed,
-    sections_needed, solve_states,
+    ArcCase, WindState, Zone, ZoneReport, ZoneRule, ZoneTargets, arc_cases, arc_polylines,
+    check_zones, jumpers_needed, sections_needed, solve_states, zone_arcs,
 };
 
 /// Reads the points around the wires: `(polylines, reach, classes, budget,
@@ -46,6 +46,10 @@ pub struct ZoneCheckResult {
     pub rules: Vec<ZoneRule>,
     /// The wind positions.
     pub states: Vec<WindState>,
+    /// The swing arcs' cases (empty: no arc).
+    pub arcs: Vec<ArcCase>,
+    /// The spans' swing arcs checked (over every case).
+    pub arc_spans: usize,
     /// The sections solved (ids).
     pub sections: Vec<String>,
     /// What was found.
@@ -54,7 +58,7 @@ pub struct ZoneCheckResult {
     pub failed: Vec<String>,
     /// Time to solve the wind positions.
     pub solving: Duration,
-    /// Time to check them.
+    /// Time to check them (with the swing arcs made).
     pub checking: Duration,
 }
 
@@ -70,7 +74,10 @@ impl ZoneCheckResult {
 /// `sections_scope` only when given) solved in every state of `states`
 /// ([`solve_states`]; `done` counts them), then checked ([`check_zones`])
 /// against `ground` and the points `points` reads around the wires (within
-/// the zone's search distance, else as far as the rules reach). Stops when
+/// the zone's search distance, else as far as the rules reach) — with
+/// `arc`, each span's swing arc too ([`arc_cases`], [`zone_arcs`]; the
+/// states must hold each windy case's still air, as
+/// [`crate::zone::wind_states`] gives them with the arc on). Stops when
 /// `budget` runs out, with an error.
 #[allow(clippy::too_many_arguments)]
 pub fn run_zone_check(
@@ -80,6 +87,7 @@ pub fn run_zone_check(
     check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
+    arc: bool,
     points: Option<&PointReader>,
     ground: Option<&Terrain>,
     sections_scope: Option<&BTreeSet<String>>,
@@ -130,6 +138,8 @@ pub fn run_zone_check(
     )?;
     let solving = started.elapsed();
     let started = Instant::now();
+    let cases = if arc { arc_cases(&states) } else { Vec::new() };
+    let (arcs, arc_notes) = zone_arcs(line, &solved.shapes, &cases);
     // Points around the wires at every wind position, within reach.
     let reach = match zone.search {
         Some(d) => d,
@@ -144,6 +154,8 @@ pub fn run_zone_check(
                     .filter_map(|r| r.width)
                     .fold(zone.width, f64::max)
                 + 1.0
+                // The arcs' polylines are up to 1 m apart.
+                + if arcs.is_empty() { 0.0 } else { 0.5 }
         }
     };
     let polylines: Vec<Vec<[f64; 2]>> = solved
@@ -159,6 +171,7 @@ pub fn run_zone_check(
                 .flatten()
                 .map(|j| j.points.iter().map(|p| [p[0], p[1]]).collect()),
         )
+        .chain(arc_polylines(&arcs))
         .collect();
     let mut feed = |classes: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| match points {
         Some(read) => read(&polylines, reach, classes, budget, visit),
@@ -171,15 +184,29 @@ pub fn run_zone_check(
         &states,
         &solved.shapes,
         &solved.jumpers,
+        &arcs,
         ZoneTargets {
             ground,
             points: points.is_some().then_some(&mut feed as _),
         },
         budget,
     )?;
+    let mut report = report;
+    if !cases.is_empty()
+        && rules
+            .iter()
+            .any(|r| r.wires != crate::rules::Wires::Sections)
+    {
+        report
+            .notes
+            .push("jumpers have no swing arc: they are checked at their solved positions".into());
+    }
+    report.notes.extend(arc_notes);
     Ok(ZoneCheckResult {
         rules,
         states,
+        arc_spans: arcs.len(),
+        arcs: cases,
         sections,
         zone: report,
         failed: solved.failed,

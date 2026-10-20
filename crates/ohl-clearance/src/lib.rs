@@ -45,6 +45,7 @@ pub mod rules;
 pub mod vegetation;
 pub mod wirefit;
 pub mod zone;
+pub mod zone_arc;
 pub mod zone_run;
 
 pub use case::{

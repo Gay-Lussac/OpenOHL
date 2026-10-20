@@ -103,6 +103,19 @@ pub struct ZonesArgs {
     /// (ruling span) (overrides the rule file's `method`).
     #[arg(long)]
     pub method: Option<String>,
+    /// Also check each span anywhere on its swing arc between still air
+    /// and the full blowouts (the rule file's `[wind] arc = true`): three
+    /// solves per windy case, a closed-form distance per point.
+    #[arg(long)]
+    pub swing_arc: bool,
+    /// Step the wind by this many Pa from 0 up to each case's pressure
+    /// (the rule file's `[wind] steps` and `step`).
+    #[arg(long)]
+    pub wind_step: Option<f64>,
+    /// The sides the wind blows from: both, left or right (the rule
+    /// file's `[wind] sides`).
+    #[arg(long)]
+    pub wind_sides: Option<String>,
     /// Write every finding (the violations, then each rule's lowest
     /// clearance) as CSV.
     #[arg(long)]
@@ -362,7 +375,21 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
     if let Some(d) = imported.depth {
         z.depth = d;
     }
-    let wind = imported.wind.unwrap_or_default();
+    let mut wind = imported.wind.unwrap_or_default();
+    if args.swing_arc {
+        wind.arc = true;
+    }
+    if let Some(step) = args.wind_step {
+        if !(step.is_finite() && step > 0.0) {
+            return Err("--wind-step must be > 0 Pa".into());
+        }
+        wind.stepped = true;
+        wind.step = step;
+    }
+    if let Some(sides) = &args.wind_sides {
+        wind.sides =
+            ohl_clearance::WindSides::parse(sides).map_err(|e| format!("--wind-sides: {e}"))?;
+    }
     let mut check = imported.check.clone().unwrap_or_default();
     if let Some(d) = args.search_distance {
         if !(d.is_finite() && d > 0.0) {
@@ -467,6 +494,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         &check,
         rules,
         states,
+        wind.arc,
         cloud.is_some().then_some(&read as _),
         ground.as_ref().map(|(t, _)| t),
         None,
@@ -495,7 +523,14 @@ fn describe_check(z: &Zone, wind: &WindSteps, check: &ohl_clearance::CheckScope)
         ohl_clearance::WindSides::Left => "the left",
         ohl_clearance::WindSides::Right => "the right",
     };
-    parts.push(if wind.stepped {
+    parts.push(if wind.stepped && wind.arc {
+        format!(
+            "wind stepped by {} Pa from {sides}, and the swing arc",
+            wind.step
+        )
+    } else if wind.arc {
+        format!("the cases' wind from {sides} and the swing arc")
+    } else if wind.stepped {
         format!("wind stepped by {} Pa from {sides}", wind.step)
     } else {
         format!("the cases' wind from {sides}")
@@ -550,10 +585,15 @@ fn rows(r: &ZoneCheckResult) -> Vec<(&'static str, &ZoneFinding)> {
 /// The summary and the findings table.
 fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
     println!(
-        "solved {} section(s) in {} wind position(s) in {:.1?}; checked in {:.1?}; {} LiDAR \
+        "solved {} section(s) in {} wind position(s){} in {:.1?}; checked in {:.1?}; {} LiDAR \
          points read",
         r.sections.len(),
         r.states.len(),
+        if r.arcs.is_empty() {
+            String::new()
+        } else {
+            format!(", {} swing arcs", r.arc_spans)
+        },
         r.solving,
         r.checking,
         r.zone.points
@@ -587,7 +627,7 @@ fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
             status,
             r.rules[f.rule].name,
             span_name(f),
-            r.states[f.state].describe(),
+            f.position(&r.states),
             target_name(f.class, scheme),
             f.distance,
             f.required,
@@ -723,7 +763,7 @@ pub fn nothing_within_reach(rows: &[(&str, Option<f64>)], notes: &[String]) -> V
 }
 
 /// The CSV header of [`csv`].
-pub const CSV_HEADER: &str = "status,rule,section,span,case,wind_pa,wind_from,target,class,clearance_m,required_m,count,wire_x,wire_y,wire_z,target_x,target_y,target_z\n";
+pub const CSV_HEADER: &str = "status,rule,section,span,case,wind_pa,wind_from,target,class,clearance_m,required_m,count,wire_x,wire_y,wire_z,target_x,target_y,target_z,arc_deg\n";
 
 /// Every finding as CSV: the violations, then each rule's lowest clearance
 /// that keeps its requirement (`status` ok).
@@ -737,12 +777,15 @@ pub fn csv(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) -> String {
         };
         let _ = writeln!(
             out,
-            "{status},{},{},{span},{},{:.0},{},{},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            "{status},{},{},{span},{},{:.0},{},{},{},{:.3},{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{}",
             csv_field(&r.rules[f.rule].name),
             csv_field(&section),
             csv_field(&s.name),
-            s.pressure,
-            s.side.map_or("", |d| d.as_str()),
+            if f.arc.is_some() { s.full } else { s.pressure },
+            match f.arc {
+                Some(_) => "arc",
+                None => s.side.map_or("", |d| d.as_str()),
+            },
             csv_field(&target_name(f.class, scheme)),
             f.class.map_or(String::new(), |c| c.to_string()),
             f.distance,
@@ -754,6 +797,7 @@ pub fn csv(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) -> String {
             f.target[0],
             f.target[1],
             f.target[2],
+            f.arc.map_or(String::new(), |a| format!("{a:.1}")),
         );
     }
     out

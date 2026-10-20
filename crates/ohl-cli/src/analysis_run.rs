@@ -827,6 +827,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
                 stepped: true,
                 step,
                 sides: a.wind_sides,
+                arc: false,
             }),
         },
         &budget,
