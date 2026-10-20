@@ -100,6 +100,17 @@ impl Crs {
     pub fn is_geographic(&self) -> bool {
         self.proj.is_latlong()
     }
+
+    /// Its EPSG code, when it was given as `EPSG:<code>`.
+    pub fn epsg(&self) -> Option<u16> {
+        self.name.strip_prefix("EPSG:")?.parse().ok()
+    }
+
+    /// Its definition as OGC WKT 1 (as a `.prj` file holds it), from the
+    /// EPSG registry: when it was given as `EPSG:<code>`.
+    pub fn wkt(&self) -> Option<&'static str> {
+        crs_definitions::from_code(self.epsg()?).map(|d| d.wkt)
+    }
 }
 
 /// The unit of a system's coordinates, as its proj4 definition gives it.
@@ -456,6 +467,13 @@ mod tests {
     fn parses_codes_and_strings() {
         let lv95 = Crs::parse("epsg:2056").unwrap();
         assert_eq!(lv95.name(), "EPSG:2056");
+        assert_eq!(lv95.epsg(), Some(2056));
+        // Its WKT, read back as the same system.
+        assert_eq!(from_prj(lv95.wkt().unwrap()).unwrap(), "EPSG:2056");
+        assert_eq!(
+            Crs::parse("+proj=longlat +datum=WGS84").unwrap().wkt(),
+            None
+        );
         assert!(!lv95.is_geographic());
         assert!(Crs::parse("EPSG:4326").unwrap().is_geographic());
         assert!(
