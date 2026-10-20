@@ -32,7 +32,7 @@ const HELVETICA: [u16; 95] = [
 ];
 
 /// The Windows-1252 byte of `c` (`?` when it has none).
-fn win_ansi(c: char) -> u8 {
+pub(crate) fn win_ansi(c: char) -> u8 {
     match c {
         ' '..='~' => c as u8,
         '\u{a0}'..='\u{ff}' => c as u32 as u8,
@@ -83,35 +83,74 @@ fn n(v: f64) -> String {
     if s == "-0" { "0".into() } else { s.to_owned() }
 }
 
-/// An image to embed: size in pixels, RGB and alpha samples.
+/// An image to embed: size in pixels, RGB and alpha samples, and the part
+/// of its box it covers (left, top, width, height, mm).
 struct Raster {
     width: u32,
     height: u32,
     rgb: Vec<u8>,
     alpha: Vec<u8>,
+    rect: [f64; 4],
 }
 
-/// A logo's box drawn from its data URI (`None`: it cannot be drawn).
-fn logo_raster(href: &str, w_mm: f64, h_mm: f64) -> Option<Raster> {
+/// A logo's box drawn from its data URI (`None`: it cannot be drawn),
+/// cropped to what it covers: no transparent rows or columns at its edges
+/// (a PDF viewer smoothing the image and its mask apart drew them as thin
+/// grey lines); fully transparent pixels white.
+fn logo_raster(href: &str, at: [f64; 2], w_mm: f64, h_mm: f64) -> Option<Raster> {
     let svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w_mm}mm" height="{h_mm}mm" viewBox="0 0 {w_mm} {h_mm}"><image width="{w_mm}" height="{h_mm}" href="{}" preserveAspectRatio="xMinYMid meet"/></svg>"#,
         crate::model::escape(href)
     );
-    let (pixmap, _) = crate::png::rasterize(&svg, LOGO_PX_PER_MM, 4.0e6).ok()?;
-    let mut rgb = Vec::with_capacity(pixmap.data().len() / 4 * 3);
-    let mut alpha = Vec::with_capacity(pixmap.data().len() / 4);
-    for p in pixmap.pixels() {
-        let c = p.demultiply();
-        rgb.extend([c.red(), c.green(), c.blue()]);
-        alpha.push(c.alpha());
+    let (pixmap, k) = crate::png::rasterize(&svg, LOGO_PX_PER_MM, 4.0e6).ok()?;
+    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
+    let alpha_at = |x: usize, y: usize| pixmap.pixel(x as u32, y as u32).map_or(0, |p| p.alpha());
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for y in 0..h {
+        for x in 0..w {
+            if alpha_at(x, y) > 0 {
+                (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
+            }
+        }
     }
-    alpha.iter().any(|a| *a > 0).then(|| Raster {
-        width: pixmap.width(),
-        height: pixmap.height(),
+    if x0 >= x1 || y0 >= y1 {
+        return None;
+    }
+    let mut rgb = Vec::with_capacity((x1 - x0) * (y1 - y0) * 3);
+    let mut alpha = Vec::with_capacity((x1 - x0) * (y1 - y0));
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let c = pixmap.pixel(x as u32, y as u32)?.demultiply();
+            if c.alpha() == 0 {
+                rgb.extend([255, 255, 255]);
+            } else {
+                rgb.extend([c.red(), c.green(), c.blue()]);
+            }
+            alpha.push(c.alpha());
+        }
+    }
+    Some(Raster {
+        width: (x1 - x0) as u32,
+        height: (y1 - y0) as u32,
         rgb,
         alpha,
+        rect: [
+            at[0] + x0 as f64 / k,
+            at[1] + y0 as f64 / k,
+            (x1 - x0) as f64 / k,
+            (y1 - y0) as f64 / k,
+        ],
     })
 }
+
+/// Whether box `a` and box `b` (left, top, width, height) meet.
+fn meets(a: [f64; 4], b: [f64; 4]) -> bool {
+    a[0] <= b[0] + b[2] && b[0] <= a[0] + a[2] && a[1] <= b[1] + b[3] && b[1] <= a[1] + a[3]
+}
+
+/// Room kept around what is seen when cutting lines, mm (wider than any
+/// pen, so no line end shows).
+const CULL_MARGIN: f64 = 5.0;
 
 /// A page's content stream and its images.
 struct Content {
@@ -157,22 +196,66 @@ fn page_content(d: &Drawing) -> Content {
         ops: Vec::new(),
         images: Vec::new(),
     };
-    fn item(c: &mut Content, it: &Item, p: &dyn Fn([f64; 2]) -> String, height: f64) {
+    // Only what can be seen is written: lines cut to the page or their
+    // clip region with a margin, texts and circles outside left out.
+    fn item(
+        c: &mut Content,
+        it: &Item,
+        p: &dyn Fn([f64; 2]) -> String,
+        height: f64,
+        view: [f64; 4],
+    ) {
+        let wide = [
+            view[0] - CULL_MARGIN,
+            view[1] - CULL_MARGIN,
+            view[2] + 2.0 * CULL_MARGIN,
+            view[3] + 2.0 * CULL_MARGIN,
+        ];
         match it {
             Item::Path(path) => {
                 if path.points.len() < 2 {
                     return;
                 }
-                c.pen(&path.pen);
-                let mut ops = String::new();
-                for (k, q) in path.points.iter().enumerate() {
-                    let _ = write!(ops, "{} {} ", p(*q), if k == 0 { "m" } else { "l" });
+                let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+                for q in &path.points {
+                    lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+                    hi = [hi[0].max(q[0]), hi[1].max(q[1])];
                 }
-                ops.push_str(if path.closed { "h S" } else { "S" });
-                c.op(&ops);
+                let bbox = [lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1]];
+                if !meets(bbox, wide) {
+                    return;
+                }
+                let inside = crate::model::inside(lo, wide) && crate::model::inside(hi, wide);
+                let runs: Vec<(Vec<[f64; 2]>, bool)> = if inside {
+                    vec![(path.points.clone(), path.closed)]
+                } else {
+                    let mut pts = path.points.clone();
+                    if path.closed {
+                        pts.extend(path.points.first().copied());
+                    }
+                    crate::model::clip_polyline(&pts, wide)
+                        .into_iter()
+                        .map(|r| (r, false))
+                        .collect()
+                };
+                if runs.is_empty() {
+                    return;
+                }
+                c.pen(&path.pen);
+                for (run, closed) in runs {
+                    let mut ops = String::new();
+                    for (k, q) in run.iter().enumerate() {
+                        let _ = write!(ops, "{} {} ", p(*q), if k == 0 { "m" } else { "l" });
+                    }
+                    ops.push_str(if closed { "h S" } else { "S" });
+                    c.op(&ops);
+                }
             }
             Item::Circle(circle) => {
                 let (x, y, r) = (circle.centre[0], circle.centre[1], circle.radius);
+                if !meets([x - r, y - r, 2.0 * r, 2.0 * r], wide) {
+                    return;
+                }
                 let k = 0.552_284_75 * r;
                 let mut ops = format!("{} m ", p([x + r, y]));
                 for (c1, c2, end) in [
@@ -200,6 +283,11 @@ fn page_content(d: &Drawing) -> Content {
             Item::Text(t) => {
                 let size = t.size * PT;
                 let w = text_width(&t.text, size, t.bold);
+                let w_mm = w / PT;
+                let box_mm = [t.at[0] - w_mm, t.at[1] - t.size, 2.0 * w_mm, 1.5 * t.size];
+                if !meets(box_mm, wide) {
+                    return;
+                }
                 let shift = match t.anchor {
                     Anchor::Start => 0.0,
                     Anchor::Middle => w / 2.0,
@@ -219,14 +307,15 @@ fn page_content(d: &Drawing) -> Content {
                 c.op(" Tj ET");
             }
             Item::Image(img) => {
-                if let Some(r) = logo_raster(&img.href, img.width, img.height) {
+                if let Some(r) = logo_raster(&img.href, img.at, img.width, img.height) {
+                    let [x, y, w, h] = r.rect;
                     c.images.push(r);
                     c.op(&format!(
                         "q {} 0 0 {} {} {} cm /Im{} Do Q",
-                        n(img.width * PT),
-                        n(img.height * PT),
-                        n(img.at[0] * PT),
-                        n((height - img.at[1] - img.height) * PT),
+                        n(w * PT),
+                        n(h * PT),
+                        n(x * PT),
+                        n((height - y - h) * PT),
                         c.images.len()
                     ));
                 }
@@ -240,8 +329,15 @@ fn page_content(d: &Drawing) -> Content {
                     n(w * PT),
                     n(h * PT)
                 ));
-                for i in &clip.items {
-                    item(c, i, p, height);
+                // What is seen: the clip region on the page.
+                let x0 = x.max(view[0]);
+                let y0 = y.max(view[1]);
+                let x1 = (x + w).min(view[0] + view[2]);
+                let y1 = (y + h).min(view[1] + view[3]);
+                if x1 >= x0 && y1 >= y0 {
+                    for i in &clip.items {
+                        item(c, i, p, height, [x0, y0, x1 - x0, y1 - y0]);
+                    }
                 }
                 c.op("Q");
             }
@@ -249,7 +345,7 @@ fn page_content(d: &Drawing) -> Content {
     }
     c.op("1 J 1 j");
     for it in &d.items {
-        item(&mut c, it, &p, height);
+        item(&mut c, it, &p, height, [0.0, 0.0, d.width, d.height]);
     }
     c
 }
@@ -298,7 +394,7 @@ pub fn write(pages: &[&Drawing], title: &str) -> Vec<u8> {
             let _ = write!(xobjects, "/Im{} {image_id} 0 R ", k + 1);
             image_objects.push(stream(
                 &format!(
-                    "/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask {mask_id} 0 R",
+                    "/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Interpolate false /SMask {mask_id} 0 R",
                     r.width, r.height
                 ),
                 &r.rgb,

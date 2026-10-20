@@ -9,13 +9,27 @@
 use crate::model::{Anchor, Circle, Clip, Color, Drawing, Image, Item, Layer, Path, Pen, Text};
 use crate::{ElevationPlace, Options, Page, RouteDrawing, format_station, nice_step};
 
-/// Where things go on a sheet (all mm, except stations and heights).
-pub(crate) struct Frame {
-    /// Station range drawn.
+/// A stretch of the profile drawn with its own height range: the whole
+/// profile, or one of the parts of a sheet whose datum is **stepped**
+/// (the ground and the wires do not fit the panel in one height range at
+/// the vertical scale; the scale is never changed).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Part {
+    /// Station range.
     pub s0: f64,
     pub s1: f64,
-    /// Content is clipped at this station (the end of a station range).
-    pub content_end: f64,
+    /// Height range shown, m.
+    pub z0: f64,
+    pub z1: f64,
+    /// Grid step of the heights, m.
+    pub step: f64,
+}
+
+/// Where things go on a sheet (all mm, except stations and heights).
+pub(crate) struct Frame {
+    /// Station range drawn: the panels end here (at the match lines).
+    pub s0: f64,
+    pub s1: f64,
     /// Left edge of the drawing area.
     pub left: f64,
     /// The plan panel is drawn.
@@ -23,72 +37,276 @@ pub(crate) struct Frame {
     /// Plan panel top and height.
     pub plan_top: f64,
     pub plan_h: f64,
+    /// Where the line's axis runs in the plan panel (y, mm).
+    pub plan_axis: f64,
     /// Profile panel top and height.
     pub prof_top: f64,
     pub prof_h: f64,
-    /// Height range of the profile.
-    pub z0: f64,
-    pub z1: f64,
+    /// The profile's parts, in station order (one unless the datum is
+    /// stepped).
+    pub parts: Vec<Part>,
     /// mm per m: along the route, across in the plan, vertical.
     pub h: f64,
     pub plan_k: f64,
     pub v: f64,
+    /// A structure at either end is drawn whole (sheets), not cut at the
+    /// match line.
+    pub whole_ends: bool,
 }
 
 impl Frame {
-    fn x(&self, s: f64) -> f64 {
+    pub(crate) fn x(&self, s: f64) -> f64 {
         self.left + (s - self.s0) * self.h
     }
-    fn plan_y(&self, offset: f64) -> f64 {
-        self.plan_top + self.plan_h / 2.0 + offset * self.plan_k
+    pub(crate) fn plan_y(&self, offset: f64) -> f64 {
+        self.plan_axis + offset * self.plan_k
     }
-    fn y(&self, z: f64) -> f64 {
-        self.prof_top + (self.z1 - z) * self.v
+    pub(crate) fn y_in(&self, p: &Part, z: f64) -> f64 {
+        self.prof_top + (p.z1 - z) * self.v
     }
-    fn width(&self) -> f64 {
-        (self.s1 - self.s0) * self.h
+    pub(crate) fn width(&self) -> f64 {
+        ((self.s1 - self.s0) * self.h).max(0.0)
     }
-    fn content_width(&self) -> f64 {
-        ((self.content_end.min(self.s1) - self.s0) * self.h).max(0.0)
+    /// The part holding station `s` (the first of two at a step).
+    pub(crate) fn part_at(&self, s: f64) -> &Part {
+        self.parts
+            .iter()
+            .find(|p| s <= p.s1 + 1e-6)
+            .unwrap_or_else(|| self.parts.last().expect("a part"))
+    }
+    /// Whether structure `m` stands at either end of the frame.
+    fn at_end(&self, m: &crate::Mark) -> bool {
+        self.whole_ends
+            && ((m.station - self.s0).abs() < 1e-6 || (m.station - self.s1).abs() < 1e-6)
     }
 }
 
-/// Height range of what lies between stations `s0` and `s1`, rounded to
-/// grid steps (with one step of room on top).
-pub(crate) fn height_range(d: &RouteDrawing, s0: f64, s1: f64) -> (f64, f64, f64) {
-    let (mut z0, mut z1) = (f64::INFINITY, f64::NEG_INFINITY);
-    let mut see = |s: f64, z: f64| {
-        if s >= s0 - 1e-6 && s <= s1 + 1e-6 && z.is_finite() {
-            z0 = z0.min(z);
-            z1 = z1.max(z);
+/// Room above a structure's top for its name and station on paper, mm.
+pub(crate) const LABEL_ROOM_MM: f64 = 7.0;
+
+/// The height ranges of what lies between stations `a` and `b`: what must
+/// be seen (the ground and side ground, the clearance line, each wire's
+/// lowest point, markers) and everything (the whole wires, the structures
+/// and their drawings), m; infinite when there is nothing.
+pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2], [f64; 2]) {
+    let mut essential = [f64::INFINITY, f64::NEG_INFINITY];
+    let within = |s: f64| s >= a - 1e-6 && s <= b + 1e-6;
+    let see = |r: &mut [f64; 2], s: f64, z: f64| {
+        if within(s) && z.is_finite() {
+            r[0] = r[0].min(z);
+            r[1] = r[1].max(z);
         }
     };
-    for m in &d.structures {
-        see(m.station, m.base);
-        see(m.station, m.top);
-        for p in m.sticks.iter().chain(&m.members).chain(&m.pole).flatten() {
-            see(p[0], p[2]);
+    let clearance = o.clearance.unwrap_or(0.0).max(0.0);
+    for run in &d.ground {
+        for p in run {
+            see(&mut essential, p[0], p[1]);
+            see(&mut essential, p[0], p[1] + clearance);
         }
     }
+    for p in d.sides.iter().flat_map(|(_, r)| r).flatten() {
+        see(&mut essential, p[0], p[1]);
+    }
+    // Of each wire its lowest point within the range (what the ground
+    // clearance is about); the whole wire with the structures.
+    for w in &d.wires {
+        let lowest = w
+            .points
+            .iter()
+            .filter(|p| within(p[0]))
+            .min_by(|a, b| a[2].total_cmp(&b[2]));
+        if let Some(p) = lowest {
+            see(&mut essential, p[0], p[2]);
+        }
+    }
+    for (p, _) in &d.markers {
+        see(&mut essential, p[0], p[2]);
+    }
+    let mut full = essential;
     for w in &d.wires {
         for p in &w.points {
-            see(p[0], p[2]);
+            see(&mut full, p[0], p[2]);
         }
     }
-    for run in d.ground.iter().chain(d.sides.iter().flat_map(|(_, p)| p)) {
-        for p in run {
-            see(p[0], p[1]);
+    for m in &d.structures {
+        see(&mut full, m.station, m.base);
+        see(&mut full, m.station, m.top);
+        for p in m.sticks.iter().chain(&m.members).chain(&m.pole).flatten() {
+            see(&mut full, m.station, p[2]);
         }
     }
+    (essential, full)
+}
+
+/// Height range of what lies between stations `s0` and `s1`, rounded to
+/// grid steps, with room on top for the structures' names: the
+/// continuous drawing's profile.
+pub(crate) fn height_range(d: &RouteDrawing, o: &Options, s0: f64, s1: f64) -> Part {
+    let (essential, full) = heights(d, o, s0, s1);
+    let [mut z0, mut z1] = if full[0].is_finite() { full } else { essential };
     if !z0.is_finite() {
         (z0, z1) = (0.0, 10.0);
     }
+    let v = 1000.0 / o.vertical_scale;
+    z1 += LABEL_ROOM_MM / v;
     let step = nice_step((z1 - z0).max(1.0), 8.0);
-    (
-        (z0 / step).floor() * step,
-        (z1 / step).ceil() * step + step,
+    Part {
+        s0,
+        s1,
+        z0: (z0 / step).floor() * step,
+        z1: (z1 / step).ceil() * step,
         step,
-    )
+    }
+}
+
+/// The profile of a sheet from `s0` to `s1` in a panel `avail` mm tall at
+/// `v` mm per m: one part when everything fits (the ground at the bottom
+/// of the panel); when only the ground, wires and clearance line fit, one
+/// part with the structures' tops cut (warned); else parts split at the
+/// structures on the line (the datum stepped, warned), each as long as
+/// its ground and wires fit. Never another vertical scale; never an
+/// empty profile (a part whose ground and wires alone do not fit is
+/// drawn from its lowest point, its top cut, warned).
+pub(crate) fn fit(
+    d: &RouteDrawing,
+    o: &Options,
+    s0: f64,
+    s1: f64,
+    avail: f64,
+) -> (Vec<Part>, Vec<String>) {
+    let v = 1000.0 / o.vertical_scale;
+    let room = (avail / v).max(1e-3);
+    let label = LABEL_ROOM_MM / v;
+    let step = nice_step(room, 8.0);
+    // A part from `a` to `b` showing `lo` to `hi` (kept within it if it
+    // can be, at a grid line below `lo` if that keeps `hi` in).
+    let part = |a: f64, b: f64, lo: f64, hi: f64| {
+        let mut z0 = (lo / step).floor() * step;
+        if z0 + room < hi {
+            z0 = lo;
+        }
+        Part {
+            s0: a,
+            s1: b,
+            z0,
+            z1: z0 + room,
+            step,
+        }
+    };
+    let (essential, full) = heights(d, o, s0, s1);
+    if !full[0].is_finite() {
+        return (vec![part(s0, s1, 0.0, 0.0)], Vec::new());
+    }
+    let essential = if essential[0].is_finite() {
+        essential
+    } else {
+        full
+    };
+    let mut warnings = Vec::new();
+    let needed = |r: [f64; 2]| (r[1] - r[0]) * v;
+    if full[1] + label - full[0] <= room + 1e-9 {
+        return (vec![part(s0, s1, full[0], full[1] + label)], warnings);
+    }
+    let parts = if essential[1] - essential[0] <= room + 1e-9 {
+        vec![part(s0, s1, essential[0], essential[1])]
+    } else {
+        // Datum steps at the structures on the line within the sheet.
+        let mut stops: Vec<(f64, String)> = d
+            .structures
+            .iter()
+            .filter(|m| !m.away && m.station > s0 + 1e-6 && m.station < s1 - 1e-6)
+            .map(|m| (m.station, m.id.clone()))
+            .collect();
+        stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+        stops.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-6);
+        stops.push((s1, String::new()));
+        let mut parts: Vec<Part> = Vec::new();
+        let (mut a, mut k) = (s0, 0);
+        while k < stops.len() {
+            let mut best = None;
+            for (j, stop) in stops.iter().enumerate().skip(k) {
+                let r = heights(d, o, a, stop.0).0;
+                if !r[0].is_finite() || r[1] - r[0] <= room + 1e-9 {
+                    best = Some(j);
+                } else {
+                    break;
+                }
+            }
+            let j = best.unwrap_or(k);
+            let r = heights(d, o, a, stops[j].0).0;
+            let r = if r[0].is_finite() {
+                r
+            } else {
+                parts.last().map_or(essential, |p| [p.z0, p.z0])
+            };
+            if best.is_none() {
+                warnings.push(format!(
+                    "the ground and the wires' lowest points of {}–{} need {:.0} mm of height at 1:{}, the panel \
+                     has {:.0} mm: drawn from the lowest point, the top cut",
+                    format_station(a),
+                    format_station(stops[j].0),
+                    needed(r),
+                    o.vertical_scale,
+                    avail
+                ));
+            }
+            parts.push(part(a, stops[j].0, r[0], r[1]));
+            a = stops[j].0;
+            k = j + 1;
+        }
+        for w in parts.windows(2) {
+            let at = stops
+                .iter()
+                .find(|s| (s.0 - w[1].s0).abs() < 1e-6)
+                .map_or_else(|| format_station(w[1].s0), |s| s.1.clone());
+            warnings.push(format!(
+                "datum stepped at {at} ({:+.0} m): the ground and the wires' lowest points of \
+                 the sheet need \
+                 {:.0} mm of height at 1:{}, the panel has {:.0} mm",
+                w[1].z0 - w[0].z0,
+                needed(essential),
+                o.vertical_scale,
+                avail
+            ));
+        }
+        parts
+    };
+    // Structures whose tops (or names) are cut at the panel's top.
+    let cut: Vec<String> = d
+        .structures
+        .iter()
+        .filter(|m| m.station >= s0 - 1e-6 && m.station <= s1 + 1e-6)
+        .filter(|m| {
+            let p = parts
+                .iter()
+                .find(|p| m.station <= p.s1 + 1e-6)
+                .unwrap_or(&parts[parts.len() - 1]);
+            structure_top(m) + label > p.z1 + 1e-9
+        })
+        .map(|m| m.id.clone())
+        .collect();
+    if !cut.is_empty() {
+        warnings.push(format!(
+            "structure tops cut at the top of the profile ({}): with them the profile needs \
+             {:.0} mm of height at 1:{}, the panel has {:.0} mm",
+            cut.join(", "),
+            needed([full[0], full[1] + label]),
+            o.vertical_scale,
+            avail
+        ));
+    }
+    (parts, warnings)
+}
+
+/// The highest point drawn of structure `m`.
+fn structure_top(m: &crate::Mark) -> f64 {
+    m.members
+        .iter()
+        .chain(&m.pole)
+        .chain(&m.sticks)
+        .flatten()
+        .map(|p| p[2])
+        .fold(m.top, f64::max)
 }
 
 /// Grid values from `from` to `to` every `step` (at most 10 000: the
@@ -161,17 +379,28 @@ fn marker(centre: [f64; 2], radius: f64, label: &str) -> Item {
     })
 }
 
-/// Grids, panels and content of one frame (clipped to its panels; the
-/// structures' elevations, when drawn, not clipped); what to warn about.
-fn draw(
-    items: &mut Vec<Item>,
-    d: &RouteDrawing,
-    o: &Options,
-    f: &Frame,
-    z_step: f64,
-) -> Vec<String> {
+/// How far on paper (mm) the drawing of structure `m` reaches along the
+/// route from its station, with a millimetre to spare.
+fn half_width_mm(m: &crate::Mark, h: f64) -> f64 {
+    m.attachments
+        .iter()
+        .chain(m.sticks.iter().flatten())
+        .chain(m.members.iter().flatten())
+        .chain(m.pole.iter().flatten())
+        .map(|p| (p[0] - m.station).abs())
+        .filter(|s| s.is_finite())
+        .fold(0.0, f64::max)
+        * h
+        + 1.0
+}
+
+/// Grids, panels and content of one frame, clipped to its panels (the
+/// structures at a sheet's ends drawn whole); the structures' elevations
+/// are drawn by [`draw_elevations`], after the match lines.
+fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     let (s0, s1) = (f.s0, f.s1);
     let grid = pen("#ddd", 0.2);
+    let prof_bottom = f.prof_top + f.prof_h;
     // Station grid in both panels, labels under the profile.
     let s_step = nice_step((s1 - s0).max(1.0), (f.width() / 40.0).max(1.0));
     for s in ticks(s0, s1, s_step) {
@@ -186,32 +415,65 @@ fn draw(
         }
         items.push(path(
             Layer::Grid,
-            vec![[x, f.prof_top], [x, f.prof_top + f.prof_h]],
+            vec![[x, f.prof_top], [x, prof_bottom]],
             grid.clone(),
             None,
         ));
         items.push(text(
             Layer::Labels,
-            [x, f.prof_top + f.prof_h + 4.0],
+            [x, prof_bottom + 4.0],
             2.5,
             Anchor::Middle,
             format_station(s),
         ));
     }
-    for z in ticks(f.z0, f.z1, z_step) {
-        items.push(path(
-            Layer::Grid,
-            vec![[f.left, f.y(z)], [f.left + f.width(), f.y(z)]],
-            grid.clone(),
-            None,
-        ));
-        items.push(text(
-            Layer::Labels,
-            [f.left - 1.5, f.y(z) + 0.9],
-            2.5,
-            Anchor::End,
-            format!("{z:.0}"),
-        ));
+    // Height grid and labels per part, inside the panel only.
+    for (k, p) in f.parts.iter().enumerate() {
+        let (xa, xb) = (f.x(p.s0), f.x(p.s1));
+        for z in ticks(p.z0, p.z1, p.step) {
+            let y = f.y_in(p, z);
+            if y < f.prof_top - 1e-6 || y > prof_bottom + 1e-6 {
+                continue;
+            }
+            items.push(path(
+                Layer::Grid,
+                vec![[xa, y], [xb, y]],
+                grid.clone(),
+                None,
+            ));
+            // Labels need 2 mm below the panel's top.
+            if y < f.prof_top + 2.0 {
+                continue;
+            }
+            items.push(if k == 0 {
+                text(
+                    Layer::Labels,
+                    [f.left - 1.5, (y + 0.9).min(prof_bottom)],
+                    2.5,
+                    Anchor::End,
+                    format!("{z:.0}"),
+                )
+            } else {
+                text(
+                    Layer::Labels,
+                    [xa + 1.5, y - 0.6],
+                    2.0,
+                    Anchor::Start,
+                    format!("{z:.0}"),
+                )
+            });
+        }
+        // A datum step: a double line across the panel.
+        if k > 0 {
+            for dx in [-0.4, 0.4] {
+                items.push(path(
+                    Layer::Panels,
+                    vec![[xa + dx, f.prof_top], [xa + dx, prof_bottom]],
+                    pen("#555", 0.3),
+                    Some(format!("datum step at {}", format_station(p.s0))),
+                ));
+            }
+        }
     }
     let panel = pen("#888", 0.3);
     if f.plan {
@@ -232,10 +494,11 @@ fn draw(
         f.prof_h,
         panel,
     ));
+    // The panels' names above them, clear of what they hold.
     if f.plan {
         items.push(bold(text(
             Layer::Labels,
-            [f.left + 1.0, f.plan_top + 3.5],
+            [f.left, f.plan_top - 1.5],
             3.0,
             Anchor::Start,
             "Plan",
@@ -243,16 +506,24 @@ fn draw(
     }
     items.push(bold(text(
         Layer::Labels,
-        [f.left + 1.0, f.prof_top + 3.5],
+        [f.left, f.prof_top - 1.5],
         3.0,
         Anchor::Start,
         "Profile",
     )));
 
     // Names of the structures shown are written whole, outside the clip
-    // regions (a name at the end of a station range is not cut in half).
-    let plan_rect = [f.left, f.plan_top, f.content_width(), f.plan_h];
-    let prof_rect = [f.left, f.prof_top, f.content_width(), f.prof_h];
+    // regions (a name at a sheet's end is not cut in half).
+    let plan_rect = [f.left, f.plan_top, f.width(), f.plan_h];
+    let prof_rect = [f.left, f.prof_top, f.width(), f.prof_h];
+    // Clip regions widened for the structures at the ends.
+    let widen = d
+        .structures
+        .iter()
+        .filter(|m| f.at_end(m))
+        .map(|m| half_width_mm(m, f.h))
+        .fold(0.0, f64::max);
+    let wide = |r: [f64; 4]| [r[0] - widen, r[1], r[2] + 2.0 * widen, r[3]];
     let mut names = Vec::new();
     let mut label = |clipped: &mut Vec<Item>, item: Item, rect: [f64; 4]| match &item {
         Item::Text(t)
@@ -268,6 +539,7 @@ fn draw(
     // Plan.
     if f.plan {
         let mut plan = Vec::new();
+        let mut ends = Vec::new();
         plan.push(path(
             Layer::Centreline,
             vec![[f.x(0.0), f.plan_y(0.0)], [f.x(d.length), f.plan_y(0.0)]],
@@ -299,9 +571,10 @@ fn draw(
         }
         for m in &d.structures {
             let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
+            let out = if f.at_end(m) { &mut ends } else { &mut plan };
             // The symbol at level 1; members and poles draw the others.
             if !m.has_body() {
-                plan.push(rect(
+                out.push(rect(
                     Layer::Structures,
                     cx - 1.0,
                     cy - 1.0,
@@ -310,25 +583,15 @@ fn draw(
                     pen("#333", 0.3),
                 ));
             }
-            let name = text(
-                Layer::Structures,
-                [cx, f.plan_top + f.plan_h - 1.5],
-                2.5,
-                Anchor::Middle,
-                m.id.clone(),
-            );
-            label(&mut plan, name, plan_rect);
-        }
-        // Stick drawings seen from above; members (levels 2 and 3): the
-        // footprint and the crossarms.
-        for m in &d.structures {
+            // Stick drawings seen from above; members (levels 2 and 3):
+            // the footprint and the crossarms.
             let (layer, lines) = if m.members.is_empty() {
                 (Layer::Structures, &m.sticks)
             } else {
                 (Layer::Members, &m.members)
             };
             for stick in lines {
-                plan.push(path(
+                out.push(path(
                     layer,
                     stick.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
                     pen("#555", 0.25),
@@ -337,12 +600,24 @@ fn draw(
             }
             // A pole's outline at the ground line and at its top.
             for ring in pole_ends(&m.pole) {
-                plan.push(closed(
+                out.push(closed(
                     Layer::Members,
                     ring.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
                     pen("#555", 0.25),
                 ));
             }
+        }
+        // Names beside the symbols, above and right of them.
+        for m in &d.structures {
+            let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
+            let name = text(
+                Layer::Structures,
+                [cx + 1.8, cy - 1.8],
+                2.5,
+                Anchor::Start,
+                m.id.clone(),
+            );
+            label(&mut plan, name, plan_rect);
         }
         for (p, label) in &d.markers {
             plan.push(marker([f.x(p[0]), f.plan_y(p[1])], 1.2, label));
@@ -351,15 +626,102 @@ fn draw(
             rect: plan_rect,
             items: plan,
         }));
+        if !ends.is_empty() {
+            items.push(Item::Clip(Clip {
+                rect: wide(plan_rect),
+                items: ends,
+            }));
+        }
     }
 
-    // Profile.
+    // Profile: each part with its own heights.
+    for p in &f.parts {
+        let (content, ends) = profile_part(d, o, f, p);
+        let rect = [f.x(p.s0), f.prof_top, (p.s1 - p.s0) * f.h, f.prof_h];
+        items.push(Item::Clip(Clip {
+            rect,
+            items: content,
+        }));
+        if !ends.is_empty() {
+            items.push(Item::Clip(Clip {
+                rect: wide(prof_rect),
+                items: ends,
+            }));
+        }
+    }
+    // Structures' names over their tops, inside the panel (a top cut at
+    // the panel's top: a break mark there).
+    let mut prof_names = Vec::new();
+    for m in &d.structures {
+        if m.station < s0 - 1e-6 || m.station > s1 + 1e-6 {
+            continue;
+        }
+        let p = f.part_at(m.station);
+        let cx = f.x(m.station);
+        let top_y = f.y_in(p, structure_top(m));
+        let cut = top_y < f.prof_top + LABEL_ROOM_MM - 1e-6;
+        let y = top_y.max(f.prof_top + LABEL_ROOM_MM);
+        let anchor = if cx < f.left + 6.0 {
+            Anchor::Start
+        } else if cx > f.left + f.width() - 6.0 {
+            Anchor::End
+        } else {
+            Anchor::Middle
+        };
+        let dx = match anchor {
+            Anchor::Start => 0.8,
+            Anchor::End => -0.8,
+            Anchor::Middle => 0.0,
+        };
+        let name = text(
+            Layer::Structures,
+            [cx + dx, y - 4.0],
+            2.5,
+            anchor,
+            m.id.clone(),
+        );
+        label(&mut prof_names, name, prof_rect);
+        if let Item::Text(mut t) = text(
+            Layer::Structures,
+            [cx + dx, y - 1.5],
+            2.0,
+            anchor,
+            format_station(m.station),
+        ) {
+            t.color = hex("#555");
+            label(&mut prof_names, Item::Text(t), prof_rect);
+        }
+        if cut && top_y < f.prof_top {
+            // Two short strokes across the mast at the panel's top.
+            for k in [0.0, 1.0] {
+                prof_names.push(path(
+                    Layer::Structures,
+                    vec![
+                        [cx - 1.2, f.prof_top + 0.8 + k],
+                        [cx + 1.2, f.prof_top + 0.2 + k],
+                    ],
+                    pen("#333", 0.25),
+                    Some(format!("{} cut at the panel's top", m.id)),
+                ));
+            }
+        }
+    }
+    // (Clipped leftovers: none, every name is inside the panel.)
+    items.extend(prof_names);
+    items.extend(names);
+}
+
+/// The profile's content of part `p` of frame `f`: what is clipped to the
+/// part, and the structures at the frame's ends (drawn whole).
+fn profile_part(d: &RouteDrawing, o: &Options, f: &Frame, p: &Part) -> (Vec<Item>, Vec<Item>) {
+    let y = |z: f64| f.y_in(p, z);
     let mut prof = Vec::new();
+    let mut ends = Vec::new();
     for (offset, runs) in &d.sides {
         for run in runs {
             prof.push(path(
                 Layer::GroundSide,
-                run.iter().map(|p| [f.x(p[0]), f.y(p[1])]).collect(),
+                run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
                 pen("#b08850", 0.25).dashed("1.5 1"),
                 Some(format!("ground at offset {offset:+.1} m")),
             ));
@@ -368,14 +730,14 @@ fn draw(
     for run in &d.ground {
         prof.push(path(
             Layer::Ground,
-            run.iter().map(|p| [f.x(p[0]), f.y(p[1])]).collect(),
+            run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
             pen("#7a4a1a", 0.45),
             Some("ground (centreline)".into()),
         ));
         if let Some(c) = o.clearance {
             prof.push(path(
                 Layer::Clearance,
-                run.iter().map(|p| [f.x(p[0]), f.y(p[1] + c)]).collect(),
+                run.iter().map(|q| [f.x(q[0]), y(q[1] + c)]).collect(),
                 pen("#d22", 0.3).dashed("3 1.5"),
                 Some(format!("ground + {c} m")),
             ));
@@ -383,64 +745,37 @@ fn draw(
     }
     for m in &d.structures {
         let cx = f.x(m.station);
-        // The symbol at level 1; members and poles draw the others (their
-        // names over the highest member or the pole's top).
+        let out = if f.at_end(m) { &mut ends } else { &mut prof };
+        // The symbol at level 1; members and poles draw the others.
         if !m.has_body() {
-            prof.push(path(
+            out.push(path(
                 Layer::Structures,
-                vec![[cx, f.y(m.base)], [cx, f.y(m.top)]],
+                vec![[cx, y(m.base)], [cx, y(m.top)]],
                 pen("#333", 0.6),
                 None,
             ));
         }
-        let top = m
-            .members
-            .iter()
-            .chain(&m.pole)
-            .flatten()
-            .map(|p| p[2])
-            .fold(m.top, f64::max);
-        let name = text(
-            Layer::Structures,
-            [cx, f.y(top) - 4.0],
-            2.5,
-            Anchor::Middle,
-            m.id.clone(),
-        );
-        label(&mut prof, name, prof_rect);
-        if let Item::Text(mut t) = text(
-            Layer::Structures,
-            [cx, f.y(top) - 1.5],
-            2.0,
-            Anchor::Middle,
-            format_station(m.station),
-        ) {
-            t.color = hex("#555");
-            label(&mut prof, Item::Text(t), prof_rect);
-        }
         for a in &m.attachments {
-            prof.push(Item::Circle(Circle {
+            out.push(Item::Circle(Circle {
                 layer: Layer::Structures,
-                centre: [f.x(a[0]), f.y(a[2])],
+                centre: [f.x(a[0]), y(a[2])],
                 radius: 0.4,
                 stroke: None,
                 fill: Some(hex("#333")),
                 title: None,
             }));
         }
-    }
-    // Stick drawings seen along the route; members (levels 2 and 3): the
-    // silhouette projected on the profile plane.
-    for m in &d.structures {
+        // Stick drawings seen along the route; members (levels 2 and 3):
+        // the silhouette projected on the profile plane.
         let (layer, lines) = if m.members.is_empty() {
             (Layer::Structures, &m.sticks)
         } else {
             (Layer::Members, &m.members)
         };
         for stick in lines {
-            prof.push(path(
+            out.push(path(
                 layer,
-                stick.iter().map(|p| [f.x(p[0]), f.y(p[2])]).collect(),
+                stick.iter().map(|q| [f.x(q[0]), y(q[2])]).collect(),
                 pen("#555", 0.3),
                 Some(m.id.clone()),
             ));
@@ -448,9 +783,9 @@ fn draw(
         // A pole: its silhouette by height.
         let outline = silhouette(&m.pole, 0);
         if !outline.is_empty() {
-            prof.push(Item::Path(Path {
+            out.push(Item::Path(Path {
                 layer: Layer::Members,
-                points: outline.iter().map(|p| [f.x(p[0]), f.y(p[1])]).collect(),
+                points: outline.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
                 closed: true,
                 pen: pen("#555", 0.3),
                 title: Some(m.id.clone()),
@@ -460,20 +795,15 @@ fn draw(
     for w in &d.wires {
         prof.push(path(
             Layer::Wires,
-            w.points.iter().map(|p| [f.x(p[0]), f.y(p[2])]).collect(),
+            w.points.iter().map(|q| [f.x(q[0]), y(q[2])]).collect(),
             pen(&w.color, 0.35).dashed(w.dash.as_deref().unwrap_or("")),
             Some(w.label.clone()),
         ));
     }
-    for (p, label) in &d.markers {
-        prof.push(marker([f.x(p[0]), f.y(p[2])], 1.2, label));
+    for (q, label) in &d.markers {
+        prof.push(marker([f.x(q[0]), y(q[2])], 1.2, label));
     }
-    items.push(Item::Clip(Clip {
-        rect: prof_rect,
-        items: prof,
-    }));
-    items.extend(names);
-    draw_elevations(items, d, o, f)
+    (prof, ends)
 }
 
 /// A closed path.
@@ -625,7 +955,7 @@ fn elevations_on_paper(
     if !f.plan || o.elevations.place == ElevationPlace::Off {
         return Vec::new();
     }
-    let end = f.content_end.min(f.s1);
+    let end = f.s1;
     let to_paper = |p: &[f64; 2]| [f.x(p[0]), f.plan_y(p[1])];
     elevations_of(d, o)
         .into_iter()
@@ -679,7 +1009,21 @@ fn elevation_warnings(d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
         f.left + f.width(),
         f.prof_top + f.prof_h,
     ];
+    let plan = [
+        f.left - 1e-6,
+        f.plan_top - 1e-6,
+        f.left + f.width() + 1e-6,
+        f.plan_top + f.plan_h + 1e-6,
+    ];
     for (a, ba) in &boxes {
+        // (Its height across the line; along it an elevation may stand
+        // past the panel's end.)
+        if ba[1] < plan[1] || ba[3] > plan[3] {
+            warnings.push(format!(
+                "the elevation of {a} leaves the plan panel (drawn anyway): a smaller offset \
+                 or a smaller scale of the elevations keeps it in"
+            ));
+        }
         if overlap(*ba, profile) {
             warnings.push(format!(
                 "the elevation of {a} reaches into the profile (drawn anyway): draw the \
@@ -733,10 +1077,13 @@ pub(crate) fn scales_text(o: &Options) -> String {
 
 /// The heading of the drawings.
 fn heading(d: &RouteDrawing, o: &Options) -> String {
+    let name = if d.name.trim().is_empty() || d.name == d.route {
+        format!("Route {}", d.route)
+    } else {
+        format!("Route {} — {}", d.route, d.name)
+    };
     format!(
-        "Route {} {} — {}",
-        d.route,
-        d.name,
+        "{name}: {}",
         if o.plan {
             "plan and profile"
         } else {
@@ -764,31 +1111,29 @@ fn whole_range(d: &RouteDrawing, o: &Options) -> (f64, f64) {
 pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<String>) {
     let d = &d.shown(o.plan_half_width);
     let (s0, s1) = whole_range(d, o);
-    let (z0, z1, z_step) = height_range(d, s0, s1);
+    let part = height_range(d, o, s0, s1);
     let (h, v) = (1000.0 / o.horizontal_scale, 1000.0 / o.vertical_scale);
     let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
     let margin = 30.0;
     let title_h = 8.0 + 5.0 * o.title.len() as f64;
-    let plan_h = if o.plan {
-        2.0 * o.plan_half_width * plan_k
-    } else {
-        0.0
-    };
+    let (above, below) = plan_room(d, o, plan_k);
+    let plan_h = if o.plan { above + below } else { 0.0 };
+    let plan_top = margin + title_h;
     let f = Frame {
         s0,
         s1,
-        content_end: s1,
         left: margin,
         plan: o.plan,
-        plan_top: margin + title_h,
+        plan_top,
         plan_h,
+        plan_axis: plan_top + above,
         prof_top: margin + title_h + if o.plan { plan_h + 15.0 } else { 0.0 },
-        prof_h: (z1 - z0) * v,
-        z0,
-        z1,
+        prof_h: (part.z1 - part.z0) * v,
+        parts: vec![part],
         h,
         plan_k,
         v,
+        whole_ends: false,
     };
     let width = 2.0 * margin + f.width();
     let height = f.prof_top + f.prof_h + margin;
@@ -817,8 +1162,26 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
         Anchor::End,
         scales_text(o),
     ));
-    let warnings = draw(items, d, o, &f, z_step);
+    draw(items, d, o, &f);
+    let warnings = draw_elevations(items, d, o, &f);
     (drawing, f, warnings)
+}
+
+/// The plan panel's room above and below the line's axis, mm: the line
+/// width at the plan's scale across the line, and what the structures'
+/// elevations need (with room for their names).
+pub(crate) fn plan_room(d: &RouteDrawing, o: &Options, plan_k: f64) -> (f64, f64) {
+    let half = o.plan_half_width * plan_k;
+    let (mut above, mut below) = (half, half);
+    if o.plan && o.elevations.place != ElevationPlace::Off {
+        for e in elevations_of(d, o) {
+            for p in e.lines.iter().flat_map(|(l, _)| l) {
+                above = above.max(-p[1] * plan_k + 4.0);
+                below = below.max(p[1] * plan_k + 1.0);
+            }
+        }
+    }
+    (above, below)
 }
 
 /// One sheet of a paged drawing.
@@ -976,65 +1339,55 @@ pub struct SheetLayout {
     /// Problems: no free break within reach (the sheet runs on), a span
     /// longer than the sheet, a profile taller than it.
     pub warnings: Vec<String>,
-    /// Height range and grid step of the profile.
-    heights: (f64, f64, f64),
+    /// The profile's parts, each with its height range (more than one
+    /// where the datum is stepped).
+    parts: Vec<Part>,
 }
 
 /// The paper geometry of sheets of `page` with options `o`.
 struct Paper {
-    /// mm per m: along the route, across in the plan, vertical.
+    /// mm per m: along the route, across in the plan.
     h: f64,
     plan_k: f64,
-    v: f64,
     left: f64,
     /// Width of the drawing area, mm.
     usable: f64,
     plan_h: f64,
+    plan_axis: f64,
     draw_top: f64,
     prof_top: f64,
-    /// Height of the profile panel at most, mm.
+    /// Height of the profile panel, mm: everything left above the station
+    /// labels and the title block.
     available: f64,
 }
 
 impl Paper {
-    /// The frame of a sheet from `s0` to `s1` holding `reach` m, its
-    /// profile's `heights` (low, high, grid step).
-    fn frame(&self, o: &Options, s0: f64, s1: f64, reach: f64, heights: (f64, f64, f64)) -> Frame {
-        let (z0, z1, _) = heights;
-        let needed = (z1 - z0) * self.v;
+    /// The frame of a sheet from `s0` to `s1` with its profile's `parts`.
+    fn frame(&self, o: &Options, s0: f64, s1: f64, parts: Vec<Part>) -> Frame {
         Frame {
             s0,
-            s1: s0 + reach.max(s1 - s0),
-            content_end: if o.stations.is_some() {
-                s1
-            } else {
-                f64::INFINITY
-            },
+            s1,
             left: self.left,
             plan: o.plan,
             plan_top: self.draw_top,
             plan_h: self.plan_h,
+            plan_axis: self.plan_axis,
             prof_top: self.prof_top,
-            // The panel takes the height its range needs (the profile is
-            // clipped to the sheet when it needs more: see warnings).
-            prof_h: self.available.min(needed).max(10.0),
-            z0,
-            z1,
+            prof_h: self.available,
+            parts,
             h: self.h,
             plan_k: self.plan_k,
-            v: self.v,
+            v: 1000.0 / o.vertical_scale,
+            whole_ends: true,
         }
     }
 
-    fn new(o: &Options, page: &Page) -> Self {
-        let (h, v) = (1000.0 / o.horizontal_scale, 1000.0 / o.vertical_scale);
+    fn new(d: &RouteDrawing, o: &Options, page: &Page) -> Self {
+        let h = 1000.0 / o.horizontal_scale;
         let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
         let left = SHEET_MARGIN + AXIS_ROOM;
-        let plan_h = if o.plan {
-            2.0 * o.plan_half_width * plan_k
-        } else {
-            0.0
-        };
+        let (above, below) = plan_room(d, o, plan_k);
+        let plan_h = if o.plan { above + below } else { 0.0 };
         let draw_top = SHEET_MARGIN + 6.0;
         let draw_bottom = page.height - SHEET_MARGIN - TITLE_BLOCK - 8.0;
         let prof_top = if o.plan {
@@ -1045,13 +1398,13 @@ impl Paper {
         Self {
             h,
             plan_k,
-            v,
             left,
             usable: page.width - left - SHEET_MARGIN,
             plan_h,
+            plan_axis: draw_top + above,
             draw_top,
             prof_top,
-            available: draw_bottom - prof_top,
+            available: (draw_bottom - prof_top).max(10.0),
         }
     }
 }
@@ -1076,7 +1429,7 @@ pub fn sheet_layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayo
 
 /// [`sheet_layout`] of `d`, what is drawn of the route.
 fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
-    let paper = Paper::new(o, page);
+    let paper = Paper::new(d, o, page);
     let (h, usable) = (paper.h, paper.usable);
     let reach = usable / h; // metres per sheet
     let clearance =
@@ -1135,19 +1488,13 @@ fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
                     reach
                 ));
             }
-            let heights = height_range(d, s0, s1);
-            let needed = (heights.1 - heights.0) * paper.v;
-            if needed > paper.available + 1e-6 {
-                warnings.push(format!(
-                    "profile {}–{} needs {:.0} mm of height at 1:{}, the sheet has {:.0} mm",
-                    stations[a].label, stations[b].label, needed, o.vertical_scale, paper.available
-                ));
-            }
+            let (parts, fitted) = fit(d, o, s0, s1, paper.available);
+            warnings.extend(fitted);
             // Elevations overlapping each other or the profile.
             warnings.extend(elevation_warnings(
                 d,
                 o,
-                &paper.frame(o, s0, s1, reach, heights),
+                &paper.frame(o, s0, s1, parts.clone()),
             ));
             SheetLayout {
                 number: k + 1,
@@ -1156,27 +1503,48 @@ fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
                 reach,
                 structures: (stations[a].label.clone(), stations[b].label.clone()),
                 warnings,
-                heights,
+                parts,
             }
         })
         .collect()
+}
+
+/// The structures at a sheet's ends as its title names them: a station
+/// (the end of a station range) is no structure, "–"; nothing when both
+/// ends are stations.
+fn end_names(sl: &SheetLayout) -> String {
+    let name = |label: &str, s: f64| {
+        if label == format_station(s) {
+            "–".to_owned()
+        } else {
+            label.to_owned()
+        }
+    };
+    let (a, b) = (
+        name(&sl.structures.0, sl.from),
+        name(&sl.structures.1, sl.to),
+    );
+    if a == "–" && b == "–" {
+        String::new()
+    } else {
+        format!("   ({a} – {b})")
+    }
 }
 
 /// The route split over sheets of `page` as [`sheet_layout`] says, each
 /// drawn with its own height range and a title block (title lines, route,
 /// sheet n/N, station range, scales, logos).
 pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
-    let paper = Paper::new(o, page);
     let d = &d.shown(o.plan_half_width);
+    let paper = Paper::new(d, o, page);
     let layout = layout(d, o, page);
     let n = layout.len();
     layout
         .into_iter()
         .map(|sl| {
             let (s0, s1) = (sl.from, sl.to);
-            let z_step = sl.heights.2;
             let k = sl.number - 1;
-            let f = paper.frame(o, s0, s1, sl.reach, sl.heights);
+            let f = paper.frame(o, s0, s1, sl.parts.clone());
             let mut drawing = Drawing::sheet(page.width, page.height);
             let items = &mut drawing.items;
             items.push(rect(
@@ -1187,8 +1555,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 page.height - SHEET_MARGIN,
                 pen("#000", 0.5),
             ));
-            // Its warnings, the elevations' too, are the layout's.
-            let _ = draw(items, d, o, &f, z_step);
+            draw(items, d, o, &f);
             // Match lines at the sheet's ends.
             let top = if o.plan { f.plan_top } else { f.prof_top };
             for x in [f.x(s0), f.x(s1)] {
@@ -1199,6 +1566,9 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     None,
                 ));
             }
+            // The elevations over the match lines (their warnings are the
+            // layout's).
+            let _ = draw_elevations(items, d, o, &f);
             // Title block across the bottom: logos, titles, sheet data.
             let tb_top = page.height - SHEET_MARGIN / 2.0 - TITLE_BLOCK;
             let tb_left = SHEET_MARGIN / 2.0;
@@ -1243,11 +1613,10 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             for (t, line) in [
                 format!("Sheet {} / {n}", k + 1),
                 format!(
-                    "{} – {}   ({} – {})",
+                    "{} – {}{}",
                     format_station(s0),
                     format_station(s1),
-                    sl.structures.0,
-                    sl.structures.1
+                    end_names(&sl)
                 ),
                 scales_text(o),
                 format!(
@@ -1290,7 +1659,13 @@ pub fn profile_model(d: &RouteDrawing, o: &Options) -> Drawing {
     let (sheet, f, _) = continuous(d, &o);
     let k = o.horizontal_scale / 1000.0; // m per mm
     let exaggeration = o.horizontal_scale / o.vertical_scale;
-    sheet.to_model(k, [f.s0 - f.left * k, f.prof_top * k + exaggeration * f.z1])
+    sheet.to_model(
+        k,
+        [
+            f.s0 - f.left * k,
+            f.prof_top * k + exaggeration * f.parts[0].z1,
+        ],
+    )
 }
 
 /// The parts of `points` between stations `a` and `b` (station first in

@@ -6373,6 +6373,89 @@ fn drawings_export_in_the_background_job() {
     assert!(crate::drawings::Input::new(&m, 0, &none).is_err());
 }
 
+/// Regression (D5, D6): the export window draws each other weather case
+/// from its own solution (not the case shown again), the markers of the
+/// last clearance check, side profiles, the plan's own scale and logos,
+/// and the clearance line of the project's ground rule.
+#[test]
+fn drawings_draw_every_case_from_its_own_solution() {
+    let m = synthetic();
+    let logo = std::env::temp_dir().join(format!("ohl-app-logo-{}.svg", std::process::id()));
+    std::fs::write(
+        &logo,
+        "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='5'/>",
+    )
+    .unwrap();
+    let rules = ohl_clearance::RuleSet::parse(
+        "format = \"ohl-clearance-rules\"\nversion = 1\n[[rule]]\nname = \"Ground\"\ntarget = \"ground\"\nvertical = \"6.5 m\"",
+    )
+    .unwrap()
+    .rules;
+    let w = crate::drawings::DrawingsWindow {
+        route: Some(0),
+        all_cases: true,
+        out: Some(std::env::temp_dir()),
+        side_offsets: vec![-10.0, 10.0],
+        plan_scale: Some(1000.0),
+        logos: vec![(logo.clone(), 20.0)],
+        ground_rules: std::sync::Arc::new(rules),
+        markers: std::sync::Arc::new(vec![([150.0, 0.0, 500.0], "test".into())]),
+        ..Default::default()
+    };
+    let input = crate::drawings::Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.options.clearance, Some(6.5));
+    assert_eq!(input.options.side_offsets, [-10.0, 10.0]);
+    assert_eq!(input.options.plan_offset_scale, Some(1000.0));
+    assert_eq!(input.options.logos.len(), 1);
+    let route = input.routes[0].clone();
+    let d = input.drawing(&route).unwrap();
+    assert_eq!(d.sides.len(), 2);
+    assert_eq!(d.markers.len(), 1);
+    // The first span of S1 in each case: the dashed ones are the other
+    // cases' (their sag differs from the case shown).
+    let lowest =
+        |t: &ohl_drawing::Trace| t.points.iter().map(|p| p[2]).fold(f64::INFINITY, f64::min);
+    let spans: Vec<&ohl_drawing::Trace> = d
+        .wires
+        .iter()
+        .filter(|t| t.label.starts_with("S1 span 0 "))
+        .collect();
+    let solid: Vec<f64> = spans
+        .iter()
+        .filter(|t| t.dash.is_none())
+        .map(|t| lowest(t))
+        .collect();
+    let dashed: Vec<f64> = spans
+        .iter()
+        .filter(|t| t.dash.is_some())
+        .map(|t| lowest(t))
+        .collect();
+    assert_eq!(solid.len(), 1);
+    assert!(dashed.len() >= 4, "{dashed:?}");
+    assert!(
+        dashed
+            .iter()
+            .filter(|z| (**z - solid[0]).abs() > 0.05)
+            .count()
+            >= 3,
+        "{solid:?} {dashed:?}"
+    );
+    // Without the ground rule tick: the typed clearance.
+    let typed = crate::drawings::DrawingsWindow {
+        clearance_rule: false,
+        clearance: Some(8.0),
+        ..w
+    };
+    assert_eq!(
+        crate::drawings::Input::new(&m, 0, &typed)
+            .unwrap()
+            .options
+            .clearance,
+        Some(8.0)
+    );
+    let _ = std::fs::remove_file(&logo);
+}
+
 /// Edit › Versions: commit, branch (a project line), work on it and merge
 /// as project operations; the model follows (re-solved) and the window lists them.
 #[test]
