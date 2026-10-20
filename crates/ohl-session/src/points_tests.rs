@@ -163,8 +163,12 @@ fn changed_points_are_logged_and_undone_bit_for_bit() {
     assert!(matches!(&commands[0], Command::ChangePoints { points, .. }
         if points.len() == 2
             && points.iter().all(|c| c.from.index.is_some() && c.to.index.is_some())));
+    // What changed, for the applications (the undo: the changes back).
+    assert_eq!(applied.points.len(), 1);
+    assert_eq!(applied.points[0].1[0].to.xyz, ca.to.xyz);
     // Undone: every stored byte as before; redone: as after.
-    s.undo("ben").unwrap();
+    let undone = s.undo("ben").unwrap();
+    assert_eq!(undone.points[0].1[1].to.xyz, a.xyz);
     assert_eq!(stored(&path), before);
     assert!(present(&path, &a) && !present(&path, &ca.to));
     s.redo("ben").unwrap();
@@ -258,8 +262,8 @@ fn point_changes_follow_the_area_granted_and_admin_rollback() {
         },
     )
     .unwrap();
-    let inside = at(&path, X0 + 10.0, 1_200_000.0, 2);
-    let outside = at(&path, X0 + 50.0, 1_200_000.0, 2);
+    let inside = at(&path, X0 + 10.0, 1_200_000.5, 2);
+    let outside = at(&path, X0 + 50.0, 1_200_000.5, 2);
     let err = s
         .apply("ben", cmd(vec![change(outside, 300, 2)]))
         .unwrap_err();

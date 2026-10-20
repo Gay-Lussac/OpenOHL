@@ -650,6 +650,9 @@ pub struct Applied {
     /// Sections to recalculate: changed sections and sections through
     /// changed structures (jumpers are recalculated on their own).
     pub sections: Vec<String>,
+    /// Points of the project's point clouds changed (by cloud, as
+    /// applied: an undo gives the changes back), [`Command::ChangePoints`].
+    pub points: Vec<(String, Vec<points::PointChange>)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3008,9 +3011,11 @@ impl Session {
         let tx = self.conn.transaction()?;
         let mut prims = prims;
         let mut point_inverses = Vec::new();
+        let mut points_changed = Vec::new();
         for p in point_prims {
             if let Command::ChangePoints { cloud, points } = p {
                 let (applied, back) = points::apply(&tx, &cloud, &points)?;
+                points_changed.push((cloud.clone(), applied.clone()));
                 prims.push(Command::ChangePoints {
                     cloud: cloud.clone(),
                     points: applied,
@@ -3089,6 +3094,7 @@ impl Session {
             seq,
             objects: changed,
             sections,
+            points: points_changed,
         })
     }
 
