@@ -9,6 +9,41 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **The vegetation and danger-tree panel** (owner's requests): **wind
+  steps** for the danger trees — each windy case also solved in still air
+  and at every pressure up to its own, by a step, from the sides chosen
+  (the clearance windows' `WindSteps`), alongside or instead of the swing
+  arc (new position kinds, added beside the others); the **required
+  clearance and the allowance A as requirements by voltage** (one
+  distance, a table, base + per kV; each wire with its system's voltage;
+  single values work as before; the command line takes the rule file's
+  forms); **every** grow-in and fall-in point kept and drawn, in two
+  colours of the user's (kept with the view settings), one batch in 3D and
+  one mark a pixel in plan and profile; **no line to the worst point**;
+  the window a **dockable panel**; its **layers shown only while the panel
+  is open** (closing it takes them off, reopening it or a saved run draws
+  them again; docking or moving keeps them); runs **saved in the
+  performed checks** (`ohl.vegetation`: settings, cases, per-span
+  results, worst points, every point packed) and shown out of date when
+  the line, the points or the ground changed since; every setting
+  **explained** beside it with small drawings, grouped (wire positions,
+  grow-in, fall-in, search) with links to the user guide; the **classes**
+  chosen in a tick menu (default: by role); **design-code presets** of
+  the check — a rule preset carrying a `[vegetation]` table (no change to
+  the plugin interface; plugins built before are unaffected) — with its
+  weather cases, those the project lacks created as one undoable change;
+  **preset dropdowns** listing every enabled design-code plugin's presets
+  grouped by plugin, in the rule editor, the clearance windows and the
+  vegetation panel. Decided here (the requests left it open): a preset's
+  weather case is matched **by name** (one of the same name with other
+  values is kept as the project's, and the preview says so); a saved run
+  tells the points changed when a point edit was logged after it (an undo
+  counts: **conservative**); isoclearance lines are not saved with a run;
+  plan and profile draw one mark a pixel (display only). ([user
+  guide](../user-guide/analyses.md#the-vegetation-panel),
+  [theory](../theory/lidar-analysis.md#wire-positions-checked),
+  [plugins](plugins.md#vegetation-presets),
+  [data model](data-model.md#performed-checks-ohl_sessionreports))
 - **No tool in two menus** (owner): OHL-Design's tools live in the
   Tools menu and the inventory/hotbar, by theme (General, Alignments,
   Structures, Wires); the Structures menu no longer has Add structure…,

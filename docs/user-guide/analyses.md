@@ -274,24 +274,117 @@ OHL_ISOCLEARANCE, the clearance written on each line; CSV:
 `--isoclearance-spacing`, `--isoclearance-swing-arc`), over the line
 width, from the cases drawn and the ground.
 
-Desktop app: **Checks › Vegetation…** — clearance, growth per year,
-years, buffer; trees falling in with the root ball (× the height,
-default 0.05), the allowance (default 2 m), the tallest tree and the
-ground point distance of a tree base (ticked, 5 m); the swing arc;
-unbalanced ice (the case's ice on the span, more ice in mm, more ice load
-in N/m, a load at mid-span in N); the search distance (± 50 m) and
-the points kept per span; isoclearance lines (interval, hide above,
-grid); the weather cases ticked (the list stays open while you tick). The
-ground is the surface of the checks. **Export CSV…** writes the table
-above, **Export lines (CSV)…** the isoclearance lines. What it finds is
-drawn on three layers of **View › Layers**: *Vegetation: grow-in* (cyan
-dots joined to the wire), *Vegetation: danger trees* (an orange trunk
-from base to top, a line to the wire point it falls to) — in the 3D view,
-the plan and the profile (within the line width) — and *Isoclearance
-lines* in the 3D view and the plan, in the colours of their clearance
-(red at 0 to green at the top line); File › Export drawings draws the
-lines on the plan (layer OHL_ISOCLEARANCE; **Leave them out** in its
-window). A cross-section view across a span is still to come.
+**Wind steps** (`--wind-step Pa`, `--wind-sides both|left|right`): each
+windy case is also solved in still air and at every pressure from 0 up to
+the case's in steps of the value given, from the sides given (the full
+pressure is checked from both sides in any case) — as the vertical and
+radial clearance windows step the wind; alongside the swing arc or
+instead of it. The positions are named `still`, `left (step) at 300 Pa`,
+`right (step) at 300 Pa`.
+
+**Clearance by voltage** (`--clearance`, `--fall-allowance`): one
+distance (`5`, `"5 m"`), or as a rule file writes a distance by voltage —
+a table `'{ by_voltage = [[220, "7 m"], [380, "9 m"]] }'` (up to kV, m:
+the first row whose voltage is not exceeded; above the last row its
+distance) or `'{ base = "3 m", per_kv = "0.01 m", above_kv = 110 }'`.
+Each span is checked with the distance for its wire's system's nominal
+voltage (an earthed wire: 0 kV). A single value works as before.
+**Classes** (`--classes 42,43`): the vegetation classes by number instead
+of by role.
+
+### The vegetation panel
+
+**Checks › Vegetation…** opens the danger-tree panel (a window that
+**docks as a panel** like the clearance windows: 📌 Dock as a panel, ⬈
+Float). At its top: **Check** (runs in the background), the name to
+**save** the run as, and — when what the run was computed from changed —
+the banner *Out of date: … changed since this run* with **Run again**.
+Below, the **Preset** dropdown, then the settings in four groups. Each
+value has a short explanation beside it (more on hover), each group a
+link to its section here (**… user guide ↗**), and small drawings follow
+the values typed.
+
+#### Vegetation: wire positions
+
+The **weather cases** ticked (the list stays open while you tick): a case
+without wind as it is, a windy case blown to the left and to the right.
+**Swing arc**: every position between the two blowouts. **Wind stepped**
+(a step in Pa, the sides): still air and every pressure up to the case's.
+Arc and steps work alone or together. **Unbalanced ice**: off, the case's
+ice on the span alone, more radial ice (mm), more ice load per wire
+(N/m), a load at mid-span (N) — on the spans with vegetation within
+reach. Drawings: the span seen along it with its positions, arc and
+steps; three spans with the middle one iced.
+
+#### Vegetation: grow-in
+
+The **required clearance c**: one distance, a table *up to kV → distance*
+or a base plus an amount per kV, with the same editor and preview (at 0
+kV and the project's voltages) as the clearance rules — each wire checked
+with its own system's voltage. A utility's practice may be higher than
+the law, e.g. 7 m at 220 kV and 9 m at 380 kV. **Growth per year g** and
+**years** until the next cut, the **buffer b** (e.g. the survey's
+accuracy). A point closer than c + g·years + b grows in. Drawing: the
+wire with the three rings.
+
+#### Vegetation: fall-in
+
+**Trees falling in**; the **root-ball fraction k** (the hinge k·h from the
+trunk; default 0.05), the **allowance A** (default 2 m; one distance or by
+voltage like c), the **smallest and tallest tree** (2 and 40 m), the
+**tree base's ground point** within a distance (ticked, 5 m: else no
+fall-in check for that point). Drawings: the falling tree (trunk, hinge
+at k·h, the sector it sweeps, A to the wire), the tree base and the
+nearest ground point.
+
+#### Vegetation: search
+
+The **classes** checked as vegetation — a tick menu of the project's class
+scheme (number, name, colour; it stays open while you tick), by default
+the classes whose role is vegetation; the **search distance** (half width
+of the corridor read, ± 50 m), the **points kept per span** in the table,
+**isoclearance lines** (interval, hide above, grid).
+
+**Results.** The table lists per span the required clearance applied, the
+grow-in and fall-in counts, the nearest point and the worst fall-in margin
+with their case and position; **Worst points** below lists the worst of
+each span. **Every** grow-in point and **every** danger tree found is
+drawn, on the layers *Vegetation: grow-in* (a dot) and *Vegetation:
+danger trees* (the trunk from base to top) in the 3D view, the plan and
+the profile (within the line width), in two **colours** chosen in the
+panel (the colour tool; kept with this project's view settings), one
+batch each in 3D and one mark a pixel in the plan and the profile (10⁶
+points stay quick; no number is coarsened). No line is drawn to the worst
+point any more: the table names it. *Isoclearance lines* are drawn in the
+colours of their clearance. **The layers show the run of the open panel
+only: closing the panel takes them off the views** (also when ticked in
+View › Layers); reopening it, or reopening a saved run, draws them again.
+Docking or moving the panel keeps them. **Export CSV…** writes the worst
+points of every span and every point found (with case and position),
+**Export lines (CSV)…** the isoclearance lines.
+
+**Presets.** The **Preset** dropdown lists the presets of every
+design-code plugin turned on, grouped by plugin (the description on
+hover; one that has none for this check says so). A vegetation preset
+sets the classes, the clearance and allowance (by voltage), the growth,
+the danger-tree values, the search distance and the wind steps, and names
+its weather cases. Chosen, it is previewed — every value, and for each of
+its weather cases whether the project has it (*exists*; by name — one of
+the same name with other values is kept as the project's, and says so) or
+it **will be created**. **Apply preset** puts the values in (edit them
+freely after), creates the missing cases in the project's weather cases
+(one change of the project, undone by Undo) and ticks the preset's cases.
+The same dropdown lists the presets in the rule editor's **Load preset…**
+and in the vertical and radial clearance windows (**Plugin preset**,
+then **Load**).
+
+**Saving.** **Save in Performed checks** keeps the run — its settings,
+weather cases, per-span results, worst points and every grow-in and
+fall-in point with its case and position — in Checks › Performed checks
+(one edit, undone by Undo; a name in use is replaced on a second click).
+Opened from there, the panel shows it with its layers, and says *out of
+date* when the line (its objects and library files), the LiDAR points or
+the ground changed since it was saved.
 
 See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees-2026-10-20).
 

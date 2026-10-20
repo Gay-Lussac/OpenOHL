@@ -281,6 +281,60 @@ rule-presets;`); extension point `design-code` as before.
   (`ohl_code_common::no_rule_presets!()`); `plugins/tests/code-presets`
   gives one preset with invented values for the tests.
 
+### Vegetation presets
+
+A **preset of the vegetation and danger-tree check** is a rule preset (the
+same `rule-presets` export, nothing added to the interface) whose `rules`
+text carries a `[vegetation]` table — with or without `[[rule]]`s (a
+preset holding only `[vegetation]` is listed for the vegetation check
+only; the rule editor and the clearance windows list those with rules).
+Hosts before 2026-10-20 refuse a preset without rules; plugins built
+before load unchanged and give none. What a plugin returns, per preset:
+
+- `name`, `description` (the source of its values, shown in the
+  dropdown's hover and the preview);
+- `rules`: a rule file's text (`format = "ohl-clearance-rules"`,
+  `version = 1`, a `name`) with, all keys optional (those given replace
+  the panel's values, the others stay):
+
+  ```toml
+  [wind]                      # the wind steps of the check
+  steps = true
+  step = "100 Pa"
+  sides = "both"              # both, left or right
+
+  [vegetation]
+  classes = [42, 43]          # LiDAR class numbers checked as vegetation
+  clearance = { by_voltage = [[0, "2.5 m"], [20, "3 m"], [220, "7 m"], [380, "9 m"]] }
+                              # or "5 m", or { base = …, per_kv = …, above_kv = … }
+  fall_allowance = "2 m"      # A: the same forms
+  root_ball = 0.05            # k
+  max_base_ground_distance = "5 m"
+  search_distance = "50 m"
+  growth_per_year = "0.3 m"
+  years = 3
+  buffer = "0.5 m"
+  min_tree_height = "2 m"
+  max_tree_height = "40 m"
+  fall_in = true
+  swing_arc = false
+  ```
+
+- `weather-cases`: an `.ohlwc` file's text with the cases the check runs
+  in (e.g. a hot case and a warm windy one); empty: none. When the preset
+  is applied, the cases the project lacks (**by name**: a case of the
+  same name with other values is kept as the project's, the preview says
+  so) are created in the project's weather cases (one undoable change)
+  and every case of the preset is ticked for the run.
+
+Unknown keys are refused (as everywhere in a rule file). Distances are
+lengths (`"9 m"` or a number of metres); a table's rows are
+`[up to kV, distance]` with the voltages increasing. Read by
+`ohl_clearance::rules::VegetationPreset` (`RuleSet::vegetation`); checked
+by `ohl_io::codes::check_rule_presets`; listed by `ohl code rule-presets`
+(`vegetation: classes …`). The test plugin `plugins/tests/code-presets`
+returns one (`trees`, invented values).
+
 `plugins/codes/*` are such plugins (EN 50341 with a national annex overlay,
 IEC 60826, NESC, CSA C22.3, ASCE MOP 74, GO 95); they share
 `plugins/codes/common` (reading parameter files, writing the case files,

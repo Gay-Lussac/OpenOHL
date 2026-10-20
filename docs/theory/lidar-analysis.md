@@ -173,6 +173,28 @@ wind is solved with the wind **from the left and from the right**.
   bound (the bundle's outer envelope), where the polylines take each
   subconductor.
 
+- **Wind steps (optional, 2026-10-20):** a windy case of full pressure
+  \\( P \\) is also solved in still air and at every intermediate pressure
+  \\( p_k = k\,\Delta p < P \\) (\\( \Delta p \\) the step; at most 200
+  steps, the step made larger beyond), from the sides chosen (both, left
+  or right; the full pressure is checked from both sides anyway) — the
+  wind steps of the vertical and radial clearance windows
+  (`WindSteps::pressures`). Each is a position of its own (`still`,
+  `left (step)`, `right (step)`, with its pressure), checked like the
+  blowouts: alongside the swing arc or instead of it. Where the arc is
+  a rigid swing at the largest radius between the two blowouts (a
+  closed form, conservative), the steps are the solver's own positions
+  at each pressure (strings and clamps where they really swing, the sag
+  of each pressure), exact at the pressures solved but blind between two
+  steps.
+
+  Check by hand (`wind_steps_of_the_example_line`): a wire hangs in the
+  plane of its load, at \\( \tan\varphi = q_w / q_g \\) from the
+  vertical about the chord between its clamps, with \\( q_w = p\,d \\)
+  proportional to the pressure, so
+  \\( \tan\varphi(p) / \tan\varphi(P) = p / P \\): at \\( P/3 \\) and
+  \\( 2P/3 \\) the solved positions give 0.333 and 0.667.
+
 - **Unbalanced ice (optional):** the span checked carries more ice than
   its neighbours, so its suspension strings swing into it and it sags
   further. The span is solved in a **weather case of its own** and the
@@ -220,6 +242,18 @@ approach distance, by voltage, from the rule), \\( g \\) the growth until
 the next cut, \\( b \\) a buffer (e.g. for the survey's accuracy). The margin
 is the difference; the worst position (hot, left, right or on the arc) is
 reported.
+
+As built (2026-10-20): \\( c_{\text{req}} \\) is one distance or a
+requirement by voltage, as the clearance rules write it — a table "up to
+kV → distance" (the first row whose voltage is not exceeded; above the
+last row its distance) or \\( c_0 + c_1 (U - U_0) \\) above \\( U_0 \\) —
+evaluated for each span at the nominal voltage \\( U \\) of its wire's
+system (an earthed wire at 0 kV). The search reaches the largest of the
+spans' distances. The fall-in allowance \\( A \\) takes the same forms.
+Check by hand (`the_clearance_by_the_voltage_of_each_wire`): two level
+wires of 220 and 380 kV, a point 8 m below each, the table 7 m up to
+220 kV and 9 m up to 380 kV: the 380 kV wire's point grows in
+(8 < 9), the 220 kV wire's does not (8 > 7).
 
 ### Fall-in: a tree pivoting about its root ball
 
@@ -386,6 +420,14 @@ and the plan, and in the profile within the line width; the isoclearance
 lines on their layer in the 3D view and the plan, and on the drawings'
 plan (layer OHL_ISOCLEARANCE). *Left for later:* the cross-section view
 (the application has no cross-section facility yet).
+
+Since 2026-10-20 the check also keeps **every** grow-in and fall-in point
+found (with the position each was found against and a tree's base), not
+only the worst; the application lists them in its CSV, draws them all
+(the grow-in points as dots, the danger trees as trunks, in the user's
+two colours; no line to the wire any more) while its panel is open, and
+saves them with a run in the performed checks. Drawing only: the plan and
+the profile mark one point a pixel, nothing computed is coarsened.
 
 ### How it is made fast
 
