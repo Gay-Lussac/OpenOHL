@@ -786,6 +786,36 @@ mod tests {
         }
     }
 
+    /// The Swiss LeV plugin's rule presets (when this checkout has it and
+    /// it is built with the `rule-presets` export): read through the
+    /// interface and checked as rule files; the law's ground clearance of
+    /// a span line, 7.5 m + 0.01 m/kV: 11.3 m at 380 kV, 7.5 m for an earth
+    /// wire (0 kV).
+    #[test]
+    fn lev_rule_presets_load() {
+        let Some(dir) = lev_plugin() else {
+            return;
+        };
+        let host = WasmHost::new().unwrap();
+        if !host.load_code(&dir).unwrap().has_rule_presets() {
+            eprintln!("skipping: lev-ch built without rule-presets");
+            return;
+        }
+        let text = std::fs::read_to_string(dir.join("example-parameters.toml")).unwrap();
+        let list = rule_presets(&host, &dir, &text).unwrap();
+        let ground = list
+            .iter()
+            .find(|p| p.name == "lev-ground-span-line")
+            .unwrap();
+        let r = &ground.rules.rules[0];
+        assert!((r.required(Some(380.0)).vertical.unwrap() - 11.3).abs() < 1e-9);
+        assert!((r.required(None).vertical.unwrap() - 7.5).abs() < 1e-9);
+        assert!(ground.weather.is_some());
+        // Without a parameter file it says what it needs.
+        let e = rule_presets(&host, &dir, "").unwrap_err();
+        assert!(e.contains("parameter file"), "{e}");
+    }
+
     /// The other codes' first wind cases, by hand from their examples.
     #[test]
     fn other_examples_by_hand() {

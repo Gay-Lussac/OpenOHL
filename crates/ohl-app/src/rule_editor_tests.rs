@@ -303,3 +303,62 @@ fn a_plugin_rule_preset_loads_into_the_rule_file() {
     harness.run();
     assert_eq!(rules_of(&file).rules.len(), 2);
 }
+
+/// The Swiss LeV plugin's rule presets (when this checkout has
+/// `local-data/plugins/lev-ch`, built with the `rule-presets` export), read
+/// as Load preset… reads them and merged into a rule file: the law's span
+/// line ground clearance, 7.5 m + 0.01 m/kV (9.7 m at 220 kV).
+#[test]
+fn the_lev_rule_presets_load_into_the_rule_file() {
+    let dir = root().join("local-data/plugins/lev-ch");
+    let Ok(m) = ohl_plugins::Manifest::load(&dir) else {
+        eprintln!("skipping: no local-data/plugins/lev-ch");
+        return;
+    };
+    if !m.entry_path().is_file() {
+        eprintln!("skipping: lev-ch not built");
+        return;
+    }
+    let host = ohl_plugins::WasmHost::new().unwrap();
+    if !host.load_code(&dir).unwrap().has_rule_presets() {
+        eprintln!("skipping: lev-ch built without rule-presets");
+        return;
+    }
+    let (mut harness, file) = harness_with_rules("lev-rule-preset");
+    let params = dir.join("example-parameters.toml");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.rule_editor
+            .presets
+            .read(vec![("lev-ch".into(), dir.clone())], Some(params));
+        assert!(
+            r.rule_editor
+                .presets
+                .poll(std::time::Duration::from_secs(60))
+        );
+        let list = r.rule_editor.presets.list[0].presets.as_ref().unwrap();
+        let k = list
+            .iter()
+            .position(|p| p.name == "lev-ground-span-line")
+            .unwrap();
+        r.rule_editor.presets.chosen = Some((0, k));
+        crate::rule_editor::apply_preset(r, crate::rule_editor::Load::Merge);
+    }
+    harness.run();
+    let set = rules_of(&file);
+    let ground = set
+        .rules
+        .iter()
+        .find(|r| r.name.starts_with("Ground vertical"))
+        .unwrap();
+    assert!((ground.required(Some(220.0)).vertical.unwrap() - 9.7).abs() < 1e-9);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(
+        r.model
+            .cases
+            .iter()
+            .any(|c| c.case.name.starts_with("LeV 40")),
+        "{:?}",
+        r.rule_editor.status
+    );
+}
