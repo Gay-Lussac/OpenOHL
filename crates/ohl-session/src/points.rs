@@ -154,6 +154,35 @@ pub(crate) fn still_there(
     ohl_pointcloud::edit::points_present(conn, &info, &to).map_err(store)
 }
 
+impl crate::Session {
+    /// The state of the project's point clouds, for a saved result to
+    /// tell whether they changed since: the last log entry that changed
+    /// points (any line: the clouds are the project's) and each cloud's
+    /// name, point count and creation time (an import makes another).
+    /// An undo is a change here too (**conservative**: the points may be
+    /// as before).
+    pub fn points_state(&self) -> String {
+        let seq: i64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(MAX(seq), 0) FROM oplog WHERE objects LIKE '%\"point_cloud\"%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let clouds: String = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(group_concat(name || ':' || points || ':' || created, ';'), '')
+                 FROM (SELECT name, points, created FROM pointcloud ORDER BY name)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or_default();
+        format!("{seq}|{clouds}")
+    }
+}
+
 /// The plan area of the points changed (where they were and where they
 /// go), for the edit rights limited to an area: `None` when the cloud is
 /// missing.
