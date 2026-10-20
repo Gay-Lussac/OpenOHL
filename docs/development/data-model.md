@@ -761,11 +761,21 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - **Danger trees** (2026-10-20; derived, never stored in the project):
   `ohl_clearance::vegetation::VegetationParams` — `clearance`,
   `growth_per_year`, `years`, `buffer` (b), `fall_in`, `root_ball` (k,
-  0 = as before; the application proposes `PROPOSED_ROOT_BALL` 0.1),
-  `fall_allowance` (A), `min_tree_height`, `max_tree_height`,
-  `max_base_ground_distance` (`Option`, m: a tree base only with a TIN
-  vertex within it in plan; none = no limit), `keep` — all inputs of a
-  run (command-line flags, the window's fields), not saved. The wire
+  0 = as before), `fall_allowance` (A), `min_tree_height`,
+  `max_tree_height`, `max_base_ground_distance` (`Option`, m: a tree
+  base only with a TIN vertex within it in plan; none = no limit), `keep`
+  — all inputs of a run (command-line flags, the window's fields), not
+  saved. Defaults since 2026-10-20 (`Default`, the command line and the
+  application alike): `DEFAULT_ROOT_BALL` 0.05, `DEFAULT_FALL_ALLOWANCE`
+  2 m, `DEFAULT_MAX_BASE_GROUND_DISTANCE` 5 m, and
+  `DEFAULT_SEARCH_DISTANCE` 50 m for the corridor read (`--corridor`,
+  the window's search distance); before, 0, 0, none and 60 m
+  (`PROPOSED_ROOT_BALL` 0.1 in the application, removed). Unbalanced ice:
+  `positions::UnbalancedIce` — `CaseIce`, `ExtraThickness(m)`,
+  `ExtraLoad(N/m per wire)` (until 2026-10-20 `Extra`, the whole
+  bundle's), `Concentrated(N, the bundle's)`; `UnbalancedIce::cases`
+  gives the section's and the span's weather case, solved by
+  `ohl_line::solve::solve_section_span_cases`. The wire
   positions are `ohl_clearance::positions::Positions`: `cases` (names),
   `spans` (`Span`: the span's `Wire`, its `Axis` A₁A₂ through the
   attachments, its positions, its capsule and `Bands`), `positions`
@@ -1095,7 +1105,20 @@ kg/m³ — for a thickness its weight, for a load its iced diameter
 `WeatherCase::iced_diameter`; until 2026-10 a load without a density
 left the wind on the bare diameter), `wind_pressure`, `wind_from`
 (`right`/`left`, looking ahead), `air_density_factor`,
-`ambient_temperature`.
+`ambient_temperature`. Derived cases (2026-10-20, in memory only):
+`without_ice`, `with_more_ice_thickness` (a thickness grows; a load
+becomes the load out to the iced diameter plus twice the extra) and
+`with_more_ice_load` (the ice weight plus the extra, as a load at the
+case's density, else glaze ice); `has_ice`.
+
+**A weather case per span** (2026-10-20, in memory only):
+`ohl_line::solve::SpanCases` — `base` (the section's case) and `spans`
+(`BTreeMap` span index → its own case); `uniform`, `with_span`, `of`,
+`is_uniform`. `solve_section_span_cases(_coupled)` solve a section with
+it (finite elements only; the ruling span refuses spans in different
+cases); one case for all is `solve_section` bit for bit. In the plain
+section model, `ohl_wirefe::State::span_states` (`(span, SpanState {
+temperature, cable_load })`, empty: all in the state's).
 
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors

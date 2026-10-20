@@ -93,9 +93,19 @@ there (about 0.5 µs a point on one core).
 *Built, in active development (not approved yet). The two checks above
 are extended: trees falling about their root ball, the wire anywhere along
 its blowout swing, an unbalanced-ice case, and isoclearance lines. With
-the root-ball fraction, the clearance allowance and the buffer at 0 (the
-command line's defaults) the results are those of the section above, bit
-for bit. Every distance is to the conductor's surface, as above. Code:
+the root-ball fraction, the clearance allowance and the buffer at 0 and
+no limit to a tree base's ground point the results are those of the
+section above, bit for bit.
+
+**Defaults** (the owner, 2026-10-20; the same in the command line and the
+desktop application): root-ball fraction \\( k = 0.05 \\), clearance
+allowance \\( A = 2 \\) m, a ground point within 5 m of a tree base, a
+50 m search distance (the half width of the corridor around the spans'
+chords in which points are read). They are the utility practice; a
+design-code plugin's preset may give others, and every one can be set
+(\\( k = 0 \\), \\( A = 0 \\), no limit). Before 2026-10-20 the command
+line's defaults were 0, 0, no limit and 60 m — its results with the
+defaults change. Every distance is to the conductor's surface, as above. Code:
 `ohl_clearance::fall`, `ohl_clearance::positions`,
 `ohl_clearance::vegetation`, `ohl_clearance::isoclearance`.*
 
@@ -164,27 +174,40 @@ wind is solved with the wind **from the left and from the right**.
   subconductor.
 
 - **Unbalanced ice (optional):** the span checked carries more ice than
-  its neighbours (by default: the case's ice on that span only, or a
-  given extra ice load or concentrated load on it), so its suspension
-  strings swing into it and it sags further. Each span checked is solved
-  with its section on its own (the section's other spans as in the case).
+  its neighbours, so its suspension strings swing into it and it sags
+  further. The span is solved in a **weather case of its own** and the
+  section's other spans in the section's case — the section solver's
+  [weather case per span](wirefe.md#a-weather-case-per-span-2026-10-20):
+  a full weather case on that span (its temperature, its ice weight, the
+  wind on its iced diameter, the ice and wind on the bodies on it, its
+  iced surface radius).
 
   As built: only the spans with vegetation points within reach (in plan,
-  of the span's positions) are solved; each span and case on its own, in
-  parallel. *The case's ice on that span only*: the section solved in the
-  case without ice, the span carrying the ice's weight per metre (the
-  case's iced load less the bare wire's, times the bundle) as a load
-  spread along it; the span's surface radius is the iced one. *An extra
-  load*: the case as it is and the given load per metre (N/m, the whole
-  bundle's) spread along the span. *A concentrated load*: the case as it
-  is and the given load (N, the whole bundle's) at mid-span. A windy case
-  is solved from the left and from the right. Cases without ice are left
-  out of *the case's ice*.
+  of the span's positions) are solved; each span and case with its
+  section on its own, in parallel. *The case's ice on that span only*:
+  the span in the case, the section's other spans in the case without its
+  ice (the same temperature and wind); cases without ice are left out.
+  *More ice as a thickness* \\( \Delta t \\): every span in the case, the
+  span in the case with \\( \Delta t \\) more radial ice (a thickness
+  grows by it; an ice load becomes the load of the ice out to the iced
+  diameter plus \\( 2\Delta t \\), at the case's density or else glaze
+  ice). *More ice as a load* \\( \Delta w \\) (N/m on each wire, each
+  subconductor, as a weather case's ice load): every span in the case,
+  the span in the case with its ice weight plus \\( \Delta w \\) as an
+  ice load at the case's density (else glaze ice: the smallest iced
+  diameter that weight can have). *A concentrated load*: the case as it
+  is and the given load (N, the whole bundle's) at mid-span — a point
+  load, the one mode not a weather case. A windy case is solved from the
+  left and from the right, the span's own case with it.
 
-  **Simplification:** the ice on the span alone is a weight spread along
-  it: the wind on that span acts on the bare diameter (the wind on the
-  extra ice is left out). Exact: the span's own iced diameter in the
-  solver.
+  Before 2026-10-20 the case's ice on one span was a weight spread along
+  it with the wind on the bare diameter (a labelled simplification, now
+  gone), and an extra load was the whole bundle's. On the example line
+  (S1's second span, rime ice with wind) the iced span is now blown
+  7.3 m across its axis against 3.7 m before (6.0 m with ice on every
+  span), its lowest point 0.67 m higher (the wind swings the sag
+  sideways); without wind (glaze ice) it hangs 3 cm lower (the marker
+  ball on it ices too).
 
 ### Grow-in
 
@@ -206,8 +229,8 @@ trunk stands straight below it, base \\( B \\) on the ground. Grown by
 \\( g \\), its height is \\( h' = h + g \\). The tree falls by turning about
 the edge of its root ball: a hinge \\( H \\) on the ground at the
 **root-ball radius** \\( b_r = k\,h' \\) from the trunk, \\( k \\) a given
-fraction of the height (a user setting: the command line's default 0, the
-desktop application proposes 0.1), on the side it falls to.
+fraction of the height (a user setting, default 0.05), on the side it
+falls to.
 
 **The tree base needs a ground point near it** (optional,
 `max_base_ground_distance`, e.g. 5 m): the ground's height below the
@@ -220,7 +243,8 @@ interpolated across a large gap in the ground points — a steep slope, a
 hole under dense canopy — where the TIN's height may be metres off and the
 tree's height with it. **Simplification:** such a point is left out of
 the fall-in check rather than given a guessed height (it is reported, not
-assumed safe: the count says how many). Default: no limit.
+assumed safe: the count says how many). Default: 5 m (no limit when
+none is given).
 
 It falls towards the wire point \\( q \\) (the worst direction). In the
 vertical plane through \\( B \\) and \\( q \\), with coordinates \\( (x, z) \\)

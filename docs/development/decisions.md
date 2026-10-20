@@ -9,6 +9,47 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Danger-tree defaults = the utility practice** (owner): root-ball
+  fraction k = 0.05, clearance allowance A = 2 m, a ground point within
+  5 m of a tree base, a 50 m search distance (the half width of the
+  corridor read) — in `VegetationParams::default`, `ohl lidar
+  vegetation` and Checks › Vegetation alike; a design-code plugin's
+  preset may give others, and each can be set (k = 0, A = 0,
+  `--max-base-ground-distance inf` for no limit). **This changes the
+  results of `ohl lidar vegetation` for runs that relied on the
+  defaults** (before: 0, 0, no limit, 60 m; the application proposed
+  k = 0.1 with no limit). The validation cases state their own
+  parameters (results unchanged); tests of the check as before set them
+  explicitly. Reading taken (not stated by the owner): the "search
+  distance" is the corridor half width (`--corridor`, the window's
+  "search ± m"). ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20),
+  [user guide](../user-guide/analyses.md))
+- **Unbalanced ice as a weather case; a weather case per span in the
+  section solver** (owner: "the extra ice should just be like another
+  weather case"; core change approved): the section solver takes a
+  weather case per span (`ohl_line::solve::SpanCases`,
+  `solve_section_span_cases`; `ohl_wirefe::State::span_states`): a
+  span's own case sets its load per metre (weight, ice, the wind on its
+  iced diameter), its temperature, the forces on the bodies on it and its
+  surface radius; the section's case the strings' wind
+  (**Simplification**, labelled), the jumpers, the core branch and the
+  rolling of a section in the blocks (it rolls in the section's case; the
+  spans' own cases act on it clipped in, as point loads do). One case for
+  all spans is solved bit for bit as before (tested); the ruling span
+  refuses spans in different cases. Validation `spancases-001…003`
+  against an independent closed-form evaluation. The danger trees'
+  unbalanced ice is rebuilt on it: the case's ice on the span (the other
+  spans in the case without ice), more ice as a thickness (new) or as a
+  load — **per wire (subconductor), as a weather case's ice load; before,
+  the whole bundle's** (the heavier reading for bundles) — each a derived
+  weather case (`WeatherCase::without_ice`, `with_more_ice_thickness`,
+  `with_more_ice_load`); a concentrated load stays a point load. The
+  wind now acts on the iced span's iced diameter (the old
+  **Simplification**, wind on the bare diameter, is gone), and bodies on
+  the span ice too. Example line, S1's second span: rime ice with wind,
+  the case's ice on the span, blown 7.3 m across its axis (3.7 m before),
+  its lowest point 0.67 m higher; glaze ice without wind 3 cm lower (the
+  marker ball's ice). ([theory](../theory/wirefe.md#a-weather-case-per-span-2026-10-20))
 - **LiDAR points: what can be clicked, and changing a point** (owner's
   request): clicking LiDAR points was unreliable because a click looked at
   the points loaded when the project opened (a sample thinned to

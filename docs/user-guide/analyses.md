@@ -214,27 +214,38 @@ span (in parallel on every core):
   the cloud's ground classes, `--ground-role`) is a tree top; the tree,
   grown, falls towards each wire point turning about the edge of its
   **root ball** — a hinge `--root-ball` × its height from the trunk
-  (default 0: about its base, as before; the desktop application
-  proposes 0.1) — and rests on the ground along that direction (a ridge
-  between the tree and a low wire shelters it). A danger tree when the
-  swept trunk comes nearer the wire's surface than `--fall-allowance`
-  (default 0, e.g. the flashover clearance). `--max-tree-height` (40 m)
-  is the tallest tree looked for. `--max-base-ground-distance 5`: a
-  tree's base is taken from the ground only when a ground point lies
-  within 5 m in plan (no limit by default); the points left without a
-  base are counted, with the reason.
+  (default 0.05; 0: about its base) — and rests on the ground along that
+  direction (a ridge between the tree and a low wire shelters it). A
+  danger tree when the swept trunk comes nearer the wire's surface than
+  `--fall-allowance` (default 2 m, e.g. the flashover clearance).
+  `--max-tree-height` (40 m) is the tallest tree looked for.
+  `--max-base-ground-distance` (default 5 m): a tree's base is taken
+  from the ground only when a ground point lies within that distance in
+  plan (`inf`: no limit); the points left without a base are counted,
+  with the reason.
 - **Swing arc** (`--swing-arc`): each span of a windy case also anywhere
   along its swing between the left and the right blowout (the span
   swinging as one about the line through its attachment points, at the
   largest of the three radii).
 - **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
-  within reach solved with its section on its own and more load on it
-  alone: `case` (the case's ice on that span only, cases with ice),
-  `extra=5` (5 N/m more on the span, the whole bundle's) or `load=2000`
-  (2000 N at mid-span).
+  within reach solved with its section on its own, the span in a weather
+  case of its own (its ice weight, the wind on its iced diameter) and the
+  other spans in the section's: `case` (the case's ice on that span
+  only, the other spans in the case without ice; cases with ice),
+  `thickness=0.01` (the case with 10 mm more radial ice on the span; in
+  metres), `extra=5` (the case with 5 N/m more ice load on each wire of
+  the span — per subconductor, as a weather case's ice load; before
+  2026-10-20 the whole bundle's) or `load=2000` (2000 N at mid-span, the
+  whole bundle's).
 
-With the defaults (`--root-ball 0`, no allowance, no buffer) the results
-are those of the check before the danger trees. The table lists the spans
+**Defaults** (since 2026-10-20, the same in the desktop application):
+root ball 0.05, allowance 2 m, a ground point within 5 m of a tree base,
+a 50 m search distance (`--corridor`) — the utility practice; a
+design-code plugin's preset may give others. Before, the command line's
+defaults were 0, 0, no limit and 60 m: **runs that relied on the
+defaults now give other results.** With `--root-ball 0
+--fall-allowance 0 --max-base-ground-distance inf` and no buffer the
+results are those of the check before the danger trees. The table lists the spans
 with findings: grow-in and fall-in counts, the nearest point and the worst
 fall-in margin, each with its case and position (`case`, `left`,
 `right`, `arc`, `ice`, `ice left`, `ice right`). The CSV (`--csv`) holds
@@ -250,7 +261,8 @@ error.
 **Isoclearance lines** (`--isoclearance FILE`, repeatable: `.geojson`,
 `.dxf` or `.csv` by the extension): the ground's clearance to the nearest
 wire's surface over all the positions checked, contoured over the
-corridor (`--corridor`, ±60 m around the spans' chords) every
+corridor (`--corridor`, the search distance, ±50 m around the spans'
+chords) every
 `--iso-interval` metres (5) up to `--iso-max` (40; lines above are not
 drawn), on a `--iso-spacing` grid (1 m) refined from a `--iso-coarse` one
 (8 m) where lines can be. A tree of height h standing inside the h line
@@ -264,8 +276,10 @@ width, from the cases drawn and the ground.
 
 Desktop app: **Checks › Vegetation…** — clearance, growth per year,
 years, buffer; trees falling in with the root ball (× the height,
-proposed 0.1), the allowance, the tallest tree and the ground point
-distance of a tree base; the swing arc; unbalanced ice; the corridor and
+default 0.05), the allowance (default 2 m), the tallest tree and the
+ground point distance of a tree base (ticked, 5 m); the swing arc;
+unbalanced ice (the case's ice on the span, more ice in mm, more ice load
+in N/m, a load at mid-span in N); the search distance (± 50 m) and
 the points kept per span; isoclearance lines (interval, hide above,
 grid); the weather cases ticked (the list stays open while you tick). The
 ground is the surface of the checks. **Export CSV…** writes the table
