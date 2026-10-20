@@ -6299,7 +6299,7 @@ fn design_code_clearance_presets_load_into_the_window() {
     assert_eq!(win.zone.search, Some(30.0));
     assert_eq!(win.check.method, Some(ohl_line::condition::Method::Fe));
     assert!(out.weather_saved.is_some());
-    crate::app::clearance_zone_out(&mut r, out);
+    crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
     assert!(
         r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"),
         "{:?}",

@@ -965,6 +965,110 @@ pub fn pick_lidar(
     best.map(|(d, _, p)| (d, p))
 }
 
+/// The LiDAR points drawn inside `area` on the screen (`project` gives
+/// the screen position and depth; points behind the eye are left out):
+/// the rule of a click — those drawn, no other ([`pick_lidar`]) —, of the
+/// classes `only` when given. At most `limit` are kept; the second value
+/// counts them all.
+///
+/// Cost: projecting the points of the groups whose bounds meet the area
+/// (~10 ns a point; a lasso tests each point inside its bounds against
+/// its edges).
+pub fn lidar_in_area(
+    model: &Model,
+    shown: &LidarShown<'_>,
+    area: &crate::area::Area,
+    project: &dyn Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    only: Option<&std::collections::BTreeSet<u8>>,
+    limit: usize,
+) -> (Vec<crate::model::LidarPoint>, usize) {
+    let mut out = Vec::new();
+    let mut total = 0usize;
+    let mut consider = |q: &[i32; 3], c: u8| {
+        if only.is_some_and(|o| !o.contains(&c)) {
+            return;
+        }
+        let Some((s, _)) = project(lidar_xyz(model, q)) else {
+            return;
+        };
+        if area.contains(s) {
+            total += 1;
+            if out.len() < limit {
+                out.push((*q, c));
+            }
+        }
+    };
+    // Whether a group's bounds may hold points inside (a corner behind
+    // the eye: not known, looked at).
+    let meets = |b: &[[f64; 3]; 2]| {
+        let mut lo = [f64::INFINITY; 2];
+        let mut hi = [f64::NEG_INFINITY; 2];
+        for k in 0..8 {
+            let p = [0, 1, 2].map(|i| b[(k >> i) & 1][i]);
+            let Some((s, _)) = project(p) else {
+                return true;
+            };
+            for i in 0..2 {
+                lo[i] = lo[i].min(s[i]);
+                hi[i] = hi[i].max(s[i]);
+            }
+        }
+        area.meets(lo, hi)
+    };
+    match shown {
+        LidarShown::Nothing => {}
+        #[cfg(test)]
+        LidarShown::Loaded => {
+            for (q, c) in &model.points {
+                if !model.hidden_classes.contains(c)
+                    && crate::scene::class_color(&model.scheme, *c).is_some()
+                {
+                    consider(q, *c);
+                }
+            }
+        }
+        LidarShown::Groups(groups) => {
+            for g in groups {
+                if g.bounds.as_ref().is_some_and(|b| !meets(b)) {
+                    continue;
+                }
+                match &g.points {
+                    LidarPoints::Columns(xyz, class) => {
+                        let runs = if g.cells.len() == xyz.len().div_ceil(LIDAR_CELL) {
+                            g.cells.len()
+                        } else {
+                            1
+                        };
+                        for k in 0..runs {
+                            if runs > 1 && !meets(&g.cells[k]) {
+                                continue;
+                            }
+                            let (a, b) = if runs > 1 {
+                                (k * LIDAR_CELL, ((k + 1) * LIDAR_CELL).min(xyz.len()))
+                            } else {
+                                (0, xyz.len())
+                            };
+                            for (q, c) in xyz[a..b].iter().zip(&class[a..b]) {
+                                consider(q, *c);
+                            }
+                        }
+                    }
+                    LidarPoints::Indices(indices, step) => {
+                        for &k in indices.iter() {
+                            if (k as usize).is_multiple_of(*step)
+                                && let Some((q, c)) = model.points.get(k as usize)
+                            {
+                                consider(q, *c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (out, total)
+}
+
 /// Picks among everything switched on in `snaps`: the [`candidates`], and
 /// the LiDAR points straight from the model (millions of them: not made
 /// into candidates), all loaded (tests; the views pick what they draw:

@@ -58,11 +58,108 @@ pub struct PointsForm {
     pub cloud: String,
     /// Its coordinate scale, m.
     pub scale: f64,
+    /// Its chunk size in units of the scale (a point's block: its chunk
+    /// and class).
+    pub units: i64,
     /// The points.
     pub points: Vec<EditedPoint>,
+    /// Classes of the points selected left as they are (several points:
+    /// the class filter).
+    pub skip: BTreeSet<u8>,
     /// Why it cannot be changed (a viewer, a cloud outside the project):
     /// shown read-only.
     pub read_only: Option<String>,
+}
+
+/// Points selected up to this many are looked for one by one (within
+/// [`FIND_WITHIN`]); more, by reading their blocks once.
+const ONE_BY_ONE: usize = 8;
+
+/// The points drawn `drawn` as stored: the blocks they lie in read once,
+/// each stored point drawn as the views draw it (mm from the model's
+/// origin) matched to those selected; points not matched so (a few) are
+/// looked for one by one within [`FIND_WITHIN`].
+///
+/// Cost: decoding the blocks (~10⁷ points a second) and a hash look-up
+/// per stored point in them.
+fn find_many(
+    model: &Model,
+    source: &ohl_pointcloud::CloudSource,
+    cloud: &ohl_pointcloud::CloudInfo,
+    drawn: &[LidarPoint],
+) -> Result<Vec<EditedPoint>, String> {
+    use std::collections::HashMap;
+    let mut wanted: HashMap<LidarPoint, usize> = HashMap::with_capacity(drawn.len());
+    let mut keys = BTreeSet::new();
+    for p in drawn {
+        *wanted.entry(*p).or_default() += 1;
+        let at = crate::selection::lidar_xyz(model, &p.0);
+        for dx in [-FIND_WITHIN, FIND_WITHIN] {
+            for dy in [-FIND_WITHIN, FIND_WITHIN] {
+                keys.insert(ohl_pointcloud::edit::block_of(
+                    cloud,
+                    [at[0] + dx, at[1] + dy, at[2]],
+                    p.1,
+                ));
+            }
+        }
+    }
+    let keys: Vec<_> = keys.into_iter().collect();
+    let blocks = source
+        .store()
+        .block_points(&cloud.name, &keys)
+        .map_err(|e| e.to_string())?;
+    let origin = model.origin;
+    let mut out = Vec::with_capacity(drawn.len());
+    for points in &blocks {
+        for (i, sp) in points.iter().enumerate() {
+            let at = sp.position(cloud);
+            let q = (
+                [0, 1, 2].map(|k| ((at[k] - origin[k]) * 1000.0).round() as i32),
+                sp.class,
+            );
+            if let Some(n) = wanted.get_mut(&q)
+                && *n > 0
+            {
+                *n -= 1;
+                out.push(EditedPoint {
+                    stored: *sp,
+                    index: i as u64,
+                    xyz: at,
+                    class: sp.class,
+                });
+            }
+        }
+    }
+    let missing: Vec<(LidarPoint, usize)> = wanted.into_iter().filter(|w| w.1 > 0).collect();
+    let n: usize = missing.iter().map(|m| m.1).sum();
+    if n > 100 {
+        return Err(format!(
+            "{n} of the {} points selected are not stored as drawn (changed since?)",
+            drawn.len()
+        ));
+    }
+    for ((q, class), _) in missing {
+        let at = crate::selection::lidar_xyz(model, &q);
+        let (stored, index) = source
+            .store()
+            .find_point(&cloud.name, at, Some(class), FIND_WITHIN)
+            .map_err(|e| e.to_string())?
+            .filter(|f| !out.iter().any(|p| p.stored == f.0 && p.index == f.1))
+            .ok_or_else(|| {
+                format!(
+                    "no stored point of class {class} at {:.3}, {:.3}, {:.3} (changed since?)",
+                    at[0], at[1], at[2]
+                )
+            })?;
+        out.push(EditedPoint {
+            stored,
+            index,
+            xyz: stored.position(cloud),
+            class: stored.class,
+        });
+    }
+    Ok(out)
 }
 
 /// The project's cloud of `model`, editable or not: the cloud's file and
@@ -93,7 +190,13 @@ impl PointsForm {
             ohl_pointcloud::CloudSource::open(&file, name.as_deref()).map_err(|e| e.to_string())?;
         let cloud = source.cloud().clone();
         let mut points = Vec::new();
-        for (q, class) in drawn {
+        let one_by_one = if drawn.len() > ONE_BY_ONE {
+            points = find_many(model, &source, &cloud, drawn)?;
+            &[]
+        } else {
+            drawn
+        };
+        for (q, class) in one_by_one {
             let at = crate::selection::lidar_xyz(model, q);
             let (stored, index) = source
                 .store()
@@ -125,11 +228,22 @@ impl PointsForm {
             Ok(()) => None,
         };
         Ok(Self {
+            units: (cloud.chunk_size / cloud.scale).round() as i64,
             cloud: cloud.name,
             scale: cloud.scale,
             points,
+            skip: BTreeSet::new(),
             read_only,
         })
+    }
+
+    /// The points per class of those selected (as stored).
+    pub fn classes(&self) -> std::collections::BTreeMap<u8, usize> {
+        let mut out = std::collections::BTreeMap::new();
+        for p in &self.points {
+            *out.entry(p.stored.class).or_default() += 1;
+        }
+        out
     }
 
     /// The (first) point as it is drawn once changed: mm from the model's
@@ -157,26 +271,53 @@ impl PointsForm {
             return Err(format!("read-only: {why}"));
         }
         let q = |v: f64| (v / self.scale).round() as i64;
+        let one = self.points.len() == 1;
+        // (block, index, change)
         let mut changes = Vec::new();
         for p in &self.points {
+            if self.skip.contains(&p.stored.class) {
+                continue;
+            }
             if p.xyz.iter().any(|v| !v.is_finite()) {
                 return Err("coordinates must be numbers".into());
             }
+            // Several points: their class only.
             let to = StoredPoint {
-                xyz: p.xyz.map(q),
+                xyz: if one { p.xyz.map(q) } else { p.stored.xyz },
                 class: p.class,
                 ..p.stored
             };
             if to != p.stored {
-                changes.push(PointChange {
-                    from: CloudPoint::of(&p.stored, Some(p.index)),
-                    to: CloudPoint::of(&to, None),
-                });
+                let s = &p.stored;
+                let block = (
+                    s.xyz[0].div_euclid(self.units.max(1)),
+                    s.xyz[1].div_euclid(self.units.max(1)),
+                    s.class,
+                );
+                changes.push((
+                    block,
+                    p.index,
+                    PointChange {
+                        from: CloudPoint::of(&p.stored, Some(p.index)),
+                        to: CloudPoint::of(&to, None),
+                    },
+                ));
             }
         }
         if changes.is_empty() {
             return Err("nothing changed".into());
         }
+        if changes.len() > ohl_session::points::MAX_POINTS {
+            return Err(format!(
+                "{} points: at most {} are changed by one command — select a smaller area",
+                changes.len(),
+                ohl_session::points::MAX_POINTS
+            ));
+        }
+        // Block by block, from the highest index down: each point is then
+        // found at its index as it is taken out (quick for many points).
+        changes.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        let changes: Vec<PointChange> = changes.into_iter().map(|c| c.2).collect();
         let what = match changes.len() {
             1 => format!("changed a LiDAR point of {}", self.cloud),
             n => format!("changed {n} LiDAR points of {}", self.cloud),
@@ -274,11 +415,17 @@ pub fn points_ui(ui: &mut egui::Ui, f: &mut PointsForm, model: &Model) {
                 ui.end_row();
             });
     } else {
-        // Several points: their class.
-        let mut class = f.points[0].class;
+        // Several points: one class for all of them (coordinates are
+        // changed one point at a time), those of the classes ticked.
+        let counts = f.classes();
+        let mut class = f
+            .points
+            .iter()
+            .find(|p| !f.skip.contains(&p.stored.class))
+            .map_or(f.points[0].class, |p| p.class);
         let before = class;
         ui.horizontal(|ui| {
-            ui.label(format!("{} points: class", f.points.len()));
+            ui.label(format!("{} points selected — new class", f.points.len()));
             class_box(ui, "lidar-points-class", &mut class);
         });
         if class != before {
@@ -286,10 +433,51 @@ pub fn points_ui(ui: &mut egui::Ui, f: &mut PointsForm, model: &Model) {
                 p.class = class;
             }
         }
-        egui::ScrollArea::vertical()
-            .max_height(160.0)
-            .show(ui, |ui| {
-                for p in &f.points {
+        ui.horizontal_wrapped(|ui| {
+            ui.label("change the points of class:");
+            for (code, n) in &counts {
+                let mut on = !f.skip.contains(code);
+                if ui
+                    .add_enabled(
+                        editable,
+                        egui::Checkbox::new(&mut on, format!("{} ({n})", class_text(model, *code))),
+                    )
+                    .changed()
+                {
+                    if on {
+                        f.skip.remove(code);
+                    } else {
+                        f.skip.insert(*code);
+                    }
+                }
+            }
+        });
+        let changing = f
+            .points
+            .iter()
+            .filter(|p| !f.skip.contains(&p.stored.class) && p.class != p.stored.class)
+            .count();
+        ui.label(format!(
+            "{changing} points change class (of the classes ticked, not of the new class already)"
+        ));
+        if changing > ohl_session::points::MAX_POINTS {
+            crate::menu::message(
+                ui,
+                format!(
+                    "at most {} points are changed by one command: untick classes or select a \
+                     smaller area",
+                    ohl_session::points::MAX_POINTS
+                ),
+                Some(ui.visuals().error_fg_color),
+            );
+        }
+        let row = ui.text_style_height(&egui::TextStyle::Small) + 2.0;
+        egui::ScrollArea::vertical().max_height(160.0).show_rows(
+            ui,
+            row,
+            f.points.len(),
+            |ui, rows| {
+                for p in &f.points[rows] {
                     ui.label(
                         egui::RichText::new(format!(
                             "{:.3}, {:.3}, {:.3} — {}",
@@ -301,13 +489,15 @@ pub fn points_ui(ui: &mut egui::Ui, f: &mut PointsForm, model: &Model) {
                         .small(),
                     );
                 }
-            });
+            },
+        );
     }
     ui.label(
         egui::RichText::new(format!(
             "Point cloud {}, coordinates to {} m. Applied as one command (one undo step); \
-             the clearances, the ground built from the cloud, vegetation and as-built \
-             wires use the new values.",
+             the clearances are checked again and the ground built from the cloud again; \
+             results computed from the points (vegetation, as-built wires, clearance \
+             windows) show they are out of date.",
             f.cloud, f.scale
         ))
         .small()
@@ -336,34 +526,51 @@ impl Model {
             )
         };
         let mut done = self.points_changed.take().unwrap_or_default();
+        let ground: BTreeSet<u8> = self.scheme.codes_with_role("ground").into_iter().collect();
+        // The points in memory by what they are (many changes: found at
+        // once, not looked for one by one).
+        let many = changed.iter().map(|c| c.1.len()).sum::<usize>() > 16;
+        let mut at: std::collections::HashMap<LidarPoint, Vec<usize>> = Default::default();
+        if many {
+            for (k, p) in self.points.iter().enumerate() {
+                at.entry(*p).or_default().push(k);
+            }
+        }
+        let mut counts: std::collections::BTreeMap<u8, u64> =
+            self.class_counts.iter().copied().collect();
         for (c, changes) in changed {
             if *c != cloud.name {
                 continue;
             }
             for ch in changes {
+                self.revisions
+                    .point_changed(c, &ch.from.stored(), &ch.to.stored(), |k| {
+                        ground.contains(&k)
+                    });
                 done.classes.insert(ch.from.class);
                 done.classes.insert(ch.to.class);
                 let (from, to) = (mm(&ch.from), mm(&ch.to));
                 done.moved.push((from, to));
-                if let Some(p) = self.points.iter_mut().find(|p| **p == from) {
-                    *p = to;
+                let k = if many {
+                    at.get_mut(&from).and_then(Vec::pop)
+                } else {
+                    self.points.iter().position(|p| *p == from)
+                };
+                if let Some(k) = k {
+                    self.points[k] = to;
+                    if many {
+                        at.entry(to).or_default().push(k);
+                    }
                 }
                 if ch.from.class != ch.to.class {
-                    let counts = &mut self.class_counts;
-                    if let Some(n) = counts.iter_mut().find(|n| n.0 == ch.from.class) {
-                        n.1 = n.1.saturating_sub(1);
+                    if let Some(n) = counts.get_mut(&ch.from.class) {
+                        *n = n.saturating_sub(1);
                     }
-                    match counts.iter_mut().find(|n| n.0 == ch.to.class) {
-                        Some(n) => n.1 += 1,
-                        None => {
-                            counts.push((ch.to.class, 1));
-                            counts.sort_by_key(|n| n.0);
-                        }
-                    }
-                    counts.retain(|n| n.1 > 0);
+                    *counts.entry(ch.to.class).or_default() += 1;
                 }
             }
         }
+        self.class_counts = counts.into_iter().filter(|n| n.1 > 0).collect();
         if !done.classes.is_empty() {
             self.points_changed = Some(done);
         }
@@ -402,12 +609,67 @@ pub fn lidar_ground(
         .map_err(|e| e.to_string())
 }
 
+/// The LiDAR points a box or lasso selected in a view (`picked`: at most
+/// one more than a command takes, `total` in it, found in `took`): the
+/// Edit window of LiDAR points on them, or why not (none drawn there,
+/// too many).
+pub fn area_picked(
+    r: &mut crate::app::Ready,
+    (picked, total, took): (Vec<LidarPoint>, usize, std::time::Duration),
+) {
+    use ohl_session::points::MAX_POINTS;
+    if total == 0 {
+        r.status = Some((
+            "no LiDAR point drawn in the box (only points drawn can be selected: of a class \
+             shown with a colour, within the share and distance drawn)"
+                .into(),
+            true,
+        ));
+        return;
+    }
+    if total > MAX_POINTS {
+        r.status = Some((
+            format!(
+                "{total} LiDAR points in the box: at most {MAX_POINTS} are changed at once — \
+                 select a smaller area or hide classes"
+            ),
+            true,
+        ));
+        return;
+    }
+    let started = std::time::Instant::now();
+    match PointsForm::of(&r.model, &picked) {
+        Ok(f) => {
+            r.status = Some((
+                format!(
+                    "{total} LiDAR points selected in {took:.1?}, found as stored in {:.1?}",
+                    started.elapsed()
+                ),
+                false,
+            ));
+            log::info!(
+                "{total} LiDAR points selected in {took:.1?}, found as stored in {:.1?}",
+                started.elapsed()
+            );
+            r.editor = Some(crate::editors::Form::Points(f));
+        }
+        Err(e) => r.status = Some((e, true)),
+    }
+}
+
 /// Every frame: after points changed, the 3D view and the profile read
 /// them again, the clearances are checked again (when checked after every
 /// edit), and the ground built from the cloud is built again in the
 /// background when ground points changed; its answer taken.
 pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
     use crate::scene::Layer;
+    // A box or lasso drawn in a view: its points in the Edit window.
+    for picked in [r.view3d.area_picked.take(), r.profile.area_picked.take()]
+        .into_iter()
+        .flatten()
+    {
+        area_picked(r, picked);
+    }
     if let Some(changed) = r.model.points_changed.take() {
         // A point selected follows.
         for (from, to) in &changed.moved {
@@ -428,14 +690,24 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
         if r.model.ground_from_lidar
             && r.model.ground_source.is_empty()
             && classes.iter().any(|c| ground.contains(c))
-            && let Some(spec) = r.model.cloud.clone()
         {
-            let line = r.model.line.clone();
-            let corridor = r.model.sources.corridor;
-            let ground: Vec<u8> = ground.into_iter().collect();
-            r.lidar_ground
-                .start(ctx, move || lidar_ground(&spec, &ground, &line, corridor));
+            r.lidar_ground_again = true;
         }
+    }
+    // The ground built again (once the build under way, if any, is done:
+    // it read the points before this change).
+    if r.lidar_ground_again
+        && !r.lidar_ground.running()
+        && let Some(spec) = r.model.cloud.clone()
+    {
+        r.lidar_ground_again = false;
+        let ground: Vec<u8> = r.model.scheme.codes_with_role("ground");
+        let line = r.model.line.clone();
+        let corridor = r.model.sources.corridor;
+        // The ground it gives: that of the ground points now.
+        r.lidar_ground_rev = r.model.revisions.ground_points;
+        r.lidar_ground
+            .start(ctx, move || lidar_ground(&spec, &ground, &line, corridor));
     }
     let running = r.lidar_ground.running();
     r.lidar_ground.poll();
@@ -443,6 +715,7 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
         match r.lidar_ground.result.take() {
             Some(Ok(Some(g))) => {
                 r.model.ground = Some(std::sync::Arc::new(g));
+                r.model.revisions.ground = r.lidar_ground_rev;
                 r.view3d.dirty.insert(Layer::Ground);
                 r.profile.invalidate();
                 r.clearances.stale = true;

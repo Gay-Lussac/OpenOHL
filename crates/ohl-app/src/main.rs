@@ -20,6 +20,7 @@ use eframe::egui;
 mod alignment_tools;
 mod annotations;
 mod app;
+mod area;
 mod backgrounds;
 mod bom;
 mod check_library;
@@ -65,6 +66,7 @@ mod python;
 mod remote;
 mod replace;
 mod requirement_ui;
+mod revision;
 mod rule_editor;
 mod scene;
 mod selection;
@@ -97,6 +99,8 @@ pub const APP_NAME: &str = "OHL-Design";
 pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
 
 #[cfg(test)]
+mod area_tests;
+#[cfg(test)]
 mod bench;
 #[cfg(test)]
 mod glyph_tests;
@@ -106,6 +110,8 @@ mod handle_tests;
 mod lidar_tests;
 #[cfg(test)]
 mod member_tests;
+#[cfg(test)]
+mod revision_tests;
 #[cfg(test)]
 mod rule_editor_tests;
 #[cfg(test)]

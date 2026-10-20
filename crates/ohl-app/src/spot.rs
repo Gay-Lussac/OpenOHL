@@ -17,6 +17,9 @@ use ohl_spotting::route::{RouteOptions, RouteProblem};
 
 use crate::model::Model;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE_GROUND;
+
 type Answer = Result<(RouteProblem, Spotting, ohl_line::Line), String>;
 
 /// The Spot structures window.
@@ -37,6 +40,8 @@ pub struct SpotWindow {
     /// The last answer.
     pub result: Option<Answer>,
     status: String,
+    /// What the last answer was computed from ([`crate::revision`]).
+    stamp: crate::revision::Stamp,
 }
 
 impl Default for SpotWindow {
@@ -54,6 +59,7 @@ impl Default for SpotWindow {
             running: None,
             result: None,
             status: String::new(),
+            stamp: Default::default(),
         }
     }
 }
@@ -124,6 +130,7 @@ impl SpotWindow {
         let budget = ohl_spotting::default_budget().cancel_token(token.clone());
         let (tx, rx) = channel();
         let c = ctx.clone();
+        self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let r = (|| {
                 let cost = ohl_bom::CostData::load(&cost_path)?;
@@ -157,7 +164,17 @@ impl SpotWindow {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => Err("the run stopped".into()),
         };
         self.result = Some(r);
+        self.stamp.arrived();
         self.running = None;
+    }
+
+    /// What the last proposal was computed from that changed since, in
+    /// words (`None`: nothing, or none): the line, the ground
+    /// ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.result, Some(Ok(_)))
+            .then(|| self.stamp.out_of_date(model, USES))
+            .flatten()
     }
 
     /// The window, when open.
@@ -308,6 +325,11 @@ impl SpotWindow {
             ui.label(egui::RichText::new(&self.status).small().weak());
         }
         ui.separator();
+        if let Some(what) = self.out_of_date(model)
+            && crate::revision::banner(ui, &what, !self.running())
+        {
+            self.start(model, ui.ctx());
+        }
         match &self.result {
             None => {}
             Some(Err(e)) => {

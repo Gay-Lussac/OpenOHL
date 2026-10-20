@@ -37,6 +37,9 @@ use ohl_line::condition::Method;
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
+
 /// Exit clause of a check: solving every wind position and reading the
 /// points. The synthetic line takes milliseconds; a long line with fine
 /// steps a few minutes.
@@ -93,6 +96,10 @@ pub struct ZoneWindow {
     running: Option<Running>,
     /// The last check's report.
     pub report: Option<Result<Report, String>>,
+    /// What it was computed from: the model's revision and a hash of the
+    /// window's rules and settings ([`crate::revision`]).
+    stamp: crate::revision::Stamp,
+    rules_hash: (Option<u64>, Option<u64>),
     /// The "Add a rule" helper's fields.
     pub draft: ZoneRule,
 }
@@ -149,6 +156,8 @@ impl ZoneWindow {
             confirm: None,
             running: None,
             report: None,
+            stamp: Default::default(),
+            rules_hash: (None, None),
             draft: first_rule(),
         }
     }
@@ -404,6 +413,8 @@ impl ZoneWindow {
         let (tx, rx) = channel();
         let ctx = ctx.clone();
         let (d, c) = (done.clone(), cancel.clone());
+        self.stamp.started(model.revision());
+        self.rules_hash.0 = Some(self.settings_hash());
         std::thread::spawn(move || {
             let r = run(
                 &line, &library, zone, &check, rules, states, cloud, ground, scope, &d, &c,
@@ -442,8 +453,33 @@ impl ZoneWindow {
             Err(e) => log::warn!("{}: {e}", self.title()),
         }
         self.report = Some(report);
+        self.stamp.arrived();
+        self.rules_hash.1 = self.rules_hash.0.take();
         self.running = None;
         true
+    }
+
+    /// A hash of the rules and the settings of the window (zone, wind,
+    /// circuits and method).
+    fn settings_hash(&self) -> u64 {
+        crate::revision::hash_debug(&(&self.rules, &self.zone, &self.wind, &self.check))
+    }
+
+    /// What the last report was computed from that changed since, in
+    /// words (`None`: nothing, or no report): the line, the LiDAR points,
+    /// the ground, the window's rules and settings ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        if !matches!(self.report, Some(Ok(_))) {
+            return None;
+        }
+        let model_changed = self.stamp.out_of_date(model, USES);
+        let rules_changed = self.rules_hash.1.is_some_and(|h| h != self.settings_hash());
+        match (model_changed, rules_changed) {
+            (None, false) => None,
+            (Some(m), false) => Some(m),
+            (None, true) => Some("the rules or settings of this window".into()),
+            (Some(m), true) => Some(format!("{m}, the rules or settings of this window")),
+        }
     }
 
     /// The last report, and whether a check runs.
@@ -483,6 +519,11 @@ impl ZoneWindow {
             }
             ui.separator();
             run = self.run_ui(ui);
+            if let Some(what) = self.out_of_date(model)
+                && crate::revision::banner(ui, &what, self.running.is_none())
+            {
+                run = self.why_not_run().is_none();
+            }
             if let Some(go) = self.results_ui(ui, model) {
                 out.go = Some(go);
             }

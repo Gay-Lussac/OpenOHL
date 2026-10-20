@@ -287,6 +287,7 @@ impl SurfacesWindow {
             Ok(_) => {
                 model.check_surface = name.clone();
                 model.check_ground = None;
+                model.revisions.ground = crate::revision::fresh();
                 if let Some(n) = name {
                     self.load_check(model, &n, ctx);
                 }
@@ -315,6 +316,7 @@ impl SurfacesWindow {
                             if model.surface_settings.active.as_deref() == Some(name.as_str()) {
                                 model.ground = Some(terrain);
                                 model.ground_source = format!("surface {name}");
+                                model.revisions.ground = crate::revision::fresh();
                                 changed = true;
                             }
                         } else if let Some(color) = model.surface_settings.shown.get(&name) {
@@ -334,6 +336,7 @@ impl SurfacesWindow {
                     Ok(terrain) => {
                         if model.check_surface.as_deref() == Some(name.as_str()) {
                             model.check_ground = Some(terrain);
+                            model.revisions.ground = crate::revision::fresh();
                             changed = true;
                         }
                     }
@@ -919,6 +922,7 @@ impl SurfacesWindow {
                             s.active = None;
                             model.ground = None;
                             model.ground_source.clear();
+                            model.revisions.ground = crate::revision::fresh();
                             changed = true;
                         }
                         if s.shown.remove(&name).is_some() {

@@ -17,6 +17,8 @@ pub struct Job<T> {
     pub result: Option<Result<T, String>>,
     /// How long it took.
     pub took: Option<Duration>,
+    /// What the answer was computed from ([`crate::revision`]).
+    pub stamp: crate::revision::Stamp,
 }
 
 impl<T> Default for Job<T> {
@@ -25,6 +27,7 @@ impl<T> Default for Job<T> {
             running: None,
             result: None,
             took: None,
+            stamp: Default::default(),
         }
     }
 }
@@ -33,6 +36,22 @@ impl<T: Send + 'static> Job<T> {
     /// Whether it runs.
     pub fn running(&self) -> bool {
         self.running.is_some()
+    }
+
+    /// Runs `work` on its own thread (unless it runs already), on the
+    /// model at revision `now`: its answer is out of date once what it
+    /// uses changes ([`crate::revision::Stamp`]).
+    pub fn start_at(
+        &mut self,
+        ctx: &egui::Context,
+        now: crate::revision::Revision,
+        work: impl FnOnce() -> Result<T, String> + Send + 'static,
+    ) {
+        if self.running.is_some() {
+            return;
+        }
+        self.stamp.started(now);
+        self.start(ctx, work);
     }
 
     /// Runs `work` on its own thread (unless it runs already).
@@ -64,6 +83,7 @@ impl<T: Send + 'static> Job<T> {
             Err(TryRecvError::Disconnected) => Err("the computation stopped".into()),
         };
         self.took = Some(t.elapsed());
+        self.stamp.arrived();
         if let Err(e) = &r {
             log::warn!("{e}");
         }

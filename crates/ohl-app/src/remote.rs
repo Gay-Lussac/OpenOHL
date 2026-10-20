@@ -220,6 +220,7 @@ impl Model {
                 {
                     self.check_surface = value.clone();
                     self.check_ground = None;
+                    self.revisions.ground = crate::revision::fresh();
                 }
                 // The drawing settings of a project line, changed by
                 // someone else (read again: those of the line worked on).

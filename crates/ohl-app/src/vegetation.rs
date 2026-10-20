@@ -58,6 +58,8 @@ pub struct Overlay {
     pub fall: Vec<([f64; 3], [f64; 3], [f64; 3])>,
     /// Isoclearance lines: clearance, colour, points on the ground.
     pub lines: Vec<(f64, [u8; 3], Vec<[f64; 3]>)>,
+    /// The report is out of date: drawn dimmed ([`crate::revision`]).
+    pub stale: bool,
 }
 
 impl Overlay {
@@ -105,6 +107,9 @@ enum Ice {
     Extra,
     Concentrated,
 }
+
+/// What a vegetation report is computed from.
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
 
 /// The Vegetation window.
 pub struct VegetationWindow {
@@ -228,7 +233,7 @@ impl VegetationWindow {
         let corridor_width = self.corridor;
         let iso = self.iso.0.then_some(self.iso.1);
         let origin = model.origin;
-        self.job.start(ctx, move || {
+        self.job.start_at(ctx, model.revision(), move || {
             // Exit clause: ~1 µs a point and position set; an hour is far
             // beyond what a line needs.
             let budget =
@@ -334,6 +339,15 @@ impl VegetationWindow {
         });
     }
 
+    /// What the last report was computed from that changed since, in
+    /// words (`None`: nothing, or no report): the line, the LiDAR points,
+    /// the ground ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.job.result, Some(Ok(_)))
+            .then(|| self.job.stamp.out_of_date(model, USES))
+            .flatten()
+    }
+
     /// The window; returns a span to go to.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Option<Selection> {
         let was = self.job.running();
@@ -342,6 +356,8 @@ impl VegetationWindow {
             self.fresh = true;
         }
         let mut go = None;
+        let mut again = false;
+        let stale = self.out_of_date(model);
         let mut open = self.open;
         egui::Window::new("Vegetation")
             .open(&mut open)
@@ -364,9 +380,15 @@ impl VegetationWindow {
                     }
                     Some(Ok(r)) => r,
                 };
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running());
+                }
                 go = report_ui(ui, report);
             });
         self.open = open;
+        if again {
+            self.start(model, ctx);
+        }
         go
     }
 
