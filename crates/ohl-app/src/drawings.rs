@@ -12,7 +12,9 @@
 //! project, per project line ([`SETTING`]): there when the project is
 //! opened again; a project without them opens with the defaults. The
 //! **line width** is one setting for the drawings and the profile view:
-//! what is shown along the line in both.
+//! what is shown along the line in both. The sheet template, its fields,
+//! the revisions and the other versions drawn are kept with them
+//! ([`crate::sheet_ui`]); a sheet is previewed as the export draws it.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -26,10 +28,12 @@ use ohl_terrain::Terrain;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Model;
+use crate::sheet_ui::{PluginTemplates, SheetChoice};
 use crate::survey_io::Job;
 
-/// Sheet formats offered ("" = one continuous drawing).
-const PAGES: [&str; 6] = ["", "A0", "A1", "A2", "A3", "A4"];
+/// Sheet formats offered ("" = one continuous drawing, "template": the
+/// sheet template's).
+const PAGES: [&str; 7] = ["", "template", "A0", "A1", "A2", "A3", "A4"];
 
 /// The Export drawings window.
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +92,12 @@ pub struct DrawingsWindow {
     /// The violations of the last clearance check (Checks › Clearances):
     /// point and label, taken when the window opens.
     pub markers: Arc<Vec<([f64; 3], String)>>,
+    /// The sheet template and what goes with it.
+    pub sheet: SheetChoice,
+    /// The plugins' templates (read in the background).
+    pub plugin_templates: PluginTemplates,
+    /// The sheet shown in the window's preview (none: no preview).
+    pub sheet_preview: Option<usize>,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -120,6 +130,9 @@ impl Default for DrawingsWindow {
             markers_on: true,
             ground_rules: Arc::default(),
             markers: Arc::default(),
+            sheet: SheetChoice::default(),
+            plugin_templates: Arc::default(),
+            sheet_preview: None,
             out: None,
             error: None,
         }
@@ -213,6 +226,8 @@ pub struct DrawingSettings {
     pub clearance_rule: bool,
     /// The last clearance check's violations as markers.
     pub markers: bool,
+    /// The sheet template, its fields, the revisions, the versions drawn.
+    pub sheet: SheetChoice,
 }
 
 /// A logo of the drawing settings: its file and width on paper.
@@ -263,6 +278,7 @@ impl DrawingSettings {
                 .collect(),
             clearance_rule: w.clearance_rule,
             markers: w.markers_on,
+            sheet: w.sheet.clone(),
         }
     }
 
@@ -328,6 +344,15 @@ impl DrawingSettings {
             .collect();
         w.clearance_rule = self.clearance_rule;
         w.markers_on = self.markers;
+        w.sheet = self.sheet.clone();
+        if w.sheet.template.is_empty() {
+            w.sheet.template = "default".into();
+        }
+        w.sheet.corridor = w.sheet.corridor.filter(|c| (0.0..=10_000.0).contains(c));
+        w.sheet.elevation_scale = w
+            .sheet
+            .elevation_scale
+            .filter(|s| (10.0..=100_000.0).contains(s));
     }
 }
 
@@ -350,6 +375,38 @@ pub struct Drawings {
     /// setting's key and the JSON ([`Drawings::save`] writes them again
     /// when they differ).
     saved: Option<(String, String)>,
+    /// The plugins giving sheet templates (name, folder), as last given.
+    template_plugins: Vec<(String, PathBuf)>,
+    /// Their templates being read.
+    template_job: Option<std::sync::mpsc::Receiver<PluginTemplates>>,
+    /// The sheet previewed in the window: for what, the image (or why
+    /// not), the sheets' count and warnings.
+    sheet_image: Option<(SheetKey, Result<SheetImage, String>)>,
+}
+
+/// What a sheet preview was made for.
+type SheetKey = (DrawingsWindow, usize, usize);
+
+/// A sheet drawn for the window.
+pub struct SheetImage {
+    /// On screen.
+    pub texture: egui::TextureHandle,
+    /// Its size, mm.
+    pub size: [f64; 2],
+    /// How many sheets the first route has.
+    pub sheets: usize,
+    /// The sheet's warnings.
+    pub warnings: Vec<String>,
+}
+
+impl std::fmt::Debug for SheetImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SheetImage")
+            .field("size", &self.size)
+            .field("sheets", &self.sheets)
+            .field("warnings", &self.warnings)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What a preview was made for: the settings that shape the sheets and
@@ -460,8 +517,25 @@ pub struct Input {
     pub isoclearance: Option<Arc<IsoLines>>,
     /// Violation markers: point, label.
     pub markers: Arc<Vec<([f64; 3], String)>>,
+    /// Other versions of the line drawn with it.
+    pub versions: Vec<Version>,
     /// Output folder.
     pub out: PathBuf,
+}
+
+/// Another version of the line drawn with it: a project line in its role,
+/// solved in the cases drawn (name, sections, jumpers).
+pub struct Version {
+    /// The project line.
+    pub name: String,
+    /// Its role.
+    pub role: String,
+    /// Its label.
+    pub label: String,
+    /// Its line.
+    pub line: Line,
+    /// Solved in each case drawn.
+    pub solved: Vec<(String, Vec<SectionShape>, Vec<JumperShape>)>,
 }
 
 impl Input {
@@ -496,11 +570,17 @@ impl Input {
         if routes.is_empty() {
             return Err("the line has no route".into());
         }
-        let page = if w.page.is_empty() {
-            None
-        } else {
-            Some(ohl_drawing::page_format(&w.page).ok_or("unknown sheet format")?)
+        let template = crate::sheet_ui::resolve(model, &w.sheet.template, &w.plugin_templates)?;
+        let page = match w.page.as_str() {
+            "" => None,
+            "template" => Some(
+                template
+                    .page()
+                    .ok_or("the sheet template gives no page format: choose one (A0–A4)")?,
+            ),
+            p => Some(ohl_drawing::page_format(p).ok_or("unknown sheet format")?),
         };
+        let page = page.map(|p| if w.sheet.portrait { p.portrait() } else { p });
         // The case shown first (solid), then the other solved ones.
         let mut order = vec![case];
         if w.all_cases {
@@ -551,25 +631,133 @@ impl Input {
             Some((d, _)) if w.clearance_rule => Some(d),
             _ => w.clearance,
         };
+        let s = &w.sheet;
+        let conductor_clearance = if s.conductor_clearance || template.conductor_clearance.show {
+            ohl_drawing::curves::conductor_clearances(&model.line, &w.ground_rules).0
+        } else {
+            Vec::new()
+        };
+        let line_name = model
+            .session()
+            .map_or(String::new(), |x| x.current_line().to_owned());
+        let project = model.sources.file.file_name().map_or(String::new(), |n| {
+            n.to_string_lossy()
+                .split('.')
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        });
+        // Other versions: project lines, solved in the cases drawn (those
+        // shown next to the line already solved).
+        let mut versions = Vec::new();
+        for v in &s.versions {
+            let solved: Vec<(String, Vec<SectionShape>, Vec<JumperShape>)> = match model
+                .other_lines
+                .iter()
+                .find(|o| o.name == v.line)
+            {
+                Some(o) => cases
+                    .iter()
+                    .filter_map(|(name, _, _)| {
+                        let k = model.cases.iter().position(|c| &c.case.name == name)?;
+                        let c = o.cases.get(k)?;
+                        Some((name.clone(), c.shapes.clone(), c.jumpers.clone()))
+                    })
+                    .collect(),
+                None => {
+                    let session = model.session().ok_or("open a project to draw its lines")?;
+                    let stored = session.line_named(&v.line).map_err(|e| e.to_string())?;
+                    let mut line = match &model.types {
+                        Some((st, ins)) => stored.resolve(st, ins).map_err(|e| e.to_string())?,
+                        None => stored.clone(),
+                    };
+                    let weather: Vec<ohl_weather::WeatherCase> =
+                        model.cases.iter().map(|c| c.case.clone()).collect();
+                    line.set_weather_cases(&weather);
+                    cases
+                        .iter()
+                        .filter_map(|(name, _, _)| {
+                            let c = model.cases.iter().find(|c| &c.case.name == name)?;
+                            let solved =
+                                crate::model::Solved::new(&line, &model.library, c.case.clone());
+                            Some((name.clone(), solved.shapes, solved.jumpers))
+                        })
+                        .collect()
+                }
+            };
+            let line = model
+                .other_lines
+                .iter()
+                .find(|o| o.name == v.line)
+                .map(|o| o.line.clone())
+                .or_else(|| model.session()?.line_named(&v.line).ok().cloned())
+                .ok_or_else(|| format!("no project line \"{}\"", v.line))?;
+            versions.push(Version {
+                name: v.line.clone(),
+                role: v.role.clone(),
+                label: if v.label.is_empty() {
+                    "{name}".into()
+                } else {
+                    v.label.clone()
+                },
+                line,
+                solved,
+            });
+        }
+        let mut options = ohl_drawing::Options {
+            horizontal_scale: w.hscale,
+            vertical_scale: w.vscale,
+            clearance,
+            title,
+            plan: !w.profile_only,
+            plan_half_width: w.line_width,
+            break_clearance,
+            side_offsets: w.side_offsets.clone(),
+            plan_offset_scale: w.plan_scale,
+            logos,
+            fields: s.fields.clone(),
+            info: ohl_drawing::SheetInfo {
+                project,
+                line: if line_name.is_empty() {
+                    model.line.name.clone()
+                } else {
+                    line_name
+                },
+                crs: model.line.crs.clone(),
+                date: ohl_drawing::today(),
+                cases: cases
+                    .iter()
+                    .map(|c| c.0.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                height_datum: String::new(),
+            },
+            role: (!s.role.is_empty()).then(|| s.role.clone()),
+            corridor: s.corridor,
+            conductor_clearance,
+            bands: s.bands,
+            ..Default::default()
+        }
+        .with_template(template);
+        // The window's elevations over the template's when it sets them.
+        if w.elevations.place != ohl_drawing::ElevationPlace::Off {
+            options.elevations.place = w.elevations.place;
+            options.elevations.offset_mm = w.elevations.offset_mm;
+            options.elevations.rotation_deg = w.elevations.rotation_deg;
+        }
+        if s.elevation_scale.is_some() {
+            options.elevations.scale = s.elevation_scale;
+        }
+        if !s.elevation_labels.is_empty() {
+            options.elevations.labels = ohl_drawing::ElevationLabels::parse(&s.elevation_labels)?;
+        }
         Ok(Self {
             line: model.line.clone(),
             bodies: model.bodies.clone(),
             routes,
             ground: model.ground.clone(),
-            options: ohl_drawing::Options {
-                horizontal_scale: w.hscale,
-                vertical_scale: w.vscale,
-                clearance,
-                title,
-                plan: !w.profile_only,
-                plan_half_width: w.line_width,
-                break_clearance,
-                elevations: w.elevations,
-                side_offsets: w.side_offsets.clone(),
-                plan_offset_scale: w.plan_scale,
-                logos,
-                ..Default::default()
-            },
+            options,
+            versions,
             markers: if w.markers_on {
                 w.markers.clone()
             } else {
@@ -604,13 +792,29 @@ impl Input {
         if let Some(lines) = &self.isoclearance {
             d.set_isoclearance(&lines.0, lines.1);
         }
+        d.set_case(&self.cases[0].0);
         for (k, (name, shapes, jumpers)) in self.cases.iter().enumerate().skip(1) {
             let other =
                 ohl_drawing::build(&self.line, route, shapes, jumpers, None, &[], &self.options)?;
             for mut w in other.wires {
                 w.label = format!("{} — {name}", w.label);
                 w.dash = Some(ohl_drawing::case_dash(k));
+                w.case = name.clone();
                 d.wires.push(w);
+            }
+        }
+        for v in &self.versions {
+            for (k, (case, shapes, jumpers)) in v.solved.iter().enumerate() {
+                d.add_version(
+                    &v.line,
+                    shapes,
+                    jumpers,
+                    &v.name,
+                    &v.role,
+                    &v.label,
+                    self.options.plan_half_width,
+                    (case, (k > 0).then(|| ohl_drawing::case_dash(k))),
+                );
             }
         }
         Ok(d)
@@ -665,6 +869,41 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
     Ok(text)
 }
 
+/// Sheet `n` of the first route the export window `w` draws, on screen
+/// (about 1600 pixels wide), with the route's sheet count and the sheet's
+/// warnings.
+fn sheet_image(
+    ctx: &egui::Context,
+    model: &Model,
+    case: usize,
+    w: &DrawingsWindow,
+    n: usize,
+) -> Result<SheetImage, String> {
+    let input = Input::prepare(model, case, w, PathBuf::new())?;
+    let page = input
+        .export
+        .page
+        .clone()
+        .ok_or("one continuous drawing: choose a sheet format to preview a sheet")?;
+    let route = input.routes.first().ok_or("no route")?;
+    let d = input.drawing(route)?;
+    let sheets = ohl_drawing::sheets(&d, &input.route_options(), &page);
+    let count = sheets.len();
+    let sheet = sheets
+        .into_iter()
+        .nth(n.saturating_sub(1))
+        .ok_or_else(|| format!("route {} has {count} sheet(s)", route.id))?;
+    let dpi = 1600.0 / (page.width / 25.4);
+    let (wpx, hpx, rgba) = ohl_drawing::png::render_rgba(&sheet.drawing, dpi, 4.0e6)?;
+    let image = egui::ColorImage::from_rgba_unmultiplied([wpx as usize, hpx as usize], &rgba);
+    Ok(SheetImage {
+        texture: ctx.load_texture("drawings-sheet-preview", image, Default::default()),
+        size: [page.width, page.height],
+        sheets: count,
+        warnings: sheet.warnings,
+    })
+}
+
 impl DrawingsWindow {
     /// The window; `Some(job)` once started.
     pub fn ui(
@@ -674,18 +913,40 @@ impl DrawingsWindow {
         case: usize,
         open: &mut bool,
         preview_on: &mut bool,
+        action: &mut Option<crate::sheet_ui::Action>,
     ) -> Option<Job> {
         let mut job = None;
         let routes = model.line.alignment_views();
+        let offers = crate::sheet_ui::offers(model, &self.plugin_templates);
+        let template =
+            crate::sheet_ui::resolve(model, &self.sheet.template, &self.plugin_templates);
+        let max_height = (ctx.content_rect().height() * 0.85).max(300.0);
         egui::Window::new("Export drawings")
             .open(open)
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
+              egui::ScrollArea::vertical()
+                .id_salt("drawings-scroll")
+                .max_height(max_height)
+                .show(ui, |ui| {
                 egui::Grid::new("drawings-grid")
                     .num_columns(2)
                     .spacing([12.0, 6.0])
                     .show(ui, |ui| {
+                        ui.label("Template");
+                        ui.vertical(|ui| {
+                            if let Some(a) =
+                                crate::sheet_ui::template_ui(ui, &mut self.sheet, &offers)
+                            {
+                                *action = Some(a);
+                            }
+                            if let Err(e) = &template {
+                                crate::menu::error_label(ui, e);
+                            }
+                        });
+                        ui.end_row();
+
                         ui.label("Route");
                         let name = |k: Option<usize>| match k.and_then(|k| routes.get(k)) {
                             Some(r) => format!("{} {}", r.id, r.name),
@@ -720,22 +981,38 @@ impl DrawingsWindow {
                         ui.end_row();
 
                         ui.label("Sheets");
-                        egui::ComboBox::from_id_salt("drawings-page")
-                            .selected_text(if self.page.is_empty() {
-                                "one continuous drawing"
-                            } else {
-                                &self.page
-                            })
-                            .show_ui(ui, |ui| {
-                                for p in PAGES {
-                                    let text = if p.is_empty() {
-                                        "one continuous drawing".to_owned()
-                                    } else {
-                                        format!("{p} landscape, split at structures")
-                                    };
-                                    ui.selectable_value(&mut self.page, p.to_owned(), text);
-                                }
-                            });
+                        let template_page = template
+                            .as_ref()
+                            .ok()
+                            .and_then(|t| t.page())
+                            .map(|p| format!("the template's: {}", p.name));
+                        ui.horizontal(|ui| {
+                            egui::ComboBox::from_id_salt("drawings-page")
+                                .selected_text(match self.page.as_str() {
+                                    "" => "one continuous drawing".to_owned(),
+                                    "template" => template_page
+                                        .clone()
+                                        .unwrap_or("the template's (none: choose one)".into()),
+                                    p => p.to_owned(),
+                                })
+                                .show_ui(ui, |ui| {
+                                    for p in PAGES {
+                                        let text = match p {
+                                            "" => "one continuous drawing".to_owned(),
+                                            "template" => match &template_page {
+                                                Some(t) => format!("{t}, split at structures"),
+                                                None => continue,
+                                            },
+                                            p => format!("{p}, split at structures"),
+                                        };
+                                        ui.selectable_value(&mut self.page, p.to_owned(), text);
+                                    }
+                                });
+                            ui.add_enabled(
+                                !self.page.is_empty(),
+                                egui::Checkbox::new(&mut self.sheet.portrait, "portrait"),
+                            );
+                        });
                         ui.end_row();
 
                         ui.label("Scales");
@@ -965,6 +1242,17 @@ impl DrawingsWindow {
                         );
                         ui.end_row();
                     });
+                if let Ok(t) = &template {
+                    sheet_sections(ui, &mut self.sheet, t, model);
+                }
+                ui.horizontal(|ui| {
+                    let mut on = self.sheet_preview.is_some();
+                    ui.checkbox(&mut on, "Preview sheet")
+                        .on_hover_text("One sheet as the export draws it, in a window of its own");
+                    let mut n = self.sheet_preview.unwrap_or(1);
+                    ui.add_enabled(on, egui::DragValue::new(&mut n).range(1..=999));
+                    self.sheet_preview = on.then_some(n);
+                });
                 ui.checkbox(&mut self.profile_only, "the profile alone (no plan)");
                 ui.checkbox(
                     &mut self.all_cases,
@@ -1034,9 +1322,116 @@ impl DrawingsWindow {
                         Err(e) => self.error = Some(e),
                     }
                 }
+                });
             });
         job
     }
+}
+
+/// The sheet template's sections of the export window: its values and
+/// revisions, the versions of the line, its other options.
+fn sheet_sections(
+    ui: &mut egui::Ui,
+    s: &mut SheetChoice,
+    t: &ohl_drawing::SheetTemplate,
+    model: &Model,
+) {
+    egui::CollapsingHeader::new("Values of the template (title block, band rows)")
+        .id_salt("drawings-values")
+        .show(ui, |ui| crate::sheet_ui::fields_ui(ui, t, &mut s.fields));
+    if t.revisions.place != "off" {
+        egui::CollapsingHeader::new(format!("Revisions ({})", s.fields.revisions.len()))
+            .id_salt("drawings-revisions")
+            .show(ui, |ui| {
+                crate::sheet_ui::revisions_ui(
+                    ui,
+                    &mut s.fields,
+                    crate::sheet_ui::last_commit(model),
+                )
+            });
+    }
+    egui::CollapsingHeader::new("Versions of the line, roles")
+        .id_salt("drawings-versions")
+        .show(ui, |ui| {
+            let roles = crate::sheet_ui::roles(t);
+            ui.horizontal(|ui| {
+                ui.label("This line");
+                egui::ComboBox::from_id_salt("drawings-own-role")
+                    .selected_text(if s.role.is_empty() {
+                        "as it is"
+                    } else {
+                        &s.role
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut s.role, String::new(), "as it is");
+                        for r in &roles {
+                            ui.selectable_value(&mut s.role, r.clone(), r);
+                        }
+                    })
+                    .response
+                    .on_hover_text("Its style: the template's [roles] (e.g. new thick)");
+            });
+            let current = model
+                .session()
+                .map_or(String::new(), |x| x.current_line().to_owned());
+            let lines: Vec<String> = model
+                .session()
+                .and_then(|x| x.lines().ok())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|l| l.name)
+                .filter(|n| *n != current)
+                .collect();
+            crate::sheet_ui::versions_ui(ui, s, &lines, &roles);
+        });
+    egui::CollapsingHeader::new("More of the template")
+        .id_salt("drawings-more")
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let mut on = s.corridor.is_some();
+                let shown = s.corridor.or(t.corridor.width.map(|w| w.0)).unwrap_or(25.0);
+                ui.checkbox(&mut on, "corridor ±")
+                    .on_hover_text("Its edges in the plan and the key map (default: the template's)");
+                let mut w = shown;
+                ui.add_enabled(on, egui::DragValue::new(&mut w).range(0.0..=10_000.0).suffix(" m"));
+                s.corridor = on.then_some(w);
+            });
+            ui.checkbox(
+                &mut s.conductor_clearance,
+                "lines below the lowest conductor (the project's ground rules)",
+            )
+            .on_hover_text(
+                "For each circuit its lowest conductor lowered by the ground clearance its rule                  requires (by voltage; the rule's weather cases, else the largest sag drawn)",
+            );
+            ui.add_enabled(
+                !t.bands.is_empty(),
+                egui::Checkbox::new(&mut s.bands, "the template's band rows"),
+            );
+            ui.horizontal(|ui| {
+                let mut on = s.elevation_scale.is_some();
+                ui.checkbox(&mut on, "elevations at 1:");
+                let mut k = s.elevation_scale.or(t.elevations.scale).unwrap_or(1000.0);
+                ui.add_enabled(on, egui::DragValue::new(&mut k).range(10.0..=100_000.0).speed(10.0));
+                s.elevation_scale = on.then_some(k);
+            });
+            ui.horizontal(|ui| {
+                ui.label("elevation labels:");
+                for (key, text) in [
+                    ("number", "number"),
+                    ("type", "type"),
+                    ("height", "height"),
+                    ("string_length", "string length"),
+                ] {
+                    let mut on = s.elevation_labels.iter().any(|l| l == key);
+                    if ui.checkbox(&mut on, text).changed() {
+                        s.elevation_labels.retain(|l| l != key);
+                        if on {
+                            s.elevation_labels.push(key.to_owned());
+                        }
+                    }
+                }
+            });
+        });
 }
 
 impl Drawings {
@@ -1124,10 +1519,28 @@ impl Drawings {
     }
 
     /// The window (if open) and the job's window, each frame.
-    pub fn show(&mut self, ctx: &egui::Context, model: &Model, case: usize) {
+    pub fn show(&mut self, ctx: &egui::Context, model: &mut Model, case: usize) {
+        // The plugins' templates, once read.
+        if let Some(rx) = &self.template_job
+            && let Ok(list) = rx.try_recv()
+        {
+            self.template_job = None;
+            self.last.plugin_templates = list.clone();
+            if let Some(w) = &mut self.window {
+                w.plugin_templates = list;
+            }
+        }
+        let mut action = None;
         if let Some(w) = &mut self.window {
             let mut open = true;
-            if let Some(job) = w.ui(ctx, model, case, &mut open, &mut self.preview_on) {
+            if let Some(job) = w.ui(
+                ctx,
+                model,
+                case,
+                &mut open,
+                &mut self.preview_on,
+                &mut action,
+            ) {
                 self.job = Some(job);
             }
             if !open {
@@ -1135,11 +1548,150 @@ impl Drawings {
                 self.last.error = None;
             }
         }
+        if let Some(a) = action {
+            let message = self.template_action(model, a);
+            if let Some(w) = &mut self.window {
+                w.error = message.err();
+            }
+        }
+        self.sheet_window(ctx, model, case);
         if let Some(job) = &mut self.job
             && crate::survey_io::job_window(ctx, job)
         {
             self.job = None;
         }
+    }
+
+    /// Loads a template file into the project (or uses it from the file
+    /// without one), or writes the template chosen to a file.
+    fn template_action(
+        &mut self,
+        model: &mut Model,
+        action: crate::sheet_ui::Action,
+    ) -> Result<(), String> {
+        let Some(w) = &mut self.window else {
+            return Ok(());
+        };
+        match action {
+            crate::sheet_ui::Action::Load(path) => {
+                let t = ohl_drawing::SheetTemplate::load(&path)?;
+                let stem = path
+                    .file_stem()
+                    .map_or("template".to_owned(), |s| s.to_string_lossy().into_owned());
+                let op = ohl_server::Op::PutLibrary {
+                    kind: crate::sheet_ui::KIND.into(),
+                    name: format!("{stem}.{}", ohl_drawing::template::EXTENSION),
+                    text: t.embedded(),
+                };
+                w.sheet.template = match model.project_op("sheet template", op) {
+                    Ok(_) => format!("project:{stem}"),
+                    // No project (or read-only): used from its file.
+                    Err(_) => format!("file:{}", path.display()),
+                };
+                Ok(())
+            }
+            crate::sheet_ui::Action::SaveAs(path) => {
+                let t = crate::sheet_ui::resolve(model, &w.sheet.template, &w.plugin_templates)?;
+                std::fs::write(&path, t.embedded()).map_err(|e| format!("{}: {e}", path.display()))
+            }
+        }
+    }
+
+    /// The window of the sheet previewed (when asked): drawn by the
+    /// export's own code, again when a setting or the case changes.
+    fn sheet_window(&mut self, ctx: &egui::Context, model: &Model, case: usize) {
+        let Some(w) = &mut self.window else {
+            self.sheet_image = None;
+            return;
+        };
+        let Some(n) = w.sheet_preview else {
+            self.sheet_image = None;
+            return;
+        };
+        let key: SheetKey = (
+            DrawingsWindow {
+                formats: Vec::new(),
+                dpi: 0.0,
+                out: None,
+                error: None,
+                sheet_preview: None,
+                ..w.clone()
+            },
+            case,
+            n,
+        );
+        if self.sheet_image.as_ref().is_none_or(|(k, _)| *k != key) {
+            let made = sheet_image(ctx, model, case, &key.0, n);
+            self.sheet_image = Some((key, made));
+        }
+        let mut open = true;
+        egui::Window::new("Sheet preview")
+            .open(&mut open)
+            .default_size([900.0, 680.0])
+            .show(ctx, |ui| match self.sheet_image.as_ref().map(|(_, r)| r) {
+                Some(Ok(img)) => {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Sheet {n} of {} ({:.0} × {:.0} mm), as the export draws it",
+                            img.sheets, img.size[0], img.size[1]
+                        ))
+                        .small(),
+                    );
+                    egui::ScrollArea::vertical()
+                        .id_salt("sheet-preview-warnings")
+                        .max_height(70.0)
+                        .show(ui, |ui| {
+                            for x in &img.warnings {
+                                ui.label(egui::RichText::new(format!("⚠ {x}")).small());
+                            }
+                        });
+                    let avail = ui.available_width().max(200.0);
+                    let k = avail / img.size[0] as f32;
+                    egui::ScrollArea::both()
+                        .id_salt("sheet-preview-image")
+                        .show(ui, |ui| {
+                            ui.image(egui::load::SizedTexture::new(
+                                img.texture.id(),
+                                [avail, img.size[1] as f32 * k],
+                            ));
+                        });
+                    ui.add_space(0.0);
+                }
+                Some(Err(e)) => {
+                    crate::menu::error_label(ui, e);
+                }
+                None => {}
+            });
+        if !open {
+            w.sheet_preview = None;
+        }
+    }
+
+    /// The sheet previewed in the window, if any: its route's sheet count
+    /// and its warnings, or why it could not be drawn.
+    #[cfg(test)]
+    pub fn sheet_previewed(&self) -> Option<Result<(usize, Vec<String>), String>> {
+        self.sheet_image.as_ref().map(|(_, r)| match r {
+            Ok(i) => Ok((i.sheets, i.warnings.clone())),
+            Err(e) => Err(e.clone()),
+        })
+    }
+
+    /// Reads the sheet templates of the plugins `dirs` (name, folder) in
+    /// the background when they changed.
+    pub fn set_template_plugins(&mut self, dirs: Vec<(String, PathBuf)>) {
+        if dirs == self.template_plugins {
+            return;
+        }
+        self.template_plugins = dirs.clone();
+        if dirs.is_empty() {
+            self.last.plugin_templates = Arc::default();
+            if let Some(w) = &mut self.window {
+                w.plugin_templates = Arc::default();
+            }
+            return;
+        }
+        self.template_job = Some(crate::sheet_ui::read_plugins(dirs));
     }
 
     /// Opens the window (with the settings it had when last closed).

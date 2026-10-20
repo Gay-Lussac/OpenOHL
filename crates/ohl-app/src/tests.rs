@@ -15116,6 +15116,96 @@ fn the_export_window_takes_the_line_width_and_break_clearance() {
     assert_eq!((d.break_clearance, d.line_width), (2.0, 40.0));
 }
 
+/// File › Export › Drawings… with a sheet template: a template file loaded
+/// is kept in the project (its images embedded) and chosen; its page
+/// taken; a required field left empty refuses the export, naming it;
+/// filled, the sheets carry it; another project line is drawn in its
+/// role; the settings (template, fields, revisions, versions) are kept;
+/// a sheet is previewed as the export draws it.
+#[test]
+fn drawings_take_a_sheet_template_its_fields_and_versions() {
+    use crate::drawings::{DrawingSettings, DrawingsWindow, Input};
+    use crate::sheet_ui::VersionChoice;
+    let mut m = synthetic_project("sheet-template");
+    let user = m.editing.as_ref().unwrap().user.clone();
+    m.editing
+        .as_mut()
+        .unwrap()
+        .session
+        .create_line(&user, "as built", "main")
+        .unwrap();
+    // The example template, kept in the project.
+    let file = root().join("examples/sheet-templates/example-a1.ohlsheet");
+    let t = ohl_drawing::SheetTemplate::load(&file).unwrap();
+    m.project_op(
+        "sheet template",
+        ohl_server::Op::PutLibrary {
+            kind: crate::sheet_ui::KIND.into(),
+            name: "example-a1.ohlsheet".into(),
+            text: t.embedded(),
+        },
+    )
+    .unwrap();
+    let offers = crate::sheet_ui::offers(&m, &Default::default());
+    assert!(offers.iter().any(|o| o.key == "project:example-a1" && o.ok));
+    let dir = std::env::temp_dir().join(format!("ohl-app-sheet-template-{}", std::process::id()));
+    let mut w = DrawingsWindow {
+        route: Some(0),
+        formats: vec![ohl_drawing::export::Format::Svg],
+        page: "template".into(),
+        all_cases: true,
+        out: Some(dir.clone()),
+        ..DrawingsWindow::default()
+    };
+    w.sheet.template = "project:example-a1".into();
+    w.sheet.versions.push(VersionChoice {
+        line: "as built".into(),
+        role: "existing".into(),
+        label: "{name}".into(),
+    });
+    w.sheet.role = "project".into();
+    // Without the project number: refused, named.
+    let input = Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.export.page.as_ref().unwrap().name, "A1");
+    let err = crate::drawings::run(&input, &|_, _| {}).unwrap_err();
+    assert!(err.contains("Project number (project_no)"), "{err}");
+    w.sheet
+        .fields
+        .values
+        .insert("project_no".into(), "P-42".into());
+    w.sheet.fields.revisions.push(ohl_drawing::Revision::parse(
+        "A;2026-10-20;first issue;AB;CD",
+    ));
+    let input = Input::new(&m, 0, &w).unwrap();
+    assert_eq!(input.versions.len(), 1);
+    let report = crate::drawings::run(&input, &|_, _| {}).unwrap();
+    assert!(report.contains("files written"), "{report}");
+    let svg = std::fs::read_to_string(dir.join("main-sheet-01.svg")).unwrap();
+    assert!(svg.contains("P-42-main-001") && svg.contains("first issue"));
+    assert!(
+        svg.contains("as built: existing"),
+        "the version in the legend"
+    );
+    assert!(svg.contains("OHL_VERSIONS") || svg.contains("as built"));
+    let _ = std::fs::remove_dir_all(&dir);
+    // Kept with the drawing settings.
+    let text = serde_json::to_string(&DrawingSettings::of(&w, false)).unwrap();
+    let back: DrawingSettings = serde_json::from_str(&text).unwrap();
+    let mut again = DrawingsWindow::default();
+    back.apply(&mut again);
+    assert_eq!(again.sheet, w.sheet);
+    assert_eq!(again.page, "template");
+    // A sheet previewed in the window, as the export draws it.
+    let ctx = egui::Context::default();
+    let mut d = crate::drawings::Drawings::default();
+    w.sheet_preview = Some(1);
+    d.window = Some(w);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| d.show(ui.ctx(), &mut m, 0));
+    out.textures_delta.clear();
+    let (sheets, warnings) = d.sheet_previewed().unwrap().unwrap();
+    assert!(sheets >= 1, "{warnings:?}");
+}
+
 /// The drawing settings are kept in the project, per project line: a
 /// project without them opens with the defaults (±40 m, 2 mm, A3, the
 /// preview off); changed (in the window or the profile), they are
