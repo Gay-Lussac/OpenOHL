@@ -74,6 +74,13 @@ Options:
 
 `xlsx` writes a workbook with the sheets *Structures*, *Sections*, *Spans* (every span and jumper of every weather case: tensions and sag), *Stations* (stationing, offsets, line angles of every route) and, when `ohl line` computes them (`--load-cases`), *Structure loads* and *Structure usage* — the same tables as `--loads-csv` and `--usage-csv`. `spans-csv` writes the *Spans* sheet as CSV.
 
+### Safety volumes
+
+The safety volumes around the wires (Checks › Safety volumes, `ohl
+safety-volume`) are written by their own export as DXF (with a `.prj`),
+IFC4 with `IfcMapConversion` and KML/KMZ: see
+[Safety volumes](analyses.md#safety-volumes-for-work-near-the-line-2026-10-20).
+
 ## Import
 
 ```bash
