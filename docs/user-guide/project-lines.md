@@ -188,6 +188,16 @@ follow it. When someone deletes it, you are moved to another line and told
 so. Soft locks are per line: holding T3 on *phase 1* does not block T3 on
 the main line. The web client shows the main line.
 
+## On the drawings
+
+Other project lines can be drawn on the plan and profile sheets with the
+line worked on, each in a **role** (existing, project, to be removed,
+decommissioned …) the sheet template styles — e.g. the existing line
+thin, the new one thick, what is removed in its own colour: File › Export
+› Drawings… › **Versions of the line, roles**, or `ohl drawing PROJECT.ohl
+--version "as built=existing"`. See [Sheet
+templates](sheet-templates.md#versions-of-the-line-kinds-and-roles).
+
 ## Your choice is remembered
 
 The line you work on and the lines you show are remembered on your computer
