@@ -1609,7 +1609,13 @@ when another project line is chosen with other library files, or a
 library change is undone or redone. Per-user view settings (`ViewPrefs`) stay
 on the computer, never in the project — since 2026-10-20 with
 `vegetation_colors` (the two colours of the vegetation layers, grow-in
-points and danger trees, `[[r, g, b], [r, g, b]]`).
+points and danger trees, `[[r, g, b], [r, g, b]]`) and `ground_lines`
+(View › Lines on the ground beside the line, `crate::ground_lines`:
+`on`, `distance` m, `from` `outermost_conductor` | `axis`,
+`hidden_routes`, `color` `[r, g, b]`, `width` px, `dashed`, `profile`;
+every field optional, left out while all are the defaults). The lines
+themselves are display only: made in the app per weather case shown,
+never stored.
 
 The structure application reads a structure's libraries beside its file
 (`Sections/`, `Insulators/`, poles `.ohlp`, models `.ohlfe`, recipes

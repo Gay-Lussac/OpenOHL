@@ -56,6 +56,33 @@ approved as finished: everything is built and in active development
     (`[centreline] ground = false` only leaves it out); the plan's axis in
     `[centreline] pen` (the built-in look kept: grey dash-dot; the
     example: solid black).
+- **Lines on the ground beside the line** (owner request: "an option in
+  View to draw a line on each side of the lines, on the ground, at the
+  displayed weather case and a given distance away from the line"): a
+  display option, View › Lines on the ground beside the line, this
+  user's view setting (`ViewPrefs.ground_lines`, never in the project,
+  not logged, never in a result). The distance is measured by default
+  **from the outermost conductor** of the weather case shown, in plan,
+  with its wind blowout (both wind sides when both are shown); each side
+  from its own outermost conductor; the alternative is **from the
+  axis** (the alignment). Geometry: per span, across its chord every 2 m,
+  the farthest point within the distance of that span's wires (and the
+  jumpers at its ends); round outer corners about the structure in 5°
+  steps; the inner loop cut off where the two spans' lines cross (the
+  outer envelope, no self-intersection). Draped on the active terrain
+  surface (or the LiDAR ground), a point at every triangle edge crossed;
+  without a ground surface on the alignment's heights every 2 m. 3D and
+  plan; the profile as two side profiles (right near, left far) when
+  ticked. Kept for the last eight weather cases shown.
+- **Decided here** for the lines on the ground (the most conservative
+  choice, open to the owner): default distance **10 m** (a display
+  value, no rule behind it); with several weather cases shown, **the
+  case chosen as shown** only (not the envelope of all of them); spans
+  to structures **away from the alignment** and **other project lines**
+  are not taken into account; the lines **end at the first and last
+  structure** (no round end caps); where the line leaves the ground
+  surface it is **broken**, not continued on the alignment's heights.
+
 - **Sheet export: the defects fixed** (the review of the sheet export,
   D1–D17): the profile panel takes the whole height; its height range
   fits the ground, the clearance line and the wires' lowest points; tops
