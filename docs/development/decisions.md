@@ -9,6 +9,31 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **LiDAR points: what can be clicked, and changing a point** (owner's
+  request): clicking LiDAR points was unreliable because a click looked at
+  the points loaded when the project opened (a sample thinned to
+  `--points`), not at those drawn — a streamed survey draws the nodes of
+  its point budget, the chunks of points in memory draw a share at levels
+  1 and 2, the plan draws none, the profile's dots were not clickable at
+  all. Now **every point drawn can be clicked and snapped to, and no
+  other** (3D: the nodes or chunks drawn in the last frame; profile: its
+  dots; plan: none); of points within a pixel the one nearest the eye.
+  Picking is display only: nothing computed changes. The Edit tool on a
+  LiDAR point opens a window to change its **coordinates and class**: the
+  new session command `change_points` changes the stored cloud point by
+  point (blocks, levels of detail, bounds and counts made again from the
+  blocks, the other points kept in order), logged and undone bit for bit
+  as one step, through the server like every edit; the clearances are
+  checked again and the ground built from the cloud when the project
+  opened is built again. Conservative choices left to the owner: the
+  clouds belong to the project, so a change is logged and undone on the
+  project line it was made on and revisions of a line do not hold the
+  points; several points at once only by the command (views select one
+  point; box or lasso selection left for later); an empty block made again
+  by an undo gets a new row id (its content is bit for bit the same).
+  ([user guide](../user-guide/desktop-app.md#editing),
+  [project files](../user-guide/project.md#changing-points),
+  [data model](data-model.md#commands-the-only-way-to-change-a-project))
 - **Rules by voltage and rule presets (confirmed by the owner):** a rule
   file is written only when every rule is complete (an unfinished rule
   shows "not written yet"); **Load preset…** reads the design-code plugins
