@@ -61,6 +61,9 @@ pub mod style;
 mod table;
 pub mod template;
 
+#[cfg(test)]
+mod sheet_tests;
+
 pub use curves::ConductorClearance;
 pub use layout::{
     ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet_layout,
@@ -128,6 +131,58 @@ pub struct Options {
     /// The template's band rows drawn (the export window may switch them
     /// off).
     pub bands: bool,
+    /// The LiDAR classes drawn (none: the template's `[lidar] classes`).
+    pub lidar_classes: Option<Vec<u8>>,
+    /// The LiDAR classes' names and colours (the class scheme's), by code:
+    /// the legend's names, the dots' colours unless the template gives
+    /// them.
+    pub class_names: std::collections::BTreeMap<u8, (String, Option<[u8; 3]>)>,
+}
+
+impl Options {
+    /// The LiDAR classes drawn: the export's, else the template's.
+    pub fn lidar_class_list(&self) -> Vec<u8> {
+        self.lidar_classes
+            .clone()
+            .unwrap_or_else(|| self.template.lidar.classes.clone())
+    }
+
+    /// Whether LiDAR points are drawn at all (in the profile or the plan,
+    /// some class chosen).
+    pub fn draws_lidar(&self) -> bool {
+        let l = &self.template.lidar;
+        (l.profile || l.plan) && !self.lidar_class_list().is_empty()
+    }
+
+    /// The half width LiDAR points are taken within, m: the corridor's,
+    /// else the line width.
+    pub fn lidar_half_width(&self) -> f64 {
+        self.corridor
+            .filter(|w| *w > 0.0)
+            .unwrap_or(self.plan_half_width)
+    }
+}
+
+/// The heights' datum a coordinate system names: the vertical part of a
+/// compound EPSG code (`EPSG:2056+5728` → `EPSG:5728`) or a proj4 geoid
+/// (`+geoidgrids=…`); empty when it names none (the sheets then write the
+/// template's `[if_empty] height_datum`, else "unknown datum").
+pub fn height_datum_of(crs: &str) -> String {
+    let t = crs.trim();
+    if let Some(code) = t.strip_prefix("EPSG:").or_else(|| t.strip_prefix("epsg:"))
+        && let Some((_, v)) = code.split_once('+')
+        && !v.trim().is_empty()
+        && v.trim().chars().all(|c| c.is_ascii_digit())
+    {
+        return format!("EPSG:{}", v.trim());
+    }
+    if let Some(at) = t.find("+geoidgrids=") {
+        let g = t[at + 12..].split_whitespace().next().unwrap_or("");
+        if !g.is_empty() {
+            return format!("geoid {g}");
+        }
+    }
+    String::new()
 }
 
 /// Computed fields of the sheets the drawing data does not hold.
@@ -326,6 +381,8 @@ impl Default for Options {
             corridor: None,
             conductor_clearance: Vec::new(),
             bands: true,
+            lidar_classes: None,
+            class_names: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -530,6 +587,10 @@ pub struct Mark {
     pub pole_xy: Vec<Vec<[f64; 2]>>,
     /// Its type (and extension), if typed.
     pub type_name: Option<String>,
+    /// Its type's id alone, if typed.
+    pub type_id: Option<String>,
+    /// Its extension, if any.
+    pub extension: Option<String>,
     /// Its strings.
     pub strings: Vec<StringMark>,
 }
@@ -609,6 +670,60 @@ pub struct RouteDrawing {
     /// Ground clearances found by a clearance check: station, clearance m
     /// (the band row `ground_clearance`; none: empty).
     pub clearances: Vec<(f64, f64)>,
+    /// Ground along the corridor's edges (offset ± its half width, right
+    /// positive): drawn in the profile, each edge in its pen.
+    pub corridor_ground: Vec<(f64, Profile)>,
+    /// LiDAR points within the corridor ([`RouteDrawing::set_lidar`]):
+    /// (station, offset, z), class; by station.
+    pub lidar: Vec<([f64; 3], u8)>,
+}
+
+impl RouteDrawing {
+    /// Keeps the LiDAR `points` (x, y, z, class) of `classes` within
+    /// `half_width` of the route's centreline (beside it, not beyond its
+    /// ends) as (station, offset, z), class, sorted by station. Nothing is
+    /// thinned here: the sheets draw one dot per paper cell.
+    pub fn set_lidar(
+        &mut self,
+        points: impl IntoIterator<Item = ([f64; 3], u8)>,
+        classes: &[u8],
+        half_width: f64,
+    ) {
+        let mut wanted = [false; 256];
+        for &c in classes {
+            wanted[c as usize] = true;
+        }
+        let centre = &self.centreline;
+        if centre.len() < 2 || half_width <= 0.0 {
+            self.lidar.clear();
+            return;
+        }
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for p in centre {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k] - half_width);
+                hi[k] = hi[k].max(p[k] + half_width);
+            }
+        }
+        let mut out: Vec<([f64; 3], u8)> = points
+            .into_iter()
+            .filter(|(p, c)| {
+                wanted[*c as usize]
+                    && p[0] >= lo[0]
+                    && p[0] <= hi[0]
+                    && p[1] >= lo[1]
+                    && p[1] <= hi[1]
+            })
+            .filter_map(|(p, c)| {
+                let (s, o) = project(centre, p);
+                let back = ohl_line::route::point_at(centre, s, o);
+                let beside = (back[0] - p[0]).hypot(back[1] - p[1]) < 0.01 * half_width.max(1.0);
+                (o.abs() <= half_width && beside).then_some(([s, o, p[2]], c))
+            })
+            .collect();
+        out.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
+        self.lidar = out;
+    }
 }
 
 fn polyline_length(p: &[Point]) -> f64 {
@@ -697,6 +812,8 @@ fn mark_of(s: &ohl_line::Structure, centre: &[Point], away: bool) -> Mark {
             Some(e) => format!("{t} {e}"),
             None => t.clone(),
         }),
+        type_id: s.structure_type.clone(),
+        extension: s.extension.clone(),
         strings,
         ..Mark::default()
     }
@@ -828,6 +945,17 @@ pub fn build(
             .map(|&o| (o, ground_profile(&centre, o, t)))
             .collect()
     });
+    // The ground along the corridor's edges: near side first.
+    let corridor_ground = match (terrain, options.corridor.filter(|w| *w > 0.0)) {
+        (Some(t), Some(w)) if options.template.corridor.profile => {
+            let near = options.template.corridor.near_offset(w);
+            [near, -near]
+                .into_iter()
+                .map(|o| (o, ground_profile(&centre, o, t)))
+                .collect()
+        }
+        _ => Vec::new(),
+    };
     let markers = markers
         .iter()
         .map(|(p, label)| (to_route(p), label.clone()))
@@ -858,6 +986,8 @@ pub fn build(
         markers,
         versions: Vec::new(),
         clearances: Vec::new(),
+        corridor_ground,
+        lidar: Vec::new(),
     })
 }
 
@@ -2332,10 +2462,11 @@ pub(crate) mod tests {
     }
 
     /// The rectangle of the title block of a sheet `s` (left, top, width,
-    /// height): the frame's bottom 32 mm.
+    /// height): the bottom 32 mm inside the frame's padding (5 mm margins,
+    /// 5 mm padding).
     fn title_block(s: &Sheet) -> [f64; 4] {
         let (w, h) = (s.drawing.width, s.drawing.height);
-        [5.0, h - 5.0 - 32.0, w - 10.0, 32.0]
+        [10.0, h - 10.0 - 32.0, w - 20.0, 32.0]
     }
 
     /// Regression (D1, D2, D3, D4, D11): the ground is seen on every sheet
@@ -2377,7 +2508,8 @@ pub(crate) mod tests {
                 }
                 assert!(all > 0 && 2 * seen > all, "1:{vscale}: {seen} of {all}");
                 // The profile panel down to the labels above the title
-                // block (297 − 10 − 32 − 8 = 247 mm).
+                // block, its 5 mm padding above it (297 − 10 − 32 − 5 − 8
+                // = 242 mm).
                 let panels: Vec<&model::Path> = flat
                     .iter()
                     .filter_map(|(i, _)| match i {
@@ -2386,7 +2518,7 @@ pub(crate) mod tests {
                     })
                     .collect();
                 let profile = panels.last().unwrap();
-                assert!((profile.points[2][1] - 247.0).abs() < 1e-6, "{profile:?}");
+                assert!((profile.points[2][1] - 242.0).abs() < 1e-6, "{profile:?}");
                 let top = profile.points[0][1];
                 for (item, clip) in &flat {
                     match item {
@@ -2394,7 +2526,7 @@ pub(crate) mod tests {
                             if t.layer == Layer::Labels && t.anchor == model::Anchor::End =>
                         {
                             // Height labels at the left of the panel.
-                            assert!(t.at[1] > top && t.at[1] < 247.0 + 1e-6, "{t:?}");
+                            assert!(t.at[1] > top && t.at[1] < 242.0 + 1e-6, "{t:?}");
                         }
                         Item::Text(t) if !matches!(t.layer, Layer::Title | Layer::TitleFields) => {
                             assert!(!model::inside(t.at, tb), "{t:?} in the title block");

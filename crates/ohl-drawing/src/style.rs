@@ -187,6 +187,8 @@ pub enum Sample {
     Square(Pen),
     /// A circle (a marker).
     Circle(Pen),
+    /// Filled dots of this colour and diameter, mm (LiDAR points).
+    Dots(crate::model::Color, f64),
 }
 
 /// One entry of a legend.

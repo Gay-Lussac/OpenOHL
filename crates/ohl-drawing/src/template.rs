@@ -352,6 +352,20 @@ pub struct LayoutSpec {
     /// Station labels under the profile (or the bands).
     #[serde(default = "yes")]
     pub station_labels: bool,
+    /// The plan panel's title (default `"Plan"`; `""`: none).
+    #[serde(default = "plan_title")]
+    pub plan_title: String,
+    /// The profile panel's title (default `"Profile"`; `""`: none).
+    #[serde(default = "profile_title")]
+    pub profile_title: String,
+}
+
+fn plan_title() -> String {
+    "Plan".into()
+}
+
+fn profile_title() -> String {
+    "Profile".into()
 }
 
 fn default_order() -> Vec<String> {
@@ -379,6 +393,8 @@ impl Default for LayoutSpec {
             beyond_match: Beyond::None,
             axis_room: fourteen(),
             station_labels: true,
+            plan_title: plan_title(),
+            profile_title: profile_title(),
         }
     }
 }
@@ -466,7 +482,16 @@ pub struct BandSpec {
     pub field: Option<String>,
     /// Decimals of its numbers (default 1).
     pub decimals: Option<usize>,
+    /// What a structure's entry says (`kind = "structures"`): `{name}`,
+    /// `{type}` (its type and extension), `{type_id}`, `{extension}`,
+    /// `{station}`, `{height}`; a line break makes two lines (default
+    /// `"{name} {type}"`).
+    pub format: Option<String>,
 }
+
+/// The placeholders of a structures band row's `format`.
+pub const STRUCTURE_BAND_FIELDS: [&str; 6] =
+    ["name", "type", "type_id", "extension", "station", "height"];
 
 /// Where a north arrow goes.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -541,6 +566,72 @@ pub struct LegendSpec {
     /// Size of its texts.
     #[serde(default = "small")]
     pub size: Mm,
+    /// Its own text for each entry the export makes, by kind
+    /// ([`LEGEND_LABELS`]: `axis`, `weather_case` …), with that kind's
+    /// placeholders; a kind not given keeps the English default.
+    #[serde(default)]
+    pub labels: BTreeMap<String, String>,
+}
+
+/// The entries the export puts in the legend: kind, English default,
+/// placeholders.
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 17] = [
+    ("axis", "axis of the line", &[]),
+    (
+        "corridor_near",
+        "corridor edge, near side ({side}) ±{width} m",
+        &["side", "width"],
+    ),
+    (
+        "corridor_far",
+        "corridor edge, far side ({side}) ±{width} m",
+        &["side", "width"],
+    ),
+    ("weather_case", "weather case {case}", &["case"]),
+    ("structure", "structure", &[]),
+    ("structure_role", "structure ({role})", &["role"]),
+    ("clearance_violation", "clearance violation", &[]),
+    ("datum_step", "datum step (heights read on each side)", &[]),
+    ("ground", "ground on the axis", &[]),
+    ("ground_side", "ground beside the axis", &["offset"]),
+    (
+        "clearance_line",
+        "ground + {distance} m (required clearance)",
+        &["distance"],
+    ),
+    (
+        "conductor_clearance",
+        "lowest conductor of {circuit} ({voltage}) – {distance} m, rule \"{rule}\", {case}{note}",
+        &["circuit", "voltage", "distance", "rule", "case", "note"],
+    ),
+    (
+        "conductor_clearance_note",
+        " — the rule names no weather case: the case drawn with the largest sag, {case}",
+        &["case"],
+    ),
+    ("match_line", "match line (sheet's end)", &[]),
+    ("isoclearance", "isoclearance {level}", &["level"]),
+    ("lidar", "{name} (LiDAR class {class})", &["name", "class"]),
+    ("version", "{label}: {words}", &["label", "words"]),
+];
+
+impl LegendSpec {
+    /// The legend's text for an entry of `kind` with `values` filled in:
+    /// the template's (`labels`), else the English default.
+    pub fn label(&self, kind: &str, values: &[(&str, &str)]) -> String {
+        let text = self.labels.get(kind).map(String::as_str).or_else(|| {
+            LEGEND_LABELS
+                .iter()
+                .find(|(k, ..)| *k == kind)
+                .map(|(_, d, _)| *d)
+        });
+        fill(text.unwrap_or(""), &|n, _| {
+            values
+                .iter()
+                .find(|(k, _)| *k == n)
+                .map(|(_, v)| (*v).to_owned())
+        })
+    }
 }
 
 fn legend_title() -> String {
@@ -568,6 +659,7 @@ impl Default for LegendSpec {
             height: thirty(),
             column_width: column_width(),
             size: small(),
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -635,8 +727,8 @@ impl Default for KeyMapSpec {
 }
 
 /// `[corridor]`: the corridor's edges in the plan at ± `width` from the
-/// axis.
-#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+/// axis, and the ground along them in the profile.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CorridorSpec {
     /// Half width, m (none: no corridor unless the export gives one).
@@ -646,6 +738,172 @@ pub struct CorridorSpec {
     /// Its pen.
     #[serde(default)]
     pub pen: PenSpec,
+    /// The side of the line nearest the profile's reader: `"right"`
+    /// (default: the right looking along increasing stations, the plan's
+    /// lower edge) or `"left"`.
+    #[serde(default = "right")]
+    pub near_side: String,
+    /// The near edge's pen, over `pen` (in the plan, the key map and its
+    /// ground line in the profile).
+    #[serde(default)]
+    pub near: PenSpec,
+    /// The far edge's pen, over `pen`.
+    #[serde(default)]
+    pub far: PenSpec,
+    /// The ground along both edges drawn in the profile (default on).
+    #[serde(default = "yes")]
+    pub profile: bool,
+}
+
+fn right() -> String {
+    "right".into()
+}
+
+impl Default for CorridorSpec {
+    fn default() -> Self {
+        Self {
+            width: None,
+            label: None,
+            pen: PenSpec::default(),
+            near_side: right(),
+            near: PenSpec::default(),
+            far: PenSpec::default(),
+            profile: true,
+        }
+    }
+}
+
+impl CorridorSpec {
+    /// The offset of the near edge for a half width `w`, m (right
+    /// positive); the far edge's is the opposite.
+    pub fn near_offset(&self, w: f64) -> f64 {
+        if self.near_side == "left" { -w } else { w }
+    }
+
+    /// The pen of the edge at `offset` (its sign), over `base`, and
+    /// whether it is the near one.
+    pub fn edge_pen(&self, offset: f64, base: crate::model::Pen) -> (crate::model::Pen, bool) {
+        let near = (offset >= 0.0) == (self.near_side != "left");
+        let spec = if near { &self.near } else { &self.far };
+        (spec.over(self.pen.over(base)), near)
+    }
+}
+
+/// `[centreline]`: the line's axis in the plan and the ground on it in
+/// the profile.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CentrelineSpec {
+    /// The axis's pen in the plan (default grey, dash-dot).
+    #[serde(default)]
+    pub pen: PenSpec,
+    /// The ground on the axis drawn in the profile (default on; always
+    /// solid).
+    #[serde(default = "yes")]
+    pub ground: bool,
+}
+
+impl Default for CentrelineSpec {
+    fn default() -> Self {
+        Self {
+            pen: PenSpec::default(),
+            ground: true,
+        }
+    }
+}
+
+/// A LiDAR class's (or group's) style on the sheets.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LidarStyle {
+    /// Colour `#rrggbb` (default: the class scheme's, else grey).
+    #[serde(alias = "color")]
+    pub colour: Option<String>,
+    /// Dot diameter (default the `[lidar]` size).
+    pub size: Option<Mm>,
+    /// What the legend calls it (default: the class scheme's name).
+    pub label: Option<String>,
+}
+
+/// `[lidar]`: the survey's LiDAR points within the corridor, as dots.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LidarSpec {
+    /// In the profile, by station and height (default off).
+    #[serde(default)]
+    pub profile: bool,
+    /// In the plan, seen from above (default off).
+    #[serde(default)]
+    pub plan: bool,
+    /// The classes drawn, by code (the export may choose others).
+    #[serde(default)]
+    pub classes: Vec<u8>,
+    /// Dot diameter.
+    #[serde(default = "dot")]
+    pub size: Mm,
+    /// One dot per class in each square cell of this size on paper (what
+    /// is drawn only: nothing computed changes).
+    #[serde(default = "dot_cell")]
+    pub cell: Mm,
+    /// Styles by class code (`"2"`) or group (`"3-5"`, `"3,4,5"`).
+    #[serde(default)]
+    pub styles: BTreeMap<String, LidarStyle>,
+}
+
+fn dot() -> Mm {
+    Mm(0.25)
+}
+
+fn dot_cell() -> Mm {
+    Mm(0.2)
+}
+
+impl Default for LidarSpec {
+    fn default() -> Self {
+        Self {
+            profile: false,
+            plan: false,
+            classes: Vec::new(),
+            size: dot(),
+            cell: dot_cell(),
+            styles: BTreeMap::new(),
+        }
+    }
+}
+
+/// The class codes of a `[lidar.styles]` key: `"2"`, `"3-5"`, `"3,4,5"`.
+pub fn class_codes(key: &str) -> Result<Vec<u8>, String> {
+    let bad = || format!("lidar.styles.\"{key}\": class codes 0–255, e.g. \"2\", \"3-5\", \"3,4\"");
+    let mut out = Vec::new();
+    for part in key.split(',') {
+        let code = |t: &str| t.trim().parse::<u8>().map_err(|_| bad());
+        match part.split_once('-') {
+            Some((a, b)) => {
+                let (a, b) = (code(a)?, code(b)?);
+                if a > b {
+                    return Err(bad());
+                }
+                out.extend(a..=b);
+            }
+            None => out.push(code(part)?),
+        }
+    }
+    Ok(out)
+}
+
+impl LidarSpec {
+    /// The style of class `code` (the first key naming it).
+    pub fn style(&self, code: u8) -> Option<&LidarStyle> {
+        self.style_entry(code).map(|(_, s)| s)
+    }
+
+    /// The key (`"3-5"`) and style of class `code`.
+    pub fn style_entry(&self, code: u8) -> Option<(&str, &LidarStyle)> {
+        self.styles
+            .iter()
+            .find(|(k, _)| class_codes(k).is_ok_and(|c| c.contains(&code)))
+            .map(|(k, s)| (k.as_str(), s))
+    }
 }
 
 /// `[elevations]`: each structure's elevation on the plan.
@@ -744,9 +1002,19 @@ pub struct ConductorClearanceSpec {
     /// `{voltage}`.
     #[serde(default = "curve_label")]
     pub label: String,
+    /// Where its label goes: `"auto"` (default: clear of the structures,
+    /// the wires and the ground, nearest the sheet's middle), `"middle"`
+    /// (the sheet's middle, above the line, as before), `"start"` or
+    /// `"end"` (the free place nearest that end of the sheet).
+    #[serde(default = "auto_place")]
+    pub label_at: String,
     /// Its pen.
     #[serde(default)]
     pub pen: PenSpec,
+}
+
+fn auto_place() -> String {
+    "auto".into()
 }
 
 fn also() -> String {
@@ -764,6 +1032,7 @@ impl Default for ConductorClearanceSpec {
             circuits: Vec::new(),
             mode: also(),
             label: curve_label(),
+            label_at: auto_place(),
             pen: PenSpec::default(),
         }
     }
@@ -1045,6 +1314,12 @@ pub struct SheetTemplate {
     /// The corridor.
     #[serde(default)]
     pub corridor: CorridorSpec,
+    /// The centreline.
+    #[serde(default)]
+    pub centreline: CentrelineSpec,
+    /// LiDAR points.
+    #[serde(default)]
+    pub lidar: LidarSpec,
     /// The elevations.
     #[serde(default)]
     pub elevations: ElevationSpec,
@@ -1069,6 +1344,10 @@ pub struct SheetTemplate {
     /// Values the user gives.
     #[serde(default, rename = "field")]
     pub fields: Vec<FieldSpec>,
+    /// What a field that comes out empty is written as, by field name
+    /// (`"*"`: every other field); see [`SheetTemplate::if_empty`].
+    #[serde(default)]
+    pub if_empty: BTreeMap<String, String>,
     /// Images.
     #[serde(default, rename = "image")]
     pub images: Vec<ImageSpec>,
@@ -1118,6 +1397,10 @@ pub const COMPUTED_FIELDS: [&str; 26] = [
 
 /// More computed fields: the coordinate system and the program.
 pub const MORE_FIELDS: [&str; 3] = ["crs", "program", "height_datum"];
+
+/// The computed fields that may say nothing (a station range's ends, the
+/// title lines not given): left empty unless `[if_empty]` names them.
+pub const MAY_BE_EMPTY: [&str; 5] = ["ends", "title", "title1", "title2", "title3"];
 
 /// The fields of a revision row.
 pub const REVISION_FIELDS: [&str; 5] =
@@ -1553,7 +1836,88 @@ impl SheetTemplate {
                 }
             }
         }
+        for k in self.if_empty.keys() {
+            if k != "*" && !self.known(k) {
+                return Err(format!(
+                    "if_empty: no field \"{k}\" (a computed or declared field, or \"*\")"
+                ));
+            }
+        }
+        for (kind, text) in &self.legend.labels {
+            let Some((_, _, own)) = LEGEND_LABELS.iter().find(|(k, ..)| k == kind) else {
+                let kinds: Vec<&str> = LEGEND_LABELS.iter().map(|(k, ..)| *k).collect();
+                return Err(format!(
+                    "legend.labels.{kind}: no such entry (entries: {})",
+                    kinds.join(", ")
+                ));
+            };
+            for (name, _) in placeholders(text).map_err(|e| format!("legend.labels.{kind}: {e}"))? {
+                if !own.contains(&name.as_str()) {
+                    return Err(format!(
+                        "legend.labels.{kind}: unknown field {{{name}}} (give {})",
+                        if own.is_empty() {
+                            "none".to_owned()
+                        } else {
+                            own.iter()
+                                .map(|n| format!("{{{n}}}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        }
+                    ));
+                }
+            }
+        }
+        if !["right", "left"].contains(&self.corridor.near_side.as_str()) {
+            return Err(format!(
+                "corridor.near_side = \"{}\": give right or left",
+                self.corridor.near_side
+            ));
+        }
+        self.corridor.near.check("corridor.near")?;
+        self.corridor.far.check("corridor.far")?;
+        self.centreline.pen.check("centreline.pen")?;
+        if !["auto", "middle", "start", "end"].contains(&self.conductor_clearance.label_at.as_str())
+        {
+            return Err(format!(
+                "conductor_clearance.label_at = \"{}\": give auto, middle, start or end",
+                self.conductor_clearance.label_at
+            ));
+        }
+        let l = &self.lidar;
+        if !(l.size.0 > 0.0 && l.size.0 <= 5.0) || !(l.cell.0 >= 0.0 && l.cell.0 <= 10.0) {
+            return Err("lidar: size from 0 to 5 mm, cell from 0 to 10 mm".into());
+        }
+        for (k, s) in &l.styles {
+            class_codes(k)?;
+            if let Some(c) = &s.colour
+                && crate::model::Color::parse(c).is_none()
+            {
+                return Err(format!(
+                    "lidar.styles.\"{k}\": colour \"{c}\" is not #rrggbb"
+                ));
+            }
+            if s.size.is_some_and(|v| !(v.0 > 0.0 && v.0 <= 5.0)) {
+                return Err(format!("lidar.styles.\"{k}\": a size from 0 to 5 mm"));
+            }
+        }
         for b in &self.bands {
+            if let Some(f) = &b.format {
+                if b.kind != BandKind::Structures {
+                    return Err("band: `format` is for the kind structures".into());
+                }
+                for (name, _) in placeholders(f).map_err(|e| format!("band format: {e}"))? {
+                    if !STRUCTURE_BAND_FIELDS.contains(&name.as_str()) {
+                        return Err(format!(
+                            "band format: unknown field {{{name}}} (give {})",
+                            STRUCTURE_BAND_FIELDS
+                                .iter()
+                                .map(|n| format!("{{{n}}}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                }
+            }
             if b.kind == BandKind::Text {
                 let f = b
                     .field
@@ -1583,6 +1947,31 @@ impl SheetTemplate {
             page = page.portrait();
         }
         Some(page)
+    }
+
+    /// What field `name` is written as when it comes out empty: the
+    /// template's `[if_empty]` for it, else (but for the fields that may
+    /// say nothing, [`MAY_BE_EMPTY`]) its `"*"`, else "unknown datum"
+    /// (`height_datum`), "unknown coordinate system" (`crs`) or "–". None:
+    /// it stays empty.
+    pub fn if_empty(&self, name: &str) -> Option<String> {
+        if let Some(t) = self.if_empty.get(name) {
+            return Some(t.clone());
+        }
+        if MAY_BE_EMPTY.contains(&name) {
+            return None;
+        }
+        if let Some(t) = self.if_empty.get("*") {
+            return Some(t.clone());
+        }
+        Some(
+            match name {
+                "height_datum" => "unknown datum",
+                "crs" => "unknown coordinate system",
+                _ => "–",
+            }
+            .to_owned(),
+        )
     }
 
     /// The pen of `layer`: `pen` with what the template gives.

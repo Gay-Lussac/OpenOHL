@@ -37,6 +37,8 @@ plan_height = "auto"          # or at least "60 mm"
 beyond_match = "faded"        # "none" (default) or "faded": the next sheet faded
 axis_room = "34 mm"           # left of the panels: height and band labels
 station_labels = true         # station labels under the bands
+plan_title = "Plan view"      # the panels' titles (default "Plan", "Profile"; "" none)
+profile_title = "Longitudinal profile"
 
 [layers]                      # pens by layer: width, colour, dash (any of them)
 OHL_GROUND = { width = "0.4 mm", colour = "#6b3f12" }
@@ -48,7 +50,8 @@ OHL_PANELS = { width = "0.25 mm", colour = "#666666" }
 [[band]]                      # rows under the profile, top to bottom
 kind = "structures"           # names and types
 height = "8 mm"
-label = "Structure"
+label = "Structure no. / type"
+format = "{name}\n{type}"     # {name}, {type} (type and extension), {type_id}, {extension}, {station}, {height}; \n: two lines
 [[band]]
 kind = "stations"
 height = "8 mm"
@@ -101,6 +104,25 @@ height = "45 mm"
 column_width = "88 mm"
 size = "2 mm"
 
+[legend.labels]               # the template's own words for the entries the export makes (default: English)
+axis = "centreline (axis of the line)"
+corridor_near = "corridor ±{width} m, near side ({side}): edge and ground"
+corridor_far = "corridor ±{width} m, far side ({side}): edge and ground"
+weather_case = "load case {case}"
+structure = "support"
+structure_role = "support ({role})"
+clearance_violation = "clearance not kept"
+datum_step = "datum step (heights read on each side)"
+ground = "ground on the centreline"
+ground_side = "ground at {offset} m"
+clearance_line = "ground + {distance} m (minimum clearance)"
+conductor_clearance = "{distance} m under the lowest conductor of {circuit} ({voltage}), {rule}, {case}{note}"
+conductor_clearance_note = " (largest sag)"
+match_line = "match line"
+isoclearance = "isoclearance {level}"
+lidar = "LiDAR: {name} ({class})"
+version = "{label}: {words}"
+
 [key_map]
 place = "bottom"              # a small plan of the route, this sheet marked
 width = "90 mm"
@@ -117,6 +139,25 @@ highlight = { width = "0.8 mm", colour = "#cc2222" }
 width = "25 m"                # the corridor's half width (the export may change it)
 label = "corridor ±{width} m"
 pen = { width = "0.3 mm", colour = "#2a7f3f", dash = "6 1.5 1 1.5" }
+near_side = "right"           # the side nearest the profile's reader: right (looking along increasing stations; the plan's lower edge) or left
+near = { colour = "#2a7f3f", dash = "6 1.5 1 1.5" }   # the near edge: plan, key map, its ground in the profile
+far = { colour = "#7a3fa0", dash = "2 1.5" }          # the far edge
+profile = true                # the ground along both edges in the profile
+
+[centreline]
+pen = { width = "0.25 mm", colour = "#000000", dash = "" }   # the axis in the plan ("" dash: solid)
+ground = true                 # the ground on the axis in the profile (always solid)
+
+[lidar]                       # LiDAR points within the corridor (else the line width), as dots
+profile = true                # by station and height
+plan = false                  # seen from above
+classes = [2, 3, 5, 6]        # drawn (the export window and --sheet-lidar-classes may choose others)
+size = "0.25 mm"              # dot diameter
+cell = "0.2 mm"               # one dot per class in each cell on paper (drawing only)
+[lidar.styles]                # by class code or group ("3-5", "3,4"); colour, size, label (default: the class scheme's)
+"2" = { colour = "#b08850" }
+"3-5" = { colour = "#2e8b57", label = "vegetation" }
+"6" = { colour = "#555555", size = "0.3 mm" }
 
 [elevations]
 place = "above"               # "above", "below" or "off"
@@ -175,7 +216,8 @@ show = true                   # lines below the lowest conductor (rules for the 
 circuits = []                 # those drawn (none: every circuit with a rule)
 mode = "also"                 # "also" or "instead" of the line above the ground
 label = "{distance} m below the lowest conductor ({rule}, {case})"
-pen = { width = "0.3 mm", colour = "#a01818", dash = "5 1 1 1 1 1" }
+label_at = "auto"             # "auto" (clear of structures, wires and ground), "middle", "start", "end"
+pen ={ width = "0.3 mm", colour = "#a01818", dash = "5 1 1 1 1 1" }
 
 [title_block]
 corner = "bottom_right"       # or "bottom_left"
@@ -311,6 +353,11 @@ label = "Approved"
 key = "remarks"
 label = "Remarks (band row)"
 per_sheet = true
+
+[if_empty]                    # what a field that comes out empty is written as (never an empty gap)
+height_datum = "the survey's height datum (not given)"   # built in: "unknown datum"
+crs = "unknown coordinate system"
+"*" = "–"                     # every other field (ends and title1–3 stay empty unless named here)
 
 [[image]]                     # images the cells name: a file next to the template, or data = "base64…"
 name = "example-logo.svg"

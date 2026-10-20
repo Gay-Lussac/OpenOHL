@@ -25,11 +25,22 @@ pub(crate) struct Values {
     pub number: BTreeMap<String, f64>,
     /// Stations by name (`{from:km}` / `{from:m}`).
     pub station: BTreeMap<String, f64>,
+    /// The template: what an empty field is written as.
+    pub template: std::sync::Arc<SheetTemplate>,
 }
 
 impl Values {
-    /// The value of `name` written with `fmt`.
+    /// The value of `name` written with `fmt`; an empty one as the
+    /// template says ([`SheetTemplate::if_empty`]): never an empty gap.
     pub(crate) fn get(&self, name: &str, fmt: &str) -> Option<String> {
+        let v = self.raw(name, fmt)?;
+        if v.trim().is_empty() {
+            return Some(self.template.if_empty(name).unwrap_or(v));
+        }
+        Some(v)
+    }
+
+    fn raw(&self, name: &str, fmt: &str) -> Option<String> {
         if let Some(s) = self.station.get(name) {
             return Some(match fmt {
                 "m" => format!("{s:.1}"),
@@ -153,6 +164,50 @@ pub(crate) fn wrap(text: &str, size: f64, bold: bool, width: f64) -> Vec<String>
     out
 }
 
+/// `text` broken to `width` mm at `size`, the size made smaller (down to
+/// 40 %) until every line fits `width` and the lines fit `height`: the
+/// size and the lines. A text that does not fit even then keeps the
+/// smallest size.
+pub(crate) fn fit_text(
+    text: &str,
+    size: f64,
+    bold: bool,
+    width: f64,
+    height: f64,
+) -> (f64, Vec<String>) {
+    let mut s = size;
+    loop {
+        let lines = wrap(text, s, bold, width);
+        let widest = lines
+            .iter()
+            .map(|l| crate::pdf::text_width(l, s, bold))
+            .fold(0.0, f64::max);
+        let tall = 1.25 * s * (lines.len() as f64 - 1.0) + 0.72 * s;
+        if (widest <= width + 1e-9 && tall <= height + 1e-9) || s <= 0.4 * size {
+            return (s, lines);
+        }
+        s = (s * 0.92).max(0.4 * size);
+    }
+}
+
+/// One line of `text` in `width` mm: the size made smaller (down to 60 %),
+/// then the text shortened with "…" if it still does not fit.
+pub(crate) fn fit_line(text: &str, size: f64, bold: bool, width: f64) -> (f64, String) {
+    let w = crate::pdf::text_width(text, size, bold);
+    if w <= width {
+        return (size, text.to_owned());
+    }
+    let s = (size * width / w * 0.999).max(0.6 * size);
+    if crate::pdf::text_width(text, s, bold) <= width {
+        return (s, text.to_owned());
+    }
+    let mut t: String = text.to_owned();
+    while t.chars().count() > 1 && crate::pdf::text_width(&format!("{t}…"), s, bold) > width {
+        t.pop();
+    }
+    (s, t.trim_end().to_owned() + "…")
+}
+
 /// Draws the title block of template `t` into `r`: its outline (its grid
 /// when asked), each cell's text (lines centred up and down) or image.
 pub(crate) fn title_block(
@@ -259,9 +314,14 @@ pub(crate) fn title_block(
         if c.text.is_empty() {
             continue;
         }
-        let size = c.size.map_or(3.0, |s| s.0);
         let filled = values.fill(&c.text);
-        let lines = wrap(&filled, size, c.bold, cell[2] - 2.0 * pad);
+        let (size, lines) = fit_text(
+            &filled,
+            c.size.map_or(3.0, |s| s.0),
+            c.bold,
+            cell[2] - 2.0 * pad,
+            cell[3] - 1.0,
+        );
         let step = 1.25 * size;
         let block = step * (lines.len() as f64 - 1.0) + 0.72 * size;
         let first = cell[1] + (cell[3] - block) / 2.0 + 0.72 * size;
@@ -312,31 +372,38 @@ pub(crate) fn revisions(
     let heading_y = r[1] + r[3] - h;
     let mut x = r[0];
     for col in &spec.columns {
-        let w = col.width.0;
+        // A column past the table's width (the room inside the frame) is
+        // cut at it; every text kept inside its column.
+        let w = col.width.0.min(r[0] + r[2] - x);
+        if w <= 1.0 {
+            break;
+        }
         items.push(line(
             Layer::Revisions,
             [x, r[1]],
             [x, r[1] + r[3]],
             pen.clone(),
         ));
+        let (s, title) = fit_line(&col.title, size, true, w - 2.0);
         items.push(text_on(
             Layer::Revisions,
-            [x + 1.0, heading_y + h / 2.0 + 0.36 * size],
-            size,
+            [x + 1.0, heading_y + h / 2.0 + 0.36 * s],
+            s,
             Anchor::Start,
             true,
             color,
-            &col.title,
+            &title,
         ));
         for (k, rev) in rows.iter().enumerate() {
             let y = heading_y - h * (k as f64 + 1.0);
             let text = fill(&col.value, &|n, f| {
                 rev.get(n).map(str::to_owned).or_else(|| values.get(n, f))
             });
+            let (s, text) = fit_line(&text, size, false, w - 2.0);
             items.push(text_on(
                 Layer::Revisions,
-                [x + 1.0, y + h / 2.0 + 0.36 * size],
-                size,
+                [x + 1.0, y + h / 2.0 + 0.36 * s],
+                s,
                 Anchor::Start,
                 false,
                 color,
@@ -362,8 +429,16 @@ pub(crate) fn revisions_height(t: &SheetTemplate) -> f64 {
 }
 
 /// Draws the template's notes, placed from the frame `inner`'s edges.
-pub(crate) fn notes(items: &mut Vec<Item>, t: &SheetTemplate, inner: Rect, values: &Values) {
+/// Each note is broken to its width, at most to the frame's padding on
+/// the right. Returns the rectangle each note covers.
+pub(crate) fn notes(
+    items: &mut Vec<Item>,
+    t: &SheetTemplate,
+    inner: Rect,
+    values: &Values,
+) -> Vec<Rect> {
     let color = Color::hex_or_black(&t.text.colour);
+    let mut covered = Vec::new();
     for n in &t.notes {
         let x = if n.at[0].0 >= 0.0 {
             inner[0] + n.at[0].0
@@ -376,10 +451,9 @@ pub(crate) fn notes(items: &mut Vec<Item>, t: &SheetTemplate, inner: Rect, value
             inner[1] + inner[3] + n.at[1].0
         };
         let size = n.size.0;
-        for (k, l) in wrap(&values.fill(&n.text), size, n.bold, n.width.0)
-            .iter()
-            .enumerate()
-        {
+        let width = n.width.0.min(inner[0] + inner[2] - x).max(1.0);
+        let lines = wrap(&values.fill(&n.text), size, n.bold, width);
+        for (k, l) in lines.iter().enumerate() {
             items.push(text_item(
                 [x, y + size + 1.25 * size * k as f64],
                 size,
@@ -389,7 +463,23 @@ pub(crate) fn notes(items: &mut Vec<Item>, t: &SheetTemplate, inner: Rect, value
                 l,
             ));
         }
+        let widest = lines
+            .iter()
+            .map(|l| crate::pdf::text_width(l, size, n.bold))
+            .fold(0.0, f64::max);
+        covered.push([
+            x,
+            y,
+            widest,
+            size * (1.25 * (lines.len() as f64 - 1.0) + 1.2),
+        ]);
     }
+    covered
+}
+
+/// Whether rectangles `a` and `b` overlap.
+pub(crate) fn overlap(a: Rect, b: Rect) -> bool {
+    a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
 }
 
 /// Draws the legend into `r`; the entries that do not fit, warned.
@@ -451,6 +541,20 @@ pub(crate) fn legend(
                 fill: None,
                 title: None,
             })),
+            Sample::Dots(color, d) => {
+                // Three dots, a little larger than drawn to be seen.
+                let r = (0.5 * d).max(0.3);
+                for dx in [1.5, 4.0, 6.5] {
+                    items.push(Item::Circle(Circle {
+                        layer: Layer::Legend,
+                        centre: [x + dx, mid],
+                        radius: r,
+                        stroke: None,
+                        fill: Some(*color),
+                        title: None,
+                    }));
+                }
+            }
         }
         let max = col_w - 11.0;
         let mut text = e.text.clone();
@@ -766,10 +870,14 @@ pub(crate) fn key_map(
                 layer: Layer::KeyMap,
                 points: pts,
                 closed: false,
+                // Each edge in its pen (near, far), as in the plan.
                 pen: t
                     .corridor
-                    .pen
-                    .over(Pen::new(Color(0x88, 0x88, 0x88), 0.13).dashed("1 1")),
+                    .edge_pen(
+                        side * w,
+                        Pen::new(Color(0x88, 0x88, 0x88), 0.13).dashed("1 1"),
+                    )
+                    .0,
                 title: Some("corridor".into()),
             }));
         }
@@ -918,12 +1026,33 @@ pub(crate) fn bands(
         };
         match b.kind {
             BandKind::Structures => {
+                let format = b.format.as_deref().unwrap_or("{name} {type}");
                 for m in &on {
-                    let t = match &m.type_name {
-                        Some(ty) => format!("{} {ty}", m.id),
-                        None => m.id.clone(),
-                    };
-                    put(items, m.station, t, true);
+                    let lines = structure_entry(format, m, dec);
+                    let x = f.x(m.station);
+                    items.push(line(Layer::Bands, [x, y], [x, y + h], tick.clone()));
+                    // Two lines (a line break in the format) one above
+                    // the other, centred in the row.
+                    let n = lines.len() as f64;
+                    for (k, l) in lines.into_iter().enumerate() {
+                        let dy = (k as f64 - 0.5 * (n - 1.0)) * 1.2 * size;
+                        let (at, anchor) = if x < f.left + 6.0 {
+                            (x + 0.8, Anchor::Start)
+                        } else if x > f.left + f.width() - 6.0 {
+                            (x - 0.8, Anchor::End)
+                        } else {
+                            (x, Anchor::Middle)
+                        };
+                        items.push(Item::Text(Text {
+                            layer: Layer::Bands,
+                            at: [at, mid + dy + 0.36 * size],
+                            text: l,
+                            size,
+                            anchor,
+                            bold: false,
+                            color,
+                        }));
+                    }
                 }
             }
             BandKind::Stations => {
@@ -1047,6 +1176,36 @@ pub(crate) fn bands(
         }
         y += h;
     }
+}
+
+/// The entry of structure `m` in a structures band row, by `format`
+/// (`{name}`, `{type}`, `{type_id}`, `{extension}`, `{station}`,
+/// `{height}` with `dec` decimals): its lines, what is not known left out
+/// (spaces closed up), empty lines dropped.
+pub(crate) fn structure_entry(format: &str, m: &crate::Mark, dec: usize) -> Vec<String> {
+    let top = m
+        .members
+        .iter()
+        .chain(&m.pole)
+        .chain(&m.sticks)
+        .flatten()
+        .map(|p| p[2])
+        .fold(m.top, f64::max);
+    let text = fill(format, &|n, _| {
+        Some(match n {
+            "name" => m.id.clone(),
+            "type" => m.type_name.clone().unwrap_or_default(),
+            "type_id" => m.type_id.clone().unwrap_or_default(),
+            "extension" => m.extension.clone().unwrap_or_default(),
+            "station" => format_station(m.station),
+            "height" => format!("{:.dec$}", top - m.base),
+            _ => return None,
+        })
+    });
+    text.split('\n')
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// The height of the template's band rows, mm (none when off).

@@ -157,8 +157,55 @@ pub struct Curve {
     pub runs: Vec<Vec<[f64; 2]>>,
     /// Its label on the sheet.
     pub label: String,
-    /// What the legend says.
+    /// What the legend says (in English; a template's words:
+    /// [`Curve::legend_with`]).
     pub legend: String,
+    /// What the legend's text is made of: circuit, voltage ("220 kV",
+    /// "earthed"), distance (m, written), rule, the weather cases, whether
+    /// the rule named none (the largest sag taken).
+    pub parts: CurveParts,
+}
+
+/// What a [`Curve`]'s legend entry is made of.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CurveParts {
+    /// The circuit.
+    pub circuit: String,
+    /// Its voltage in words.
+    pub voltage: String,
+    /// The distance, m, written.
+    pub distance: String,
+    /// The rule.
+    pub rule: String,
+    /// The weather cases its lowest conductor is taken in.
+    pub case: String,
+    /// The rule names no case: the drawn case with the largest sag.
+    pub largest_sag: bool,
+}
+
+impl Curve {
+    /// The legend's text in `legend`'s words (the template's
+    /// `[legend.labels]` `conductor_clearance` and
+    /// `conductor_clearance_note`).
+    pub fn legend_with(&self, legend: &crate::template::LegendSpec) -> String {
+        let p = &self.parts;
+        let note = if p.largest_sag {
+            legend.label("conductor_clearance_note", &[("case", &p.case)])
+        } else {
+            String::new()
+        };
+        legend.label(
+            "conductor_clearance",
+            &[
+                ("circuit", &p.circuit),
+                ("voltage", &p.voltage),
+                ("distance", &p.distance),
+                ("rule", &p.rule),
+                ("case", &p.case),
+                ("note", &note),
+            ],
+        )
+    }
 }
 
 /// The lines below the lowest conductor of route drawing `d` for the
@@ -188,8 +235,7 @@ pub fn curves(
         if of_circuit.is_empty() {
             continue;
         }
-        let (chosen, case_words, legend_note): (Vec<&Trace>, String, String) = if c.cases.is_empty()
-        {
+        let (chosen, case_words, largest_sag): (Vec<&Trace>, String, bool) = if c.cases.is_empty() {
             // The case drawn whose wires sag lowest.
             let mut cases: Vec<&str> = of_circuit.iter().map(|t| t.case.as_str()).collect();
             cases.sort_unstable();
@@ -214,9 +260,7 @@ pub fn curves(
                     .filter(|t| t.case == case)
                     .collect(),
                 case.to_owned(),
-                format!(
-                    " — the rule names no weather case: the case drawn with the largest sag, {case}"
-                ),
+                true,
             )
         } else {
             let chosen: Vec<&Trace> = of_circuit
@@ -241,7 +285,7 @@ pub fn curves(
             let mut names: Vec<&str> = chosen.iter().map(|t| t.case.as_str()).collect();
             names.sort_unstable();
             names.dedup();
-            (chosen, names.join(", "), String::new())
+            (chosen, names.join(", "), false)
         };
         let runs: Vec<Vec<[f64; 2]>> = lower_envelope(&chosen)
             .into_iter()
@@ -259,14 +303,21 @@ pub fn curves(
             "voltage" => Some(voltage.clone()),
             _ => None,
         });
-        out.push(Curve {
+        let mut curve = Curve {
             runs,
-            legend: format!(
-                "lowest conductor of {} ({voltage}) − {distance} m, rule \"{}\", {case_words}{legend_note}",
-                c.circuit, c.rule
-            ),
+            legend: String::new(),
             label: text,
-        });
+            parts: CurveParts {
+                circuit: c.circuit.clone(),
+                voltage,
+                distance,
+                rule: c.rule.clone(),
+                case: case_words,
+                largest_sag,
+            },
+        };
+        curve.legend = curve.legend_with(&crate::template::LegendSpec::default());
+        out.push(curve);
     }
     (out, warnings)
 }
