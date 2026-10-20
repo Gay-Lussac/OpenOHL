@@ -1272,22 +1272,27 @@ impl TabViewer for Viewer<'_> {
                 r.drawings.preview(&r.model, r.case),
                 buttons,
             ),
-            Tab::Profile => r
-                .profile
-                .ui(
-                    ui,
-                    &r.model,
-                    r.case,
-                    &mut r.selection,
-                    &snaps,
-                    &mut r.drawings,
-                    buttons,
-                )
-                .map(|target| crate::selection::Use {
-                    target,
-                    at: None,
-                    on: None,
-                }),
+            Tab::Profile => {
+                r.profile.vegetation_layers = [
+                    r.visible.contains(&Layer::GrowIn),
+                    r.visible.contains(&Layer::FallIn),
+                ];
+                r.profile
+                    .ui(
+                        ui,
+                        &r.model,
+                        r.case,
+                        &mut r.selection,
+                        &snaps,
+                        &mut r.drawings,
+                        buttons,
+                    )
+                    .map(|target| crate::selection::Use {
+                        target,
+                        at: None,
+                        on: None,
+                    })
+            }
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
                 let action = crate::properties::ui(
@@ -8229,6 +8234,16 @@ impl eframe::App for App {
                 ];
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
+                }
+                // A new vegetation report: drawn on its layers.
+                if let Some(overlay) = ready.vegetation.take_overlay() {
+                    ready.view3d.vegetation = overlay.clone();
+                    ready.plan.vegetation = overlay.clone();
+                    ready.profile.vegetation = overlay;
+                    ready
+                        .view3d
+                        .dirty
+                        .extend([Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]);
                 }
                 // The checks' pages asked for: opened (floating first).
                 if std::mem::take(&mut ready.phase_distance.open) {

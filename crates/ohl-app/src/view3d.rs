@@ -57,6 +57,8 @@ pub struct View3d {
     left_press_on_handle: bool,
     /// Clearance violations to draw: (on the wire, on the target).
     pub marks: Vec<([f64; 3], [f64; 3])>,
+    /// What Checks › Vegetation found.
+    pub vegetation: crate::vegetation::Overlay,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
     /// What a replacement would remove (Replace structure's window open):
@@ -833,6 +835,9 @@ impl View3d {
             }
             let s = match layer {
                 Layer::Clearances => scene::marks(model.origin, &self.marks),
+                Layer::GrowIn | Layer::FallIn | Layer::Isoclearance => {
+                    scene::vegetation(model.origin, &self.vegetation, layer)
+                }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
                 _ => scene::layer(model, layer, case, selection),
             };

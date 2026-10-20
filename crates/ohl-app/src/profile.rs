@@ -44,6 +44,10 @@ pub struct ProfileView {
     /// sheet number, first and last station on the profile (shifted as
     /// the alignment is), with warnings or not.
     pub(crate) sheets_drawn: Vec<(String, usize, f64, f64, bool)>,
+    /// What Checks › Vegetation found ...
+    pub vegetation: crate::vegetation::Overlay,
+    /// ... and whether its grow-in and danger-tree layers are shown.
+    pub vegetation_layers: [bool; 2],
 }
 
 /// Where the view is: stations, heights, its rectangle (bits of each).
@@ -647,6 +651,31 @@ impl ProfileView {
                 egui::Color32::from_gray(130),
             );
             z += step;
+        }
+        // What Checks › Vegetation found within the line width: grow-in
+        // points (cyan dots), danger trees (an orange trunk).
+        let [grows, falls] = self.vegetation_layers;
+        let near = |p: [f64; 3]| {
+            let (st, off) = ohl_line::route::project(&d.centreline, p);
+            (off.abs() <= depth && st >= s0 && st <= s1).then_some(st)
+        };
+        let color = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+        if grows {
+            for (p, _) in &self.vegetation.grow {
+                if let Some(st) = near(*p) {
+                    painter.circle_filled(to_screen(st, p[2]), 3.0, color(crate::scene::GROW_IN));
+                }
+            }
+        }
+        if falls {
+            for (top, base, _) in &self.vegetation.fall {
+                if let Some(st) = near(*top) {
+                    painter.line_segment(
+                        [to_screen(st, base[2]), to_screen(st, top[2])],
+                        egui::Stroke::new(2.5, color(crate::scene::FALL_IN)),
+                    );
+                }
+            }
         }
         let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);
         // The corridor: survey points, the ground at its edges, the 3D

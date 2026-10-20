@@ -23,6 +23,8 @@ pub struct PlanView {
     scale: f64,
     /// Clearance violations to mark (points on the wires).
     pub marks: Vec<[f64; 3]>,
+    /// What Checks › Vegetation found.
+    pub vegetation: crate::vegetation::Overlay,
     /// Other users (server mode): where each looks, with their name.
     pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
@@ -35,6 +37,56 @@ pub struct PlanView {
     alignments: AlignmentViews,
     /// The sheet preview's sheets drawn in the last frame.
     pub sheets_drawn: usize,
+}
+
+/// What Checks › Vegetation found, on the layers shown: isoclearance lines
+/// in their colours, grow-in points (cyan dots), danger trees (an orange
+/// triangle at the base, a line to the wire point it falls to).
+fn paint_vegetation(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    to_screen: &impl Fn([f64; 3]) -> egui::Pos2,
+    overlay: &crate::vegetation::Overlay,
+    visible: &std::collections::HashSet<crate::scene::Layer>,
+) {
+    use crate::scene::{FALL_IN, GROW_IN, Layer};
+    let color = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+    if visible.contains(&Layer::Isoclearance) {
+        for (_, rgb, points) in &overlay.lines {
+            let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
+            if pts.iter().any(|p| rect.expand(50.0).contains(*p)) {
+                painter.add(egui::Shape::line(pts, egui::Stroke::new(1.2, color(*rgb))));
+            }
+        }
+    }
+    if visible.contains(&Layer::GrowIn) {
+        for (p, _) in &overlay.grow {
+            let p = to_screen(*p);
+            if rect.expand(10.0).contains(p) {
+                painter.circle_filled(p, 3.5, color(GROW_IN));
+            }
+        }
+    }
+    if visible.contains(&Layer::FallIn) {
+        for (_, base, q) in &overlay.fall {
+            let (b, w) = (to_screen(*base), to_screen(*q));
+            if !rect.expand(10.0).contains(b) {
+                continue;
+            }
+            let c = color(FALL_IN);
+            painter.line_segment([b, w], egui::Stroke::new(1.0, c.gamma_multiply(0.6)));
+            let d = 5.0;
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    b + egui::vec2(0.0, -d),
+                    b + egui::vec2(d * 0.87, d * 0.5),
+                    b + egui::vec2(-d * 0.87, d * 0.5),
+                ],
+                c,
+                egui::Stroke::NONE,
+            ));
+        }
+    }
 }
 
 /// The sheet preview on the plan: each sheet's band along its alignment
@@ -787,6 +839,7 @@ impl PlanView {
         for (at, galley) in names {
             painter.galley(at, galley, name_color);
         }
+        paint_vegetation(&painter, rect, &to_screen, &self.vegetation, visible);
         for m in &self.marks {
             let p = to_screen(*m);
             if rect.expand(10.0).contains(p) {

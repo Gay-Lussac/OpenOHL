@@ -1809,14 +1809,26 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
             }
             let veg = veg.as_ref().unwrap();
             assert_eq!(veg.points, 1);
-            let (w, found) = &veg.wires[0];
+            let (w, found) = (&veg.positions.spans[0].wire, &veg.results[0]);
             assert_eq!((w.section.as_str(), w.span), ("S1", 0));
             assert_eq!(found.encroaching, 1);
+            // The case shown, as it is, and the root ball proposed.
+            assert_eq!(veg.positions.cases.len(), 1);
+            assert_eq!(
+                veg.params.root_ball,
+                ohl_clearance::vegetation::PROPOSED_ROOT_BALL
+            );
             break;
         }
         assert!(started.elapsed().as_secs() < 120, "no answers in 120 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    // Drawn on its layers: the tree under the span grows in.
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.view3d.vegetation.grow.len(), 1);
+    assert_eq!(r.plan.vegetation, r.view3d.vegetation);
+    assert_eq!(r.profile.vegetation, r.view3d.vegetation);
     std::fs::remove_dir_all(dir).ok();
 }
 
