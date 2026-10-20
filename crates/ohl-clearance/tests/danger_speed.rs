@@ -199,6 +199,11 @@ fn speed() {
         growth_per_year: 0.3,
         years: 3.0,
         fall_in: true,
+        // The check before the danger trees: no root ball, no allowance,
+        // no limit to a base's ground point.
+        root_ball: 0.0,
+        fall_allowance: 0.0,
+        max_base_ground_distance: None,
         ..VegetationParams::default()
     };
     let danger = VegetationParams {

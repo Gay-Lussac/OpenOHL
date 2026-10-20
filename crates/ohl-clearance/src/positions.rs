@@ -1353,29 +1353,62 @@ pub fn solve_positions(
 }
 
 /// Unbalanced ice on a span: what the span checked carries more than its
-/// neighbours.
+/// neighbours. The span is solved in a weather case of its own, the
+/// section's other spans in the section's
+/// ([`ohl_line::solve::SpanCases`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnbalancedIce {
-    /// The case's ice on the span alone (cases without ice are left out).
+    /// The case's ice on the span alone: the span in the case, the
+    /// section's other spans in the case without its ice (cases without
+    /// ice are left out).
     CaseIce,
-    /// The case as it is, and this extra load on the span, N/m (the whole
-    /// bundle's).
-    Extra(f64),
+    /// The case on every span, and the span in the case with this much
+    /// more radial ice, m ([`WeatherCase::with_more_ice_thickness`]).
+    ExtraThickness(f64),
+    /// The case on every span, and the span in the case with this much
+    /// more ice load per metre on each wire (each subconductor, as a
+    /// weather case's ice load), N/m
+    /// ([`WeatherCase::with_more_ice_load`]).
+    ExtraLoad(f64),
     /// The case as it is, and this concentrated load at mid-span, N (the
     /// whole bundle's).
     Concentrated(f64),
 }
 
+impl UnbalancedIce {
+    /// The section's case and the span's for `case` on a wire of bare
+    /// diameter `diameter` (none: the case is left out).
+    pub fn cases(
+        self,
+        case: &WeatherCase,
+        diameter: ohl_core::units::Length,
+    ) -> Option<(WeatherCase, WeatherCase)> {
+        use ohl_core::units::{ForcePerLength, Length};
+        match self {
+            UnbalancedIce::CaseIce => case.has_ice().then(|| (case.without_ice(), case.clone())),
+            UnbalancedIce::ExtraThickness(t) => Some((
+                case.clone(),
+                case.with_more_ice_thickness(Length::from_si(t), diameter),
+            )),
+            UnbalancedIce::ExtraLoad(q) => Some((
+                case.clone(),
+                case.with_more_ice_load(ForcePerLength::from_si(q), diameter),
+            )),
+            UnbalancedIce::Concentrated(_) => Some((case.clone(), case.clone())),
+        }
+    }
+}
+
 /// Adds the unbalanced-ice positions of spans `spans` (indices of
 /// `positions.spans`) in every case: each span solved with its section on
-/// its own, the span loaded as `mode` says (in parallel, per span and
-/// case). Returns the number of solves.
+/// its own, the span in its own weather case and the other spans in the
+/// section's ([`UnbalancedIce::cases`]; a concentrated load added as a
+/// point load at mid-span), in parallel, per span and case. A windy case
+/// is solved from the left and from the right. Returns the number of
+/// solves.
 ///
-/// **Simplification:** the case's ice on the span alone (`CaseIce`) is
-/// the case without ice and the ice's weight spread along the span: the
-/// wind on that span acts on the bare diameter, not the iced one (the
-/// wind on the extra ice is left out). The span's surface radius is the
-/// iced one.
+/// The span's case is a full weather case: its ice weight, the wind on
+/// its iced diameter, its surface radius the iced one.
 ///
 /// Exit clause: `budget` (its time limit, between solves).
 pub fn add_unbalanced_ice(
@@ -1387,14 +1420,13 @@ pub fn add_unbalanced_ice(
     spans: &[usize],
     budget: &Budget,
 ) -> Result<usize, String> {
-    use ohl_line::SpanPlace;
-    use ohl_line::legacy::{SpanLoad, SpreadLoad};
+    use ohl_line::legacy::SpanLoad;
+    use ohl_line::solve::SpanCases;
     // Jobs: (span, case, kind, the case solved).
     let mut jobs: Vec<(usize, usize, PositionKind, WeatherCase)> = Vec::new();
     for &id in spans {
         for (c, case) in cases.iter().enumerate() {
-            let iced = case.ice_thickness.si() > 0.0 || case.ice_load.is_some_and(|l| l.si() > 0.0);
-            if mode == UnbalancedIce::CaseIce && !iced {
+            if mode == UnbalancedIce::CaseIce && !case.has_ice() {
                 continue;
             }
             if is_windy(case) {
@@ -1415,74 +1447,64 @@ pub fn add_unbalanced_ice(
         let Some(cable) = library.get(&section.cable) else {
             return Ok(None);
         };
+        let Some((base, own)) = mode.cases(case, cable.diameter) else {
+            return Ok(None);
+        };
         let mut section = section.clone();
-        let mut solved_case = case.clone();
-        let mut radius = None;
-        match mode {
-            UnbalancedIce::CaseIce => {
-                let iced = case.wire_load(cable.diameter, cable.weight()).vertical.si();
-                let ice = iced - cable.weight().si();
-                radius = Some(case.iced_diameter(cable.diameter).si() / 2.0);
-                solved_case.ice_thickness = ohl_core::units::Length::from_si(0.0);
-                solved_case.ice_load = None;
-                section.add_spread_load(&SpreadLoad {
-                    span: span.wire.span,
-                    start: SpanPlace::Fraction(0.0),
-                    end: SpanPlace::Fraction(1.0),
-                    load: ice * f64::from(section.bundle.max(1)),
-                    label: "unbalanced ice".into(),
-                });
-            }
-            UnbalancedIce::Extra(load) => section.add_spread_load(&SpreadLoad {
+        if let UnbalancedIce::Concentrated(force) = mode {
+            section.add_point_load(&SpanLoad {
                 span: span.wire.span,
-                start: SpanPlace::Fraction(0.0),
-                end: SpanPlace::Fraction(1.0),
-                load,
+                fraction: 0.5,
+                vertical: force,
                 label: "unbalanced ice".into(),
-            }),
-            UnbalancedIce::Concentrated(force) => {
-                section.add_point_load(&SpanLoad {
-                    span: span.wire.span,
-                    fraction: 0.5,
-                    vertical: force,
-                    label: "unbalanced ice".into(),
-                    ..SpanLoad::default()
-                });
-            }
+                ..SpanLoad::default()
+            });
         }
-        let shape = ohl_line::solve::solve_section(line, &section, cable, &solved_case, &fe)
-            .map_err(|e| e.to_string());
-        Ok(Some((shape, radius)))
+        let span_cases = SpanCases::uniform(base).with_span(span.wire.span, own);
+        let shape =
+            ohl_line::solve::solve_section_span_cases(line, &section, cable, &span_cases, &fe)
+                .map_err(|e| e.to_string());
+        Ok(Some(shape))
     })?;
     let mut count = 0;
-    let mut failed = 0;
+    let mut failed = Vec::new();
     for ((id, c, kind, _), r) in jobs.iter().zip(solved) {
-        let Some((shape, radius)) = r else {
-            failed += 1;
-            continue;
-        };
-        let Ok(shape) = shape else {
-            failed += 1;
-            continue;
+        let span = &positions.spans[*id];
+        let shape = match r {
+            Some(Ok(shape)) => shape,
+            Some(Err(e)) => {
+                failed.push(e);
+                continue;
+            }
+            None => {
+                failed.push(format!("section {} not solved", span.wire.section));
+                continue;
+            }
         };
         count += 1;
-        let span = &positions.spans[*id];
         let Some(s) = shape.spans.get(span.wire.span) else {
-            failed += 1;
+            failed.push(format!(
+                "section {}: no span {}",
+                span.wire.section, span.wire.span
+            ));
             continue;
         };
         let wire = Wire {
             points: s.points.clone(),
-            surface_radius: radius.unwrap_or(s.surface_radius),
+            surface_radius: s.surface_radius,
             polyline_error: s.polyline_error,
             ..span.wire.clone()
         };
         let axis = span.axis;
         positions.add(*id, *c, *kind, Shape::Wire(WireShape::new(wire, &axis)));
     }
-    if failed > 0 {
+    if !failed.is_empty() {
+        failed.sort();
+        failed.dedup();
         positions.notes.push(format!(
-            "unbalanced ice: {failed} solves did not converge (left out)"
+            "unbalanced ice: {} solves left out ({})",
+            jobs.len() - count,
+            failed.join("; ")
         ));
     }
     Ok(count)
@@ -1753,12 +1775,73 @@ mod tests {
             &line,
             &library,
             &glaze,
-            UnbalancedIce::Extra(5.0),
+            UnbalancedIce::ExtraLoad(5.0),
             &[s],
             &budget,
         )
         .unwrap();
         assert!(low(&q, PositionKind::Ice) < iced - 0.01);
+    }
+
+    /// The case's ice on one span as a weather case of its own: rime ice
+    /// with wind (500 kg/m³, the iced diameter 2.8 times the bare one) on
+    /// S1's second span of the example, the other spans bare in the same
+    /// wind. The iced span takes the wind on its iced diameter: blown at
+    /// least as far as with ice on every span (before 2026-10-20, with the
+    /// ice as a spread weight and the wind on the bare diameter, it was
+    /// blown 3.7 m against 6.0 m); its radius is the iced one. Extra ice
+    /// as a thickness grows that radius by it.
+    #[test]
+    fn unbalanced_ice_takes_the_wind_on_its_iced_diameter() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let cases = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .select(&["rime ice + wind".into()], &[])
+        .unwrap();
+        let budget = Budget::new();
+        let solve = |mode: UnbalancedIce| {
+            let mut p =
+                solve_positions(&line, &library, &cases, PositionOptions::default(), &budget)
+                    .unwrap();
+            let s = p.span_of("S1", 1).unwrap();
+            add_unbalanced_ice(&mut p, &line, &library, &cases, mode, &[s], &budget).unwrap();
+            assert!(p.notes.is_empty(), "{:?}", p.notes);
+            (p, s)
+        };
+        // The largest offset across the axis, and the radius.
+        let out = |p: &Positions, s: usize, k: PositionKind| {
+            let axis = p.spans[s].axis;
+            let x = p.spans[s]
+                .positions
+                .iter()
+                .map(|&i| &p.positions[i])
+                .find(|x| x.kind == k)
+                .unwrap();
+            let Shape::Wire(w) = &x.shape else {
+                panic!("a wire")
+            };
+            let side = w
+                .wire
+                .points
+                .iter()
+                .map(|q| dot(sub(*q, axis.a1), axis.right).abs())
+                .fold(0.0, f64::max);
+            (side, w.wire.surface_radius)
+        };
+        let (p, s) = solve(UnbalancedIce::CaseIce);
+        let (case, r) = out(&p, s, PositionKind::Left);
+        let (ice, r_ice) = out(&p, s, PositionKind::IceLeft);
+        assert!(ice > case, "{ice} {case}");
+        assert_eq!(r, r_ice);
+        let (p, s) = solve(UnbalancedIce::ExtraThickness(0.005));
+        let (_, r_more) = out(&p, s, PositionKind::IceRight);
+        assert!((r_more - r - 0.005).abs() < 1e-12, "{r_more} {r}");
     }
 
     #[test]

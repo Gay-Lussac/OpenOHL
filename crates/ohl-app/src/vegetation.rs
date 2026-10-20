@@ -24,7 +24,8 @@ use eframe::egui;
 use ohl_clearance::isoclearance::{Contour, IsoParams};
 use ohl_clearance::positions::{PositionOptions, Positions, UnbalancedIce};
 use ohl_clearance::vegetation::{
-    PROPOSED_ROOT_BALL, VegetationCheck, VegetationParams, WireVegetation,
+    DEFAULT_MAX_BASE_GROUND_DISTANCE, DEFAULT_SEARCH_DISTANCE, VegetationCheck, VegetationParams,
+    WireVegetation,
 };
 
 use crate::job::{Job, or_dash, save_csv};
@@ -98,6 +99,9 @@ impl Overlay {
 enum Ice {
     Off,
     OfCase,
+    /// More radial ice, mm.
+    Thickness,
+    /// More ice load per wire, N/m.
     Extra,
     Concentrated,
 }
@@ -112,7 +116,7 @@ pub struct VegetationWindow {
     pub params: VegetationParams,
     /// Each span along its swing arc too.
     swing_arc: bool,
-    /// Unbalanced ice and its value (N/m or N).
+    /// Unbalanced ice and its value (mm, N/m or N).
     ice: (Ice, f64),
     /// A limit to the distance of a tree base's ground point (and its
     /// value, m).
@@ -131,16 +135,16 @@ impl Default for VegetationWindow {
         Self {
             open: false,
             cases: Vec::new(),
+            // The defaults: the utility practice (root ball, allowance,
+            // base ground point, search distance), as the command line.
             params: VegetationParams {
                 fall_in: true,
-                // A user setting, proposed: a tenth of the height.
-                root_ball: PROPOSED_ROOT_BALL,
                 ..VegetationParams::default()
             },
             swing_arc: false,
             ice: (Ice::Off, 5.0),
-            base_limit: (false, 5.0),
-            corridor: 60.0,
+            base_limit: (true, DEFAULT_MAX_BASE_GROUND_DISTANCE),
+            corridor: DEFAULT_SEARCH_DISTANCE,
             iso: (false, IsoParams::default()),
             job: Job::default(),
             fresh: false,
@@ -217,7 +221,8 @@ impl VegetationWindow {
         let ice = match self.ice.0 {
             Ice::Off => None,
             Ice::OfCase => Some(UnbalancedIce::CaseIce),
-            Ice::Extra => Some(UnbalancedIce::Extra(self.ice.1)),
+            Ice::Thickness => Some(UnbalancedIce::ExtraThickness(self.ice.1 / 1000.0)),
+            Ice::Extra => Some(UnbalancedIce::ExtraLoad(self.ice.1)),
             Ice::Concentrated => Some(UnbalancedIce::Concentrated(self.ice.1)),
         };
         let corridor_width = self.corridor;
@@ -403,7 +408,8 @@ impl VegetationWindow {
             let names = [
                 (Ice::Off, "off"),
                 (Ice::OfCase, "the case's ice on the span"),
-                (Ice::Extra, "extra load N/m"),
+                (Ice::Thickness, "more ice mm"),
+                (Ice::Extra, "more ice load N/m"),
                 (Ice::Concentrated, "load at mid-span N"),
             ];
             let shown = names
@@ -417,14 +423,14 @@ impl VegetationWindow {
                         ui.selectable_value(&mut self.ice.0, k, n);
                     }
                 });
-            if matches!(self.ice.0, Ice::Extra | Ice::Concentrated) {
+            if matches!(self.ice.0, Ice::Thickness | Ice::Extra | Ice::Concentrated) {
                 ui.add(
                     egui::DragValue::new(&mut self.ice.1)
                         .speed(1.0)
                         .range(0.0..=1e6),
                 );
             }
-            num(ui, "corridor ± m", &mut self.corridor, 1.0, 500.0);
+            num(ui, "search ± m", &mut self.corridor, 1.0, 500.0);
             ui.label("points kept per span");
             ui.add(egui::DragValue::new(&mut self.params.keep).range(0..=1000));
         });
