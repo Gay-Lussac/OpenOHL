@@ -1,0 +1,67 @@
+# A concentrated load on a span: the slope jumps by P/H at the load.
+#
+# Expected values: benchmarks/reference/textbook_reference.py — the span as
+# pieces integrated by quadrature (see textbook-catenary.toml); the tangent
+# force jumps by the load where it acts; the start force and the arc length
+# of each piece by Newton until each piece ends at its load's x and the last
+# at the far support.
+#
+# Tolerance: 1e-8 relative (closed form in 001; the code's segmented
+# catenary is exact, its shooting converges far below it).
+
+[[case]]
+id = "tbpl-001"
+title = "Level 300 m, H = 20 kN, w = 10 N/m, 2 kN at mid-span: closed form"
+calculation = "sagtension.loaded_span"
+reference = "Textbook closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: by symmetry each support carries half of the load and of the wire; just left of
+the load the slope is -P/2H, just right +P/2H: the jump is P/H = 0.1 exactly (the reference's
+jump: 0.1). Each half is a catenary piece C = 2000 m whose vertex lies beyond the load:
+with a = S/2C = 0.075 and b = asinh(P/2H) = asinh(0.05) = 0.0499792,
+sag = C [cosh(a + b) - cosh(b)] = 13.14170060 m (the bare span: 5.62764 m),
+T_A = H cosh(a + b) = 20156.40140 N, L = 2C [sinh(a + b) - sinh(b)] = 301.2192102 m,
+V_A = H sinh(a + b) = 2506.096 N = (w L + P)/2."""
+max_seconds = 1.0
+
+[case.inputs]
+span = "300 m"
+rise = "0 m"
+horizontal_tension = "20 kN"
+base_load = "10 N/m"
+points = [{ x = "150 m", load = "2 kN" }]
+distributed = []
+
+[case.expected]
+length_m = { value = 301.2192102, rel_tol = 1e-8 }
+sag_m = { value = 13.1417006, rel_tol = 1e-8 }
+tension_left_n = { value = 20156.4014, rel_tol = 1e-8 }
+tension_right_n = { value = 20156.4014, rel_tol = 1e-8 }
+
+[[case]]
+id = "tbpl-002"
+title = "Inclined 300 m, rise 30 m, H = 20 kN, w = 10 N/m, 1.5 kN at 100 m"
+calculation = "sagtension.loaded_span"
+reference = "Independent quadrature + Newton (benchmarks/reference/textbook_reference.py)"
+notes = """Hand checks on the reference's solution: the slope jumps by P/H = 0.075 at the load,
+from 0.0246968 to 0.0996968; vertical balance V_A + V_B = w L + P: 506.167 + 4017.181
+= 4523.349 N = 10 x 302.33486 + 1500. Along a uniform piece T grows by w dz, so
+T_B - T_A = w h + the jump at the load H [sqrt(1 + 0.0996968^2) - sqrt(1 + 0.0246968^2)]
+= 300 + 93.050 = 393.050 N = 20399.45454 - 20006.40411.
+The largest sag is not under the load: just after it the slope (0.0997) is still below the
+chord's (0.1); it reaches 0.1 about (20000 x 0.1 - 1993.94) / 10 = 0.61 m further on, where
+the sag is larger by about 0.61 x 0.0003 / 2 = 0.09 mm."""
+max_seconds = 1.0
+
+[case.inputs]
+span = "300 m"
+rise = "30 m"
+horizontal_tension = "20 kN"
+base_load = "10 N/m"
+points = [{ x = "100 m", load = "1.5 kN" }]
+distributed = []
+
+[case.expected]
+length_m = { value = 302.334863, rel_tol = 1e-8 }
+sag_m = { value = 10.03066115, rel_tol = 1e-8 }
+tension_left_n = { value = 20006.40411, rel_tol = 1e-8 }
+tension_right_n = { value = 20399.45454, rel_tol = 1e-8 }

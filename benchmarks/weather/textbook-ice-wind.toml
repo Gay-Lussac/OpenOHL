@@ -1,0 +1,50 @@
+# Ice and wind on a wire: ice load per metre from a radial thickness and a
+# density, wind on the iced diameter, the resultant and the blowout angle.
+# Cable: the textbook cable, 28 mm, 1.6 kg/m (w = 15.69064 N/m).
+#
+# Expected values: benchmarks/reference/textbook_reference.py (the ice
+# area as the quadrature of 2 pi r dr over the annulus).
+# Hand: w_i = rho g pi/4 [(d + 2t)^2 - d^2] = rho g pi t (d + t);
+#       w_h = q (d + 2t); resultant sqrt((w_c + w_i)^2 + w_h^2);
+#       blowout atan(w_h / (w_c + w_i)).
+# Tolerance: 1e-9 relative (closed forms; abs 1e-9 where the value is 0).
+
+[[case]]
+id = "tbwx-001"
+title = "12 mm radial glaze ice (913 kg/m³, the default) on 28 mm"
+calculation = "weather.wire_load"
+reference = "Closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: 913 x 9.80665 x pi x 0.012 x 0.040 = 13.50152 N/m; vertical 15.69064 + 13.50152
+= 29.19216 N/m (1.86 times the bare weight); iced diameter 28 + 24 = 52 mm."""
+inputs = { diameter = "28 mm", weight = "1.6 kg/m", temperature = "-5 °C", ice_thickness = "12 mm", wind_pressure = "0 Pa" }
+expected.vertical_n_per_m = { value = 29.19215686, rel_tol = 1e-9 }
+expected.horizontal_n_per_m = { value = 0.0, abs_tol = 1e-9 }
+expected.resultant_n_per_m = { value = 29.19215686, rel_tol = 1e-9 }
+expected.iced_diameter_mm = { value = 52.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "tbwx-002"
+title = "25 mm rime ice (500 kg/m³) with 300 Pa wind on the iced diameter"
+calculation = "weather.wire_load"
+reference = "Closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: 500 x 9.80665 x pi x 0.025 x 0.053 = 20.41063 N/m, vertical 36.10127 N/m;
+D = 28 + 50 = 78 mm, wind 300 x 0.078 = 23.4 N/m (the bare wire would take 8.4 N/m);
+resultant 43.02164 N/m at atan(23.4 / 36.10127) = 32.95036° from the vertical."""
+inputs = { diameter = "28 mm", weight = "1.6 kg/m", temperature = "-5 °C", ice_thickness = "25 mm", ice_density = "500 kg/m³", wind_pressure = "300 Pa" }
+expected.vertical_n_per_m = { value = 36.10127098, rel_tol = 1e-9 }
+expected.horizontal_n_per_m = { value = 23.4, rel_tol = 1e-9 }
+expected.resultant_n_per_m = { value = 43.021643, rel_tol = 1e-9 }
+expected.swing_angle_deg = { value = 32.95036406, rel_tol = 1e-9 }
+expected.iced_diameter_mm = { value = 78.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "tbwx-003"
+title = "Bare wire, 600 Pa: blowout angle"
+calculation = "weather.wire_load"
+reference = "Closed form (benchmarks/reference/textbook_reference.py)"
+notes = "Hand: 600 x 0.028 = 16.8 N/m; resultant 22.98774 N/m; atan(16.8 / 15.69064) = 46.95555°."
+inputs = { diameter = "28 mm", weight = "1.6 kg/m", temperature = "10 °C", wind_pressure = "600 Pa" }
+expected.vertical_n_per_m = { value = 15.69064, rel_tol = 1e-9 }
+expected.horizontal_n_per_m = { value = 16.8, rel_tol = 1e-9 }
+expected.resultant_n_per_m = { value = 22.98773985, rel_tol = 1e-9 }
+expected.swing_angle_deg = { value = 46.95554667, rel_tol = 1e-9 }

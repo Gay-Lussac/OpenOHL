@@ -1,0 +1,198 @@
+# Ruling (equivalent) span: a section of three level spans, 200, 350 and
+# 250 m, with suspension strings, solved
+#   (1) with one horizontal tension and a conserved unstressed length
+#       (sagtension.section, exact equal H: strings free to swing, no
+#       length),
+#   (2) as the classical ruling span RS = sqrt(sum S^3 / sum S) taken as one
+#       span (printed by the reference, the textbook method),
+#   (3) by the line's finite elements, clipped in, with real 3 m strings
+#       (the strings swing, the spans' tensions differ),
+#   (4) by the line's ruling-span method (one H, clamps held where they hang
+#       at stringing, the stress-strain model's additive strain).
+#
+# Cable: the textbook cable (textbook-change-of-state.toml): EA = 30 MN,
+# alpha = 20e-6 /K, 1.6 kg/m, 28 mm. Strung at H = 25 kN at 10 °C.
+# Line: dead-end wire points fixed at x = 0 and 800 m, 30 m high;
+# suspension strings at x = 200 and 550 m from 33 m: 3 m, 600 N, EA 5e7 N.
+#
+# Expected values: benchmarks/reference/textbook_reference.py — the spans
+# by quadrature in 3D, the clamps by Newton on the nodal force balance,
+# the stringing as docs/theory/wirefe.md says (each span at 25 kN in still
+# air, strings plumb, stretched by their load).
+#
+# The approximation, stated (80 °C): exact equal H 18312.83 N; the classical
+# ruling span 288.314 m gives 18312.01 N (-0.0045 %: for level spans the
+# ruling span is the parabolic form of the exact equal-H section);
+# with real strings the spans carry 18176.65 N (200 m, -0.74 %),
+# 18357.69 N (350 m, +0.25 %) and 18242.81 N (250 m, -0.38 %): the
+# ruling-span method overestimates the hot tension of the short spans
+# (their sags are larger than it says) and underestimates the long span's.
+# At -20 °C the signs turn: 30227.81 / 30160.57 / 30203.99 N against the
+# exact equal H 30176.66 N (+0.17 %, -0.05 %, +0.09 %).
+#
+# Tolerance: 1e-7 relative on forces, 1e-6 m on positions, 1e-6° on
+# angles: the reference's unbalanced nodal forces are below 1e-7 N and the
+# code's Newton stops at 1e-9 of the loads.
+
+[[case]]
+id = "tbrs-001"
+title = "Three level spans 200/350/250 m: 25 kN at 10 °C -> 80 °C, exact equal H, and the ruling span"
+calculation = "sagtension.section"
+reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: RS = sqrt((200^3 + 350^3 + 250^3) / 800) = sqrt(83125) = 288.3140649 m.
+The change of state of one 288.314 m span: 18316.8 N by the parabolic cubic (+0.022 %),
+18312.01 N by the exact catenary (-0.0045 %); the exact section 18312.83 N."""
+max_seconds = 1.0
+
+[case.inputs]
+axial_stiffness = "30e6 N"
+thermal_expansion = 20e-6
+known_tension = "25 kN"
+known_load = "15.69064 N/m"
+known_temperature = "10 °C"
+load = "15.69064 N/m"
+temperature = "80 °C"
+spans = [
+    { span = "200 m", rise = "0 m" },
+    { span = "350 m", rise = "0 m" },
+    { span = "250 m", rise = "0 m" },
+]
+
+[case.expected]
+horizontal_tension_n = { value = 18312.82557, rel_tol = 1e-7 }
+ruling_span_m = { value = 288.3140649, rel_tol = 1e-9 }
+
+[[case]]
+id = "tbrs-002"
+title = "Same section by finite elements, clipped in, 3 m strings: 80 °C (strings swing to the long span)"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the clamps (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: the strings carry the spans' tension difference. At the clamp the horizontal
+force of each span is its H (constant along a span without wind), so
+H(350) - H(200) = N1 sin(phi1) = 4627.722 x sin 2.241981° = 181.04 N = 18357.690 - 18176.653;
+H(350) - H(250) = N2 sin(phi2) = 5018.653 x sin 1.311653° = 114.88 N. The clamps move
+3.0003 m x sin(phi): +0.1174 m and -0.0687 m towards the 350 m span."""
+max_seconds = 5.0
+expected.h_0_n = { value = 18176.65329, rel_tol = 1e-7 }
+expected.h_1_n = { value = 18357.68962, rel_tol = 1e-7 }
+expected.h_2_n = { value = 18242.80928, rel_tol = 1e-7 }
+expected.clamp_x_1_m = { value = 200.1173707, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.00201899, abs_tol = 1e-6 }
+expected.clamp_x_2_m = { value = 549.9313211, abs_tol = 1e-6 }
+expected.clamp_z_2_m = { value = 30.00048504, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 4627.722486, rel_tol = 1e-7 }
+expected.string_1_0_along_deg = { value = 2.241980758, abs_tol = 1e-6 }
+expected.string_2_0_n = { value = 5018.653405, rel_tol = 1e-7 }
+expected.string_2_0_along_deg = { value = -1.311653262, abs_tol = 1e-6 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "hot", temperature = "80 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "ruling span", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [200, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [200, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [200, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [550, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [550, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [550, 0, 30], "set": 1}]},
+  {"id": "T4", "position": [800, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [800, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+             {"structure": "T3", "set": 1}, {"structure": "T4", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbrs-003"
+title = "Same section by finite elements, clipped in: -20 °C (strings swing to the short spans)"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the clamps (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: H(200) - H(350) = 30227.815 - 30160.566 = 67.25 N = 4615.792 x sin 0.834789°;
+H(250) - H(350) = 43.43 N = 5008.104 x sin 0.496815°."""
+max_seconds = 5.0
+expected.h_0_n = { value = 30227.81458, rel_tol = 1e-7 }
+expected.h_1_n = { value = 30160.56574, rel_tol = 1e-7 }
+expected.h_2_n = { value = 30203.99076, rel_tol = 1e-7 }
+expected.clamp_x_1_m = { value = 199.9562881, abs_tol = 1e-6 }
+expected.clamp_x_2_m = { value = 550.0260155, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 4615.791928, rel_tol = 1e-7 }
+expected.string_1_0_along_deg = { value = -0.8347887654, abs_tol = 1e-6 }
+expected.string_2_0_along_deg = { value = 0.4968150621, abs_tol = 1e-6 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "cold", temperature = "-20 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "ruling span", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [200, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [200, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [200, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [550, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [550, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [550, 0, 30], "set": 1}]},
+  {"id": "T4", "position": [800, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [800, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+             {"structure": "T3", "set": 1}, {"structure": "T4", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbrs-004"
+title = "Same section by the line's ruling-span method (initial-rs): 80 °C, one H"
+calculation = "line.section"
+reference = "Independent quadrature + secant, additive strain (benchmarks/reference/textbook_reference.py)"
+notes = """The line's RS: the spans between the clamps where they hang at stringing (the inner
+clamps 0.3 mm lower than the dead-ends: the strings' stretch), the linear stress-strain
+model's additive strain eps = Tmean/EA + alpha (t - 20 °C). 18317.98 N: +0.028 % on the
+exact multiplicative section (tbrs-001), the two thermal forms' difference
+(docs/theory/sagtension.md)."""
+max_seconds = 5.0
+expected.h_0_n = { value = 18317.97519, rel_tol = 1e-7 }
+expected.h_1_n = { value = 18317.97519, rel_tol = 1e-7 }
+expected.h_2_n = { value = 18317.97519, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "hot", temperature = "80 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "ruling span", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [200, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [200, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [200, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [550, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [550, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 600.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [550, 0, 30], "set": 1}]},
+  {"id": "T4", "position": [800, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [800, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "initial-rs",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+             {"structure": "T3", "set": 1}, {"structure": "T4", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
