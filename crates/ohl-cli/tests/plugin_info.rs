@@ -105,6 +105,7 @@ fn code_rule_presets_are_listed_and_written() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(stdout.contains("ground — Ground 6 m"), "{stdout}");
+    assert!(stdout.contains("vegetation: classes 42, 43"), "{stdout}");
     assert!(
         stdout.contains("Test ground: vertical 6.00 m + 0.01 m/kV above 0 kV"),
         "{stdout}"

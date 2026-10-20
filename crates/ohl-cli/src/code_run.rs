@@ -212,6 +212,23 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
             }
             println!("  {}: {}", r.name, parts.join("; "));
         }
+        if let Some(v) = &p.rules.vegetation {
+            let mut parts = Vec::new();
+            if !v.classes.is_empty() {
+                let c: Vec<String> = v.classes.iter().map(u8::to_string).collect();
+                parts.push(format!("classes {}", c.join(", ")));
+            }
+            if let Some(c) = &v.clearance {
+                parts.push(format!("clearance {c}"));
+            }
+            if let Some(a) = &v.fall_allowance {
+                parts.push(format!("allowance {a}"));
+            }
+            if let Some(k) = v.root_ball {
+                parts.push(format!("root ball {k}"));
+            }
+            println!("  vegetation: {}", parts.join("; "));
+        }
     }
     if let Some(dir) = out {
         for (rules, cases) in ohl_io::codes::write_rule_presets(&name, &presets, dir, dir)? {

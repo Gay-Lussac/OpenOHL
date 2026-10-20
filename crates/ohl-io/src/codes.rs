@@ -971,7 +971,22 @@ mod tests {
         let host = WasmHost::new().unwrap();
         assert!(host.load_code(&dir).unwrap().has_rule_presets());
         let list = rule_presets(&host, &dir, "").unwrap();
-        assert_eq!(list.len(), 1);
+        assert_eq!(list.len(), 2);
+        // Its vegetation preset: classes 42 and 43, no rule, two cases.
+        let trees = &list[1];
+        let v = trees.rules.vegetation.as_ref().unwrap();
+        assert_eq!(v.classes, [42, 43]);
+        assert_eq!(v.clearance.as_ref().unwrap().at(220.0), Ok(7.0));
+        assert!(trees.rules.rules.is_empty());
+        let names: Vec<&str> = trees
+            .weather
+            .as_ref()
+            .unwrap()
+            .cases
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(names, ["max temperature", "Test warm wind"]);
         let p = &list[0];
         assert_eq!(p.name, "ground");
         // 6 m + 0.01 m/kV · 380 kV = 9.8 m; crossings at 220 kV: the
@@ -986,7 +1001,7 @@ mod tests {
             "{e}"
         );
         let g = generate(&host, &dir, "").unwrap();
-        assert_eq!(g.rule_presets.len(), 1);
+        assert_eq!(g.rule_presets.len(), 2);
     }
 
     /// Plugins built before the optional exports (the plain `code-plugin`
