@@ -1,0 +1,221 @@
+# Wind blowout of a span, the swing of a suspension string with weight,
+# and the leg forces of a V-string, by the line's finite elements
+# (line.section). The textbook cable (EA = 30 MN, alpha = 20e-6 /K,
+# 1.6 kg/m, 28 mm), strung at H = 25 kN at 10 °C, solved at 10 °C.
+# The line runs along +x; wind from the right (the default) blows the
+# wires to +y. Structure axes: x to the right of the line (-y here), so a
+# string blown to +y swings to negative `across_deg`.
+#
+# Expected values: benchmarks/reference/textbook_reference.py — each span
+# integrated by quadrature in 3D (F(s) = F0 - q s, the shape the integral
+# of F/|F| (1 + |F|/EA), load per unit unstressed length), strings as bars
+# (EA/l0 (l - l0), tension only, half their weight and wind at each end),
+# the free clamps by Newton on the force balance; stringing as
+# docs/theory/wirefe.md says (spans at 25 kN in still air, strings plumb
+# and stretched by their load, V tips settled under the spans).
+#
+# Tolerance: 1e-7 relative on forces, 1e-6 m on positions, 1e-6° on
+# angles (reference unbalanced forces below 1e-7 N; the code's Newton
+# stops at 1e-9 of the loads).
+
+[[case]]
+id = "tbins-001"
+title = "Dead-end span 300 m in 500 Pa wind: blown out by atan(q d / w)"
+calculation = "line.section"
+reference = "Independent 3D quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: wind 500 x 0.028 = 14 N/m, weight 15.69064 N/m: the span lies in the plane of
+its chord and its load, swung atan(14 / 15.69064) = 41.74099° — exactly, for fixed ends at one
+height: mid_y / (30 - mid_z) = 5.026501 / 5.633502 = 0.892297 = tan 41.74099°. Sag in that
+plane sqrt(5.0265^2 + 5.6335^2) = 7.5501 m under the resultant 21.0285 N/m (still air: about
+7.06 m); the parabola w S^2 / 8H with H = 31327.6 N gives 7.551 m."""
+max_seconds = 5.0
+expected.h_0_n = { value = 31327.60511, rel_tol = 1e-7 }
+expected.max_tension_0_n = { value = 31486.20334, rel_tol = 1e-7 }
+expected.mid_y_0_m = { value = 5.026501369, abs_tol = 1e-6 }
+expected.mid_z_0_m = { value = 24.36649833, abs_tol = 1e-6 }
+expected.sag_0_m = { value = 5.633501675, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "wind", temperature = "10 °C", wind_pressure = "500 Pa" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "blowout", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-002"
+title = "Suspension string 3 m, 800 N, 0.4 m² between two 300 m spans in 500 Pa: swing 36.86°"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the clamp (benchmarks/reference/textbook_reference.py)"
+notes = """Classical pendulum formula: tan(phi) = (q d L + q A / 2) / (w L + W / 2) with the weight
+span = wind span = L = 300.192 m of wire: (4202.69 + 100) / (4710.21 + 400) = 0.8420,
+phi = 40.10°. The exact swing is 3.24° less: the clamp moves 1.80 m to +y and 0.60 m up, so
+each span's chord is skewed and pulls the clamp back across by H_x x 1.7997 / 300 (about
+189 N each) and down by H_x x 0.5993 / 300 (about 63 N each). With those:
+F_y = 4202.69 - 377.6 + 100 = 3925.1 N, F_z = 4710.21 + 400 + 125.7 = 5235.9 N,
+atan(3925.1 / 5235.9) = 36.86°, string force sqrt(F_y^2 + F_z^2) = 6543.7 N (exact 6543.29 N).
+Both spans carry the same H by symmetry."""
+max_seconds = 5.0
+expected.h_0_n = { value = 31470.48563, rel_tol = 1e-7 }
+expected.h_1_n = { value = 31470.48563, rel_tol = 1e-7 }
+expected.string_1_0_n = { value = 6543.292458, rel_tol = 1e-7 }
+expected.string_1_0_across_deg = { value = -36.8566671, abs_tol = 1e-6 }
+expected.clamp_y_1_m = { value = 1.799681238, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.59927028, abs_tol = 1e-6 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "wind", temperature = "10 °C", wind_pressure = "500 Pa" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "I-string", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [300, 0, 33]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0, "weight": 800.0, "wind_area": 0.4, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [600, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-003"
+title = "V-string (legs from ±2.5 m, 3 m above the tip, 400 N each) in still air: equal legs"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: the tip carries half of each span, 4710.15 N (w L0 = 4710.21 N, less 0.06 N as the
+tip hangs 0.34 mm below the dead-ends), and half of each leg's weight, 400 N: V = 5110.15 N. Legs at beta from the vertical, cos(beta) = 3 / 3.90512 =
+0.768221 as drawn (0.768256 with the tip 0.34 mm lower, the legs stretched):
+F = V / (2 cos beta) = 3325.96 N drawn, 3325.81 N stretched."""
+max_seconds = 5.0
+expected.h_0_n = { value = 25000.0, rel_tol = 1e-7 }
+expected.clamp_z_1_m = { value = 29.99966188, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 3325.808256, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 3325.808256, rel_tol = 1e-7 }
+expected.string_1_0_slack = { value = 0.0, abs_tol = 0.0 }
+expected.string_1_1_slack = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "still", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "VL", "position": [300, 2.5, 33]}, {"label": "VR", "position": [300, -2.5, 33]}],
+   "strings": [{"label": "L", "top": "VL", "wire": "W1", "weight": 400.0, "stiffness": 5e7},
+               {"label": "R", "top": "VR", "wire": "W1", "weight": 400.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [600, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-004"
+title = "Same V in 300 Pa: both legs taut, forces from the geometry"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: the V holds the tip (it moves 0.24 mm), so the spans' pull on it is that of two
+fixed-end blown spans: across T = q d L0 = 300 x 0.028 x 300.192 = 2521.6 N, down
+V = 4710.1 + 400 = 5110.1 N. Two legs from (±2.5, +3) m, length l = 3.90512 m:
+across (F_R - F_L) 2.5 / l = T, up (F_L + F_R) 3 / l = V:
+F_L = (V l / 3 - T l / 2.5) / 2 = 1356.55 N (leg L, top on the +y side the wind blows to),
+F_R = (V l / 3 + T l / 2.5) / 2 = 5295.37 N. Slack when T / V > 2.5 / 3 = 0.833; here 0.493."""
+max_seconds = 5.0
+expected.h_0_n = { value = 27565.15865, rel_tol = 1e-7 }
+expected.clamp_y_1_m = { value = 0.0002402767857, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 1356.531171, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 5295.232878, rel_tol = 1e-7 }
+expected.string_1_0_slack = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "wind", temperature = "10 °C", wind_pressure = "300 Pa" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "VL", "position": [300, 2.5, 33]}, {"label": "VR", "position": [300, -2.5, 33]}],
+   "strings": [{"label": "L", "top": "VL", "wire": "W1", "weight": 400.0, "stiffness": 5e7},
+               {"label": "R", "top": "VR", "wire": "W1", "weight": 400.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [600, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-005"
+title = "Same V in 1000 Pa: the leg on the lee side goes slack, the tip swings on the other"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: T / V = 8405 / 5110 = 1.64 > 0.833: leg L would have to push — it goes slack
+(tension only) and the tip hangs from leg R alone, a pendulum about (300, -2.5, 33) lined up
+with the load on the tip. Swung to y = +0.768 m, z = 30.861 m, the spans' chords pull it back
+across by 2 H_x 0.768 / 300 = 220.7 N and down by 2 H_x 0.861 / 300 = 247.3 N (H_x about
+43.1 kN): T = 8405.4 - 220.7 = 8184.7 N, V = 4710.1 + 247.3 + 400 = 5357.4 N (the slack leg's
+half weight still hangs on the tip). Leg R: tan = (0.768 + 2.5) / (33 - 30.861) = 1.5277
+= T / V, force sqrt(T^2 + V^2) = 9782 N."""
+max_seconds = 5.0
+expected.h_0_n = { value = 43112.27378, rel_tol = 1e-7 }
+expected.clamp_y_1_m = { value = 0.7679884191, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.86079004, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 0.0, abs_tol = 1e-6 }
+expected.string_1_0_slack = { value = 1.0, abs_tol = 0.0 }
+expected.string_1_1_n = { value = 9781.955498, rel_tol = 1e-7 }
+expected.string_1_1_slack = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+clip_in = true
+weather = { name = "wind", temperature = "10 °C", wind_pressure = "1000 Pa" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "VL", "position": [300, 2.5, 33]}, {"label": "VR", "position": [300, -2.5, 33]}],
+   "strings": [{"label": "L", "top": "VL", "wire": "W1", "weight": 400.0, "stiffness": 5e7},
+               {"label": "R", "top": "VR", "wire": "W1", "weight": 400.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]},
+  {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [600, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''

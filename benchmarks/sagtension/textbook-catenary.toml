@@ -1,0 +1,106 @@
+# Textbook catenary cases: level and inclined spans, the parabola's error,
+# the low point outside the span (uplift), the inverse problem.
+#
+# Expected values: benchmarks/reference/textbook_reference.py (the span as
+# the integral of its tangent F/|F|, F = (H, V0 + w s), by Gauss-Legendre
+# quadrature; V0 and the length L by Newton until the end lands on the
+# far support; sag, low point and tensions from the same integrals — no
+# catenary formula). Run: python3 -I benchmarks/reference/textbook_reference.py
+#
+# Hand derivations (closed forms, C = H/w, a = S/2C; left support (0, 0),
+# right (S, h)):
+#   x_m = S/2 - C asinh(h / (2C sinh a))         low point (vertex)
+#   y(x) = C [cosh((x - x_m)/C) - cosh(x_m/C)]
+#   L = sqrt(h^2 + (2C sinh a)^2),  T(x) = H cosh((x - x_m)/C),  T_B - T_A = w h
+#   largest sag at x* = x_m + C asinh(h/S) (slope = chord slope)
+#   parabola: D = w S^2 / (8 H cos(theta)),  L = S + 8 D^2 / (3 S) (level)
+#
+# Tolerance: 1e-8 relative (abs 1e-6 m where the value is 0 or a position):
+# the closed forms are exact, the reference agrees with them to 1e-12 and
+# the code's solvers converge far below 1e-8. Any modelling difference
+# would show as more than 1e-6.
+
+[[case]]
+id = "tbcat-001"
+title = "Level 400 m, H = 20 kN, w = 10 N/m (C = 2000 m): catenary vs parabola"
+calculation = "catenary.span"
+reference = "Textbook closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: a = 400/4000 = 0.1, cosh a = 1.0050041681, sinh a = 0.1001667500.
+D = C (cosh a - 1) = 2000 x 0.0050041681 = 10.00833611 m; parabola w S^2/8H = 10.00000 m:
+the parabola is 8.34 mm (0.083 %, about a^2/12) short. L = 2C sinh a = 400.6670001 m;
+parabola S + 8D^2/3S = 400.6666667 m (0.33 mm short). T = H cosh a = H + w D = 20100.08336 N."""
+max_seconds = 1.0
+inputs = { span = "400 m", rise = "0 m", horizontal_tension = "20 kN", weight = "10 N/m" }
+expected.sag_m = { value = 10.00833611, rel_tol = 1e-8 }
+expected.midspan_sag_m = { value = 10.00833611, rel_tol = 1e-8 }
+expected.length_m = { value = 400.6670001, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 20100.08336, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 20100.08336, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = 200.0, abs_tol = 1e-6 }
+
+[[case]]
+id = "tbcat-002"
+title = "Level 1000 m crossing, H = 10 kN, w = 10 N/m (C = 1000 m): the parabola 2 % off"
+calculation = "catenary.span"
+reference = "Textbook closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: a = 0.5, cosh a = 1.1276259652, sinh a = 0.5210953055.
+D = 1000 x 0.1276259652 = 127.6259652 m; parabola 10 x 1000^2 / 80000 = 125.000 m:
+2.626 m (2.06 %) short — the parabola is not valid for deep spans (w^2 S^2 / 48 H^2 = 0.021
+is not << 1). L = 2000 sinh a = 1042.190611 m; parabola 1041.666667 m (0.524 m short).
+T = H cosh a = 11276.25965 N."""
+max_seconds = 1.0
+inputs = { span = "1000 m", rise = "0 m", horizontal_tension = "10 kN", weight = "10 N/m" }
+expected.sag_m = { value = 127.6259652, rel_tol = 1e-8 }
+expected.length_m = { value = 1042.190611, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 11276.25965, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = 500.0, abs_tol = 1e-6 }
+
+[[case]]
+id = "tbcat-003"
+title = "Inclined 400 m, rise 20 m, H = 20 kN, w = 10 N/m: low point inside the span"
+calculation = "catenary.span"
+reference = "Textbook closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: h / (2C sinh a) = 20 / 400.6670 = 0.04991676, asinh = 0.04989608,
+x_m = 200 - 2000 x 0.04989608 = 100.2078849 m. T_A = H cosh(x_m/C) = 20000 cosh(0.0501039)
+= 20025.10930 N, T_B = T_A + w h = 20225.10930 N (exact relation). L = sqrt(20^2 + 400.6670^2)
+= 401.1658572 m. x* = x_m + C asinh(0.05) = 200.1662651 m, sag 10.02080408 m; the inclined
+parabola w S^2 / (8 H cos theta) = 10.01249 m is 8.3 mm short (as in the level span)."""
+max_seconds = 1.0
+inputs = { span = "400 m", rise = "20 m", horizontal_tension = "20 kN", weight = "10 N/m" }
+expected.sag_m = { value = 10.02080408, rel_tol = 1e-8 }
+expected.midspan_sag_m = { value = 10.02079716, rel_tol = 1e-8 }
+expected.length_m = { value = 401.1658572, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 20025.1093, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 20225.1093, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = 100.2078849, rel_tol = 1e-8 }
+
+[[case]]
+id = "tbcat-004"
+title = "Steep 300 m, rise 60 m, H = 10 kN, w = 10 N/m: low point outside the span (uplift)"
+calculation = "catenary.span"
+reference = "Textbook closed form, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Hand: a = 0.15, sinh a = 0.1505631332, h / (2C sinh a) = 0.1992519641,
+asinh = 0.1979565481, x_m = 150 - 197.9565481 = -47.95654809 m: the vertex lies 47.96 m
+beyond the lower (left) support, so the wire leaves that support climbing — its vertical
+component there is H sinh(47.9565/1000) = 479.749 N upwards: uplift on the lower support.
+T_A = H cosh(0.04795655) = 10011.50136 N, T_B = T_A + w h = 10611.50136 N.
+L = sqrt(60^2 + 301.1262663^2) = 307.0456452 m; sag at x* = x_m + C asinh(0.2) = 150.734 m:
+11.49294539 m (inclined parabola 11.4728 m, 2 cm short)."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "60 m", horizontal_tension = "10 kN", weight = "10 N/m" }
+expected.sag_m = { value = 11.49294539, rel_tol = 1e-8 }
+expected.midspan_sag_m = { value = 11.49267101, rel_tol = 1e-8 }
+expected.length_m = { value = 307.0456452, rel_tol = 1e-8 }
+expected.tension_left_n = { value = 10011.50136, rel_tol = 1e-8 }
+expected.tension_right_n = { value = 10611.50136, rel_tol = 1e-8 }
+expected.low_point_x_m = { value = -47.95654809, rel_tol = 1e-8 }
+
+[[case]]
+id = "tbcat-005"
+title = "Tension for the sag of tbcat-001 (inverse): 10.00833611 m gives back 20 kN"
+calculation = "catenary.tension_for_sag"
+reference = "Inverse of tbcat-001 (benchmarks/reference/textbook_reference.py)"
+notes = "The sag 10.00833611 m is tbcat-001's to 10 digits (1e-10 relative), so H comes back to 1e-8."
+max_seconds = 1.0
+inputs = { span = "400 m", rise = "0 m", weight = "10 N/m", sag = "10.00833611 m" }
+expected.horizontal_tension_n = { value = 20000.0, rel_tol = 1e-7 }

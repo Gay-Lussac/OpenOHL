@@ -1,0 +1,103 @@
+# Bimetallic (composite) conductor with a knee point: linear outer strands
+# that take no compression (bird cage) on a linear core. Below the knee
+# both components carry load (composite modulus and expansion); above it
+# the outer strands are slack and the cable expands as its core.
+#
+# Cable: component values of CIGRE TB 324 sec. 5.2.3-5.2.4 (typical data,
+# used here only as textbook input): outer 402.8 mm², 55 GPa, 23e-6 /K;
+# core 65.8 mm², 190 GPa, 11.5e-6 /K; 1.6285 kg/m (w = 15.970130 N/m);
+# both components unstressed at 20 °C (the curves' reference temperature
+# when a cable has none). Level span 300 m, strung at H = 28 kN at 20 °C.
+# Solved by the ruling-span stress-strain model (sagtension.nonlinear,
+# initial state; the cable has no curves, so both components are linear).
+#
+# Expected values: benchmarks/reference/textbook_reference.py — the span by
+# quadrature, the additive strain of the two components in closed form
+# (outer load E_oA_o (eps - a_o dt), floored at 0; core E_cA_c (eps - a_c dt)),
+# a secant root on log H of sum L / (1 + eps(Tmean, t)) = L0.
+#
+# Hand derivation:
+#   E_oA_o = 22.154 MN, E_cA_c = 12.502 MN, EA = 34.656 MN;
+#   composite alpha = (22.154 x 23 + 12.502 x 11.5) / 34.656 = 18.8514e-6 /K.
+#   Strung: Tmean = 28034.2 N, eps0 = Tmean / EA = 808.93 µstrain,
+#   L0 = 300.36612 / 1.00080893 = 300.12333 m (sag 6.4205 m).
+#   Knee: the outer strands unload when eps = a_o dt (their free length);
+#   the core then carries E_cA_c (a_o - a_c) dt = 143.77 N/K x dt. The span
+#   length is L0 (1 + a_o dt); the two meet at dt = 120.85 K: L = 300.95751
+#   m, catenary H = 17318.9 N, Tmean = 17374.34 N = 143.77 x 120.85 —
+#   knee at 140.85 °C.
+#   60 °C (below the knee): a linear cable with EA = 34.656 MN and the
+#   composite alpha; the outer strands still carry 10979 N.
+#   150 °C (above the knee): the core alone, eps = Tmean / E_cA_c + a_c dt.
+#   With the composite model throughout (outer strands taking compression,
+#   no knee) 150 °C would give 16899.4 N and 10.649 m: the knee keeps the
+#   sag 0.118 m smaller.
+#
+# Tolerance: 1e-7 relative (the code's strain inversion and section
+# bisection converge far below it).
+
+[[case]]
+id = "tbbim-001"
+title = "Bimetallic, bird cage: 300 m strung at 28 kN, 20 °C -> 60 °C (below the knee)"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature + closed-form component strains (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 22884.41302, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 7.858103057, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "60 °C"
+
+[case.inputs.cable]
+id = "bimetallic-textbook"
+name = "Bimetallic textbook cable"
+kind = "acsr"
+source = "Component values from CIGRE TB 324 sec. 5.2.3-5.2.4 (typical data)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "bird_cage"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+
+[[case]]
+id = "tbbim-002"
+title = "Bimetallic, bird cage: same cable at 150 °C (above the knee, 140.85 °C): the core alone"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature + closed-form component strains (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 17088.06282, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 10.53123378, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "150 °C"
+
+[case.inputs.cable]
+id = "bimetallic-textbook"
+name = "Bimetallic textbook cable"
+kind = "acsr"
+source = "Component values from CIGRE TB 324 sec. 5.2.3-5.2.4 (typical data)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "bird_cage"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }

@@ -1,0 +1,64 @@
+# The elastic catenary (Irvine) of a span with a given unstressed length:
+# one finite element between fixed ends. Load per unit unstressed length
+# w = 15.69064 N/m (1.6 kg/m), EA = 30 MN.
+#
+# Expected values: benchmarks/reference/textbook_reference.py — the stretched
+# shape as the integral of F/|F| (1 + |F|/EA) along the unstressed length,
+# F(s) = F0 - q s, by Gauss-Legendre quadrature; the start force F0 by
+# Newton with the quadrature's own Jacobian.
+#
+# Hand check, every case: Irvine's closed-form equations (H, V0 the start
+# force's components, V0 < 0 going down, V1 = V0 + w L0):
+#   x = H L0/EA + (H/w) [asinh(V1/H) - asinh(V0/H)]
+#   z = (V0 L0 + w L0^2/2)/EA + (1/w) [sqrt(H^2 + V1^2) - sqrt(H^2 + V0^2)]
+# evaluated at the expected (H, V0) reproduce the chord to below 1e-12 m
+# (the reference prints the residuals). A parabolic estimate is given too.
+#
+# Tolerance: 1e-8 relative (the element is exact; the code's Newton and
+# the reference agree to 1e-12).
+
+[[case]]
+id = "tbirv-001"
+title = "Level 400 m chord, L0 = 400.5 m"
+calculation = "wirefe.span"
+reference = "Irvine's equations, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Expected H = 27489.27671 N, V0 = -3142.05066 N (= -w L0 / 2 by symmetry: 15.69064 x
+400.5 / 2 = 3142.0507). Parabolic estimate: S + w^2 S^3 / (24 H^2) = L0 (1 + H/EA) gives
+27513 N (+0.09 %). The cable stretches by about Tmean L0 / EA = 0.368 m to 400.868 m, a
+slack of 0.868 m: sag sqrt(3 x 400 x 0.868 / 8) = 11.41 m = w S^2 / 8H. Without the
+elasticity (2C sinh(S/2C) = 400.5) H would be 36243 N."""
+max_seconds = 1.0
+inputs = { unstressed_length = "400.5 m", chord_x = "400 m", chord_y = "0 m", chord_z = "0 m", axial_stiffness = "30e6 N", load_x = "0 N/m", load_y = "0 N/m", load_z = "-15.69064 N/m" }
+expected.horizontal_n = { value = 27489.27671, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 27668.26371, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 27668.26371, rel_tol = 1e-8 }
+
+[[case]]
+id = "tbirv-002"
+title = "Inclined chord 300 m, rise 60 m, L0 = 306.5 m"
+calculation = "wirefe.span"
+reference = "Irvine's equations, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """Expected H = 18940.65497 N, V0 = +1402.98 N (the wire leaves the lower end climbing:
+the vertex is outside the span). Hand: along the stretched cable dT = w dz / (1 + T/EA), so
+T_j - T_i = w h (1 - Tmean/EA) approximately: 941.438 x (1 - 19460/30e6) = 940.828 N
+= 19933.37298 - 18992.54495 (an inextensible cable would give w h = 941.438 N)."""
+max_seconds = 1.0
+inputs = { unstressed_length = "306.5 m", chord_x = "300 m", chord_y = "0 m", chord_z = "60 m", axial_stiffness = "30e6 N", load_x = "0 N/m", load_y = "0 N/m", load_z = "-15.69064 N/m" }
+expected.horizontal_n = { value = 18940.65497, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 18992.54495, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 19933.37298, rel_tol = 1e-8 }
+
+[[case]]
+id = "tbirv-003"
+title = "Taut 50 m chord, L0 = 49.98 m (shorter than the chord: held by its stretch)"
+calculation = "wirefe.span"
+reference = "Irvine's equations, independent quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """An inextensible cable cannot span the chord at all. Hand: the stretch alone gives
+H = EA (S/L0 - 1) = 30e6 x 0.02 / 49.98 = 12004.8 N; with the sag's length w^2 S^3 / (24 H^2)
+the parabolic equation S + 1.28227e6 / H^2 = L0 (1 + H/EA) gives 15294.9 N; Irvine: 15291.48 N.
+V0 = -w L0 / 2 = -392.109 N."""
+max_seconds = 1.0
+inputs = { unstressed_length = "49.98 m", chord_x = "50 m", chord_y = "0 m", chord_z = "0 m", axial_stiffness = "30e6 N", load_x = "0 N/m", load_y = "0 N/m", load_z = "-15.69064 N/m" }
+expected.horizontal_n = { value = 15291.47551, rel_tol = 1e-8 }
+expected.tension_i_n = { value = 15296.50198, rel_tol = 1e-8 }
+expected.tension_j_n = { value = 15296.50198, rel_tol = 1e-8 }
