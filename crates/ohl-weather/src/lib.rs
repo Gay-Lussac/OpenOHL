@@ -230,6 +230,59 @@ impl WeatherCase {
         Length::from_si(self.ice(diameter.si()).1)
     }
 
+    /// Whether it puts ice on the wires (a thickness or a load above 0).
+    pub fn has_ice(&self) -> bool {
+        self.ice_thickness.si() > 0.0 || self.ice_load.is_some_and(|l| l.si() > 0.0)
+    }
+
+    /// The case without its ice (the same temperature and wind).
+    pub fn without_ice(&self) -> Self {
+        Self {
+            name: format!("{} without ice", self.name),
+            ice_thickness: Length::ZERO,
+            ice_load: None,
+            ..self.clone()
+        }
+    }
+
+    /// The case with `extra` more radial ice on a wire of bare diameter
+    /// `diameter`: a thickness grows by it (the same density); a load
+    /// becomes the load of the ice out to the iced diameter plus
+    /// \\( 2 \cdot \\) `extra` at the case's density (else glaze ice), so
+    /// that its iced diameter grows by \\( 2 \cdot \\) `extra`.
+    pub fn with_more_ice_thickness(&self, extra: Length, diameter: Length) -> Self {
+        let name = format!("{} + {:.1} mm ice", self.name, extra.millimeters());
+        if self.ice_load.is_none() {
+            return Self {
+                name,
+                ice_thickness: self.ice_thickness + extra,
+                ..self.clone()
+            };
+        }
+        let d = diameter.si();
+        let iced = self.ice(d).1 + 2.0 * extra.si();
+        let area = Area::from_si(std::f64::consts::FRAC_PI_4 * (iced * iced - d * d));
+        Self {
+            name,
+            ice_load: Some(self.ice_density_or_glaze().weight_per_length(area)),
+            ..self.clone()
+        }
+    }
+
+    /// The case with `extra` more ice load per length on a wire of bare
+    /// diameter `diameter`: as a load, the case's ice weight plus `extra`,
+    /// at the case's density (else glaze ice) — a thickness becomes the
+    /// load of its ice (the same iced diameter for `extra` = 0).
+    pub fn with_more_ice_load(&self, extra: ForcePerLength, diameter: Length) -> Self {
+        let ice = self.ice(diameter.si()).0;
+        Self {
+            name: format!("{} + {:.2} N/m ice", self.name, extra.newtons_per_meter()),
+            ice_thickness: Length::ZERO,
+            ice_load: Some(ForcePerLength::from_si(ice) + extra),
+            ..self.clone()
+        }
+    }
+
     /// Ice weight per length and iced diameter, m, on a bare diameter `d`
     /// (m).
     fn ice(&self, d: f64) -> (f64, f64) {
@@ -678,5 +731,61 @@ air_density_factor = 0.6
         let mut bad = b.clone();
         bad.air_density_factor = Some(0.0);
         assert!(bad.validate().is_err());
+    }
+
+    /// Derived cases: more ice as a thickness grows the iced diameter by
+    /// twice it (a thickness, or a load at its density); more ice as a
+    /// load adds exactly that weight (a thickness turned into its load
+    /// keeps its iced diameter); without ice keeps the wind and
+    /// temperature.
+    #[test]
+    fn more_ice_and_none() {
+        let d = Length::from_millimeters(28.0);
+        let w = ForcePerLength::from_newtons_per_meter(15.97);
+        let mut glaze = WeatherCase::still("glaze", Temperature::from_celsius(-5.0));
+        glaze.ice_thickness = Length::from_millimeters(12.7);
+        glaze.wind_pressure = Stress::from_pascals(200.0);
+        let mut rime = glaze.clone();
+        rime.ice_thickness = Length::ZERO;
+        rime.ice_load = Some(ForcePerLength::from_newtons_per_meter(20.0));
+        rime.ice_density = Some(Density::from_kilograms_per_cubic_meter(500.0));
+        let t = Length::from_millimeters(5.0);
+        for case in [&glaze, &rime] {
+            assert!(case.has_ice());
+            let more = case.with_more_ice_thickness(t, d);
+            more.validate().unwrap();
+            close(
+                more.iced_diameter(d).si(),
+                case.iced_diameter(d).si() + 0.010,
+                1e-12,
+            );
+            let q = ForcePerLength::from_newtons_per_meter(7.5);
+            let heavier = case.with_more_ice_load(q, d);
+            heavier.validate().unwrap();
+            close(
+                heavier.wire_load(d, w).vertical.si(),
+                case.wire_load(d, w).vertical.si() + 7.5,
+                1e-12,
+            );
+            let same = case.with_more_ice_load(ForcePerLength::ZERO, d);
+            close(
+                same.iced_diameter(d).si(),
+                case.iced_diameter(d).si(),
+                1e-12,
+            );
+            let bare = case.without_ice();
+            assert!(!bare.has_ice());
+            assert_eq!(bare.wind_pressure, case.wind_pressure);
+            assert_eq!(bare.iced_diameter(d), d);
+        }
+        assert_eq!(
+            glaze.with_more_ice_thickness(t, d).ice_thickness,
+            Length::from_millimeters(17.7)
+        );
+        // No ice at all: the load alone (glaze ice for its diameter).
+        let still = WeatherCase::still("s", Temperature::from_celsius(0.0));
+        assert!(!still.has_ice());
+        let iced = still.with_more_ice_load(ForcePerLength::from_newtons_per_meter(5.0), d);
+        close(iced.wire_load(d, w).vertical.si(), 20.97, 1e-12);
     }
 }
