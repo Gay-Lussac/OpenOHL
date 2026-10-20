@@ -372,7 +372,7 @@ A string hangs down by default; its `angle` and `direction` point it anywhere �
 
 A **pylon template** is the face of a pylon — across the line and up, in
 its own axes, no outside sizes — given by a few named dimensions. From it
-**Structures › New pylon from a template…** builds a structure type of
+**Tools › New pylon from a template…** builds a structure type of
 level 1 (its points, strings and wire points with their sets), for
 **suspension** or for **strain**: two separate types, built one after the
 other with the toggle. The type records the template, the role and the
