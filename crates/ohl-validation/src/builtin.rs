@@ -49,6 +49,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(FallIn));
     registry.register(Box::new(SwingArcCase));
     registry.register(Box::new(SwingArcClearance));
+    registry.register(Box::new(SafetyVolumeCase));
     registry.register(Box::new(SpanCasesSection));
 }
 
@@ -1588,5 +1589,125 @@ outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
             ("swing_deg", swing),
             ("string_n", string.force),
         ]))
+    }
+}
+
+/// `safety_volume.mesh`: the safety volume of a straight level wire
+/// along x (`length`, 30 m up, conductor radius `radius`, distance
+/// `distance`, tolerance `tolerance`; `shape` `still`: the wire alone, a
+/// capsule; `arc`: the swing arc of the wire turned rigidly by
+/// ±`blowout_angle` about an axis `arc_radius` above it). Outputs: the
+/// mesh's open edges, whether every sampled point of the exact surface is
+/// inside, its volume over the capsule's (`still`), and at mid-span the
+/// section's reach to the side and below the axis (`arc`).
+struct SafetyVolumeCase;
+
+impl Calculation for SafetyVolumeCase {
+    fn id(&self) -> &'static str {
+        "safety_volume.mesh"
+    }
+
+    fn description(&self) -> &'static str {
+        "The safety volume of a straight wire, still or on a swing arc (inputs: shape, length, \
+         radius, distance, tolerance, arc_radius, blowout_angle); outputs open_edges, \
+         exact_inside, volume_ratio, lateral_m, below_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::positions::{Axis, PositionKind, Positions, Shape, SwingArc, WireShape};
+        use ohl_clearance::rules::Requirement;
+        use ohl_clearance::safety_volume::{SafetyParams, build};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (l, r, d, tol) = (
+            len("length")?,
+            len("radius")?,
+            len("distance")?,
+            len("tolerance")?,
+        );
+        let z0 = 30.0;
+        let wire = |y: f64, z: f64| ohl_clearance::Wire {
+            section: "S".into(),
+            span: 0,
+            circuit: "c".into(),
+            phase: "L1".into(),
+            potential: None,
+            bundle: Vec::new(),
+            points: (0..=10).map(|k| [l * k as f64 / 10.0, y, z]).collect(),
+            ends: Vec::new(),
+            surface_radius: r,
+            polyline_error: 0.0,
+        };
+        let params = SafetyParams {
+            distance: Requirement::Fixed(d),
+            tolerance: tol,
+            ..SafetyParams::default()
+        };
+        let reach = d + r;
+        let budget =
+            ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+        match string_input(inputs, "shape")? {
+            "still" => {
+                let v = build(
+                    &Positions::of_wires("still", vec![wire(0.0, z0)]),
+                    &params,
+                    &budget,
+                )?;
+                let m = &v.volumes[0].mesh;
+                let exact = std::f64::consts::PI * reach * reach * (l + 4.0 / 3.0 * reach);
+                let mut inside = true;
+                for i in 0..=20 {
+                    for j in 0..16 {
+                        let a = std::f64::consts::TAU * f64::from(j) / 16.0;
+                        let x = l * f64::from(i) / 20.0;
+                        inside &= m.contains([x, reach * a.cos(), z0 + reach * a.sin()]);
+                    }
+                }
+                Ok(outputs([
+                    ("open_edges", m.open_edges() as f64),
+                    ("exact_inside", f64::from(u8::from(inside))),
+                    ("volume_ratio", m.volume() / exact),
+                ]))
+            }
+            "arc" => {
+                let ra = len("arc_radius")?;
+                let phi = float_input(inputs, "blowout_angle")?.to_radians();
+                let axis = Axis::new([0.0, 0.0, z0], [l, 0.0, z0]).ok_or("no axis")?;
+                let turned = |p: f64| WireShape::new(wire(-ra * p.sin(), z0 - ra * p.cos()), &axis);
+                let arc = SwingArc::new(axis, &turned(-phi), &turned(0.0), &turned(phi))
+                    .ok_or("no arc")?;
+                let mut pos = Positions::default();
+                pos.cases.push("wind".into());
+                let k = pos.add_span(wire(0.0, z0 - ra), axis);
+                pos.add(k, 0, PositionKind::Arc, Shape::Arc(arc));
+                let v = build(&pos, &params, &budget)?;
+                let m = &v.volumes[0].mesh;
+                // The section at mid-span: where the edges cross x = l/2.
+                let (mut lateral, mut below) = (0.0f64, 0.0f64);
+                let x = 0.5 * l;
+                for t in &m.triangles {
+                    let c = m.corners(t);
+                    for e in 0..3 {
+                        let (a, b) = (c[e], c[(e + 1) % 3]);
+                        if (a[0] - x) * (b[0] - x) < 0.0 {
+                            let s = (x - a[0]) / (b[0] - a[0]);
+                            lateral = lateral.max((a[1] + s * (b[1] - a[1])).abs());
+                            below = below.max(z0 - (a[2] + s * (b[2] - a[2])));
+                        }
+                    }
+                }
+                let mut inside = true;
+                for k in 0..=20 {
+                    let p = -phi + 2.0 * phi * f64::from(k) / 20.0;
+                    inside &= m.contains([x, -(ra + reach) * p.sin(), z0 - (ra + reach) * p.cos()]);
+                }
+                Ok(outputs([
+                    ("open_edges", m.open_edges() as f64),
+                    ("exact_inside", f64::from(u8::from(inside))),
+                    ("lateral_m", lateral),
+                    ("below_m", below),
+                ]))
+            }
+            other => Err(format!("shape \"{other}\": still or arc")),
+        }
     }
 }

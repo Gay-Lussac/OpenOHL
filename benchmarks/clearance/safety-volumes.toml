@@ -1,0 +1,38 @@
+# Safety volumes (ohl_clearance::safety_volume; theory: Safety volumes).
+#
+# A straight level wire 100 m long, 30 m up, conductor radius 0.015 m,
+# distance d = 3 m: the exact envelope is a capsule of radius
+# D = d + r = 3.015 m, volume pi D^2 L + 4/3 pi D^3
+# = pi 9.090225 (100 + 4.02) = 2970.59 m^3. The mesh holds it whole
+# (every sampled point of the exact surface inside, never inside it) and
+# lies outside it by at most the tolerance (0.05 m) and 2 mm where smooth:
+# its volume is between the capsule's and that of the capsule of radius
+# D + 0.052 m, a ratio between 1 and (3.067 / 3.015)^2 ~ 1.0348.
+#
+# A swing arc of radius R = 10 m about a level axis 40 m long, from -40
+# to +40 degrees, d = 2 m, r = 0, tolerance 0.1 m: at mid-span the volume
+# reaches R sin 40 + d = 8.427876 m to each side and R + d = 12 m below
+# the axis; the mesh is never inside (reach at least that), outside by at
+# most about the tolerance with the rounding and the arc's own
+# triangulation error (at most 0.15 m allowed here).
+
+[[case]]
+id = "safetyvolume-001"
+title = "A straight wire in still air: a closed mesh holding the capsule"
+calculation = "safety_volume.mesh"
+reference = "Hand calculation (this file)"
+inputs = { shape = "still", length = "100 m", radius = "0.015 m", distance = "3 m", tolerance = "0.05 m" }
+expected.open_edges = { value = 0.0, abs_tol = 0.0 }
+expected.exact_inside = { value = 1.0, abs_tol = 0.0 }
+expected.volume_ratio = { value = 1.0174, abs_tol = 0.0174 }
+
+[[case]]
+id = "safetyvolume-002"
+title = "A swing arc of plus or minus 40 degrees: the reach to the side and below at mid-span"
+calculation = "safety_volume.mesh"
+reference = "Hand calculation (this file)"
+inputs = { shape = "arc", length = "40 m", radius = "0 m", distance = "2 m", tolerance = "0.1 m", arc_radius = "10 m", blowout_angle = 40.0 }
+expected.open_edges = { value = 0.0, abs_tol = 0.0 }
+expected.exact_inside = { value = 1.0, abs_tol = 0.0 }
+expected.lateral_m = { value = 8.502876, abs_tol = 0.075 }
+expected.below_m = { value = 12.075, abs_tol = 0.075 }
