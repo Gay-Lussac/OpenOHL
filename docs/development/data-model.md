@@ -716,6 +716,16 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   farther from the wires are ignored) — what the desktop clearance
   windows and `ohl zones` solve and read (both through
   `ohl_clearance::zone::run_zone_check`); `ohl line` ignores it.
+- `[vegetation]` (optional, 2026-10-20, `VegetationPreset`): settings of
+  the vegetation and danger-tree check, each optional — `classes` (LiDAR
+  class numbers), `clearance` and `fall_allowance` (a distance, a table
+  by voltage or a formula, as `vertical`), `growth_per_year`, `years`,
+  `buffer`, `fall_in`, `root_ball`, `min_tree_height`, `max_tree_height`,
+  `max_base_ground_distance`, `search_distance`, `swing_arc`; the wind
+  steps are the file's `[wind]`. A file may hold it without any
+  `[[rule]]`: a design code's preset of the vegetation check
+  ([plugins](plugins.md#vegetation-presets)). Unknown keys are refused.
+  Older programs refuse a file with it (an unknown table).
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.ohlr` and
   `<model>.radial-clearances.ohlr` (one `[[rule]]` per row and target
@@ -780,12 +790,21 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `spans` (`Span`: the span's `Wire`, its `Axis` A₁A₂ through the
   attachments, its positions, its capsule and `Bands`), `positions`
   (`Position`: span, case, `PositionKind` — `case`, `left`, `right`,
-  `arc`, `ice`, `ice left`, `ice right` — and its `Shape`: a solved
+  `arc`, `ice`, `ice left`, `ice right`, and since 2026-10-20 `still`,
+  `left (step)`, `right (step)` of a stepped wind
+  (`PositionOptions::wind_steps`, a `rules::WindSteps`) with its
+  `pressure` (Pa) — and its `Shape`: a solved
   `WireShape` or a `SwingArc` with its stations and the three wires'
-  points at each), `notes`. Results per span:
+  points at each), `notes`. `VegetationParams::clearance_by_voltage` and
+  `allowance_by_voltage` (a `rules::Requirement`, else `clearance` and
+  `fall_allowance`) give each span its distance by its wire's voltage
+  (`VegetationCheck::required`). Results per span:
   `vegetation::WireVegetation` (counts, `nearest`, `worst_fall`,
-  `worst`), each `VegPoint` with its `position`, `fall_position`,
-  `fall_point` (indices into `positions`). The danger CSV
+  `worst`, and with `keep_all` `all`: every grow-in and fall-in point as a
+  `Found` — point, grows, falls, position, fall position, a tree's base),
+  each `VegPoint` with its `position`, `fall_position`,
+  `fall_point` (indices into `positions`) and the `required` clearance
+  applied. The danger CSV
   (`vegetation::DANGER_CSV_HEADER`) has a row per kept point with its
   case and position; the older per-case CSV (`vegetation::CSV_HEADER`,
   `to_csv`) remains for a single case. Isoclearance lines:
@@ -1376,6 +1395,33 @@ choices, spacing, nearby pairs, the circuits, the weather cases with
 their values and each circuit's plugin-column values; as results the
 counts and the pairs below the required distance or within 1 m of it.
 
+The vegetation check (`check` `ohl.vegetation`, title "Vegetation and
+danger trees", 2026-10-20; `ohl-app` `vegetation::saved`) keeps as
+`parameters`: `version` (1), the settings — `classes`, `cases` (weather
+case names), `clearance` and `fall_allowance` (as a rule file writes a
+distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
+`growth_per_year`, `years`, `buffer`, `fall_in`, `root_ball`,
+`min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
+no limit), `search_distance`, `swing_arc`, `wind_steps`, `wind_step`
+(Pa), `wind_sides`, `unbalanced_ice` (`off`, `case`, `thickness`,
+`extra`, `load`) and `unbalanced_ice_value`, `keep`, `isoclearance`
+(`interval`, `max_level`, `spacing`; null: none) — and what the run read:
+`points_state` (`Session::points_state`: the last log entry that changed
+points and each cloud's name, count and creation time) and `ground` (the
+ground's source and the surface of the checks). Its `results`: `version`
+(1), `points` (vegetation points read), `positions`, `notes`, `labels`
+(the cases and positions named, e.g. `high wind, left (step) at 300
+Pa`), `spans` (`section`, `span`, `required` m, `encroaching`,
+`fall_in`, `nearest` {`distance`, `label`}, `worst_fall` {`margin`,
+`label`}, `worst` [{`point` [x, y, z], `class`, `distance`, `height`,
+`fall_margin`, `margin`, `label`}]), and every point found, packed
+(`ohl_session::packing`, `"zstd+base64:…"`): `grow_in` — the count, then
+x, y, z in mm (each column as zigzag varints of the difference to the
+point before), then each label (varint) — and `fall_in` the same with
+the base's z (mm) after z. Opened again, it is out of date when the line
+state, `points_state` or `ground` differ from now. Isoclearance lines are
+not saved (run again to draw them).
+
 ### Commands (the only way to change a project)
 
 `ohl_session::Command`, JSON tagged by `op` (snake_case): `put` (`kind`,
@@ -1462,7 +1508,9 @@ it lacks are copied in from these places (one `library` log entry), and the
 model reads working copies written to a temporary folder — written again
 when another project line is chosen with other library files, or a
 library change is undone or redone. Per-user view settings (`ViewPrefs`) stay
-on the computer, never in the project.
+on the computer, never in the project — since 2026-10-20 with
+`vegetation_colors` (the two colours of the vegetation layers, grow-in
+points and danger trees, `[[r, g, b], [r, g, b]]`).
 
 The structure application reads a structure's libraries beside its file
 (`Sections/`, `Insulators/`, poles `.ohlp`, models `.ohlfe`, recipes
