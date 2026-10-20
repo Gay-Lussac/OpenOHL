@@ -1418,7 +1418,18 @@ back (a block removed and made again gets a new row id). Undo is refused
 when a point the entry left is not there any more. Edit grants limited to
 an area check where the points were and where they go. `Applied::points`
 lists the changes as applied (an undo: the changes back) for the
-applications to follow. Example (synthetic, a 1 mm cloud):
+applications to follow. A command takes at most 10⁶ points
+(`points::MAX_POINTS`). From 100 points on, `points` is written as one
+string `"zstd+base64:…"` (`points::packed`): version byte 1, the count
+(LEB128 varint), then for `from` and then `to` the columns — x, y, z each
+as the zigzag varint of the difference to the point before (the first to
+0), the classes (a byte each), the intensities (varints), the returns (a
+byte each), the indices (varint of index + 1; 0: none) — compressed with
+zstd and base64-encoded (standard alphabet, padded): some 10 bytes a point
+instead of some 200; both forms are read, shorter lists are written as
+before. The point store keeps a block's points in runs of a few hundred
+while changing them, so 10⁶ points change in seconds; the bytes stored are
+the same as before. Example (synthetic, a 1 mm cloud):
 
 ```json
 {"op": "change_points", "cloud": "survey",

@@ -199,6 +199,9 @@ is logged with the points' places in their blocks: undo, redo and an
 admin's rollback put every stored byte back as it was. It is refused when
 a point is not there (changed meanwhile), to viewers, and outside the area
 an admin limited a user to (where the points were and where they go).
+A command takes at most 10⁶ points; from 100 points on its list is
+written packed (see the data model). The desktop app's box and lasso
+selection changes the class of many points this way.
 
 The point clouds belong to the project, not to a project line: a change
 is logged (and undone) on the line it was made on, every line sees it, and

@@ -75,6 +75,32 @@ approved as finished: everything is built and in active development
   the case's ice on the span, blown 7.3 m across its axis (3.7 m before),
   its lowest point 0.67 m higher; glaze ice without wind 3 cm lower (the
   marker ball's ice). ([theory](../theory/wirefe.md#a-weather-case-per-span-2026-10-20))
+- **Results out of date** (owner's decision for point edits, extended to
+  line edits so the rule is the same): a result computed on demand keeps
+  the revision it was computed from — a content hash of the line (with
+  its weather cases, wire library and library files), of the point cloud
+  (a sum of point hashes, changed by each point changed) and of the ground
+  surface — and its window shows "Out of date: … changed since this run"
+  with Run again when it differs; layers drawn from it are dimmed.
+  Results are never dropped and never run again by themselves. Decided
+  here (the task left it open): **an undo back to the state a result was
+  computed from clears the mark**, since the revision is a hash of content
+  and a new run would give the same result. Conservative choices: a
+  change of any library file marks every result using the line (not only
+  those reading that file); the wind side shown is a view setting and is
+  not tracked (a galloping result follows the case shown as solved).
+  ([user guide](../user-guide/desktop-app.md#results-out-of-date))
+- **Box and lasso selection of LiDAR points** (owner's request): Alt +
+  drag (box) and Alt + Shift + drag (lasso) with the selecting button in
+  the 3D view and the profile select the points drawn inside (the rule of
+  a click); their class is changed together as one `change_points`
+  command, with a class filter; coordinates only for a single point. A
+  command takes at most 10⁶ points (more: refused with the reason); from
+  100 points it is written packed (zstd + base64 of its columns, some 10
+  bytes a point) — a change of the log's format, older lists still read.
+  The point store keeps a block's points in runs while changing them
+  (stored bytes unchanged). ([user guide](../user-guide/desktop-app.md#editing),
+  [data model](data-model.md#commands-the-only-way-to-change-a-project))
 - **LiDAR points: what can be clicked, and changing a point** (owner's
   request): clicking LiDAR points was unreliable because a click looked at
   the points loaded when the project opened (a sample thinned to
