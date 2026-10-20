@@ -529,6 +529,9 @@ pub struct Input {
     pub markers: Arc<Vec<([f64; 3], String)>>,
     /// Other versions of the line drawn with it.
     pub versions: Vec<Version>,
+    /// LiDAR points loaded of the classes drawn: (x, y, z), class (none
+    /// unless the template draws them).
+    pub lidar: Arc<Vec<([f64; 3], u8)>>,
     /// Output folder.
     pub out: PathBuf,
 }
@@ -746,9 +749,51 @@ impl Input {
             corridor: s.corridor,
             conductor_clearance,
             bands: s.bands,
+            lidar_classes: s
+                .lidar_classes
+                .as_deref()
+                .map(crate::sheet_ui::parse_classes)
+                .transpose()?,
+            class_names: model
+                .scheme
+                .classes
+                .iter()
+                .map(|c| {
+                    (
+                        c.code,
+                        (
+                            c.name.clone(),
+                            crate::scene::class_color(&model.scheme, c.code),
+                        ),
+                    )
+                })
+                .collect(),
             ..Default::default()
         }
         .with_template(template);
+        // The LiDAR points loaded (the project's point budget), of the
+        // classes drawn: each route keeps those within its corridor.
+        let lidar = if options.draws_lidar() {
+            let mut wanted = [false; 256];
+            for c in options.lidar_class_list() {
+                wanted[c as usize] = true;
+            }
+            Arc::new(
+                model
+                    .points
+                    .iter()
+                    .filter(|(_, c)| wanted[*c as usize])
+                    .map(|(q, c)| {
+                        (
+                            [0, 1, 2].map(|k| model.origin[k] + f64::from(q[k]) / 1000.0),
+                            *c,
+                        )
+                    })
+                    .collect(),
+            )
+        } else {
+            Arc::default()
+        };
         // The window's elevations over the template's when it sets them.
         if w.elevations.place != ohl_drawing::ElevationPlace::Off {
             options.elevations.place = w.elevations.place;
@@ -781,6 +826,7 @@ impl Input {
             },
             cases,
             isoclearance: w.isoclearance.clone(),
+            lidar,
             out,
         })
     }
@@ -799,6 +845,13 @@ impl Input {
             &self.options,
         )?;
         crate::scene::set_drawn_members(&mut d, &self.line, &self.bodies);
+        if !self.lidar.is_empty() {
+            d.set_lidar(
+                self.lidar.iter().copied(),
+                &self.options.lidar_class_list(),
+                self.options.lidar_half_width(),
+            );
+        }
         if let Some(lines) = &self.isoclearance {
             d.set_isoclearance(&lines.0, lines.1);
         }
@@ -1405,6 +1458,35 @@ fn sheet_sections(
                 let mut w = shown;
                 ui.add_enabled(on, egui::DragValue::new(&mut w).range(0.0..=10_000.0).suffix(" m"));
                 s.corridor = on.then_some(w);
+            });
+            ui.horizontal(|ui| {
+                let mut own = s.lidar_classes.is_some();
+                let shown = t.lidar.profile || t.lidar.plan;
+                ui.add_enabled(
+                    shown,
+                    egui::Checkbox::new(&mut own, "LiDAR classes"),
+                )
+                .on_hover_text(
+                    "The LiDAR points loaded within the corridor (else the line width), as dots \
+                     where the template draws them ([lidar] profile, plan); these classes instead \
+                     of the template's",
+                );
+                let mut text = s.lidar_classes.clone().unwrap_or_else(|| {
+                    t.lidar
+                        .classes
+                        .iter()
+                        .map(u8::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                });
+                ui.add_enabled(
+                    shown && own,
+                    egui::TextEdit::singleline(&mut text).desired_width(120.0),
+                );
+                s.lidar_classes = own.then_some(text);
+                if !shown {
+                    ui.weak("(the template draws none)");
+                }
             });
             ui.checkbox(
                 &mut s.conductor_clearance,
