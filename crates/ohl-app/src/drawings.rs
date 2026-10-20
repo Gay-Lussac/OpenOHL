@@ -426,6 +426,9 @@ pub struct PreviewRoute {
     /// The structures' elevations the sheets' plan carries (none when
     /// off), in the route's (station, offset).
     pub elevations: Vec<ohl_drawing::ElevationDrawing>,
+    /// The lines below the lowest conductor the sheets' profile carries
+    /// (none when not asked for), by station and height.
+    pub curves: Vec<ohl_drawing::curves::Curve>,
 }
 
 /// The export's sheets, as File › Export › Drawings… would write them now.
@@ -482,6 +485,13 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
                 id: route.id.clone(),
                 sheets: ohl_drawing::sheet_layout(&d, &options, page),
                 elevations: ohl_drawing::elevations(&d, &options),
+                curves: ohl_drawing::curves::curves(
+                    &d,
+                    &options.conductor_clearance,
+                    &options.template.conductor_clearance.circuits,
+                    &options.template.conductor_clearance.label,
+                )
+                .0,
                 centreline: d.centreline,
             });
         }
