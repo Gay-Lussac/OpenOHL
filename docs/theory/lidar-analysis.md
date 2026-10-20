@@ -87,6 +87,193 @@ the search reach (clearance + growth + 5 m, or the tallest tree looked
 for), so each point is compared with the few segments near it — about 1 µs
 a point.
 
+
+## Danger trees (planned, 2026-10-20)
+
+*This section describes the method to be built; the section above is
+what exists today. The two checks above are extended: trees falling about
+their root ball, the wire anywhere along its blowout swing, an
+unbalanced-ice case, and isoclearance lines. Every distance is to the
+conductor's surface, as above.*
+
+### Wire positions checked
+
+For each weather case chosen (up to a few hundred), each span of each
+section is solved by the line's own solver (finite elements). A case with
+wind is solved with the wind **from the left and from the right**.
+
+- **Hot / still air:** the case's own position.
+- **Blowout:** the left and right positions.
+- **Swing arc (optional):** every position the span passes through
+  between its left and its right blowout, through the still-air position.
+  The span is taken to swing as one about its **axis** \\( a \\), the line
+  through its two attachment points \\( A_1, A_2 \\) (string tops; at a
+  dead-end, the clamp), unit vector \\( \mathbf u = (A_2 - A_1)/|A_2 - A_1| \\).
+  At a station \\( s \\) along the span (a fraction of its length), the
+  wire's point lies in the plane square to \\( \mathbf u \\) at
+  \\( C(s) = A_1 + s\,(A_2 - A_1) \\): at angle \\( \varphi_L(s) \\) and
+  radius \\( R_L(s) \\) blown to the left, \\( \varphi_0(s), R_0(s) \\) in
+  still air, \\( \varphi_R(s), R_R(s) \\) blown to the right (angles about
+  \\( \mathbf u \\) from the downward vertical). The arc at \\( s \\) is the
+  circular arc of centre \\( C(s) \\), radius
+  \\( R(s) = \max(R_L, R_0, R_R) \\), from \\( \varphi_L \\) to \\( \varphi_R \\).
+
+  **Conservative:** one radius, the largest of the three, along the whole
+  arc (a wind between none and the full one sags the wire between the two
+  radii: never further than the largest).
+
+  **Simplification:** a rigid swing about the axis through the
+  attachment points. Suspension strings swing with the wire, and the
+  clamps move on their own arcs, so the true locus is close to this one
+  but not on it. Exact: a solve at each intermediate wind pressure.
+
+  The distance from a point \\( q \\) to the arc of a span: project
+  \\( q \\) on the axis, \\( s_q = (q - A_1)\cdot\mathbf u / |A_2 - A_1| \\)
+  (clamped to [0, 1]); in the plane at \\( s_q \\), \\( q \\) is at radius
+  \\( \rho_q \\) and angle \\( \varphi_q \\). With \\( R, \varphi_L, \varphi_R \\)
+  interpolated at \\( s_q \\) from the stations either side:
+  \\[ d_{\text{arc}} = \begin{cases} |\rho_q - R| & \varphi_L \le \varphi_q \le \varphi_R \\ \min\big(|q - P_L|,\ |q - P_R|\big) & \text{otherwise} \end{cases} \\]
+  (\\( P_L, P_R \\): the arc's ends), and the clearance is
+  \\( d_{\text{arc}} - r \\), \\( r \\) the conductor's radius and the
+  polyline's bound as everywhere.
+
+- **Unbalanced ice (optional):** the span checked carries more ice than
+  its neighbours (by default: the case's ice on that span only, or a
+  given extra ice load or concentrated load on it), so its suspension
+  strings swing into it and it sags further. Each span checked is solved
+  with its section on its own (the section's other spans as in the case).
+
+### Grow-in
+
+A vegetation point \\( q \\) encroaches on a wire when its distance to the
+wire's surface, for any position checked above, is below the required
+clearance plus the allowances:
+\\[ d(q, \text{wire}) - r < c_{\text{req}} + g + b \\]
+with \\( c_{\text{req}} \\) the required clearance (flashover or minimum
+approach distance, by voltage, from the rule), \\( g \\) the growth until
+the next cut, \\( b \\) a buffer (e.g. for the survey's accuracy). The margin
+is the difference; the worst position (hot, left, right or on the arc) is
+reported.
+
+### Fall-in: a tree pivoting about its root ball
+
+A vegetation point \\( q_t \\) at height \\( h \\) above the ground below it
+(at least the smallest tree height) is taken as the top of a tree whose
+trunk stands straight below it, base \\( B \\) on the ground. Grown by
+\\( g \\), its height is \\( h' = h + g \\). The tree falls by turning about
+the edge of its root ball: a hinge \\( H \\) on the ground at the
+**root-ball radius** \\( b_r = k\,h' \\) from the trunk, \\( k \\) a given
+fraction of the height (e.g. 0.1), on the side it falls to.
+
+It falls towards the wire point \\( q \\) (the worst direction). In the
+vertical plane through \\( B \\) and \\( q \\), with coordinates \\( (x, z) \\)
+from \\( B \\) (\\( x \\) towards \\( q \\), \\( z \\) up):
+\\( H = (b_r, 0) \\), the top \\( T = (0, h') \\), the trunk's length from the
+hinge \\( L = \sqrt{h'^2 + b_r^2} \\) and its starting angle about the hinge
+\\( \theta_0 = \operatorname{atan2}(h', -b_r) \\) (just over 90°). Falling, the
+trunk sweeps the **sector** of radius \\( L \\) about \\( H \\) from
+\\( \theta_0 \\) down to \\( \theta_{\min} \\), where it comes to rest on the
+ground: the largest angle, seen from \\( H \\), of the ground along the fall
+direction within reach,
+\\[ \theta_{\min} = \max_{0 < u \le L} \operatorname{atan2}\big(z_g(b_r + u) - z_B,\ u\big) \\]
+(\\( z_g \\): the ground's height along the direction; on level ground
+0°, falling down a slope below 0°).
+
+With \\( q = (\rho, \zeta) \\) in that plane (\\( \rho \\) its horizontal
+distance from \\( B \\), \\( \zeta \\) its height above \\( B \\)) and
+\\( \theta_q = \operatorname{atan2}(\zeta, \rho - b_r) \\) its angle about
+\\( H \\), the distance from the wire point to the swept trunk is
+\\[ d_{\text{fall}} = \begin{cases} \max\big(0,\ |q - H| - L\big) & \theta_{\min} \le \theta_q \le \theta_0 \\ \min\big(d(q, [H, H + L e^{i\theta_{\min}}]),\ d(q, [H, T])\big) & \text{otherwise} \end{cases} \\]
+The tree is a **danger tree** when, for some wire point and position,
+\\[ d_{\text{fall}} - r < A \\]
+with \\( A \\) the clearance allowance (flashover clearance, buffers; the
+growth is already in \\( h' \\)). The fall-in margin is the difference. With
+\\( k = 0 \\) and level ground this is the check above (a sphere of radius
+\\( h' \\) about the base), so the existing results are the special case.
+
+**Conservative:** the tree falls straight towards each wire point, the
+worst direction for every point.
+**Simplification:** a straight trunk below the top point and no crown;
+the root ball as a hinge at a fixed fraction of the height. A leaning tree
+falls further one way and a crown reaches further than its trunk (unsafe).
+Exact: the stem and crown segmented from the points, lean measured.
+
+### Isoclearance lines
+
+The **clearance** of a ground point \\( G = (x, y, z_g(x, y)) \\) is its
+distance to the nearest wire's surface over the positions checked:
+\\[ c(x, y) = \min_{\text{cases, positions, wires}} \big(d(G, \text{wire}) - r\big) \\]
+For one case, or the worst (smallest) over many. **Isoclearance lines** are
+its contours at a chosen interval (e.g. 1 m or 5 m), drawn over the
+corridor; lines above a chosen value can be hidden, so what remains shows
+where the ground or the vegetation comes closest. A tree of height
+\\( h' \\) standing inside the \\( h' \\) line can reach a wire when it falls
+(\\( k = 0 \\), level ground).
+
+\\( c \\) is computed on a grid of the corridor (spacing \\( \delta \\), e.g.
+1 m) and contoured by marching squares with linear interpolation between
+nodes.
+
+**Simplification:** a contour is placed by linear interpolation between
+grid nodes; the values at the nodes are exact. As \\( c \\) changes by at
+most the distance moved along the ground (it is a distance:
+\\( |c(G_1) - c(G_2)| \le |G_1 - G_2| \\)), a contour is placed within
+\\( \delta\sqrt{1 + m^2} \\) of the true line (\\( m \\): the ground's slope).
+The contours are a drawing; the checks above use the exact distances.
+
+### Results
+
+Per span: the number of grow-in and fall-in points, the worst of each
+(point, margin, the position and case, the wire), and the list of
+violating points; per line the totals. Shown in the 3D view, the plan and
+the profile (grow-in and fall-in as their own symbols and layers), in a
+cross-section across the span at a chosen point (the swing arc, the
+point, the fall sector), on the drawings, and as CSV.
+
+### How it is made fast
+
+LiDAR surveys hold \\( 10^7 \\) to \\( 10^8 \\) points per line, and every
+vegetation point meets every position of every case. The work is kept to
+the points and wires that can matter; the numbers computed are never
+coarsened.
+
+- **Only what can reach.** A point is compared only with the spans within
+  its *reach*: \\( c_{\text{req}} + g + b \\) for grow-in, and the tallest
+  tree looked for plus its root ball plus \\( A \\) for fall-in. Spans are
+  indexed once per position on a plan grid (cells of about the reach), so
+  a point meets the few spans near it, not the line.
+- **One bound per span before the exact distance.** Each span's positions
+  (hot, left, right and the swing arc) fit in a capsule about its axis of
+  radius \\( \max R + \) reach; a point outside it is rejected with one
+  distance to a segment. Only points inside get the exact distances
+  above, each a closed form (no iteration).
+- **Cases share the work.** Positions of all cases are gathered per span;
+  the point is looked up once and compared with all its span's positions.
+  The smallest margin found so far bounds the rest: a case cannot make a
+  point worse once its distance exceeds the current worst by the reach.
+- **Ground once per point.** The height above the ground (for fall-in)
+  comes from the ground surface once per point; the fall sector's resting
+  angle \\( \theta_{\min} \\) is computed only for points that are near
+  enough, by stepping along the fall direction at the TIN's resolution.
+- **Unbalanced ice only where trees are.** A span is solved with its own
+  ice only if vegetation points lie within its reach (most spans over
+  fields have none). Spans are independent: they are solved in parallel.
+- **Isoclearance by refinement.** \\( c \\) is first computed on a coarse
+  grid (e.g. 8 m). Because \\( c \\) cannot change faster than the distance
+  moved, a coarse cell whose corner values all exceed the highest line
+  drawn by more than its diagonal (times \\( \sqrt{1 + m^2} \\)) cannot hold
+  a drawn line and is not refined. Only cells near the wires or near
+  low clearance are refined to \\( \delta \\).
+- **Parallel by tiles.** Points are read tile by tile from the project's
+  point cloud (its spatial chunks) and the tiles are processed in
+  parallel; results are merged per span.
+- **Expected cost:** about 1 µs per vegetation point and position set
+  today; with the swing arc and a few dozen cases, a line of \\( 10^8 \\)
+  points (a third of them vegetation) is expected in minutes on a
+  10-core computer, and an isoclearance drawing of a 50 km corridor in
+  seconds. Exit clauses: a time limit per run, reported, never a partial
+  result shown as complete.
+
 ## As-built wires
 
 **Points of a span**: points of the wire classes (roles `conductor`,

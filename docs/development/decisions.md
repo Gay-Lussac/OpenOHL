@@ -9,6 +9,13 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Danger trees (method written, to be built):** fall-in about a root
+  ball (hinge at a fraction k of the height), the tree falling towards
+  each wire point and resting on the ground along its direction; grow-in
+  with the wire hot, blown left and right, and along its swing arc (a
+  rigid swing about the attachment points' axis, the largest radius);
+  an optional unbalanced-ice case per span; isoclearance lines over the
+  corridor for one case or the worst. ([theory](../theory/lidar-analysis.md#danger-trees-planned-2026-10-20))
 - **Licence:** OpenOHL is under the **AGPL-3.0-or-later** (forks and
   modified versions, also those offered as a network service, stay open
   under the same licence). The plugin interface (`crates/ohl-plugins/wit/`)
