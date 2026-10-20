@@ -1007,6 +1007,35 @@ Project templates: `library` objects of kind `sheet-templates` (name
 app's choice key: `default`, `project:NAME`, `library:NAME`,
 `plugin:PLUGIN/NAME`, `file:PATH`.
 
+Template keys added the same day (still version 1; every one optional,
+the defaults keep the look): `[layout] plan_title`, `profile_title`;
+`[[band]] format` (structures rows: `template::STRUCTURE_BAND_FIELDS`
+`name`, `type`, `type_id`, `extension`, `station`, `height`);
+`[legend] labels: BTreeMap<entry kind, text>` (`template::LEGEND_LABELS`:
+kind, English default, its placeholders; `LegendSpec::label`);
+`[corridor] near_side` (`right` default, `left`), `near`, `far`
+(`PenSpec`, over `pen`; `CorridorSpec::edge_pen`), `profile: bool`;
+`[centreline] { pen, ground }` (`CentrelineSpec`); `[lidar] { profile,
+plan, classes: Vec<u8>, size, cell, styles: BTreeMap<"2" | "3-5" |
+"3,4", LidarStyle { colour, size, label }> }` (`LidarSpec`,
+`template::class_codes`); `[conductor_clearance] label_at` (`auto`,
+`middle`, `start`, `end`); `[if_empty]: BTreeMap<field | "*", text>`
+(`SheetTemplate::if_empty`; `template::MAY_BE_EMPTY` the fields left
+empty unless named). The title block, revisions and legend now lie
+inside the frame's padding (`Paper::new`), texts made smaller to fit
+their cells (`furniture::fit_text`, `fit_line`). `Options` gained
+`lidar_classes: Option<Vec<u8>>` (the export's choice over the
+template's) and `class_names: BTreeMap<u8, (name, Option<rgb>)>` (the
+class scheme's); `RouteDrawing` gained `corridor_ground: Vec<(offset,
+Profile)>` (near edge first, built when a corridor and the ground are
+given) and `lidar: Vec<([station, offset, z], class)>`
+(`RouteDrawing::set_lidar`, by station); `Mark` gained `type_id` and
+`extension`; `curves::Curve` gained `parts: CurveParts` (the legend in
+the template's words: `Curve::legend_with`); `style::Sample::Dots`;
+`height_datum_of(crs)`. New layer `OHL_LIDAR`. The app's
+`SheetChoice` gained `lidar_classes: Option<String>`; `ohl drawing`
+`--sheet-lidar-classes`.
+
 **Editing a structure file** (`apps/structure/ohl-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
 of `ohl-app`'s structure screen is a function on the file's text
