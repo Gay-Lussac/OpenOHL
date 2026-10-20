@@ -104,3 +104,38 @@ fn a_pole_is_drawn_with_its_outline_and_elevations_on_request() {
     assert!(String::from_utf8_lossy(&bad.stderr).contains("off, above or below"));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `--isoclearance-interval` draws the ground's isoclearance lines over
+/// the line width on OHL_ISOCLEARANCE (the example's survey as the
+/// ground, the hot and the windy case).
+#[test]
+fn isoclearance_lines_on_the_drawing() {
+    let dir = std::env::temp_dir().join(format!("ohl-drawing-iso-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("drawing")
+        .arg(example("synthetic-line.ohl.json"))
+        .arg("--terrain")
+        .arg(example("synthetic-survey.csv"))
+        .arg("--weather")
+        .arg(example("weather-cases.ohlwc"))
+        .args(["--case", "max temperature", "--case", "high wind"])
+        .args(["--route", "main", "--format", "svg,dxf"])
+        .args(["--isoclearance-interval", "5", "--isoclearance-max", "25"])
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("isoclearance:"), "{stdout}");
+    let svg = std::fs::read_to_string(dir.join("main.svg")).unwrap();
+    let dxf = std::fs::read_to_string(dir.join("main.dxf")).unwrap();
+    assert!(svg.contains(r#"class="OHL_ISOCLEARANCE""#));
+    assert!(dxf.contains("\n  8\nOHL_ISOCLEARANCE\n"));
+    std::fs::remove_dir_all(&dir).ok();
+}
