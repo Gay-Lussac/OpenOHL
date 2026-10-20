@@ -59,6 +59,7 @@
   - [ADR-0008: Spatial chunk index](adr/0008-spatial-chunk-index.md)
   - [ADR-0009: GUI toolkit — egui with wgpu](adr/0009-gui-toolkit.md)
   - [ADR-0010: Version control, edit rights and reviews](adr/0010-version-control.md)
+  - [ADR-0011: Licence — AGPL-3.0-or-later, plugin interface MPL-2.0](adr/0011-license-agpl.md)
   - [ADR template](adr/0000-template.md)
 
 # Development

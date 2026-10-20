@@ -1,6 +1,6 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Help › **User guide**, **Start from scratch (tutorial)** and **About**:
 //! the manual on this computer (the book built by `mdbook build` in
@@ -176,7 +176,7 @@ pub fn about_ui(ui: &mut egui::Ui) {
     );
     ui.label(
         egui::RichText::new(
-            "Free software under the Mozilla Public License 2.0. Help › User guide and Start \
+            "Free software under the GNU Affero General Public License v3.0 or later. Help › User guide and Start \
              from scratch open the manual on this computer.",
         )
         .small()

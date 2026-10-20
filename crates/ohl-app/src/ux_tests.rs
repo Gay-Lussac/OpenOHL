@@ -1,6 +1,6 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The first steps of a new user: the New project window, the starter
 //! template, the Next steps page, the Help menu, the clearance windows'
@@ -226,7 +226,7 @@ fn help_opens_the_manual_and_about() {
     h.run();
     h.get_by_label("About OHL-Design").click();
     h.run();
-    h.get_by_label_contains("Mozilla Public License");
+    h.get_by_label_contains("GNU Affero General Public License");
 }
 
 /// A clearance window always has a rule: it starts with the ground's,

@@ -55,7 +55,7 @@ Every calculation PR must include:
    cargo install mdbook && mdbook build   # output in target/book
    ```
 
-Every source file starts with the MPL-2.0 header (copy it from an existing file). Iterative or long-running code must have exit clauses (see docs/development/performance.md).
+Every source file starts with the licence header (copy it from an existing file): AGPL-3.0-or-later for the program, MPL-2.0 for the plugin interface and the plugins under `plugins/` and `crates/ohl-plugins/wit/`. Iterative or long-running code must have exit clauses (see docs/development/performance.md).
 
 ## Workflow
 

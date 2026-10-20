@@ -1,6 +1,6 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! A small XML reader (a tree of elements) and writing helpers, for the
 //! XML formats (OHL XML, LandXML); [`decode`] gives a file's text in the

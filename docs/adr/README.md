@@ -4,7 +4,7 @@
 
 | # | Title | Status |
 |---|---|---|
-| [0001](0001-license.md) | License (MPL-2.0) | Accepted |
+| [0001](0001-license.md) | License (MPL-2.0) | Superseded by 0011 |
 | [0002](0002-tech-stack.md) | Tech stack (Rust) | Accepted |
 | [0003](0003-plugin-mechanism.md) | Plugin mechanism (WASM + Python + in-tree Rust) | Accepted |
 | [0004](0004-project-file-format.md) | Project file format (SQLite + JSON export) | Accepted |
@@ -14,5 +14,6 @@
 | [0008](0008-spatial-chunk-index.md) | Spatial chunk index | Accepted |
 | [0009](0009-gui-toolkit.md) | GUI toolkit: egui with wgpu | Accepted |
 | [0010](0010-version-control.md) | Version control, edit rights and reviews in the project file | Accepted |
+| [0011](0011-license-agpl.md) | Licence (AGPL-3.0-or-later; plugin interface MPL-2.0) | Accepted |
 
 Template: copy `0000-template.md`, give it the next number, open a PR.

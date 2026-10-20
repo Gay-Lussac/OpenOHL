@@ -6,7 +6,7 @@
 
 - [ ] Tests added or updated (`cargo test --workspace`)
 - [ ] `cargo fmt --all` and `cargo clippy --workspace --all-targets -- -D warnings` pass
-- [ ] New source files carry the MPL-2.0 header
+- [ ] New source files carry the licence header (AGPL-3.0-or-later; MPL-2.0 under `plugins/` and `crates/ohl-plugins/wit/`)
 
 For engineering calculations:
 
