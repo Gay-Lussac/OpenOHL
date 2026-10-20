@@ -27,6 +27,14 @@ use crate::geometry::P3;
 use crate::positions::{Positions, parallel};
 use crate::vegetation::SpanIndex;
 
+/// The steepest ground slope taken for the bounds (rise over run, 79°):
+/// steeper TIN triangles are taken as this.
+///
+/// **Simplification:** on ground steeper than 5:1 a coarse cell whose
+/// corners are just above the top line could hold a line and not be
+/// refined. Such slopes are rare outside TIN artefacts and cliffs.
+pub const MAX_SLOPE: f64 = 5.0;
+
 /// What isoclearance lines are drawn.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IsoParams {
@@ -192,6 +200,9 @@ pub fn isoclearance(
             slope = slope.max(m);
         }
     }
+    // A TIN's near-vertical triangles (artefacts, cliffs) would make the
+    // reach huge: slopes above MAX_SLOPE are taken as MAX_SLOPE.
+    let slope = slope.min(MAX_SLOPE);
     let reach = top + diag * (1.0 + slope * slope).sqrt() + delta;
     let index = SpanIndex::new(positions, reach, 25f64.max(reach / 4.0));
     let value = |x: f64, y: f64| -> (f64, f64) {
@@ -233,7 +244,9 @@ pub fn isoclearance(
                 (j0 + j as i64) as f64 * coarse + 0.5 * coarse,
             );
             let low = known.iter().copied().fold(f64::INFINITY, f64::min);
-            let m = steepest(ground, cx, cy, 0.5 * diag).unwrap_or(0.0);
+            let m = steepest(ground, cx, cy, 0.5 * diag)
+                .unwrap_or(0.0)
+                .min(MAX_SLOPE);
             if low - diag * (1.0 + m * m).sqrt() > top {
                 continue;
             }
