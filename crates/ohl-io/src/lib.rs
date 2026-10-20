@@ -25,6 +25,7 @@ pub mod neutral;
 pub mod ohlxml;
 pub mod plugin;
 pub mod projects;
+pub mod safety_volume;
 pub mod shapefile;
 pub mod surfaces;
 pub mod tables;
