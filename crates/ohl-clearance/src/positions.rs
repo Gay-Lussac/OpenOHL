@@ -257,7 +257,7 @@ impl Band {
 const BAND: f64 = 20.0;
 
 /// The bands of a position (or of all of a span's positions) along the
-/// span's axis, on a grid of [`BAND`] from the axis's start (the first
+/// span's axis, on a grid of 20 m from the axis's start (the first
 /// and last bands reach on beyond the ends): a lower bound of the distance
 /// from any point to the centre line, from the bands near the point's
 /// place — the speed's "one bound per span before the exact distance",
