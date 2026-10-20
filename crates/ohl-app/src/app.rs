@@ -324,6 +324,8 @@ pub struct Ready {
     pub open_project: Option<std::path::PathBuf>,
     /// Criteria › Design code.
     pub design_code: crate::codes::DesignCodeWindow,
+    /// The Clearances tab's rule editor and its rule presets.
+    pub rule_editor: crate::rule_editor::RuleEditor,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ohl_line::SectionPoint>,
     /// Add jumper: the first end right-clicked when it is a tap (a clamp
@@ -441,6 +443,7 @@ impl Ready {
             backgrounds: Default::default(),
             open_project: None,
             design_code: Default::default(),
+            rule_editor: Default::default(),
             jumper_from: None,
             spacer_from: None,
             jumper_tap: None,
@@ -6855,6 +6858,8 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         }
         None => {}
     }
+    crate::rule_editor::ui(ui, r);
+    let c = &mut r.clearances;
     if c.stale && !c.running() && c.report.is_some() {
         ui.colored_label(ui.visuals().warn_fg_color, "out of date: the model changed");
     }
@@ -8216,6 +8221,7 @@ impl eframe::App for App {
                 }
                 ready.model.set_check_plugins(self.plugins.check_dirs());
                 crate::codes::window(&ctx, ready, &self.plugins);
+                crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
                     ready.vegetation.ui(&ctx, &ready.model),

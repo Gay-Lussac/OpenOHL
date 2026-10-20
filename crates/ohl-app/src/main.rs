@@ -62,6 +62,8 @@ mod pylon_builder;
 mod python;
 mod remote;
 mod replace;
+mod requirement_ui;
+mod rule_editor;
 mod scene;
 mod selection;
 mod span_tool;
@@ -100,6 +102,8 @@ mod glyph_tests;
 mod handle_tests;
 #[cfg(test)]
 mod member_tests;
+#[cfg(test)]
+mod rule_editor_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

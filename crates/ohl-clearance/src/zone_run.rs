@@ -134,7 +134,10 @@ pub fn run_zone_check(
     let reach = match zone.search {
         Some(d) => d,
         None => {
-            rules.iter().map(|r| r.distance).fold(0.0, f64::max)
+            rules
+                .iter()
+                .map(|r| r.distance.largest(&line_voltages(line)))
+                .fold(0.0, f64::max)
                 + line.defaults.clearance_search_margin
                 + rules
                     .iter()
