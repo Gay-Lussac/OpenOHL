@@ -30,6 +30,7 @@
 //! [`Calculation`] and registering it in a [`Registry`].
 
 mod builtin;
+mod textbook;
 
 use std::collections::BTreeMap;
 use std::fmt::{self, Write as _};
@@ -74,6 +75,7 @@ impl Registry {
     pub fn with_builtin() -> Self {
         let mut registry = Self::new();
         builtin::register(&mut registry);
+        textbook::register(&mut registry);
         registry
     }
 
