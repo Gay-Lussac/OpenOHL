@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+base64 = "0.23"
 ohl-cables.workspace = true
 ohl-core.workspace = true
 ohl-line.workspace = true
