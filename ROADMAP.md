@@ -40,7 +40,7 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 140 validation cases pass (47 textbook and CIGRE TB 324 cases added
+- 142 validation cases pass (47 textbook and CIGRE TB 324 cases added
   2026-10-20); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
