@@ -263,6 +263,97 @@ pub(crate) fn wire_load_in_line_wind(
     Vector3::new(push.x, push.y, -load.vertical.si())
 }
 
+/// The weather cases of a section's spans: the section's case, and spans
+/// that carry a case of their own (one span iced while its neighbours are
+/// not, unequal ice, …). A section solved with [`SpanCases::uniform`] is
+/// solved exactly as with its one case, bit for bit.
+///
+/// What a span's own case sets: its load per metre (weight, ice, the wind
+/// on its iced diameter, from its side), its temperature (the thermal
+/// strain of its wire, and the stress-strain curves' strain at its
+/// tension), the forces on the objects on it, and its surface radius. The
+/// section's case (`base`) sets the rest: the wind on the strings, the
+/// jumpers on the clamps, the core branch of a bimetallic cable (one per
+/// section), and the rolling of a section in the blocks — a section in the
+/// blocks rolls in the section's case and the spans' own cases then act on
+/// it clipped in (as point and spread loads do: ice arriving on one span
+/// of a clipped-in wire swings the strings into it).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpanCases {
+    /// The section's case: every span without its own.
+    pub base: WeatherCase,
+    /// Spans with their own case, by span index in the section.
+    pub spans: std::collections::BTreeMap<usize, WeatherCase>,
+}
+
+impl SpanCases {
+    /// One case for every span.
+    pub fn uniform(case: WeatherCase) -> Self {
+        Self {
+            base: case,
+            spans: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// With span `span` in `case`.
+    pub fn with_span(mut self, span: usize, case: WeatherCase) -> Self {
+        self.spans.insert(span, case);
+        self
+    }
+
+    /// The case of span `span`.
+    pub fn of(&self, span: usize) -> &WeatherCase {
+        self.spans.get(&span).unwrap_or(&self.base)
+    }
+
+    /// Every span in the section's case.
+    pub fn is_uniform(&self) -> bool {
+        self.spans.values().all(|c| *c == self.base)
+    }
+
+    /// The cases with the wind's side swapped.
+    fn flipped(&self) -> Self {
+        let flip = |c: &WeatherCase| WeatherCase {
+            wind_from: c.wind_from.opposite(),
+            ..c.clone()
+        };
+        Self {
+            base: flip(&self.base),
+            spans: self.spans.iter().map(|(s, c)| (*s, flip(c))).collect(),
+        }
+    }
+}
+
+/// The cases of a section's spans, borrowed (the solver's view of
+/// [`SpanCases`], or one case for all).
+#[derive(Clone, Copy)]
+struct Cases<'a> {
+    base: &'a WeatherCase,
+    own: Option<&'a std::collections::BTreeMap<usize, WeatherCase>>,
+}
+
+impl<'a> Cases<'a> {
+    /// One case for every span.
+    fn one(case: &'a WeatherCase) -> Self {
+        Self {
+            base: case,
+            own: None,
+        }
+    }
+
+    fn of_spans(cases: &'a SpanCases) -> Self {
+        Self {
+            base: &cases.base,
+            own: Some(&cases.spans),
+        }
+    }
+
+    /// The case of span `s`.
+    fn of(&self, s: usize) -> &'a WeatherCase {
+        self.own.and_then(|m| m.get(&s)).unwrap_or(self.base)
+    }
+}
+
 /// Stringing reference of a section: clamp positions and unstressed lengths
 /// at a reference temperature.
 #[derive(Clone)]
@@ -722,14 +813,14 @@ fn build(
     layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     with_loads: bool,
     extras: &Extras,
 ) -> Result<Built, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let ea = cable.axial_stiffness().si();
-    let thermal =
-        (cable.thermal_expansion() * (case.temperature.celsius() - reference.temperature)).exp();
+    // The section's case: the wind on the strings.
+    let case = cases.base;
     let gravity = Vector3::new(0.0, 0.0, -cable.weight().si());
     let n = layout.len();
 
@@ -832,6 +923,11 @@ fn build(
     let mut span_points: Vec<(String, usize)> = Vec::new();
     let mut span_elements = Vec::with_capacity(n - 1);
     for s in 0..n - 1 {
+        // The span's own case (the section's, unless it has its own).
+        let case = cases.of(s);
+        let thermal = (cable.thermal_expansion()
+            * (case.temperature.celsius() - reference.temperature))
+            .exp();
         let length = reference.lengths[s] * thermal;
         let d = reference.clamps[s + 1] - reference.clamps[s];
         let load = span_load(case, cable, d);
@@ -1017,7 +1113,7 @@ fn solve_built(
     layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     budget: &Budget,
     loads: Option<&Extras>,
 ) -> Result<(Built, ohl_wirefe::Solution), LineError> {
@@ -1027,7 +1123,7 @@ fn solve_built(
         layout,
         reference,
         cable,
-        case,
+        cases,
         loads.is_some(),
         loads.unwrap_or(&none),
     )?;
@@ -1090,7 +1186,7 @@ fn estimate_strain_weights(
         &held,
         &reference,
         cable,
-        &case,
+        Cases::one(&case),
         budget,
         Some(&Extras::default()),
     )?;
@@ -1196,8 +1292,16 @@ fn reference(
             lengths,
             temperature,
         };
-        let (built, solved) = solve_built(section, layout, &reference, cable, &case, budget, None)
-            .map_err(|e| invalid(format!("stringing: {e}")))?;
+        let (built, solved) = solve_built(
+            section,
+            layout,
+            &reference,
+            cable,
+            Cases::one(&case),
+            budget,
+            None,
+        )
+        .map_err(|e| invalid(format!("stringing: {e}")))?;
         let previous = clamps.clone();
         clamps = settled(layout, &clamps, &built, &solved);
         // Converged when the clamps used for the next pass (after the
@@ -1406,7 +1510,8 @@ fn rolled(
         budget,
     )?;
     for _ in 0..20 {
-        let (built, solved) = solve_built(section, layout, &r, cable, case, budget, None)?;
+        let (built, solved) =
+            solve_built(section, layout, &r, cable, Cases::one(case), budget, None)?;
         let clamps = settled(layout, &r.clamps, &built, &solved);
         let moved = clamps
             .iter()
@@ -1559,11 +1664,6 @@ pub fn solve_section_coupled(
     budget: &Budget,
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
-    use crate::condition::{Condition, Method};
-    // Places given by station: as fractions of their spans.
-    let section = &*line.section_with_fractions(section);
-    // The line's bimetallic model for cables that do not give their own.
-    let cable = &*line.bimetallic.apply(cable);
     // The wind's side is the line's: a section whose points run against
     // the line's direction is solved with the side swapped, so its spans
     // blow to the same side as those entered along it.
@@ -1577,10 +1677,82 @@ pub fn solve_section_coupled(
     } else {
         case
     };
+    solve_cases(line, section, cable, Cases::one(case), budget, coupling)
+}
+
+/// Solves one section of a line with a weather case per span
+/// ([`SpanCases`]): the spans with their own case loaded by it, the others
+/// by the section's case. With every span in the section's case, the
+/// same as [`solve_section`] bit for bit.
+///
+/// Spans in different cases need the finite-element method: a section
+/// solved by the ruling span (one horizontal tension for all spans) with
+/// cases that differ is an error.
+///
+/// Expected cost: as [`solve_section`].
+pub fn solve_section_span_cases(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    cases: &SpanCases,
+    budget: &Budget,
+) -> Result<SectionShape, LineError> {
+    solve_section_span_cases_coupled(line, section, cable, cases, budget, &Coupling::default())
+}
+
+/// [`solve_section_span_cases`] sharing assemblies with other sections.
+pub fn solve_section_span_cases_coupled(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    cases: &SpanCases,
+    budget: &Budget,
+    coupling: &Coupling,
+) -> Result<SectionShape, LineError> {
+    if section.calculation.method() == crate::condition::Method::Rs && !cases.is_uniform() {
+        return Err(LineError::Invalid(format!(
+            "section {}: spans in different weather cases need the finite-element method \
+             (the ruling span has one tension for all spans)",
+            section.id
+        )));
+    }
+    // The wind's side is the line's (as [`solve_section_coupled`]).
+    let flipped;
+    let cases = if against_the_line(line, section) {
+        flipped = cases.flipped();
+        &flipped
+    } else {
+        cases
+    };
+    solve_cases(
+        line,
+        section,
+        cable,
+        Cases::of_spans(cases),
+        budget,
+        coupling,
+    )
+}
+
+/// A section in its spans' cases (the wind's side already the line's).
+fn solve_cases(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    cases: Cases<'_>,
+    budget: &Budget,
+    coupling: &Coupling,
+) -> Result<SectionShape, LineError> {
+    use crate::condition::{Condition, Method};
+    // Places given by station: as fractions of their spans.
+    let section = &*line.section_with_fractions(section);
+    // The line's bimetallic model for cables that do not give their own.
+    let cable = &*line.bimetallic.apply(cable);
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
-        Method::Fe => solve_fe(line, section, cable, case, final_state, budget, coupling),
-        Method::Rs => solve_rs(line, section, cable, case, final_state, budget),
+        Method::Fe => solve_fe(line, section, cable, cases, final_state, budget, coupling),
+        // Uniform cases only (checked by the callers).
+        Method::Rs => solve_rs(line, section, cable, cases.base, final_state, budget),
     };
     match calc.condition() {
         Condition::Initial => solve(None),
@@ -1672,7 +1844,15 @@ fn strung(
         "stringing",
         Temperature::from_celsius(reference.temperature),
     );
-    let (built, solution) = solve_built(section, &layout, &reference, cable, &still, budget, None)?;
+    let (built, solution) = solve_built(
+        section,
+        &layout,
+        &reference,
+        cable,
+        Cases::one(&still),
+        budget,
+        None,
+    )?;
     let clamps: Vec<Vector3<f64>> = built
         .clamps
         .iter()
@@ -2004,11 +2184,13 @@ fn solve_fe(
     line: &Line,
     section: &Section,
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     final_state: Option<&FinalState>,
     budget: &Budget,
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
+    // The section's case: the jumpers, the rolling, the core branch.
+    let case = cases.base;
     let (layout, estimated_weights) =
         estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
@@ -2039,7 +2221,13 @@ fn solve_fe(
                 ohl_core::units::Temperature::from_celsius(reference.temperature),
             );
             let (b, sol) = solve_built(
-                section, &layout, &reference, cable, &stringing, budget, None,
+                section,
+                &layout,
+                &reference,
+                cable,
+                Cases::one(&stringing),
+                budget,
+                None,
             )?;
             Some(span_tensions(&b, &sol))
         }
@@ -2074,7 +2262,7 @@ fn solve_fe(
         &loaded,
         &reference,
         cable,
-        case,
+        cases,
         budget,
         Some(&extras),
     )?;
@@ -2083,9 +2271,12 @@ fn solve_fe(
         use ohl_core::units::{Force, Temperature};
         let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
         let ea = cable.axial_stiffness().si();
-        let thermal = (cable.thermal_expansion()
-            * (case.temperature.celsius() - reference.temperature))
-            .exp();
+        // Each span at its own case's temperature.
+        let thermal = |s: usize| {
+            (cable.thermal_expansion()
+                * (cases.of(s).temperature.celsius() - reference.temperature))
+                .exp()
+        };
         let t_ref = Temperature::from_celsius(reference.temperature);
         let strain = |t: f64, at: Temperature, state: &MaterialState| {
             m.strain(Force::from_si(t), at, state)
@@ -2105,8 +2296,8 @@ fn solve_fe(
             let mut change: f64 = 0.0;
             for (s, &t) in tensions.iter().enumerate() {
                 let (stretched, eps_ref) = at_stringing[s];
-                let eps = strain(t, case.temperature, &material)?;
-                let k = stretched * (1.0 + eps) / ((1.0 + eps_ref) * thermal * (1.0 + t / ea));
+                let eps = strain(t, cases.of(s).temperature, &material)?;
+                let k = stretched * (1.0 + eps) / ((1.0 + eps_ref) * thermal(s) * (1.0 + t / ea));
                 change = change.max(((k - factors[s]) / factors[s]).abs());
                 factors[s] = k;
             }
@@ -2122,7 +2313,7 @@ fn solve_fe(
                 &loaded,
                 &reference,
                 cable,
-                case,
+                cases,
                 budget,
                 Some(&extras),
             )?;
@@ -2145,7 +2336,7 @@ fn solve_fe(
             &loaded,
             &reference,
             &core,
-            case,
+            cases,
             budget,
             Some(&extras),
         )?;
@@ -2195,7 +2386,7 @@ fn solve_fe(
             .expect("points");
         let sag = crate::jumper::sag_below_chord(&points, a, b);
         spans.push(SpanShape {
-            surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
+            surface_radius: cases.of(s).iced_diameter(cable.diameter).si() / 2.0,
             polyline_error: off,
             points: points.iter().map(|q| p(*q)).collect(),
             horizontal_tension: solution.cables[elements[0]].horizontal,
@@ -4864,5 +5055,144 @@ mod spacer_tests {
         let line = spaced(Some(0.7 * gap), Some(10_000.0));
         let inc = crate::incremental::SolvedLine::solve(&line, &lib, &case);
         assert_eq!(inc.shapes(&line), solve(&line));
+    }
+}
+
+#[cfg(test)]
+mod span_case_tests {
+    use super::*;
+    use crate::condition::Calculation;
+    use ohl_core::units::{Length, Stress, Temperature};
+    use std::path::Path;
+
+    fn library() -> ohl_cables::Library {
+        ohl_cables::Library::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
+        )
+        .unwrap()
+    }
+
+    fn iced(t: f64, ice_mm: f64, wind: f64) -> WeatherCase {
+        WeatherCase {
+            ice_thickness: Length::from_millimeters(ice_mm),
+            wind_pressure: Stress::from_pascals(wind),
+            ..WeatherCase::still("iced", Temperature::from_celsius(t))
+        }
+    }
+
+    /// Every span in the section's case: the section solved bit for bit
+    /// as with its one case — every section of the example (rolling,
+    /// clipped, marker balls, jumpers), still, hot, iced and windy; also
+    /// with a span given the section's case as its own.
+    #[test]
+    fn one_case_for_every_span_is_the_section_solved_as_before() {
+        let line = crate::tests::example();
+        let lib = library();
+        let budget = default_fe_budget();
+        let cases = [
+            WeatherCase::still("15", Temperature::from_celsius(15.0)),
+            WeatherCase::still("80", Temperature::from_celsius(80.0)),
+            iced(-5.0, 20.0, 400.0),
+        ];
+        let mut solved = 0;
+        for case in &cases {
+            for section in &line.sections {
+                let cable = lib.get(&section.cable).unwrap();
+                let one = solve_section(&line, section, cable, case, &budget);
+                let all = SpanCases::uniform(case.clone());
+                let uniform = solve_section_span_cases(&line, section, cable, &all, &budget);
+                let given = all.clone().with_span(0, case.clone());
+                assert!(given.is_uniform());
+                let own = solve_section_span_cases(&line, section, cable, &given, &budget);
+                match (one, uniform, own) {
+                    (Ok(a), Ok(b), Ok(c)) => {
+                        assert_eq!(a, b, "{} {}", section.id, case.name);
+                        assert_eq!(a, c, "{} {}", section.id, case.name);
+                        solved += 1;
+                    }
+                    (Err(a), Err(b), Err(c)) => {
+                        assert_eq!(a.to_string(), b.to_string());
+                        assert_eq!(a.to_string(), c.to_string());
+                    }
+                    (a, b, c) => panic!("{a:?}\n{b:?}\n{c:?}"),
+                }
+            }
+        }
+        assert!(solved >= 3 * line.sections.len() - 1, "{solved}");
+    }
+
+    /// One span iced (10 mm, −5 °C) in a section otherwise bare at −5 °C:
+    /// that span sags more and is the only one with the iced radius; its
+    /// tension rises, the strings at its ends swing into it (its clamps
+    /// move towards its middle), and the neighbours are pulled tighter
+    /// too. With wind, the iced span is blown further than the same span
+    /// bare in the same wind (the wind on its iced diameter).
+    #[test]
+    fn one_iced_span_sags_and_pulls_its_strings_in() {
+        let mut line = crate::tests::example();
+        line.sections[0].clear_point_loads();
+        let lib = library();
+        let section = &line.sections[0];
+        let cable = lib.get(&section.cable).unwrap();
+        let budget = default_fe_budget();
+        let bare = iced(-5.0, 0.0, 0.0);
+        let k = 1;
+        let base = solve_section(&line, section, cable, &bare, &budget).unwrap();
+        let cases = SpanCases::uniform(bare.clone()).with_span(k, iced(-5.0, 10.0, 0.0));
+        assert!(!cases.is_uniform());
+        let one = solve_section_span_cases(&line, section, cable, &cases, &budget).unwrap();
+        assert!(one.spans[k].sag > base.spans[k].sag + 0.1);
+        let r_bare = cable.diameter.si() / 2.0;
+        for (s, span) in one.spans.iter().enumerate() {
+            let r = if s == k { r_bare + 0.01 } else { r_bare };
+            assert!((span.surface_radius - r).abs() < 1e-12, "{s}");
+            assert!(
+                span.horizontal_tension > base.spans[s].horizontal_tension,
+                "{s}"
+            );
+        }
+        // The clamps at the iced span's ends move towards its middle.
+        let at = |s: &SectionShape, i: usize| v(s.clamps[i]);
+        let towards = |i: usize, j: usize| {
+            let d = (at(&one, j) - at(&one, i)).xy().normalize();
+            (at(&one, i) - at(&base, i)).xy().dot(&d)
+        };
+        assert!(towards(k, k + 1) > 0.01, "{}", towards(k, k + 1));
+        assert!(towards(k + 1, k) > 0.01, "{}", towards(k + 1, k));
+        // Wind on the iced diameter: blown further than bare in the same
+        // wind.
+        let windy = iced(-5.0, 0.0, 400.0);
+        let blown_bare = solve_section(&line, section, cable, &windy, &budget).unwrap();
+        let cases = SpanCases::uniform(windy.clone()).with_span(k, iced(-5.0, 10.0, 400.0));
+        let blown = solve_section_span_cases(&line, section, cable, &cases, &budget).unwrap();
+        let out = |s: &SectionShape| {
+            let chord = (v(s.clamps[k]) + v(s.clamps[k + 1])) / 2.0;
+            (v(s.spans[k].mid_point) - chord).xy().norm()
+        };
+        assert!(
+            out(&blown) > out(&blown_bare),
+            "{} {}",
+            out(&blown),
+            out(&blown_bare)
+        );
+    }
+
+    /// The ruling span has one tension for all spans: spans in different
+    /// cases are refused; in one case they solve.
+    #[test]
+    fn the_ruling_span_takes_one_case_only() {
+        let mut line = crate::tests::example();
+        line.sections[0].clear_point_loads();
+        line.sections[0].calculation = Calculation::INITIAL_RS;
+        let lib = library();
+        let cable = lib.get(&line.sections[0].cable).unwrap();
+        let bare = iced(-5.0, 0.0, 0.0);
+        let budget = default_fe_budget();
+        let all = SpanCases::uniform(bare.clone());
+        let section = &line.sections[0];
+        assert!(solve_section_span_cases(&line, section, cable, &all, &budget).is_ok());
+        let one = all.with_span(1, iced(-5.0, 10.0, 0.0));
+        let e = solve_section_span_cases(&line, section, cable, &one, &budget).unwrap_err();
+        assert!(e.to_string().contains("finite-element"), "{e}");
     }
 }

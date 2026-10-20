@@ -1,0 +1,59 @@
+# A weather case per span (ohl_line::solve::solve_section_span_cases;
+# theory: Wire system FE › A weather case per span). Two level 300 m spans,
+# dead-end clamps fixed at (0, 27) and (600, 27) m, a suspension string in
+# the middle from (300, 30) m: 3 m, 800 N, axial stiffness 5e7 N. Cable
+# EA = 34.64 MN, alpha = 18.9e-6 /K, 1.6285 kg/m; strung at 28 kN at
+# 15 °C. Span 0 carries a case of its own; span 1 the section's.
+#
+# Reference: benchmarks/wirefe/reference_span_cases.py — the closed-form
+# elastic catenary of each span (its own implementation) and Newton on
+# the middle clamp's position until the two spans' end forces, the
+# string's pull and half its weight balance. Hand checks:
+#   001 both spans alike: the string stays plumb, H the same in both.
+#   002 span 0 iced: H0 > H1 and the string swings into span 0 (negative)
+#       by tan(phi) = (H1 - H0) / (vertical at the clamp):
+#       H0 - H1 = 338.2 N = 6700.66 N · sin(2.893°) — the iced span sags
+#       more, pulls the clamp 0.151 m towards it.
+#   003 span 0 hot (60 °C), span 1 at 15 °C: the hot span slackens, the
+#       string swings towards span 1 (positive), H1 > H0.
+
+[[case]]
+id = "spancases-001"
+title = "Both spans in the same case (-5 °C, bare): the string plumb"
+calculation = "line.span_cases"
+reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
+max_seconds = 2.0
+inputs = { temperature = "-5 °C", span_temperature = "-5 °C", span_ice_load = "0 N/m" }
+expected.h0_n = { value = 31740.41912, rel_tol = 1e-7 }
+expected.h1_n = { value = 31740.41912, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 300.0, abs_tol = 1e-6 }
+expected.swing_deg = { value = 0.0, abs_tol = 1e-6 }
+expected.string_n = { value = 5191.119825, rel_tol = 1e-7 }
+
+[[case]]
+id = "spancases-002"
+title = "Span 0 iced (10 N/m more) at -5 °C, span 1 bare: the string swings into span 0"
+calculation = "line.span_cases"
+reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
+max_seconds = 2.0
+inputs = { temperature = "-5 °C", span_temperature = "-5 °C", span_ice_load = "10 N/m" }
+expected.h0_n = { value = 38948.61825, rel_tol = 1e-7 }
+expected.h1_n = { value = 38610.39965, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 299.8485535, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.00342256, abs_tol = 1e-6 }
+expected.swing_deg = { value = -2.893257694, abs_tol = 1e-6 }
+expected.string_n = { value = 6700.660062, rel_tol = 1e-7 }
+
+[[case]]
+id = "spancases-003"
+title = "Span 0 at 60 °C, span 1 at 15 °C: the string swings towards span 1"
+calculation = "line.span_cases"
+reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
+max_seconds = 2.0
+inputs = { temperature = "15 °C", span_temperature = "60 °C", span_ice_load = "0 N/m" }
+expected.h0_n = { value = 24704.62322, rel_tol = 1e-7 }
+expected.h1_n = { value = 24916.58222, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 300.1223033, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.00218181, abs_tol = 1e-6 }
+expected.swing_deg = { value = 2.336226079, abs_tol = 1e-6 }
+expected.string_n = { value = 5199.720252, rel_tol = 1e-7 }

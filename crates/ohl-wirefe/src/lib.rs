@@ -13,5 +13,5 @@ pub mod section;
 pub use catenary_element::{CableProperties, ElementError, ElementState};
 pub use model::{CableElement, FeError, Model, Node, Solution, TrussElement, default_fe_budget};
 pub use section::{
-    Assembly, CableSpec, FeSection, LoadSite, SectionResult, SectionSpec, State, Support,
+    Assembly, CableSpec, FeSection, LoadSite, SectionResult, SectionSpec, SpanState, State, Support,
 };
