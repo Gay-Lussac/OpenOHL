@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10" viewBox="0 0 20 10">
+  <!-- An invented test mark. -->
+  <rect x="0.5" y="0.5" width="19" height="9" fill="none" stroke="#333333"/>
+  <circle cx="5" cy="5" r="3" fill="#2a7f3f"/>
+</svg>

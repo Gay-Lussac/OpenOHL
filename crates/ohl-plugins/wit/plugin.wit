@@ -160,3 +160,55 @@ world project-plugin {
     /// Reads a project from `data` in format `format`.
     export import-project: func(format: string, data: list<u8>, options: list<tuple<string, string>>) -> result<project, string>;
 }
+
+/// Sheet templates a plugin offers as presets: page, title block, logos,
+/// band rows, legend, key map, the styles of the line's kinds and
+/// versions — everything of a plan and profile sheet (optional export of
+/// any plugin, extension point `sheet-templates`). Added in interface
+/// version 0.3 without changing anything else: plugins built before load
+/// as they are, and give none.
+interface sheet-templates {
+    /// An image a template names (`image = "logo.svg"` in a title block
+    /// cell).
+    record sheet-image {
+        /// The name the template uses, e.g. "logo.svg".
+        name: string,
+        /// "image/svg+xml", "image/png" or "image/jpeg".
+        media-type: string,
+        /// The file's bytes.
+        bytes: list<u8>,
+    }
+
+    /// A sheet template preset.
+    record sheet-template {
+        /// Name, unique among the plugin's templates (e.g. "a1-standard").
+        name: string,
+        /// What it is for, shown before it is chosen.
+        description: string,
+        /// The template, as a sheet template file (.ohlsheet, TOML,
+        /// format `ohl-sheet-template`).
+        template: string,
+        /// The images it names.
+        images: list<sheet-image>,
+    }
+
+    /// The plugin's sheet templates. The error says why there are none.
+    sheet-templates: func() -> result<list<sheet-template>, string>;
+}
+
+/// A plugin that gives sheet templates only (extension point
+/// `sheet-templates`).
+world sheet-template-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export sheet-templates;
+}
+
+/// The `sheet-templates` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world sheet-templates-export {
+    export sheet-templates;
+}

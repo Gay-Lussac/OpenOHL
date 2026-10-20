@@ -1,0 +1,12 @@
+[plugin]
+name = "sheet-presets"
+version = "0.1.0"
+description = "Test plugin: sheet templates from its code (an A1 template with an SVG logo) and from its manifest (an A3 template, no code) — invented values"
+sdk = "0.3"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/sheet_presets.wasm"
+extension-points = ["sheet-templates"]
+
+# A template file the plugin ships: no code needed.
+[[sheet-template]]
+file = "templates/test-a3.ohlsheet"

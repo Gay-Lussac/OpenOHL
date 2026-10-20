@@ -111,6 +111,25 @@ pub use rule_presets_bindings::exports::ohl::plugin::rule_presets::RulePreset;
 /// plugins.
 pub const RULE_PRESETS_EXPORT: &str = "ohl:plugin/rule-presets@0.1.0";
 
+mod sheet_templates_bindings {
+    wasmtime::component::bindgen!({
+        world: "sheet-templates-export",
+        path: "wit",
+    });
+}
+
+pub use sheet_templates_bindings::exports::ohl::plugin::sheet_templates::{
+    SheetImage, SheetTemplate,
+};
+
+/// Export name of the optional `sheet-templates` interface of any plugin.
+pub const SHEET_TEMPLATES_EXPORT: &str = "ohl:plugin/sheet-templates@0.1.0";
+
+/// Extension point of plugins giving sheet templates (the
+/// `sheet-templates` export, or `[[sheet-template]]` files in the
+/// manifest).
+pub const SHEET_TEMPLATES: &str = "sheet-templates";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -346,6 +365,36 @@ pub struct TableColumn {
     pub default: Option<String>,
 }
 
+/// A `[[sheet-template]]` of a manifest: a sheet template file (`.ohlsheet`)
+/// the plugin ships, no code needed; its images next to it.
+///
+/// ```toml
+/// [[sheet-template]]
+/// file = "templates/a1.ohlsheet"
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestTemplate {
+    /// The file, inside the plugin's folder.
+    pub file: PathBuf,
+}
+
+/// A sheet template a plugin gives ([`WasmHost::sheet_templates`]): from
+/// its `sheet-templates` export, or a file its manifest names.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplatePreset {
+    /// Its name (a file's: the file name without its extension).
+    pub name: String,
+    /// What it is for.
+    pub description: String,
+    /// The template's text (.ohlsheet).
+    pub template: String,
+    /// Its images: name, media type, bytes (a file's: read next to it).
+    pub images: Vec<(String, String, Vec<u8>)>,
+    /// The folder its images are read from (a file's), else none.
+    pub dir: Option<PathBuf>,
+}
+
 /// The tables a plugin may add columns to.
 pub const COLUMN_TABLES: [&str; 7] = [
     "structures",
@@ -372,6 +421,9 @@ pub struct Manifest {
     /// `[[column]]`s the plugin adds to the app's tables.
     #[serde(default, rename = "column")]
     pub columns: Vec<TableColumn>,
+    /// `[[sheet-template]]` files the plugin ships.
+    #[serde(default, rename = "sheet-template")]
+    pub sheet_templates: Vec<ManifestTemplate>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -405,6 +457,18 @@ impl Manifest {
             path: manifest_path(dir),
             message,
         };
+        for t in &manifest.sheet_templates {
+            let inside = t
+                .file
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)));
+            if !inside || t.file.as_os_str().is_empty() {
+                return Err(bad(format!(
+                    "sheet-template {}: a file inside the plugin's folder",
+                    t.file.display()
+                )));
+            }
+        }
         let mut names = std::collections::BTreeSet::new();
         for c in &manifest.columns {
             if !COLUMN_TABLES.contains(&c.table.as_str()) {
@@ -1245,6 +1309,24 @@ pub fn discover_checks(roots: &[PathBuf]) -> Vec<Found> {
         .collect()
 }
 
+/// The plugins in `roots` giving sheet templates (each as [`discover`]
+/// reads it): those whose manifest lists [`SHEET_TEMPLATES`] or names
+/// template files; a name found again is left out.
+pub fn discover_sheet_templates(roots: &[PathBuf]) -> Vec<Found> {
+    let mut names = std::collections::BTreeSet::new();
+    roots
+        .iter()
+        .flat_map(|r| discover(r))
+        .filter(|f| {
+            f.provides(SHEET_TEMPLATES)
+                || f.manifest
+                    .as_ref()
+                    .is_ok_and(|m| !m.sheet_templates.is_empty())
+        })
+        .filter(|f| names.insert(f.name()))
+        .collect()
+}
+
 /// The design-code plugins in `roots` (each as [`discover`] reads it):
 /// those whose manifest lists [`DESIGN_CODE`], usable or not; a name
 /// found again is left out.
@@ -1290,6 +1372,72 @@ fn format_line(
 }
 
 impl WasmHost {
+    /// The sheet templates of the plugin in `dir`: the files its manifest
+    /// names (read as they are, no code run), then those of its
+    /// `sheet-templates` export when it is a WebAssembly plugin built with
+    /// it (one built without it, or before it, gives none). Its own error
+    /// (why it has none) comes back as an `Err` naming it.
+    pub fn sheet_templates(&self, dir: &Path) -> Result<Vec<TemplatePreset>, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        let mut out = Vec::new();
+        for t in &manifest.sheet_templates {
+            let path = dir.join(&t.file);
+            let text = std::fs::read_to_string(&path).map_err(|e| PluginError::Manifest {
+                path: path.clone(),
+                message: e.to_string(),
+            })?;
+            out.push(TemplatePreset {
+                name: t
+                    .file
+                    .file_stem()
+                    .map_or(String::new(), |s| s.to_string_lossy().into_owned()),
+                description: String::new(),
+                template: text,
+                images: Vec::new(),
+                dir: path.parent().map(Path::to_path_buf),
+            });
+        }
+        // Code: only a WebAssembly plugin whose entry is there.
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(out);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, SHEET_TEMPLATES_EXPORT)
+            .is_none()
+        {
+            return Ok(out);
+        }
+        let name = p.manifest.plugin.name.clone();
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest.plugin.name, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = sheet_templates_bindings::SheetTemplatesExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_sheet_templates()
+            .call_sheet_templates(&mut p.store)
+            .map_err(|e| classify(e, &name, "sheet-templates", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        out.extend(given.into_iter().map(|t| {
+            TemplatePreset {
+                name: t.name,
+                description: t.description,
+                template: t.template,
+                images: t
+                    .images
+                    .into_iter()
+                    .map(|i| (i.name, i.media_type, i.bytes))
+                    .collect(),
+                dir: None,
+            }
+        }));
+        Ok(out)
+    }
+
     /// Loads the plugin in `dir` in the world of each extension point its
     /// manifest lists (`design-code`, `io`, `terrain`, `project`, `check`;
     /// none of these: the minimal `plugin` world) and says what it
@@ -1911,5 +2059,42 @@ mod tests {
         // The host still works after the interruption.
         let mut other = host.load(&dir).unwrap();
         assert_eq!(other.describe().unwrap().name, "runaway");
+    }
+
+    /// A plugin gives sheet templates from its `sheet-templates` export
+    /// (with its images) and from its manifest's files (no code); a plugin
+    /// built without the export (or before it) still loads and gives
+    /// none.
+    #[test]
+    fn plugins_give_sheet_templates() {
+        let Some(dir) = built_plugin("tests/sheet-presets") else {
+            return;
+        };
+        let host = WasmHost::new().unwrap();
+        let list = host.sheet_templates(&dir).unwrap();
+        let names: Vec<&str> = list.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["test-a3", "test-a1"]);
+        // The file: read as it is, its images next to it.
+        assert!(list[0].template.contains("name = \"test-a3\""));
+        assert_eq!(
+            list[0].dir.as_deref(),
+            Some(dir.join("templates").as_path())
+        );
+        // The export: its text and its logo.
+        assert!(list[1].template.contains("format = \"ohl-sheet-template\""));
+        assert_eq!(list[1].images.len(), 1);
+        assert_eq!(list[1].images[0].0, "test-logo.svg");
+        assert!(list[1].images[0].2.starts_with(b"<svg"));
+        let found = discover_sheet_templates(&[dir.join("..")]);
+        assert!(found.iter().any(|f| f.name() == "sheet-presets"));
+        assert!(!found.iter().any(|f| f.name() == "code-old"));
+        // An old plugin (no such export): loads, none.
+        if let Some(old) = built_plugin("tests/code-old") {
+            assert!(host.sheet_templates(&old).unwrap().is_empty());
+            assert!(host.load_code(&old).is_ok());
+        }
+        // A manifest naming a file outside its folder is refused.
+        let text = "[plugin]\nname=\"t\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"wasm\"\nentry=\"t.wasm\"\n[[sheet-template]]\nfile = \"../x.ohlsheet\"";
+        assert!(Manifest::parse(text, Path::new("/plugins/t")).is_err());
     }
 }

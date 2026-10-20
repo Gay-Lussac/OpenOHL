@@ -1,0 +1,31 @@
+# A test sheet template shipped as a file by the test plugin (invented).
+format = "ohl-sheet-template"
+version = 1
+name = "test-a3"
+description = "Test: A3 portrait, a small title block with a logo next to it"
+
+[page]
+format = "A3"
+orientation = "portrait"
+
+[title_block]
+width = "120 mm"
+columns = ["40 mm", "*"]
+rows = ["12 mm", "8 mm"]
+grid = true
+
+[[title_block.cell]]
+at = [0, 0]
+span = [2, 1]
+image = "test-mark.svg"
+
+[[title_block.cell]]
+at = [0, 1]
+text = "{heading}"
+size = "3 mm"
+bold = true
+
+[[title_block.cell]]
+at = [1, 1]
+text = "Sheet {sheet} / {sheets}"
+size = "2.5 mm"
