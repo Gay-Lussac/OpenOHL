@@ -364,3 +364,42 @@ fn tool_windows_dock_and_still_close_with_their_tool() {
         dock.find_tab(&Tab::Model).unwrap().node_path()
     );
 }
+
+/// File › Export › Drawings… with a sheet template: the window shows the
+/// template, its values, the versions and its options; a sheet is
+/// previewed in a window of its own, as the export draws it.
+#[test]
+fn the_export_window_shows_the_sheet_template_and_a_sheet() {
+    let model = crate::tests::synthetic_project("ux-sheet-template");
+    let mut h = harness(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        let file = root().join("examples/sheet-templates/example-a1.ohlsheet");
+        let t = ohl_drawing::SheetTemplate::load(&file).unwrap();
+        r.model
+            .project_op(
+                "sheet template",
+                ohl_server::Op::PutLibrary {
+                    kind: crate::sheet_ui::KIND.into(),
+                    name: "example-a1.ohlsheet".into(),
+                    text: t.embedded(),
+                },
+            )
+            .unwrap();
+        r.drawings.open();
+        let w = r.drawings.window.as_mut().unwrap();
+        w.sheet.template = "project:example-a1".into();
+        w.page = "template".into();
+        w.sheet
+            .fields
+            .values
+            .insert("project_no".into(), "P-1".into());
+        w.sheet_preview = Some(1);
+    }
+    h.run();
+    h.run();
+    h.get_by_label_contains("Values of the template");
+    h.get_by_label_contains("Sheet 1 of");
+    shot(&mut h, "drawings-sheet-template");
+}

@@ -4734,7 +4734,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     angles_window(ctx, r);
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
-    r.drawings.show(ctx, &r.model, r.case);
+    r.drawings.show(ctx, &mut r.model, r.case);
     if std::mem::take(&mut r.model.drawings_setting_changed) {
         r.drawings.load(&r.model);
     }
@@ -8265,6 +8265,9 @@ impl eframe::App for App {
                     ready.model.plugin_columns = columns;
                 }
                 ready.model.set_check_plugins(self.plugins.check_dirs());
+                ready
+                    .drawings
+                    .set_template_plugins(self.plugins.sheet_template_dirs());
                 crate::codes::window(&ctx, ready, &self.plugins);
                 crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 let go = [

@@ -70,6 +70,7 @@ mod revision;
 mod rule_editor;
 mod scene;
 mod selection;
+mod sheet_ui;
 mod span_tool;
 mod spot;
 mod starter;

@@ -96,6 +96,18 @@ pub fn render(d: &Drawing, dpi: f64) -> Result<(Vec<u8>, f64), String> {
     Ok((png, k * 25.4))
 }
 
+/// The drawing (a sheet) as RGBA pixels at `dpi` (at most `max_pixels`):
+/// width, height, the pixels (not premultiplied) — a preview on screen.
+pub fn render_rgba(d: &Drawing, dpi: f64, max_pixels: f64) -> Result<(u32, u32, Vec<u8>), String> {
+    let (pixmap, _) = rasterize(&d.svg(), dpi.clamp(5.0, 2400.0) / 25.4, max_pixels)?;
+    let mut rgba = Vec::with_capacity(pixmap.data().len());
+    for p in pixmap.pixels() {
+        let c = p.demultiply();
+        rgba.extend([c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    Ok((pixmap.width(), pixmap.height(), rgba))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

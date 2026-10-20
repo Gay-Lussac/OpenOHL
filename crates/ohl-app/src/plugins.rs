@@ -547,6 +547,22 @@ impl Plugins {
             .collect()
     }
 
+    /// The plugins in use giving sheet templates: name, folder.
+    pub fn sheet_template_dirs(&self) -> Vec<(String, PathBuf)> {
+        self.listed
+            .iter()
+            .filter(|l| !l.duplicate && !self.disabled.contains(&l.found.name()))
+            .filter(|l| {
+                l.found.provides(ohl_plugins::SHEET_TEMPLATES)
+                    || l.found
+                        .manifest
+                        .as_ref()
+                        .is_ok_and(|m| !m.sheet_templates.is_empty())
+            })
+            .map(|l| (l.found.name(), l.found.dir.clone()))
+            .collect()
+    }
+
     /// The directories of the check plugins in use.
     pub fn check_dirs(&self) -> Vec<PathBuf> {
         self.listed
