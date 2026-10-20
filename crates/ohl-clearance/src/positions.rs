@@ -1130,8 +1130,9 @@ pub struct PositionOptions {
 }
 
 /// The attachment of section point `i` of `shape` a span swings about:
-/// the top of its one hanging string, else (a dead end, a V-string, a
-/// wire fixed to the structure) its clamp.
+/// at a point inside the section, the top of its one string hanging below
+/// it; else (the section's ends, a V-string, a wire fixed to the
+/// structure) its clamp.
 fn attachment(shape: &SectionShape, i: usize) -> P3 {
     let clamp = shape.clamps[i];
     let last = shape.clamps.len().saturating_sub(1);
@@ -1139,14 +1140,8 @@ fn attachment(shape: &SectionShape, i: usize) -> P3 {
         return clamp;
     }
     match shape.strings.get(i).map(Vec::as_slice) {
-        Some([s]) => {
-            let d = sub(s.bottom, s.top);
-            if d[2] < 0.0 && d[0].hypot(d[1]) < -d[2] {
-                s.top
-            } else {
-                clamp
-            }
-        }
+        // A hanging string, however far a wind swings it.
+        Some([s]) if s.bottom[2] < s.top[2] => s.top,
         _ => clamp,
     }
 }

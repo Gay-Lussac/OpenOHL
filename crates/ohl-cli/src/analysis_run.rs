@@ -292,32 +292,30 @@ pub struct FitArgs {
     pub csv: Option<PathBuf>,
 }
 
-/// The line with its structure types resolved, and the wire library.
+/// The line with its structure types resolved, and the wire library: a
+/// project's own libraries unless given, as `ohl line` reads them
+/// ([`crate::project::Libraries`]).
 fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String> {
-    use ohl_core::files::shipped_library;
+    let libs = crate::project::Libraries::resolve(
+        &m.file,
+        crate::project::GivenLibraries {
+            cables: m.library.as_deref(),
+            structures: m.structures.as_deref(),
+            insulators: m.insulators.as_deref(),
+            sections: None,
+        },
+    )?;
     let mut line = crate::project::load_line(&m.file)?;
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
-        let dir = match &m.structures {
-            Some(d) => d.clone(),
-            None => m.file.parent().unwrap_or(Path::new(".")).join("Structures"),
-        };
-        let insulators = m
-            .insulators
-            .clone()
-            .unwrap_or_else(|| shipped_library("insulators"));
-        let structures =
-            ohl_structures::StructureLibrary::load_dir(&dir).map_err(|e| e.to_string())?;
-        let insulators =
-            ohl_structures::InsulatorLibrary::load_dir(&insulators).map_err(|e| e.to_string())?;
+        let structures = ohl_structures::StructureLibrary::load_dir(&libs.structures)
+            .map_err(|e| e.to_string())?;
+        let insulators = ohl_structures::InsulatorLibrary::load_dir(&libs.insulators)
+            .map_err(|e| e.to_string())?;
         line = line
             .resolve(&structures, &insulators)
             .map_err(|e| e.to_string())?;
     }
-    let library = m
-        .library
-        .clone()
-        .unwrap_or_else(|| shipped_library("cables"));
-    let library = ohl_cables::Library::load(&library).map_err(|e| e.to_string())?;
+    let library = ohl_cables::Library::load(&libs.cables).map_err(|e| e.to_string())?;
     Ok((line, library))
 }
 
