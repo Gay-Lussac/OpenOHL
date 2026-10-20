@@ -480,17 +480,20 @@ impl PlanView {
         let used = if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let target = selection::pick_in_model(
+            // The plan view draws no LiDAR points: none can be clicked.
+            let target = selection::pick_shown(
                 model,
                 case,
                 snaps,
                 [f64::from(pos.x), f64::from(pos.y)],
                 12.0,
-                |p| {
+                &|p| {
                     let q = to_screen(p);
-                    Some([f64::from(q.x), f64::from(q.y)])
+                    Some(([f64::from(q.x), f64::from(q.y)], 0.0))
                 },
-            );
+                &selection::LidarShown::Nothing,
+            )
+            .0;
             let (x, y) = (
                 c[0] + f64::from(pos.x - mid.x) / scale,
                 c[1] - f64::from(pos.y - mid.y) / scale,
@@ -529,16 +532,17 @@ impl PlanView {
         if (response.clicked_by(select_button) || response.double_clicked_by(select_button))
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let (picked, picked_case) = selection::pick_in_model_case(
+            let (picked, picked_case) = selection::pick_shown(
                 model,
                 case,
                 snaps,
                 [f64::from(pos.x), f64::from(pos.y)],
                 12.0,
-                |p| {
+                &|p| {
                     let q = to_screen(p);
-                    Some([f64::from(q.x), f64::from(q.y)])
+                    Some(([f64::from(q.x), f64::from(q.y)], 0.0))
                 },
+                &selection::LidarShown::Nothing,
             );
             *selection = picked;
             self.picked_case = Some(picked_case);

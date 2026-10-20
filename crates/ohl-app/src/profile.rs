@@ -38,8 +38,11 @@ pub struct ProfileView {
     extent: Option<([u64; 2], (f64, f64))>,
     /// the corridor's shapes (survey dots, ground, drawings),
     back: Option<((ViewKey, u64), Vec<egui::Shape>)>,
-    /// the wires' shapes.
+    /// the wires' shapes,
     wires: Option<(WiresKey, Vec<egui::Shape>)>,
+    /// the LiDAR points dotted (one per pixel and class colour): where,
+    /// and the point (what a click picks, [`crate::selection::LidarShown`]).
+    lidar_dots: Vec<(egui::Pos2, crate::model::LidarPoint)>,
     /// The sheet preview's sheets drawn in the last frame: alignment,
     /// sheet number, first and last station on the profile (shifted as
     /// the alignment is), with warnings or not.
@@ -82,8 +85,9 @@ pub(crate) struct Built {
     /// 3D drawing points in the corridor: drawing, colour, (station, z).
     pub(crate) points: Vec<(String, [u8; 3], [f64; 2])>,
     /// LiDAR points shown (of the budget loaded) in the corridor:
-    /// (station, z), class; by station.
-    pub(crate) lidar: Vec<([f64; 2], u8)>,
+    /// (station, z), class, the point (mm from the model's origin); by
+    /// station.
+    pub(crate) lidar: Vec<([f64; 2], u8, [i32; 3])>,
     /// All alignments: where each begins, and its name.
     pub(crate) joints: Vec<(f64, String)>,
 }
@@ -168,7 +172,7 @@ fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Buil
         .step_by(stride)
         .filter_map(|(q, c)| {
             let p = [0, 1, 2].map(|k| model.origin[k] + f64::from(q[k]) / 1000.0);
-            Some((inside(p)?, *c))
+            Some((inside(p)?, *c, *q))
         })
         .collect();
     for d in &model.backgrounds.drawings {
@@ -727,7 +731,8 @@ impl ProfileView {
             let from = lidar.partition_point(|p| p.0[0] < s0);
             let to = lidar.partition_point(|p| p.0[0] <= s1);
             let mut dotted = PixelSet::new(rect);
-            for (p, c) in &lidar[from..to.max(from)] {
+            self.lidar_dots.clear();
+            for (p, c, at) in &lidar[from..to.max(from)] {
                 if model.hidden_classes.contains(c) {
                     continue;
                 }
@@ -741,6 +746,7 @@ impl ProfileView {
                         1.0,
                         egui::Color32::from_rgb(col[0], col[1], col[2]),
                     ));
+                    self.lidar_dots.push((q, (*at, *c)));
                 }
             }
             for (_, prof) in &d.sides {
@@ -1089,6 +1095,18 @@ impl ProfileView {
                     .map(|p| to_screen(p[0], p[2]).distance(pos))
                     .fold(f32::INFINITY, f32::min);
                 consider(dmin, sel);
+            }
+            // The LiDAR points dotted (every one drawn can be clicked; a
+            // point under another's dot is drawn as that one).
+            if let Some((d, p)) = self
+                .lidar_dots
+                .iter()
+                .map(|(q, p)| (q.distance(pos), *p))
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .filter(|(d, _)| *d <= 12.0)
+            {
+                // Over the wires at about the same distance (as in 3D).
+                consider((d - 4.0).max(0.0), Selection::LidarPoint(p));
             }
             best.map_or(Selection::None, |b| b.1)
         };

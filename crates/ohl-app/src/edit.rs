@@ -83,6 +83,11 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
+        // Points of the cloud changed: the points in memory follow, the
+        // views read them again.
+        if !applied.points.is_empty() {
+            self.take_point_changes(&applied.points);
+        }
         // A library file changed (an undo, a redo): its working copy and
         // the libraries read again, the line with them.
         if applied

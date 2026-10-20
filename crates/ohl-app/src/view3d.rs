@@ -111,8 +111,15 @@ struct Streamed {
     /// The cloud (`FILE.ohl`, `FILE.ohl#name` or a COPC file).
     spec: String,
     octree: crate::octree::PointOctree,
-    cache: NodeCache<GpuScene>,
+    cache: NodeCache<Node>,
     drawn: Vec<usize>,
+}
+
+/// A node of a streamed cloud: on the GPU, and its points as drawn (for
+/// picking).
+struct Node {
+    gpu: GpuScene,
+    points: crate::octree::NodePoints,
 }
 
 /// Time for building chunks in one frame (the nearest first; the rest in
@@ -131,7 +138,7 @@ impl View3d {
                 .drawn
                 .iter()
                 .filter_map(|&i| p.cache.peek(i))
-                .map(|g| g.counts().1)
+                .map(|g| g.gpu.counts().1)
                 .sum();
         }
         self.chunks
@@ -156,7 +163,7 @@ impl View3d {
                     p.drawn
                         .iter()
                         .filter_map(|&i| p.cache.peek(i))
-                        .for_each(&mut add);
+                        .for_each(|n| add(&n.gpu));
                 }
                 (Some(c), _) => c.drawn().for_each(&mut add),
                 (None, _) => self.gpu.get(l).into_iter().for_each(&mut add),
@@ -173,6 +180,101 @@ impl View3d {
             .map(|c| c.set.stats.pending + c.near.stats.pending)
             .sum::<usize>()
             + self.points.as_ref().map_or(0, |p| p.octree.stats.pending)
+    }
+
+    /// The LiDAR points drawn in the last frame, for picking:
+    /// the nodes of a streamed cloud, or the chunks of the points held in
+    /// memory at the level each is drawn; nothing while the layer is
+    /// hidden.
+    fn lidar_shown<'a>(
+        points: &'a Option<Streamed>,
+        chunks: &'a HashMap<Layer, Chunked>,
+        model: &Model,
+        visible: &HashSet<Layer>,
+    ) -> selection::LidarShown<'a> {
+        use selection::{LidarGroup, LidarPoints, LidarShown};
+        if !visible.contains(&Layer::Points) {
+            return LidarShown::Nothing;
+        }
+        if let Some(p) = points
+            && model.cloud.as_ref() == Some(&p.spec)
+        {
+            return LidarShown::Groups(
+                p.drawn
+                    .iter()
+                    .filter_map(|&i| p.cache.peek(i))
+                    .map(|n| LidarGroup {
+                        bounds: n.points.bounds,
+                        points: LidarPoints::Columns(&n.points.xyz, &n.points.class),
+                        cells: &n.points.cells,
+                    })
+                    .collect(),
+            );
+        }
+        let Some(c) = chunks.get(&Layer::Points) else {
+            return LidarShown::Nothing;
+        };
+        LidarShown::Groups(
+            c.set
+                .shown()
+                .filter_map(|(tile, level)| c.index.points_drawn(tile, level, &c.row))
+                .map(|(b, indices, step)| LidarGroup {
+                    bounds: Some([b.min, b.max]),
+                    points: LidarPoints::Indices(indices, step),
+                    cells: &[],
+                })
+                .collect(),
+        )
+    }
+
+    /// Every LiDAR point drawn in the last frame (tests).
+    #[cfg(test)]
+    pub fn drawn_lidar(
+        &self,
+        model: &Model,
+        visible: &HashSet<Layer>,
+    ) -> Vec<crate::model::LidarPoint> {
+        use selection::{LidarPoints, LidarShown};
+        let mut out = Vec::new();
+        if let LidarShown::Groups(groups) =
+            Self::lidar_shown(&self.points, &self.chunks, model, visible)
+        {
+            for g in groups {
+                match g.points {
+                    LidarPoints::Columns(xyz, class) => {
+                        out.extend(xyz.iter().copied().zip(class.iter().copied()));
+                    }
+                    LidarPoints::Indices(indices, step) => out.extend(
+                        indices
+                            .iter()
+                            .filter(|k| (**k as usize).is_multiple_of(step))
+                            .map(|&k| model.points[k as usize]),
+                    ),
+                }
+            }
+        }
+        out
+    }
+
+    /// What a click at `at` (pixels from the view's top left, a view of
+    /// `size`) picks: [`selection::pick_shown`] with the LiDAR points drawn
+    /// in the last frame.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick(
+        &self,
+        camera: &Camera,
+        size: [f64; 2],
+        model: &Model,
+        case: usize,
+        snaps: &selection::Snaps,
+        visible: &HashSet<Layer>,
+        at: [f64; 2],
+        radius: f64,
+    ) -> (Selection, Option<usize>) {
+        let project = camera.projector(size);
+        let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
+        selection::pick_shown(model, case, snaps, at, radius, &project, &lidar)
     }
 
     /// What a chunked layer drew in the last frame.
@@ -241,7 +343,10 @@ impl View3d {
         };
         p.drawn = p
             .octree
-            .frame(&mut p.cache, &view, &limits, |s| GpuScene::new(device, s));
+            .frame(&mut p.cache, &view, &limits, |s, points| Node {
+                gpu: GpuScene::new(device, s),
+                points,
+            });
         changed
     }
 
@@ -730,11 +835,10 @@ impl View3d {
             }
         }
         let radius = if self.captured { 10.0 } else { 14.0 };
+        let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
         let used = use_at.map(|at| {
             let project = camera.projector(size);
-            let target = selection::pick_in_model(model, case, snaps, at, radius, |p| {
-                project(p).map(|(q, _)| q)
-            });
+            let target = selection::pick_shown(model, case, snaps, at, radius, &project, &lidar).0;
             let ground = camera
                 .ray(at, size)
                 .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]));
@@ -755,9 +859,7 @@ impl View3d {
             let project = cam.projector(size);
             let started = std::time::Instant::now();
             let (picked, picked_case) =
-                selection::pick_in_model_case(model, case, snaps, at, radius, |p| {
-                    project(p).map(|(q, _)| q)
-                });
+                selection::pick_shown(model, case, snaps, at, radius, &project, &lidar);
             self.picked_case = Some(picked_case);
             self.picked_member = match &picked {
                 Selection::Structure(id) => {
@@ -948,7 +1050,11 @@ impl View3d {
         for l in Layer::ALL.iter().filter(|l| visible.contains(l)) {
             match (self.chunks.get(l), &self.points) {
                 (_, Some(p)) if *l == Layer::Points => {
-                    layers.extend(p.drawn.iter().filter_map(|&i| p.cache.peek(i)));
+                    layers.extend(
+                        p.drawn
+                            .iter()
+                            .filter_map(|&i| p.cache.peek(i).map(|n| &n.gpu)),
+                    );
                 }
                 (Some(c), _) => layers.extend(c.drawn()),
                 (None, _) => layers.extend(self.gpu.get(l)),

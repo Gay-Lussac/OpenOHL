@@ -57,6 +57,21 @@ type Dot = ([f64; 3], [u8; 4]);
 /// A TIN: points and triangles (indices into the points).
 type Mesh = (Vec<[f64; 3]>, Vec<[usize; 3]>);
 
+/// A chunk's LiDAR points drawn: its bounds, the indices of its points
+/// into the model's, the stride (those of an index divisible by it).
+pub type PointsDrawn<'a> = (Bounds, &'a [u32], usize);
+
+/// Of a LiDAR chunk's points, those whose index (into the model's
+/// points) is divisible by this are drawn at `level`: all at level 0, the
+/// row's share (%) at levels 1 and 2.
+pub fn points_stride(level: usize, row: &LodRow) -> usize {
+    if level == 0 {
+        1
+    } else {
+        (100.0 / row.detail[level.clamp(1, 2) - 1]).round().max(1.0) as usize
+    }
+}
+
 /// A layer split into the tiles of the grid.
 #[derive(Debug)]
 pub struct ChunkIndex {
@@ -310,6 +325,16 @@ impl ChunkIndex {
         self.chunks.len()
     }
 
+    /// The LiDAR points chunk `tile` draws at `level` as `row` says: its
+    /// bounds, and indices into the model's points of which those
+    /// divisible by the stride are drawn ([`points_stride`]).
+    pub fn points_drawn(&self, tile: &Tile, level: usize, row: &LodRow) -> Option<PointsDrawn<'_>> {
+        match self.chunks.get(tile) {
+            Some((b, Content::Points(v))) => Some((*b, v, points_stride(level, row))),
+            _ => None,
+        }
+    }
+
     /// The chunks holding solids drawn by the solids distance (members
     /// with a library profile, poles at levels 2 and 3), and their bounds.
     pub fn near_keys(&self) -> impl Iterator<Item = (Tile, Bounds)> + '_ {
@@ -372,11 +397,7 @@ impl ChunkIndex {
                 }
             }
             Content::Points(points) => {
-                let stride = if level == 0 {
-                    1
-                } else {
-                    (100.0 / detail(level)).round().max(1.0) as usize
-                };
+                let stride = points_stride(level, row);
                 for &k in points {
                     if !(k as usize).is_multiple_of(stride) {
                         continue;

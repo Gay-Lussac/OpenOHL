@@ -772,13 +772,10 @@ pub fn ui(
                 );
             }
         }
-        Selection::LidarPoint(k) => {
-            ui.heading(format!("LiDAR point {k}"));
-            let Some((q, class)) = model.points.get(k) else {
-                ui.label("not loaded");
-                return;
-            };
-            let p = crate::selection::lidar_xyz(model, q);
+        Selection::LidarPoint((q, class)) => {
+            let class = &class;
+            ui.heading("LiDAR point");
+            let p = crate::selection::lidar_xyz(model, &q);
             let def = model.scheme.class(*class);
             grid(
                 ui,
@@ -797,7 +794,9 @@ pub fn ui(
             );
             ui.label(
                 egui::RichText::new(
-                    "Shown points are a thinned subset of the cloud (see the Model tab).",
+                    "As drawn, to the millimetre. Every point drawn can be clicked; farther \
+                     away the level of detail draws a share of the cloud. The Edit tool \
+                     changes its coordinates and class.",
                 )
                 .small(),
             );

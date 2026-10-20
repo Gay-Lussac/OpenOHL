@@ -523,6 +523,13 @@ pub struct Model {
     pub hidden_classes: std::collections::BTreeSet<u8>,
     /// Points per class of the whole point cloud (loaded or not).
     pub class_counts: Vec<(u8, u64)>,
+    /// Points of the cloud changed since the last frame (an edit, its
+    /// undo, someone else's); the views read the points again
+    /// ([`crate::lidar_edit::frame`]).
+    pub points_changed: Option<crate::lidar_edit::PointsChanged>,
+    /// The ground was built from the cloud's ground classes when the
+    /// project opened (built again after a change of those points).
+    pub ground_from_lidar: bool,
     /// Share of the point cloud shown near the camera, % (level of detail
     /// 0; kept with the project, [`LIDAR_PERCENT_SETTING`]).
     pub points_percent: f64,
@@ -2002,6 +2009,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         has.then(|| sources.file.display().to_string())
     });
     let mut points = Vec::new();
+    let mut ground_from_lidar = false;
     let mut class_counts: Vec<(u8, u64)> = Vec::new();
     let mut scheme = ohl_lidar::ClassScheme::asprs();
     if let Some(spec) = cloud.clone() {
@@ -2126,6 +2134,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
                 &mut log,
             );
             ground = Some(g);
+            ground_from_lidar = true;
         }
     }
     // The surface of the checks (the project's choice).
@@ -2245,6 +2254,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         lines_changed: Vec::new(),
         hidden_classes,
         class_counts,
+        points_changed: None,
+        ground_from_lidar,
         points_percent,
         library_dir,
         section_display,
