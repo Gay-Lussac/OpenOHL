@@ -83,6 +83,7 @@ mod thermal;
 mod tools;
 mod type_workspace;
 mod vegetation;
+mod vegetation_help;
 mod versions;
 mod view3d;
 mod wire_style;
@@ -118,6 +119,8 @@ mod rule_editor_tests;
 mod tests;
 #[cfg(test)]
 mod ux_tests;
+#[cfg(test)]
+mod vegetation_tests;
 
 /// OHL-Design, the line application of OpenOHL — view and edit a line
 /// model in 3D, plan and profile.

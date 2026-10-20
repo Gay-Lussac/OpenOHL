@@ -6670,12 +6670,17 @@ impl Ready {
 
     /// What the Performed checks page asks: a report opened in its check's
     /// page, a change applied.
-    fn check_library_out(&mut self, out: crate::check_library::Out) {
+    pub(crate) fn check_library_out(&mut self, out: crate::check_library::Out) {
         if let Some(r) = out.open {
             match r.check.as_str() {
                 crate::phase_distance::CHECK_ID => {
                     if let Err(e) = self.phase_distance.load(&r, &self.model) {
                         self.model.log.push(e);
+                    }
+                }
+                crate::vegetation::CHECK_ID => {
+                    if let Err(e) = self.vegetation.load_saved(&r, &self.model) {
+                        self.status = Some((e, true));
                     }
                 }
                 other => self
@@ -6707,6 +6712,15 @@ pub(crate) fn clearance_zone_out(
             crate::library::LibraryKind::WeatherCases,
             crate::library::PageAction::UseForModel(p),
         );
+    }
+    if let Some((plugin, p)) = out.plugin_preset
+        && let Some(wc) = &p.weather
+        && let Err(e) = crate::rule_editor::preset_cases(r, &plugin, &p.name, &p.weather_text, wc)
+    {
+        r.status = Some((
+            format!("preset {plugin} {}: weather cases: {e}", p.name),
+            true,
+        ));
     }
     if let Some(marks) = out.marks {
         r.marks_from = MarksFrom::Zone(measure);
@@ -8253,19 +8267,33 @@ impl eframe::App for App {
                 crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
-                    ready.vegetation.ui(&ctx, &ready.model),
                     ready.wirefit.ui(&ctx, &ready.model),
                 ];
                 if let Some(target) = go.into_iter().flatten().next() {
                     ready.go_to(target);
                 }
-                // A new vegetation report: drawn on its layers.
-                if let Some(overlay) = ready.vegetation.take_overlay() {
+                // The vegetation panel (its plugin presets read once).
+                if ready.vegetation.open
+                    || ready.vertical_clearances.open
+                    || ready.radial_clearances.open
+                {
+                    crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
+                }
+                let out = ready.vegetation.ui(
+                    &ctx,
+                    &ready.model,
+                    &ready.rule_editor.presets.list,
+                    &mut self.palette,
+                );
+                crate::vegetation::handle(ready, out);
+                // Its report drawn on its layers while the panel is open,
+                // taken off once it is closed.
+                if let Some(overlay) = ready.vegetation.overlay_change(&ready.model) {
                     let lines = ready.vegetation.isoclearance_lines();
                     ready.drawings.set_isoclearance(lines);
                     ready.view3d.vegetation = overlay.clone();
                     ready.plan.vegetation = overlay.clone();
-                    ready.profile.vegetation = overlay;
+                    ready.profile.set_vegetation(overlay);
                     ready
                         .view3d
                         .dirty
@@ -8289,11 +8317,19 @@ impl eframe::App for App {
                 for (measure, out) in [
                     (
                         ohl_clearance::Measure::Vertical,
-                        ready.vertical_clearances.ui(&ctx, &mut ready.model),
+                        ready.vertical_clearances.ui(
+                            &ctx,
+                            &mut ready.model,
+                            &ready.rule_editor.presets.list,
+                        ),
                     ),
                     (
                         ohl_clearance::Measure::Radial,
-                        ready.radial_clearances.ui(&ctx, &mut ready.model),
+                        ready.radial_clearances.ui(
+                            &ctx,
+                            &mut ready.model,
+                            &ready.rule_editor.presets.list,
+                        ),
                     ),
                 ] {
                     clearance_zone_out(ready, measure, out);

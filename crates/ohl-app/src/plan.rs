@@ -42,8 +42,8 @@ pub struct PlanView {
 }
 
 /// What Checks › Vegetation found, on the layers shown: isoclearance lines
-/// in their colours, grow-in points (cyan dots), danger trees (an orange
-/// triangle at the base, a line to the wire point it falls to).
+/// in their colours, every grow-in point (a dot) and every danger tree (a
+/// triangle at its base), in the user's colours; one mark a pixel.
 fn paint_vegetation(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -51,10 +51,12 @@ fn paint_vegetation(
     overlay: &crate::vegetation::Overlay,
     visible: &std::collections::HashSet<crate::scene::Layer>,
 ) {
-    use crate::scene::{FALL_IN, GROW_IN, Layer};
+    use crate::scene::Layer;
     let color = |c: [u8; 3]| {
         crate::revision::dimmed32(egui::Color32::from_rgb(c[0], c[1], c[2]), overlay.stale)
     };
+    // One mark a pixel: 10⁶ points stay quick to draw (what is drawn only).
+    let mut dotted = crate::profile::PixelSet::new(rect);
     if visible.contains(&Layer::Isoclearance) {
         for (_, rgb, points) in &overlay.lines {
             let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
@@ -64,22 +66,23 @@ fn paint_vegetation(
         }
     }
     if visible.contains(&Layer::GrowIn) {
-        for (p, _) in &overlay.grow {
+        let c = color(overlay.colors[0]);
+        for p in &overlay.grow {
             let p = to_screen(*p);
-            if rect.expand(10.0).contains(p) {
-                painter.circle_filled(p, 3.5, color(GROW_IN));
+            if rect.contains(p) && dotted.insert(p) {
+                painter.circle_filled(p, 3.0, c);
             }
         }
     }
+    let mut dotted = crate::profile::PixelSet::new(rect);
     if visible.contains(&Layer::FallIn) {
-        for (_, base, q) in &overlay.fall {
-            let (b, w) = (to_screen(*base), to_screen(*q));
-            if !rect.expand(10.0).contains(b) {
+        let c = color(overlay.colors[1]);
+        for (_, base) in &overlay.fall {
+            let b = to_screen(*base);
+            if !rect.contains(b) || !dotted.insert(b) {
                 continue;
             }
-            let c = color(FALL_IN);
-            painter.line_segment([b, w], egui::Stroke::new(1.0, c.gamma_multiply(0.6)));
-            let d = 5.0;
+            let d = 4.0;
             painter.add(egui::Shape::convex_polygon(
                 vec![
                     b + egui::vec2(0.0, -d),

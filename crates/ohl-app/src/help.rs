@@ -137,6 +137,24 @@ pub fn open(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens the manual's page `page` (e.g. `user-guide/analyses`, without
+/// extension) at section `anchor`: the built book's page, else its
+/// Markdown source (the section's heading then to look for). What was
+/// opened, or why not.
+pub fn open_section(page: &str, anchor: &str) -> Result<String, String> {
+    for b in ["target/book", "book"] {
+        if let Some(p) = shipped(&format!("{b}/{page}.html")) {
+            let url = format!("file://{}#{anchor}", p.display());
+            open(Path::new(&url))?;
+            return Ok(url);
+        }
+    }
+    let p = shipped(&format!("docs/{page}.md"))
+        .ok_or_else(|| format!("the manual is not on this computer ({page})"))?;
+    open(&p)?;
+    Ok(format!("{} (section {anchor})", p.display()))
+}
+
 /// The Help menu's entries for the manual: one per [`Page`] (greyed out,
 /// with where it looked, when the manual is not on this computer). What
 /// went wrong goes to `status`.

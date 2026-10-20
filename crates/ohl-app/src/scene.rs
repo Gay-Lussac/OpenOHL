@@ -1800,29 +1800,25 @@ pub const GROW_IN: [u8; 3] = [60, 220, 230];
 /// See [`GROW_IN`].
 pub const FALL_IN: [u8; 3] = [255, 150, 40];
 
-/// What Checks › Vegetation found, on layer `layer`: grow-in points (a
-/// cyan dot joined to the wire), danger trees (an orange trunk from base
-/// to top, a line to the wire point it falls to), isoclearance lines in
-/// their colours; dimmed while the report is out of date.
+/// What Checks › Vegetation found, on layer `layer`: every grow-in point
+/// (a dot) and every danger tree (its trunk from base to top), in the
+/// user's two colours; isoclearance lines in their colours; dimmed while the report is out of date.
 pub fn vegetation(origin: [f64; 3], overlay: &crate::vegetation::Overlay, layer: Layer) -> Scene {
     let mut s = Scene::new(origin);
     let c = |rgb: [u8; 3]| crate::revision::dimmed([rgb[0], rgb[1], rgb[2], 255], overlay.stale);
     match layer {
+        // Every point found, one batch each (no line to the wire).
         Layer::GrowIn => {
-            for (p, q) in &overlay.grow {
-                s.polyline(&[*p, *q], c(GROW_IN), 1.5);
-                s.point(*p, c(GROW_IN), 8.0);
+            let col = c(overlay.colors[0]);
+            for p in &overlay.grow {
+                s.point(*p, col, 6.0);
             }
         }
         Layer::FallIn => {
-            for (top, base, q) in &overlay.fall {
-                s.polyline(&[*base, *top], c(FALL_IN), 3.0);
-                s.polyline(
-                    &[*base, *q],
-                    crate::revision::dimmed([255, 150, 40, 140], overlay.stale),
-                    1.0,
-                );
-                s.point(*top, c(FALL_IN), 7.0);
+            let col = c(overlay.colors[1]);
+            for (top, base) in &overlay.fall {
+                s.polyline(&[*base, *top], col, 2.0);
+                s.point(*top, col, 6.0);
             }
         }
         Layer::Isoclearance => {
