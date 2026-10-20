@@ -9,7 +9,8 @@
 //
 // A design-code plugin turns the user's parameter file (TOML, every value
 // taken from the standard and its national annex by the user) into weather
-// cases and load cases, and may give presets of the clearance windows.
+// cases and load cases, and may give presets of the clearance windows
+// and (optional export `rule-presets`) presets of any clearance rule set.
 // OpenOHL ships no code tables.
 
 /// Types of design-code plugins.

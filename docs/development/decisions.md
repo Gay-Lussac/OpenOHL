@@ -9,6 +9,25 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Clearance rules by voltage in the app, rule presets from plugins**
+  (owner's request): wherever a rule's distance is set (the Clearances
+  tab's new rule editor, the Vertical / Radial clearances windows and
+  their Add a rule) it is one distance, a table "up to kV: distance" or a
+  base plus an amount per kV, with a preview at the project's voltages
+  and 0 kV — as the rule files already allowed. The windows now keep a
+  rule's requirement as written (`ZoneRule::distance` is a
+  `Requirement`): a rule by voltage is one row, each wire checked with
+  its voltage's distance, where an import gave one row per line voltage
+  before (results unchanged: the same distance per wire); a table that
+  does not reach a wire's voltage stops the window's check and `ohl zones`
+  with an error, as `ohl line` already did. Design-code plugins may give
+  presets of any clearance rule set through the new optional
+  `rule-presets` export (interface 0.3 unchanged: the host looks for it,
+  plugins built before load as they are); the app merges a preset into
+  the chosen rule file or replaces its rules, one command; the CLI writes
+  them (`ohl code rule-presets`, `ohl code generate`).
+  ([user guide](../user-guide/desktop-app.md#distances-by-voltage),
+  [plugins](plugins.md#rule-presets))
 - **Danger trees (method written, to be built):** fall-in about a root
   ball (hinge at a fraction k of the height), the tree falling towards
   each wire point and resting on the ground along its direction; grow-in
