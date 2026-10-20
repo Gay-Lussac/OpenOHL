@@ -83,6 +83,12 @@ pub struct VegetationParams {
     /// The tallest tree looked for, m (how far from the wires bases are
     /// searched).
     pub max_tree_height: f64,
+    /// Largest horizontal distance from a vegetation point to the nearest
+    /// ground point the ground surface is built from (a TIN vertex: a
+    /// LiDAR ground point or a survey point) for its ground height — its
+    /// tree base — to be taken, m (none: no limit). Beyond it the point
+    /// has no base and no fall-in check.
+    pub max_base_ground_distance: Option<f64>,
     /// Worst points kept per span.
     pub keep: usize,
 }
@@ -104,6 +110,7 @@ impl Default for VegetationParams {
             fall_allowance: 0.0,
             min_tree_height: 2.0,
             max_tree_height: 40.0,
+            max_base_ground_distance: None,
             keep: 10,
         }
     }
@@ -297,6 +304,16 @@ pub fn spans_near(
     (0..near.len()).filter(|&s| near[s]).collect()
 }
 
+/// Whether a point of `ground` (a vertex of its triangles: a ground point
+/// it is built from) lies within `limit` m of (x, y) in plan.
+pub fn ground_point_within(ground: &Terrain, x: f64, y: f64, limit: f64) -> bool {
+    let mut found = false;
+    ground.triangles_near(x, y, limit, |corners| {
+        found |= corners.iter().any(|c| (c[0] - x).hypot(c[1] - y) <= limit);
+    });
+    found
+}
+
 /// A fall found for a tree and a span.
 #[derive(Debug, Clone, Copy)]
 struct Fall {
@@ -345,6 +362,9 @@ pub struct VegetationCheck {
     pub points: u64,
     /// Points with no ground below them (no fall-in check).
     pub without_ground: u64,
+    /// Of those, the points with a ground surface below them but no ground
+    /// point within [`VegetationParams::max_base_ground_distance`].
+    pub ground_too_far: u64,
     /// The work done.
     pub work: Work,
     touched: Vec<Touched>,
@@ -383,6 +403,7 @@ impl VegetationCheck {
             results: vec![WireVegetation::default(); n],
             points: 0,
             without_ground: 0,
+            ground_too_far: 0,
             work: Work::default(),
             touched: Vec::new(),
             scratch: Vec::new(),
@@ -410,6 +431,7 @@ impl VegetationCheck {
             results: vec![WireVegetation::default(); self.results.len()],
             points: 0,
             without_ground: 0,
+            ground_too_far: 0,
             work: Work::default(),
             touched: Vec::new(),
             scratch: Vec::new(),
@@ -421,6 +443,7 @@ impl VegetationCheck {
     pub fn merge(&mut self, other: VegetationCheck) {
         self.points += other.points;
         self.without_ground += other.without_ground;
+        self.ground_too_far += other.ground_too_far;
         self.work.pairs += other.work.pairs;
         self.work.distances += other.work.distances;
         self.work.sectors += other.work.sectors;
@@ -729,7 +752,14 @@ impl VegetationCheck {
         let fixed = Fixed { geo, params };
         let growth = params.growth();
         let near_reach = params.near_reach();
-        let g = ground.and_then(|t| t.height(x, y));
+        let mut g = ground.and_then(|t| t.height(x, y));
+        if params.fall_in
+            && let (Some(t), Some(_), Some(limit)) = (ground, g, params.max_base_ground_distance)
+            && !ground_point_within(t, x, y, limit)
+        {
+            g = None;
+            self.ground_too_far += 1;
+        }
         if params.fall_in && g.is_none() {
             self.without_ground += 1;
         }
@@ -1321,6 +1351,60 @@ mod tests {
         r.worst.sort_by(|a, b| a.order(b, params));
         r.worst.truncate(params.keep);
         r
+    }
+
+    /// The ground under a tree is taken only with a ground point within
+    /// the distance: the ground's points are the corners at ±100 m and one
+    /// at (150, 4); a 25 m tree at (150, 0) has it 4 m away (base found
+    /// with a 5 m limit), at (150, −2) 6 m away (no base, counted).
+    #[test]
+    fn a_tree_base_needs_a_ground_point_near() {
+        let p = |x: f64, y: f64| SurveyPoint {
+            x,
+            y,
+            z: 0.0,
+            code: String::new(),
+            line: String::new(),
+        };
+        let ground = Terrain::from_points(
+            &[
+                p(-100.0, -100.0),
+                p(400.0, -100.0),
+                p(400.0, 100.0),
+                p(-100.0, 100.0),
+                p(150.0, 4.0),
+            ],
+            None,
+        )
+        .unwrap();
+        let params = VegetationParams {
+            clearance: 4.0,
+            fall_in: true,
+            max_base_ground_distance: Some(5.0),
+            ..VegetationParams::default()
+        };
+        let mut found = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+        found.visit(Some(&ground), 150.0, 0.0, 25.0, 5);
+        assert_eq!((found.without_ground, found.ground_too_far), (0, 0));
+        let r = found.finish().remove(0);
+        assert_eq!(r.fall_in, 1);
+        let mut far = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+        far.visit(Some(&ground), 150.0, -2.0, 25.0, 5);
+        assert_eq!((far.without_ground, far.ground_too_far), (1, 1));
+        let r = far.finish().remove(0);
+        assert_eq!(r.fall_in, 0);
+        assert!(r.nearest.is_some_and(|v| v.height.is_none()));
+        // No limit (the default): the base is found.
+        let mut any = VegetationCheck::new(
+            vec![level_wire()],
+            &[5],
+            VegetationParams {
+                max_base_ground_distance: None,
+                ..params
+            },
+        );
+        any.visit(Some(&ground), 150.0, -2.0, 25.0, 5);
+        assert_eq!(any.finish().remove(0).fall_in, 1);
     }
 
     /// Parallel blocks find what one pass finds.
