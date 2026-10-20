@@ -306,6 +306,10 @@ pub enum Kind {
     /// insulators, weather cases, …): id `kind/name`, its text; not part of
     /// the line itself ([`Session::library_files`]).
     Library,
+    /// A point cloud of the project file, by name: its points changed by
+    /// [`Command::ChangePoints`] (no object row; not part of the line, kept
+    /// by the project for every line, [`points`]).
+    PointCloud,
 }
 
 impl Kind {
@@ -322,6 +326,7 @@ impl Kind {
             Self::Report => "report",
             Self::Spacer => "spacer",
             Self::Library => "library",
+            Self::PointCloud => "point_cloud",
         }
     }
 
@@ -337,6 +342,7 @@ impl Kind {
             "report" => Self::Report,
             "spacer" => Self::Spacer,
             "library" => Self::Library,
+            "point_cloud" => Self::PointCloud,
             other => return Err(SessionError::Store(format!("unknown object kind {other}"))),
         })
     }
@@ -586,6 +592,18 @@ pub enum Command {
     ReplaceLine {
         /// The new line.
         line: Box<Line>,
+    },
+    /// Change points of the project's point cloud `cloud` ([`points`]):
+    /// each point `from`, exactly as stored, becomes `to` (other
+    /// coordinates, another class), in its block of the cloud. Refused when
+    /// a point is not there (changed since). The clouds belong to the
+    /// project: every project line sees the change; it is logged and
+    /// undone on the line it was made on.
+    ChangePoints {
+        /// The point cloud's name.
+        cloud: String,
+        /// The points changed, in order.
+        points: Vec<points::PointChange>,
     },
     /// Several commands applied together (all or none).
     Batch {
@@ -1040,7 +1058,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
                 .jumpers
                 .push(serde_json::from_value::<Jumper>(v).map_err(parse_err)?),
             // Kept with the line, not part of it.
-            Kind::Report | Kind::Library => {}
+            Kind::Report | Kind::Library | Kind::PointCloud => {}
             Kind::Spacer => line
                 .spacers
                 .push(serde_json::from_value::<ohl_line::Spacer>(v).map_err(parse_err)?),
@@ -1113,7 +1131,8 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
                 | Kind::Alignment
                 | Kind::AlignmentPoint
                 | Kind::Report
-                | Kind::Library => {}
+                | Kind::Library
+                | Kind::PointCloud => {}
             }
         }
     }
@@ -1835,7 +1854,22 @@ impl Session {
         user: bool,
     ) -> Result<(), SessionError> {
         match command {
+            Command::Put {
+                kind: Kind::PointCloud,
+                ..
+            } => {
+                return Err(refused(
+                    "a point cloud is not an object: its points change by change_points",
+                ));
+            }
             Command::Put { .. } => out.push(command),
+            Command::ChangePoints {
+                ref cloud,
+                ref points,
+            } => {
+                points::check(cloud, points)?;
+                out.push(command);
+            }
             Command::Delete { kind, id, confirm } => {
                 if !user {
                     out.push(Command::Delete {
@@ -2498,6 +2532,11 @@ impl Session {
         let mut impact = Impact::new(kind, id);
         match kind {
             Kind::Meta => return Err(refused("the line settings cannot be deleted")),
+            Kind::PointCloud => {
+                return Err(refused(
+                    "a point cloud is not deleted by a command (Terrain › point clouds)",
+                ));
+            }
             Kind::Structure => return self.structure_deletion(id),
             Kind::Section => {
                 let sec = self
@@ -2827,6 +2866,10 @@ impl Session {
         if prims.is_empty() {
             return Err(refused("empty command"));
         }
+        // Points of the project's clouds: applied in the transaction below.
+        let (point_prims, prims): (Vec<Command>, Vec<Command>) = prims
+            .into_iter()
+            .partition(|c| matches!(c, Command::ChangePoints { .. }));
         // Apply to a copy, collect the inverse (in reverse order).
         let mut objects = self.objects.clone();
         let mut inverse = Vec::new();
@@ -2903,6 +2946,14 @@ impl Session {
             }
         }
         inverse.reverse();
+        // The line is checked when its objects change (a change of points
+        // only leaves it as it is; a project may have none yet).
+        let objects_changed = !changed.is_empty();
+        for p in &point_prims {
+            if let Command::ChangePoints { cloud, .. } = p {
+                changed.push((Kind::PointCloud, cloud.clone()));
+            }
+        }
         for (kind, id) in &changed {
             if *kind == Kind::Report
                 && let Some(o) = objects.get(&(*kind, id.clone()))
@@ -2910,7 +2961,11 @@ impl Session {
                 reports::check_value(id, &o.value)?;
             }
         }
-        let line = line_of(&objects)?;
+        let line = if objects_changed {
+            line_of(&objects)?
+        } else {
+            self.line.clone()
+        };
         changed.sort();
         changed.dedup();
         let sections = if import {
@@ -2921,20 +2976,60 @@ impl Session {
         // Moved structures move their sections, jumpers and routes too:
         // the index is recomputed from the line, only differences written.
         let spatial = spatial::entries(&line, &self.grid);
-        // Edit rights limited to kinds, objects or an area (admins: all).
+        // Edit rights limited to kinds, objects or an area (admins: all);
+        // changed points: where they were and where they go.
         if !import {
+            let objects_only: Vec<(Kind, String)> = changed
+                .iter()
+                .filter(|(k, _)| *k != Kind::PointCloud)
+                .cloned()
+                .collect();
             self.check_edit(
                 user,
-                &changed,
+                &objects_only,
                 &self.spatial,
                 &spatial,
                 Some((&self.line, &line)),
             )?;
+            for p in &point_prims {
+                if let Command::ChangePoints { cloud, points } = p {
+                    let key = (Kind::PointCloud, cloud.clone());
+                    let area: BTreeMap<(Kind, String), spatial::Entry> =
+                        points::entry(&self.conn, &self.grid, cloud, points)
+                            .map(|e| (key.clone(), e))
+                            .into_iter()
+                            .collect();
+                    self.check_edit(user, &[key], &area, &area, None)?;
+                }
+            }
         }
 
-        // Persist atomically: objects and log entry.
+        // Persist atomically: points, objects and log entry.
         let tx = self.conn.transaction()?;
+        let mut prims = prims;
+        let mut point_inverses = Vec::new();
+        for p in point_prims {
+            if let Command::ChangePoints { cloud, points } = p {
+                let (applied, back) = points::apply(&tx, &cloud, &points)?;
+                prims.push(Command::ChangePoints {
+                    cloud: cloud.clone(),
+                    points: applied,
+                });
+                point_inverses.push(Command::ChangePoints {
+                    cloud,
+                    points: back,
+                });
+            }
+        }
+        // Undone newest first, before the objects (they do not depend on
+        // each other).
+        point_inverses.reverse();
+        point_inverses.extend(inverse);
+        let inverse = point_inverses;
         for (kind, id) in &changed {
+            if *kind == Kind::PointCloud {
+                continue;
+            }
             match objects.get(&(*kind, id.clone())) {
                 Some(o) => {
                     tx.execute(
@@ -3103,6 +3198,16 @@ impl Session {
                     Command::Delete { kind, id, .. } => {
                         left.insert((kind, id), None);
                     }
+                    // The points it changed must be as it left them.
+                    Command::ChangePoints { cloud, points } => {
+                        let there = points::still_there(&self.conn, &cloud, &points)?;
+                        if !there {
+                            return Err(refused(format!(
+                                "points of point cloud {cloud} were changed after entry {seq}: \
+                                 undo those changes first or ask an admin to roll back"
+                            )));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -3193,10 +3298,13 @@ impl Session {
             .iter()
             .map(|(k, o)| (k.clone(), (o.value.clone(), Some(o.ord))))
             .collect();
+        // Changed points: put back by the inverses, newest first.
+        let mut points_back = Vec::new();
         for text in inverses {
             if let Command::Batch { commands } = serde_json::from_str(&text).map_err(store)? {
                 for c in commands {
                     match c {
+                        c @ Command::ChangePoints { .. } => points_back.push(c),
                         Command::Put {
                             kind,
                             id,
@@ -3215,7 +3323,7 @@ impl Session {
                 }
             }
         }
-        let mut diff = Vec::new();
+        let mut diff = points_back;
         for (key, o) in &self.objects {
             match target.get(key) {
                 Some((v, _)) if *v == o.value => {}
@@ -3265,6 +3373,7 @@ pub mod collab;
 pub mod impact;
 pub mod lines;
 pub mod live;
+pub mod points;
 pub mod replace;
 pub mod reports;
 pub mod reproject;
@@ -3276,6 +3385,8 @@ pub use live::Live;
 
 #[cfg(test)]
 mod lines_tests;
+#[cfg(test)]
+mod points_tests;
 #[cfg(test)]
 mod replace_tests;
 #[cfg(test)]

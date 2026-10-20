@@ -312,6 +312,10 @@ impl Op {
                     out.push((Kind::Route, route.clone()));
                 }
                 Command::RenameSystem { .. } => out.push((Kind::Meta, "systems".into())),
+                // Points of a cloud: no object of the line is locked.
+                Command::ChangePoints { cloud, .. } => {
+                    out.push((Kind::PointCloud, cloud.clone()));
+                }
                 Command::Batch { commands } => {
                     for c in commands {
                         if !of(c, out) {
@@ -872,5 +876,7 @@ pub fn random_code(n: usize) -> String {
         .collect()
 }
 
+#[cfg(test)]
+mod points_tests;
 #[cfg(test)]
 mod tests;

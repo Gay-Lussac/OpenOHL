@@ -17,6 +17,8 @@
 //!   ([`CloudSource`]), LAS/LAZ tiles read directly ([`TileSource`]), COPC
 //!   files ([`copc::CopcSource`]), and later plugins (e.g. a link to a
 //!   point database).
+//! - [`edit`]: single points changed (coordinates, class), exactly
+//!   undoable — the session's `change_points` command.
 //! - Levels of detail: every block also holds the coordinates of its
 //!   points of levels 1–3 (about a 4th, 16th, 64th of them, spread
 //!   evenly; [`lod_level`]), so a view far away reads a small part of the
@@ -41,6 +43,7 @@
 
 pub mod codec;
 pub mod copc;
+pub mod edit;
 pub mod octree;
 
 use std::collections::HashMap;
@@ -399,29 +402,7 @@ impl Store {
 
     /// The point clouds in the project.
     pub fn clouds(&self) -> Result<Vec<CloudInfo>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, crs, scale, chunk_size, class_scheme, points,
-                    xmin, ymin, zmin, xmax, ymax, zmax FROM pointcloud ORDER BY name",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            let opt = |k: usize| -> rusqlite::Result<f64> {
-                Ok(r.get::<_, Option<f64>>(k)?.unwrap_or(f64::NAN))
-            };
-            let scale: f64 = r.get(3)?;
-            Ok(CloudInfo {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                crs: r.get(2)?,
-                scale,
-                // The chunks are whole numbers of scale units (as the
-                // blocks were binned), whatever was asked for.
-                chunk_size: whole_chunk(r.get(4)?, scale),
-                class_scheme: r.get(5)?,
-                points: r.get::<_, i64>(6)? as u64,
-                bounds: [[opt(7)?, opt(8)?, opt(9)?], [opt(10)?, opt(11)?, opt(12)?]],
-            })
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        clouds_in(&self.conn)
     }
 
     /// The cloud named `name`, or the only cloud when `name` is `None`.
@@ -1233,12 +1214,7 @@ impl Store {
             progress(start, todo.len());
         }
         // The top of the cloud, now known.
-        self.conn.execute(
-            "UPDATE pointcloud SET zmax = (SELECT MAX(l.z1) * ?2 FROM pointcloud_lod l
-                JOIN pointcloud_block b ON b.id = l.block WHERE b.cloud = ?1)
-             WHERE id = ?1",
-            params![cloud.id, cloud.scale],
-        )?;
+        update_top(&self.conn, cloud)?;
         Ok(todo.len())
     }
 
@@ -1375,21 +1351,7 @@ impl Store {
 
     /// Recomputes a cloud's point count and bounds from its blocks.
     fn update_summary(&self, cloud: &CloudInfo) -> Result<(), StoreError> {
-        let (s, c) = (cloud.scale, cloud.chunk_size);
-        // Plan bounds from the chunks; heights from the block minima (the
-        // maxima need decoding — taken while visiting is enough for now).
-        self.conn.execute(
-            "UPDATE pointcloud SET
-                points = (SELECT COALESCE(SUM(count), 0) FROM pointcloud_block WHERE cloud = ?1),
-                xmin = (SELECT MIN(cx) * ?2 FROM pointcloud_block WHERE cloud = ?1),
-                ymin = (SELECT MIN(cy) * ?2 FROM pointcloud_block WHERE cloud = ?1),
-                xmax = (SELECT (MAX(cx) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
-                ymax = (SELECT (MAX(cy) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
-                zmin = (SELECT MIN(z0) * ?3 FROM pointcloud_block WHERE cloud = ?1)
-             WHERE id = ?1",
-            params![cloud.id, c, s],
-        )?;
-        Ok(())
+        update_summary(&self.conn, cloud)
     }
 
     /// Calls `visit(x, y, z, class)` for the points of `cloud` inside
@@ -1694,6 +1656,65 @@ impl Read {
 }
 
 /// Bins a point into the blocks being imported.
+/// The point clouds of a project file's connection.
+pub(crate) fn clouds_in(conn: &Connection) -> Result<Vec<CloudInfo>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, crs, scale, chunk_size, class_scheme, points,
+                xmin, ymin, zmin, xmax, ymax, zmax FROM pointcloud ORDER BY name",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        let opt = |k: usize| -> rusqlite::Result<f64> {
+            Ok(r.get::<_, Option<f64>>(k)?.unwrap_or(f64::NAN))
+        };
+        let scale: f64 = r.get(3)?;
+        Ok(CloudInfo {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            crs: r.get(2)?,
+            scale,
+            // The chunks are whole numbers of scale units (as the
+            // blocks were binned), whatever was asked for.
+            chunk_size: whole_chunk(r.get(4)?, scale),
+            class_scheme: r.get(5)?,
+            points: r.get::<_, i64>(6)? as u64,
+            bounds: [[opt(7)?, opt(8)?, opt(9)?], [opt(10)?, opt(11)?, opt(12)?]],
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Recomputes a cloud's point count and bounds from its blocks (the
+/// same after any change of its points: a change undone gives them back
+/// exactly).
+fn update_summary(conn: &Connection, cloud: &CloudInfo) -> Result<(), StoreError> {
+    let (s, c) = (cloud.scale, cloud.chunk_size);
+    // Plan bounds from the chunks; heights from the block minima (the
+    // maxima need decoding — taken while visiting is enough for now).
+    conn.execute(
+        "UPDATE pointcloud SET
+            points = (SELECT COALESCE(SUM(count), 0) FROM pointcloud_block WHERE cloud = ?1),
+            xmin = (SELECT MIN(cx) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+            ymin = (SELECT MIN(cy) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+            xmax = (SELECT (MAX(cx) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+            ymax = (SELECT (MAX(cy) + 1) * ?2 FROM pointcloud_block WHERE cloud = ?1),
+            zmin = (SELECT MIN(z0) * ?3 FROM pointcloud_block WHERE cloud = ?1)
+         WHERE id = ?1",
+        params![cloud.id, c, s],
+    )?;
+    Ok(())
+}
+
+/// Sets a cloud's highest point from its blocks' levels of detail.
+fn update_top(conn: &Connection, cloud: &CloudInfo) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE pointcloud SET zmax = (SELECT MAX(l.z1) * ?2 FROM pointcloud_lod l
+            JOIN pointcloud_block b ON b.id = l.block WHERE b.cloud = ?1)
+         WHERE id = ?1",
+        params![cloud.id, cloud.scale],
+    )?;
+    Ok(())
+}
+
 fn add_pending(pending: &mut HashMap<(i64, i64, u8), Pending>, cloud: &CloudInfo, p: &LidarPoint) {
     let units = (cloud.chunk_size / cloud.scale).round() as i64;
     let q = |v: f64| (v / cloud.scale).round() as i64;

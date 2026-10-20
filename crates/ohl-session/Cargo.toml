@@ -12,6 +12,7 @@ authors.workspace = true
 ohl-cables.workspace = true
 ohl-core.workspace = true
 ohl-line.workspace = true
+ohl-pointcloud.workspace = true
 ohl-structures.workspace = true
 ohl-weather.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -20,6 +21,9 @@ serde_json.workspace = true
 sha2 = "0.10"
 zstd = "0.14"
 
+
+[dev-dependencies]
+ohl-lidar.workspace = true
 
 [lints]
 workspace = true
