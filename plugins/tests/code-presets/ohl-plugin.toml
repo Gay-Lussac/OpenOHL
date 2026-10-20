@@ -1,7 +1,7 @@
 [plugin]
 name = "code-presets"
 version = "0.1.0"
-description = "Test design-code plugin: one preset of clearance rules by voltage (invented values)"
+description = "Test design-code plugin: a preset of clearance rules by voltage and a preset of the vegetation check (invented values)"
 sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/code_presets.wasm"
