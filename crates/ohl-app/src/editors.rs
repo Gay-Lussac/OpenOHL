@@ -61,6 +61,9 @@ pub struct StructureForm {
     pub make_route: Option<String>,
     /// A note of the window (Put it on the line again found no point).
     pub message: Option<String>,
+    /// New on an alignment point: the alignment's other points that get a
+    /// structure too, in the same command (made when first shown).
+    pub more: Option<crate::placement::MorePoints>,
 }
 
 /// An alignment point a structure can be put on: (alignment, index there,
@@ -1256,7 +1259,7 @@ pub enum Outcome {
     ResetString,
     /// Pick the section's points again with the String wire tool.
     PickPoints,
-    /// Open Structures › New pylon from a template… (the window stays).
+    /// Open Tools › New pylon from a template… (the window stays).
     NewPylon,
 }
 
@@ -1303,6 +1306,7 @@ impl StructureForm {
             new_route: String::new(),
             make_route: None,
             message: None,
+            more: None,
         };
         if let Some(on) = on_alignment {
             f.place_on(model, on);
@@ -1406,7 +1410,38 @@ impl StructureForm {
             new_route: String::new(),
             make_route: None,
             message: None,
+            more: None,
         })
+    }
+
+    /// The command of the window: the structure, and (new on an alignment
+    /// point) one on each other point of the alignment ticked, in one
+    /// command ([`crate::placement`]).
+    pub fn command_with_more(&self, model: &Model) -> Result<(String, Command), String> {
+        let stored = model.stored_line();
+        let (what, command) = self.command(stored)?;
+        let more = match (&self.more, &self.on_alignment) {
+            (Some(m), Some(on)) if self.new && m.alignment == on.0 && m.own == on.1 => m,
+            _ => return Ok((what, command)),
+        };
+        if more.ticked().next().is_none() {
+            return Ok((what, command));
+        }
+        let mut taken: Vec<String> = stored
+            .map(|l| l.structures.iter().map(|s| s.id.clone()).collect())
+            .unwrap_or_default();
+        taken.push(self.id.trim().to_owned());
+        let others = more.commands(model, self, &mut taken)?;
+        let ids: Vec<&str> = others.iter().map(|(id, _)| id.as_str()).collect();
+        let what = format!(
+            "{what}, and {} more on alignment {}: {}",
+            others.len(),
+            more.alignment,
+            ids.join(", ")
+        );
+        let mut commands = vec![command];
+        commands.extend(others.into_iter().map(|(_, c)| c));
+        Ok((what, Command::Batch { commands }))
     }
 
     pub(crate) fn command(&self, stored: Option<&Line>) -> Result<(String, Command), String> {
@@ -2782,7 +2817,7 @@ impl Form {
     pub fn command(&self, model: &Model, reset: bool) -> Result<(String, Command), String> {
         let stored = model.stored_line();
         match self {
-            Form::Structure(f) => f.command(stored),
+            Form::Structure(f) => f.command_with_more(model),
             Form::String(f) => {
                 if f.new
                     && let Some(set) = f.wires.iter().filter_map(|w| w.set).find(|set| {
@@ -3024,7 +3059,7 @@ fn structure_ui(
         );
         new_pylon = ui
             .button("New pylon from a template…")
-            .on_hover_text("Structures › New pylon from a template…: this window stays open")
+            .on_hover_text("Tools › New pylon from a template…: this window stays open")
             .clicked();
         ui.separator();
     }
@@ -3226,9 +3261,40 @@ fn structure_ui(
                             }
                         });
                     if let Some(c) = chosen {
-                        f.place_on(model, c);
+                        // The base kept at the point's height when so chosen.
+                        let ground = f.on_ground;
+                        f.place_on(model, c.clone());
+                        if !ground && let Some(p) = points.iter().find(|p| p.0 == c.0 && p.1 == c.1) {
+                            f.on_ground = false;
+                            f.position = p.2;
+                        }
                     }
                     help(ui, "It stands on the point, tied to it: the alignment follows it when it moves.");
+                    if ui
+                        .checkbox(&mut f.on_ground, "base on the ground")
+                        .on_hover_text("Unticked: the base at the alignment point's own height")
+                        .changed()
+                        && !f.on_ground
+                        && let Some(on) = &f.on_alignment
+                        && let Some(p) = points.iter().find(|p| p.0 == on.0 && p.1 == on.1)
+                    {
+                        f.position = p.2;
+                    }
+                    // New: the alignment's other points too, one command.
+                    if f.new
+                        && let Some(on) = f.on_alignment.clone()
+                    {
+                        let more = f
+                            .more
+                            .get_or_insert_with(|| crate::placement::MorePoints::new(model, &on.0, on.1));
+                        more.follow(model, &on);
+                        let n = more.ticked().count();
+                        egui::CollapsingHeader::new(format!(
+                            "Also on other points of this alignment ({n} ticked)"
+                        ))
+                        .id_salt("structure-more-points")
+                        .show(ui, |ui| more.ui(ui, model));
+                    }
                 }
                 None => {
                     let before = f.position;

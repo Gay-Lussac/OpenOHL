@@ -53,6 +53,7 @@ mod octree;
 mod perf;
 mod phase_distance;
 mod placed_editor;
+mod placement;
 mod plan;
 mod plugins;
 mod preview3d;

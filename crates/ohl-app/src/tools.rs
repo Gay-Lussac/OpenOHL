@@ -146,7 +146,7 @@ impl Tool {
             Tool::GoTo => "right-click to open the Go to window",
             Tool::Edit => "right-click a structure (its pylon), a string or a span to edit it",
             Tool::AddStructure => {
-                "right-click an alignment point (the structure stands on it) or the ground to add a structure there"
+                "right-click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
             }
             Tool::AddString => {
                 "right-click a structure point or a wire point to hang a new string from it; or two span points: a spacer between them"

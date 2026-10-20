@@ -3,8 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Tool windows that can also be panels of the dock: the editor windows
-//! (structure, string, section, jumper), the pylon builder, the placement
-//! on alignment points, Replace structure, the ground clearance windows,
+//! (structure, string, section, jumper), the pylon builder, Replace
+//! structure, the ground clearance windows,
 //! Display weather cases. Each comes up as a floating window where it
 //! always did; **Dock as a panel** (its button, top right) makes it a tab
 //! of the main window — dragged anywhere there, into another group or out
@@ -29,10 +29,8 @@ use eframe::egui;
 pub enum Panel {
     /// The editor window: a structure, string, section, jumper….
     Editor,
-    /// Structures › New pylon from a template.
+    /// Tools › New pylon from a template.
     PylonBuilder,
-    /// Structures › Place on alignment points.
-    Placement,
     /// Replace structure.
     Replace,
     /// Checks › Ground clearances › Vertical clearances.
@@ -45,10 +43,9 @@ pub enum Panel {
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 7] = [
+    pub const ALL: [Panel; 6] = [
         Panel::Editor,
         Panel::PylonBuilder,
-        Panel::Placement,
         Panel::Replace,
         Panel::VerticalClearances,
         Panel::RadialClearances,
@@ -60,7 +57,6 @@ impl Panel {
         match self {
             Panel::Editor => "Editor",
             Panel::PylonBuilder => "New pylon from a template",
-            Panel::Placement => "Place on alignment points",
             Panel::Replace => "Replace structure",
             Panel::VerticalClearances => "Vertical clearances",
             Panel::RadialClearances => "Radial clearances",

@@ -8176,14 +8176,18 @@ fn the_edit_alignment_tool_reconnects_extends_and_branches() {
     assert_eq!(main(&mut harness), now, "main unchanged");
 }
 
-/// Structures › New pylon from a template…: a suspension and a strain
-/// type built from a template (sets: the slots, + 20 back, + 40 ahead);
-/// Place on alignment points…: one command puts them on every point,
-/// along the line; built again, the structures follow; Put it on the line
-/// again turns a structure back.
+/// Tools › New pylon from a template…: a suspension and a strain type
+/// built from a template (sets: the slots, + 20 back, + 40 ahead); Add
+/// structure on an alignment point, the alignment's other points ticked
+/// (what Place on alignment points… did): one command puts them on every
+/// point, along the line, a row's own type at the angle point; built
+/// again, the structures follow; Put it on the line again turns a
+/// structure back.
 #[test]
 fn pylons_are_built_from_templates_and_placed_on_the_alignment() {
-    use crate::pylon_builder::{Placement, PylonBuilder};
+    use crate::editors::Form;
+    use crate::pylon_builder::PylonBuilder;
+    use crate::tools::Tool;
     use ohl_structures::templates::Role;
     let model = synthetic_project_with("pylon-builder", |l| {
         l.alignment_points.clear();
@@ -8249,22 +8253,56 @@ fn pylons_are_built_from_templates_and_placed_on_the_alignment() {
         .line
         .structures
         .len();
-    {
+    // Add structure on the alignment's first point; its other points
+    // ticked in the window (All), the angle point its own type.
+    let first = {
         let r = harness.state_mut().ready().unwrap();
         r.pylon_builder = None;
-        let mut p = Placement::new(&r.model);
-        p.alignment = "main".into();
-        p.rows(&r.model);
-        p.structure_type = Some("danube-2c-susp".into());
-        p.rows[2].structure_type = Some("danube-2c-strain".into());
-        r.placement = Some(p);
+        let l = &r.model.line;
+        l.points_of(l.alignment_by_id("main").unwrap())[0]
+            .id
+            .clone()
+    };
+    use_tool(
+        &mut harness,
+        Tool::AddStructure,
+        Selection::AlignmentPoint { id: first },
+        None,
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.on_alignment, Some(("main".into(), 0)), "on the point");
+        f.structure_type = Some("danube-2c-susp".into());
     }
     harness.run();
-    harness.get_by_label("Place 4 structure(s)").click();
+    harness
+        .get_by_label("Also on other points of this alignment (0 ticked)")
+        .click();
+    harness.run();
+    harness.get_by_label("All").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        let more = f.more.as_mut().expect("the other points");
+        assert_eq!(
+            more.rows.iter().map(|r| r.index).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        more.rows[1].structure_type = Some("danube-2c-strain".into());
+    }
+    harness.run();
+    harness.get_by_label("Also on other points of this alignment (3 ticked)");
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     harness.run();
     let placed: Vec<ohl_line::Structure> = {
         let r = harness.state_mut().ready().unwrap();
-        assert!(r.placement.is_none(), "{:?}", r.status);
+        assert!(r.editor.is_none(), "{:?}", r.status);
         let l = &r.model.line;
         assert_eq!(l.structures.len(), before + 4);
         let pts = l.points_of(l.alignment_by_id("main").unwrap());
@@ -10805,8 +10843,9 @@ fn clearances_are_in_the_checks_menu() {
     harness.get_by_label("also after every edit");
 }
 
-/// Structures › Add structure…: one click opens the window, one Apply
-/// adds the structure; again for the next one.
+/// Tools › Add structure holds the tool; each use opens the window, one
+/// Apply adds the structure (the mouse free after it); again for the next
+/// one.
 #[test]
 fn add_structure_from_the_menu_takes_one_click_each() {
     let model = synthetic_project("add-structure-menu");
@@ -10819,14 +10858,19 @@ fn add_structure_from_the_menu_takes_one_click_each() {
     harness.state_mut().ready().unwrap().view3d.controls =
         crate::controls::Controls::by_name("minecraft").unwrap();
     for k in 1..=2 {
-        // (the menu bar's, before the Structures layer of the Model page)
-        harness
-            .get_all_by_label("Structures")
-            .next()
-            .unwrap()
-            .click();
+        harness.get_by_label("Tools").click();
         harness.run();
-        harness.get_by_label("Add structure…").click();
+        harness.get_by_label("Add structure").click();
+        harness.run();
+        {
+            let r = harness.state_mut().ready().unwrap();
+            assert_eq!(r.hotbar.tool(), crate::tools::Tool::AddStructure);
+            r.use_tool(crate::selection::Use {
+                target: Selection::None,
+                at: None,
+                on: None,
+            });
+        }
         harness.run();
         assert!(
             harness.state_mut().ready().unwrap().editor.is_some(),
@@ -10865,7 +10909,177 @@ fn opening_a_menu_escapes_what_was_going_on() {
     let r = harness.state_mut().ready().unwrap();
     assert!(!r.view3d.captured);
     assert!(r.new_alignment.is_empty());
-    harness.get_by_label("Add structure…");
+    harness.get_by_label("Spot structures…");
+}
+
+/// No tool twice: the Structures menu holds no tool nor the commands that
+/// moved to the Tools menu (Add structure…, New pylon from a template…,
+/// Place on alignment points…); the Tools menu has every tool and New
+/// pylon from a template…, which opens the pylon builder.
+#[test]
+fn the_structures_menu_holds_no_tools() {
+    use crate::tools::Tool;
+    let model = synthetic_project("menus-no-duplicates");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let gone = [
+        "Add structure…",
+        "New pylon from a template…",
+        "Place on alignment points…",
+    ];
+    let names: Vec<&str> = Tool::ALL.iter().map(|t| t.name()).chain(gone).collect();
+    // How often each name is shown with no menu open ("Edit" is a menu of
+    // the bar).
+    let count = |h: &Harness<'_, App>| -> Vec<usize> {
+        names
+            .iter()
+            .map(|n| h.query_all_by_label_contains(n).count())
+            .collect()
+    };
+    let closed = count(&harness);
+    // (the menu bar's, before the Structures layer of the Model page)
+    harness
+        .get_all_by_label("Structures")
+        .next()
+        .unwrap()
+        .click();
+    harness.run();
+    harness.get_by_label("Spot structures…");
+    assert_eq!(count(&harness), closed, "{names:?}");
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    harness.get_by_label("Tools").click();
+    harness.run();
+    let open = count(&harness);
+    for (k, n) in names.iter().enumerate().take(Tool::ALL.len()) {
+        assert!(open[k] > closed[k], "{n} in the Tools menu");
+    }
+    harness.get_by_label("New pylon from a template…").click();
+    harness.run();
+    assert!(harness.state_mut().ready().unwrap().pylon_builder.is_some());
+}
+
+/// A quick bar saved with a tool and New pylon from a template loads with
+/// both (the menu entries removed from Structures were never quick-bar
+/// commands; the tool's key is unchanged).
+#[test]
+fn saved_quick_bars_keep_the_structure_tools() {
+    use crate::menu::{Command, QuickBar};
+    use crate::tools::Tool;
+    let mut storage = Memory::default();
+    eframe::Storage::set_string(
+        &mut storage,
+        "quickbar",
+        "undo,tool-add_structure,new-pylon,save".into(),
+    );
+    let bar = QuickBar::load(&storage).unwrap();
+    assert_eq!(
+        bar.0,
+        [
+            Command::Undo,
+            Command::Hold(Tool::AddStructure),
+            Command::NewPylon,
+            Command::Save
+        ]
+    );
+    let mut again = Memory::default();
+    bar.save(&mut again);
+    assert_eq!(QuickBar::load(&again), Some(bar));
+}
+
+/// Add structure on an alignment point with the base not on the ground:
+/// it and the other points ticked stand at the points' own heights, the
+/// window's type, extension and height adjustment on each (a row's own
+/// type: its base); with no type at all, Apply says which point needs one.
+#[test]
+fn add_structure_on_more_points_keeps_the_window_s_choices() {
+    use crate::editors::{Form, StructureForm};
+    let model = typed_project_edited(
+        "more-points",
+        |_| {},
+        |l| {
+            l.alignments
+                .push(ohl_line::Alignment::new("extra", "main", Vec::new()));
+            l.set_alignment_points(
+                "extra",
+                [[0.0, -80.0], [300.0, -80.0], [600.0, -20.0]].map(|p| ([p[0], p[1], 777.0], None)),
+            );
+        },
+    );
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let before = harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structures
+        .len();
+    // A type with extensions: the window's extension goes with its type.
+    let ty = "ext-02".to_owned();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let m = &r.model;
+        let mut f = StructureForm::new_at(m, [300.0, -80.0, 777.0]);
+        assert_eq!(f.on_alignment, Some(("extra".into(), 1)), "the point near");
+        f.on_ground = false;
+        f.position[2] = 777.0;
+        f.structure_type = None;
+        let mut more = crate::placement::MorePoints::new(m, "extra", 1);
+        assert_eq!(
+            more.rows.iter().map(|r| r.index).collect::<Vec<_>>(),
+            [0, 2]
+        );
+        for row in &mut more.rows {
+            row.on = true;
+        }
+        f.more = Some(more);
+        let e = Form::Structure(f.clone()).command(m, false).unwrap_err();
+        assert!(e.contains("point 1"), "{e}");
+        f.structure_type = Some(ty.clone());
+        f.extension = Some("+3".into());
+        f.height_adjust = 0.5;
+        f.more.as_mut().unwrap().rows[1].structure_type = Some(ty.clone());
+        r.editor = Some(Form::Structure(f));
+    }
+    harness.run();
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let l = &r.model.line;
+    assert_eq!(l.structures.len(), before + 3);
+    let pts = l.points_of(l.alignment_by_id("extra").unwrap());
+    let on: Vec<&ohl_line::Structure> = pts
+        .iter()
+        .map(|p| l.structure(p.structure.as_deref().expect("tied")).unwrap())
+        .collect();
+    for s in &on {
+        assert!(
+            (s.position[2] - 777.0).abs() < 1e-9,
+            "{}: {:?}",
+            s.id,
+            s.position
+        );
+        assert_eq!(s.structure_type.as_deref(), Some(ty.as_str()));
+    }
+    // The type above: the window's extension and foundations; a row's own
+    // type: its base.
+    assert_eq!(
+        (
+            on[0].height_adjust,
+            on[1].height_adjust,
+            on[2].height_adjust
+        ),
+        (0.5, 0.5, 0.0)
+    );
+    let ext: Vec<Option<&str>> = on.iter().map(|s| s.extension.as_deref()).collect();
+    assert_eq!(ext, [Some("+3"), Some("+3"), None]);
 }
 
 /// View › Profile aspect ratio: at 1:10 the heights are drawn ten times
@@ -14054,6 +14268,16 @@ pub(crate) fn typed_project(name: &str) -> model::Model {
 /// [`typed_project`] with its structure files (the folder given) changed
 /// first.
 pub(crate) fn typed_project_with(name: &str, edit: impl FnOnce(&Path)) -> model::Model {
+    typed_project_edited(name, edit, |_| {})
+}
+
+/// [`typed_project_with`], its line changed first too (`line`).
+pub(crate) fn typed_project_edited(
+    name: &str,
+    edit: impl FnOnce(&Path),
+    line: impl FnOnce(&mut ohl_line::Line),
+) -> model::Model {
+    let edit_line = line;
     let ex = root().join("examples/synthetic-line");
     let dir = std::env::temp_dir().join(format!("ohl-app-{}-{name}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
@@ -14085,7 +14309,8 @@ pub(crate) fn typed_project_with(name: &str, edit: impl FnOnce(&Path)) -> model:
     .unwrap();
     edit(&dir.join("Structures"));
     let file = dir.join("p.ohl");
-    let line = ohl_line::Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
+    let mut line = ohl_line::Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
+    edit_line(&mut line);
     ohl_session::Session::open(&file)
         .unwrap()
         .import(&line, "tester")

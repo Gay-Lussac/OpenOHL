@@ -280,10 +280,8 @@ pub struct Ready {
     pub bom: crate::bom::BomWindow,
     /// Structures › Spot structures.
     pub spot: crate::spot::SpotWindow,
-    /// Structures › New pylon from a template…, when open.
+    /// Tools › New pylon from a template…, when open.
     pub pylon_builder: Option<crate::pylon_builder::PylonBuilder>,
-    /// Structures › Place on alignment points…, when open.
-    pub placement: Option<crate::pylon_builder::Placement>,
     /// Checks › Galloping ellipses.
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Distance between conductors (LeV).
@@ -422,7 +420,6 @@ impl Ready {
             bom: Default::default(),
             spot: Default::default(),
             pylon_builder: None,
-            placement: None,
             galloping: Default::default(),
             phase_distance: Default::default(),
             check_library: Default::default(),
@@ -4641,7 +4638,7 @@ fn alignment_windows(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
-/// The pylon builder and the placement on alignment points.
+/// The pylon builder.
 fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(mut b) = r.pylon_builder.take() {
         let mut open = true;
@@ -4674,19 +4671,6 @@ fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
         }
         if open {
             r.pylon_builder = Some(b);
-        }
-    }
-    if let Some(mut p) = r.placement.take() {
-        let mut open = true;
-        if let Some((what, command)) = p.ui(ctx, &r.model, &mut open) {
-            if r.perform(crate::edit::Action::Command { what, command }) {
-                open = false;
-            } else {
-                p.message = r.status.as_ref().map(|s| s.0.clone());
-            }
-        }
-        if open {
-            r.placement = Some(p);
         }
     }
 }
@@ -7346,43 +7330,10 @@ fn menus(
                 r.refresh_views();
             }
         });
-        if ui
-            .button("Add structure…")
-            .on_hover_text(
-                "A new structure: on the first free alignment point, or at coordinates \
-                 (also: the Add structure tool, right-click the ground)",
-            )
-            .clicked()
-        {
-            let at = structure_spot(&r.model);
-            r.editor = Some(crate::editors::Form::Structure(
-                crate::editors::StructureForm::new_at(&r.model, at),
-            ));
-            ui.close();
-        }
-        if ui
-            .button("New pylon from a template…")
-            .on_hover_text(
-                "A structure type of level 1 from a pylon template: the face's dimensions, \
-                 suspension or strain",
-            )
-            .clicked()
-        {
-            r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
-            ui.close();
-        }
-        if ui
-            .add_enabled(
-                !r.model.line.alignments.is_empty(),
-                egui::Button::new("Place on alignment points…"),
-            )
-            .on_hover_text("A type on many points of an alignment at once, along the line")
-            .on_disabled_hover_text("No alignment yet (Terrain › Alignments)")
-            .clicked()
-        {
-            r.placement = Some(crate::pylon_builder::Placement::new(&r.model));
-            ui.close();
-        }
+        // Adding structures is the Add structure tool (on an alignment
+        // point: also on the other points of that alignment, one command);
+        // New pylon from a template is in the Tools menu (Structures).
+        ui.separator();
         if ui
             .button("Spot structures…")
             .on_hover_text("The least-cost structures along a route (proposal saved as a new line)")
@@ -7680,6 +7631,11 @@ fn menus(
         let mut theme = "";
         for t in crate::tools::Tool::ALL {
             if t.theme() != theme {
+                // The Structures group ends with its command (a window,
+                // no tool held).
+                if theme == "Structures" {
+                    item(ui, Command::NewPylon, out);
+                }
                 ui.separator();
                 theme = t.theme();
             }
@@ -7837,6 +7793,9 @@ fn run_command(
         }
         Command::Table(k) => open_page(dock, Tab::Table(k)),
         Command::Hold(t) => r.hotbar.hold(t),
+        Command::NewPylon => {
+            r.pylon_builder = Some(crate::pylon_builder::PylonBuilder::new(&r.model));
+        }
     }
 }
 
