@@ -569,6 +569,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Usage / utilisation reports: Structure loads › Usage (worst first, governing case, colours), `ohl line --usage-csv`, structures coloured by usage in the plan and 3D views with a legend; a structure whose wires did not solve is **incomplete** (never a pass), one whose FE check kept tension-only members active (the last resort) is **approximate**
 - [x] String limits: optional maximum load and swing angles on strings, kept for plugins (no core check)
 - [x] Clearance presets from design-code plugins for the Vertical and Radial clearances windows
+- [x] Swing arc in the Vertical and Radial clearances (2026-10-20, built, in active development (not approved yet)): none, the wind steps, the swing arc or both, with the sides (rule file `[wind] arc = true`, `ohl zones --swing-arc`), the danger-tree check's arc shared (closed-form radial and vertical distance to points, the ground against the wire swung every 2 cm, conservative); the windows explained as the vegetation panel (grouped settings, a line each with hover text, drawings, user-guide links, the solves a choice needs, the arc suggested for fine steps), a progress bar with the time left, Stop keeping the previous results; the point and ground checks made faster with the same numbers bit for bit (one measure, bounds before exact distances, the highest ground per cell, every core)
 
 **Deliverable:** code-checked line design with structure loading reports.
 

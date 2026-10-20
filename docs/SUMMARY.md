@@ -44,6 +44,7 @@
 - [Galloping ellipses and blowout](theory/galloping.md)
 - [LiDAR analyses](theory/lidar-analysis.md)
 - [Plan and profile drawings](theory/drawings.md)
+- [Vertical and radial clearances](theory/clearances.md)
 
 # Design
 

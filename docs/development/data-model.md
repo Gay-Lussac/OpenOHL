@@ -707,9 +707,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   wire), `vertical_depth` (the area's depth along the line), `voltages`
   (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
   `jumpers` or `both`).
-- `[wind]` (optional): `steps`, `step` (Pa), `sides` — how the desktop
-  clearance windows and `ohl zones` step the wind up to each case's
-  pressure; `ohl line` ignores it.
+- `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
+  2026-10-20 `arc` (bool, default false; written only when true, so a
+  file without it is written as before and older programs read it) —
+  how the desktop clearance windows and `ohl zones` apply the wind: the
+  steps up to each case's pressure, and/or each span's swing arc
+  (`WindSteps::arc`; the danger-tree check's `positions::SwingArc`,
+  shared). `ohl line` ignores it. A vegetation preset's `[wind] arc =
+  true` turns its swing arc on too (its own `swing_arc` decides when
+  given).
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
@@ -763,6 +769,29 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   each wire checked with its voltage's distance (`WireResult::required`;
   `ZoneFinding::required` is the wire's); a table not reaching a wire's
   voltage is an error of `check_zones`.
+- **Swing arcs in the clearance windows** (2026-10-20; derived, never
+  stored): `zone::wind_states` adds each windy case's still air when the
+  arc is on; `zone::arc_cases` names the positions of each case's arc
+  (`ArcCase`: still, full left, full right), `zone::zone_arcs` makes one
+  `ZoneArc` per span (its still wire, its `SwingArc`, its largest
+  radius); `check_zones` takes them (`&[]`: none) and
+  `run_zone_check(…, arc, …)` makes them. A finding on the arc has
+  `ZoneFinding::arc` = the angle (degrees from the downward vertical
+  about the span's axis, positive to the right looking along the span)
+  and `state` = its case's still air (`ZoneFinding::position` /
+  `wind` say it in words). `ZoneCheckResult` has `arcs` (the cases) and
+  `arc_spans`. The `ohl zones` CSV has a last column `arc_deg` (empty
+  off the arc; on it `wind_pa` is the case's pressure, `wind_from`
+  `arc`).
+- **Point and ground checks, speed** (2026-10-20, numbers unchanged bit
+  for bit): `checks::PointCheck` keeps `best` (the smallest clearance
+  per wire and measure), `PointCheck::only(vertical, radial)` (the zone
+  windows work out their one measure), `eval` / `apply` (a point's
+  `PointEvent`s worked out on any core from a snapshot, applied in the
+  points' order); `checks::GroundMax` (the highest ground per 5 m cell,
+  in 64 × 64 tiles) bounds `ground_check` / `ground_check_with`, which
+  checks the wires on every core. `checks_reference.rs` keeps the
+  earlier code for the tests that compare them.
 - The Clearances tab's rule editor (`ohl-app` `rule_editor`) edits a rule
   file in place with `toml_edit` (names, `vertical`, `radial`, rules
   added and removed, a value's trailing comment kept; an unchanged

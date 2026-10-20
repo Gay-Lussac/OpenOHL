@@ -185,6 +185,47 @@ approved as finished: everything is built and in active development
   `OHL_LEGEND`, `OHL_KEY_MAP`, `OHL_CORRIDOR`, `OHL_VERSIONS`,
   `OHL_CONDUCTOR_CLEARANCE`); DXF text codes `%%nnn` instead of `\U+`.
 
+- **The swing arc in the vertical and radial clearances, and the windows
+  explained as the vegetation panel** (owner's request): the wind of the
+  Vertical and Radial clearances windows and `ohl zones` is none (the
+  cases' own pressure), the **wind steps**, the **swing arc** or both,
+  with the sides (`[wind] arc = true`, additive: files without it read
+  and are written as before; `ohl zones --swing-arc`, `--wind-step`,
+  `--wind-sides`; a preset may set it). The arc is the danger-tree
+  check's (`positions::SwingArc`, not copied): between still air and the
+  full blowouts of the sides chosen, the largest radius, rigid swing.
+  **Vertical distance to the arc** defined as the height of the arc's
+  lowest point over the point's plan position within the zone's width
+  (its highest for a point above), found exactly at the place along the
+  axis where the arc passes over the point (not the point's own
+  projection on the axis); radially the arc's closed form; the ground
+  against the wire swung every Δφ = 2 cm / R, each taken 2 cm thicker
+  in a zone 2 cm wider (conservative). A finding on the arc names it and
+  the angle (`ZoneFinding::arc`, CSV `arc_deg`). The windows: grouped
+  settings with user-guide links, a line beside each value with a longer
+  hover text, drawings of the zone and the wind positions, the shared
+  wind choice (`check_help::wind_choice`, also in the vegetation panel,
+  which is unchanged in behaviour) saying how many solves a windy case
+  needs and suggesting the arc above 40; a progress bar with the time
+  left; **Stop keeps the previous results**. Theory: [Vertical and radial
+  clearances](../theory/clearances.md) (new page).
+- **Speed of the vertical and radial clearance checks** (owner's
+  request, with his data point: steps of 10 Pa on a long line did not
+  finish in 10 minutes): measured, the time is the point and ground
+  checks, not the solves (an invented line of 600 spans, 10 Pa steps,
+131 solves, 10⁶ points: solves 68 s, vertical checks 91 s for the ground
+and 103 s for the points, radial 264 s and 101 s; after: 65 s, 12 s,
+17 s, 44 s, 15 s; the swing arc: 1.3 s of solves, vertical 5.9 s and
+0.9 s). Made faster **with the
+  same numbers bit for bit** (proved by tests against the earlier code,
+  kept for them): one measure worked out per window, bounding boxes
+  before exact distances, the highest ground per 5 m cell bounding the
+  ground checks, the ground check and the points (in blocks, applied in
+  order) on every core. Left out: warm-started solves (other numbers
+  within the solver's tolerance), solving only sections near candidate
+  points (needs the solve, or the rigid-swing simplification), the
+  nearest line point instead of the piece over a point for the vertical
+  (other numbers).
 - **The vegetation and danger-tree panel** (owner's requests): **wind
   steps** for the danger trees — each windy case also solved in still air
   and at every pressure up to its own, by a step, from the sides chosen

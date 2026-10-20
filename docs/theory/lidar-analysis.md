@@ -138,7 +138,10 @@ wind is solved with the wind **from the left and from the right**.
 
   **Conservative:** one radius, the largest of the three, along the whole
   arc (a wind between none and the full one sags the wire between the two
-  radii: never further than the largest).
+  radii: never further than the largest) — for points outside the arc
+  (vegetation below and beside the wire); a point between the axis and
+  the arc can be nearer a wire at an intermediate pressure (measured
+  2026-10-20: [Arc or steps](clearances.md#arc-or-steps-speed-and-quality)).
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\) (the still-air position need not
@@ -188,6 +191,11 @@ wind is solved with the wind **from the left and from the right**.
   of each pressure), exact at the pressures solved but blind between two
   steps.
 
+  The same arc (the same code) is, since 2026-10-20, an option of the
+  vertical and radial clearance checks, beside their wind steps; there
+  its vertical distance is defined as well
+  ([Vertical and radial clearances](clearances.md#the-vertical-distance-to-the-arc)).
+
   Check by hand (`wind_steps_of_the_example_line`): a wire hangs in the
   plane of its load, at \\( \tan\varphi = q_w / q_g \\) from the
   vertical about the chord between its clamps, with \\( q_w = p\,d \\)
@@ -230,6 +238,30 @@ wind is solved with the wind **from the left and from the right**.
   span), its lowest point 0.67 m higher (the wind swings the sag
   sideways); without wind (glaze ice) it hangs 3 cm lower (the marker
   ball on it ices too).
+
+### Arc or steps: speed and quality
+
+Measured in the vertical and radial clearance checks, which share the
+arc and the steps with this check
+([Arc or steps](clearances.md#arc-or-steps-speed-and-quality), where the
+numbers are): three solves per windy case against 25 (50 Pa steps) or
+131 (10 Pa) for 650 Pa; on an invented line of 600 spans the arc's
+solves take 1.3 s against 12 s and 56 s, and its point checks about a
+tenth of a microsecond to a microsecond a point against 2–18 µs.
+
+- **Why the arc is faster:** three solves per windy case (left, still,
+  right) instead of one per pressure and side, and one closed-form
+  distance per point and span instead of one per position.
+- **What the arc gains:** every angle between the blowouts, continuously
+  (the steps are blind between two pressures); the largest radius of the
+  three (**Conservative** for targets outside the arc — trees below and
+  beside the wire; not for one between the axis and the arc, measured
+  0.47 m on the example line).
+- **What it simplifies:** the rigid swing about the attachment axis
+  (**Simplification**, above): suspension clamps move along the line and
+  the sag changes with the pressure. The steps are exact at the pressures
+  they solve; where a point is nearest the wire at an intermediate
+  pressure they can be the more exact (and lower) value.
 
 ### Grow-in
 
