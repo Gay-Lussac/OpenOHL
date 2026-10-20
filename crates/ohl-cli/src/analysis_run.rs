@@ -10,10 +10,12 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::{Args, Subcommand};
 use ohl_clearance::galloping::{self, GallopingParams};
+use ohl_clearance::positions::PositionKind;
 use ohl_clearance::vegetation::{VegetationCheck, VegetationParams};
 use ohl_clearance::wirefit::{FitParams, WireCollector};
 use ohl_clearance::{Wire, wires_of};
@@ -176,12 +178,75 @@ pub struct VegetationArgs {
     /// Tallest tree looked for, m.
     #[arg(long, default_value_t = 40.0)]
     pub max_tree_height: f64,
-    /// Half width of the corridor around the spans' chords, m.
+    /// Buffer added to the clearance for grow-in (e.g. the survey's
+    /// accuracy), m.
+    #[arg(long, default_value_t = 0.0)]
+    pub buffer: f64,
+    /// Root-ball radius as a fraction of the grown tree's height: the
+    /// tree turns about a hinge this far from its trunk (0: about its
+    /// base; the desktop application proposes 0.1).
+    #[arg(long, default_value_t = 0.0)]
+    pub root_ball: f64,
+    /// Clearance allowance of a falling tree (flashover clearance,
+    /// buffers), m.
+    #[arg(long, default_value_t = 0.0)]
+    pub fall_allowance: f64,
+    /// Also check each span anywhere along its swing arc between its left
+    /// and right blowout (windy cases).
+    #[arg(long)]
+    pub swing_arc: bool,
+    /// Unbalanced ice on each span with vegetation within reach, solved
+    /// with its section on its own: `case` (the case's ice on that span
+    /// only), `extra=N/m` (an extra load on the span, the whole bundle's)
+    /// or `load=N` (a concentrated load at mid-span).
+    #[arg(long, value_parser = unbalanced_ice)]
+    pub unbalanced_ice: Option<ohl_clearance::positions::UnbalancedIce>,
+    /// Half width of the corridor around the spans' chords, m (the points
+    /// read, and the isoclearance lines).
     #[arg(long, default_value_t = 60.0)]
     pub corridor: f64,
-    /// Write the nearest and worst points of every span as CSV.
+    /// Write per span the counts and the nearest, worst falling and worst
+    /// points, with the case and position of each, as CSV.
     #[arg(long)]
     pub csv: Option<PathBuf>,
+    /// Write isoclearance lines over the corridor: .geojson, .dxf or .csv
+    /// by the extension (repeatable).
+    #[arg(long)]
+    pub isoclearance: Vec<PathBuf>,
+    /// Interval of the isoclearance lines, m.
+    #[arg(long, default_value_t = 5.0)]
+    pub iso_interval: f64,
+    /// Isoclearance lines above this clearance are not drawn, m.
+    #[arg(long, default_value_t = 40.0)]
+    pub iso_max: f64,
+    /// Grid spacing of the isoclearance lines, m.
+    #[arg(long, default_value_t = 1.0)]
+    pub iso_spacing: f64,
+    /// Spacing of the coarse grid first computed, m.
+    #[arg(long, default_value_t = 8.0)]
+    pub iso_coarse: f64,
+    /// Exit clause: stop after this many seconds (an error, never a
+    /// partial result).
+    #[arg(long, default_value_t = 3600)]
+    pub time_limit: u64,
+}
+
+/// `case`, `extra=N/m` or `load=N`.
+fn unbalanced_ice(text: &str) -> Result<ohl_clearance::positions::UnbalancedIce, String> {
+    use ohl_clearance::positions::UnbalancedIce;
+    let number = |v: &str| {
+        v.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && *x > 0.0)
+            .ok_or_else(|| format!("{text}: a positive number after ="))
+    };
+    match text.trim().split_once('=') {
+        None if text.trim() == "case" => Ok(UnbalancedIce::CaseIce),
+        Some(("extra", v)) => Ok(UnbalancedIce::Extra(number(v)?)),
+        Some(("load", v)) => Ok(UnbalancedIce::Concentrated(number(v)?)),
+        _ => Err(format!("{text}: write case, extra=N/m or load=N")),
+    }
 }
 
 /// `ohl lidar fit-wires`.
@@ -692,57 +757,200 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         clearance: a.clearance,
         growth_per_year: a.growth,
         years: a.years,
+        buffer: a.buffer,
         fall_in: a.fall_in,
+        root_ball: a.root_ball,
+        fall_allowance: a.fall_allowance,
         max_tree_height: a.max_tree_height,
         ..VegetationParams::default()
     };
-    let mut rows = String::from(ohl_clearance::vegetation::CSV_HEADER);
-    for case in &chosen {
-        let t = Instant::now();
-        let shapes = solve(&line, &library, case);
-        let wires = wires_of(&line, &shapes, &[]);
-        let mut check = VegetationCheck::new(wires.clone(), &classes, params.clone());
-        let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
-        for (p, c) in &veg {
-            check.visit(terrain.as_ref(), at(p[0], 0), at(p[1], 1), at(p[2], 2), *c);
-        }
-        let results = check.finish();
-        let (enc, fall): (u64, u64) = results
-            .iter()
-            .fold((0, 0), |(e, f), r| (e + r.encroaching, f + r.fall_in));
-        println!(
-            "case \"{}\": {enc} points within {:.2} m (clearance {:.2} + growth {:.2}), {fall} points of trees that could fall in ({:.1?})",
-            case.name,
-            params.clearance + params.growth(),
-            params.clearance,
-            params.growth(),
-            t.elapsed()
+    // Exit clause of the whole run (solves, checks, lines).
+    let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
+    let t = Instant::now();
+    let mut positions = ohl_clearance::positions::solve_positions(
+        &line,
+        &library,
+        &chosen,
+        ohl_clearance::positions::PositionOptions {
+            swing_arc: a.swing_arc,
+        },
+        &budget,
+    )?;
+    let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
+    if let Some(mode) = a.unbalanced_ice {
+        let reach = if params.fall_in {
+            params.near_reach().max(params.fall_reach())
+        } else {
+            params.near_reach()
+        };
+        let spans = ohl_clearance::vegetation::spans_near(
+            &positions,
+            reach,
+            veg.iter().map(|(p, _)| [at(p[0], 0), at(p[1], 1)]),
         );
+        let solves = ohl_clearance::positions::add_unbalanced_ice(
+            &mut positions,
+            &line,
+            &library,
+            &chosen,
+            mode,
+            &spans,
+            &budget,
+        )?;
         println!(
-            "  {:<18} {:>11} {:>8} {:>11} {:>14}",
-            "span", "encroaching", "fall-in", "nearest m", "fall margin m"
+            "unbalanced ice: {} of {} spans with vegetation within {reach:.1} m, {solves} solves",
+            spans.len(),
+            positions.spans.len()
         );
-        for (w, r) in wires.iter().zip(&results) {
-            if r.encroaching == 0 && r.fall_in == 0 {
-                continue;
-            }
-            println!(
-                "  {:<18} {:>11} {:>8} {:>11} {:>14}",
-                wire_name(w),
-                r.encroaching,
-                r.fall_in,
-                r.nearest
-                    .map_or("-".into(), |v| format!("{:.2}", v.distance)),
-                r.worst_fall
-                    .and_then(|v| v.fall_margin)
-                    .map_or("-".into(), |f| format!("{f:.2}")),
-            );
+    }
+    for n in &positions.notes {
+        println!("  {n}");
+    }
+    let count = |k: PositionKind| positions.positions.iter().filter(|p| p.kind == k).count();
+    println!(
+        "positions: {} spans, {} cases — {} as the case, {} left, {} right, {} swing arcs, {} with unbalanced ice ({:.1?})",
+        positions.spans.len(),
+        positions.cases.len(),
+        count(PositionKind::Case),
+        count(PositionKind::Left),
+        count(PositionKind::Right),
+        count(PositionKind::Arc),
+        count(PositionKind::Ice) + count(PositionKind::IceLeft) + count(PositionKind::IceRight),
+        t.elapsed()
+    );
+    let positions = Arc::new(positions);
+    let t = Instant::now();
+    let mut check =
+        VegetationCheck::with_positions(Arc::clone(&positions), &classes, params.clone());
+    check.visit_parallel(
+        terrain.as_ref(),
+        &veg,
+        |(p, c)| (at(p[0], 0), at(p[1], 1), at(p[2], 2), *c),
+        &budget,
+    )?;
+    let (points, work) = (check.points, check.work);
+    let results = check.finish();
+    let (enc, fall): (u64, u64) = results
+        .iter()
+        .fold((0, 0), |(e, f), r| (e + r.encroaching, f + r.fall_in));
+    let elapsed = t.elapsed();
+    println!(
+        "{enc} points within {:.2} m (clearance {:.2} + growth {:.2} + buffer {:.2}), {fall} points of trees that could fall in (root ball {}, allowance {:.2} m) — {points} points in {elapsed:.1?}, {:.2} µs a point",
+        params.clearance + params.growth() + params.buffer,
+        params.clearance,
+        params.growth(),
+        params.buffer,
+        params.root_ball,
+        params.fall_allowance,
+        elapsed.as_secs_f64() * 1e6 / points.max(1) as f64
+    );
+    println!(
+        "  work: {} point–span pairs, {} distances to positions, {} fall sectors, {} sheltered by the ground",
+        work.pairs, work.distances, work.sectors, work.sheltered
+    );
+    println!(
+        "  {:<18} {:>8} {:>8} {:>10} {:<26} {:>13} {:<26}",
+        "span",
+        "grow-in",
+        "fall-in",
+        "nearest m",
+        "case, position",
+        "fall margin m",
+        "case, position"
+    );
+    let place = |k: Option<usize>| k.map_or("-".to_owned(), |k| positions.describe(k));
+    for (s, r) in positions.spans.iter().zip(&results) {
+        if r.encroaching == 0 && r.fall_in == 0 {
+            continue;
         }
-        let csv = ohl_clearance::vegetation::to_csv(&case.name, &wires, &results, &params);
-        rows.push_str(csv.split_once('\n').map_or("", |x| x.1));
+        println!(
+            "  {:<18} {:>8} {:>8} {:>10} {:<26} {:>13} {:<26}",
+            wire_name(&s.wire),
+            r.encroaching,
+            r.fall_in,
+            r.nearest
+                .map_or("-".into(), |v| format!("{:.2}", v.distance)),
+            place(r.nearest.and_then(|v| v.position)),
+            r.worst_fall
+                .and_then(|v| v.fall_margin)
+                .map_or("-".into(), |f| format!("{f:.2}")),
+            place(r.worst_fall.and_then(|v| v.fall_position)),
+        );
     }
     if let Some(path) = &a.csv {
-        write(path, &rows)?;
+        write(
+            path,
+            &ohl_clearance::vegetation::danger_csv(&positions, &results, &params),
+        )?;
+    }
+    if !a.isoclearance.is_empty() {
+        let Some(ground) = terrain.as_ref() else {
+            return Err("isoclearance lines need the ground: no ground points".into());
+        };
+        let iso = ohl_clearance::isoclearance::IsoParams {
+            interval: a.iso_interval,
+            max_level: a.iso_max,
+            spacing: a.iso_spacing,
+            coarse: a.iso_coarse,
+        };
+        let bounds = corridor
+            .bounds()
+            .ok_or("isoclearance lines: no span to draw them along")?;
+        let t = Instant::now();
+        let lines = ohl_clearance::isoclearance::isoclearance(
+            &positions,
+            ground,
+            bounds,
+            &|x, y| corridor.contains(x, y),
+            &iso,
+            &budget,
+        )?;
+        println!(
+            "isoclearance: {} lines every {} m up to {} m, {} of {} coarse cells refined to {} m, {} clearances ({:.1?}){}",
+            lines.contours.len(),
+            iso.interval,
+            iso.max_level,
+            lines.refined_cells,
+            lines.coarse_cells,
+            iso.spacing,
+            lines.nodes,
+            t.elapsed(),
+            lines.lowest.map_or(String::new(), |(c, _)| format!(
+                "; lowest clearance {c:.2} m"
+            ))
+        );
+        for path in &a.isoclearance {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let text = match ext.as_str() {
+                "geojson" | "json" => {
+                    ohl_clearance::isoclearance::to_geojson(&lines.contours, &line.name, &line.crs)
+                }
+                "csv" => ohl_clearance::isoclearance::to_csv(&lines.contours),
+                "dxf" => {
+                    let l: Vec<(f64, Vec<[f64; 3]>)> = lines
+                        .contours
+                        .iter()
+                        .map(|c| (c.level, c.points.clone()))
+                        .collect();
+                    ohl_drawing::dxf::write(&ohl_drawing::isoclearance_model(
+                        &l,
+                        iso.max_level,
+                        2000.0,
+                    ))
+                }
+                _ => {
+                    return Err(format!(
+                        "{}: write the isoclearance lines as .geojson, .dxf or .csv",
+                        path.display()
+                    ));
+                }
+            };
+            write(path, &text)?;
+        }
     }
     Ok(())
 }

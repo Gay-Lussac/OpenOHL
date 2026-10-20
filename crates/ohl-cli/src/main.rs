@@ -410,6 +410,22 @@ struct DrawingArgs {
     /// standing perpendicular to the line).
     #[arg(long, default_value_t = 90.0, allow_hyphen_values = true)]
     elevation_rotation: f64,
+    /// Isoclearance lines on the plan every this many metres (layer
+    /// OHL_ISOCLEARANCE): the ground's clearance to the wires of the cases
+    /// drawn (the worst of them; a windy case blown left and right), over
+    /// the line width. Needs the ground.
+    #[arg(long)]
+    isoclearance_interval: Option<f64>,
+    /// Isoclearance lines above this clearance are not drawn, m.
+    #[arg(long, default_value_t = 40.0)]
+    isoclearance_max: f64,
+    /// Grid spacing of the isoclearance lines, m.
+    #[arg(long, default_value_t = 1.0)]
+    isoclearance_spacing: f64,
+    /// The isoclearance lines also along each span's swing arc between its
+    /// left and right blowout.
+    #[arg(long)]
+    isoclearance_swing_arc: bool,
     /// Output directory (created).
     #[arg(long)]
     out: PathBuf,
@@ -455,6 +471,8 @@ struct DrawingSpec {
     profile_only: bool,
     /// The structures' elevations on the plan.
     elevations: ohl_drawing::Elevations,
+    /// Isoclearance lines on the plan, with the swing arcs or not.
+    isoclearance: Option<(ohl_clearance::isoclearance::IsoParams, bool)>,
     /// Output directory.
     out: PathBuf,
 }
@@ -492,6 +510,17 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
             offset_mm: args.elevation_offset,
             rotation_deg: args.elevation_rotation,
         },
+        isoclearance: args.isoclearance_interval.map(|interval| {
+            (
+                ohl_clearance::isoclearance::IsoParams {
+                    interval,
+                    max_level: args.isoclearance_max,
+                    spacing: args.isoclearance_spacing,
+                    ..Default::default()
+                },
+                args.isoclearance_swing_arc,
+            )
+        }),
         out: args.out.clone(),
     };
     line(&args.line, Some(&spec))
@@ -1780,6 +1809,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             to: None,
             profile_only: false,
             elevations: Default::default(),
+            isoclearance: None,
             out: dir.clone(),
         });
         // Structures at levels 2 and 3: their members on their own layer
@@ -1880,6 +1910,52 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 page: page.clone(),
                 ..spec.export.clone()
             };
+            // Isoclearance lines: once for every route of the drawing.
+            let isolines = match &spec.isoclearance {
+                None => Vec::new(),
+                Some((iso, swing_arc)) => {
+                    let ground = ground.ok_or("isoclearance lines need the ground (--terrain)")?;
+                    let cases: Vec<WeatherCase> =
+                        solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
+                    // Exit clause: an hour for the solves and the lines.
+                    let budget = ohl_core::budget::Budget::new()
+                        .time_limit(std::time::Duration::from_secs(3600));
+                    let positions = ohl_clearance::positions::solve_positions(
+                        &line,
+                        &library,
+                        &cases,
+                        ohl_clearance::positions::PositionOptions {
+                            swing_arc: *swing_arc,
+                        },
+                        &budget,
+                    )?;
+                    let corridor = ohl_lidar::Corridor::along_spans(&line, *plan_width);
+                    let bounds = corridor
+                        .bounds()
+                        .ok_or("isoclearance lines: no span to draw them along")?;
+                    let t = std::time::Instant::now();
+                    let found = ohl_clearance::isoclearance::isoclearance(
+                        &positions,
+                        ground,
+                        bounds,
+                        &|x, y| corridor.contains(x, y),
+                        iso,
+                        &budget,
+                    )?;
+                    println!(
+                        "isoclearance: {} lines every {} m up to {} m over the line width ({:.1?})",
+                        found.contours.len(),
+                        iso.interval,
+                        iso.max_level,
+                        t.elapsed()
+                    );
+                    found
+                        .contours
+                        .into_iter()
+                        .map(|c| (c.level, c.points))
+                        .collect::<Vec<_>>()
+                }
+            };
             let routes = line.alignment_views();
             for id in &spec.routes {
                 if !routes.iter().any(|r| &r.id == id) {
@@ -1902,6 +1978,9 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 )?;
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
+                if let Some((iso, _)) = &spec.isoclearance {
+                    d.set_isoclearance(&isolines, iso.max_level);
+                }
                 // The other cases' wires, dashed (the envelope of positions).
                 for (k, (case, case_shapes, case_jumpers)) in
                     solved_cases.iter().enumerate().skip(1)
