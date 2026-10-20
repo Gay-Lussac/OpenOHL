@@ -48,6 +48,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(ClearanceSurface));
     registry.register(Box::new(FallIn));
     registry.register(Box::new(SwingArcCase));
+    registry.register(Box::new(SpanCasesSection));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -1409,6 +1410,103 @@ impl Calculation for SwingArcCase {
             ("arc_from_deg", place.from.to_degrees()),
             ("arc_to_deg", place.to.to_degrees()),
             ("distance_m", d),
+        ]))
+    }
+}
+
+/// `line.span_cases`: a section of two level 300 m spans solved by the
+/// line's solver ([`ohl_line::solve::solve_section_span_cases`]) with
+/// span 0 in a weather case of its own. Dead-end clamps fixed at
+/// (0, 0, 27) and (600, 0, 27) m; in the middle a suspension string from
+/// (300, 0, 30) m, 3 m, 800 N, axial stiffness 5e7 N. Cable: one
+/// component, EA = 400 mm² × 86.6 GPa = 34.64 MN, α = 18.9e-6 /K,
+/// 1.6285 kg/m, 28 mm; strung at 28 kN at 15 °C in the blocks. The
+/// section's case: still air at `temperature`, no ice; span 0's: still
+/// air at `span_temperature` with `span_ice_load` (glaze ice). Outputs:
+/// both spans' horizontal tensions, the middle clamp's position along
+/// the line and height, the string's swing along the line (positive
+/// towards span 1) and its force.
+struct SpanCasesSection;
+
+impl Calculation for SpanCasesSection {
+    fn id(&self) -> &'static str {
+        "line.span_cases"
+    }
+
+    fn description(&self) -> &'static str {
+        "Two level spans and a suspension string, span 0 in its own weather case (inputs: \
+         temperature, span_temperature, span_ice_load); outputs h0_n, h1_n, clamp_x_m, \
+         clamp_z_m, swing_deg, string_n"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_line::solve::{SpanCases, solve_section_span_cases};
+        let cable: ohl_cables::Cable = toml::from_str(
+            r#"
+id = "span-cases"
+name = "Synthetic homogeneous test cable"
+kind = "aaac"
+source = "Synthetic test data, not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "120 kN"
+outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
+"#,
+        )
+        .map_err(|e| e.to_string())?;
+        let line = ohl_line::Line::from_json(
+            r#"{
+  "format": "ohl-line", "version": 6, "name": "span cases", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "points": [{"label": "A1", "position": [300, 0, 30]}],
+     "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0,
+                  "weight": 800.0, "stiffness": 5e7}],
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1}]},
+    {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [600, 0, 27], "set": 1}]}
+  ],
+  "sections": [{"id": "S", "cable": "span-cases", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+               {"structure": "T3", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 28000.0, "temperature": 15.0}}]
+}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        let base = WeatherCase::still(
+            "base",
+            quantity_input::<Temperature>(inputs, "temperature")?,
+        );
+        let mut own = WeatherCase::still(
+            "span 0",
+            quantity_input::<Temperature>(inputs, "span_temperature")?,
+        );
+        let ice = quantity_input::<ForcePerLength>(inputs, "span_ice_load")?;
+        if ice.si() > 0.0 {
+            own.ice_load = Some(ice);
+        }
+        let cases = SpanCases::uniform(base).with_span(0, own);
+        let shape = solve_section_span_cases(
+            &line,
+            &line.sections[0],
+            &cable,
+            &cases,
+            &default_fe_budget(),
+        )
+        .map_err(|e| e.to_string())?;
+        let clamp = shape.clamps[1];
+        let string = shape.strings[1].first().ok_or("no string")?;
+        let (top, bottom) = (string.top, string.bottom);
+        let swing = (bottom[0] - top[0]).atan2(top[2] - bottom[2]).to_degrees();
+        Ok(outputs([
+            ("h0_n", shape.spans[0].horizontal_tension),
+            ("h1_n", shape.spans[1].horizontal_tension),
+            ("clamp_x_m", clamp[0]),
+            ("clamp_z_m", clamp[2]),
+            ("swing_deg", swing),
+            ("string_n", string.force),
         ]))
     }
 }

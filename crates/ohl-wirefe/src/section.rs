@@ -113,6 +113,32 @@ pub struct State {
     pub site_loads: Vec<Vector3<f64>>,
     /// Spans removed (broken conductor).
     pub broken_spans: Vec<usize>,
+    /// Spans in a state of their own (temperature and load per metre),
+    /// by span index; the others in `temperature` and `cable_load`. E.g.
+    /// one span iced while its neighbours are not.
+    pub span_states: Vec<(usize, SpanState)>,
+}
+
+/// The state of one span when it differs from the section's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpanState {
+    /// Cable temperature, °C.
+    pub temperature: f64,
+    /// Load on the cable per unit length, N/m (as [`State::cable_load`]).
+    pub cable_load: Vector3<f64>,
+}
+
+impl State {
+    /// The temperature and load per metre of span `span`.
+    pub fn of_span(&self, span: usize) -> (f64, Vector3<f64>) {
+        self.span_states
+            .iter()
+            .rev()
+            .find(|(s, _)| *s == span)
+            .map_or((self.temperature, self.cable_load), |(_, x)| {
+                (x.temperature, x.cable_load)
+            })
+    }
 }
 
 impl State {
@@ -124,6 +150,7 @@ impl State {
             insulator_wind: 0.0,
             site_loads: vec![Vector3::zeros(); spec.load_sites.len()],
             broken_spans: vec![],
+            span_states: vec![],
         }
     }
 }
@@ -493,9 +520,6 @@ impl FeSection {
             )));
         }
         let mut model = self.base.clone();
-        let thermal = (self.spec.cable.thermal_expansion
-            * (state.temperature - self.spec.stringing_temperature))
-            .exp();
         let mut piece_elements = Vec::with_capacity(self.pieces.len());
         for piece in &self.pieces {
             if state.broken_spans.contains(&piece.span) {
@@ -503,13 +527,18 @@ impl FeSection {
                 continue;
             }
             piece_elements.push(Some(model.cables.len()));
+            // The span's own state, or the section's.
+            let (temperature, load) = state.of_span(piece.span);
+            let thermal = (self.spec.cable.thermal_expansion
+                * (temperature - self.spec.stringing_temperature))
+                .exp();
             model.cables.push(CableElement {
                 i: piece.i,
                 j: piece.j,
                 properties: CableProperties {
                     unstressed_length: piece.unstressed_length * thermal,
                     axial_stiffness: self.spec.cable.axial_stiffness,
-                    load: state.cable_load,
+                    load,
                 },
             });
         }
@@ -787,5 +816,57 @@ mod tests {
         assert!(l.sag > b.sag + 1.0, "bare {} loaded {}", b.sag, l.sag);
         // The loaded span pulls the shared string towards it.
         assert!(loaded.supports[1].swing_longitudinal_deg < 0.0);
+    }
+
+    /// A span in a state of its own: two level 300 m spans at −5 °C,
+    /// span 0 with 10 N/m of ice, then span 0 at 60 °C and span 1 at
+    /// 15 °C. Reference: benchmarks/wirefe/reference_span_cases.py (the
+    /// closed-form elastic catenary and the clamp's balance, its own
+    /// implementation; 15.97 N/m). With every span in the section's state,
+    /// the same as without span states, bit for bit.
+    #[test]
+    fn a_span_in_its_own_state() {
+        let section =
+            FeSection::build(spec(&[(300.0, 0.0), (300.0, 0.0)], suspension()), &budget()).unwrap();
+        let close = |a: f64, b: f64, tol: f64| assert!((a - b).abs() < tol, "{a} {b}");
+        let mut cold = State::bare(section.spec(), -5.0);
+        let plain = section.solve(&cold, &default_fe_budget()).unwrap();
+        cold.span_states = vec![(
+            1,
+            SpanState {
+                temperature: -5.0,
+                cable_load: cold.cable_load,
+            },
+        )];
+        assert_eq!(section.solve(&cold, &default_fe_budget()).unwrap(), plain);
+        let check = |state: &State, h: [f64; 2], x: f64, swing: f64| {
+            let r = section.solve(state, &default_fe_budget()).unwrap();
+            for (s, h) in h.iter().enumerate() {
+                close(
+                    r.spans[s].as_ref().unwrap().horizontal_tension,
+                    *h,
+                    1e-7 * h,
+                );
+            }
+            close(r.supports[1].clamp.x, x, 1e-6);
+            close(r.supports[1].swing_longitudinal_deg, swing, 1e-6);
+        };
+        cold.span_states = vec![(
+            0,
+            SpanState {
+                temperature: -5.0,
+                cable_load: Vector3::new(0.0, 0.0, -(W + 10.0)),
+            },
+        )];
+        check(&cold, [38948.68766, 38610.47421], 299.8485549, -2.893230611);
+        let mut hot = State::bare(section.spec(), 15.0);
+        hot.span_states = vec![(
+            0,
+            SpanState {
+                temperature: 60.0,
+                cable_load: hot.cable_load,
+            },
+        )];
+        check(&hot, [24704.58882, 24916.54638], 300.1223034, 2.336227718);
     }
 }
