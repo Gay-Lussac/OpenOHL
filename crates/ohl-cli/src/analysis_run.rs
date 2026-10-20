@@ -178,6 +178,11 @@ pub struct VegetationArgs {
     /// Tallest tree looked for, m.
     #[arg(long, default_value_t = 40.0)]
     pub max_tree_height: f64,
+    /// Largest horizontal distance from a tree to the nearest ground
+    /// point for its base to be taken from the ground, m (default: no
+    /// limit); beyond it no fall-in check.
+    #[arg(long)]
+    pub max_base_ground_distance: Option<f64>,
     /// Buffer added to the clearance for grow-in (e.g. the survey's
     /// accuracy), m.
     #[arg(long, default_value_t = 0.0)]
@@ -762,6 +767,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         root_ball: a.root_ball,
         fall_allowance: a.fall_allowance,
         max_tree_height: a.max_tree_height,
+        max_base_ground_distance: a.max_base_ground_distance,
         ..VegetationParams::default()
     };
     // Exit clause of the whole run (solves, checks, lines).
@@ -829,6 +835,15 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         &budget,
     )?;
     let (points, work) = (check.points, check.work);
+    if params.fall_in && check.without_ground > 0 {
+        println!(
+            "  {} points without a tree base (no fall-in check): {} with no ground below them, {} with no ground point within {} m",
+            check.without_ground,
+            check.without_ground - check.ground_too_far,
+            check.ground_too_far,
+            params.max_base_ground_distance.unwrap_or(f64::INFINITY)
+        );
+    }
     let results = check.finish();
     let (enc, fall): (u64, u64) = results
         .iter()
