@@ -546,7 +546,7 @@ fn lidar_points_can_be_picked() {
     let on = Snaps([Snap::LidarPoint].into_iter().collect());
     assert_eq!(
         pick_in_model(&model, 0, &on, at, 5.0, project),
-        Selection::LidarPoint(0)
+        Selection::LidarPoint(([200_000, 0, 30_000], 5))
     );
 }
 

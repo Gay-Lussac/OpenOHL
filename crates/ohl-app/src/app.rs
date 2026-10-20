@@ -294,6 +294,9 @@ pub struct Ready {
     pub vegetation: crate::vegetation::VegetationWindow,
     /// Checks › As-built wires.
     pub wirefit: crate::wirefit::WireFitWindow,
+    /// The ground built again from the LiDAR ground classes after their
+    /// points changed ([`crate::lidar_edit::frame`]).
+    pub lidar_ground: crate::job::Job<Option<ohl_terrain::Terrain>>,
     /// Checks › Ground clearances › Vertical clearances.
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
     /// Checks › Ground clearances › Radial clearances.
@@ -425,6 +428,7 @@ impl Ready {
             check_library: Default::default(),
             vegetation: Default::default(),
             wirefit: Default::default(),
+            lidar_ground: Default::default(),
             vertical_clearances: crate::clearance_zones::ZoneWindow::new(
                 ohl_clearance::Measure::Vertical,
             ),
@@ -1582,6 +1586,17 @@ impl Ready {
                 return;
             }
             _ => {}
+        }
+        // A LiDAR point: its window (read-only for a viewer).
+        if tool == Tool::Edit
+            && let Selection::LidarPoint(p) = &target
+        {
+            match crate::lidar_edit::PointsForm::of(&self.model, &[*p]) {
+                Ok(f) => self.editor = Some(crate::editors::Form::Points(f)),
+                Err(e) => self.status = Some((e, true)),
+            }
+            self.select(target);
+            return;
         }
         if let Err(why) = self.model.can_edit() {
             self.status = Some((format!("{}: read-only — {why}", tool.name()), true));
@@ -4710,6 +4725,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     alignment_windows(ctx, r);
     crate::replace::window(ctx, r, rs);
     editor_window(ctx, r, rs);
+    crate::lidar_edit::frame(ctx, r);
     display_window(ctx, r);
     angles_window(ctx, r);
     survey_window(ctx, r);
@@ -6190,6 +6206,12 @@ fn editor_window(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wg
                         structure: f.structure.clone(),
                         set: f.wires.iter().find_map(|w| w.set).unwrap_or(f.set),
                     }),
+                    // The point where it is now.
+                    Form::Points(f) => {
+                        if let Some(p) = f.drawn_after(&r.model) {
+                            r.select(Selection::LidarPoint(p));
+                        }
+                    }
                     _ => {}
                 }
             } else {

@@ -80,8 +80,10 @@ pub enum Selection {
         /// The point's label.
         label: String,
     },
-    /// A LiDAR point shown (index in the model's points).
-    LidarPoint(usize),
+    /// A LiDAR point drawn: millimetres from the model's origin and its
+    /// class, as drawn ([`lidar_xyz`]); the editor finds the stored point
+    /// behind it ([`crate::lidar_edit`]).
+    LidarPoint(crate::model::LidarPoint),
     /// A point of the ground surface (survey; index in its points).
     SurveyPoint(usize),
 }
@@ -290,7 +292,7 @@ impl Selection {
             Selection::AlignmentPoint { id } => {
                 format!("alignment point {id}")
             }
-            Selection::LidarPoint(k) => format!("LiDAR point {k}"),
+            Selection::LidarPoint((_, c)) => format!("LiDAR point (class {c})"),
             Selection::SurveyPoint(k) => format!("survey point {}", k + 1),
         }
     }
@@ -403,7 +405,7 @@ pub fn spacer_state<'a>(
 /// The exact coordinates of a LiDAR or survey point.
 pub fn position(model: &Model, s: &Selection) -> Option<[f64; 3]> {
     match s {
-        Selection::LidarPoint(k) => model.points.get(*k).map(|(q, _)| lidar_xyz(model, q)),
+        Selection::LidarPoint((q, _)) => Some(lidar_xyz(model, q)),
         Selection::SurveyPoint(k) => model.ground.as_ref()?.points().get(*k).copied(),
         _ => None,
     }
@@ -607,7 +609,7 @@ fn span_object_candidates(model: &Model, shape: &ohl_line::solve::SectionShape) 
 /// piece), strings (all along them, where they are drawn: as solved in
 /// the case shown and its mirror) and attachment points (string tops and
 /// clamps, where drawn), alignment points. LiDAR points are picked
-/// separately ([`pick_in_model`]).
+/// separately ([`pick_shown`]).
 pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
     use crate::scene::Part;
     let mut out = Vec::new();
@@ -813,9 +815,161 @@ fn other_case_candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<(Cand
     out
 }
 
+/// The LiDAR points a view draws, for picking: every point drawn can be
+/// clicked, no other (not those a level of detail thins out, beyond the
+/// render distance, of hidden classes or without a colour).
+#[derive(Debug)]
+pub enum LidarShown<'a> {
+    /// None (a view without LiDAR points, or their layer hidden).
+    Nothing,
+    /// The model's points loaded (classes hidden and those without a
+    /// colour left out): a view drawing all of them (tests).
+    #[cfg(test)]
+    Loaded,
+    /// Groups of points drawn, each with its bounds (groups whose bounds
+    /// lie away from the click on the screen are skipped).
+    Groups(Vec<LidarGroup<'a>>),
+}
+
+/// Points drawn together (a node of a streamed cloud, a chunk).
+#[derive(Debug)]
+pub struct LidarGroup<'a> {
+    /// Lowest and highest corner of its points, project coordinates.
+    pub bounds: Option<[[f64; 3]; 2]>,
+    /// Its points.
+    pub points: LidarPoints<'a>,
+    /// The same of each run of [`LIDAR_CELL`] of its points in their
+    /// order (columns only; empty: not known).
+    pub cells: &'a [[[f64; 3]; 2]],
+}
+
+/// Points per run whose bounds a click looks at before its points
+/// ([`LidarGroup::cells`]).
+pub const LIDAR_CELL: usize = 4096;
+
+/// The points of a [`LidarGroup`].
+#[derive(Debug)]
+pub enum LidarPoints<'a> {
+    /// Coordinates (mm from the model's origin) and classes.
+    Columns(&'a [[i32; 3]], &'a [u8]),
+    /// The model's points of these indices, those divisible by the step.
+    Indices(&'a [u32], usize),
+}
+
+/// The LiDAR point drawn nearest to `at` on the screen within `radius`
+/// pixels: its distance there, px, and the point. Of points within a
+/// pixel of each other, the one nearest the eye (`project` gives the
+/// screen position and the depth). Groups whose bounds project away from
+/// `at` are skipped (their eight corners all in front of the eye: the
+/// rectangle around them on the screen).
+///
+/// Cost: projecting the points of the groups near the click (a few
+/// nodes of 10⁵ points: a few ms; the loaded points of the tests: every
+/// loaded point, ~10 ns each).
+pub fn pick_lidar(
+    model: &Model,
+    shown: &LidarShown<'_>,
+    at: [f64; 2],
+    radius: f64,
+    project: &dyn Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+) -> Option<(f64, crate::model::LidarPoint)> {
+    // (distance px, depth, point)
+    let mut best: Option<(f64, f64, crate::model::LidarPoint)> = None;
+    let mut consider = |q: &[i32; 3], c: u8| {
+        let Some((s, depth)) = project(lidar_xyz(model, q)) else {
+            return;
+        };
+        let d = (s[0] - at[0]).hypot(s[1] - at[1]);
+        if d > radius {
+            return;
+        }
+        let better = match &best {
+            None => true,
+            // A pixel apart or less: the one nearer the eye.
+            Some((bd, bz, _)) if (d - bd).abs() <= 1.0 => depth < *bz,
+            Some((bd, _, _)) => d < *bd,
+        };
+        if better {
+            best = Some((d, depth, (*q, c)));
+        }
+    };
+    let near = |b: &[[f64; 3]; 2]| {
+        let mut lo = [f64::INFINITY; 2];
+        let mut hi = [f64::NEG_INFINITY; 2];
+        for k in 0..8 {
+            let p = [0, 1, 2].map(|i| b[(k >> i) & 1][i]);
+            // A corner behind the eye: the rectangle is not known.
+            let Some((s, _)) = project(p) else {
+                return true;
+            };
+            for i in 0..2 {
+                lo[i] = lo[i].min(s[i]);
+                hi[i] = hi[i].max(s[i]);
+            }
+        }
+        (0..2).all(|i| at[i] >= lo[i] - radius && at[i] <= hi[i] + radius)
+    };
+    match shown {
+        LidarShown::Nothing => {}
+        #[cfg(test)]
+        LidarShown::Loaded => {
+            let drawn = |c: u8| {
+                !model.hidden_classes.contains(&c)
+                    && crate::scene::class_color(&model.scheme, c).is_some()
+            };
+            for (q, c) in &model.points {
+                if drawn(*c) {
+                    consider(q, *c);
+                }
+            }
+        }
+        LidarShown::Groups(groups) => {
+            for g in groups {
+                if g.bounds.as_ref().is_some_and(|b| !near(b)) {
+                    continue;
+                }
+                match &g.points {
+                    LidarPoints::Columns(xyz, class) => {
+                        let runs = if g.cells.len() == xyz.len().div_ceil(LIDAR_CELL) {
+                            g.cells.len()
+                        } else {
+                            1
+                        };
+                        for k in 0..runs {
+                            if runs > 1 && !near(&g.cells[k]) {
+                                continue;
+                            }
+                            let (a, b) = if runs > 1 {
+                                (k * LIDAR_CELL, ((k + 1) * LIDAR_CELL).min(xyz.len()))
+                            } else {
+                                (0, xyz.len())
+                            };
+                            for (q, c) in xyz[a..b].iter().zip(&class[a..b]) {
+                                consider(q, *c);
+                            }
+                        }
+                    }
+                    LidarPoints::Indices(indices, step) => {
+                        for &k in indices.iter() {
+                            if (k as usize).is_multiple_of(*step)
+                                && let Some((q, c)) = model.points.get(k as usize)
+                            {
+                                consider(q, *c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best.map(|(d, _, p)| (d, p))
+}
+
 /// Picks among everything switched on in `snaps`: the [`candidates`], and
 /// the LiDAR points straight from the model (millions of them: not made
-/// into candidates).
+/// into candidates), all loaded (tests; the views pick what they draw:
+/// [`pick_shown`]).
+#[cfg(test)]
 pub fn pick_in_model(
     model: &Model,
     case: usize,
@@ -882,6 +1036,7 @@ fn inside_hull(at: [f64; 2], points: &[[f64; 2]]) -> bool {
 /// [`pick_in_model`], also in every other weather case drawn: what was
 /// picked, and the case of the copy clicked where it is not the one shown
 /// (`None`: the case shown, or nothing case-bound).
+#[cfg(test)]
 pub fn pick_in_model_case(
     model: &Model,
     case: usize,
@@ -890,6 +1045,34 @@ pub fn pick_in_model_case(
     radius: f64,
     project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
 ) -> (Selection, Option<usize>) {
+    pick_shown(
+        model,
+        case,
+        snaps,
+        at,
+        radius,
+        &|p| project(p).map(|q| (q, 0.0)),
+        &LidarShown::Loaded,
+    )
+}
+
+/// What a click at `at` picks among everything switched on in `snaps`:
+/// the [`candidates`] (in the case shown), the copies in every other
+/// weather case drawn ([`other_case_candidates`]; the case of the copy
+/// clicked where it is not the one shown, else `None`), poles by their
+/// outline, survey points, and the LiDAR points the view draws, `lidar`:
+/// those and no other ([`pick_lidar`]). `project3` gives the screen
+/// position and the depth (0 in plan and profile).
+pub fn pick_shown(
+    model: &Model,
+    case: usize,
+    snaps: &Snaps,
+    at: [f64; 2],
+    radius: f64,
+    project3: &dyn Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    lidar: &LidarShown<'_>,
+) -> (Selection, Option<usize>) {
+    let project = |p: [f64; 3]| project3(p).map(|q| q.0);
     let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
     let mut picked_case = None;
     let others = other_case_candidates(model, case, snaps);
@@ -923,19 +1106,12 @@ pub fn pick_in_model_case(
             }
         }
     }
-    if snaps.on(Snap::LidarPoint) {
+    if snaps.on(Snap::LidarPoint)
+        && let Some((d, p)) = pick_lidar(model, lidar, at, radius, project3)
+    {
         let bonus = Snap::LidarPoint.priority();
-        for (k, (q, class)) in model.points.iter().enumerate() {
-            if model.hidden_classes.contains(class) {
-                continue;
-            }
-            let Some(s) = project(lidar_xyz(model, q)) else {
-                continue;
-            };
-            let d = (s[0] - at[0]).hypot(s[1] - at[1]);
-            if d <= radius && best.as_ref().is_none_or(|b| d - bonus < b.0) {
-                best = Some((d - bonus, Selection::LidarPoint(k)));
-            }
+        if best.as_ref().is_none_or(|b| d - bonus < b.0) {
+            best = Some((d - bonus, Selection::LidarPoint(p)));
         }
     }
     let chosen = best.map_or(Selection::None, |b| b.1);

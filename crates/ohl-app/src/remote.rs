@@ -101,6 +101,7 @@ fn merge(applied: Vec<Applied>) -> Option<Applied> {
     for a in it {
         first.seq = a.seq;
         first.objects.extend(a.objects);
+        first.points.extend(a.points);
         for s in a.sections {
             if !first.sections.contains(&s) {
                 first.sections.push(s);

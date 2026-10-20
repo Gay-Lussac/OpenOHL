@@ -237,6 +237,14 @@ impl<K: Eq + Hash + Clone> ChunkSet<K> {
             .filter_map(|c| c.shown.and_then(|l| c.lods[l].as_ref()))
     }
 
+    /// The chunks drawn at the last plan, with the level each is drawn
+    /// at (what a click can pick).
+    pub fn shown(&self) -> impl Iterator<Item = (&K, usize)> {
+        self.chunks
+            .iter()
+            .filter_map(|(k, c)| c.shown.filter(|l| c.lods[*l].is_some()).map(|l| (k, l)))
+    }
+
     /// Levels on the GPU, all chunks.
     pub fn built(&self) -> usize {
         self.chunks

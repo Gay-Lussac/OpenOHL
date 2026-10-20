@@ -343,6 +343,8 @@ pub enum Form {
     Span(crate::span_tool::SpanForm),
     /// A new spacer between two span points.
     Spacer(crate::span_tool::SpacerForm),
+    /// LiDAR points: their coordinates and class.
+    Points(crate::lidar_edit::PointsForm),
 }
 
 /// A jumper being changed: the jumper as it will be put.
@@ -2771,6 +2773,7 @@ impl Form {
             },
             Form::Spacer(f) if f.new => "Add spacer".into(),
             Form::Spacer(f) => format!("Spacer {}", f.spacer.id),
+            Form::Points(f) => f.title(),
         }
     }
 
@@ -2823,6 +2826,7 @@ impl Form {
             Form::Jumper(f) => f.command(),
             Form::Span(f) => f.command(model),
             Form::Spacer(f) => f.command(model),
+            Form::Points(f) => f.command(),
         }
     }
 
@@ -2855,10 +2859,17 @@ impl Form {
             Form::Jumper(f) => jumper_ui(ui, f, model),
             Form::Span(f) => crate::span_tool::span_ui(ui, f),
             Form::Spacer(f) => crate::span_tool::spacer_ui(ui, f, model),
+            Form::Points(f) => crate::lidar_edit::points_ui(ui, f, model),
         }
+        // Read-only (a viewer's LiDAR point): nothing to apply.
+        let editable = !matches!(self, Form::Points(f) if f.read_only.is_some());
         ui.separator();
         ui.horizontal(|ui| {
-            if ui.button("Apply").on_hover_text("Enter").clicked() {
+            if ui
+                .add_enabled(editable, egui::Button::new("Apply"))
+                .on_hover_text("Enter")
+                .clicked()
+            {
                 out = Some(Outcome::Apply);
             }
             if ui.button("Cancel").on_hover_text("Escape").clicked() {

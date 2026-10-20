@@ -38,11 +38,52 @@ pub struct LoadSettings {
     pub colors: Arc<Vec<Option<[u8; 3]>>>,
 }
 
+/// The points of a node as drawn (after the class and share settings),
+/// kept for picking: every point drawn can be clicked
+/// ([`crate::selection::LidarShown`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct NodePoints {
+    /// Coordinates, mm from the view's origin (as the model's points).
+    pub xyz: Vec<[i32; 3]>,
+    /// Classes.
+    pub class: Vec<u8>,
+    /// Lowest and highest corner of the points, project coordinates
+    /// (none: no point).
+    pub bounds: Option<[[f64; 3]; 2]>,
+    /// The same of each run of [`crate::selection::LIDAR_CELL`] points
+    /// in their order (a block's points lie near each other: sorted by
+    /// x, then y), so a click skips the runs away from it.
+    pub cells: Vec<[[f64; 3]; 2]>,
+}
+
+impl NodePoints {
+    fn push(&mut self, p: [f64; 3], class: u8, origin: [f64; 3]) {
+        let grow = |b: &mut [[f64; 3]; 2]| {
+            for k in 0..3 {
+                b[0][k] = b[0][k].min(p[k]);
+                b[1][k] = b[1][k].max(p[k]);
+            }
+        };
+        if self.xyz.len().is_multiple_of(crate::selection::LIDAR_CELL) {
+            self.cells.push([p, p]);
+        } else if let Some(c) = self.cells.last_mut() {
+            grow(c);
+        }
+        self.xyz
+            .push([0, 1, 2].map(|k| ((p[k] - origin[k]) * 1000.0).round() as i32));
+        self.class.push(class);
+        match &mut self.bounds {
+            Some(b) => grow(b),
+            None => self.bounds = Some([p, p]),
+        }
+    }
+}
+
 /// A node read.
 struct Done {
     node: usize,
     generation: u64,
-    scene: Result<(Scene, u64), String>,
+    scene: Result<(Scene, NodePoints, u64), String>,
 }
 
 /// The queue the readers take from.
@@ -202,7 +243,8 @@ impl PointOctree {
     }
 
     /// One frame: takes the nodes read since the last one into `cache`
-    /// (`make` uploads them), picks the nodes for `view` within `limits`,
+    /// (`make` uploads them, with their points as drawn), picks the nodes
+    /// for `view` within `limits`,
     /// queues the missing ones and drops old ones from the cache. Returns
     /// the nodes to draw (in the cache).
     pub fn frame<V>(
@@ -210,7 +252,7 @@ impl PointOctree {
         cache: &mut NodeCache<V>,
         view: &LodView<'_>,
         limits: &LodLimits,
-        mut make: impl FnMut(&Scene) -> V,
+        mut make: impl FnMut(&Scene, NodePoints) -> V,
     ) -> Vec<usize> {
         cache.tick();
         let selection = self.hierarchy.select(view, limits);
@@ -225,7 +267,9 @@ impl PointOctree {
                     continue;
                 }
                 match d.scene {
-                    Ok((scene, points)) => cache.insert(d.node, make(&scene), points),
+                    Ok((scene, drawn, points)) => {
+                        cache.insert(d.node, make(&scene, drawn), points);
+                    }
                     Err(e) => {
                         log::warn!("LiDAR node {}: {e}", d.node);
                         self.failed.insert(d.node);
@@ -343,6 +387,7 @@ fn read_nodes(
             }
         };
         let mut scene = Scene::new(origin);
+        let mut drawn = NodePoints::default();
         let mut keep = ohl_pointcloud::Every::new(settings.every, &settings.whole);
         let mut kept = 0u64;
         let result = reader
@@ -357,10 +402,11 @@ fn read_nodes(
                     {
                         kept += 1;
                         scene.point([x, y, z], [col[0], col[1], col[2], 255], 2.0);
+                        drawn.push([x, y, z], c, origin);
                     }
                 },
             )
-            .map(|_| (scene, kept));
+            .map(|_| (scene, drawn, kept));
         {
             let Ok(mut q) = lock.lock() else {
                 return;
@@ -454,7 +500,10 @@ mod tests {
             };
             let mut drawn = Vec::new();
             for _ in 0..2000 {
-                drawn = stream.frame(cache, &view, &limits, |s| s.counts().1 as u64);
+                drawn = stream.frame(cache, &view, &limits, |s, p| {
+                    assert_eq!(p.xyz.len(), s.counts().1, "every point drawn kept");
+                    s.counts().1 as u64
+                });
                 if stream.stats.pending == 0 {
                     break;
                 }

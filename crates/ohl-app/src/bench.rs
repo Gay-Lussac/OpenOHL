@@ -206,11 +206,11 @@ fn pick_time(app: &mut App, tab: Tab) -> f64 {
                 return 0.0;
             };
             let size = [f64::from(rect.width()), f64::from(rect.height())];
-            let project = cam.projector(size);
             let at = [0.5 * size[0], 0.5 * size[1]];
-            let _ = crate::selection::pick_in_model_case(&r.model, r.case, &snaps, at, 14.0, |p| {
-                project(p).map(|(q, _)| q)
-            });
+            // What the view drew can be clicked (the LiDAR points drawn).
+            let _ = r
+                .view3d
+                .pick(&cam, size, &r.model, r.case, &snaps, &r.visible, at, 14.0);
         }
         _ => {
             let (Some(rect), Some(c)) = (r.plan.drawn, r.plan.centre()) else {
@@ -224,8 +224,15 @@ fn pick_time(app: &mut App, tab: Tab) -> f64 {
                 ])
             };
             let at = [f64::from(mid.x), f64::from(mid.y)];
-            let _ =
-                crate::selection::pick_in_model_case(&r.model, r.case, &snaps, at, 12.0, to_screen);
+            let _ = crate::selection::pick_shown(
+                &r.model,
+                r.case,
+                &snaps,
+                at,
+                12.0,
+                &|p| to_screen(p).map(|q| (q, 0.0)),
+                &crate::selection::LidarShown::Nothing,
+            );
         }
     }
     started.elapsed().as_secs_f64() * 1e3

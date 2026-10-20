@@ -43,6 +43,7 @@ mod help;
 mod icons;
 mod job;
 mod library;
+mod lidar_edit;
 mod loads;
 mod lod;
 mod menu;
@@ -100,6 +101,8 @@ mod bench;
 mod glyph_tests;
 #[cfg(test)]
 mod handle_tests;
+#[cfg(test)]
+mod lidar_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]
