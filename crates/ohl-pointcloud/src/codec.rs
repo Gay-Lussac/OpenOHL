@@ -118,6 +118,13 @@ impl Columns {
     /// compressed blobs (xyz, intensity, returns).
     pub fn encode(&mut self) -> Result<Blobs, String> {
         self.sort();
+        self.encode_in_order()
+    }
+
+    /// Encodes the columns in their order, already sorted by (x, y) (a
+    /// block changed point by point keeps the order of its other points:
+    /// [`crate::edit`]).
+    pub fn encode_in_order(&self) -> Result<Blobs, String> {
         let n = self.len();
         let z = |bytes: &[u8]| zstd::encode_all(bytes, LEVEL).map_err(|e| e.to_string());
         let intensity: Vec<u8> = {

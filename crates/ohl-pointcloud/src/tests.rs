@@ -1168,3 +1168,181 @@ fn store_counts(points: &[[i64; 4]]) -> Vec<(u8, u64)> {
     }
     m.into_iter().collect()
 }
+
+/// Every stored row of a cloud by what it is (not by row id): blocks by
+/// (cx, cy, class), their levels, the cloud's summary.
+type Snapshot = (
+    Vec<(
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        Vec<u8>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+    )>,
+    Vec<(i64, i64, i64, i64, i64, i64, Vec<u8>)>,
+    CloudInfo,
+);
+
+fn snapshot(path: &Path, name: &str) -> Snapshot {
+    let conn = Connection::open(path).unwrap();
+    let blocks = conn
+        .prepare(
+            "SELECT cx, cy, class, count, z0, xyz, intensity, returns FROM pointcloud_block
+             ORDER BY cx, cy, class",
+        )
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let lods = conn
+        .prepare(
+            "SELECT b.cx, b.cy, b.class, l.level, l.count, l.z1, l.xyz FROM pointcloud_lod l
+             JOIN pointcloud_block b ON b.id = l.block ORDER BY b.cx, b.cy, b.class, l.level",
+        )
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let mut cloud = Store::open(path).unwrap().cloud(Some(name)).unwrap();
+    cloud.id = 0;
+    (blocks, lods, cloud)
+}
+
+/// Single points changed — a height and class within its chunk, one
+/// moved to another chunk and a class of its own (a new block), the only
+/// point of a block moved out (the block goes) — read back exactly, the
+/// counts and levels follow; the inverses give every stored byte back.
+#[test]
+fn changed_points_read_back_and_undo_gives_every_byte_back() {
+    use crate::edit::{PointChange, StoredPoint};
+    let dir = scratch("edit");
+    let db = dir.join("p.ohl");
+    std::fs::remove_file(&db).ok();
+    let x0 = 2_600_000.0;
+    let points = synthetic(x0, 100, 30);
+    let mut store = Store::open(&db).unwrap();
+    store
+        .import_points("c", "", None, 64.0, 0.001, points.clone(), &Budget::new())
+        .unwrap();
+    let before = snapshot(&db, "c");
+    let cloud = store.cloud(Some("c")).unwrap();
+    // A ground point (class 2) at x0 + 10.5, y + 3.5.
+    let at = [x0 + 10.5, 1_200_003.5, 0.0];
+    let ground = points
+        .iter()
+        .find(|p| p.x == at[0] && p.y == at[1])
+        .unwrap();
+    assert_eq!(ground.class, 2);
+    let (a, ia) = store
+        .find_point("c", [ground.x, ground.y, ground.z], Some(2), 0.01)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        a.position(&cloud),
+        [ground.x, ground.y, ground.z].map(|v| (v * 1000.0).round() / 1000.0)
+    );
+    // A wire point (class 14, every 997th) to move into another chunk.
+    let wire = points
+        .iter()
+        .find(|p| p.class == 14 && p.x < x0 + 60.0)
+        .unwrap();
+    let (b, _) = store
+        .find_point("c", [wire.x, wire.y, wire.z], None, 0.01)
+        .unwrap()
+        .unwrap();
+    assert_eq!(b.class, 14);
+    let a2 = StoredPoint {
+        xyz: [a.xyz[0], a.xyz[1], a.xyz[2] + 1234],
+        class: 5,
+        ..a
+    };
+    let b2 = StoredPoint {
+        xyz: [b.xyz[0] + 140_000, b.xyz[1], b.xyz[2] - 5],
+        class: 31,
+        ..b
+    };
+    let changes = [
+        PointChange {
+            from: a,
+            from_index: Some(ia),
+            to: a2,
+            to_index: None,
+        },
+        PointChange {
+            from: b,
+            from_index: None,
+            to: b2,
+            to_index: None,
+        },
+    ];
+    let applied = store.change_points("c", &changes).unwrap();
+    // Read back: the new points there, the old ones gone, as many points.
+    let all = collect(&CloudSource::open(&db, Some("c")).unwrap(), None, None);
+    let mm = |p: [f64; 3], c: u8| {
+        let m = |v: f64| (v * 1000.0).round() as i64;
+        [m(p[0]), m(p[1]), m(p[2]), i64::from(c)]
+    };
+    for (p, c, present) in [
+        (a2.position(&cloud), 5, true),
+        (b2.position(&cloud), 31, true),
+        (a.position(&cloud), 2, false),
+        (b.position(&cloud), 14, false),
+    ] {
+        assert_eq!(all.contains(&mm(p, c)), present, "{p:?} class {c}");
+    }
+    assert_eq!(all.len(), points.len());
+    let after = store.cloud(Some("c")).unwrap();
+    assert_eq!(after.points, cloud.points);
+    // The class of its own, counted; the cloud reaches the new chunk.
+    let counts = store.class_counts(&after).unwrap();
+    assert!(counts.contains(&(31, 1)), "{counts:?}");
+    assert!(after.bounds[1][0] > cloud.bounds[1][0]);
+    assert!(store.has_lod(&after).unwrap());
+    // Exactly as the changed point: found again by its coordinates.
+    let (found, _) = store
+        .find_point("c", a2.position(&cloud), None, 0.0005)
+        .unwrap()
+        .unwrap();
+    assert_eq!(found, a2);
+    // The only point of block 31 moved back out: the block goes.
+    let back: Vec<PointChange> = applied.iter().rev().map(PointChange::inverse).collect();
+    store.change_points("c", &back).unwrap();
+    assert_eq!(snapshot(&db, "c"), before, "undo gives every byte back");
+    // A point that is not there: refused, nothing written.
+    let missing = PointChange {
+        from: a2,
+        from_index: None,
+        to: a,
+        to_index: None,
+    };
+    assert!(store.change_points("c", &[missing]).is_err());
+    assert_eq!(snapshot(&db, "c"), before);
+    drop(store);
+    std::fs::remove_dir_all(dir).ok();
+}
