@@ -27,6 +27,8 @@ pub struct PlanView {
     pub marks_stale: bool,
     /// What Checks › Vegetation found.
     pub vegetation: crate::vegetation::Overlay,
+    /// The lines on the ground beside the line (none: not shown).
+    pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
     /// Other users (server mode): where each looks, with their name.
     pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
@@ -583,6 +585,16 @@ impl PlanView {
             scale,
         );
         drop(backgrounds);
+        // The lines on the ground beside the line, under the line.
+        if visible.contains(&crate::scene::Layer::GroundLines) {
+            crate::ground_lines::paint_plan(
+                &painter,
+                rect,
+                &to_screen,
+                self.ground_lines.as_deref(),
+                &model.ground_lines,
+            );
+        }
         let wires = crate::perf::span("plan wires");
         let line = &model.line;
         let cull = Cull::new(rect, c, scale, 20.0);

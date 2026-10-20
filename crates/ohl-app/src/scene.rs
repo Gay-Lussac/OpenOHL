@@ -48,11 +48,14 @@ pub enum Layer {
     FallIn,
     /// Isoclearance lines on the ground (Checks › Vegetation).
     Isoclearance,
+    /// Lines on the ground a distance beside the line (View › Lines on
+    /// the ground beside the line, [`crate::ground_lines`]).
+    GroundLines,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 16] = [
+    pub const ALL: [Layer; 17] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -69,6 +72,7 @@ impl Layer {
         Layer::GrowIn,
         Layer::FallIn,
         Layer::Isoclearance,
+        Layer::GroundLines,
     ];
 
     /// Name in the layer panel.
@@ -90,6 +94,7 @@ impl Layer {
             Layer::GrowIn => "Vegetation: grow-in",
             Layer::FallIn => "Vegetation: danger trees",
             Layer::Isoclearance => "Isoclearance lines",
+            Layer::GroundLines => "Ground lines (beside the line)",
         }
     }
 }
@@ -1487,7 +1492,8 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::Orthophotos
         | Layer::GrowIn
         | Layer::FallIn
-        | Layer::Isoclearance => {}
+        | Layer::Isoclearance
+        | Layer::GroundLines => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {
             let hi = [255, 255, 255, 255];

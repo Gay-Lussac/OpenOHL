@@ -47,6 +47,12 @@ pub struct ProfileView {
     /// sheet number, first and last station on the profile (shifted as
     /// the alignment is), with warnings or not.
     pub(crate) sheets_drawn: Vec<(String, usize, f64, f64, bool)>,
+    /// The lines on the ground beside the line, when shown in the
+    /// profile too (none: not drawn) ...
+    pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
+    /// ... along the alignments shown (the lines they were found for,
+    /// the profile's alignments): each side's pieces of (station, height).
+    ground_along: Option<GroundAlong>,
     /// What Checks › Vegetation found ...
     pub vegetation: crate::vegetation::Overlay,
     /// ... and whether its grow-in and danger-tree layers are shown;
@@ -67,6 +73,15 @@ pub struct ProfileView {
 /// The stations and offsets of the vegetation points along a route: the
 /// route, the report's serial, grow-in, danger trees.
 type VegetationAlong = (String, u64, Vec<(f64, f64)>, Vec<(f64, f64)>);
+
+/// The lines on the ground along the profile: what they were found for
+/// (the lines, the alignments' starts), each side's pieces of (station,
+/// height).
+type GroundAlong = (
+    usize,
+    Vec<(f64, String)>,
+    Vec<(crate::ground_lines::Side, Vec<Vec<[f64; 2]>>)>,
+);
 
 /// Where the view is: stations, heights, its rectangle (bits of each).
 type ViewKey = [u64; 8];
@@ -321,6 +336,17 @@ impl ProfileView {
     #[cfg(test)]
     pub fn lidar_dots(&self) -> &[(egui::Pos2, crate::model::LidarPoint)] {
         &self.lidar_dots
+    }
+
+    /// The pieces of the lines on the ground drawn along the profile, by
+    /// side: left, right (tests).
+    #[cfg(test)]
+    pub fn ground_profiles(&self) -> [usize; 2] {
+        let mut n = [0; 2];
+        for (side, pieces) in self.ground_along.iter().flat_map(|g| &g.2) {
+            n[usize::from(*side == crate::ground_lines::Side::Right)] += pieces.len();
+        }
+        n
     }
 
     /// Draws what Checks › Vegetation found (nothing: the default).
@@ -870,6 +896,56 @@ impl ProfileView {
         }
         if let Some((_, shapes)) = &self.back {
             painter.extend(shapes.iter().cloned());
+        }
+        // The lines on the ground beside the line (View › Lines on the
+        // ground beside the line, "in the profile too"): the ground along
+        // each, by the station of its points; the right side (near)
+        // solid, the left (far) dashed.
+        match self
+            .ground_lines
+            .as_ref()
+            .filter(|_| model.ground_lines.profile)
+        {
+            None => self.ground_along = None,
+            Some(drawn) => {
+                let id = std::sync::Arc::as_ptr(drawn) as usize;
+                if self
+                    .ground_along
+                    .as_ref()
+                    .is_none_or(|g| g.0 != id || g.1 != built.joints)
+                {
+                    let mut sides = Vec::new();
+                    for (at, name) in &built.joints {
+                        let alignment = name.strip_prefix("alignment ").unwrap_or(name);
+                        sides.extend(crate::ground_lines::along(drawn, alignment, *at));
+                    }
+                    self.ground_along = Some((id, built.joints.clone(), sides));
+                }
+                let [r, g, b] = model.ground_lines.color;
+                let stroke =
+                    egui::Stroke::new(model.ground_lines.width, egui::Color32::from_rgb(r, g, b));
+                for (side, pieces) in &self.ground_along.as_ref().expect("made above").2 {
+                    for piece in pieces {
+                        if piece.iter().all(|p| p[0] < s0 || p[0] > s1) {
+                            continue;
+                        }
+                        let pts = crate::plan::thin_px(
+                            piece
+                                .iter()
+                                .filter(|p| visible(p))
+                                .map(|p| to_screen(p[0], p[1])),
+                        );
+                        if pts.len() < 2 {
+                            continue;
+                        }
+                        if *side == crate::ground_lines::Side::Right {
+                            painter.add(egui::Shape::line(pts, stroke));
+                        } else {
+                            painter.extend(egui::Shape::dashed_line(&pts, stroke, 6.0, 4.0));
+                        }
+                    }
+                }
+            }
         }
         // All alignments: where each begins.
         if built.joints.len() > 1 {

@@ -369,6 +369,9 @@ pub struct Ready {
     plan_on_line: bool,
     /// Pages moved with their tab's context menu, done after the frame.
     pub dock_moves: Vec<(Tab, Place)>,
+    /// View › Lines on the ground beside the line: the lines of the
+    /// weather case shown (kept per case).
+    pub ground_lines: crate::ground_lines::GroundLines,
 }
 
 impl Ready {
@@ -472,6 +475,7 @@ impl Ready {
             open_page: None,
             placed: None,
             structure_apps: Default::default(),
+            ground_lines: Default::default(),
             coord_dialog: None,
             route_choice: None,
             // Step 1 of a new project: its route (then its alignment).
@@ -2949,6 +2953,27 @@ impl Ready {
             self.clearances.stale = true;
             self.refresh_views();
         }
+    }
+
+    /// Every frame: the lines on the ground beside the line in the
+    /// weather case shown (View › Lines on the ground beside the line),
+    /// made when the case, the line, its solution, the ground or the
+    /// settings change, handed to the views. Display only.
+    pub fn ground_lines_frame(&mut self) {
+        if self
+            .ground_lines
+            .frame(&self.model, self.case, &self.model.ground_lines)
+        {
+            self.view3d.ground_lines = self.ground_lines.drawn.clone();
+            self.plan.ground_lines = self.ground_lines.drawn.clone();
+            self.view3d.dirty.insert(Layer::GroundLines);
+        }
+        // The profile follows the layer's tick too.
+        self.profile.ground_lines = self
+            .ground_lines
+            .drawn
+            .clone()
+            .filter(|_| self.visible.contains(&Layer::GroundLines));
     }
 
     /// Server mode, every frame: what others did, what this user shows
@@ -7348,6 +7373,16 @@ fn menus(
             crate::profile::ratio_menu(ui, &mut r.model.profile_ratio);
         });
         crate::menu::options_menu(ui, "Sheet preview", |ui| r.drawings.preview_menu(ui));
+        // Ticks keep it open; this user's, remembered with the project.
+        crate::menu::options_menu(ui, "Lines on the ground beside the line", |ui| {
+            let routes: Vec<String> = r.model.line.routes.iter().map(|x| x.id.clone()).collect();
+            crate::ground_lines::menu(
+                ui,
+                &mut r.model.ground_lines,
+                &routes,
+                r.ground_lines.drawn.as_deref(),
+            );
+        });
         crate::menu::options_menu(ui, "Layers", |ui| {
             for layer in Layer::ALL {
                 let mut on = r.visible.contains(&layer);
@@ -8425,6 +8460,7 @@ impl eframe::App for App {
                 // The structure being edited: its handles in the 3D view.
                 let dock = &self.dock;
                 ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
+                ready.ground_lines_frame();
                 let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
