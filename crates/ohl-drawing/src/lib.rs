@@ -218,6 +218,70 @@ const DASHES: [(&str, &str); 4] = [
     ("6 2", "long dashes"),
 ];
 
+/// Colour of the isoclearance line at `level` m of lines up to `top` m:
+/// red at 0 through amber to green at the top.
+pub fn isoclearance_color(level: f64, top: f64) -> String {
+    let t = if top > 0.0 {
+        (level / top).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let (r, g, b) = if t < 0.5 {
+        let u = t / 0.5;
+        (0xd0, (0x30 as f64 + u * (0xa0 - 0x30) as f64) as u8, 0x30)
+    } else {
+        let u = (t - 0.5) / 0.5;
+        (
+            (0xd0 as f64 - u * (0xd0 - 0x2a) as f64) as u8,
+            (0xa0 as f64 - u * (0xa0 - 0x9d) as f64) as u8,
+            (0x30 as f64 + u * (0x8f - 0x30) as f64) as u8,
+        )
+    };
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+/// Isoclearance lines on their own, in model space (project coordinates,
+/// m): each line on [`model::Layer::Isoclearance`] in its colour, its
+/// clearance written at its middle (2.5 mm at `scale`, e.g. 2000).
+pub fn isoclearance_model(lines: &[(f64, Vec<Point>)], top: f64, scale: f64) -> model::Drawing {
+    use model::{Anchor, Item, Layer, Path, Pen, Text};
+    let k = scale / 1000.0;
+    let mut items = Vec::new();
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for (level, points) in lines {
+        let color = model::Color::hex_or_black(&isoclearance_color(*level, top));
+        for p in points {
+            lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+            hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+        }
+        items.push(Item::Path(Path {
+            layer: Layer::Isoclearance,
+            points: points.iter().map(|p| [p[0], p[1]]).collect(),
+            closed: false,
+            pen: Pen::new(color, 0.18),
+            title: Some(format!("{level} m")),
+        }));
+        if let Some(m) = points.get(points.len() / 2) {
+            items.push(Item::Text(Text {
+                layer: Layer::Isoclearance,
+                at: [m[0], m[1]],
+                text: format!("{level}"),
+                size: 2.5 * k,
+                anchor: Anchor::Middle,
+                bold: false,
+                color,
+            }));
+        }
+    }
+    model::Drawing {
+        space: model::Space::Model,
+        width: (hi[0] - lo[0]).max(0.0),
+        height: (hi[1] - lo[1]).max(0.0),
+        line_scale: k,
+        items,
+    }
+}
+
 /// Dash pattern of the `k`-th weather case (k ≥ 1; case 0 is solid).
 pub fn case_dash(k: usize) -> String {
     DASHES[(k.max(1) - 1) % DASHES.len()].0.to_owned()
@@ -311,6 +375,9 @@ pub struct RouteDrawing {
     pub sides: Vec<(f64, Profile)>,
     /// Wires.
     pub wires: Vec<Trace>,
+    /// Isoclearance lines on the ground (each labelled with its
+    /// clearance, coloured by it): [`RouteDrawing::set_isoclearance`].
+    pub isoclearance: Vec<Trace>,
     /// Markers: station, offset, z, label.
     pub markers: Vec<([f64; 3], String)>,
     /// The alignment's points, in station order.
@@ -497,6 +564,7 @@ pub fn build(
         ground,
         sides,
         wires,
+        isoclearance: Vec::new(),
         markers,
     })
 }
@@ -521,7 +589,32 @@ impl RouteDrawing {
             .iter()
             .flat_map(|w| cut_trace(w, width))
             .collect();
+        d.isoclearance = self
+            .isoclearance
+            .iter()
+            .flat_map(|w| cut_trace(w, width))
+            .collect();
         d
+    }
+
+    /// Gives it the isoclearance lines `lines` ((clearance m, points on
+    /// the ground in project coordinates); `top`: the highest line, for
+    /// the colours), along the route.
+    pub fn set_isoclearance(&mut self, lines: &[(f64, Vec<Point>)], top: f64) {
+        let centre = self.centreline.clone();
+        self.isoclearance = lines
+            .iter()
+            .map(|(level, points)| {
+                let (mut along, mut xy) = along(&centre, std::slice::from_ref(points));
+                Trace {
+                    label: format!("isoclearance {level} m"),
+                    color: isoclearance_color(*level, top),
+                    points: along.pop().unwrap_or_default(),
+                    xy: xy.pop().unwrap_or_default(),
+                    dash: None,
+                }
+            })
+            .collect();
     }
 
     /// Gives each structure the members `of` it returns (polylines in
@@ -828,6 +921,42 @@ pub(crate) mod tests {
             options,
         )
         .unwrap()
+    }
+
+    /// Isoclearance lines along the route on their own layer, cut at the
+    /// line width like the wires; alone in model space for DXF.
+    #[test]
+    fn isoclearance_lines_on_their_layer() {
+        let o = Options::default();
+        let mut d = main_route(&o);
+        let line: Vec<Point> = (0..=20)
+            .map(|k| {
+                let p = point_at(&d.centreline, 10.0 * k as f64, 15.0);
+                [p[0], p[1], 500.0]
+            })
+            .collect();
+        d.set_isoclearance(&[(10.0, line)], 40.0);
+        let iso = &d.isoclearance[0];
+        assert_eq!(iso.label, "isoclearance 10 m");
+        assert_eq!(iso.color, isoclearance_color(10.0, 40.0));
+        assert!((iso.points[3][0] - 30.0).abs() < 1e-6 && (iso.points[3][1] - 15.0).abs() < 1e-6);
+        let plan = crate::layout::plan_model(&d, &o);
+        assert!(
+            plan.items.iter().any(
+                |i| matches!(i, model::Item::Path(p) if p.layer == model::Layer::Isoclearance)
+            )
+        );
+        // 15 m off the centreline: beyond a line width of 10 m.
+        assert!(d.shown(10.0).isoclearance.is_empty());
+        assert_eq!(d.shown(20.0).isoclearance.len(), 1);
+        let text = dxf::write(&isoclearance_model(
+            &[(10.0, vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]])],
+            40.0,
+            2000.0,
+        ));
+        assert!(text.contains("OHL_ISOCLEARANCE"));
+        assert_eq!(isoclearance_color(0.0, 40.0), "#d03030");
+        assert_eq!(isoclearance_color(40.0, 40.0), "#2a9d8f");
     }
 
     #[test]

@@ -79,6 +79,9 @@ pub enum Layer {
     Elevations,
     /// Wires and jumpers.
     Wires,
+    /// Isoclearance lines in the plan: where the ground's clearance to the
+    /// wires is a whole number of the interval.
+    Isoclearance,
     /// Violation markers.
     Markers,
     /// Match lines at the sheet's ends.
@@ -87,7 +90,7 @@ pub enum Layer {
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -102,6 +105,7 @@ impl Layer {
         Self::Members,
         Self::Elevations,
         Self::Wires,
+        Self::Isoclearance,
         Self::Markers,
         Self::Match,
     ];
@@ -123,6 +127,7 @@ impl Layer {
             Self::Members => "OHL_MEMBERS",
             Self::Elevations => "OHL_ELEVATIONS",
             Self::Wires => "OHL_WIRES",
+            Self::Isoclearance => "OHL_ISOCLEARANCE",
             Self::Markers => "OHL_MARKERS",
             Self::Match => "OHL_MATCH",
         }
@@ -142,6 +147,7 @@ impl Layer {
             Self::GroundSide => Color(0xb0, 0x88, 0x50),
             Self::Clearance => Color(0xdd, 0x22, 0x22),
             Self::Wires => Color(0x00, 0x66, 0xcc),
+            Self::Isoclearance => Color(0x2a, 0x9d, 0x8f),
             Self::Markers => Color(0xdd, 0x00, 0x00),
             Self::Match => Color(0x00, 0x66, 0xcc),
         }
@@ -446,9 +452,12 @@ fn svg_item(out: &mut String, item: &Item, clips: &mut usize) {
     match item {
         Item::Path(p) => {
             let title = svg_title(p.title.as_ref());
-            // Members and elevations on their own layers: a class to
-            // select them by.
-            let class = if matches!(p.layer, Layer::Members | Layer::Elevations) {
+            // Members, elevations and isoclearance lines on their own
+            // layers: a class to select them by.
+            let class = if matches!(
+                p.layer,
+                Layer::Members | Layer::Elevations | Layer::Isoclearance
+            ) {
                 format!(r#" class="{}""#, p.layer.name())
             } else {
                 String::new()

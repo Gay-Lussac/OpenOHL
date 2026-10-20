@@ -274,6 +274,18 @@ fn draw(
             pen("#999", 0.25).dashed("4 1 1 1"),
             None,
         ));
+        // Isoclearance lines under the wires.
+        for w in &d.isoclearance {
+            plan.push(path(
+                Layer::Isoclearance,
+                w.points
+                    .iter()
+                    .map(|p| [f.x(p[0]), f.plan_y(p[1])])
+                    .collect(),
+                pen(&w.color, 0.18),
+                Some(w.label.clone()),
+            ));
+        }
         for w in &d.wires {
             plan.push(path(
                 Layer::Wires,
@@ -1363,7 +1375,12 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
             None,
         ));
     }
-    for w in &d.wires {
+    for (w, layer, width) in d
+        .isoclearance
+        .iter()
+        .map(|w| (w, Layer::Isoclearance, 0.18))
+        .chain(d.wires.iter().map(|w| (w, Layer::Wires, 0.35)))
+    {
         let pts: Vec<[f64; 3]> = w
             .points
             .iter()
@@ -1371,6 +1388,15 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
             .map(|(p, q)| [p[0], q[0], q[1]])
             .collect();
         for run in station_runs(&pts, a, b) {
+            if layer == Layer::Isoclearance {
+                items.push(path(
+                    layer,
+                    run.iter().map(|p| [p[1], p[2]]).collect(),
+                    pen(&w.color, width),
+                    Some(w.label.clone()),
+                ));
+                continue;
+            }
             items.push(path(
                 Layer::Wires,
                 run.iter().map(|p| [p[1], p[2]]).collect(),
