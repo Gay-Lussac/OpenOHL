@@ -9,6 +9,17 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Rules by voltage and rule presets (confirmed by the owner):** a rule
+  file is written only when every rule is complete (an unfinished rule
+  shows "not written yet"); **Load preset…** reads the design-code plugins
+  with the parameter file of Criteria › Design code, or none. A design-code
+  plugin's presets for a national code (kept outside the repository) check
+  the direct distances at the largest sag and under wind and the vertical
+  distances at the largest sag; building distances are screened out to
+  the largest horizontal distance the code asks; crossing presets that
+  depend on the distance to the nearer tower or support are given only
+  when that distance is entered (nothing assumed); its LiDAR class mapping
+  confirmed.
 - **Clearance rules by voltage in the app, rule presets from plugins**
   (owner's request): wherever a rule's distance is set (the Clearances
   tab's new rule editor, the Vertical / Radial clearances windows and
