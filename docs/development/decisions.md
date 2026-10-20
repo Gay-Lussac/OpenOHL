@@ -83,6 +83,26 @@ approved as finished: everything is built and in active development
   structure** (no round end caps); where the line leaves the ground
   surface it is **broken**, not continued on the alignment's heights.
 
+- **Textbook and published validation cases** (the owner: "start with
+  the textbook cases to improve the test suite"): 31 textbook cases
+  (`benchmarks/*/textbook-*.toml`) and 16 worked examples of CIGRE TB 324
+  (`benchmarks/sagtension/cigre-tb324.toml`), 135 cases in all. Each
+  textbook case has a hand derivation in its comments and expected values
+  from a new independent reference, `benchmarks/reference/textbook_reference.py`
+  (standard library; the cable as the quadrature of its tangent, Newton
+  with the quadrature's Jacobian — none of the code's formulas). The TB 324
+  cases take the brochure's printed numbers with their printed rounding as
+  tolerance; examples with incomplete inputs (Table 3, Table 4), graphical
+  or curve-based ones (sec. 6.2, 6.3, Tables 5, 6, 12, 14, 15) are left out
+  with the reason ([Textbook and published cases](../validation/textbook.md)).
+  Two validation calculations added (runner adapters, no engine change):
+  `line.section` (a line's section by its solver, optionally clipped in as
+  the app does) and `cables.properties`. No computed number changes. Found
+  and now documented as a **Simplification** in
+  [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element):
+  the FE's thermal lengthening of a span's unstressed length also scales
+  its weight (+0.17 % on H at 150 °C, −0.04 % at −20 °C for the textbook
+  span); left for the owner to decide.
 - **Sheet export: the defects fixed** (the review of the sheet export,
   D1–D17): the profile panel takes the whole height; its height range
   fits the ground, the clearance line and the wires' lowest points; tops

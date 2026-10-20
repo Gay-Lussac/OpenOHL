@@ -84,3 +84,4 @@
 # Validation
 
 - [Validation report](validation/report.md)
+- [Textbook and published cases](validation/textbook.md)
