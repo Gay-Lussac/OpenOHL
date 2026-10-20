@@ -86,7 +86,7 @@
 //! name = "Buildings"
 //! target = "points"
 //! roles = ["building"]
-//! # Rows [up to kV, distance]: the first row whose voltage is reached.
+//! # Rows [up to kV, distance]: the first row whose voltage is not exceeded.
 //! vertical = { by_voltage = [[0, "5 m"], [150, "6 m"], [245, "6.5 m"], [420, "7.5 m"]] }
 //! # base + per_kv · (U − above_kv) above `above_kv`, else base.
 //! radial = { base = "5 m", per_kv = "0.01 m", above_kv = 50 }
@@ -182,6 +182,91 @@ impl Requirement {
     /// Whether the distance depends on the voltage.
     pub fn by_voltage(&self) -> bool {
         !matches!(self, Self::Fixed(_))
+    }
+
+    /// The distance at `kv`, above a table's last row its last distance
+    /// (use [`Requirement::at`] or [`Rule::check_voltages`] first to say
+    /// so).
+    pub fn at_or_last(&self, kv: f64) -> f64 {
+        match (self.at(kv), self) {
+            (Ok(d), _) => d,
+            (Err(_), Self::ByVoltage(rows)) => rows.last().map_or(0.0, |x| x.1),
+            (Err(_), _) => 0.0,
+        }
+    }
+
+    /// The largest distance over the voltages `kvs` (kV; none: the
+    /// distance at 0 kV), above a table's last row its last distance.
+    pub fn largest(&self, kvs: &[f64]) -> f64 {
+        if kvs.is_empty() {
+            return self.at_or_last(0.0);
+        }
+        kvs.iter()
+            .map(|&kv| self.at_or_last(kv))
+            .fold(0.0, f64::max)
+    }
+
+    /// What is wrong with it as an editor fills it in, if anything: a
+    /// table needs rows, voltages ≥ 0 and increasing, distances above 0; a
+    /// formula a base above 0, the amount per kV and the voltage ≥ 0; a
+    /// distance above 0 (0 m is no requirement: no value is invented).
+    pub fn problem(&self) -> Option<String> {
+        let positive = |d: f64| d.is_finite() && d > 0.0;
+        match self {
+            Self::Fixed(d) if !positive(*d) => Some("set the distance".into()),
+            Self::Fixed(_) => None,
+            Self::ByVoltage(rows) if rows.is_empty() => {
+                Some("add a row: up to kV, distance".into())
+            }
+            Self::ByVoltage(rows) => {
+                if rows.iter().any(|r| !(r.0.is_finite() && r.0 >= 0.0)) {
+                    Some("voltages must be ≥ 0 kV".into())
+                } else if rows.windows(2).any(|w| w[1].0 <= w[0].0) {
+                    Some("the voltages must increase from row to row (Sort)".into())
+                } else if rows.iter().any(|r| !positive(r.1)) {
+                    Some("set every row's distance (above 0 m)".into())
+                } else {
+                    None
+                }
+            }
+            Self::Formula {
+                base,
+                per_kv,
+                above_kv,
+            } => {
+                if !positive(*base) {
+                    Some("set the base distance".into())
+                } else if !(per_kv.is_finite() && *per_kv >= 0.0) {
+                    Some("the amount per kV must be ≥ 0".into())
+                } else if !(above_kv.is_finite() && *above_kv >= 0.0) {
+                    Some("the voltage it starts from must be ≥ 0 kV".into())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// As written in a rule file (`"7 m"`, `{ by_voltage = … }`,
+    /// `{ base = …, per_kv = …, above_kv = … }`): read back by
+    /// [`RuleSet::parse`] as the same requirement.
+    pub fn to_toml(&self) -> String {
+        match self {
+            Self::Fixed(d) => length(*d),
+            Self::ByVoltage(rows) => format!(
+                "{{ by_voltage = {} }}",
+                list(rows.iter().map(|(u, d)| format!("[{u:?}, {}]", length(*d))))
+            ),
+            Self::Formula {
+                base,
+                per_kv,
+                above_kv,
+            } => format!(
+                "{{ base = {}, per_kv = {}, above_kv = {above_kv:?} }}",
+                length(*base),
+                length(*per_kv)
+            ),
+        }
     }
 }
 
@@ -388,13 +473,7 @@ impl Rule {
     /// row's distance is used.
     pub fn required(&self, kv: Option<f64>) -> Required {
         let kv = kv.unwrap_or(0.0);
-        let at = |r: &Option<Requirement>| {
-            r.as_ref().map(|r| match (r.at(kv), r) {
-                (Ok(d), _) => d,
-                (Err(_), Requirement::ByVoltage(rows)) => rows.last().map_or(0.0, |x| x.1),
-                (Err(_), _) => 0.0,
-            })
-        };
+        let at = |r: &Option<Requirement>| r.as_ref().map(|r| r.at_or_last(kv));
         Required {
             vertical: at(&self.vertical),
             radial: at(&self.radial),
@@ -1102,28 +1181,6 @@ fn list(items: impl Iterator<Item = String>) -> String {
     format!("[{}]", items.collect::<Vec<_>>().join(", "))
 }
 
-impl Requirement {
-    /// As written in a rule file.
-    fn to_toml(&self) -> String {
-        match self {
-            Self::Fixed(d) => length(*d),
-            Self::ByVoltage(rows) => format!(
-                "{{ by_voltage = {} }}",
-                list(rows.iter().map(|(u, d)| format!("[{u:?}, {}]", length(*d))))
-            ),
-            Self::Formula {
-                base,
-                per_kv,
-                above_kv,
-            } => format!(
-                "{{ base = {}, per_kv = {}, above_kv = {above_kv:?} }}",
-                length(*base),
-                length(*per_kv)
-            ),
-        }
-    }
-}
-
 impl Rule {
     /// The rule as a `[[rule]]` table of a rule file.
     pub fn to_toml(&self) -> String {
@@ -1413,6 +1470,69 @@ mod tests {
                 .is_err()
         );
         assert_eq!(x.reach(&[Some(ac(380.0))], &[Some(ac(220.0))]), 5.5 + 5.0);
+    }
+
+    /// The three forms of a requirement written and read back exactly
+    /// (values that are not round in binary too), and what an editor is
+    /// told about one half filled in.
+    #[test]
+    fn requirement_forms_round_trip() {
+        let forms = [
+            Requirement::Fixed(7.1),
+            Requirement::ByVoltage(vec![(0.0, 5.3), (110.0, 6.05), (420.0, 7.775)]),
+            Requirement::Formula {
+                base: 5.1,
+                per_kv: 0.0123,
+                above_kv: 52.5,
+            },
+        ];
+        for f in forms {
+            let text = format!(
+                "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = {}\n",
+                f.to_toml()
+            );
+            let set = RuleSet::parse(&text).unwrap();
+            assert_eq!(set.rules[0].vertical.as_ref(), Some(&f), "{text}");
+            assert_eq!(RuleSet::parse(&set.to_toml()).unwrap(), set);
+            assert_eq!(f.problem(), None);
+        }
+        // Largest over voltages: 0 and 220 kV meet 5.3 and 7.775 m.
+        let t = Requirement::ByVoltage(vec![(0.0, 5.3), (110.0, 6.05), (420.0, 7.775)]);
+        assert_eq!(t.largest(&[0.0, 220.0]), 7.775);
+        assert_eq!(t.largest(&[]), 5.3);
+        assert_eq!(t.at_or_last(500.0), 7.775);
+        for (bad, why) in [
+            (Requirement::Fixed(0.0), "set the distance"),
+            (Requirement::ByVoltage(vec![]), "add a row"),
+            (
+                Requirement::ByVoltage(vec![(110.0, 5.0), (110.0, 6.0)]),
+                "increase",
+            ),
+            (Requirement::ByVoltage(vec![(-1.0, 5.0)]), "≥ 0 kV"),
+            (
+                Requirement::ByVoltage(vec![(0.0, 5.0), (220.0, 0.0)]),
+                "distance",
+            ),
+            (
+                Requirement::Formula {
+                    base: 0.0,
+                    per_kv: 0.01,
+                    above_kv: 0.0,
+                },
+                "base",
+            ),
+            (
+                Requirement::Formula {
+                    base: 5.0,
+                    per_kv: -0.01,
+                    above_kv: 0.0,
+                },
+                "per kV",
+            ),
+        ] {
+            let p = bad.problem().unwrap();
+            assert!(p.contains(why), "{p}");
+        }
     }
 
     #[test]

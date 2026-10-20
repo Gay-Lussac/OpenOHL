@@ -278,7 +278,7 @@ fn clearance_windows_start_with_a_rule_to_set() {
         .unwrap()
         .vertical_clearances
         .draft
-        .distance = 7.0;
+        .distance = ohl_clearance::Requirement::Fixed(7.0);
     h.run();
     h.get_by_label("Add this rule").click();
     h.run();

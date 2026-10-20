@@ -1593,7 +1593,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             name: "High ground".into(),
             voltage: Some(220.0),
             cases: vec!["high wind".into()],
-            distance: 100.0,
+            distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
             ground: true,
             wires: ohl_clearance::Wires::Sections,
@@ -1687,7 +1687,7 @@ fn the_radial_clearances_window_keeps_its_rules() {
     {
         let w = &mut harness.state_mut().ready().unwrap().radial_clearances;
         w.rules.truncate(1);
-        w.rules[0].distance = 5.0;
+        w.rules[0].distance = ohl_clearance::Requirement::Fixed(5.0);
     }
     harness.run();
     harness.get_by_label("Duplicate").click();

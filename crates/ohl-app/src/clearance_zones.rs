@@ -28,6 +28,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use ohl_clearance::rules::Requirement;
 use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneRule};
 use ohl_clearance::{CheckScope, RuleSet, WindSides, WindSteps};
 use ohl_core::budget::{Budget, CancelToken};
@@ -97,9 +98,10 @@ pub struct ZoneWindow {
 }
 
 /// A rule's distance not set yet (the placeholder of a window's first
-/// rule, a row added blank): 0 m, which no regulation asks for.
+/// rule, a row added blank: 0 m, which no regulation asks for), or a
+/// table or formula not filled in ([`Requirement::problem`]).
 pub fn unset(r: &ZoneRule) -> bool {
-    r.distance.is_nan() || r.distance <= 0.0
+    r.distance.problem().is_some()
 }
 
 /// The rule a window starts with when it has none: the ground, every
@@ -109,7 +111,7 @@ pub fn first_rule() -> ZoneRule {
         name: "Ground".into(),
         voltage: None,
         cases: Vec::new(),
-        distance: 0.0,
+        distance: Requirement::Fixed(0.0),
         classes: Vec::new(),
         ground: true,
         wires: ohl_clearance::Wires::Both,
@@ -119,8 +121,8 @@ pub fn first_rule() -> ZoneRule {
 
 /// Why rule `r` cannot run, if it cannot.
 pub fn not_ready(r: &ZoneRule) -> Option<String> {
-    if unset(r) {
-        Some(format!("\"{}\": set the distance", r.name))
+    if let Some(p) = r.distance.problem() {
+        Some(format!("\"{}\": {p}", r.name))
     } else if !r.ground && r.classes.is_empty() {
         Some(format!(
             "\"{}\": choose its targets (the ground or LiDAR classes)",
@@ -825,7 +827,7 @@ impl ZoneWindow {
                             "name",
                             "voltage",
                             "weather cases",
-                            "distance m",
+                            "distance",
                             "width m",
                             "wires",
                             "targets",
@@ -849,26 +851,12 @@ impl ZoneWindow {
                                 .changed();
                             self.dirty |= voltage_ui(ui, (self.zone.measure, k), r, &voltages);
                             self.dirty |= cases_ui(ui, (self.zone.measure, k), r, &cases);
-                            ui.horizontal(|ui| {
-                                self.dirty |= ui
-                                    .add(
-                                        egui::DragValue::new(&mut r.distance)
-                                            .speed(0.05)
-                                            .range(0.0..=200.0)
-                                            .max_decimals(3),
-                                    )
-                                    .on_hover_text(
-                                        "The clearance to keep, m: the value of the regulation \
-                                         you work to",
-                                    )
-                                    .changed();
-                                if unset(r) {
-                                    ui.colored_label(
-                                        ui.visuals().warn_fg_color,
-                                        egui::RichText::new(SET_THE_DISTANCE).small(),
-                                    );
-                                }
-                            });
+                            self.dirty |= crate::requirement_ui::requirement_ui(
+                                ui,
+                                ("zone-distance", self.zone.measure.as_str(), k),
+                                &mut r.distance,
+                                &voltages,
+                            );
                             if vertical {
                                 self.dirty |= width_ui(ui, r, self.zone.width);
                             }
@@ -936,9 +924,11 @@ impl ZoneWindow {
                     egui::RichText::new(
                         "A rule says how close the wires may come to a target: the ground, or \
                          LiDAR points of some classes (vegetation, buildings…). Take the \
-                         distance from the regulation you work to — none is given here. The \
-                         voltage and the weather cases narrow where it applies (any voltage, \
-                         every case: everywhere).",
+                         distance from the regulation you work to — none is given here: one \
+                         distance, a table \"up to kV: distance\" or a base plus an amount \
+                         per kV, so that one rule covers every voltage. The voltage and the \
+                         weather cases narrow where it applies (any voltage, every case: \
+                         everywhere).",
                     )
                     .small()
                     .weak(),
@@ -960,21 +950,13 @@ impl ZoneWindow {
                         ui.label("Voltage");
                         voltage_ui(ui, (measure, usize::MAX), d, &voltages);
                         ui.end_row();
-                        ui.label("Distance m");
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut d.distance)
-                                    .speed(0.05)
-                                    .range(0.0..=200.0)
-                                    .max_decimals(3),
-                            );
-                            if unset(d) {
-                                ui.colored_label(
-                                    ui.visuals().warn_fg_color,
-                                    egui::RichText::new(SET_THE_DISTANCE).small(),
-                                );
-                            }
-                        });
+                        ui.label("Distance");
+                        crate::requirement_ui::requirement_ui(
+                            ui,
+                            ("zone-distance", measure.as_str(), usize::MAX),
+                            &mut d.distance,
+                            &voltages,
+                        );
                         ui.end_row();
                         ui.label("Weather cases");
                         cases_ui(ui, (measure, usize::MAX), d, &cases);
@@ -1218,9 +1200,6 @@ fn run(
         done,
     )
 }
-
-/// The note next to a distance not set yet.
-pub const SET_THE_DISTANCE: &str = "set the distance";
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest
 /// first.
