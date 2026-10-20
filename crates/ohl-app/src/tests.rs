@@ -1791,6 +1791,7 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
     let r = harness.state_mut().ready().unwrap();
     r.wirefit.open = true;
     r.vegetation.show(0);
+    r.vegetation.iso.0 = true;
     harness.run();
     harness.get_by_label("Fit").click();
     harness.get_by_label("Check").click();
@@ -1829,6 +1830,10 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
     assert_eq!(r.view3d.vegetation.grow.len(), 1);
     assert_eq!(r.plan.vegetation, r.view3d.vegetation);
     assert_eq!(r.profile.vegetation, r.view3d.vegetation);
+    // The isoclearance lines too, and for the drawings' plan.
+    assert!(!r.view3d.vegetation.lines.is_empty());
+    let lines = r.drawings.settings().isoclearance.clone().unwrap();
+    assert_eq!(lines.0.len(), r.view3d.vegetation.lines.len());
     std::fs::remove_dir_all(dir).ok();
 }
 
