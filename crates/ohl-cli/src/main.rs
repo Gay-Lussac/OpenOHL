@@ -17,6 +17,7 @@ mod code_run;
 mod cost_run;
 mod io_run;
 mod project;
+mod safety_run;
 mod sagtension_job;
 mod sheet_run;
 mod structure_app_run;
@@ -102,6 +103,11 @@ enum Command {
     /// the wind, by a rule file: the check of the desktop clearance
     /// windows. Exit status 0: no violation, 1: violations, 2: an error.
     Zones(Box<zones_run::ZonesArgs>),
+    /// Safety volumes for work near the line: the space within a distance
+    /// (by voltage) of the wires in every position of the weather cases
+    /// (blowouts, wind steps, swing arc), one closed mesh per wire or
+    /// circuit, written as georeferenced DXF (+ .prj), IFC4 and KML/KMZ.
+    SafetyVolume(Box<safety_run::SafetyArgs>),
     /// Galloping ellipses and blowout against the right of way.
     Clearance {
         #[command(subcommand)]
@@ -827,6 +833,7 @@ fn main() -> ExitCode {
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Line(args)) => line(&args, None),
         Some(Command::Zones(args)) => zones_run::command(&args),
+        Some(Command::SafetyVolume(args)) => report(safety_run::run(*args)),
         Some(Command::Bom(args)) => report(cost_run::bom(&args)),
         Some(Command::Spot(args)) => report(cost_run::spot(&args)),
         Some(Command::Drawing(args)) => drawing_command(&args),
