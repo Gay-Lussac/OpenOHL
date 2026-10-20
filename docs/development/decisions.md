@@ -39,13 +39,50 @@ approved as finished: everything is built and in active development
   them (`ohl code rule-presets`, `ohl code generate`).
   ([user guide](../user-guide/desktop-app.md#distances-by-voltage),
   [plugins](plugins.md#rule-presets))
+- **Danger trees built** (in active development, not approved): the
+  method below as written, with these changes and readings
+  ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20)):
+  within the fall sector the distance is \(|q - H| - L\) (negative
+  inside: by how much the tree reaches past the wire) instead of
+  \(\max(0, \ldots)\) — same verdict, the margins as before; the
+  resting angle at every TIN edge crossing along the fall direction (the
+  TIN's resolution, exactly), rising ground seen from the base
+  (**Conservative**); the smallest over a wire as the distance between
+  the wire and the hinge circle (exact per piece; on a swing arc within
+  1 mm below, **Conservative**); a tree whose nearest wire point is
+  outside the sector's angles (sheltered) searched along the wire by the
+  bound of a distance (**Simplification**), no shelter credited on an arc
+  (**Conservative**); the arc's angles from the smallest to the largest
+  of the three, the bundle's outer envelope on the arc (both
+  **Conservative**), the three wires' points interpolated at the point's
+  place (no radius interpolation error); the case's ice on one span as a
+  weight spread along it, the wind on its bare diameter
+  (**Simplification**); isoclearance slopes above 5:1 taken as 5:1 in
+  the bounds (**Simplification**). Root-ball fraction: default 0 in the
+  command line (results bit for bit as before), 0.1 proposed in the
+  application (a user setting; open point for the owner). `ohl lidar
+  vegetation` solves all the cases chosen together and reports per span
+  the worst over them with case and position; its CSV changes to one row
+  per kept point with case and position (`DANGER_CSV_HEADER`; the
+  per-case blocks are gone). The vegetation, galloping, right-of-way and
+  as-built commands now read a project file's own libraries, as `ohl
+  line` does. New drawing layer `OHL_ISOCLEARANCE`. The cross-section
+  view is left for later (no such view in the application yet).
+- **Tree base needs a ground point near it** (owner, via the
+  coordinator): `max_base_ground_distance` — a vegetation point's ground
+  height (its tree base) is taken only when a ground point the surface is
+  built from lies within that horizontal distance, else no base, no
+  fall-in check, counted as "no ground point within the distance".
+  Default no limit (results unchanged); a design-code plugin's preset
+  may give 5 m (the private national-code plugin with root ball 0.05, a
+  2 m clearance allowance and a 50 m search distance).
 - **Danger trees (method written, to be built):** fall-in about a root
   ball (hinge at a fraction k of the height), the tree falling towards
   each wire point and resting on the ground along its direction; grow-in
   with the wire hot, blown left and right, and along its swing arc (a
   rigid swing about the attachment points' axis, the largest radius);
   an optional unbalanced-ice case per span; isoclearance lines over the
-  corridor for one case or the worst. ([theory](../theory/lidar-analysis.md#danger-trees-planned-2026-10-20))
+  corridor for one case or the worst. ([theory](../theory/lidar-analysis.md#danger-trees-2026-10-20))
 - **Licence:** OpenOHL is under the **AGPL-3.0-or-later** (forks and
   modified versions, also those offered as a network service, stay open
   under the same licence). The plugin interface (`crates/ohl-plugins/wit/`)

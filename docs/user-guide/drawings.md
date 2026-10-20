@@ -164,6 +164,22 @@ elevation standing perpendicular to the line on the sheet (its height
 across the line), seen along the line (the crossarms across); the
 rotation is the angle between the line and the elevation's height.
 
+## Isoclearance lines
+
+`--isoclearance-interval 5` draws on the plan the ground's **isoclearance
+lines**: where its clearance to the nearest wire's surface — over the
+weather cases drawn, a windy one blown left and right
+(`--isoclearance-swing-arc`: and anywhere along each span's swing between
+them) — is 0, 5, 10 … m, up to `--isoclearance-max` (40 m), on a
+`--isoclearance-spacing` grid (1 m), over the line width. Each line is
+coloured by its clearance (red at 0 to green at the top line) and titled
+`isoclearance 10 m`, on its own layer **`OHL_ISOCLEARANCE`** (SVG
+`class="OHL_ISOCLEARANCE"`), in the sheets and the plan's model space. It
+needs the ground (`--terrain`, `--lidar` or `--pointcloud`). In the
+desktop application the export draws the lines of the last
+Checks › Vegetation run that computed them. See [Vegetation and danger
+trees](analyses.md#vegetation-and-danger-trees).
+
 ## Sheets
 
 With `--page`, each route (or its station range) is split **at
@@ -241,7 +257,7 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **DXF** (release 12, `AC1009`, ASCII): a format most CAD programs read; not tried
   in a given program yet (no DWG file is written). Entities are LINE,
   POLYLINE, TEXT and CIRCLE on layers `OHL_GROUND`, `OHL_WIRES`,
-  `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_ELEVATIONS`, `OHL_CLEARANCE`, `OHL_GRID`,
+  `OHL_STRUCTURES`, `OHL_MEMBERS`, `OHL_ELEVATIONS`, `OHL_ISOCLEARANCE`, `OHL_CLEARANCE`, `OHL_GRID`,
   `OHL_TITLE`… Colours are
   the nearest of DXF's indexed colours; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
