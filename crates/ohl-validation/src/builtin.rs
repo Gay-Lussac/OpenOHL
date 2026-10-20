@@ -46,6 +46,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(GallopingEllipses));
     registry.register(Box::new(CatenaryFit));
     registry.register(Box::new(ClearanceSurface));
+    registry.register(Box::new(FallIn));
+    registry.register(Box::new(SwingArcCase));
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -1243,6 +1245,170 @@ impl Calculation for ClearanceSurface {
             ("ground_vertical_m", hit(g.vertical)),
             ("ground_radial_m", hit(g.radial)),
             ("point_radial_m", hit(points_check.results[0].radial)),
+        ]))
+    }
+}
+
+/// `vegetation.fall_in`: a tree at the origin (base on the ground) of
+/// height `tree_height` above it, grown by `growth`, root-ball fraction
+/// `root_ball`, allowance `allowance`, falling towards a straight level
+/// wire along y at x = `wire_x`, z = `wire_z` (no radius). The ground:
+/// `level`, a `slope` (z = slope · x) or a `ridge` (level, 5 m high at
+/// x = 10 between x = 8 and 12). Outputs: the resting angle along +x and
+/// the fall-in margin.
+struct FallIn;
+
+impl Calculation for FallIn {
+    fn id(&self) -> &'static str {
+        "vegetation.fall_in"
+    }
+
+    fn description(&self) -> &'static str {
+        "A tree falling about its root ball towards a straight wire (inputs: ground, slope, \
+         tree_height, growth, root_ball, allowance, wire_x, wire_z); outputs theta_min_deg, \
+         fall_margin_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::vegetation::{VegetationCheck, VegetationParams};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let num = |k: &str| float_input(inputs, k);
+        let ground = string_input(inputs, "ground")?;
+        let slope = if ground == "slope" {
+            num("slope")?
+        } else {
+            0.0
+        };
+        let pts: Vec<[f64; 3]> = match ground {
+            "level" | "slope" => [
+                [-200.0, -200.0],
+                [200.0, -200.0],
+                [200.0, 200.0],
+                [-200.0, 200.0],
+            ]
+            .into_iter()
+            .map(|[x, y]| [x, y, slope * x])
+            .collect(),
+            "ridge" => [
+                (-50.0, 0.0),
+                (8.0, 0.0),
+                (10.0, 5.0),
+                (12.0, 0.0),
+                (80.0, 0.0),
+            ]
+            .into_iter()
+            .flat_map(|(x, z)| [[x, -50.0, z], [x, 50.0, z]])
+            .collect(),
+            other => return Err(format!("ground \"{other}\": level, slope or ridge")),
+        };
+        let terrain = ohl_terrain::Terrain::from_xyz(&pts, None).map_err(|e| e.to_string())?;
+        let (h, growth, k) = (len("tree_height")?, len("growth")?, num("root_ball")?);
+        let (wx, wz) = (len("wire_x")?, len("wire_z")?);
+        let wire = ohl_clearance::Wire {
+            section: "S".into(),
+            span: 0,
+            circuit: String::new(),
+            phase: String::new(),
+            potential: None,
+            bundle: Vec::new(),
+            points: (0..=100)
+                .map(|i| [wx, -100.0 + 2.0 * i as f64, wz])
+                .collect(),
+            ends: Vec::new(),
+            surface_radius: 0.0,
+            polyline_error: 0.0,
+        };
+        let params = VegetationParams {
+            clearance: 0.0,
+            growth_per_year: growth,
+            years: 1.0,
+            fall_in: true,
+            root_ball: k,
+            fall_allowance: len("allowance")?,
+            max_tree_height: h + 1.0,
+            ..VegetationParams::default()
+        };
+        let mut check = VegetationCheck::new(vec![wire], &[5], params);
+        let z0 = terrain.height(0.0, 0.0).ok_or("no ground at the tree")?;
+        check.visit(Some(&terrain), 0.0, 0.0, z0 + h, 5);
+        let r = check.finish().remove(0);
+        let margin = r
+            .worst_fall
+            .and_then(|v| v.fall_margin)
+            .ok_or("no fall found")?;
+        let tree = ohl_clearance::fall::Tree::new([0.0, 0.0, z0], h + growth, k);
+        let theta = tree.theta_min(&terrain, [1.0, 0.0]);
+        Ok(outputs([
+            ("theta_min_deg", theta.to_degrees()),
+            ("fall_margin_m", margin),
+        ]))
+    }
+}
+
+/// `vegetation.swing_arc`: a level span along x from (0, 0, z) to
+/// (`span`, 0, z), z = `attachment_height`, hanging as a parabola of sag
+/// `still_sag` in still air and `blown_sag` blown by ±`blowout_angle`
+/// about its axis (21 points each); the swing arc at the place of point
+/// (`point_s`, `point_y`, `point_z`) and the point's distance to it.
+struct SwingArcCase;
+
+impl Calculation for SwingArcCase {
+    fn id(&self) -> &'static str {
+        "vegetation.swing_arc"
+    }
+
+    fn description(&self) -> &'static str {
+        "The swing arc of a level span and a point's distance to it (inputs: span, \
+         attachment_height, still_sag, blown_sag, blowout_angle, point_s, point_y, point_z); \
+         outputs arc_radius_m, arc_from_deg, arc_to_deg, distance_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::positions::{Axis, SwingArc, WireShape};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (span, z) = (len("span")?, len("attachment_height")?);
+        let phi = float_input(inputs, "blowout_angle")?.to_radians();
+        let axis = Axis::new([0.0, 0.0, z], [span, 0.0, z]).ok_or("a span of no length")?;
+        let wire = |angle: f64, sag: f64| {
+            let points = (0..=20)
+                .map(|k| {
+                    let x = span * k as f64 / 20.0;
+                    let r = 4.0 * sag * (x / span) * (1.0 - x / span);
+                    [x, -r * angle.sin(), z - r * angle.cos()]
+                })
+                .collect();
+            WireShape::new(
+                ohl_clearance::Wire {
+                    section: "S".into(),
+                    span: 0,
+                    circuit: String::new(),
+                    phase: String::new(),
+                    potential: None,
+                    bundle: Vec::new(),
+                    points,
+                    ends: Vec::new(),
+                    surface_radius: 0.0,
+                    polyline_error: 0.0,
+                },
+                &axis,
+            )
+        };
+        let (still, blown) = (len("still_sag")?, len("blown_sag")?);
+        let arc = SwingArc::new(
+            axis,
+            &wire(-phi, blown),
+            &wire(0.0, still),
+            &wire(phi, blown),
+        )
+        .ok_or("no arc")?;
+        let q = [len("point_s")?, len("point_y")?, len("point_z")?];
+        let place = arc.place(q[0]);
+        let (d, _) = arc.nearest(q);
+        Ok(outputs([
+            ("arc_radius_m", place.radius),
+            ("arc_from_deg", place.from.to_degrees()),
+            ("arc_to_deg", place.to.to_degrees()),
+            ("distance_m", d),
         ]))
     }
 }

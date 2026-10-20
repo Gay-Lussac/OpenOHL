@@ -1,0 +1,116 @@
+# Danger trees (ohl_clearance::vegetation, ohl_clearance::fall,
+# ohl_clearance::positions; theory: LiDAR analyses › Danger trees).
+#
+# Fall-in: a tree at the origin, its base on the ground (z = 0 there),
+# height h above it grown by g to h' = h + g; root-ball radius b_r = k h',
+# trunk length from the hinge L = sqrt(h'^2 + b_r^2); a straight level
+# wire along y at x = X, z = Z (no radius). The tree falls towards the
+# wire point (X, 0, Z), in the vertical plane y = 0: rho = X, zeta = Z,
+# hinge at (b_r, 0). Within the sector's angles the distance is
+# |q - H| - L = sqrt((X - b_r)^2 + Z^2) - L and the margin that less the
+# allowance A. Hand calculations:
+#
+#   001 level, k = 0, h' = 20, X = 15, Z = 12:
+#       theta_min = 0; sqrt(15^2 + 12^2) - 20 = 19.209373 - 20 = -0.790627
+#   002 level, k = 0.1, h' = 20: b_r = 2, L = sqrt(404) = 20.099751;
+#       sqrt(13^2 + 12^2) - L = 17.691806 - 20.099751 = -2.407945
+#   003 h = 18 grown by 2 (h' = 20), k = 0.1, A = 2: -2.407945 - 2 = -4.407945
+#   004 ground falling 30 % along +x (z = -0.3 x), k = 0.1, h' = 20,
+#       X = 15, Z = 7.5 (12 m above the ground there): seen from the
+#       hinge (2, 0) the ground at u further is -0.3 (2 + u), its angle
+#       -atan(0.3 (1 + 2/u)) largest at u = L: theta_min =
+#       -atan(0.3 (1 + 2/20.099751)) = -18.255197 deg; theta_q =
+#       atan2(7.5, 13) = 29.98 deg within the sector;
+#       sqrt(13^2 + 7.5^2) - L = 15.008331 - 20.099751 = -5.091420
+#   005 level ground with a ridge 5 m high at x = 10 (from x = 8 to 12),
+#       k = 0, h' = 20, wire X = 18, Z = 2: theta_min = atan(5/10) =
+#       26.565051 deg; theta_q = atan(2/18) = 6.34 deg below it: the
+#       trunk rests on the ridge, the distance is to the trunk at rest,
+#       |18 sin(theta_min) - 2 cos(theta_min)| = 8.049845 - 1.788854 =
+#       6.260990 (its foot 16.99 m along it, within L): margin +6.260990
+#       (the sphere alone would give sqrt(18^2 + 2^2) - 20 = -1.889).
+#       The wire's other points are further (the same holds along y).
+#       Found along the wire to within 1 mm below (the bound reported).
+
+[[case]]
+id = "dangertree-001"
+title = "Level ground, no root ball: the sphere about the base"
+calculation = "vegetation.fall_in"
+reference = "Hand calculation (this file)"
+inputs = { ground = "level", tree_height = "20 m", growth = "0 m", root_ball = 0.0, allowance = "0 m", wire_x = "15 m", wire_z = "12 m" }
+expected.theta_min_deg = { value = 0.0, abs_tol = 1e-9 }
+expected.fall_margin_m = { value = -0.7906272877, abs_tol = 1e-9 }
+
+[[case]]
+id = "dangertree-002"
+title = "Level ground, root ball k = 0.1: the hinge 2 m nearer the wire"
+calculation = "vegetation.fall_in"
+reference = "Hand calculation (this file)"
+inputs = { ground = "level", tree_height = "20 m", growth = "0 m", root_ball = 0.1, allowance = "0 m", wire_x = "15 m", wire_z = "12 m" }
+expected.theta_min_deg = { value = 0.0, abs_tol = 1e-9 }
+expected.fall_margin_m = { value = -2.4079452293, abs_tol = 1e-6 }
+
+[[case]]
+id = "dangertree-003"
+title = "Growth and the clearance allowance: h = 18 m grown by 2 m, A = 2 m"
+calculation = "vegetation.fall_in"
+reference = "Hand calculation (this file)"
+inputs = { ground = "level", tree_height = "18 m", growth = "2 m", root_ball = 0.1, allowance = "2 m", wire_x = "15 m", wire_z = "12 m" }
+expected.fall_margin_m = { value = -4.4079452293, abs_tol = 1e-6 }
+
+[[case]]
+id = "dangertree-004"
+title = "Falling down a 30 % slope: the resting angle below the horizontal"
+calculation = "vegetation.fall_in"
+reference = "Hand calculation (this file)"
+inputs = { ground = "slope", slope = -0.3, tree_height = "20 m", growth = "0 m", root_ball = 0.1, allowance = "0 m", wire_x = "15 m", wire_z = "7.5 m" }
+expected.theta_min_deg = { value = -18.2551968954, abs_tol = 1e-7 }
+expected.fall_margin_m = { value = -5.0914202224, abs_tol = 1e-6 }
+
+[[case]]
+id = "dangertree-005"
+title = "A ridge between the tree and a low wire: the trunk rests on it"
+calculation = "vegetation.fall_in"
+reference = "Hand calculation (this file)"
+inputs = { ground = "ridge", tree_height = "20 m", growth = "0 m", root_ball = 0.0, allowance = "0 m", wire_x = "18 m", wire_z = "2 m" }
+expected.theta_min_deg = { value = 26.5650511771, abs_tol = 1e-7 }
+expected.fall_margin_m = { value = 6.260990337, abs_tol = 1.1e-3 }
+
+# Swing arc: a level 100 m span along x, attachments 20 m up, a parabola
+# of sag 4 m in still air and 5 m blown by ±40 degrees about its axis. At
+# mid-span the arc has R = max(5, 4, 5) = 5 m from -40 to +40 degrees.
+#   swingarc-001: a point 8 m straight below the axis (phi = 0, rho = 8):
+#       |8 - 5| = 3 m.
+#   swingarc-002: a point 6 m to the right at the axis height (phi = 90
+#       deg, beyond the arc): to its end (5 sin 40, 5 cos 40 below) =
+#       sqrt((6 - 3.213938)^2 + 3.830222^2) = 4.736322 m.
+#   swingarc-003: at s = 25 m, R = 4 · 5 · 0.25 · 0.75 = 3.75 m; a point
+#       1 m from the axis at 20 deg to the right: 2.75 m.
+
+[[case]]
+id = "swingarc-001"
+title = "Swing arc at mid-span, a point below the axis"
+calculation = "vegetation.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "0 m", point_z = "12 m" }
+expected.arc_radius_m = { value = 5.0, abs_tol = 1e-12 }
+expected.arc_from_deg = { value = -40.0, abs_tol = 1e-9 }
+expected.arc_to_deg = { value = 40.0, abs_tol = 1e-9 }
+expected.distance_m = { value = 3.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "swingarc-002"
+title = "Swing arc at mid-span, a point beyond its end"
+calculation = "vegetation.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "-6 m", point_z = "20 m" }
+expected.distance_m = { value = 4.736321718, abs_tol = 1e-9 }
+
+[[case]]
+id = "swingarc-003"
+title = "Swing arc at a quarter of the span, a point inside the arc"
+calculation = "vegetation.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "25 m", point_y = "-0.3420201433 m", point_z = "19.0603073792 m" }
+expected.arc_radius_m = { value = 3.75, abs_tol = 1e-12 }
+expected.distance_m = { value = 2.75, abs_tol = 1e-9 }
