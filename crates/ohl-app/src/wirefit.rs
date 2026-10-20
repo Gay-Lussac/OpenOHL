@@ -16,6 +16,9 @@ use crate::job::{Job, or_dash, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE_POINTS;
+
 /// One span's result.
 #[derive(Debug, Clone)]
 pub struct Row {
@@ -81,7 +84,7 @@ impl WireFitWindow {
         let library = model.library.clone();
         let params = self.params.clone();
         let (t, estimate) = (self.temperature, self.estimate);
-        self.job.start(ctx, move || {
+        self.job.start_at(ctx, model.revision(), move || {
             let case = ohl_weather::WeatherCase::still(
                 "model",
                 ohl_core::units::Temperature::from_celsius(t),
@@ -140,10 +143,21 @@ impl WireFitWindow {
         });
     }
 
+    /// What the last fit was computed from that changed since, in words
+    /// (`None`: nothing, or no fit): the line, the LiDAR points
+    /// ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.job.result, Some(Ok(_)))
+            .then(|| self.job.stamp.out_of_date(model, USES))
+            .flatten()
+    }
+
     /// The window; returns a span to go to.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Option<Selection> {
         self.job.poll();
         let mut go = None;
+        let mut again = false;
+        let stale = self.out_of_date(model);
         let mut open = self.open;
         egui::Window::new("As-built wires")
             .open(&mut open)
@@ -189,6 +203,9 @@ impl WireFitWindow {
                     }
                     Some(Ok(r)) => r,
                 };
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running());
+                }
                 ui.horizontal(|ui| {
                     let fitted = rows.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count();
                     let temps: Vec<f64> = rows.iter().filter_map(|r| r.temperature).collect();
@@ -269,6 +286,9 @@ impl WireFitWindow {
                     });
             });
         self.open = open;
+        if again {
+            self.start(model, ctx);
+        }
         go
     }
 }

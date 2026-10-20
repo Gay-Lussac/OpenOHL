@@ -25,6 +25,9 @@ use ohl_loads::capacity::{CaseUsage, StructureUsage, UsageStatus};
 
 use crate::model::Model;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
+
 type Outcome = Result<Vec<CaseLoads>, String>;
 
 /// A computation's answer: the loads, and the usage computed from them.
@@ -106,7 +109,7 @@ impl UsageMark {
 }
 
 /// The legend of the colours by usage, at the bottom right of `rect`.
-pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect) {
+pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect, out_of_date: bool) {
     let font = egui::FontId::proportional(11.0);
     let row = 15.0;
     let width = 190.0;
@@ -117,9 +120,17 @@ pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect) {
     painter.text(
         at + egui::vec2(6.0, 4.0),
         egui::Align2::LEFT_TOP,
-        "structures by usage",
+        if out_of_date {
+            "structures by usage: OUT OF DATE"
+        } else {
+            "structures by usage"
+        },
         font.clone(),
-        egui::Color32::WHITE,
+        if out_of_date {
+            egui::Color32::from_rgb(255, 190, 60)
+        } else {
+            egui::Color32::WHITE
+        },
     );
     for (k, m) in UsageMark::ALL.iter().enumerate() {
         let y = at.y + 20.0 + row * k as f32;
@@ -164,6 +175,8 @@ pub struct LoadsPage {
     /// The structures coloured by usage in the plan and 3D views (the
     /// usage's load case).
     pub colour_structures: bool,
+    /// What the results were computed from ([`crate::revision`]).
+    stamp: crate::revision::Stamp,
 }
 
 impl LoadsPage {
@@ -234,6 +247,7 @@ impl LoadsPage {
         let scope = model.scope().map(|s| s.structures);
         let (tx, rx) = channel();
         let c = ctx.clone();
+        self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let r = sections
                 .clone()
@@ -296,8 +310,18 @@ impl LoadsPage {
                 self.case = 0;
             }
             self.results = Some(r);
+            self.stamp.arrived();
             self.running = None;
         }
+    }
+
+    /// What the results were computed from that changed since, in words
+    /// (`None`: nothing, or no results): the line, its cases and files
+    /// ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.results, Some(Ok(_)))
+            .then(|| self.stamp.out_of_date(model, USES))
+            .flatten()
     }
 
     /// The page; returns a structure to go to.
@@ -373,6 +397,12 @@ impl LoadsPage {
             }
             Some(Ok(r)) => r,
         };
+        if let Some(what) = self.out_of_date(model)
+            && crate::revision::banner(ui, &what, !self.running())
+        {
+            self.start(model, ui.ctx());
+            return None;
+        }
         if results.is_empty() {
             ui.label("The load case file has no case.");
             return None;

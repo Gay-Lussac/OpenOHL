@@ -17,6 +17,9 @@ use crate::job::{Job, case_combo, or_dash, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
+
 /// One pair of wires by one method.
 #[derive(Debug, Clone)]
 pub struct Row {
@@ -91,7 +94,7 @@ impl GallopingWindow {
         let shapes = solved.shapes.clone();
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
-        self.job.start(ctx, move || {
+        self.job.start_at(ctx, model.revision(), move || {
             let params = GallopingParams::load(&path)?;
             let mut notes: Vec<String> =
                 failed.iter().map(|f| format!("not solved: {f}")).collect();
@@ -128,10 +131,21 @@ impl GallopingWindow {
         });
     }
 
+    /// What the last check was computed from that changed since, in
+    /// words (`None`: nothing, or no report): the line, its weather cases
+    /// and files ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.job.result, Some(Ok(_)))
+            .then(|| self.job.stamp.out_of_date(model, USES))
+            .flatten()
+    }
+
     /// The window; returns a span to go to.
     pub fn ui(&mut self, ctx: &egui::Context, model: &Model) -> Option<Selection> {
         self.job.poll();
         let mut go = None;
+        let mut again = false;
+        let stale = self.out_of_date(model);
         let mut open = self.open;
         egui::Window::new("Galloping ellipses")
             .open(&mut open)
@@ -180,6 +194,9 @@ impl GallopingWindow {
                     }
                     Some(Ok(r)) => r,
                 };
+                if let Some(what) = &stale {
+                    again = crate::revision::banner(ui, what, !self.job.running());
+                }
                 for n in &report.notes {
                     ui.label(egui::RichText::new(n).small().weak());
                 }
@@ -260,6 +277,9 @@ impl GallopingWindow {
                     });
             });
         self.open = open;
+        if again {
+            self.start(model, ctx);
+        }
         go
     }
 }

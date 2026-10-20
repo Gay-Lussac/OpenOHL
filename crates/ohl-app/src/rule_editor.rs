@@ -867,7 +867,8 @@ fn preset_cases(
             "its weather cases are used for the model".to_owned()
         }
     };
-    crate::app::clearance_zone_out(r, out);
+    // A preset's weather cases (no violations to draw).
+    crate::app::clearance_zone_out(r, ohl_clearance::Measure::Vertical, out);
     Ok(m)
 }
 

@@ -57,6 +57,8 @@ pub struct View3d {
     left_press_on_handle: bool,
     /// Clearance violations to draw: (on the wire, on the target).
     pub marks: Vec<([f64; 3], [f64; 3])>,
+    /// The check that found them is out of date: drawn dimmed.
+    pub marks_stale: bool,
     /// What Checks › Vegetation found.
     pub vegetation: crate::vegetation::Overlay,
     /// A wire being strung: its points so far.
@@ -73,6 +75,13 @@ pub struct View3d {
     fitted_on_line: bool,
     /// Drag handles of the structure being edited ([`crate::handles`]).
     pub handles: crate::handles::Handles,
+    /// A box or lasso being drawn to select LiDAR points
+    /// ([`crate::area`]).
+    pub area: Option<crate::area::AreaDrag>,
+    /// The LiDAR points a box or lasso selected (at most
+    /// [`ohl_session::points::MAX_POINTS`] + 1), how many it held, how long
+    /// finding them took; taken by the app.
+    pub area_picked: Option<(Vec<crate::model::LidarPoint>, usize, std::time::Duration)>,
     /// Chunks built so far (tests: none while the camera stands still).
     #[cfg(test)]
     pub chunks_built: usize,
@@ -679,6 +688,8 @@ impl View3d {
             self.left_press_on_handle = pressed_on_handle;
         }
         let mut pick_at: Option<([f64; 2], bool)> = None;
+        // A box or lasso drawn (released this frame).
+        let mut area_done: Option<crate::area::Area> = None;
         // A click of the tool button uses the held tool on what is there.
         let mut use_at: Option<[f64; 2]> = None;
         if self.captured {
@@ -759,7 +770,8 @@ impl View3d {
                     self.controls.capture
                 );
             }
-            if self.controls.capture && pressed_here && !pressed_on_handle && !handle_drag {
+            let alt = ui.input(|i| i.modifiers.alt);
+            if self.controls.capture && pressed_here && !pressed_on_handle && !handle_drag && !alt {
                 Self::set_captured(&mut self.captured, ui.ctx(), true);
                 // Swallow its release, unless it came in the same frame.
                 self.swallow_release =
@@ -794,7 +806,16 @@ impl View3d {
                     use_at = Some(local(pos));
                 }
             }
+            // Alt + drag of the selecting button: a box or lasso of LiDAR
+            // points (not on a drag handle).
+            let (done, drawing) = if handle_drag || self.left_press_on_handle {
+                (None, false)
+            } else {
+                crate::area::frame(&mut self.area, ui, &response, select_button)
+            };
+            area_done = done;
             if response.dragged()
+                && !drawing
                 && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
             {
                 let d = response.drag_delta();
@@ -821,8 +842,13 @@ impl View3d {
                 }
             }
         }
-        // Not flying while a handle is dragged (Shift + Z holds a plane).
-        if !handle_drag && (self.captured || response.hovered() || response.has_focus()) {
+        // Not flying while a handle is dragged (Shift + Z holds a plane),
+        // nor while Alt is held or an area drawn (Alt + Shift: a lasso).
+        let area_keys = self.area.is_some() || ui.input(|i| i.modifiers.alt);
+        if !handle_drag
+            && !area_keys
+            && (self.captured || response.hovered() || response.has_focus())
+        {
             let (v, sprint, dt) = ui.input(|i| {
                 let (v, sprint) = self.controls.held(i);
                 (v, sprint, f64::from(i.stable_dt).min(0.1))
@@ -836,6 +862,21 @@ impl View3d {
         }
         let radius = if self.captured { 10.0 } else { 14.0 };
         let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
+        if let Some(area) = area_done {
+            let started = std::time::Instant::now();
+            let project = camera.projector(size);
+            let (points, total) = selection::lidar_in_area(
+                model,
+                &lidar,
+                &area,
+                &project,
+                None,
+                ohl_session::points::MAX_POINTS + 1,
+            );
+            let took = started.elapsed();
+            log::info!("3D view: {total} LiDAR points in the area, found in {took:.1?}");
+            self.area_picked = Some((points, total, took));
+        }
         let used = use_at.map(|at| {
             let project = camera.projector(size);
             let target = selection::pick_shown(model, case, snaps, at, radius, &project, &lidar).0;
@@ -936,7 +977,7 @@ impl View3d {
                 continue;
             }
             let s = match layer {
-                Layer::Clearances => scene::marks(model.origin, &self.marks),
+                Layer::Clearances => scene::marks(model.origin, &self.marks, self.marks_stale),
                 Layer::GrowIn | Layer::FallIn | Layer::Isoclearance => {
                     scene::vegetation(model.origin, &self.vegetation, layer)
                 }
@@ -1129,6 +1170,10 @@ impl View3d {
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        // A box or lasso being drawn.
+        if let Some(a) = &self.area {
+            a.paint(&painter);
+        }
         drop(rendering);
         let labels = crate::perf::span("3d labels");
         // Section labels and sags, structures' names and the other
@@ -1194,7 +1239,7 @@ impl View3d {
         }
         // Structures coloured by usage: the legend.
         if !model.usage_marks.is_empty() {
-            crate::loads::paint_usage_legend(&painter, rect);
+            crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)

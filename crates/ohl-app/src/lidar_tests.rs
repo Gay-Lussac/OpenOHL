@@ -243,7 +243,7 @@ fn a_click_among_ten_million_points_is_quick() {
 /// A project of the synthetic line with an invented cloud "c" around the
 /// first structure: a grid of `n` × `n` points 1 m apart, 2 m above it,
 /// classes 2 (ground) and every 3rd 5.
-fn project_with_cloud(name: &str, n: u32) -> (PathBuf, [f64; 3]) {
+pub(crate) fn project_with_cloud(name: &str, n: u32) -> (PathBuf, [f64; 3]) {
     let first = crate::tests::synthetic_project(name);
     let file = first.sources.file.clone();
     let o = first.origin;
@@ -275,7 +275,7 @@ fn project_with_cloud(name: &str, n: u32) -> (PathBuf, [f64; 3]) {
     (file, o)
 }
 
-fn load(file: &Path) -> Model {
+pub(crate) fn load(file: &Path) -> Model {
     let root = crate::tests::root();
     let ex = root.join("examples/synthetic-line");
     let mut m = model::load(
@@ -299,7 +299,7 @@ fn load(file: &Path) -> Model {
 }
 
 /// The cloud's blocks and levels as stored, by what they are.
-fn stored(file: &Path) -> Vec<String> {
+pub(crate) fn stored(file: &Path) -> Vec<String> {
     let conn = rusqlite::Connection::open(file).unwrap();
     conn.prepare(
         "SELECT cx || ',' || cy || ',' || class || ',' || count || ',' || z0 || ',' ||
@@ -317,7 +317,7 @@ fn stored(file: &Path) -> Vec<String> {
 }
 
 /// The stored point at `at` (m), if any.
-fn stored_at(file: &Path, at: [f64; 3]) -> Option<ohl_pointcloud::edit::StoredPoint> {
+pub(crate) fn stored_at(file: &Path, at: [f64; 3]) -> Option<ohl_pointcloud::edit::StoredPoint> {
     ohl_pointcloud::Store::open(file)
         .unwrap()
         .find_point("c", at, None, 0.0005)
@@ -325,7 +325,7 @@ fn stored_at(file: &Path, at: [f64; 3]) -> Option<ohl_pointcloud::edit::StoredPo
         .map(|p| p.0)
 }
 
-fn harness(model: Model, gpu: bool) -> Harness<'static, App> {
+pub(crate) fn harness(model: Model, gpu: bool) -> Harness<'static, App> {
     let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
     if gpu {
         builder = builder.wgpu();

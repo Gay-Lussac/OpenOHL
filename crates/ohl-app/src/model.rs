@@ -513,6 +513,9 @@ pub struct Model {
     /// (Checks › Structure loads › Usage, Colour structures by usage); empty:
     /// not coloured.
     pub usage_marks: std::collections::BTreeMap<String, crate::loads::UsageMark>,
+    /// The usage they show is out of date (the line changed since it was
+    /// computed): the legend says so.
+    pub usage_out_of_date: bool,
     /// Project lines shown next to the line worked on (Versions menu).
     pub other_lines: Vec<OtherLine>,
     /// Project lines another user changed since the last frame (server
@@ -530,6 +533,9 @@ pub struct Model {
     /// The ground was built from the cloud's ground classes when the
     /// project opened (built again after a change of those points).
     pub ground_from_lidar: bool,
+    /// The revisions of what results computed on demand are computed
+    /// from ([`Model::revision`]): a result shows when it is out of date.
+    pub revisions: crate::revision::Revisions,
     /// Share of the point cloud shown near the camera, % (level of detail
     /// 0; kept with the project, [`LIDAR_PERCENT_SETTING`]).
     pub points_percent: f64,
@@ -1777,6 +1783,7 @@ impl Model {
             .collect();
         self.solving.clear();
         self.line_version += 1;
+        self.revisions.libraries += 1;
         let old = std::mem::take(&mut self.cases);
         self.cases = cases
             .into_iter()
@@ -2250,12 +2257,14 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         shown_cases: vec![0],
         selection_case: None,
         usage_marks: Default::default(),
+        usage_out_of_date: false,
         other_lines: Vec::new(),
         lines_changed: Vec::new(),
         hidden_classes,
         class_counts,
         points_changed: None,
         ground_from_lidar,
+        revisions: Default::default(),
         points_percent,
         library_dir,
         section_display,

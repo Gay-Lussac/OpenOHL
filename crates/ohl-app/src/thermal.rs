@@ -24,6 +24,9 @@ use ohl_thermal::{AmbientCases, Conductor, Method};
 
 use crate::model::Model;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
+
 type Outcome = Result<Vec<SectionLimit>, String>;
 
 /// A clearance-limit search running.
@@ -58,6 +61,8 @@ pub struct ThermalWindow {
     /// How long it took.
     pub took: Option<Duration>,
     job: Option<Job>,
+    /// What the last search was computed from ([`crate::revision`]).
+    stamp: crate::revision::Stamp,
 }
 
 impl Default for ThermalWindow {
@@ -73,6 +78,7 @@ impl Default for ThermalWindow {
             limits: None,
             took: None,
             job: None,
+            stamp: Default::default(),
         }
     }
 }
@@ -120,7 +126,17 @@ impl ThermalWindow {
             Err(e) => log::warn!("thermal: {e}"),
         }
         self.limits = Some(r);
+        self.stamp.arrived();
         self.job = None;
+    }
+
+    /// What the clearance limits were computed from that changed since,
+    /// in words (`None`: nothing, or none computed): the line, the LiDAR
+    /// points, the ground ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.limits, Some(Ok(_)))
+            .then(|| self.stamp.out_of_date(model, USES))
+            .flatten()
     }
 
     /// Starts the clearance-limit search on the model as it is now.
@@ -140,6 +156,7 @@ impl ThermalWindow {
         let (tx, rx) = channel();
         let (c, d, token) = (ctx.clone(), done.clone(), cancel.clone());
         let sections = line.sections.len();
+        self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let r = (|| -> Outcome {
                 let classes: Vec<Vec<u8>> = rules
@@ -387,6 +404,12 @@ pub fn window(
             });
             if let Some(Err(e)) = &w.limits {
                 ui.colored_label(ui.visuals().error_fg_color, e);
+            }
+            if let Some(what) = w.out_of_date(model)
+                && crate::revision::banner(ui, &what, !w.running())
+                && let Some(Ok(r)) = rules
+            {
+                w.start(model, r.clone(), ui.ctx());
             }
             ui.separator();
             table(ui, w, model, &cases);

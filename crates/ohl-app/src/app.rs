@@ -146,6 +146,16 @@ pub enum PluginRequest {
     Export,
 }
 
+/// The check whose clearance violations the views draw (dimmed while it
+/// is out of date, [`crate::revision::frame`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarksFrom {
+    /// The Clearances tab.
+    Clearances,
+    /// A vertical or radial clearance window.
+    Zone(ohl_clearance::Measure),
+}
+
 /// What is shown once the model is loaded.
 pub struct Ready {
     /// The model.
@@ -295,6 +305,13 @@ pub struct Ready {
     /// The ground built again from the LiDAR ground classes after their
     /// points changed ([`crate::lidar_edit::frame`]).
     pub lidar_ground: crate::job::Job<Option<ohl_terrain::Terrain>>,
+    /// The check whose clearance violations the views draw.
+    pub marks_from: MarksFrom,
+    /// The ground is to be built again from the LiDAR ground classes
+    /// (their points changed).
+    pub lidar_ground_again: bool,
+    /// The revision of the ground being built ([`crate::revision`]).
+    pub lidar_ground_rev: u64,
     /// Checks › Ground clearances › Vertical clearances.
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
     /// Checks › Ground clearances › Radial clearances.
@@ -426,6 +443,9 @@ impl Ready {
             vegetation: Default::default(),
             wirefit: Default::default(),
             lidar_ground: Default::default(),
+            lidar_ground_again: false,
+            marks_from: MarksFrom::Clearances,
+            lidar_ground_rev: 0,
             vertical_clearances: crate::clearance_zones::ZoneWindow::new(
                 ohl_clearance::Measure::Vertical,
             ),
@@ -5011,6 +5031,19 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     ];
                     rows.extend(clicks);
                     rows.push(row(select_double, "show the whole route"));
+                    let select = if r.view3d.controls.tools_on_left {
+                        "right"
+                    } else {
+                        "left"
+                    };
+                    rows.push((
+                        format!("Alt + {select} drag"),
+                        "box: the LiDAR points dotted in it, their class changed together".into(),
+                    ));
+                    rows.push((
+                        format!("Alt + Shift + {select} drag"),
+                        "lasso: the same in a free shape (Esc: give up)".into(),
+                    ));
                     controls_grid(ui, "controls-profile", &rows);
                 }
             }
@@ -6588,6 +6621,7 @@ fn move_window(ctx: &egui::Context, r: &mut Ready) {
 /// (with "check after edits" on) or no check ran yet.
 fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
     if r.clearances.poll() {
+        r.marks_from = MarksFrom::Clearances;
         let f = r.clearances.findings();
         r.view3d.marks = f.iter().map(|f| (f.at, f.target)).collect();
         r.plan.marks = f.iter().map(|f| f.at).collect();
@@ -6656,7 +6690,11 @@ impl Ready {
     }
 }
 
-pub(crate) fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out) {
+pub(crate) fn clearance_zone_out(
+    r: &mut Ready,
+    measure: ohl_clearance::Measure,
+    out: crate::clearance_zones::Out,
+) {
     // A preset's weather cases: the model reads its weather cases again.
     if let Some(p) = out.weather_saved {
         r.library_saved(
@@ -6671,6 +6709,7 @@ pub(crate) fn clearance_zone_out(r: &mut Ready, out: crate::clearance_zones::Out
         );
     }
     if let Some(marks) = out.marks {
+        r.marks_from = MarksFrom::Zone(measure);
         r.plan.marks = marks.iter().map(|m| m.0).collect();
         r.view3d.marks = marks;
         r.view3d.dirty.insert(Layer::Clearances);
@@ -6871,8 +6910,12 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
     }
     crate::rule_editor::ui(ui, r);
     let c = &mut r.clearances;
-    if c.stale && !c.running() && c.report.is_some() {
-        ui.colored_label(ui.visuals().warn_fg_color, "out of date: the model changed");
+    if c.stale
+        && !c.running()
+        && c.report.is_some()
+        && crate::revision::banner(ui, "the model or the case shown", true)
+    {
+        check = true;
     }
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
@@ -8243,12 +8286,20 @@ impl eframe::App for App {
                 {
                     ready.view3d.measure = None;
                 }
-                for out in [
-                    ready.vertical_clearances.ui(&ctx, &mut ready.model),
-                    ready.radial_clearances.ui(&ctx, &mut ready.model),
+                for (measure, out) in [
+                    (
+                        ohl_clearance::Measure::Vertical,
+                        ready.vertical_clearances.ui(&ctx, &mut ready.model),
+                    ),
+                    (
+                        ohl_clearance::Measure::Radial,
+                        ready.radial_clearances.ui(&ctx, &mut ready.model),
+                    ),
                 ] {
-                    clearance_zone_out(ready, out);
+                    clearance_zone_out(ready, measure, out);
                 }
+                // Layers drawn from results out of date: dimmed.
+                crate::revision::frame(ready);
                 if let Some(mut w) = ready.class_window.take() {
                     let mut open = true;
                     let default = self.default_class_scheme.clone();

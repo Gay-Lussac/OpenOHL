@@ -1782,12 +1782,14 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
 
 /// Clearance violations as drawn: a red line from the wire to the target,
 /// a dot on the wire.
-pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])]) -> Scene {
+/// Dimmed while the check that found them is out of date (`stale`).
+pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])], stale: bool) -> Scene {
     let mut s = Scene::new(origin);
+    let c = |rgba| crate::revision::dimmed(rgba, stale);
     for (at, target) in marks {
-        s.polyline(&[*at, *target], [255, 60, 50, 255], 2.5);
-        s.point(*at, [255, 60, 50, 255], 9.0);
-        s.point(*target, [255, 160, 60, 255], 6.0);
+        s.polyline(&[*at, *target], c([255, 60, 50, 255]), 2.5);
+        s.point(*at, c([255, 60, 50, 255]), 9.0);
+        s.point(*target, c([255, 160, 60, 255]), 6.0);
     }
     s
 }
@@ -1801,10 +1803,10 @@ pub const FALL_IN: [u8; 3] = [255, 150, 40];
 /// What Checks › Vegetation found, on layer `layer`: grow-in points (a
 /// cyan dot joined to the wire), danger trees (an orange trunk from base
 /// to top, a line to the wire point it falls to), isoclearance lines in
-/// their colours.
+/// their colours; dimmed while the report is out of date.
 pub fn vegetation(origin: [f64; 3], overlay: &crate::vegetation::Overlay, layer: Layer) -> Scene {
     let mut s = Scene::new(origin);
-    let c = |rgb: [u8; 3]| [rgb[0], rgb[1], rgb[2], 255];
+    let c = |rgb: [u8; 3]| crate::revision::dimmed([rgb[0], rgb[1], rgb[2], 255], overlay.stale);
     match layer {
         Layer::GrowIn => {
             for (p, q) in &overlay.grow {
@@ -1815,7 +1817,11 @@ pub fn vegetation(origin: [f64; 3], overlay: &crate::vegetation::Overlay, layer:
         Layer::FallIn => {
             for (top, base, q) in &overlay.fall {
                 s.polyline(&[*base, *top], c(FALL_IN), 3.0);
-                s.polyline(&[*base, *q], [255, 150, 40, 140], 1.0);
+                s.polyline(
+                    &[*base, *q],
+                    crate::revision::dimmed([255, 150, 40, 140], overlay.stale),
+                    1.0,
+                );
                 s.point(*top, c(FALL_IN), 7.0);
             }
         }

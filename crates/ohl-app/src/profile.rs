@@ -51,6 +51,12 @@ pub struct ProfileView {
     pub vegetation: crate::vegetation::Overlay,
     /// ... and whether its grow-in and danger-tree layers are shown.
     pub vegetation_layers: [bool; 2],
+    /// A box or lasso being drawn to select LiDAR points
+    /// ([`crate::area`]).
+    pub area: Option<crate::area::AreaDrag>,
+    /// The LiDAR points a box or lasso selected (its dots), how many, how
+    /// long finding them took; taken by the app.
+    pub area_picked: Option<(Vec<crate::model::LidarPoint>, usize, std::time::Duration)>,
 }
 
 /// Where the view is: stations, heights, its rectangle (bits of each).
@@ -300,6 +306,19 @@ fn joined(parts: Vec<(String, Built)>) -> Option<Built> {
 }
 
 impl ProfileView {
+    /// The LiDAR points dotted in the last frame: where, and the point
+    /// (tests).
+    #[cfg(test)]
+    pub fn lidar_dots(&self) -> &[(egui::Pos2, crate::model::LidarPoint)] {
+        &self.lidar_dots
+    }
+
+    /// Shows stations `range` (tests).
+    #[cfg(test)]
+    pub fn set_range(&mut self, range: [f64; 2]) {
+        self.range = Some(range);
+    }
+
     /// Forgets the drawing (after the model or case changed).
     pub fn invalidate(&mut self) {
         self.drawing = None;
@@ -542,7 +561,10 @@ impl ProfileView {
         let ratio = model.profile_ratio.filter(|k| *k > 0.0);
         let vscale = |r: &[f64; 2]| ratio.map(|k| k * width / (r[1] - r[0]).max(1e-9));
         let before = *range;
-        if response.dragged() {
+        // Alt + drag of the selecting button: a box or lasso of the LiDAR
+        // points dotted (the view does not move meanwhile).
+        let (area_done, drawing) = crate::area::frame(&mut self.area, ui, &response, buttons.0);
+        if response.dragged() && !drawing {
             let ds = -f64::from(response.drag_delta().x) / width * (range[1] - range[0]);
             range[0] += ds;
             range[1] += ds;
@@ -663,7 +685,10 @@ impl ProfileView {
             let (st, off) = ohl_line::route::project(&d.centreline, p);
             (off.abs() <= depth && st >= s0 && st <= s1).then_some(st)
         };
-        let color = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+        let stale = self.vegetation.stale;
+        let color = |c: [u8; 3]| {
+            crate::revision::dimmed32(egui::Color32::from_rgb(c[0], c[1], c[2]), stale)
+        };
         if grows {
             for (p, _) in &self.vegetation.grow {
                 if let Some(st) = near(*p) {
@@ -1111,6 +1136,22 @@ impl ProfileView {
             best.map_or(Selection::None, |b| b.1)
         };
         let (select_button, tool_button) = buttons;
+        if let Some(area) = area_done {
+            let started = std::time::Instant::now();
+            let picked: Vec<crate::model::LidarPoint> = self
+                .lidar_dots
+                .iter()
+                .filter(|(q, _)| {
+                    area.contains([f64::from(q.x - rect.min.x), f64::from(q.y - rect.min.y)])
+                })
+                .map(|(_, p)| *p)
+                .collect();
+            let n = picked.len();
+            self.area_picked = Some((picked, n, started.elapsed()));
+        }
+        if let Some(a) = &self.area {
+            a.paint(&ui.painter_at(rect));
+        }
         if response.clicked_by(select_button)
             && let Some(pos) = response.interact_pointer_pos()
         {

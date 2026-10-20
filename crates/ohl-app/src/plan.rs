@@ -23,6 +23,8 @@ pub struct PlanView {
     scale: f64,
     /// Clearance violations to mark (points on the wires).
     pub marks: Vec<[f64; 3]>,
+    /// The check that found them is out of date: drawn dimmed.
+    pub marks_stale: bool,
     /// What Checks › Vegetation found.
     pub vegetation: crate::vegetation::Overlay,
     /// Other users (server mode): where each looks, with their name.
@@ -50,7 +52,9 @@ fn paint_vegetation(
     visible: &std::collections::HashSet<crate::scene::Layer>,
 ) {
     use crate::scene::{FALL_IN, GROW_IN, Layer};
-    let color = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+    let color = |c: [u8; 3]| {
+        crate::revision::dimmed32(egui::Color32::from_rgb(c[0], c[1], c[2]), overlay.stale)
+    };
     if visible.contains(&Layer::Isoclearance) {
         for (_, rgb, points) in &overlay.lines {
             let pts: Vec<egui::Pos2> = points.iter().map(|p| to_screen(*p)).collect();
@@ -850,7 +854,13 @@ impl PlanView {
                 painter.circle_stroke(
                     p,
                     6.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 60, 50)),
+                    egui::Stroke::new(
+                        2.0,
+                        crate::revision::dimmed32(
+                            egui::Color32::from_rgb(255, 60, 50),
+                            self.marks_stale,
+                        ),
+                    ),
                 );
             }
         }
@@ -881,7 +891,7 @@ impl PlanView {
             }
         }
         if !model.usage_marks.is_empty() {
-            crate::loads::paint_usage_legend(&painter, rect);
+            crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
         // Scale bar.
         let target = 120.0 / scale;

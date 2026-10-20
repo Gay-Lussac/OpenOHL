@@ -16,6 +16,9 @@ use ohl_bom::{CostData, CostEstimate};
 
 use crate::model::Model;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
+
 /// The categories of the bill shown: the cables'.
 pub const CABLES: [&str; 2] = ["wire", "stringing"];
 
@@ -42,6 +45,8 @@ pub struct BomWindow {
     running: Option<Receiver<Result<CostEstimate, String>>>,
     /// What the last export did.
     status: String,
+    /// What the last answer was computed from ([`crate::revision`]).
+    stamp: crate::revision::Stamp,
 }
 
 impl BomWindow {
@@ -67,6 +72,7 @@ impl BomWindow {
         let path = self.cost_path.clone();
         let (tx, rx) = channel();
         let c = ctx.clone();
+        self.stamp.started(model.revision());
         std::thread::spawn(move || {
             let r = path.as_deref().map(CostData::load).transpose().map(|cost| {
                 let hardware = cost
@@ -94,7 +100,17 @@ impl BomWindow {
             }
         };
         self.result = Some(r);
+        self.stamp.arrived();
         self.running = None;
+    }
+
+    /// What the last answer was computed from that changed since, in
+    /// words (`None`: nothing, or no answer): the line and its files
+    /// ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.result, Some(Ok(_)))
+            .then(|| self.stamp.out_of_date(model, USES))
+            .flatten()
     }
 
     /// The window, when open.
@@ -172,6 +188,11 @@ impl BomWindow {
             ui.label(egui::RichText::new(&self.status).small().weak());
         }
         ui.separator();
+        if let Some(what) = self.out_of_date(model)
+            && crate::revision::banner(ui, &what, !self.running())
+        {
+            self.start(model, ui.ctx());
+        }
         match &self.result {
             None => {
                 ui.label("Computing…");

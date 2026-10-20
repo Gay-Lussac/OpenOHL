@@ -83,6 +83,8 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
+        // Library files may have changed (their hash is taken again).
+        self.revisions.libraries += 1;
         // Points of the cloud changed: the points in memory follow, the
         // views read them again.
         if !applied.points.is_empty() {

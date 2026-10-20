@@ -348,6 +348,17 @@ impl Controls {
         out.push(("left drag".into(), self.left.name().into()));
         out.push(("right drag".into(), self.right.name().into()));
         out.push(("middle drag".into(), self.middle.name().into()));
+        // Box and lasso selection of LiDAR points (the selecting button,
+        // [`crate::area`]).
+        let select = if self.tools_on_left { "right" } else { "left" };
+        out.push((
+            format!("Alt + {select} drag"),
+            "box: the LiDAR points drawn in it, their class changed together (Edit window)".into(),
+        ));
+        out.push((
+            format!("Alt + Shift + {select} drag"),
+            "lasso: the same in a free shape (Esc: give up)".into(),
+        ));
         out.push(("scroll".into(), "zoom".into()));
         out.push((
             if self.tools_on_left {

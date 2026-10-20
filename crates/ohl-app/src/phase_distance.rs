@@ -31,6 +31,9 @@ use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
 
+/// What its results are computed from ([`crate::revision`]).
+pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::LINE;
+
 /// The extension of a phase distance values file when the check gives
 /// none (the LeV plugin's `.ohlpd`).
 const PHASE_DISTANCE_FILE_EXTENSION: &str = "ohlpd";
@@ -804,7 +807,7 @@ impl PhaseDistanceWindow {
             .collect();
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
-        self.job.start(ctx, move || {
+        self.job.start_at(ctx, model.revision(), move || {
             let mut notes = Vec::new();
             let mut rows = Vec::new();
             for (solved, ready) in cases {
@@ -946,6 +949,8 @@ impl PhaseDistanceWindow {
         self.comparison = None;
         self.ask = None;
         self.compared = true;
+        // A saved report: compared with the line by its own state.
+        self.job.stamp.clear();
         self.job.result = Some(Ok(Report {
             code: saved.code.clone(),
             diagram: params.diagram_name.clone(),
@@ -1105,8 +1110,23 @@ impl PhaseDistanceWindow {
                 self.values_ui(ui, model);
             });
         ui.separator();
+        if let Some(what) = self.out_of_date(model)
+            && crate::revision::banner(ui, &what, !self.job.running())
+        {
+            self.start(model, ui.ctx());
+        }
         self.results_ui(ui, &mut out);
         out
+    }
+
+    /// What the last run was computed from that changed since, in words
+    /// (`None`: nothing, no run, or a saved report — compared with the
+    /// line by its own state): the line, its cases and files
+    /// ([`crate::revision`]).
+    pub fn out_of_date(&self, model: &Model) -> Option<String> {
+        matches!(self.job.result, Some(Ok(_)))
+            .then(|| self.job.stamp.out_of_date(model, USES))
+            .flatten()
     }
 
     /// The saved report shown (its line's state now), the questions, and
