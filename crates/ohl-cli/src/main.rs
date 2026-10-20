@@ -18,6 +18,7 @@ mod cost_run;
 mod io_run;
 mod project;
 mod sagtension_job;
+mod sheet_run;
 mod structure_app_run;
 mod structure_fe;
 mod surface;
@@ -74,6 +75,21 @@ enum Command {
     /// SVG, DXF, PDF, PNG sheets and the profile as CSV or XML, for a
     /// station range at chosen scales. Takes every option of `ohl line`.
     Drawing(Box<DrawingArgs>),
+    /// The sheet templates the drawings may use: built in, the project's,
+    /// the library folder's (libraries/sheet-templates) and the plugins'
+    /// (name, source, page, fields); with --out, written as .ohlsheet
+    /// files, their images embedded.
+    SheetTemplates {
+        /// A project file (.ohl): its own templates too.
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// A plugin directory giving templates (repeatable).
+        #[arg(long)]
+        plugin: Vec<PathBuf>,
+        /// Write them into this folder.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Structure and insulator libraries; structure analysis (finite
     /// elements, poles); a structure's results from OHL-Structure
     /// (`analyse`, `report`: its headless tool, a program of its own).
@@ -360,6 +376,48 @@ struct LineArgs {
     /// FILE:WIDTH_MM (repeatable).
     #[arg(long)]
     logo: Vec<String>,
+    /// Sheet template of the sheets: `default`, a .ohlsheet file, a
+    /// template of the project or of the library folder by name, or
+    /// PLUGIN/PRESET (a plugin of --plugin); its page unless --page.
+    #[arg(long)]
+    sheet_template: Option<String>,
+    /// A value of the template's fields: KEY=VALUE, or KEY@SHEET=VALUE for
+    /// one sheet (repeatable).
+    #[arg(long = "field")]
+    field: Vec<String>,
+    /// The template's fields from a TOML file (KEY = "value",
+    /// [per_sheet.KEY] SHEET = "value", [[revision]] index, date, text,
+    /// by, checked).
+    #[arg(long)]
+    fields: Option<PathBuf>,
+    /// A row of the revision table: "INDEX;DATE;TEXT;BY;CHECKED"
+    /// (repeatable, oldest first).
+    #[arg(long)]
+    revision: Vec<String>,
+    /// Orientation of the sheets: landscape or portrait.
+    #[arg(long, value_parser = ["landscape", "portrait"])]
+    orientation: Option<String>,
+    /// Corridor on the sheets: its edges at ± this many metres from the
+    /// axis in the plan and the key map (default: the template's).
+    #[arg(long)]
+    corridor_width: Option<f64>,
+    /// Another version of the line drawn with it: LINE=ROLE or
+    /// LINE=ROLE:LABEL (repeatable) — LINE a project line (of a project
+    /// file) or a line file, ROLE a role of the template's [roles]
+    /// (existing, project, removal, decommissioned, other …), LABEL with
+    /// {name} and {voltage}.
+    #[arg(long = "version", value_name = "LINE=ROLE")]
+    versions: Vec<String>,
+    /// The role of the line itself on the sheets (e.g. project).
+    #[arg(long)]
+    role: Option<String>,
+    /// Lines below the lowest conductor of each circuit, lowered by its
+    /// ground clearance from the rules (--rules, --clearance).
+    #[arg(long)]
+    conductor_clearance: bool,
+    /// Leave out the template's band rows.
+    #[arg(long)]
+    no_bands: bool,
     /// Export the solved line (every weather case): FILE (format from the
     /// extension) or FORMAT=FILE, e.g. kmz=line.kmz (repeatable; see ohl
     /// formats).
@@ -399,17 +457,25 @@ struct DrawingArgs {
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
     /// Structures' elevations on the plan: off, above or below the line
-    /// (each structure seen along the line at the horizontal scale, a
-    /// leader from where it stands; layer OHL_ELEVATIONS).
-    #[arg(long, default_value = "off", value_parser = elevation_place)]
-    elevations: ohl_drawing::ElevationPlace,
-    /// From the line to the elevations' base, mm on paper.
-    #[arg(long, default_value_t = 10.0)]
-    elevation_offset: f64,
-    /// Angle between the line and the elevations' height, degrees (90:
-    /// standing perpendicular to the line).
-    #[arg(long, default_value_t = 90.0, allow_hyphen_values = true)]
-    elevation_rotation: f64,
+    /// (each structure seen along the line, a leader from where it stands;
+    /// layer OHL_ELEVATIONS); default: the sheet template's, else off.
+    #[arg(long, value_parser = elevation_place)]
+    elevations: Option<ohl_drawing::ElevationPlace>,
+    /// From the line to the elevations' base, mm on paper (default 10).
+    #[arg(long)]
+    elevation_offset: Option<f64>,
+    /// Angle between the line and the elevations' height, degrees (90,
+    /// the default: standing perpendicular to the line).
+    #[arg(long, allow_hyphen_values = true)]
+    elevation_rotation: Option<f64>,
+    /// Scale of the elevations, 1:1000 or 1000 (default: the horizontal
+    /// scale).
+    #[arg(long, value_parser = scale)]
+    elevation_scale: Option<f64>,
+    /// What is written at each elevation: number, type, height,
+    /// string_length (comma-separated).
+    #[arg(long, value_delimiter = ',')]
+    elevation_labels: Vec<String>,
     /// Isoclearance lines on the plan every this many metres (layer
     /// OHL_ISOCLEARANCE): the ground's clearance to the wires of the cases
     /// drawn (the worst of them; a windy case blown left and right), over
@@ -469,12 +535,45 @@ struct DrawingSpec {
     to: Option<f64>,
     /// The profile alone.
     profile_only: bool,
-    /// The structures' elevations on the plan.
-    elevations: ohl_drawing::Elevations,
+    /// The structures' elevations on the plan, as given (none: the
+    /// template's, else the defaults).
+    elevations: ElevationChoice,
     /// Isoclearance lines on the plan, with the swing arcs or not.
     isoclearance: Option<(ohl_clearance::isoclearance::IsoParams, bool)>,
     /// Output directory.
     out: PathBuf,
+}
+
+/// The elevations as the command line gives them (none: not given).
+#[derive(Clone, Default)]
+struct ElevationChoice {
+    place: Option<ohl_drawing::ElevationPlace>,
+    offset: Option<f64>,
+    rotation: Option<f64>,
+    scale: Option<f64>,
+    labels: Vec<String>,
+}
+
+impl ElevationChoice {
+    /// `e` with what is given.
+    fn over(&self, mut e: ohl_drawing::Elevations) -> Result<ohl_drawing::Elevations, String> {
+        if let Some(p) = self.place {
+            e.place = p;
+        }
+        if let Some(o) = self.offset {
+            e.offset_mm = o;
+        }
+        if let Some(r) = self.rotation {
+            e.rotation_deg = r;
+        }
+        if self.scale.is_some() {
+            e.scale = self.scale;
+        }
+        if !self.labels.is_empty() {
+            e.labels = ohl_drawing::ElevationLabels::parse(&self.labels)?;
+        }
+        Ok(e)
+    }
 }
 
 /// `ohl drawing`: solves the line like `ohl line`, then writes the
@@ -505,10 +604,12 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
         from: args.from,
         to: args.to,
         profile_only: args.profile_only,
-        elevations: ohl_drawing::Elevations {
+        elevations: ElevationChoice {
             place: args.elevations,
-            offset_mm: args.elevation_offset,
-            rotation_deg: args.elevation_rotation,
+            offset: args.elevation_offset,
+            rotation: args.elevation_rotation,
+            scale: args.elevation_scale,
+            labels: args.elevation_labels.clone(),
         },
         isoclearance: args.isoclearance_interval.map(|interval| {
             (
@@ -723,6 +824,11 @@ fn main() -> ExitCode {
         Some(Command::Bom(args)) => report(cost_run::bom(&args)),
         Some(Command::Spot(args)) => report(cost_run::spot(&args)),
         Some(Command::Drawing(args)) => drawing_command(&args),
+        Some(Command::SheetTemplates {
+            project,
+            plugin,
+            out,
+        }) => report(sheet_run::list(project.as_deref(), &plugin, out.as_deref())),
         Some(Command::Structures {
             command:
                 StructuresCommand::Derive {
@@ -1368,6 +1474,16 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         page,
         break_clearance,
         logo,
+        sheet_template,
+        field,
+        fields,
+        revision,
+        orientation,
+        corridor_width,
+        versions,
+        role,
+        conductor_clearance,
+        no_bands,
         export,
         export_options,
         plugin,
@@ -1863,12 +1979,28 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     ohl_drawing::Logo::from_file(std::path::Path::new(file), width)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            // The sheet template (its page unless --page), the fields.
+            let template = std::sync::Arc::new(match sheet_template {
+                Some(t) => sheet_run::resolve(t, Some(file), plugin)?,
+                None => ohl_drawing::SheetTemplate::builtin(),
+            });
             let page = match page {
                 Some(name) => Some(ohl_drawing::page_format(name).ok_or_else(|| {
                     format!("unknown page format \"{name}\" (A0–A4 or WIDTHxHEIGHT in mm)")
                 })?),
+                None if sheet_template.is_some() => template.page(),
                 None => None,
             };
+            let page = match (page, orientation.as_deref()) {
+                (Some(p), Some("portrait")) => Some(p.portrait()),
+                (Some(p), Some("landscape")) if p.height > p.width => Some(ohl_drawing::Page {
+                    name: p.name.trim_end_matches(" portrait").to_owned(),
+                    width: p.height,
+                    height: p.width,
+                }),
+                (p, _) => p,
+            };
+            let sheet_fields = sheet_run::fields(fields.as_deref(), field, revision)?;
             let options = ohl_drawing::Options {
                 horizontal_scale: *hscale,
                 vertical_scale: *vscale,
@@ -1904,8 +2036,90 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 stations: None,
                 plan: !spec.profile_only,
                 break_clearance: *break_clearance,
-                elevations: spec.elevations,
+                fields: sheet_fields,
+                info: ohl_drawing::SheetInfo {
+                    project: if project::is_project(file) {
+                        file.file_stem()
+                            .map_or(String::new(), |s| s.to_string_lossy().into_owned())
+                    } else {
+                        String::new()
+                    },
+                    line: line.name.clone(),
+                    crs: line.crs.clone(),
+                    date: ohl_drawing::today(),
+                    cases: solved_cases
+                        .iter()
+                        .map(|(c, _, _)| c.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    height_datum: String::new(),
+                },
+                role: role.clone(),
+                corridor: *corridor_width,
+                conductor_clearance: if *conductor_clearance || template.conductor_clearance.show {
+                    let (specs, notes) =
+                        ohl_drawing::curves::conductor_clearances(&line, prepared.rules());
+                    for n in notes {
+                        println!("  warning: {n}");
+                    }
+                    if specs.is_empty() && *conductor_clearance {
+                        println!(
+                            "  warning: no line below the lowest conductor: no ground rule with a \
+                             vertical distance (--rules, --clearance)"
+                        );
+                    }
+                    specs
+                } else {
+                    Vec::new()
+                },
+                bands: !*no_bands,
+                ..Default::default()
+            }
+            .with_template(template.clone());
+            // The command line's elevations over the template's.
+            let options = ohl_drawing::Options {
+                elevations: spec.elevations.over(options.elevations)?,
+                ..options
             };
+            // Other versions of the line: solved in the same weather cases.
+            let mut other_versions = Vec::new();
+            for v in versions {
+                let (given, role, label) = sheet_run::parse_version(v)?;
+                let mut vline =
+                    sheet_run::version_line(file, &given, structure_dir, insulator_dir)?;
+                // A line file is called by its line's name.
+                let name = if std::path::Path::new(&given).is_file() && !vline.name.is_empty() {
+                    vline.name.clone()
+                } else {
+                    given
+                };
+                let weather: Vec<WeatherCase> =
+                    solved_cases.iter().map(|(c, _, _)| c.clone()).collect();
+                vline.set_weather_cases(&weather);
+                let solved: Vec<_> = solved_cases
+                    .iter()
+                    .map(|(case, _, _)| {
+                        let shapes: Vec<ohl_line::solve::SectionShape> =
+                            ohl_line::solve::solve_line(&vline, &library, case)
+                                .into_iter()
+                                .filter_map(Result::ok)
+                                .collect();
+                        let jumpers: Vec<ohl_line::jumper::JumperShape> =
+                            ohl_line::jumper::solve_jumpers(&vline, &library, case, &shapes)
+                                .into_iter()
+                                .filter_map(Result::ok)
+                                .collect();
+                        (case.name.clone(), shapes, jumpers)
+                    })
+                    .collect();
+                println!(
+                    "version {name} ({role}): {} structures, {} sections, solved in {} case(s)",
+                    vline.structures.len(),
+                    vline.sections.len(),
+                    solved.len()
+                );
+                other_versions.push((name, role, label, vline, solved));
+            }
             let target = ohl_drawing::export::Export {
                 page: page.clone(),
                 ..spec.export.clone()
@@ -1979,6 +2193,21 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 )?;
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
+                d.set_case(&first_case.name);
+                for (name, role, label, vline, solved) in &other_versions {
+                    for (k, (case, shapes, jumpers)) in solved.iter().enumerate() {
+                        d.add_version(
+                            vline,
+                            shapes,
+                            jumpers,
+                            name,
+                            role,
+                            label,
+                            options.plan_half_width,
+                            (case, (k > 0).then(|| ohl_drawing::case_dash(k))),
+                        );
+                    }
+                }
                 if let Some((iso, _)) = &spec.isoclearance {
                     d.set_isoclearance(&isolines, iso.max_level);
                 }
@@ -1998,6 +2227,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     for mut w in other.wires {
                         w.label = format!("{} — {}", w.label, case.name);
                         w.dash = Some(ohl_drawing::case_dash(k));
+                        w.case = case.name.clone();
                         d.wires.push(w);
                     }
                 }
