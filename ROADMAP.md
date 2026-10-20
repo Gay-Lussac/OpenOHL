@@ -40,7 +40,7 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 77 validation cases pass; the private Swiss plugin and the importers of
+- 85 validation cases pass; the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
