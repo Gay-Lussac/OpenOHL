@@ -145,7 +145,14 @@ fn changed_points_are_logged_and_undone_bit_for_bit() {
     // of its own (a new block) — one command, one log entry.
     let ca = change(a, 1500, 5);
     let cb = change(b, -250, 40);
+    let state = s.points_state();
+    assert!(state.contains("c:960:"), "{state}");
     let applied = s.apply("ben", cmd(vec![ca, cb])).unwrap();
+    assert_ne!(
+        s.points_state(),
+        state,
+        "a saved result tells the points changed"
+    );
     assert_eq!(applied.objects, vec![(Kind::PointCloud, "c".to_owned())]);
     assert!(applied.sections.is_empty(), "no section to solve again");
     assert!(present(&path, &ca.to) && present(&path, &cb.to));

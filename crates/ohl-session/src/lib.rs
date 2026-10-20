@@ -3381,6 +3381,7 @@ pub mod collab;
 pub mod impact;
 pub mod lines;
 pub mod live;
+pub mod packing;
 pub mod points;
 pub mod replace;
 pub mod reports;
