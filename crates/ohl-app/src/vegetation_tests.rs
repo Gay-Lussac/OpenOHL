@@ -88,7 +88,7 @@ fn every_setting_is_explained_and_drawn() {
         "Points lower than the smallest are not trees",
         "The base is taken from the ground only",
         "Half width of the corridor read",
-        "Swing arc: anywhere between left and right",
+        "None ticked: each case's own pressure",
         "The span checked carries more ice",
         "The LiDAR classes checked as vegetation",
     ] {

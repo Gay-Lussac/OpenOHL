@@ -6747,6 +6747,14 @@ pub(crate) fn clearance_zone_out(
             true,
         ));
     }
+    if let Some(anchor) = out.guide {
+        r.status = Some(
+            match crate::help::open_section(crate::clearance_zones::GUIDE, anchor) {
+                Ok(m) => (format!("user guide opened: {m}"), false),
+                Err(e) => (e, true),
+            },
+        );
+    }
     if let Some(marks) = out.marks {
         r.marks_from = MarksFrom::Zone(measure);
         r.plan.marks = marks.iter().map(|m| m.0).collect();

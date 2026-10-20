@@ -17,7 +17,7 @@
 //! the point cloud in the search corridor, on a background thread.
 //!
 //! The panel can be docked ([`crate::dockable`]); each setting is
-//! explained beside it, with small drawings ([`crate::vegetation_help`]).
+//! explained beside it, with small drawings ([`crate::check_help`]).
 //! A design-code plugin's vegetation preset
 //! ([`ohl_clearance::rules::VegetationPreset`]) is chosen from a dropdown,
 //! previewed, then applied (its weather cases missing from the project
@@ -47,10 +47,10 @@ use ohl_session::packing::{Reader, Writer};
 use ohl_session::reports::{self, CheckReport, ReportStatus};
 use serde_json::{Value, json};
 
+use crate::check_help as help;
 use crate::job::{Job, or_dash, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
-use crate::vegetation_help as help;
 
 /// The id of a saved vegetation run in the library of performed checks.
 pub const CHECK_ID: &str = "ohl.vegetation";
@@ -247,11 +247,14 @@ impl Settings {
         if let Some(f) = p.fall_in {
             self.fall_in = f;
         }
+        if let Some(w) = wind {
+            // The arc of a `[wind]` table turns the swing arc on; its
+            // steps and sides are the steps'.
+            self.arc |= w.arc;
+            self.steps = WindSteps { arc: false, ..w };
+        }
         if let Some(a) = p.swing_arc {
             self.arc = a;
-        }
-        if let Some(w) = wind {
-            self.steps = w;
         }
     }
 
@@ -355,6 +358,7 @@ impl Settings {
                         .and_then(Value::as_str)
                         .and_then(|s| WindSides::parse(s).ok())
                         .unwrap_or(WindSides::Both),
+                    arc: false,
                 },
                 ice: (
                     Ice::parse(
@@ -1233,16 +1237,9 @@ impl VegetationWindow {
 
     /// A heading with a link to its section of the user guide.
     fn heading(ui: &mut egui::Ui, title: &str, anchor: &'static str, out: &mut Out) {
-        ui.horizontal(|ui| {
-            ui.strong(title);
-            if ui
-                .small_button(format!("{title}: user guide ↗"))
-                .on_hover_text(format!("Help › User guide: {title} (and its theory)"))
-                .clicked()
-            {
-                out.guide = Some(anchor);
-            }
-        });
+        if let Some(a) = help::heading(ui, title, anchor) {
+            out.guide = Some(a);
+        }
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
@@ -1284,35 +1281,20 @@ impl VegetationWindow {
                     "The wires are solved in each case ticked; a case with wind is solved with \
                      the wind from the right (blown left) and from the left (blown right).",
                 );
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut s.arc, "swing arc");
-                    ui.checkbox(&mut s.steps.stepped, "wind stepped");
-                    ui.add_enabled_ui(s.steps.stepped, |ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut s.steps.step)
-                                .speed(10.0)
-                                .range(1.0..=10_000.0)
-                                .suffix(" Pa"),
-                        );
-                        egui::ComboBox::from_id_salt("vegetation-wind-sides")
-                            .selected_text(s.steps.sides.as_str())
-                            .width(70.0)
-                            .show_ui(ui, |ui| {
-                                for w in WindSides::ALL {
-                                    ui.selectable_value(&mut s.steps.sides, w, w.as_str());
-                                }
-                            });
-                    });
-                });
-                help::explain(
-                    ui,
-                    "Swing arc: anywhere between left and right. Wind stepped: still air and \
-                     every pressure up to the case's, by the step, from the sides chosen.",
-                    "Alongside each other or alone. The swing arc covers every position between \
-                     the two blowouts (closed form); the steps solve the wires at 0, step, 2 × \
-                     step … up to the case's pressure, as the vertical and radial clearance \
-                     windows do.",
-                );
+                // The wind choice shared with the clearance windows (the
+                // arc kept apart, as saved).
+                let full = cases
+                    .iter()
+                    .filter_map(|&k| model.cases.get(k))
+                    .map(|c| c.case.wind_pressure.si())
+                    .fold(0.0, f64::max);
+                let mut wind = WindSteps {
+                    arc: s.arc,
+                    ..s.steps
+                };
+                help::wind_choice(ui, "vegetation", &mut wind, false, full);
+                s.arc = wind.arc;
+                s.steps = WindSteps { arc: false, ..wind };
                 ui.horizontal(|ui| {
                     ui.label("unbalanced ice");
                     egui::ComboBox::from_id_salt("vegetation-ice")
@@ -1494,15 +1476,7 @@ impl VegetationWindow {
                         let mut on = chosen.contains(&c.code)
                             || (chosen.is_empty() && c.roles.iter().any(|r| r == "vegetation"));
                         ui.horizontal(|ui| {
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                            if let Some(col) = crate::scene::class_color(&model.scheme, c.code) {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    2.0,
-                                    egui::Color32::from_rgb(col[0], col[1], col[2]),
-                                );
-                            }
+                            help::class_swatch(ui, &model.scheme, c.code);
                             if ui
                                 .checkbox(&mut on, format!("{} {}", c.code, c.name))
                                 .changed()

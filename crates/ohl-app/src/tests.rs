@@ -1561,7 +1561,7 @@ fn open_clearance_window(harness: &mut Harness<'_, App>, item: &str) {
 fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
     let model = synthetic();
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, 900.0))
+        .with_size(egui::vec2(1400.0, 1600.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     open_clearance_window(&mut harness, "Vertical clearances…");
@@ -1588,6 +1588,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             stepped: true,
             step: 200.0,
             sides: ohl_clearance::WindSides::Both,
+            arc: false,
         };
         w.rules.push(ohl_clearance::ZoneRule {
             name: "High ground".into(),
@@ -1631,13 +1632,111 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// Checks › Vertical clearances with the swing arc: the window says how
+/// many solves a windy case needs (and suggests the arc for fine steps),
+/// runs the arc (three positions), names the arc and its angle in the
+/// results; its groups link to the user guide.
+#[test]
+fn the_vertical_clearances_window_runs_the_swing_arc() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1600.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Vertical clearances…");
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-zones-arc", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.vertical_clearances;
+        w.rules.clear();
+        w.file = Some(dir.join("rules.ohlr"));
+        w.wind = ohl_clearance::WindSteps {
+            stepped: true,
+            step: 10.0,
+            sides: ohl_clearance::WindSides::Both,
+            arc: false,
+        };
+        w.rules.push(ohl_clearance::ZoneRule {
+            name: "High ground".into(),
+            voltage: None,
+            cases: vec!["high wind".into()],
+            distance: ohl_clearance::Requirement::Fixed(100.0),
+            classes: Vec::new(),
+            ground: true,
+            wires: ohl_clearance::Wires::Sections,
+            width: None,
+        });
+    }
+    harness.run();
+    // 600 Pa in 10 Pa steps: 1 + 59 × 2 + 2 solves, the arc suggested.
+    let text = harness
+        .query_all_by_label_contains("121 solves for a windy case of 600 Pa")
+        .count();
+    assert!(text > 0);
+    assert!(
+        harness
+            .query_all_by_label_contains("The swing arc needs 3")
+            .next()
+            .is_some()
+    );
+    for g in [
+        "Wind: user guide ↗",
+        "Zone: user guide ↗",
+        "Results: user guide ↗",
+    ] {
+        harness.get_by_label(g);
+    }
+    {
+        let w = &mut harness.state_mut().ready().unwrap().vertical_clearances;
+        w.wind.stepped = false;
+        w.wind.arc = true;
+    }
+    harness.run();
+    assert!(
+        harness
+            .query_all_by_label_contains("3 solves for a windy case of 600 Pa")
+            .next()
+            .is_some()
+    );
+    harness.get_by_label("Run").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.vertical_clearances.result() {
+            let rep = rep.as_ref().unwrap();
+            // Still air and the two blowouts; every span's arc.
+            assert_eq!(rep.states.len(), 3);
+            assert!(rep.arc_spans > 0);
+            assert!(rep.zone.findings.iter().any(|f| f.arc.is_some()));
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    assert!(harness.query_all_by_label_contains("arc ").next().is_some());
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// The time left to solve: none before the first position, then the
+/// mean time of those solved times those left.
+#[test]
+fn the_clearance_windows_say_the_time_left() {
+    use crate::clearance_zones::time_left;
+    assert_eq!(time_left(3.0, 0, 10), None);
+    assert_eq!(time_left(3.0, 3, 10), Some(7.0));
+    assert_eq!(time_left(3.0, 10, 10), None);
+}
+
 /// Checks › Radial clearances: a rule added is kept in the
 /// project's rule file; removing it asks first.
 #[test]
 fn the_radial_clearances_window_keeps_its_rules() {
     let model = synthetic();
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, 900.0))
+        .with_size(egui::vec2(1400.0, 1600.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     open_clearance_window(&mut harness, "Radial clearances…");

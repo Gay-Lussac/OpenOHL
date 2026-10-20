@@ -17,7 +17,16 @@
 //! of the same name: the cases its rules name, added to the model's
 //! weather cases where missing).
 //! The check runs on its own thread: the wind positions are solved, the
-//! LiDAR points read again from the point cloud around the wires.
+//! LiDAR points read again from the point cloud around the wires; its
+//! progress and the time left are shown, and **Stop** keeps the previous
+//! results.
+//!
+//! The settings are grouped and explained as in the vegetation panel
+//! (the shared [`crate::check_help`]): a heading per group with a link to
+//! its user-guide section, a line beside each value with a longer text
+//! on hover, small drawings of the zone and the wind positions, and the
+//! same wind choice — none, the wind steps, the swing arc, or both — with
+//! the solves it means.
 //! `ohl zones` runs the same check without the window
 //! ([`ohl_clearance::zone::run_zone_check`]).
 
@@ -30,12 +39,16 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use ohl_clearance::rules::Requirement;
 use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneRule};
-use ohl_clearance::{CheckScope, RuleSet, WindSides, WindSteps};
+use ohl_clearance::{CheckScope, RuleSet, WindSteps};
 use ohl_core::budget::{Budget, CancelToken};
 use ohl_line::condition::Method;
 
+use crate::check_help as help;
 use crate::model::Model;
 use crate::selection::Selection;
+
+/// The user guide's page of the windows' settings.
+pub const GUIDE: &str = "user-guide/desktop-app";
 
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
@@ -67,6 +80,8 @@ pub struct Out {
     /// A design-code plugin's preset loaded (its plugin, the preset): its
     /// weather cases missing from the model to add.
     pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
+    /// A section of the user guide to open ([`GUIDE`]).
+    pub guide: Option<&'static str>,
 }
 
 struct Running {
@@ -75,6 +90,8 @@ struct Running {
     total: usize,
     cancel: CancelToken,
     started: Instant,
+    /// Stopped by the user: the previous results stay.
+    stopped: bool,
 }
 
 /// One clearance window.
@@ -400,6 +417,7 @@ impl ZoneWindow {
             model.cases.iter().map(|c| c.case.clone()).collect();
         let rules = self.rules.clone();
         let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &self.wind);
+        let arc = self.wind.arc;
         if let Some(why) = self.why_not_run() {
             self.report = Some(Err(format!("not run: {why}")));
             return;
@@ -426,7 +444,7 @@ impl ZoneWindow {
         self.rules_hash.0 = Some(self.settings_hash());
         std::thread::spawn(move || {
             let r = run(
-                &line, &library, zone, &check, rules, states, cloud, ground, scope, &d, &c,
+                &line, &library, zone, &check, rules, states, arc, cloud, ground, scope, &d, &c,
             );
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -437,6 +455,7 @@ impl ZoneWindow {
             total,
             cancel,
             started: Instant::now(),
+            stopped: false,
         });
     }
 
@@ -450,6 +469,13 @@ impl ZoneWindow {
             Err(TryRecvError::Empty) => return false,
             Err(TryRecvError::Disconnected) => Err("the check stopped".into()),
         };
+        // Stopped by the user: the previous results stay, said so.
+        if r.stopped && report.is_err() {
+            self.status = Some(("stopped: the previous results are kept".into(), false));
+            self.rules_hash.0 = None;
+            self.running = None;
+            return true;
+        }
         match &report {
             Ok(rep) => log::info!(
                 "{}: {} spans below the rules, {} wind positions ({:.1?} + {:.1?})",
@@ -591,28 +617,59 @@ impl ZoneWindow {
             Measure::Radial => crate::dockable::Panel::RadialClearances,
         };
         let window = egui::Window::new(self.title()).default_width(820.0);
+        let mut guide = None;
         crate::dockable::show(ctx, panel, self.title(), window, Some(&mut open), |ui| {
-            self.help(ui);
-            ui.separator();
-            self.zone_ui(ui);
-            self.wind_ui(ui);
-            self.check_ui(ui, model);
-            ui.separator();
-            self.plugin_presets_ui(ui, model, presets);
-            if let Some(chosen) = self.rules_ui(ui, model) {
-                preset = Some(chosen);
-            }
-            ui.separator();
-            run = self.run_ui(ui);
-            if let Some(what) = self.out_of_date(model)
-                && crate::revision::banner(ui, &what, self.running.is_none())
             {
-                run = self.why_not_run().is_none();
-            }
-            if let Some(go) = self.results_ui(ui, model) {
-                out.go = Some(go);
+                {
+                    self.help(ui);
+                    // Run at the top, as in the vegetation panel; out of
+                    // date: said there, Run again beside.
+                    run = self.run_ui(ui);
+                    if let Some(what) = self.out_of_date(model)
+                        && crate::revision::banner(ui, &what, self.running.is_none())
+                    {
+                        run = self.why_not_run().is_none();
+                    }
+                    // The results right under Run.
+                    guide = guide.or(help::heading(ui, "Results", "clearances-results"));
+                    self.results_help(ui);
+                    if let Some(go) = self.results_ui(ui, model) {
+                        out.go = Some(go);
+                    }
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        "Rules and presets",
+                        "clearances-rules-and-presets",
+                    ));
+                    self.plugin_presets_ui(ui, model, presets);
+                    if let Some(chosen) = self.rules_ui(ui, model) {
+                        preset = Some(chosen);
+                    }
+                    ui.separator();
+                    guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
+                    self.wind_ui(ui, model);
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        match self.zone.measure {
+                            Measure::Vertical => "Zone",
+                            Measure::Radial => "Distance",
+                        },
+                        "clearances-zone",
+                    ));
+                    self.zone_ui(ui);
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        "What is solved",
+                        "clearances-what-is-solved",
+                    ));
+                    self.check_ui(ui, model);
+                }
             }
         });
+        out.guide = guide;
         self.open = open;
         if let Some((r, w)) = preset {
             self.load_preset(model, &r, &w, &mut out);
@@ -653,22 +710,38 @@ impl ZoneWindow {
     }
 
     fn help(&self, ui: &mut egui::Ui) {
-        let text = match self.zone.measure {
-            Measure::Vertical => {
-                "The zone is straight under the wire: a width on each side, across the line \
-                 in plan, cut along the line in slices of the depth. A target in the zone is \
+        let (short, long) = match self.zone.measure {
+            Measure::Vertical => (
+                "How high the wires pass over the ground and over LiDAR points straight below \
+                 them, in every wind position of the rules' weather cases.",
+                "The zone is straight under the wire: a width on each side, across the line in \
+                 plan, cut along the line in slices of the depth. A target in the zone is \
                  compared with the wire's lowest point over its slice; a target above the wire \
-                 with its highest point. The ground counts in the same zone."
-            }
-            Measure::Radial => {
+                 with its highest point. The ground counts in the same zone. Every clearance is \
+                 to the conductor's surface.",
+            ),
+            Measure::Radial => (
+                "How close the wires come to the ground and to LiDAR points in any direction, in \
+                 every wind position of the rules' weather cases.",
                 "The direct 3D distance from the wire (each subconductor of a bundle) to the \
-                 targets: LiDAR points of the classes ticked, the ground."
-            }
+                 targets: LiDAR points of the classes ticked, the ground. Every clearance is to \
+                 the conductor's surface.",
+            ),
         };
-        ui.label(egui::RichText::new(text).small().weak());
+        help::explain(ui, short, long);
     }
 
     fn zone_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| self.zone_values_ui(ui));
+            match self.zone.measure {
+                Measure::Vertical => help::vertical_zone(ui, self.zone.width, self.zone.depth),
+                Measure::Radial => help::radial_zone(ui),
+            }
+        });
+    }
+
+    fn zone_values_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let mut limited = self.zone.search.is_some();
             if ui
@@ -689,7 +762,20 @@ impl ZoneWindow {
                 ui.label("m from the wires");
             }
         });
+        help::explain(
+            ui,
+            "Search distance: only the LiDAR points this near the wires are read.",
+            "Points farther from every wire position (and swing arc) are not read nor compared; \
+             unticked, as far as the rules' largest distance reaches. A smaller distance reads \
+             fewer points: faster, never a different clearance within it.",
+        );
         if self.zone.measure != Measure::Vertical {
+            help::explain(
+                ui,
+                "Radial: the shortest 3D distance from the conductor's surface.",
+                "To each subconductor of a bundle; to the ground, the nearest point of the ground \
+                 surface in any direction.",
+            );
             return;
         }
         ui.horizontal(|ui| {
@@ -715,48 +801,35 @@ impl ZoneWindow {
                 )
                 .changed();
         });
+        help::explain(
+            ui,
+            "Width on each side of the wire, in plan; depth: the slice along the line.",
+            "A target within the width of the wire (across the line, in plan) is compared with \
+             the wire's lowest point over the slice of the depth around it (its highest for a \
+             target above). A rule may have its own width (the rules' width column).",
+        );
     }
 
-    fn wind_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            self.dirty |= ui
-                .checkbox(&mut self.wind.stepped, "Step the wind")
-                .on_hover_text(
-                    "Solve every wind pressure from 0 up to the case's in steps: the wires at \
-                     every step form the surface checked. Unticked: the case's wind only.",
-                )
-                .changed();
-            ui.add_enabled_ui(self.wind.stepped, |ui| {
-                ui.label("step Pa");
-                self.dirty |= ui
-                    .add(
-                        egui::DragValue::new(&mut self.wind.step)
-                            .speed(5.0)
-                            .range(1.0..=10_000.0),
-                    )
-                    .changed();
+    /// The wind choice (shared with the vegetation panel) and its drawing.
+    fn wind_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        // The largest pressure of the rules' cases.
+        let full = model
+            .cases
+            .iter()
+            .filter(|c| self.rules.iter().any(|r| r.applies(&c.case.name)))
+            .map(|c| c.case.wind_pressure.si())
+            .fold(0.0, f64::max);
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                self.dirty |= help::wind_choice(ui, self.title(), &mut self.wind, true, full);
             });
-            ui.label("Wind from");
-            let name = |s: WindSides| match s {
-                WindSides::Both => "the left and the right",
-                WindSides::Left => "the left only",
-                WindSides::Right => "the right only",
+            let n = if self.wind.stepped {
+                (full / self.wind.step.max(1.0)).ceil() as usize
+            } else {
+                0
             };
-            egui::ComboBox::from_id_salt((self.title(), "sides"))
-                .selected_text(name(self.wind.sides))
-                .show_ui(ui, |ui| {
-                    for s in WindSides::ALL {
-                        self.dirty |= ui
-                            .selectable_value(&mut self.wind.sides, s, name(s))
-                            .changed();
-                    }
-                });
+            help::wind_positions(ui, self.wind.arc, n);
         });
-        ui.label(
-            egui::RichText::new("Left and right looking ahead along the line.")
-                .small()
-                .weak(),
-        );
     }
 
     /// The circuits checked and the calculation method.
@@ -830,11 +903,30 @@ impl ZoneWindow {
                      cable condition)",
                 );
         });
+        help::explain(
+            ui,
+            "Circuits: those checked (none ticked: every one). Solved by: each section's own \
+             calculation, or one method for all.",
+            "Only the sections of the circuits ticked are solved and checked. Finite elements \
+             solve each section with its strings swinging; ruling span is the classic \
+             approximation; each section keeps its cable condition (initial, final).",
+        );
     }
 
     /// The rules; a preset chosen (rule file, weather case file).
     fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<(PathBuf, PathBuf)> {
         let mut preset = None;
+        help::explain(
+            ui,
+            "A rule: the voltage, the weather cases, the distance and the targets — LiDAR \
+             classes and/or the ground.",
+            "Voltage: any (each wire with the distance of its own system) or one of the line's. \
+             Weather cases: those the rule applies in (none ticked: every case). Distance: one \
+             value, a table \"up to kV: distance\" or a base plus an amount per kV. Targets: the \
+             LiDAR classes ticked (by number and name of the class scheme, with their colours) \
+             and the ground surface of the checks. A preset (a design code's) replaces the rules \
+             with its own, with its wind and what it solves.",
+        );
         self.add_rule_ui(ui, model);
         ui.horizontal(|ui| {
             ui.strong("Rules");
@@ -987,7 +1079,8 @@ impl ZoneWindow {
                                 self.dirty |= width_ui(ui, r, self.zone.width);
                             }
                             self.dirty |= wires_ui(ui, (self.zone.measure, k), r);
-                            self.dirty |= targets_ui(ui, (self.zone.measure, k), r, &classes);
+                            self.dirty |=
+                                targets_ui(ui, (self.zone.measure, k), r, &classes, &model.scheme);
                             ui.horizontal(|ui| {
                                 if ui.small_button("Duplicate").clicked() {
                                     duplicate = Some(k);
@@ -1071,7 +1164,7 @@ impl ZoneWindow {
                         ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(200.0));
                         ui.end_row();
                         ui.label("What");
-                        targets_ui(ui, (measure, usize::MAX), d, &classes);
+                        targets_ui(ui, (measure, usize::MAX), d, &classes, &model.scheme);
                         ui.end_row();
                         ui.label("Voltage");
                         voltage_ui(ui, (measure, usize::MAX), d, &voltages);
@@ -1113,18 +1206,31 @@ impl ZoneWindow {
     /// The Run row; true to start a check.
     fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut run = false;
+        let mut stop_now = false;
         ui.horizontal(|ui| match &self.running {
             Some(r) => {
                 ui.spinner();
                 let done = r.done.load(Ordering::Relaxed);
-                ui.label(if done < r.total {
-                    format!("solving the wind positions: {done} of {}", r.total)
+                let elapsed = r.started.elapsed().as_secs_f64();
+                if done < r.total {
+                    ui.add(
+                        egui::ProgressBar::new(done as f32 / r.total.max(1) as f32)
+                            .desired_width(140.0)
+                            .text(format!("{done} of {} solved", r.total)),
+                    );
+                    ui.label(match time_left(elapsed, done, r.total) {
+                        Some(left) => format!("{elapsed:.0} s, about {left:.0} s left to solve"),
+                        None => format!("{elapsed:.0} s"),
+                    });
                 } else {
-                    "checking the clearances…".into()
-                });
-                ui.label(format!("{:.1} s", r.started.elapsed().as_secs_f64()));
-                if ui.button("Stop").clicked() {
+                    ui.label(format!("checking the clearances… {elapsed:.0} s"));
+                }
+                let stop = ui
+                    .button("Stop")
+                    .on_hover_text("Stop this check: the previous results stay");
+                if stop.clicked() {
                     r.cancel.cancel();
+                    stop_now = true;
                 }
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
             }
@@ -1147,9 +1253,14 @@ impl ZoneWindow {
                 if let Some(Ok(r)) = &self.report {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{} wind positions solved in {:.1?}, checked in {:.1?}",
+                            "{} wind positions solved in {:.1?}{}, checked in {:.1?}",
                             r.states.len(),
                             r.solving,
+                            if r.arcs.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ({} swing arcs)", r.arc_spans)
+                            },
                             r.checking
                         ))
                         .small()
@@ -1158,7 +1269,22 @@ impl ZoneWindow {
                 }
             }
         });
+        if stop_now && let Some(r) = self.running.as_mut() {
+            r.stopped = true;
+        }
         run
+    }
+
+    /// What the results show.
+    fn results_help(&self, ui: &mut egui::Ui) {
+        help::explain(
+            ui,
+            "The spans below a rule, worst first; each rule's lowest clearance; drawn in the views.",
+            "Per span: the rule, the distance required and found (to the conductor's surface), \
+             the wind position where it is found (a pressure and side, or the swing arc and the \
+             angle there), the target (the ground or a LiDAR class) and how many points (or wire \
+             pieces) are too close. A click on the span goes to it.",
+        );
     }
 
     fn results_ui(&self, ui: &mut egui::Ui, model: &Model) -> Option<(Selection, [f64; 3])> {
@@ -1190,7 +1316,7 @@ impl ZoneWindow {
                     f.distance,
                     f.section,
                     f.span + 1,
-                    report.states[f.state].describe()
+                    f.position(&report.states)
                 ),
                 None => format!("{name}: nothing within reach"),
             });
@@ -1249,14 +1375,8 @@ impl ZoneWindow {
                                 ui.visuals().error_fg_color,
                                 format!("{:.2}", f.distance),
                             );
-                            let s = &report.states[f.state];
-                            ui.label(match s.side {
-                                Some(side) => {
-                                    format!("{:.0} Pa from the {}", s.pressure, side.as_str())
-                                }
-                                None => "no wind".into(),
-                            })
-                            .on_hover_text(s.describe());
+                            ui.label(f.wind(&report.states))
+                                .on_hover_text(f.position(&report.states));
                             ui.label(match f.class {
                                 None => "ground".into(),
                                 Some(c) => format!(
@@ -1295,6 +1415,7 @@ fn run(
     check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
+    arc: bool,
     cloud: Option<String>,
     ground: Option<Arc<ohl_terrain::Terrain>>,
     scope: Option<std::collections::BTreeSet<String>>,
@@ -1319,12 +1440,19 @@ fn run(
         check,
         rules,
         states,
+        arc,
         cloud.is_some().then_some(&read as _),
         ground.as_deref(),
         scope.as_ref(),
         &budget,
         done,
     )
+}
+
+/// The seconds left to solve `total` positions after `done` in
+/// `elapsed` s (none before the first is solved).
+pub fn time_left(elapsed: f64, done: usize, total: usize) -> Option<f64> {
+    (done > 0 && done < total).then(|| elapsed / done as f64 * (total - done) as f64)
 }
 
 /// The nominal voltages of the line's sections, kV (0: earthed), lowest
@@ -1539,6 +1667,7 @@ fn targets_ui(
     id: (Measure, usize),
     r: &mut ZoneRule,
     classes: &[(u8, String)],
+    scheme: &ohl_lidar::ClassScheme,
 ) -> bool {
     let mut changed = false;
     let mut parts: Vec<String> = r.classes.iter().map(u8::to_string).collect();
@@ -1569,15 +1698,18 @@ fn targets_ui(
                 .show(ui, |ui| {
                     for (code, name) in classes {
                         let mut on = r.classes.contains(code);
-                        if ui.checkbox(&mut on, format!("{code} {name}")).changed() {
-                            if on {
-                                r.classes.push(*code);
-                                r.classes.sort_unstable();
-                            } else {
-                                r.classes.retain(|c| c != code);
+                        ui.horizontal(|ui| {
+                            help::class_swatch(ui, scheme, *code);
+                            if ui.checkbox(&mut on, format!("{code} {name}")).changed() {
+                                if on {
+                                    r.classes.push(*code);
+                                    r.classes.sort_unstable();
+                                } else {
+                                    r.classes.retain(|c| c != code);
+                                }
+                                changed = true;
                             }
-                            changed = true;
-                        }
+                        });
                     }
                 });
         });
