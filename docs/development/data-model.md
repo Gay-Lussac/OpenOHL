@@ -1451,6 +1451,29 @@ the `PATH`. Request on the tool's input, reply on its output; exit status
 | `cases` | per case: `name`, `usage` (largest over its checks; null when not finite), `members` and `pole` (null: no such check): `usage`, `governs`, `error` (null: it ran), `notes` |
 | `files` | `report`: `report`, `members_csv` (paths); else null |
 
+### Safety volumes (`ohl_clearance::safety_volume`, `ohl_io::safety_volume`)
+
+Computed, not stored in the line. `SafetyParams`: `distance`
+(`Requirement`), `margin`, `tolerance`, `grouping` (`Wire`, `Circuit`),
+`circuits`; `WindMode` (`None`, `Steps`, `Arc`, `Both`) with `WindSteps`
+gives the positions (`positions::solve_positions`). `SafetyVolumes`:
+`volumes`, `cases`, `positions`, `notes`; each `SafetyVolume`: `name`,
+`circuit`, `phases`, `sections`, `kv`, `distance`, `margin`, `outer`,
+`positions`, `arc_error`, `arc_error_median`, `allowance`, `stats`
+(`MeshStats`: cell, level, evaluations, cells, vertex range), `simplified`
+(`SimplifyStats`), `mesh` (`Mesh`: `vertices` in the line's coordinates,
+`triangles` counter-clockwise from outside, closed), `seconds`, `timings`.
+Files (`ohl_io::safety_volume::write`, `Format` `dxf`, `ifc`, `kml`,
+`kmz`; `Description`: line, crs, distance, wind, date): DXF R12 `3DFACE`s
+by layer `SAFETY_<name>` + `.prj` (WKT from `ohl_crs::Crs::wkt`, EPSG
+systems); IFC4 `IfcBuildingElementProxy` (`SafetyVolume`,
+`.USERDEFINED.`) with an `IfcTriangulatedFaceSet` relative to a
+whole-metre origin, `IfcMapConversion` (eastings, northings, orthogonal
+height of that origin; x axis 1, 0; scale 1) to an `IfcProjectedCRS`
+(name `EPSG:<code>`), property set `OHL_SafetyVolume`; KML placemarks of a
+`MultiGeometry` of polygons (WGS84, absolute heights kept), `ExtendedData`
+with the same properties.
+
 ### Structure exports (IFC, SAF, CSV)
 
 Written by `apps/structure/ohl-structure-export` (File › Export of the
@@ -1549,6 +1572,23 @@ point before), then each label (varint) — and `fall_in` the same with
 the base's z (mm) after z. Opened again, it is out of date when the line
 state, `points_state` or `ground` differ from now. Isoclearance lines are
 not saved (run again to draw them).
+
+The safety volumes (`check` `ohl.safety-volume`, title "Safety
+volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
+`parameters`: `version` (1), `cases` (weather case names), `distance` (as
+a rule file writes a distance), `margin`, `tolerance` (m), `wind`
+(`none`, `steps`, `arc`, `both`), `wind_step` (Pa), `wind_sides`, `per`
+(`wire`, `circuit`), `circuits`. Their `results`: `positions`, `notes`,
+`volumes` [{`name`, `circuit`, `phases`, `sections`, `kv` (null:
+earthed), `distance`, `margin`, `outer` (the largest conductor outer
+radius), `positions`, `arc_error`, `arc_error_median`, `allowance` (how
+far the mesh lies outside, measured), `cell`, `level`, `triangles`,
+`volume_m3`, `seconds`, `mesh`}] — `mesh` packed (`"zstd+base64:…"`):
+the vertex count, x, y, z in mm (each column as zigzag varints of the
+difference to the one before), the triangle count, then each triangle's
+three corners as such columns; `null` for a run of more than 2 000 000
+triangles (run again to see it). Opened again, it is out of date when
+the line state differs from now.
 
 ### Commands (the only way to change a project)
 

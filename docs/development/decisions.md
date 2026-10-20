@@ -103,6 +103,42 @@ approved as finished: everything is built and in active development
   the FE's thermal lengthening of a span's unstressed length also scales
   its weight (+0.17 % on H at 150 °C, −0.04 % at −20 °C for the textbook
   span); left for the owner to decide.
+- **Safety volumes for work near the line** (the owner's request: "a
+  tool to draw a volume around the lines with a given diameter from
+  weather cases and a voltage rule, with the wind stepped or arced, that I
+  can then export in a georeferenced file; it's for safety of work").
+  Built (in active development, not approved yet): Checks › Safety
+  volumes and `ohl safety-volume`. The volume is the union over the cases
+  chosen and the wind positions (blowouts; steps; arc; both — the
+  danger-tree check's positions) of the points within d(U) + margin of
+  the conductor's surface, d a requirement by voltage (earthed wires at
+  0 kV), one closed mesh per wire or circuit. **No distance is built
+  in** (the user's, or a preset rule's radial else vertical distance).
+  The mesh: marching tetrahedra on a sparse grid at a level 60 % of the
+  tolerance, the cell chosen so that no triangle can enter the envelope
+  (proof in the theory), then edge collapses kept only when every new
+  triangle stays out of it (exact distances) and the result checked as a
+  whole — never inside the exact volume, outside by about the tolerance
+  where smooth, more where tubes meet (measured and shown). Exports: DXF
+  R12 3DFACE + `.prj`, IFC4 (`IfcBuildingElementProxy`,
+  `IfcTriangulatedFaceSet`, `IfcMapConversion` + `IfcProjectedCRS`), KML/
+  KMZ (polygons, WGS84, heights kept, no geoid). Additive, small core
+  changes: `ohl_crs::Crs::epsg` and `wkt`; the IFC writer's helpers
+  shared within `ohl-io`; `--case` takes `--cases` as an alias.
+- **Decided here** (not covered by the request; the most conservative
+  choice, open to the owner): structures and **jumpers are not
+  included**; a wire is a circuit's phase through all its sections; the
+  default tolerance 0.05 m; a preset fills the distance from a rule's
+  radial distance, else its vertical one; KML as polygons (not a COLLADA
+  model) with the line's heights unchanged; the volume element in IFC is
+  an `IfcBuildingElementProxy` (object type `SafetyVolume`); without an
+  EPSG system no `.prj` is written and no KML (said); meshes of more than
+  2 000 000 triangles are saved without their meshes.
+- **Measured** (`the_arc_holds_the_steps_up_to_the_rigid_swing`, the
+  example line, 600 Pa in steps of 100 Pa): a stepped position lies up to
+  1.53 m inside the arc's radius (towards the axis): the swing arc alone
+  does not hold the steps' tubes on its inner side — "both" does.
+
 - **Sheet export: the defects fixed** (the review of the sheet export,
   D1–D17): the profile panel takes the whole height; its height range
   fits the ground, the clearance line and the wires' lowest points; tops

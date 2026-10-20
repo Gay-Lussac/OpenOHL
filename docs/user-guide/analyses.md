@@ -2,11 +2,13 @@
 
 Analyses of a solved line beyond the clearance rules: galloping ellipses,
 blown-out wires against the right of way, LiDAR classification, vegetation
-near the wires and catenaries fitted to the surveyed wires. Each is a
+near the wires, safety volumes around the wires for work near the line
+and catenaries fitted to the surveyed wires. Each is a
 command of `ohl` and (but for classification and the right of way) a window
 of the desktop app's **Checks** menu. The methods are in the theory manual:
 [Galloping ellipses and blowout](../theory/galloping.md),
-[LiDAR analyses](../theory/lidar-analysis.md).
+[LiDAR analyses](../theory/lidar-analysis.md),
+[Safety volumes](../theory/safety-volumes.md).
 
 The commands share the options of `ohl line` for the model: the line or
 project file, `--library`, `--structures`, `--insulators`; and for weather
@@ -391,6 +393,80 @@ date* when the line (its objects and library files), the LiDAR points or
 the ground changed since it was saved.
 
 See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees-2026-10-20).
+
+## Safety volumes for work near the line (2026-10-20)
+
+*Built, in active development (not approved yet).* The space within a
+distance of the wires in every position of the weather cases chosen —
+for planning work near the line (cranes, scaffolds, trees felled): one
+closed volume per wire (a circuit's phase through all its sections) or
+per circuit, shown in the 3D view and the plan, saved with the line and
+exported as georeferenced files. Structures and jumpers are not part of
+it.
+
+**In the desktop app:** Checks › **Safety volumes…**
+
+- **Weather cases**: tick any number. Each is solved by the line's
+  solver: still air as it is, a windy case blown to the left and to the
+  right at its full pressure.
+- **Wind**: *blowouts at full wind* (the cases as solved), *wind stepped*
+  (also still air and every pressure up to the case's by the step, from
+  the sides chosen), *swing arc* (also every position between the two
+  blowouts: the span swinging about its attachment axis, closed form) or
+  *wind stepped and swing arc* — the positions of the danger-tree check.
+- **Distance from the conductors' surface**: one distance, or by the
+  voltage of each wire's system (a table "up to kV: distance" or a base
+  plus an amount per kV, as in the clearance rules; earthed wires count as
+  0 kV). **No safety distance is built in**: enter the one of the rules you
+  work to, or choose a design-code plugin's preset and one of its rules,
+  then **Fill the distance** (its radial distance, else its vertical one).
+- **Margin**: added to the distance. **Tolerance** (default 0.05 m): how
+  far the volume may lie outside the exact one where it is smooth; it is
+  never inside it. Smaller: more triangles, longer.
+- **One per wire / one per circuit**, and the circuits (a tick menu).
+
+**Run** computes it in the background. The table lists each volume: its
+colour (its circuit's wire colour), voltage, distance, triangles, volume
+and how far it lies outside the exact volume at most (measured; where
+tubes meet the triangles bridge the groove, so this can be larger than
+the tolerance). The volumes are drawn translucent in the 3D view (layer
+*Safety volumes*) and their outlines in the plan while the window is
+open. When the line or its weather cases change the window says *out of
+date* (the layers dimmed) with **Run again**.
+
+**Save in Performed checks** keeps the run (its settings and the volumes'
+meshes) with the project line; Checks › Performed checks opens it again.
+
+**Export to a folder…** writes the formats ticked, in the line's
+coordinate system (Properties of the line, *CRS*):
+
+| file | contents |
+|------|----------|
+| `.dxf` + `.prj` | DXF R12: 3D faces (`3DFACE`), a layer `SAFETY_<volume>` per volume, in the line's coordinates; the `.prj` holds the coordinate system as WKT (EPSG systems) |
+| `.ifc` | IFC4: one element (`IfcBuildingElementProxy`, object type `SafetyVolume`) per volume, a closed triangulated face set, translucent; georeferenced by `IfcMapConversion` to an `IfcProjectedCRS` named by its EPSG code; property set `OHL_SafetyVolume` (line, circuit, phases, sections, voltage, distance, margin, rule, weather cases, wind, date, tolerance, volume) |
+| `.kml`, `.kmz` | WGS84 for Google Earth: each volume a placemark of triangles at absolute heights, with the same properties; needs the line's real coordinate system (EPSG) |
+
+Heights in KML are the line's (above its height datum), not corrected to
+a geoid: see the theory.
+
+**From the command line:**
+
+```bash
+ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case "max temperature" \
+    --wind both --wind-step 100 --distance '{ by_voltage = [[0, 2], [110, 3], [380, 5]] }' \
+    --margin 0.5 --per circuit --crs EPSG:2056 --out volumes --format dxf,ifc,kmz
+```
+
+`--wind none|steps|arc|both`, `--wind-step` (Pa), `--wind-sides
+both|left|right`, `--distance` (required; the rule file's forms),
+`--margin`, `--tolerance`, `--per wire|circuit`, `--circuit` (repeatable),
+`--crs` (when the line file has none), `--format` (dxf, ifc, kml, kmz),
+`--name` (file name stem, default `safety-volume`), `--time-limit`.
+
+On the example line (two cases, wind stepped and swing arc, 4 m): three
+volumes of 24 000–75 000 triangles, about half a minute.
+
+See the theory: [Safety volumes](../theory/safety-volumes.md).
 
 ## As-built wires
 
