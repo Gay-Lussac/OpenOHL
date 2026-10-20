@@ -1662,6 +1662,110 @@ mod tests {
         }
     }
 
+    /// The example line: a windy case solved left and right with its
+    /// swing arcs; the glaze-ice case with its ice on one span alone sags
+    /// that span further than the ice on every span (the strings swing
+    /// into it), and an extra load further still than the case.
+    #[test]
+    fn positions_of_the_example_line() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let cases = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .select(&["high wind".into(), "glaze ice".into()], &[])
+        .unwrap();
+        let budget = Budget::new();
+        let mut p = solve_positions(
+            &line,
+            &library,
+            &cases,
+            PositionOptions { swing_arc: true },
+            &budget,
+        )
+        .unwrap();
+        let n = p.spans.len();
+        let count =
+            |p: &Positions, k: PositionKind| p.positions.iter().filter(|x| x.kind == k).count();
+        assert_eq!(count(&p, PositionKind::Left), n);
+        assert_eq!(count(&p, PositionKind::Right), n);
+        assert_eq!(count(&p, PositionKind::Arc), n);
+        assert_eq!(count(&p, PositionKind::Case), n);
+        // Left is blown to the left: its points on the left of the
+        // span's axis.
+        let s = p.span_of("S1", 1).unwrap();
+        let low = |p: &Positions, k: PositionKind| {
+            p.spans[s]
+                .positions
+                .iter()
+                .map(|&i| &p.positions[i])
+                .filter(|x| x.kind == k)
+                .map(|x| match &x.shape {
+                    Shape::Wire(w) => w
+                        .wire
+                        .points
+                        .iter()
+                        .map(|q| q[2])
+                        .fold(f64::INFINITY, f64::min),
+                    Shape::Arc(_) => f64::NAN,
+                })
+                .next()
+                .unwrap()
+        };
+        let axis = p.spans[s].axis;
+        let mid = |k: PositionKind| {
+            p.spans[s]
+                .positions
+                .iter()
+                .map(|&i| &p.positions[i])
+                .find(|x| x.kind == k)
+                .and_then(|x| match &x.shape {
+                    Shape::Wire(w) => Some(w.at(0.5 * axis.length)),
+                    Shape::Arc(_) => None,
+                })
+                .unwrap()
+        };
+        let side = |q: P3| dot(sub(q, axis.a1), axis.right);
+        assert!(side(mid(PositionKind::Left)) < -0.5 && side(mid(PositionKind::Right)) > 0.5);
+        let iced = low(&p, PositionKind::Case);
+        add_unbalanced_ice(
+            &mut p,
+            &line,
+            &library,
+            &cases,
+            UnbalancedIce::CaseIce,
+            &[s],
+            &budget,
+        )
+        .unwrap();
+        assert!(p.notes.is_empty(), "{:?}", p.notes);
+        let unbalanced = low(&p, PositionKind::Ice);
+        assert!(unbalanced < iced - 0.01, "{unbalanced} {iced}");
+        let glaze: Vec<WeatherCase> = cases
+            .iter()
+            .filter(|c| c.name == "glaze ice")
+            .cloned()
+            .collect();
+        let mut q =
+            solve_positions(&line, &library, &glaze, PositionOptions::default(), &budget).unwrap();
+        assert_eq!(q.span_of("S1", 1), Some(s));
+        add_unbalanced_ice(
+            &mut q,
+            &line,
+            &library,
+            &glaze,
+            UnbalancedIce::Extra(5.0),
+            &[s],
+            &budget,
+        )
+        .unwrap();
+        assert!(low(&q, PositionKind::Ice) < iced - 0.01);
+    }
+
     #[test]
     fn positions_of_wires_keep_one_per_wire() {
         let p = Positions::of_wires("hot", vec![wire(hanging(0.0, 4.0))]);
