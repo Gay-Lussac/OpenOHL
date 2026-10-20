@@ -33,8 +33,14 @@
 //! route, plan and profile), vertical (profile) and plan across the line,
 //! each set separately.
 //!
-//! The sheet layout (title block, margins) is fixed here; a layout plugin
-//! with company templates can replace it later.
+//! The sheets follow a **sheet template** ([`template::SheetTemplate`],
+//! `.ohlsheet`): page, frame, panels, pens, band rows, title block,
+//! revisions, notes, legend, key map, scale bars, north arrows, the styles
+//! of the line's kinds and of its versions; the built-in one draws them as
+//! before templates. Several versions of the line may be drawn on one
+//! sheet, each in its role ([`RouteDrawing::add_version`]); lines below
+//! the lowest conductor by the project's ground clearance rules
+//! ([`curves::conductor_clearances`]).
 
 use ohl_line::jumper::JumperShape;
 use ohl_line::route::project;
@@ -42,19 +48,28 @@ use ohl_line::solve::SectionShape;
 use ohl_line::{AlignmentView, Line, Point, Station};
 use ohl_terrain::Terrain;
 
+pub mod curves;
 pub mod dxf;
 pub mod export;
+mod furniture;
 mod layout;
 pub mod model;
+mod outline;
 pub mod pdf;
 pub mod png;
+pub mod style;
 mod table;
+pub mod template;
 
+pub use curves::ConductorClearance;
 pub use layout::{
     ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet_layout,
     sheets,
 };
 pub use table::{profile_csv, profile_xml};
+pub use template::{Revision, SheetFields, SheetTemplate};
+
+use std::sync::Arc;
 
 /// Drawing options.
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +108,61 @@ pub struct Options {
     pub break_clearance: f64,
     /// Structures' elevations on the plan (off by default).
     pub elevations: Elevations,
+    /// The sheet template (the built-in one by default).
+    pub template: Arc<SheetTemplate>,
+    /// What the user gives the template's fields, and the revisions.
+    pub fields: SheetFields,
+    /// The computed fields the drawing data does not hold (project, line,
+    /// date, cases …).
+    pub info: SheetInfo,
+    /// The role of the line drawn ("project", "existing" …: its style in
+    /// the template's `[roles]`); none: drawn as it is.
+    pub role: Option<String>,
+    /// The corridor's half width, m: its edges drawn in the plan (and the
+    /// key map), the plan at least that wide (none: the template's, else
+    /// none).
+    pub corridor: Option<f64>,
+    /// Lines below the lowest conductor of each circuit, lowered by its
+    /// ground clearance ([`curves::conductor_clearances`]).
+    pub conductor_clearance: Vec<ConductorClearance>,
+    /// The template's band rows drawn (the export window may switch them
+    /// off).
+    pub bands: bool,
+}
+
+/// Computed fields of the sheets the drawing data does not hold.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SheetInfo {
+    /// The project's name (`{project}`).
+    pub project: String,
+    /// The project line's name (`{line}`).
+    pub line: String,
+    /// The coordinate system (`{crs}`).
+    pub crs: String,
+    /// The export's date, `YYYY-MM-DD` (`{date}`; empty: today).
+    pub date: String,
+    /// The weather cases drawn, in words (`{cases}`).
+    pub cases: String,
+    /// The heights' datum (`{height_datum}`).
+    pub height_datum: String,
+}
+
+/// Today's date, `YYYY-MM-DD` (UTC).
+pub fn today() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400) as i64;
+    // Civil from days (H. Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    format!("{:04}-{m:02}-{d:02}", if m <= 2 { y + 1 } else { y })
 }
 
 /// Default clearance on paper, mm, between a sheet break and the drawing
@@ -151,10 +221,10 @@ impl ElevationPlace {
 
 /// The structures' elevations on the plan: each structure seen along the
 /// line (its members, its pole's outline, else its stick drawing), true
-/// shape at the horizontal scale, its base `offset_mm` on paper from the
-/// line, standing at `rotation_deg` to the line (90°: perpendicular to
-/// it), its top away from the line; a thin leader from where it stands.
-/// Display only.
+/// shape at the horizontal scale (or a scale of their own), its base
+/// `offset_mm` on paper from the line, standing at `rotation_deg` to the
+/// line (90°: perpendicular to it), its top away from the line; a thin
+/// leader from where it stands; labels on request. Display only.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Elevations {
     /// Off, above or below the line.
@@ -164,6 +234,61 @@ pub struct Elevations {
     /// Angle between the line and the elevation's height, degrees (90:
     /// standing perpendicular to the line).
     pub rotation_deg: f64,
+    /// Scale denominator of the elevations (none: the horizontal scale).
+    pub scale: Option<f64>,
+    /// What is written at each elevation.
+    pub labels: ElevationLabels,
+    /// Size of the labels, mm.
+    pub text_size: f64,
+}
+
+/// What is written at each elevation: its number above its top, its type,
+/// its height, and the length of each suspension string beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ElevationLabels {
+    /// The structure's number (id).
+    pub number: bool,
+    /// Its type (and extension).
+    pub type_name: bool,
+    /// Its height: the highest point above its base, m.
+    pub height: bool,
+    /// The length of each suspension string, m (the model's strings).
+    pub string_length: bool,
+}
+
+impl ElevationLabels {
+    /// From the names `number`, `type`, `height`, `string_length`.
+    pub fn parse(names: &[impl AsRef<str>]) -> Result<Self, String> {
+        let mut l = Self::default();
+        for n in names {
+            match n.as_ref().trim() {
+                "number" => l.number = true,
+                "type" => l.type_name = true,
+                "height" => l.height = true,
+                "string_length" => l.string_length = true,
+                "" => {}
+                other => {
+                    return Err(format!(
+                        "elevation label \"{other}\": give number, type, height or string_length"
+                    ));
+                }
+            }
+        }
+        Ok(l)
+    }
+
+    /// The names of those on.
+    pub fn names(&self) -> Vec<&'static str> {
+        [
+            (self.number, "number"),
+            (self.type_name, "type"),
+            (self.height, "height"),
+            (self.string_length, "string_length"),
+        ]
+        .into_iter()
+        .filter_map(|(on, n)| on.then_some(n))
+        .collect()
+    }
 }
 
 impl Default for Elevations {
@@ -172,6 +297,9 @@ impl Default for Elevations {
             place: ElevationPlace::Off,
             offset_mm: 10.0,
             rotation_deg: 90.0,
+            scale: None,
+            labels: ElevationLabels::default(),
+            text_size: 2.0,
         }
     }
 }
@@ -191,12 +319,55 @@ impl Default for Options {
             plan: true,
             break_clearance: BREAK_CLEARANCE_MM,
             elevations: Elevations::default(),
+            template: Arc::new(SheetTemplate::builtin()),
+            fields: SheetFields::default(),
+            info: SheetInfo::default(),
+            role: None,
+            corridor: None,
+            conductor_clearance: Vec::new(),
+            bands: true,
         }
     }
 }
 
+impl Options {
+    /// The options with what template `t` sets and they leave at their
+    /// defaults: the elevations (when off here), the corridor (when none
+    /// here). The export's own choices win.
+    pub fn with_template(mut self, t: Arc<SheetTemplate>) -> Self {
+        let e = &t.elevations;
+        if self.elevations.place == ElevationPlace::Off
+            && let Some(p) = e.place.as_deref().and_then(ElevationPlace::parse)
+        {
+            self.elevations.place = p;
+            if let Some(o) = e.offset {
+                self.elevations.offset_mm = o.0;
+            }
+            if let Some(r) = e.rotation {
+                self.elevations.rotation_deg = r;
+            }
+        }
+        if e.scale.is_some() && self.elevations.scale.is_none() {
+            self.elevations.scale = e.scale;
+        }
+        if let Some(labels) = &e.labels
+            && self.elevations.labels == ElevationLabels::default()
+        {
+            self.elevations.labels = ElevationLabels::parse(labels).unwrap_or_default();
+        }
+        if let Some(s) = e.size {
+            self.elevations.text_size = s.0;
+        }
+        if self.corridor.is_none() {
+            self.corridor = t.corridor.width.map(|w| w.0);
+        }
+        self.template = t;
+        self
+    }
+}
+
 /// A wire along the route: (station, offset, z) points.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Trace {
     /// Label (section and span, or jumper).
     pub label: String,
@@ -209,6 +380,18 @@ pub struct Trace {
     /// Dash pattern (SVG `stroke-dasharray`) for other weather cases;
     /// `None`: solid.
     pub dash: Option<String>,
+    /// The weather case it is drawn in ("": the case drawn solid, before
+    /// the caller names it).
+    pub case: String,
+    /// Its circuit's name (sections; a jumper: its section's).
+    pub circuit: String,
+    /// Its phase label.
+    pub phase: String,
+    /// Its system's nominal voltage, kV (none: earthed or no system).
+    pub voltage_kv: Option<f64>,
+    /// Its section's fields (`plugin.column` → value): the template may
+    /// read its kind and construction from them.
+    pub fields: ohl_line::Fields,
 }
 
 const DASHES: [(&str, &str); 4] = [
@@ -292,8 +475,25 @@ pub fn case_dash_name(k: usize) -> &'static str {
     DASHES[(k.max(1) - 1) % DASHES.len()].1
 }
 
-/// A structure along the route.
+/// A string of a structure, along the route: its top and its wire point
+/// (station, offset, z), its length, and whether it is a suspension
+/// string (not a strain one).
 #[derive(Debug, Clone, PartialEq)]
+pub struct StringMark {
+    /// Its label.
+    pub label: String,
+    /// Where it hangs from.
+    pub top: [f64; 3],
+    /// Its wire point.
+    pub bottom: [f64; 3],
+    /// Its length, m (the model's).
+    pub length: f64,
+    /// A suspension string.
+    pub suspension: bool,
+}
+
+/// A structure along the route.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mark {
     /// Structure id.
     pub id: String,
@@ -328,6 +528,10 @@ pub struct Mark {
     pub pole: Vec<Vec<[f64; 3]>>,
     /// The same outlines in project coordinates (x, y).
     pub pole_xy: Vec<Vec<[f64; 2]>>,
+    /// Its type (and extension), if typed.
+    pub type_name: Option<String>,
+    /// Its strings.
+    pub strings: Vec<StringMark>,
 }
 
 impl Mark {
@@ -354,8 +558,26 @@ pub struct AlignmentMark {
 /// ground.
 pub type Profile = Vec<Vec<[f64; 2]>>;
 
+/// Another version of the line drawn with the route (a project line, a
+/// line file), in its role: its structures and wires near the route, along
+/// the route's centreline ([`RouteDrawing::add_version`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VersionDrawing {
+    /// Its name (a project line's, a line file's).
+    pub name: String,
+    /// Its role: a key of the template's `[roles]` (`existing`,
+    /// `project`, `removal`, `decommissioned`, `other` …).
+    pub role: String,
+    /// Its label (legend, plan): `{name}`, `{voltage}` filled.
+    pub label: String,
+    /// Its structures near the route (within the line width).
+    pub structures: Vec<Mark>,
+    /// Its wires near the route, cut at the line width.
+    pub wires: Vec<Trace>,
+}
+
 /// Drawing data of one route.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct RouteDrawing {
     /// Route id.
     pub route: String,
@@ -382,6 +604,11 @@ pub struct RouteDrawing {
     pub markers: Vec<([f64; 3], String)>,
     /// The alignment's points, in station order.
     pub alignment: Vec<AlignmentMark>,
+    /// Other versions of the line drawn with it, each in its role.
+    pub versions: Vec<VersionDrawing>,
+    /// Ground clearances found by a clearance check: station, clearance m
+    /// (the band row `ground_clearance`; none: empty).
+    pub clearances: Vec<(f64, f64)>,
 }
 
 fn polyline_length(p: &[Point]) -> f64 {
@@ -423,6 +650,92 @@ fn ground_profile(centre: &[Point], offset: f64, terrain: &Terrain) -> Profile {
     runs
 }
 
+/// Structure `s` of `line` along `centre`.
+fn mark_of(s: &ohl_line::Structure, centre: &[Point], away: bool) -> Mark {
+    let to_route = |p: &Point| {
+        let (st, o) = project(centre, *p);
+        [st, o, p[2]]
+    };
+    let (station, offset) = project(centre, s.position);
+    let position = |label: &str| {
+        s.point(label)
+            .map(|p| p.position)
+            .or_else(|| s.wire(label).map(|w| w.position))
+    };
+    let strings = s
+        .strings
+        .iter()
+        .filter_map(|st| {
+            Some(StringMark {
+                label: st.label.clone(),
+                top: to_route(&position(&st.top)?),
+                bottom: to_route(&s.wire(&st.wire)?.position),
+                length: st.length,
+                suspension: !st.strain,
+            })
+        })
+        .collect();
+    Mark {
+        id: s.id.clone(),
+        station,
+        offset,
+        away,
+        xy: [s.position[0], s.position[1]],
+        base: s.position[2],
+        top: s
+            .points
+            .iter()
+            .map(|p| p.position[2])
+            .fold(s.position[2], f64::max),
+        attachments: s.points.iter().map(|p| to_route(&p.position)).collect(),
+        sticks: s
+            .members
+            .iter()
+            .map(|m| m.iter().map(to_route).collect())
+            .collect(),
+        type_name: s.structure_type.as_ref().map(|t| match &s.extension {
+            Some(e) => format!("{t} {e}"),
+            None => t.clone(),
+        }),
+        strings,
+        ..Mark::default()
+    }
+}
+
+/// The wire of `section`'s span `points` (or a jumper's) along `centre`:
+/// colour, circuit, phase, voltage and fields from the section.
+fn trace_of(
+    line: &Line,
+    section: Option<&ohl_line::Section>,
+    potentials: &std::collections::BTreeMap<String, Option<ohl_line::electrical::Potential>>,
+    label: String,
+    color: String,
+    points: &[Point],
+    centre: &[Point],
+) -> Trace {
+    let _ = line;
+    Trace {
+        label,
+        color,
+        points: points
+            .iter()
+            .map(|p| {
+                let (s, o) = project(centre, *p);
+                [s, o, p[2]]
+            })
+            .collect(),
+        xy: points.iter().map(|p| [p[0], p[1]]).collect(),
+        dash: None,
+        case: String::new(),
+        circuit: section.map_or(String::new(), |s| s.circuit_name.clone()),
+        phase: section.map_or(String::new(), |s| s.phase_label.clone()),
+        voltage_kv: section
+            .and_then(|s| potentials.get(&s.id).cloned().flatten())
+            .map(|p| p.nominal_kv),
+        fields: section.map_or_else(Default::default, |s| s.fields.clone()),
+    }
+}
+
 /// Collects the drawing data of `route`: structures, wires of its spans
 /// and jumpers (from solved `shapes` and `jumpers`), ground profiles from
 /// `terrain`, and `markers` (3D points with labels) near the route.
@@ -441,38 +754,15 @@ pub fn build(
         let (s, o) = project(&centre, *p);
         [s, o, p[2]]
     };
-    let xy = |points: &[Point]| points.iter().map(|p| [p[0], p[1]]).collect();
     let structures = route
         .structures
         .iter()
         .filter_map(|id| line.structure(id))
-        .map(|s| {
-            let (station, offset) = project(&centre, s.position);
-            Mark {
-                id: s.id.clone(),
-                station,
-                offset,
-                away: route.is_away(&s.id),
-                xy: [s.position[0], s.position[1]],
-                base: s.position[2],
-                top: s
-                    .points
-                    .iter()
-                    .map(|p| p.position[2])
-                    .fold(s.position[2], f64::max),
-                attachments: s.points.iter().map(|p| to_route(&p.position)).collect(),
-                sticks: s
-                    .members
-                    .iter()
-                    .map(|m| m.iter().map(to_route).collect())
-                    .collect(),
-                members: Vec::new(),
-                members_xy: Vec::new(),
-                pole: Vec::new(),
-                pole_xy: Vec::new(),
-            }
-        })
+        .map(|s| mark_of(s, &centre, route.is_away(&s.id)))
         .collect();
+    // (Voltages are for the styles only: a line whose systems do not read
+    // is drawn without them.)
+    let potentials = line.potentials().unwrap_or_default();
     // Spans of the route: between consecutive structures of its run along
     // the alignment, and those to a structure of the route away from it
     // (a connection beside the line: projected), which do not break the
@@ -493,16 +783,18 @@ pub fn build(
                 &section.points[k + 1].structure,
             );
             if consecutive(a, b) {
-                wires.push(Trace {
-                    dash: None,
-                    label: format!(
+                wires.push(trace_of(
+                    line,
+                    Some(section),
+                    &potentials,
+                    format!(
                         "{} span {k} ({} {})",
                         section.id, section.circuit_name, section.phase_label
                     ),
-                    color: color.clone(),
-                    points: span.points.iter().map(to_route).collect(),
-                    xy: xy(&span.points),
-                });
+                    color.clone(),
+                    &span.points,
+                    &centre,
+                ));
             }
         }
     }
@@ -515,19 +807,21 @@ pub fn build(
             .flat_map(|e| line.end_structures(e))
             .any(|s| route.structures.contains(&s))
         {
+            let section = line.jumper_section(def);
             let color = def.color.clone().unwrap_or_else(|| {
-                line.jumper_section(def)
-                    .map_or(ohl_line::NEUTRAL_COLOR.to_owned(), |s| {
-                        line.section_color(s)
-                    })
+                section.map_or(ohl_line::NEUTRAL_COLOR.to_owned(), |s| {
+                    line.section_color(s)
+                })
             });
-            wires.push(Trace {
-                dash: None,
-                label: format!("jumper {}", j.jumper),
+            wires.push(trace_of(
+                line,
+                section,
+                &potentials,
+                format!("jumper {}", j.jumper),
                 color,
-                points: j.points.iter().map(to_route).collect(),
-                xy: xy(&j.points),
-            });
+                &j.points,
+                &centre,
+            ));
         }
     }
     let ground = terrain.map_or_else(Vec::new, |t| ground_profile(&centre, 0.0, t));
@@ -566,10 +860,131 @@ pub fn build(
         wires,
         isoclearance: Vec::new(),
         markers,
+        versions: Vec::new(),
+        clearances: Vec::new(),
     })
 }
 
+/// The highest nominal voltage of `line`'s systems, in words ("220 kV";
+/// none: "").
+pub fn voltage_words(line: &Line) -> String {
+    let kv = line
+        .systems
+        .iter()
+        .map(|s| s.voltage_kv)
+        .fold(0.0, f64::max);
+    if kv > 0.0 {
+        format!("{} kV", template::format_number(kv, ""))
+    } else {
+        String::new()
+    }
+}
+
 impl RouteDrawing {
+    /// Adds another version of the line (a project line, a line file)
+    /// solved in `shapes` and `jumpers` — in the role `role` (a key of the
+    /// template's `[roles]`), labelled `label` (`{name}` and `{voltage}`
+    /// filled) — with its structures and wires within `width` m of this
+    /// route's centreline (wires cut there), along it. Its weather case:
+    /// `case` (its wires dashed as `dash` says, none: solid).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_version(
+        &mut self,
+        line: &Line,
+        shapes: &[SectionShape],
+        jumpers: &[JumperShape],
+        name: &str,
+        role: &str,
+        label: &str,
+        width: f64,
+        case: (&str, Option<String>),
+    ) {
+        let centre = self.centreline.clone();
+        let near = |s: f64, o: f64| o.abs() <= width && s >= -width && s <= self.length + width;
+        let potentials = line.potentials().unwrap_or_default();
+        let structures: Vec<Mark> = line
+            .structures
+            .iter()
+            .map(|s| mark_of(s, &centre, false))
+            .filter(|m| near(m.station, m.offset))
+            .collect();
+        let mut wires = Vec::new();
+        for shape in shapes {
+            let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+                continue;
+            };
+            let color = line.section_color(section);
+            for (k, span) in shape.spans.iter().enumerate() {
+                let t = trace_of(
+                    line,
+                    Some(section),
+                    &potentials,
+                    format!("{name}: {} span {k}", section.id),
+                    color.clone(),
+                    &span.points,
+                    &centre,
+                );
+                wires.extend(cut_trace(&t, width));
+            }
+        }
+        for j in jumpers {
+            let section = line
+                .jumpers
+                .iter()
+                .find(|d| d.id == j.jumper)
+                .and_then(|d| line.jumper_section(d));
+            let t = trace_of(
+                line,
+                section,
+                &potentials,
+                format!("{name}: jumper {}", j.jumper),
+                section.map_or(ohl_line::NEUTRAL_COLOR.to_owned(), |s| {
+                    line.section_color(s)
+                }),
+                &j.points,
+                &centre,
+            );
+            wires.extend(cut_trace(&t, width));
+        }
+        // Along the route only (a crossing line: where it crosses).
+        wires.retain(|w| w.points.iter().any(|p| near(p[0], p[1])));
+        for w in &mut wires {
+            w.case = case.0.to_owned();
+            w.dash = case.1.clone();
+        }
+        let label = template::fill(label, &|n, _| match n {
+            "name" => Some(name.to_owned()),
+            "voltage" => Some(voltage_words(line)),
+            "role" => Some(role.to_owned()),
+            _ => None,
+        });
+        match self
+            .versions
+            .iter_mut()
+            .find(|v| v.name == name && v.role == role)
+        {
+            // Another weather case of a version already drawn: its wires.
+            Some(v) => v.wires.extend(wires),
+            None => self.versions.push(VersionDrawing {
+                name: name.to_owned(),
+                role: role.to_owned(),
+                label: label.trim().to_owned(),
+                structures,
+                wires,
+            }),
+        }
+    }
+
+    /// Names the weather case of the wires without one (those of
+    /// [`build`]): `case`.
+    pub fn set_case(&mut self, case: &str) {
+        for w in &mut self.wires {
+            if w.case.is_empty() {
+                w.case = case.to_owned();
+            }
+        }
+    }
+
     /// What is drawn of it along the line with line width `width` (m, the
     /// half width [`Options::plan_half_width`]): every structure of the run
     /// along the alignment; a structure beside the line (away from the
@@ -594,6 +1009,10 @@ impl RouteDrawing {
             .iter()
             .flat_map(|w| cut_trace(w, width))
             .collect();
+        for v in &mut d.versions {
+            v.structures.retain(|m| within(m.offset));
+            v.wires = v.wires.iter().flat_map(|w| cut_trace(w, width)).collect();
+        }
         d
     }
 
@@ -611,7 +1030,7 @@ impl RouteDrawing {
                     color: isoclearance_color(*level, top),
                     points: along.pop().unwrap_or_default(),
                     xy: xy.pop().unwrap_or_default(),
-                    dash: None,
+                    ..Trace::default()
                 }
             })
             .collect();
@@ -690,11 +1109,9 @@ fn cut_trace(w: &Trace, width: f64) -> Vec<Trace> {
     let mut push = |points: Vec<[f64; 3]>, xy: Vec<[f64; 2]>| {
         if points.len() > 1 {
             runs.push(Trace {
-                label: w.label.clone(),
-                color: w.color.clone(),
                 points,
                 xy,
-                dash: w.dash.clone(),
+                ..w.clone()
             });
         }
     };
@@ -785,6 +1202,21 @@ pub struct Page {
     pub height: f64,
 }
 
+impl Page {
+    /// The page turned to portrait (its height the longer side).
+    pub fn portrait(self) -> Self {
+        Self {
+            name: if self.name.ends_with(" portrait") {
+                self.name
+            } else {
+                format!("{} portrait", self.name)
+            },
+            width: self.width.min(self.height),
+            height: self.width.max(self.height),
+        }
+    }
+}
+
 /// ISO 216 formats A0–A4 in landscape, or a custom `WIDTHxHEIGHT` in mm.
 pub fn page_format(name: &str) -> Option<Page> {
     let (w, h) = match name.to_ascii_uppercase().as_str() {
@@ -834,6 +1266,26 @@ fn base64(bytes: &[u8]) -> String {
         }
     }
     out
+}
+
+/// Bytes from base64 (`None`: not base64; white space ignored).
+pub(crate) fn unbase64(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0);
+    for c in text.bytes().filter(|c| !c.is_ascii_whitespace()) {
+        if c == b'=' {
+            break;
+        }
+        let v = BASE64.iter().position(|&b| b == c)? as u32;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 impl Logo {
@@ -1286,6 +1738,7 @@ pub(crate) mod tests {
             place: ElevationPlace::Below,
             offset_mm: 25.0,
             rotation_deg: 90.0,
+            ..Elevations::default()
         };
         let w = warnings_of(&d, &options);
         assert!(w.is_empty(), "{w:?}");
@@ -1774,7 +2227,7 @@ pub(crate) mod tests {
             color: "#000000".into(),
             points: pts.to_vec(),
             xy: pts.iter().map(|p| [p[0], p[1]]).collect(),
-            dash: None,
+            ..Trace::default()
         };
         let w = trace(&[
             [0.0, 0.0, 10.0],
@@ -1949,7 +2402,7 @@ pub(crate) mod tests {
                             // Height labels at the left of the panel.
                             assert!(t.at[1] > top && t.at[1] < 247.0 + 1e-6, "{t:?}");
                         }
-                        Item::Text(t) if t.layer != Layer::Title => {
+                        Item::Text(t) if !matches!(t.layer, Layer::Title | Layer::TitleFields) => {
                             assert!(!model::inside(t.at, tb), "{t:?} in the title block");
                         }
                         _ => {}
@@ -2091,6 +2544,171 @@ pub(crate) mod tests {
         assert!(svg.contains("Route main — Main route: plan and profile"));
     }
 
+    /// The example template with every option: its page (A1), title
+    /// block with its logo and the fields filled, revisions, notes, band
+    /// rows, legend, key map, scale bars, north arrows, the corridor,
+    /// elevations with labels, wires by kind, the line's versions in their
+    /// roles, lines below the lowest conductor, the next sheet faded; a
+    /// required field left empty refuses the export, naming it; DXF holds
+    /// the logo as outlines.
+    #[test]
+    fn the_example_template_draws_every_option() {
+        use crate::model::{Item, Layer};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let t = std::sync::Arc::new(
+            SheetTemplate::load(&root.join("sheet-templates/example-a1.ohlsheet")).unwrap(),
+        );
+        let page = t.page().unwrap();
+        assert_eq!((page.width, page.height), (841.0, 594.0));
+        let (line, shapes, jumpers, _) = solved();
+        let rules = ohl_clearance::RuleSet::load(&root.join("synthetic-line/clearance-rules.ohlr"))
+            .unwrap()
+            .rules;
+        let (specs, _) = curves::conductor_clearances(&line, &rules);
+        // (Its rule names "max temperature"; drawn here: one case, the
+        // largest sag of those drawn.)
+        let specs: Vec<ConductorClearance> = specs
+            .into_iter()
+            .map(|c| ConductorClearance {
+                cases: Vec::new(),
+                ..c
+            })
+            .collect();
+        let mut fields = SheetFields::default();
+        fields.values.insert("project_no".into(), "EX-1".into());
+        fields
+            .per_sheet
+            .insert("remarks".into(), [(1, "remark one".to_owned())].into());
+        fields
+            .revisions
+            .push(Revision::parse("A;2026-10-20;first issue;AB;CD"));
+        let o = Options {
+            horizontal_scale: 1000.0,
+            clearance: Some(7.0),
+            fields,
+            info: SheetInfo {
+                line: "Synthetic".into(),
+                date: "2026-10-20".into(),
+                ..SheetInfo::default()
+            },
+            role: Some("project".into()),
+            conductor_clearance: specs,
+            ..Options::default()
+        }
+        .with_template(t.clone());
+        assert_eq!(o.corridor, Some(25.0));
+        assert_eq!(o.elevations.place, ElevationPlace::Above);
+        assert!(o.elevations.labels.string_length);
+        let mut d = main_route(&o);
+        d.set_case("t");
+        // The crossing line, as another line in the role "other".
+        let crossing = Line::load(&root.join("synthetic-line/crossing-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("../libraries/cables")).unwrap();
+        let case = WeatherCase::still("t", Temperature::from_celsius(15.0));
+        let cs: Vec<_> = ohl_line::solve::solve_line(&crossing, &library, &case)
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
+        d.add_version(
+            &crossing,
+            &cs,
+            &[],
+            "crossing",
+            "other",
+            "{name} {voltage}",
+            40.0,
+            ("t", None),
+        );
+        // The line itself as it stood before (the same), "existing".
+        d.add_version(
+            &line,
+            &shapes,
+            &jumpers,
+            "as built",
+            "existing",
+            "{name}",
+            40.0,
+            ("t", None),
+        );
+        assert_eq!(d.versions[0].label, "crossing 110 kV");
+        assert!(!d.versions[0].wires.is_empty());
+        let s = sheets(&d, &o, &page);
+        assert!(!s.is_empty());
+        let first = &s[0];
+        let flat = first.drawing.flat();
+        let on = |layer: Layer| {
+            flat.iter()
+                .filter(|(i, _)| match i {
+                    Item::Path(p) => p.layer == layer,
+                    Item::Text(t) => t.layer == layer,
+                    Item::Circle(c) => c.layer == layer,
+                    Item::Image(i) => i.layer == layer,
+                    Item::Clip(_) => false,
+                })
+                .count()
+        };
+        for layer in [
+            Layer::Corridor,
+            Layer::Versions,
+            Layer::ConductorClearance,
+            Layer::Bands,
+            Layer::Legend,
+            Layer::KeyMap,
+            Layer::Revisions,
+            Layer::TitleFields,
+            Layer::Elevations,
+            Layer::Logo,
+        ] {
+            assert!(on(layer) > 0, "nothing on {}", layer.name());
+        }
+        let svg = first.svg();
+        for text in [
+            "EX-1-main-001",
+            "first issue",
+            "remark one",
+            "corridor ±25 m",
+            "Heights above",
+            "20.10.2026",
+            "crossing 110 kV: other line",
+            "new — high voltage 220 kV",
+            "7.5 m below the lowest conductor (Ground at maximum temperature",
+            "3.50 m",
+        ] {
+            assert!(svg.contains(&escape(text)), "{text}");
+        }
+        // North arrows on the plan, the key map's too.
+        assert!(svg.matches(">N</text>").count() >= 2);
+        // The next sheet faded beyond the match line (a colour at 30 %).
+        let faded = style::faded(Color::hex_or_black("#c00000"), 0.3);
+        assert!(svg.contains(&faded.hex()));
+        // A required field left empty: refused, named.
+        let dir = std::env::temp_dir().join(format!("ohl-drawing-template-{}", std::process::id()));
+        let e = export::Export {
+            formats: vec![export::Format::Dxf],
+            page: Some(page.clone()),
+            dpi: 50.0,
+        };
+        let empty = Options {
+            fields: SheetFields::default(),
+            ..o.clone()
+        };
+        let err = export::write_route(&d, &empty, &e, &dir, &ohl_core::budget::Budget::new())
+            .unwrap_err();
+        assert!(err.contains("Project number (project_no)"), "{err}");
+        // DXF: the SVG logo as outlines.
+        let w = export::write_route(&d, &o, &e, &dir, &ohl_core::budget::Budget::new()).unwrap();
+        let sheet = std::fs::read_to_string(&w.files[0]).unwrap();
+        assert!(sheet.contains("OHL_TITLE_IMAGE\n"), "no logo outlines");
+        assert!(
+            w.warnings.iter().all(|x| !x.contains("logo image")),
+            "{:?}",
+            w.warnings
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    use crate::model::{Color, escape};
+
     #[test]
     fn page_formats_and_base64() {
         assert_eq!(page_format("A1").unwrap().width, 841.0);
@@ -2099,6 +2717,12 @@ pub(crate) mod tests {
         assert_eq!(base64(b"Man"), "TWFu");
         assert_eq!(base64(b"Ma"), "TWE=");
         assert_eq!(base64(b"M"), "TQ==");
+        for t in [&b"Man"[..], b"Ma", b"M", b"", b"any carnal pleasure."] {
+            assert_eq!(unbase64(&base64(t)).unwrap(), t);
+        }
+        assert!(unbase64("T!==").is_none());
+        let p = page_format("A3").unwrap().portrait();
+        assert_eq!((p.width, p.height), (297.0, 420.0));
     }
 
     #[test]

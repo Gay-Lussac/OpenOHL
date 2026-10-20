@@ -1,0 +1,79 @@
+# The built-in sheet template of OpenOHL: the plan and profile sheets as
+# they are drawn without a template of your own (neutral colours, a title
+# block across the bottom). Copy it to start a template; every key is
+# explained in the user guide (Drawings › Sheet templates) and shown in
+# examples/sheet-templates/example-a1.ohlsheet.
+format = "ohl-sheet-template"
+version = 1
+name = "default"
+description = "Plan and profile, the export's format, title block across the bottom"
+
+[page]
+margin = { left = "5 mm", top = "5 mm", right = "5 mm", bottom = "5 mm" }
+
+[frame]
+border = [{ inset = "0 mm", width = "0.5 mm" }]
+padding = "5 mm"
+
+[layout]
+order = ["plan", "profile", "bands"]
+gap = "8 mm"
+axis_room = "14 mm"
+beyond_match = "none"
+
+[title_block]
+width = "auto"
+columns = ["logos", "*", "*"]
+rows = ["10 mm", "6 mm", "6 mm", "6 mm", "4 mm"]
+line = "0.4 mm"
+
+[[title_block.cell]]
+at = [0, 0]
+span = [5, 1]
+image = "{logos}"
+
+[[title_block.cell]]
+at = [0, 1]
+text = "{heading}"
+size = "4.5 mm"
+bold = true
+
+[[title_block.cell]]
+at = [1, 1]
+text = "{title1}"
+size = "3 mm"
+
+[[title_block.cell]]
+at = [2, 1]
+text = "{title2}"
+size = "3 mm"
+
+[[title_block.cell]]
+at = [3, 1]
+text = "{title3}"
+size = "3 mm"
+
+[[title_block.cell]]
+at = [0, 2]
+text = "Sheet {sheet} / {sheets}"
+size = "4.5 mm"
+bold = true
+align = "right"
+
+[[title_block.cell]]
+at = [1, 2]
+text = "{from} – {to}{ends}"
+size = "3 mm"
+align = "right"
+
+[[title_block.cell]]
+at = [2, 2]
+text = "{scales}"
+size = "3 mm"
+align = "right"
+
+[[title_block.cell]]
+at = [3, 2]
+text = "Format {format} ({page_width} × {page_height} mm)"
+size = "3 mm"
+align = "right"

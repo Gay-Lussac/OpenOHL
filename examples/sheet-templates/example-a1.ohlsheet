@@ -1,0 +1,318 @@
+# An example sheet template using every option (OpenOHL, format
+# ohl-sheet-template, version 1). Every value is invented for the example:
+# the colours, pens, sizes and texts are not those of any company or
+# authority. Lengths on paper with their unit ("10 mm"), lengths in the
+# field in metres ("100 m"). Placeholders {name} or {name:format} take the
+# computed fields (project, line, route, route_name, heading, title,
+# title1–3, sheet, sheets, from, to, from_structure, to_structure, ends,
+# hscale, vscale, plan_scale, exaggeration, scales, format, page_width,
+# page_height, date, cases, crs, program, height_datum) and the fields
+# declared below ([[field]]). Formats: {sheet:03} (zero padded), {date:%d.%m.%Y},
+# {from:km} (0+640.0) or {from:m} (640.0), {hscale:.0}.
+format = "ohl-sheet-template"
+version = 1
+name = "example-a1"
+description = "Example: A1 landscape, 20 mm binding edge, title block bottom right, every option"
+
+[page]
+format = "A1"                 # A0–A4; or width and height (a long format)
+orientation = "landscape"     # or "portrait"
+# width = "1189 mm"
+# height = "420 mm"
+margin = { left = "20 mm", top = "10 mm", right = "10 mm", bottom = "10 mm" }
+
+[frame]
+border = [{ inset = "0 mm", width = "0.7 mm" }, { inset = "2 mm", width = "0.25 mm" }]
+padding = "6 mm"              # between the frame and what is inside it
+
+[text]
+font = "Helvetica"            # the PDF standard font (no other yet)
+size = "2.5 mm"               # the drawing's labels (band rows)
+colour = "#000000"            # texts of the title block, notes, legend
+
+[layout]
+order = ["plan", "profile", "bands"]   # or ["profile", "bands", "plan"]
+gap = "8 mm"                  # between the panels
+plan_height = "auto"          # or at least "60 mm"
+beyond_match = "faded"        # "none" (default) or "faded": the next sheet faded
+axis_room = "34 mm"           # left of the panels: height and band labels
+station_labels = true         # station labels under the bands
+
+[layers]                      # pens by layer: width, colour, dash (any of them)
+OHL_GROUND = { width = "0.4 mm", colour = "#6b3f12" }
+OHL_CLEARANCE = { width = "0.25 mm", colour = "#cc0000", dash = "2 1" }
+OHL_GRID = { width = "0.1 mm", colour = "#d8d8d8" }
+OHL_MATCH = { width = "0.3 mm", colour = "#0066cc", dash = "2 1" }
+OHL_PANELS = { width = "0.25 mm", colour = "#666666" }
+
+[[band]]                      # rows under the profile, top to bottom
+kind = "structures"           # names and types
+height = "8 mm"
+label = "Structure"
+[[band]]
+kind = "stations"
+height = "8 mm"
+label = "Station"
+[[band]]
+kind = "ground_height"        # at the structures and every `every`
+every = "50 m"
+height = "8 mm"
+label = "Ground height (m)"
+decimals = 1
+[[band]]
+kind = "span_length"
+height = "8 mm"
+label = "Span (m)"
+[[band]]
+kind = "structure_height"
+height = "8 mm"
+label = "Structure height (m)"
+[[band]]
+kind = "line_angle"
+height = "8 mm"
+label = "Line angle"
+[[band]]
+kind = "lowest_wire_height"
+height = "8 mm"
+label = "Lowest wire (m)"
+[[band]]
+kind = "ground_clearance"     # from a clearance check (none: empty)
+height = "8 mm"
+label = "Ground clearance (m)"
+[[band]]
+kind = "text"                 # a field the user gives per sheet
+field = "remarks"
+height = "8 mm"
+label = "Remarks"
+
+[north_arrow]
+place = "plan"                # one per straight stretch at the plan's top edge
+size = "8 mm"
+
+[scale_bar]
+place = "bottom"              # "bottom", "plan", "profile" or "off"
+lengths = ["100 m", "10 m"]   # along the line, up
+
+[legend]
+place = "above_title_block"   # or "bottom", "off"
+title = "Legend"
+width = "180 mm"
+height = "45 mm"
+column_width = "88 mm"
+size = "2 mm"
+
+[key_map]
+place = "bottom"              # a small plan of the route, this sheet marked
+width = "90 mm"
+height = "60 mm"
+# scale = 25000               # its own scale (none: fitted)
+extent = "route"              # or "sheet" with a margin around it
+margin = "500 m"
+structures = true             # the structures' names
+north_arrow = true
+corridor = true
+highlight = { width = "0.8 mm", colour = "#cc2222" }
+
+[corridor]
+width = "25 m"                # the corridor's half width (the export may change it)
+label = "corridor ±{width} m"
+pen = { width = "0.3 mm", colour = "#2a7f3f", dash = "6 1.5 1 1.5" }
+
+[elevations]
+place = "above"               # "above", "below" or "off"
+offset = "8 mm"               # from the axis to the elevation's base
+rotation = 90                 # degrees between the line and the height
+scale = 1000                  # their own scale (none: the horizontal one)
+labels = ["number", "type", "height", "string_length"]
+size = "1.8 mm"
+pen = { width = "0.2 mm", colour = "#444444" }
+
+[line_styles]
+by_kind = true                # wires by kind instead of phase colours
+low_voltage_up_to_kv = 1      # invented example value: take your authority's limit
+kind_field = "example.line_kind"            # a section field naming the kind
+construction_field = "example.construction" # a section field: overhead or cable
+cable_dash = "3 1.5"
+[line_styles.kinds.hv]
+colour = "#c00000"
+width = "0.35 mm"
+label = "high voltage"
+[line_styles.kinds.lv]
+colour = "#0050c0"
+width = "0.3 mm"
+label = "low voltage"
+[line_styles.kinds.telecom]
+colour = "#008000"
+width = "0.25 mm"
+label = "telecom"
+[line_styles.kinds.earth]
+colour = "#606060"
+width = "0.25 mm"
+label = "earth wire"
+
+[roles.project]
+label = "new"
+weight = 1.6                  # thicker
+[roles.existing]
+label = "existing"
+weight = 0.6                  # thinner
+[roles.removal]
+label = "to be removed"
+colour = "#e08000"
+dash = "4 1.5"
+names = true                  # its structures' names drawn
+[roles.decommissioned]
+label = "decommissioned"
+colour = "#9a9a9a"
+dash = "1 1"
+[roles.other]
+label = "other line"
+colour = "#8c8c8c"
+weight = 0.7
+
+[conductor_clearance]
+show = true                   # lines below the lowest conductor (rules for the ground)
+circuits = []                 # those drawn (none: every circuit with a rule)
+mode = "also"                 # "also" or "instead" of the line above the ground
+label = "{distance} m below the lowest conductor ({rule}, {case})"
+pen = { width = "0.3 mm", colour = "#a01818", dash = "5 1 1 1 1 1" }
+
+[title_block]
+corner = "bottom_right"       # or "bottom_left"
+width = "180 mm"              # or "auto": across the frame
+columns = ["30 mm", "60 mm", "45 mm", "45 mm"]   # a length, "*" or "logos"
+rows = ["20 mm", "8 mm", "8 mm", "8 mm", "8 mm", "8 mm"]
+line = "0.35 mm"
+grid = true
+
+[[title_block.cell]]
+at = [0, 0]                   # row, column
+span = [1, 2]
+image = "example-logo.svg"    # an image of the template (or "{logos}")
+[[title_block.cell]]
+at = [0, 2]
+span = [1, 2]
+text = "{project}\n{line}"
+size = "3.5 mm"
+bold = true
+[[title_block.cell]]
+at = [1, 0]
+text = "Route"
+size = "2 mm"
+[[title_block.cell]]
+at = [1, 1]
+text = "{route} — {route_name}"
+size = "2.5 mm"
+[[title_block.cell]]
+at = [1, 2]
+text = "Sheet"
+size = "2 mm"
+[[title_block.cell]]
+at = [1, 3]
+text = "{sheet} / {sheets}"
+size = "2.5 mm"
+bold = true
+align = "right"
+[[title_block.cell]]
+at = [2, 0]
+text = "Stations"
+size = "2 mm"
+[[title_block.cell]]
+at = [2, 1]
+text = "{from} – {to}{ends}"
+size = "2.2 mm"
+[[title_block.cell]]
+at = [2, 2]
+text = "Scales"
+size = "2 mm"
+[[title_block.cell]]
+at = [2, 3]
+text = "1:{hscale} / 1:{vscale}"
+size = "2.5 mm"
+align = "right"
+[[title_block.cell]]
+at = [3, 0]
+text = "Drawing no."
+size = "2 mm"
+[[title_block.cell]]
+at = [3, 1]
+text = "{project_no}-{route}-{sheet:03}"
+size = "2.5 mm"
+[[title_block.cell]]
+at = [3, 2]
+text = "Revision"
+size = "2 mm"
+[[title_block.cell]]
+at = [3, 3]
+text = "{revision}"
+size = "2.5 mm"
+align = "right"
+[[title_block.cell]]
+at = [4, 0]
+text = "Drawn / checked / approved"
+size = "1.8 mm"
+[[title_block.cell]]
+at = [4, 1]
+span = [1, 3]
+text = "{drawn_by} / {checked_by} / {approved_by}"
+size = "2.5 mm"
+[[title_block.cell]]
+at = [5, 0]
+text = "Date"
+size = "2 mm"
+[[title_block.cell]]
+at = [5, 1]
+text = "{date:%d.%m.%Y}"
+size = "2.5 mm"
+[[title_block.cell]]
+at = [5, 2]
+span = [1, 2]
+text = "{cases}"
+size = "1.6 mm"
+align = "centre"
+
+[revisions]                   # the revision table, newest at the top
+place = "above_title_block"
+rows = 4                      # the last four
+row_height = "5 mm"
+size = "2 mm"
+columns = [
+  { title = "Rev", width = "12 mm", value = "{rev.index}" },
+  { title = "Date", width = "25 mm", value = "{rev.date}" },
+  { title = "Description", width = "95 mm", value = "{rev.text}" },
+  { title = "By", width = "24 mm", value = "{rev.by}" },
+  { title = "Checked", width = "24 mm", value = "{rev.checked}" },
+]
+
+[[note]]                      # free texts: from the frame's edges (negative: from the right / bottom)
+at = ["4 mm", "-80 mm"]
+width = "120 mm"
+size = "2 mm"
+text = "Heights above {height_datum}. Coordinates {crs}. Drawn with {program}. Not for construction unless approved."
+
+[[field]]                     # values the user gives (export window, --field)
+key = "project_no"
+label = "Project number"
+required = true
+[[field]]
+key = "revision"
+label = "Revision"
+default = "A"
+[[field]]
+key = "drawn_by"
+label = "Drawn"
+[[field]]
+key = "checked_by"
+label = "Checked"
+[[field]]
+key = "approved_by"
+label = "Approved"
+[[field]]
+key = "remarks"
+label = "Remarks (band row)"
+per_sheet = true
+
+[[image]]                     # images the cells name: a file next to the template, or data = "base64…"
+name = "example-logo.svg"
+file = "example-logo.svg"
+media_type = "image/svg+xml"

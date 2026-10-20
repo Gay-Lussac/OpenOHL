@@ -553,6 +553,23 @@ mod tests {
         assert!((pages[0][0] - 841.89).abs() < 0.01 && (pages[0][1] - 595.276).abs() < 0.01);
     }
 
+    /// Regression (D14): a logo is embedded cropped to what it covers —
+    /// a 2:1 image in a square box gives an image half as tall as wide,
+    /// placed in the box's middle, no transparent rows at its edges.
+    #[test]
+    fn logos_are_cropped_to_what_they_cover() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="#ff0000"/></svg>"##;
+        let href = format!(
+            "data:image/svg+xml;base64,{}",
+            crate::base64(svg.as_bytes())
+        );
+        let r = logo_raster(&href, [10.0, 20.0], 20.0, 20.0).unwrap();
+        assert!((r.rect[3] - 10.0).abs() < 0.2, "{:?}", r.rect);
+        assert!((r.rect[1] - 25.0).abs() < 0.2, "{:?}", r.rect);
+        assert!(r.alpha.iter().all(|a| *a > 0));
+        assert_eq!(r.width as usize * r.height as usize * 3, r.rgb.len());
+    }
+
     #[test]
     fn route_sheets_with_logos() {
         // A 2 × 1 px red PNG as the logo.

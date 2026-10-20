@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="24" viewBox="0 0 60 24">
+  <!-- An invented logo for the example sheet template (no real company). -->
+  <rect x="1" y="1" width="22" height="22" rx="3" fill="#1d4e89"/>
+  <path d="M5 18 L12 5 L19 18 Z" fill="#ffffff"/>
+  <path d="M28 6 H58 M28 12 H52 M28 18 H56" stroke="#1d4e89" stroke-width="2.5" fill="none"/>
+</svg>

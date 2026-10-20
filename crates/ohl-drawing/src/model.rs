@@ -86,11 +86,31 @@ pub enum Layer {
     Markers,
     /// Match lines at the sheet's ends.
     Match,
+    /// Title block texts filled from fields (the computed ones and the
+    /// user's).
+    TitleFields,
+    /// Images of the title block as outlines (DXF: SVG logos).
+    TitleImage,
+    /// The revision table.
+    Revisions,
+    /// Band rows under the profile.
+    Bands,
+    /// The legend.
+    Legend,
+    /// The key map.
+    KeyMap,
+    /// The corridor's edges in the plan.
+    Corridor,
+    /// Other versions of the line (existing, to be removed, other lines
+    /// …): their wires and structures.
+    Versions,
+    /// Lines below the lowest conductor (by the ground clearance).
+    ConductorClearance,
 }
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 26] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -108,6 +128,15 @@ impl Layer {
         Self::Isoclearance,
         Self::Markers,
         Self::Match,
+        Self::TitleFields,
+        Self::TitleImage,
+        Self::Revisions,
+        Self::Bands,
+        Self::Legend,
+        Self::KeyMap,
+        Self::Corridor,
+        Self::Versions,
+        Self::ConductorClearance,
     ];
 
     /// Layer name in DXF.
@@ -130,15 +159,34 @@ impl Layer {
             Self::Isoclearance => "OHL_ISOCLEARANCE",
             Self::Markers => "OHL_MARKERS",
             Self::Match => "OHL_MATCH",
+            Self::TitleFields => "OHL_TITLE_FIELDS",
+            Self::TitleImage => "OHL_TITLE_IMAGE",
+            Self::Revisions => "OHL_REVISIONS",
+            Self::Bands => "OHL_BANDS",
+            Self::Legend => "OHL_LEGEND",
+            Self::KeyMap => "OHL_KEY_MAP",
+            Self::Corridor => "OHL_CORRIDOR",
+            Self::Versions => "OHL_VERSIONS",
+            Self::ConductorClearance => "OHL_CONDUCTOR_CLEARANCE",
         }
     }
 
     /// The layer's own colour (items carry their own colour too).
     pub fn color(self) -> Color {
         match self {
-            Self::Frame | Self::Title | Self::Logo | Self::Labels | Self::Structures => {
-                Color::BLACK
-            }
+            Self::Frame
+            | Self::Title
+            | Self::Logo
+            | Self::Labels
+            | Self::Structures
+            | Self::TitleFields
+            | Self::TitleImage
+            | Self::Revisions
+            | Self::Bands
+            | Self::Legend
+            | Self::KeyMap => Color::BLACK,
+            Self::Corridor | Self::Versions => Color(0x6a, 0x6a, 0x6a),
+            Self::ConductorClearance => Color(0xa0, 0x18, 0x18),
             Self::Members | Self::Elevations => Color(0x55, 0x55, 0x55),
             Self::Grid => Color(0xdd, 0xdd, 0xdd),
             Self::Panels => Color(0x88, 0x88, 0x88),

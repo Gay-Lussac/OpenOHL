@@ -7,7 +7,9 @@
 //! colours, a line type per dash pattern. R12 DXF opens in every CAD
 //! program (and imports into DWG-based ones); it has no line weights,
 //! true colours or images, so pens become the nearest AutoCAD colour index
-//! (ACI) and logos are left out.
+//! (ACI), SVG logos are written as their outlines (layer
+//! `OHL_TITLE_IMAGE`) and PNG/JPEG logos are left out (said so:
+//! [`write_counted`]).
 //!
 //! A sheet is written in mm (y up from the sheet's bottom left corner);
 //! model space in metres as it is. What a clip region hides is cut away
@@ -128,6 +130,13 @@ impl Writer {
 
 /// The drawing as R12 ASCII DXF.
 pub fn write(d: &Drawing) -> String {
+    write_counted(d).0
+}
+
+/// The drawing as R12 ASCII DXF, and how many raster images (PNG, JPEG)
+/// were left out (R12 has no images; SVG images are written as their
+/// outlines).
+pub fn write_counted(d: &Drawing) -> (String, usize) {
     let sheet = d.space == Space::Sheet;
     let to_dxf = |p: [f64; 2]| if sheet { [p[0], d.height - p[1]] } else { p };
     // Line types: one per dash pattern, in order of first use.
@@ -238,7 +247,31 @@ pub fn write(d: &Drawing) -> String {
                 e.point(10, at);
                 e.num(40, c.radius);
             }
-            Item::Image(_) => images += 1,
+            Item::Image(img) => {
+                match crate::outline::svg_outlines(&img.href, img.at, img.width, img.height) {
+                    Some(lines) => {
+                        for (pts, closed, color) in lines {
+                            let pts: Vec<[f64; 2]> = pts.into_iter().map(to_dxf).collect();
+                            pts.iter().for_each(|q| see(*q));
+                            e.pair(0, "POLYLINE");
+                            e.pair(8, Layer::TitleImage.name());
+                            e.pair(6, "CONTINUOUS");
+                            e.pair(62, aci(color));
+                            e.pair(66, 1);
+                            e.point(10, [0.0, 0.0]);
+                            e.pair(70, i32::from(closed));
+                            for q in pts {
+                                e.pair(0, "VERTEX");
+                                e.pair(8, Layer::TitleImage.name());
+                                e.point(10, q);
+                            }
+                            e.pair(0, "SEQEND");
+                            e.pair(8, Layer::TitleImage.name());
+                        }
+                    }
+                    None => images += 1,
+                }
+            }
             Item::Clip(_) => {}
         }
     }
@@ -255,7 +288,7 @@ pub fn write(d: &Drawing) -> String {
     if images > 0 {
         w.pair(
             999,
-            format!("{images} image(s) (logos) not written: R12 has no images"),
+            format!("{images} raster image(s) (logos) not written: R12 has no images"),
         );
     }
     w.pair(0, "SECTION");
@@ -355,7 +388,7 @@ pub fn write(d: &Drawing) -> String {
     w.out.push_str(&e.out);
     w.pair(0, "ENDSEC");
     w.pair(0, "EOF");
-    w.out
+    (w.out, images)
 }
 
 /// A DXF file read back as group code / value pairs, for tests and
