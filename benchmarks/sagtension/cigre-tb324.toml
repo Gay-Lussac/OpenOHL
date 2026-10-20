@@ -1,0 +1,257 @@
+# Worked examples of CIGRE Technical Brochure 324, "Sag-tension calculation
+# methods for overhead lines" (Working Group B2.12). Inputs and expected values
+# are the brochure's printed numbers, cited by section and page (the
+# brochure's own page numbers). Each tolerance is the printed rounding
+# (half a unit of the last printed digit) unless a case says otherwise.
+#
+# Independent check of every case: benchmarks/reference/textbook_reference.py
+# (tb324_cases) reproduces the printed values from the printed inputs.
+# Examples not used, and why: docs/validation/textbook.md.
+
+[[case]]
+id = "tb324-001"
+title = "TB 324 sec. 2.1-2.4: Drake, 300 m level span, H = 28 kN, w = 15.97 N/m"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.1 p. 11 (sag), sec. 2.2-2.3 p. 12 (length, slack), sec. 2.4 p. 15 (support tension)"
+notes = """Inputs p. 11: S = 300 m, H = 28 kN (20 % RTS), w = 15.97 N/m. Printed: sag 6.420 m
+(the parabola 6.417 m, 3 mm less), length 300.366 m (slack 0.366 m, 0.122 %), support tension
+H + w D = 28000 + 15.97 x 6.420 = 28102.5 N, printed as H plus 102 N (the product 102.5 N
+truncated): expected 28102.5 N, tolerance 0.5 N.
+Reference: sag 6.420433 m, length 300.366105 m, T 28102.534 N."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", horizontal_tension = "28 kN", weight = "15.97 N/m" }
+expected.sag_m = { value = 6.420, abs_tol = 0.0005 }
+expected.length_m = { value = 300.366, abs_tol = 0.0005 }
+expected.tension_left_n = { value = 28102.5, abs_tol = 0.5 }
+expected.low_point_x_m = { value = 150.0, abs_tol = 1e-6 }
+
+[[case]]
+id = "tb324-002"
+title = "TB 324 sec. 2.3: 100 mm more wire in the Drake span — sag 7.241 m at 24.8 kN"
+calculation = "catenary.tension_for_sag"
+reference = "CIGRE TB 324, sec. 2.3 p. 13"
+notes = """Printed (parabolic): with 0.1 m added to the 0.366 m slack, D = sqrt(3 x 300 x 0.466 / 8)
+= 7.241 m and H = w S^2 / 8D = 24.8 kN. The case gives the code the sag and asks for H by the
+exact catenary: 24831.1 N (reference) — 24.8 kN to the printed digits; tolerance 50 N."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", weight = "15.97 N/m", sag = "7.241 m" }
+expected.horizontal_tension_n = { value = 24800.0, abs_tol = 50.0 }
+
+# Table 2 (sec. 2.7, p. 20): 300 m span, Drake, H = 28000 N, w = 15.96 N/m
+# (the value of the worked example on p. 19), one support h lower. The
+# brochure's R (lower) support is the code's left support (x = 0), its L
+# (higher) the right one: low_point_x_m = Xr, tension_left_n = Tr,
+# tension_right_n = Tl. Xr is printed to 0.01 m (tolerance 0.005 m),
+# tensions to 1 N (0.5 N). Vr < 0 from h = 30 m: the low point is beyond
+# the lower support and the wire pulls it up (uplift).
+
+[[case]]
+id = "tb324-003"
+title = "TB 324 Table 2: h = 5 m"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr 120.7972 m, Tr 28066.399 N, Tl 28146.199 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "5 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = 120.80, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28066.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28146.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-004"
+title = "TB 324 Table 2 and the worked example of p. 19: h = 10 m, low point 91.6 m from the lower support"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, eq. (10) example p. 19 and Table 2 p. 20"
+notes = """p. 19: H/w = 28000 / 15.96 = 1754 m, xR = 300/2 - 1754 asinh[(10/2) / (1754 sinh(150/1754))]
+= 91.6 m. Reference: Xr 91.6024 m, Tr 28038.176 N, Tl 28197.776 N."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "10 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = 91.60, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28038.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28198.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-005"
+title = "TB 324 Table 2: h = 15 m"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr 62.4239 m, Tr 28017.727 N, Tl 28257.127 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "15 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = 62.42, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28018.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28257.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-006"
+title = "TB 324 Table 2: h = 20 m"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr 33.2695 m, Tr 28005.035 N, Tl 28324.235 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "20 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = 33.27, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28005.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28324.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-007"
+title = "TB 324 Table 2: h = 25 m (low point near the lower support)"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr 4.1472 m, Tr 28000.078 N, Tl 28399.078 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "25 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = 4.15, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28000.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28399.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-008"
+title = "TB 324 Table 2: h = 30 m (low point beyond the lower support: uplift)"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = """Reference: Xr -24.93500 m (the printed -24.93 is within its rounding by 2.4 µm),
+Tr 28002.828 N, Tl 28481.628 N; Vr = -398 N (uplift)."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "30 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = -24.93, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28003.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28482.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-009"
+title = "TB 324 Table 2: h = 35 m (uplift)"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr -53.9694 m, Tr 28013.250 N, Tl 28571.850 N; Vr = -861 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "35 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = -53.97, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28013.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28572.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-010"
+title = "TB 324 Table 2: h = 40 m (uplift)"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 2.7, Table 2 p. 20"
+notes = "Reference: Xr -82.9483 m, Tr 28031.302 N, Tl 28669.702 N; Vr = -1324 N."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "40 m", horizontal_tension = "28000 N", weight = "15.96 N/m" }
+expected.low_point_x_m = { value = -82.95, abs_tol = 0.005 }
+expected.tension_left_n = { value = 28031.0, abs_tol = 0.5 }
+expected.tension_right_n = { value = 28670.0, abs_tol = 0.5 }
+
+[[case]]
+id = "tb324-011"
+title = "TB 324 sec. 2.5: the Drake span between 2 m dead-end strings of 100 kg sags 6.45 m"
+calculation = "line.section"
+reference = "CIGRE TB 324, sec. 2.5 item 2, p. 16-17"
+notes = """Printed: with 2 m dead-end strings of 100 kg at both ends the example span's sag grows
+from 6.41 m to 6.45 m. Read as: H = 28 kN (the example's), 300 m between the strings'
+attachment points, the sag measured from them.
+Model: attachment points (0, 0, 30) and (300, 0, 30) m; strain strings 2 m, 980.665 N, the
+line's default stiffness 5e7 N; Drake as the brochure gives it (w = 15.97 N/m, sec. 2.1;
+components 402.8 mm² at 55 GPa + 65.8 mm² at 190 GPa, sec. 5.2.3-5.2.4, for its stretch);
+the section strung at 28 kN at 15 °C, solved in still air at 15 °C. Expected: the low point
+30 - 6.45 = 23.55 m, tolerance 0.005 m (printed to 0.01 m).
+Hand: each string hangs at tan(theta) = (V_clamp + W/2) / H = (2364.6 + 490.3) / 28000,
+theta = 5.83°: it drops 2 sin(theta) = 0.203 m and shortens the span to 296.02 m, whose sag at
+28 kN is 6.251 m (inextensible): 6.454 m. Reference (elastic wire, weight per unstressed metre,
+the strings' 1.1 mm stretch): 6.4490 m, low point 23.5510 m.
+The bare span's 6.41 m on this page is printed as 6.42 m on p. 11 (6.4204 m)."""
+max_seconds = 5.0
+expected.low_z_0_m = { value = 23.55, abs_tol = 0.005 }
+expected.h_0_n = { value = 28000.0, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "stringing", temperature = "15 °C" }
+cable = { id = "drake-tb324", name = "Drake as given in CIGRE TB 324", kind = "acsr", source = "CIGRE TB 324 sec. 2.1 (weight), sec. 5.2.3-5.2.4 (components)", diameter = "28.1 mm", mass_per_length = "1.628487 kg/m", rated_tensile_strength = "140 kN", outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }, core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "TB 324 sec. 2.5", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [0, 0, 30]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 2.0, "weight": 980.665, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [2, 0, 29.8], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [300, 0, 30]}],
+   "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 2.0, "weight": 980.665, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [298, 0, 29.8], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "drake-tb324", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 28000.0, "temperature": 15.0}}]
+}
+'''
+
+[[case]]
+id = "tb324-012"
+title = "TB 324 sec. 5.2.3-5.2.4: Drake's composite modulus and expansion from its components"
+calculation = "cables.properties"
+reference = "CIGRE TB 324, sec. 5.2.3 eq. (19) p. 37 and sec. 5.2.4 eq. (20) and example p. 38-39"
+notes = """Inputs p. 39: aluminium 402.8 mm², steel 65.8 mm², total 468.6 mm²; E_A = 55 GPa,
+E_S = 190 GPa (p. 37); alpha_A = 23e-6 /K (sec. 5.2.2 p. 36), alpha_S = 11.5e-6 /K (p. 39).
+Eq. (19): E_AS = 55 x 402.8/468.6 + 190 x 65.8/468.6 = 47.2774 + 26.6791 = 73.956 GPa,
+printed rounded as 74; eq. (20) with that value: 18.851e-6 /K. The brochure prints 18.84e-6,
+evaluating eq. (20) with the rounded 74 GPa (that gives 18.840e-6). Expected: the equations
+with the printed inputs, tolerance 1e-4 relative (the printed 74 and 18.84 are within their
+rounding of the rounded E)."""
+inputs = { cable = { id = "drake-tb324", name = "Drake as given in CIGRE TB 324", kind = "acsr", source = "CIGRE TB 324 sec. 5.2.3-5.2.4", diameter = "28.1 mm", mass_per_length = "1.628487 kg/m", rated_tensile_strength = "140 kN", outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }, core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 } } }
+expected.modulus_gpa = { value = 73.956, rel_tol = 1e-4 }
+expected.thermal_expansion_per_k = { value = 18.851e-6, rel_tol = 1e-4 }
+expected.area_mm2 = { value = 468.6, rel_tol = 1e-9 }
+
+[[case]]
+id = "tb324-013"
+title = "TB 324 sec. 5.2.1: 403-A1-37 at 12 kN stretches 506 µstrain"
+calculation = "cables.properties"
+reference = "CIGRE TB 324, sec. 5.2.1 p. 35 (with Table 7 p. 35 and Table 13 p. 56)"
+notes = """Printed: 403-A1-37 at 12 kN (20 % RTS): elastic strain 506 µstrain, 152 mm on 300 m.
+Inputs: 37 strands, E = 58.9 GPa (Table 7), area 402.9 mm² (Table 13). 12000 / (58.9e9 x 402.9e-6)
+= 505.67 µstrain; tolerance 0.5 µstrain (printed to 1)."""
+inputs = { tension = "12 kN", cable = { id = "arbutus-tb324", name = "403-A1-37 as given in CIGRE TB 324", kind = "aac", source = "CIGRE TB 324 Table 7, Table 13", diameter = "26.1 mm", mass_per_length = "1.110471 kg/m", rated_tensile_strength = "61.8 kN", outer = { area = "402.9 mm²", modulus = "58.9 GPa", thermal_expansion = 23e-6 } } }
+expected.strain = { value = 506e-6, abs_tol = 0.5e-6 }
+
+[[case]]
+id = "tb324-014"
+title = "TB 324 sec. 6.1: 430 Pa on the 26.1 mm Arbutus conductor"
+calculation = "weather.wire_load"
+reference = "CIGRE TB 324, sec. 6.1 p. 57 (inputs Table 13 p. 56)"
+notes = """Printed: wind force 430 x 0.0261 = 11.2 N/m, the vector sum with 10.89 N/m is 15.6 N/m
+(the page prints '430 MPa', a typo for Pa). Mass 10.89 / 9.80665 = 1.110471 kg/m.
+Reference: 11.223 N/m, 15.638 N/m; tolerance 0.05 N/m (printed to 0.1)."""
+inputs = { diameter = "26.1 mm", weight = "1.110471 kg/m", temperature = "15 °C", wind_pressure = "430 Pa" }
+expected.horizontal_n_per_m = { value = 11.2, abs_tol = 0.05 }
+expected.resultant_n_per_m = { value = 15.6, abs_tol = 0.05 }
+
+[[case]]
+id = "tb324-015"
+title = "TB 324 sec. 6.1: Arbutus strung at 15.33 kN in 300 m sags 8.0 m"
+calculation = "catenary.span"
+reference = "CIGRE TB 324, sec. 6.1 p. 57"
+notes = "Printed: strung at 15.33 kN (25 % RTS) in 300 m, initial sag at 15 °C 8.0 m. Reference: 7.9992 m."
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", horizontal_tension = "15330 N", weight = "10.89 N/m" }
+expected.sag_m = { value = 8.0, abs_tol = 0.05 }
+
+[[case]]
+id = "tb324-016"
+title = "TB 324 sec. 6.1: Arbutus (linear elastic) under 430 Pa wind: H = 20745 N, sag 8.5 m"
+calculation = "sagtension.change_of_state"
+reference = "CIGRE TB 324, sec. 6.1 p. 57-58"
+notes = """Inputs: S = 300 m, strung 15.33 kN at 15 °C bare (10.89 N/m), then 15.6 N/m (the
+brochure's rounded resultant) at 15 °C; E = 58.9 GPa on 403 mm² (the area in the brochure's
+equation; 402.9 mm² in Table 13), EA = 23.7367 MN; alpha 23e-6 /K (no temperature change).
+Printed: H = 20745 N, sag 8.5 m (the extracted equation reads 5.8, its digits reversed;
+the text gives the sag 0.5 m above the initial 8.0 m), strain +228 µstrain.
+The brochure's model: L = L_ref (1 + (H - H_ref)/EA), H the horizontal tension. The reference
+reproduces it: 20744.73 N (prints 20745). OpenOHL's change of state stretches the cable by
+its mean tension, multiplicatively: 20742.77 N (reference, the same model as the code), 1.97 N
+(0.0095 %) lower, a documented model difference, not an error. Tolerance 2.5 N = 0.5 N printed
+rounding + 2.0 N model difference. Sag 8.4698 m against 8.5 m printed to 0.1 m (0.05 m)."""
+max_seconds = 1.0
+inputs = { span = "300 m", rise = "0 m", axial_stiffness = "23.7367e6 N", thermal_expansion = 23e-6, known_tension = "15330 N", known_load = "10.89 N/m", known_temperature = "15 °C", load = "15.6 N/m", temperature = "15 °C" }
+expected.horizontal_tension_n = { value = 20745.0, abs_tol = 2.5 }
+expected.sag_m = { value = 8.5, abs_tol = 0.05 }
