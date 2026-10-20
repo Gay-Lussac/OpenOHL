@@ -786,6 +786,19 @@ pub struct ArcPlace {
     pub to: f64,
 }
 
+/// A point's vertical clearance to a swing arc ([`SwingArc::vertical`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArcVertical {
+    /// The vertical distance to the arc's centre line (0 inside its
+    /// height range), m.
+    pub gap: f64,
+    /// The arc's point it is measured to.
+    pub point: P3,
+    /// Its angle about the axis (rad from the downward vertical, positive
+    /// to the right).
+    pub angle: f64,
+}
+
 impl SwingArc {
     /// The arc of `left`, `still` and `right` along `axis` (none when one
     /// of them does not run steadily along the axis).
@@ -904,6 +917,196 @@ impl SwingArc {
             let (da, db) = (distance(q, a), distance(q, b));
             if da <= db { (da, a) } else { (db, b) }
         }
+    }
+
+    /// The largest allowance of its three wires ([`Wire::allowance`]), m.
+    pub fn allowance(&self) -> f64 {
+        self.allowance
+    }
+
+    /// The angle about the axis of `p` (rad from the downward vertical,
+    /// positive to the right, looking along the axis).
+    pub fn angle_of(&self, p: P3) -> f64 {
+        self.polar(sub(p, self.axis.a1)).1
+    }
+
+    /// Its largest radius over the stations, and the smallest and largest
+    /// angle of its ends (rad).
+    pub fn extent(&self) -> (f64, f64, f64) {
+        self.stations.iter().map(|&s| self.place(s)).fold(
+            (0.0f64, f64::INFINITY, f64::NEG_INFINITY),
+            |(r, a, b), p| (r.max(p.radius), a.min(p.from), b.max(p.to)),
+        )
+    }
+
+    /// The centre line of the wire swung to angle `phi` (rad): at every
+    /// station the arc's point at `phi`, clamped to the arc's angles
+    /// there — a polyline lying on the arc at every station.
+    pub fn line_at(&self, phi: f64) -> Vec<P3> {
+        self.stations
+            .iter()
+            .map(|&s| {
+                let p = self.place(s);
+                self.point(p.centre, p.radius, phi.clamp(p.from, p.to))
+            })
+            .collect()
+    }
+
+    /// The angles of the arc at `place` whose point lies within `band`
+    /// across the line of `y` (its offset to the right of the axis, m):
+    /// up to three intervals (the lower half of the circle, and the two
+    /// upper quarters an arc rarely reaches), each within the arc's ends.
+    fn angles_within(place: &ArcPlace, y: f64, band: f64) -> Vec<(f64, f64)> {
+        use std::f64::consts::PI;
+        let r = place.radius;
+        if r <= 0.0 {
+            // On the axis: every angle is the same point.
+            return if y.abs() <= band {
+                vec![(place.from, place.to)]
+            } else {
+                Vec::new()
+            };
+        }
+        let (a, b) = ((y - band) / r, (y + band) / r);
+        if a > 1.0 || b < -1.0 {
+            return Vec::new();
+        }
+        let (ta, tb) = (a.max(-1.0).asin(), b.min(1.0).asin());
+        [(ta, tb), (PI - tb, PI - ta), (-PI - tb, -PI - ta)]
+            .into_iter()
+            .map(|(lo, hi)| (lo.max(place.from), hi.min(place.to)))
+            .filter(|(lo, hi)| lo <= hi)
+            .collect()
+    }
+
+    /// The lowest (`low`) or highest point of the arc over the plan
+    /// position `h` m along the axis's plan direction from A₁ and `y` m to
+    /// its right, within `band` across: (point, angle). At a station s
+    /// the arc's point at angle φ lies \\( R\cos\varphi\,u_z \\) further
+    /// along in plan than \\( s\,|u_h| \\) and \\( R\cos\varphi\,|u_h| \\)
+    /// below the centre (\\( u_h, u_z \\): the axis's horizontal and
+    /// vertical parts); its height is lowest where \\( R\cos\varphi \\)
+    /// is largest — the admissible angle nearest the vertical. The
+    /// station whose point lies over `h` is found by fixed-point steps
+    /// \\( s \leftarrow (h - R\cos\varphi\,u_z)/|u_h| \\) (each a
+    /// contraction by about \\( |dR/ds|\,|u_z|/|u_h| \\), well below 1 on
+    /// a span), to 10⁻⁶ m. `None`: no point of the arc there (beyond the
+    /// span's ends, or farther than `band` across), or a vertical axis.
+    fn extreme_over(&self, h: f64, y: f64, band: f64, low: bool) -> Option<(P3, f64)> {
+        let u = self.axis.u;
+        let uh = u[0].hypot(u[1]);
+        if uh < 1e-9 {
+            return None;
+        }
+        let uz = u[2];
+        let pick = |place: &ArcPlace| -> Option<f64> {
+            let mut best: Option<(f64, f64)> = None;
+            for (lo, hi) in Self::angles_within(place, y, band) {
+                let mut cands = vec![lo, hi];
+                if lo <= 0.0 && 0.0 <= hi {
+                    cands.push(0.0);
+                }
+                for phi in cands {
+                    // Lowest: cos largest; highest: cos smallest.
+                    let key = if low { -phi.cos() } else { phi.cos() };
+                    if best.is_none_or(|(k, _)| key < k) {
+                        best = Some((key, phi));
+                    }
+                }
+            }
+            best.map(|b| b.1)
+        };
+        let n = self.stations.len();
+        let (first, last) = (self.stations[0], self.stations[n - 1]);
+        let mut s = h / uh;
+        let mut phi = 0.0;
+        for _ in 0..50 {
+            let place = self.place(s);
+            phi = pick(&place)?;
+            let next = (h - place.radius * phi.cos() * uz) / uh;
+            let done = (next - s).abs() < 1e-6;
+            s = next;
+            if done {
+                break;
+            }
+        }
+        if s < first - 1e-6 || s > last + 1e-6 {
+            return None;
+        }
+        let place = self.place(s);
+        let phi = pick(&place).unwrap_or(phi);
+        Some((self.point(place.centre, place.radius, phi), phi))
+    }
+
+    /// The vertical clearance of `q` to the arc (to the centre line): the
+    /// height of the arc's lowest point above it, or `q`'s height above
+    /// the arc's highest point, over `q`'s plan position — counting the
+    /// arc's points within `band` across the line and within half of
+    /// `depth` along it — 0 where `q` lies between the two. With a depth,
+    /// the lowest height over the slice is bounded from the heights at
+    /// its ends and middle, \\( f_0 - \max(|f_0 - f_-|, |f_+ - f_0|) \\)
+    /// and the ends themselves (exact where the height is convex along
+    /// the line, as a hanging wire's; the highest mirrored). `None`: no
+    /// point of the arc over `q` within the band.
+    pub fn vertical(&self, q: P3, band: f64, depth: f64) -> Option<ArcVertical> {
+        let u = self.axis.u;
+        let uh = u[0].hypot(u[1]);
+        if uh < 1e-9 {
+            return None;
+        }
+        let v = sub(q, self.axis.a1);
+        let h = (v[0] * u[0] + v[1] * u[1]) / uh;
+        let y = dot(v, self.right);
+        let low = self.extreme_over(h, y, band, true)?;
+        let high = self.extreme_over(h, y, band, false)?;
+        let half = depth.max(0.0) / 2.0;
+        let slice = |f0: f64, at: &dyn Fn(f64) -> Option<f64>, lowest: bool| -> f64 {
+            if half <= 0.0 {
+                return f0;
+            }
+            let mut out = f0;
+            for d in [-half, half] {
+                if let Some(f) = at(h + d) {
+                    let tangent = 2.0 * f0 - f;
+                    out = if lowest {
+                        out.min(f).min(tangent)
+                    } else {
+                        out.max(f).max(tangent)
+                    };
+                }
+            }
+            out
+        };
+        let zl = slice(
+            low.0[2],
+            &|hh| self.extreme_over(hh, y, band, true).map(|p| p.0[2]),
+            true,
+        );
+        let zh = slice(
+            high.0[2],
+            &|hh| self.extreme_over(hh, y, band, false).map(|p| p.0[2]),
+            false,
+        );
+        let z = q[2];
+        Some(if z <= zl {
+            ArcVertical {
+                gap: zl - z,
+                point: low.0,
+                angle: low.1,
+            }
+        } else if z >= zh {
+            ArcVertical {
+                gap: z - zh,
+                point: high.0,
+                angle: high.1,
+            }
+        } else {
+            ArcVertical {
+                gap: 0.0,
+                point: low.0,
+                angle: low.1,
+            }
+        })
     }
 
     /// Its bands along its axis: the arc's radius and angles at each
@@ -1185,7 +1388,7 @@ fn attachment(shape: &SectionShape, i: usize) -> P3 {
 }
 
 /// The axis of span `k` of `shape`.
-fn span_axis(shape: &SectionShape, k: usize) -> Option<Axis> {
+pub(crate) fn span_axis(shape: &SectionShape, k: usize) -> Option<Axis> {
     Axis::new(attachment(shape, k), attachment(shape, k + 1))
 }
 
@@ -1940,6 +2143,7 @@ mod tests {
             stepped: true,
             step: full / 3.0 + 1e-9,
             sides: crate::rules::WindSides::Both,
+            arc: false,
         };
         let p = solve_positions(
             &line,

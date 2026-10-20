@@ -65,8 +65,9 @@
 //!   the ground: default 0, straight below the wire);
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
 //!   depth, the wire taken at its lowest over each slice.
-//! - `[wind]` (`steps`, `step`, `sides`): how the desktop clearance windows
-//!   apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line` ignores it.
+//! - `[wind]` (`steps`, `step`, `sides`, `arc`): how the desktop clearance
+//!   windows apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line`
+//!   ignores it. `arc = true` (2026-10-20) adds each span's swing arc.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
@@ -727,6 +728,8 @@ struct RawWind {
     step: Option<Stress>,
     #[serde(default)]
     sides: Option<String>,
+    #[serde(default)]
+    arc: bool,
 }
 
 /// The sides the wind blows from, looking ahead along the line.
@@ -785,6 +788,13 @@ pub struct WindSteps {
     pub step: f64,
     /// Sides the wind blows from.
     pub sides: WindSides,
+    /// Each span also anywhere on its **swing arc** (2026-10-20): the span
+    /// swung as one about its attachment axis between still air and the
+    /// full blowouts of the sides chosen, at the largest of their radii
+    /// ([`crate::positions::SwingArc`]): three solves per windy case
+    /// (still air, left, right) and one closed-form distance per point.
+    /// Alongside the steps or alone (`[wind] arc = true`).
+    pub arc: bool,
 }
 
 /// Default step of the wind pressure, Pa.
@@ -796,6 +806,7 @@ impl Default for WindSteps {
             stepped: false,
             step: DEFAULT_WIND_STEP,
             sides: WindSides::Both,
+            arc: false,
         }
     }
 }
@@ -1227,6 +1238,7 @@ impl RuleSet {
                         .sides
                         .as_deref()
                         .map_or(Ok(WindSides::Both), WindSides::parse)?,
+                    arc: w.arc,
                 })
             })
             .transpose()?;
@@ -1308,6 +1320,10 @@ impl RuleSet {
                 w.step,
                 w.sides.as_str()
             );
+            // Written only when on: a file without it reads as before.
+            if w.arc {
+                t.push_str("arc = true\n");
+            }
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
             t.push_str("\n# What the desktop clearance windows solve (ohl line: every circuit, each section's method).\n[check]\n");
@@ -1467,6 +1483,25 @@ impl Rule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `[wind] arc = true` is read and written back; a file without it
+    /// reads as before (no arc), and is written without it.
+    #[test]
+    fn the_swing_arc_in_the_wind_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let old =
+            RuleSet::parse(&format!("{head}[wind]\nsteps = true\nstep = \"50 Pa\"\n")).unwrap();
+        let w = old.wind.unwrap();
+        assert!(w.stepped && !w.arc);
+        assert!(!old.to_toml().contains("arc ="));
+        let set = RuleSet::parse(&format!("{head}[wind]\narc = true\nsides = \"left\"\n")).unwrap();
+        let w = set.wind.unwrap();
+        assert!(w.arc && !w.stepped);
+        assert_eq!(w.sides, WindSides::Left);
+        let again = RuleSet::parse(&set.to_toml()).unwrap();
+        assert_eq!(again.wind, set.wind);
+        assert!(set.to_toml().contains("arc = true"));
+    }
 
     /// A rule file read with a project's default values: its search
     /// margin, vertical band and wind step where the file gives none.

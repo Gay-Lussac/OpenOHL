@@ -48,6 +48,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(ClearanceSurface));
     registry.register(Box::new(FallIn));
     registry.register(Box::new(SwingArcCase));
+    registry.register(Box::new(SwingArcClearance));
     registry.register(Box::new(SpanCasesSection));
 }
 
@@ -1412,6 +1413,83 @@ impl Calculation for SwingArcCase {
             ("arc_from_deg", place.from.to_degrees()),
             ("arc_to_deg", place.to.to_degrees()),
             ("distance_m", d),
+        ]))
+    }
+}
+
+/// `clearance.swing_arc`: a span from (0, 0, z) to (`span`, 0, z +
+/// `rise`), z = `attachment_height`, hanging in the plane square to its
+/// axis as a parabola of sag `still_sag` (measured square to the axis)
+/// in still air and `blown_sag` blown by ±`blowout_angle` about its axis
+/// (21 points each); the point (`point_x`, `point_y`, `point_z`)'s
+/// radial distance to the swing arc and its vertical clearance to it in
+/// the vertical zone of half width `band` and depth `depth` (the
+/// vertical and radial clearance checks' swing arc).
+struct SwingArcClearance;
+
+impl Calculation for SwingArcClearance {
+    fn id(&self) -> &'static str {
+        "clearance.swing_arc"
+    }
+
+    fn description(&self) -> &'static str {
+        "The vertical and radial clearance of a point to a span's swing arc (inputs: span, \
+         rise, attachment_height, still_sag, blown_sag, blowout_angle, point_x, point_y, \
+         point_z, band, depth); outputs radial_m, vertical_m, vertical_angle_deg"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::positions::{Axis, SwingArc, WireShape};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (span, rise, z) = (len("span")?, len("rise")?, len("attachment_height")?);
+        let phi = float_input(inputs, "blowout_angle")?.to_radians();
+        let axis = Axis::new([0.0, 0.0, z], [span, 0.0, z + rise]).ok_or("a span of no length")?;
+        let wire = |angle: f64, sag: f64| {
+            let points = (0..=20)
+                .map(|k| {
+                    let t = k as f64 / 20.0;
+                    let r = 4.0 * sag * t * (1.0 - t);
+                    let (c, s) = (angle.cos(), angle.sin());
+                    std::array::from_fn(|i| {
+                        axis.a1[i]
+                            + t * (axis.a2[i] - axis.a1[i])
+                            + r * (c * axis.down[i] + s * axis.right[i])
+                    })
+                })
+                .collect();
+            WireShape::new(
+                ohl_clearance::Wire {
+                    section: "S".into(),
+                    span: 0,
+                    circuit: String::new(),
+                    phase: String::new(),
+                    potential: None,
+                    bundle: Vec::new(),
+                    points,
+                    ends: Vec::new(),
+                    surface_radius: 0.0,
+                    polyline_error: 0.0,
+                },
+                &axis,
+            )
+        };
+        let (still, blown) = (len("still_sag")?, len("blown_sag")?);
+        let arc = SwingArc::new(
+            axis,
+            &wire(-phi, blown),
+            &wire(0.0, still),
+            &wire(phi, blown),
+        )
+        .ok_or("no arc")?;
+        let q = [len("point_x")?, len("point_y")?, len("point_z")?];
+        let (d, _) = arc.nearest(q);
+        let v = arc
+            .vertical(q, len("band")?, len("depth")?)
+            .ok_or("the point is not under or over the arc within the band")?;
+        Ok(outputs([
+            ("radial_m", d),
+            ("vertical_m", v.gap),
+            ("vertical_angle_deg", v.angle.to_degrees()),
         ]))
     }
 }

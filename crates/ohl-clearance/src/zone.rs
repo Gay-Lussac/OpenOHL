@@ -41,11 +41,16 @@ use ohl_line::solve::SectionShape;
 use ohl_terrain::Terrain;
 use ohl_weather::{WeatherCase, WindSide};
 
-use crate::checks::{Hit, PointCheck, Wire, WireSet, checked_parts, ground_check, wires_of};
+use crate::checks::{
+    GroundMax, Hit, PointCheck, PointEvent, Tally, Wire, WireResult, WireSet, checked_parts,
+    ground_check_with, wires_of,
+};
 use crate::rules::{
     CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
     Target, WindSteps, Wires, default_band,
 };
+pub use crate::zone_arc::{ARC_TOLERANCE, ArcCase, ZoneArc, arc_cases, arc_polylines, zone_arcs};
+use crate::zone_arc::{ArcPointCheck, arc_ground, arcs_of_rule};
 pub use crate::zone_run::{PointReader, ZoneCheckResult, line_voltages, run_zone_check};
 use ohl_line::jumper::JumperShape;
 
@@ -389,7 +394,7 @@ impl WindState {
 
 /// The positions of the wires to check: of every case `wanted`, the
 /// pressures of `wind` ([`WindSteps::pressures`]) from each of its sides
-/// (0 Pa once).
+/// (0 Pa once; with the swing arc, still air too).
 pub fn wind_states(
     cases: &[WeatherCase],
     wanted: impl Fn(&str) -> bool,
@@ -398,7 +403,12 @@ pub fn wind_states(
     let mut out = Vec::new();
     for case in cases.iter().filter(|c| wanted(&c.name)) {
         let full = case.wind_pressure.si();
-        for p in wind.pressures(full, MAX_STEPS) {
+        let mut pressures = wind.pressures(full, MAX_STEPS);
+        // The swing arc swings through still air: solved too.
+        if wind.arc && full > 0.0 && pressures.first().is_some_and(|p| *p > 0.0) {
+            pressures.insert(0, 0.0);
+        }
+        for p in pressures {
             let sides: Vec<Option<WindSide>> = if p > 0.0 {
                 wind.sides.sides().iter().copied().map(Some).collect()
             } else {
@@ -610,8 +620,47 @@ pub struct ZoneFinding {
     /// Points too close at any wind position (each counted once); for the
     /// ground, wire pieces too close at the worst one.
     pub count: u64,
-    /// The wind position of the lowest clearance (index in the states).
+    /// The wind position of the lowest clearance (index in the states;
+    /// on a swing arc, its case's still air).
     pub state: usize,
+    /// On a swing arc: the angle where the clearance is found, degrees
+    /// from the downward vertical about the span's attachment axis,
+    /// positive to the right looking along the span.
+    pub arc: Option<f64>,
+}
+
+impl ZoneFinding {
+    /// Where the wire is: "high wind, 600 of 600 Pa from the left",
+    /// "high wind, swing arc at 23° to the right".
+    pub fn position(&self, states: &[WindState]) -> String {
+        let s = &states[self.state];
+        match self.arc {
+            Some(a) => format!("{}, swing arc at {}", s.name, arc_angle(a)),
+            None => s.describe(),
+        }
+    }
+
+    /// The wind in short: "300 Pa from the right", "no wind", "arc 23° to
+    /// the right".
+    pub fn wind(&self, states: &[WindState]) -> String {
+        let s = &states[self.state];
+        match (self.arc, s.side) {
+            (Some(a), _) => format!("arc {}", arc_angle(a)),
+            (None, Some(side)) => format!("{:.0} Pa from the {}", s.pressure, side.as_str()),
+            (None, None) => "no wind".into(),
+        }
+    }
+}
+
+/// "23° to the right", "4° to the left", "0° (hanging)".
+pub fn arc_angle(deg: f64) -> String {
+    if deg.abs() < 0.5 {
+        "0° (hanging)".into()
+    } else if deg > 0.0 {
+        format!("{deg:.0}° to the right")
+    } else {
+        format!("{:.0}° to the left", -deg)
+    }
 }
 
 /// What a check found.
@@ -647,12 +696,17 @@ struct Part {
     wires: Vec<Wire>,
     points: Option<PointCheck>,
     set: Option<WireSet>,
+    /// The swing arcs checked (index in the arcs) and their groups.
+    arcs: Vec<usize>,
+    arc_groups: Vec<usize>,
+    arc_points: Option<ArcPointCheck>,
 }
 
 /// Checks `rules` in the zone `zone` against the wires of every state
 /// (`shapes` and `jumpers`, as [`solve_states`] gives them; `jumpers` may
-/// be empty): each span's (and jumper's) lowest clearance over all the
-/// states of each rule's cases.
+/// be empty) and the spans' swing arcs `arcs` ([`zone_arcs`]; none: no
+/// arc): each span's (and jumper's) lowest clearance over all the
+/// states of each rule's cases and their arcs.
 #[allow(clippy::too_many_arguments)]
 pub fn check_zones(
     line: &Line,
@@ -661,6 +715,7 @@ pub fn check_zones(
     states: &[WindState],
     shapes: &[Vec<SectionShape>],
     jumpers: &[Vec<JumperShape>],
+    arcs: &[ZoneArc],
     targets: ZoneTargets,
     budget: &Budget,
 ) -> Result<ZoneReport, String> {
@@ -732,6 +787,8 @@ pub fn check_zones(
                 ));
                 continue;
             }
+            let arc_items = arcs_of_rule(&def, arcs, &used);
+            let arc_groups = arc_items.iter().map(|&a| group(&arcs[a].wire)).collect();
             parts.push(Part {
                 rule: k,
                 def,
@@ -739,6 +796,9 @@ pub fn check_zones(
                 wires: ws,
                 points: None,
                 set: None,
+                arcs: arc_items,
+                arc_groups,
+                arc_points: None,
             });
         }
     }
@@ -764,9 +824,24 @@ pub fn check_zones(
             .max(p.def.vertical_band)
             .min(zone.search.unwrap_or(f64::INFINITY));
         let set = WireSet::new(p.wires.clone(), reach);
-        let group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
-        p.points = Some(PointCheck::new(&p.def, classes, &set).grouped(group));
+        let mut group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
+        // Room for the arcs' groups too.
+        group.extend(p.arc_groups.iter().copied());
+        p.points = Some(
+            PointCheck::new(&p.def, classes, &set)
+                .only(p.def.vertical.is_some(), p.def.radial.is_some())
+                .grouped(group),
+        );
         p.set = Some(set);
+        if !p.arcs.is_empty() {
+            p.arc_points = Some(ArcPointCheck::new(
+                &p.def,
+                arcs,
+                p.arcs.clone(),
+                p.arc_groups.clone(),
+                reach,
+            ));
+        }
     }
     let have_points = targets.points.is_some();
     let classes: Vec<u8> = (0..=255u8).filter(|c| wanted[*c as usize]).collect();
@@ -777,16 +852,18 @@ pub fn check_zones(
                 .push("no point cloud: the LiDAR classes are not checked".into()),
             Some(feed) => {
                 let mut n = 0u64;
-                let mut checks: Vec<(&mut PointCheck, &WireSet)> = parts
-                    .iter_mut()
-                    .filter_map(|p| p.points.as_mut().zip(p.set.as_ref()))
-                    .collect();
+                // In blocks, worked out on every core and applied in the
+                // points' order: the results of one point at a time.
+                let mut block: Vec<([f64; 3], u8)> = Vec::with_capacity(BLOCK);
                 feed(&classes, &mut |x, y, z, c| {
                     n += 1;
-                    for (check, set) in checks.iter_mut() {
-                        check.visit(set, x, y, z, c);
+                    block.push(([x, y, z], c));
+                    if block.len() == BLOCK {
+                        check_block(&mut parts, arcs, &block);
+                        block.clear();
                     }
                 })?;
+                check_block(&mut parts, arcs, &block);
                 report.points = n;
             }
         }
@@ -795,14 +872,46 @@ pub fn check_zones(
         .map_err(|e| format!("checking the clearances {e}"))?;
     let vertical = zone.measure == Measure::Vertical;
     let mut findings: Vec<ZoneFinding> = Vec::new();
+    // The highest ground per cell, made once for every rule.
+    let mut top: Option<GroundMax> = None;
     for p in &parts {
-        let (results, counts): (Vec<_>, Option<&[[u64; 2]]>) = match (&p.def.target, &p.points) {
+        // (result, state, group, arc index) of every wire and arc.
+        type Entry = (WireResult, usize, usize, Option<usize>);
+        let (results, counts): (Vec<Entry>, Option<&[[u64; 2]]>) = match (&p.def.target, &p.points)
+        {
             (Target::Points { .. }, Some(check)) if have_points => {
-                (check.results.clone(), Some(&check.group_violations))
+                let mut all: Vec<Entry> = check
+                    .results
+                    .iter()
+                    .zip(&p.meta)
+                    .map(|(r, &(s, g))| (r.clone(), s, g, None))
+                    .collect();
+                if let Some(a) = &p.arc_points {
+                    for (k, r) in a.results.iter().enumerate() {
+                        let arc = a.items[k];
+                        all.push((r.clone(), arcs[arc].state, a.groups[k], Some(arc)));
+                    }
+                }
+                (all, Some(&check.group_violations))
             }
             (Target::Points { .. }, _) => continue,
             _ => match targets.ground {
-                Some(ground) => (ground_check(&p.def, &p.wires, ground), None),
+                Some(ground) => {
+                    let top = top.get_or_insert_with(|| GroundMax::new(ground));
+                    let mut all: Vec<Entry> = ground_check_with(&p.def, &p.wires, ground, top)
+                        .into_iter()
+                        .zip(&p.meta)
+                        .map(|(r, &(s, g))| (r, s, g, None))
+                        .collect();
+                    let found = crate::positions::parallel(p.arcs.len(), budget, |k| {
+                        Ok(arc_ground(&p.def, &arcs[p.arcs[k]], ground, top))
+                    })
+                    .map_err(|e| format!("checking the clearances {e}"))?;
+                    for ((&arc, &g), r) in p.arcs.iter().zip(&p.arc_groups).zip(found) {
+                        all.push((r, arcs[arc].state, g, Some(arc)));
+                    }
+                    (all, None)
+                }
                 None => {
                     report
                         .notes
@@ -816,9 +925,12 @@ pub fn check_zones(
         // The lowest per span over the states, and the count.
         // (hit, state, the wire's requirement: a span's wires are of one
         // section, one voltage)
-        let mut best: Vec<Option<(Hit, usize, f64)>> = vec![None; groups_n];
+        // (hit, state, requirement, arc) of each span.
+        type Lowest = Option<(Hit, usize, f64, Option<usize>)>;
+        let mut best: Vec<Lowest> = vec![None; groups_n];
         let mut ground_counts = vec![0u64; groups_n];
-        for (r, &(state, g)) in results.iter().zip(&p.meta) {
+        for (r, state, g, arc) in &results {
+            let (state, g, arc) = (*state, *g, *arc);
             let (hit, n, required) = if vertical {
                 (r.vertical, r.vertical_violations, r.required.vertical)
             } else {
@@ -827,13 +939,13 @@ pub fn check_zones(
             let required = required.unwrap_or(0.0);
             ground_counts[g] = ground_counts[g].max(n);
             if let Some(h) = hit
-                && best[g].is_none_or(|(b, _, _)| h.distance < b.distance)
+                && best[g].is_none_or(|(b, ..)| h.distance < b.distance)
             {
-                best[g] = Some((h, state, required));
+                best[g] = Some((h, state, required, arc));
             }
         }
         for (g, b) in best.into_iter().enumerate() {
-            let Some((hit, state, required)) = b else {
+            let Some((hit, state, required, arc)) = b else {
                 continue;
             };
             let count = match counts {
@@ -851,6 +963,7 @@ pub fn check_zones(
                 class: hit.class,
                 count: count.max(1),
                 state,
+                arc: arc.map(|a| arcs[a].arc.angle_of(hit.wire).to_degrees()),
             };
             let low = &mut report.lowest[p.rule];
             if low.as_ref().is_none_or(|l| f.distance < l.distance) {
@@ -864,6 +977,117 @@ pub fn check_zones(
     findings.sort_by(|a, b| (a.distance - a.required).total_cmp(&(b.distance - b.required)));
     report.findings = findings;
     Ok(report)
+}
+
+/// Points worked out together on every core.
+const BLOCK: usize = 1 << 16;
+
+/// Checks a block of points against every part: each core works out a
+/// stretch of the block ([`PointCheck::eval`], [`ArcPointCheck::eval`])
+/// from the results so far, then the events are applied in the points'
+/// order — the results, the counts and the first of equal clearances as
+/// one point at a time gives them.
+fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
+    if block.is_empty() {
+        return;
+    }
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(block.len().div_ceil(1024))
+        .max(1);
+    let size = block.len().div_ceil(threads);
+    /// One stretch's events: per point, whether it was taken and where
+    /// its wire and arc events end.
+    struct Stretch {
+        taken: Vec<bool>,
+        wire_end: Vec<usize>,
+        arc_end: Vec<usize>,
+        wire: Vec<PointEvent>,
+        arc: Vec<PointEvent>,
+        /// The counts (added up in any order).
+        tally: Tally,
+    }
+    for p in parts.iter_mut() {
+        let (Some(check), Some(set)) = (p.points.as_mut(), p.set.as_ref()) else {
+            continue;
+        };
+        let arc_check = p.arc_points.as_mut();
+        let stretches: Vec<Stretch> = {
+            let (check, arc_check) = (&*check, arc_check.as_deref());
+            std::thread::scope(|s| {
+                let handles: Vec<_> = block
+                    .chunks(size)
+                    .enumerate()
+                    .map(|(k, chunk)| {
+                        // The points' numbers, above every one before.
+                        let first = check.offered + (k * size) as u64;
+                        s.spawn(move || {
+                            let mut best = check.best.clone();
+                            let mut arc_best =
+                                arc_check.map(|a| a.best.clone()).unwrap_or_default();
+                            let mut out = Stretch {
+                                taken: Vec::with_capacity(chunk.len()),
+                                wire_end: Vec::with_capacity(chunk.len()),
+                                arc_end: Vec::with_capacity(chunk.len()),
+                                wire: Vec::new(),
+                                arc: Vec::new(),
+                                tally: Tally::new(check.best.len(), check.groups()),
+                            };
+                            for (i, &(q, c)) in chunk.iter().enumerate() {
+                                let stamp = first + i as u64 + 1;
+                                let taken = check.eval(
+                                    set,
+                                    &mut best,
+                                    Some(&mut out.tally),
+                                    stamp,
+                                    q[0],
+                                    q[1],
+                                    q[2],
+                                    c,
+                                    &mut out.wire,
+                                );
+                                if taken && let Some(a) = arc_check {
+                                    a.eval(
+                                        arcs,
+                                        &mut arc_best,
+                                        Some(&mut out.tally),
+                                        stamp,
+                                        q,
+                                        c,
+                                        &mut out.arc,
+                                    );
+                                }
+                                out.taken.push(taken);
+                                out.wire_end.push(out.wire.len());
+                                out.arc_end.push(out.arc.len());
+                            }
+                            out
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().expect("a point check thread"))
+                    .collect()
+            })
+        };
+        check.offered += block.len() as u64;
+        let mut arc_check = arc_check;
+        for st in &stretches {
+            let (mut w0, mut a0) = (0, 0);
+            for k in 0..st.taken.len() {
+                let (w1, a1) = (st.wire_end[k], st.arc_end[k]);
+                if st.taken[k] {
+                    check.apply(&st.wire[w0..w1]);
+                    if let Some(a) = arc_check.as_deref_mut() {
+                        a.apply(&st.arc[a0..a1], check);
+                    }
+                }
+                (w0, a0) = (w1, a1);
+            }
+            check.take_tally(&st.tally);
+        }
+    }
 }
 
 /// Whether a rule checks jumpers.
@@ -968,6 +1192,7 @@ mod tests {
             &states,
             &solved.shapes,
             &solved.jumpers,
+            &[],
             ZoneTargets {
                 ground: None,
                 points: Some(&mut feed),
@@ -1024,6 +1249,7 @@ mod tests {
                 check,
                 vec![rule(5.0, &[5])],
                 states.clone(),
+                false,
                 Some(&read),
                 None,
                 None,
@@ -1104,6 +1330,7 @@ mod tests {
             &states,
             &solved.shapes,
             &[],
+            &[],
             ZoneTargets {
                 ground: None,
                 points: None,
@@ -1120,6 +1347,7 @@ mod tests {
             stepped,
             step,
             sides: WindSides::Both,
+            arc: false,
         };
         assert_eq!(w(false, 50.0).pressures(600.0, 200), vec![600.0]);
         assert_eq!(w(true, 50.0).pressures(0.0, 200), vec![0.0]);
@@ -1205,6 +1433,7 @@ mod tests {
             stepped,
             step: 100.0,
             sides: WindSides::Right,
+            arc: false,
         };
         let started = std::time::Instant::now();
         let (states, stepped) = check(
@@ -1229,6 +1458,7 @@ mod tests {
             stepped: true,
             step: 10.0,
             sides: WindSides::Both,
+            arc: false,
         };
         let started = std::time::Instant::now();
         let (states, r) = check(&zone, &rules, std::slice::from_ref(&full), &fine, &[p]);
@@ -1375,6 +1605,7 @@ mod tests {
                 stepped: false,
                 step: 50.0,
                 sides,
+                arc: false,
             };
             let (states, r) = check(&zone, &rules, &[windy(600.0)], &wind, &[p]);
             s1(&r).map(|f| states[f.state].side)
@@ -1396,6 +1627,7 @@ mod tests {
             stepped: true,
             step: 25.0,
             sides: WindSides::Left,
+            arc: false,
         };
         let rows = vec![
             ZoneRule {

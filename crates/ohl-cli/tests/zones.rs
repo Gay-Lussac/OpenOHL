@@ -202,6 +202,7 @@ fn zones_by_a_rule_file_with_its_check() {
         &check,
         imported.rules,
         states,
+        false,
         Some(&read),
         Some(&ground),
         None,
