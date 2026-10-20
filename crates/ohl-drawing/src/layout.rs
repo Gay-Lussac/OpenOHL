@@ -6,7 +6,9 @@
 //! a page format split at structures, and model-space drawings (plan in
 //! project coordinates, profile by station and exaggerated height).
 
-use crate::model::{Anchor, Circle, Clip, Color, Drawing, Image, Item, Layer, Path, Pen, Text};
+use crate::furniture;
+use crate::model::{Anchor, Circle, Clip, Color, Drawing, Item, Layer, Path, Pen, Text};
+use crate::style::Sample;
 use crate::{ElevationPlace, Options, Page, RouteDrawing, format_station, nice_step};
 
 /// A stretch of the profile drawn with its own height range: the whole
@@ -52,6 +54,13 @@ pub(crate) struct Frame {
     /// A structure at either end is drawn whole (sheets), not cut at the
     /// match line.
     pub whole_ends: bool,
+    /// Where the paper ends along the route (the next sheet's content
+    /// faded to there, when the template asks).
+    pub paper_end: f64,
+    /// The band rows' height under the profile, mm.
+    pub bands_h: f64,
+    /// The legend, made as the frame is drawn.
+    pub legend: std::cell::RefCell<crate::style::Legend>,
 }
 
 impl Frame {
@@ -123,12 +132,20 @@ pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2
         see(&mut essential, p[0], p[2]);
     }
     let mut full = essential;
-    for w in &d.wires {
+    for w in d
+        .wires
+        .iter()
+        .chain(d.versions.iter().flat_map(|v| &v.wires))
+    {
         for p in &w.points {
             see(&mut full, p[0], p[2]);
         }
     }
-    for m in &d.structures {
+    for m in d
+        .structures
+        .iter()
+        .chain(d.versions.iter().flat_map(|v| &v.structures))
+    {
         see(&mut full, m.station, m.base);
         see(&mut full, m.station, m.top);
         for p in m.sticks.iter().chain(&m.members).chain(&m.pole).flatten() {
@@ -394,14 +411,282 @@ fn half_width_mm(m: &crate::Mark, h: f64) -> f64 {
         + 1.0
 }
 
+/// The pen of `layer` as the options' template sets it, from the
+/// drawing's own colour and width.
+fn lp(o: &Options, layer: Layer, color: &str, width: f64) -> Pen {
+    o.template.pen(layer, pen(color, width))
+}
+
+/// The structures drawn in the plan and the profile: the line's, and
+/// those of the other versions with their roles: (structure, role, its
+/// name written, of another version).
+fn all_structures<'a>(
+    d: &'a RouteDrawing,
+    o: &'a Options,
+) -> impl Iterator<Item = (&'a crate::Mark, Option<&'a str>, bool, bool)> {
+    d.structures
+        .iter()
+        .map(|m| (m, o.role.as_deref(), true, false))
+        .chain(d.versions.iter().flat_map(|v| {
+            let names = o
+                .template
+                .roles
+                .get(&v.role)
+                .and_then(|r| r.names)
+                .unwrap_or(false);
+            v.structures
+                .iter()
+                .map(move |m| (m, Some(v.role.as_str()), names, true))
+        }))
+}
+
+/// The wires drawn: the line's in its role, the versions' in theirs.
+fn all_wires<'a>(
+    d: &'a RouteDrawing,
+    o: &'a Options,
+) -> impl Iterator<Item = (&'a crate::Trace, Option<&'a str>, Option<&'a str>)> {
+    // The versions first: under the line's own wires.
+    d.versions
+        .iter()
+        .flat_map(|v| {
+            v.wires
+                .iter()
+                .map(move |w| (w, Some(v.role.as_str()), Some(v.label.as_str())))
+        })
+        .chain(d.wires.iter().map(|w| (w, o.role.as_deref(), None)))
+}
+
+/// The pen of wire `w` in `role` (with its version's `label`), its legend
+/// entries added to frame `f`'s legend: its kind or phase and role, and
+/// its weather case's dash.
+fn wire_pen(
+    f: &Frame,
+    o: &Options,
+    w: &crate::Trace,
+    role: Option<&str>,
+    label: Option<&str>,
+) -> Pen {
+    let (p, words) = crate::style::wire_pen(&o.template, w, role);
+    let p = o.template.pen(Layer::Wires, p);
+    let mut legend = f.legend.borrow_mut();
+    let words = match label {
+        Some(l) if !l.is_empty() => format!("{l}: {words}"),
+        _ => words,
+    };
+    legend.add(
+        Sample::Line(Pen {
+            dash: None,
+            ..p.clone()
+        }),
+        words,
+    );
+    if let Some(d) = &w.dash {
+        let case = if w.case.is_empty() {
+            "another weather case"
+        } else {
+            w.case.as_str()
+        };
+        legend.add(
+            Sample::Line(Pen::new(Color(0x44, 0x44, 0x44), 0.3).dashed(d)),
+            format!("weather case {case}"),
+        );
+    } else if !w.case.is_empty() {
+        legend.add(
+            Sample::Line(Pen::new(Color(0x44, 0x44, 0x44), 0.3)),
+            format!("weather case {}", w.case),
+        );
+    }
+    p
+}
+
+/// The content of the plan of frame `f`: what is clipped to the panel,
+/// the structures at the frame's ends (drawn whole), and the names
+/// (drawn whole outside the clip).
+fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Item>, Vec<Item>) {
+    let mut plan = Vec::new();
+    let mut ends = Vec::new();
+    let mut names = Vec::new();
+    let axis = lp(o, Layer::Centreline, "#999", 0.25).dashed("4 1 1 1");
+    plan.push(path(
+        Layer::Centreline,
+        vec![[f.x(0.0), f.plan_y(0.0)], [f.x(d.length), f.plan_y(0.0)]],
+        axis.clone(),
+        None,
+    ));
+    f.legend
+        .borrow_mut()
+        .add(Sample::Line(axis), "axis of the line");
+    // The corridor's edges.
+    if let Some(w) = o.corridor.filter(|w| *w > 0.0) {
+        let p = o
+            .template
+            .corridor
+            .pen
+            .over(lp(o, Layer::Corridor, "#6a6a6a", 0.25).dashed("6 1.5 1 1.5"));
+        let label = crate::template::fill(
+            o.template
+                .corridor
+                .label
+                .as_deref()
+                .unwrap_or("corridor ±{width} m"),
+            &|n, _| (n == "width").then(|| crate::template::format_number(w, "")),
+        );
+        for side in [-1.0, 1.0] {
+            let y = f.plan_y(side * w);
+            plan.push(path(
+                Layer::Corridor,
+                vec![[f.x(0.0), y], [f.x(d.length), y]],
+                p.clone(),
+                Some(label.clone()),
+            ));
+            names.push(text(
+                Layer::Corridor,
+                [f.left + 1.0, y + if side < 0.0 { -0.8 } else { 2.4 }],
+                2.0,
+                Anchor::Start,
+                label.clone(),
+            ));
+        }
+        f.legend.borrow_mut().add(Sample::Line(p), label);
+    }
+    // Isoclearance lines under the wires.
+    for w in &d.isoclearance {
+        plan.push(path(
+            Layer::Isoclearance,
+            w.points
+                .iter()
+                .map(|p| [f.x(p[0]), f.plan_y(p[1])])
+                .collect(),
+            lp(o, Layer::Isoclearance, &w.color, 0.18),
+            Some(w.label.clone()),
+        ));
+        f.legend.borrow_mut().add(
+            Sample::Line(pen(&w.color, 0.3)),
+            format!(
+                "isoclearance {}",
+                w.label.trim_start_matches("isoclearance ")
+            ),
+        );
+    }
+    for (w, role, label) in all_wires(d, o) {
+        let layer = if label.is_some() {
+            Layer::Versions
+        } else {
+            Layer::Wires
+        };
+        plan.push(path(
+            layer,
+            w.points
+                .iter()
+                .map(|p| [f.x(p[0]), f.plan_y(p[1])])
+                .collect(),
+            wire_pen(f, o, w, role, label),
+            Some(w.label.clone()),
+        ));
+    }
+    // A version's label at its first wire in the plan.
+    for v in &d.versions {
+        if v.label.is_empty() {
+            continue;
+        }
+        if let Some(p) = v
+            .wires
+            .iter()
+            .flat_map(|w| w.points.iter())
+            .filter(|p| p[0] >= f.s0 && p[0] <= f.s1)
+            .min_by(|a, b| a[0].total_cmp(&b[0]))
+        {
+            let mut t = text(
+                Layer::Versions,
+                [f.x(p[0]) + 1.0, f.plan_y(p[1]) - 1.0],
+                2.0,
+                Anchor::Start,
+                v.label.clone(),
+            );
+            if let Item::Text(x) = &mut t {
+                x.color = hex("#555");
+            }
+            plan.push(t);
+        }
+    }
+    for (m, role, named, version) in all_structures(d, o) {
+        let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
+        let out = if f.at_end(m) { &mut ends } else { &mut plan };
+        let layer = if version {
+            Layer::Versions
+        } else {
+            Layer::Structures
+        };
+        let symbol = crate::style::structure_pen(&o.template, role, lp(o, layer, "#333", 0.3));
+        // The symbol at level 1; members and poles draw the others.
+        if !m.has_body() {
+            out.push(rect(layer, cx - 1.0, cy - 1.0, 2.0, 2.0, symbol.clone()));
+            f.legend.borrow_mut().add(
+                Sample::Square(symbol.clone()),
+                match role
+                    .and_then(|r| o.template.roles.get(r))
+                    .and_then(|r| r.label.clone())
+                {
+                    Some(l) => format!("structure ({l})"),
+                    None => "structure".into(),
+                },
+            );
+        }
+        // Stick drawings seen from above; members (levels 2 and 3): the
+        // footprint and the crossarms.
+        let (layer, lines) = match (version, m.members.is_empty()) {
+            (true, true) => (Layer::Versions, &m.sticks),
+            (true, false) => (Layer::Versions, &m.members),
+            (false, true) => (Layer::Structures, &m.sticks),
+            (false, false) => (Layer::Members, &m.members),
+        };
+        let thin = crate::style::structure_pen(&o.template, role, lp(o, layer, "#555", 0.25));
+        for stick in lines {
+            out.push(path(
+                layer,
+                stick.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
+                thin.clone(),
+                None,
+            ));
+        }
+        // A pole's outline at the ground line and at its top.
+        for ring in pole_ends(&m.pole) {
+            out.push(closed(
+                Layer::Members,
+                ring.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
+                thin.clone(),
+            ));
+        }
+        // Its name beside the symbol, above and right of it.
+        if named {
+            names.push(text(
+                Layer::Structures,
+                [cx + 1.8, cy - 1.8],
+                2.5,
+                Anchor::Start,
+                m.id.clone(),
+            ));
+        }
+    }
+    for (p, label) in &d.markers {
+        plan.push(marker([f.x(p[0]), f.plan_y(p[1])], 1.2, label));
+        f.legend
+            .borrow_mut()
+            .add(Sample::Circle(pen("#d00", 0.5)), "clearance violation");
+    }
+    (plan, ends, names)
+}
+
 /// Grids, panels and content of one frame, clipped to its panels (the
-/// structures at a sheet's ends drawn whole); the structures' elevations
-/// are drawn by [`draw_elevations`], after the match lines.
+/// structures at a sheet's ends drawn whole; with `beyond_match = "faded"`
+/// the next sheet's content faded to the paper's edge); the structures'
+/// elevations are drawn by [`draw_elevations`], after the match lines.
 fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     let (s0, s1) = (f.s0, f.s1);
-    let grid = pen("#ddd", 0.2);
+    let grid = lp(o, Layer::Grid, "#ddd", 0.2);
     let prof_bottom = f.prof_top + f.prof_h;
-    // Station grid in both panels, labels under the profile.
+    // Station grid in both panels, labels under the profile (and its
+    // bands).
     let s_step = nice_step((s1 - s0).max(1.0), (f.width() / 40.0).max(1.0));
     for s in ticks(s0, s1, s_step) {
         let x = f.x(s);
@@ -419,13 +704,15 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             grid.clone(),
             None,
         ));
-        items.push(text(
-            Layer::Labels,
-            [x, prof_bottom + 4.0],
-            2.5,
-            Anchor::Middle,
-            format_station(s),
-        ));
+        if o.template.layout.station_labels {
+            items.push(text(
+                Layer::Labels,
+                [x, prof_bottom + f.bands_h + 4.0],
+                2.5,
+                Anchor::Middle,
+                format_station(s),
+            ));
+        }
     }
     // Height grid and labels per part, inside the panel only.
     for (k, p) in f.parts.iter().enumerate() {
@@ -465,17 +752,21 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
         }
         // A datum step: a double line across the panel.
         if k > 0 {
+            let step = lp(o, Layer::Panels, "#555", 0.3);
             for dx in [-0.4, 0.4] {
                 items.push(path(
                     Layer::Panels,
                     vec![[xa + dx, f.prof_top], [xa + dx, prof_bottom]],
-                    pen("#555", 0.3),
+                    step.clone(),
                     Some(format!("datum step at {}", format_station(p.s0))),
                 ));
             }
+            f.legend
+                .borrow_mut()
+                .add(Sample::Line(step), "datum step (heights read on each side)");
         }
     }
-    let panel = pen("#888", 0.3);
+    let panel = lp(o, Layer::Panels, "#888", 0.3);
     if f.plan {
         items.push(rect(
             Layer::Panels,
@@ -517,110 +808,42 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     let plan_rect = [f.left, f.plan_top, f.width(), f.plan_h];
     let prof_rect = [f.left, f.prof_top, f.width(), f.prof_h];
     // Clip regions widened for the structures at the ends.
-    let widen = d
-        .structures
-        .iter()
-        .filter(|m| f.at_end(m))
-        .map(|m| half_width_mm(m, f.h))
+    let widen = all_structures(d, o)
+        .filter(|(m, ..)| f.at_end(m))
+        .map(|(m, ..)| half_width_mm(m, f.h))
         .fold(0.0, f64::max);
     let wide = |r: [f64; 4]| [r[0] - widen, r[1], r[2] + 2.0 * widen, r[3]];
+    let inside_or =
+        |names: &mut Vec<Item>, clipped: &mut Vec<Item>, item: Item, rect: [f64; 4]| match &item {
+            Item::Text(t)
+                if crate::model::inside(
+                    [t.at[0], t.at[1]],
+                    [rect[0] - 1e-6, rect[1], rect[2] + 2e-6, rect[3]],
+                ) =>
+            {
+                names.push(item)
+            }
+            _ => clipped.push(item),
+        };
     let mut names = Vec::new();
-    let mut label = |clipped: &mut Vec<Item>, item: Item, rect: [f64; 4]| match &item {
-        Item::Text(t)
-            if crate::model::inside(
-                [t.at[0], t.at[1]],
-                [rect[0] - 1e-6, rect[1], rect[2] + 2e-6, rect[3]],
-            ) =>
-        {
-            names.push(item)
-        }
-        _ => clipped.push(item),
-    };
+    // Beyond the match line, faded (the paper's width).
+    let faded =
+        o.template.layout.beyond_match == crate::template::Beyond::Faded && f.paper_end > s1 + 1e-6;
+    let beyond = |r: [f64; 4]| [r[0] + r[2], r[1], (f.paper_end - s1) * f.h, r[3]];
     // Plan.
     if f.plan {
-        let mut plan = Vec::new();
-        let mut ends = Vec::new();
-        plan.push(path(
-            Layer::Centreline,
-            vec![[f.x(0.0), f.plan_y(0.0)], [f.x(d.length), f.plan_y(0.0)]],
-            pen("#999", 0.25).dashed("4 1 1 1"),
-            None,
-        ));
-        // Isoclearance lines under the wires.
-        for w in &d.isoclearance {
-            plan.push(path(
-                Layer::Isoclearance,
-                w.points
-                    .iter()
-                    .map(|p| [f.x(p[0]), f.plan_y(p[1])])
-                    .collect(),
-                pen(&w.color, 0.18),
-                Some(w.label.clone()),
-            ));
+        let (mut plan, ends, plan_names) = plan_content(d, o, f);
+        for n in plan_names {
+            inside_or(&mut names, &mut plan, n, plan_rect);
         }
-        for w in &d.wires {
-            plan.push(path(
-                Layer::Wires,
-                w.points
-                    .iter()
-                    .map(|p| [f.x(p[0]), f.plan_y(p[1])])
-                    .collect(),
-                pen(&w.color, 0.35).dashed(w.dash.as_deref().unwrap_or("")),
-                Some(w.label.clone()),
-            ));
-        }
-        for m in &d.structures {
-            let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
-            let out = if f.at_end(m) { &mut ends } else { &mut plan };
-            // The symbol at level 1; members and poles draw the others.
-            if !m.has_body() {
-                out.push(rect(
-                    Layer::Structures,
-                    cx - 1.0,
-                    cy - 1.0,
-                    2.0,
-                    2.0,
-                    pen("#333", 0.3),
-                ));
-            }
-            // Stick drawings seen from above; members (levels 2 and 3):
-            // the footprint and the crossarms.
-            let (layer, lines) = if m.members.is_empty() {
-                (Layer::Structures, &m.sticks)
-            } else {
-                (Layer::Members, &m.members)
-            };
-            for stick in lines {
-                out.push(path(
-                    layer,
-                    stick.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
-                    pen("#555", 0.25),
-                    None,
-                ));
-            }
-            // A pole's outline at the ground line and at its top.
-            for ring in pole_ends(&m.pole) {
-                out.push(closed(
-                    Layer::Members,
-                    ring.iter().map(|p| [f.x(p[0]), f.plan_y(p[1])]).collect(),
-                    pen("#555", 0.25),
-                ));
-            }
-        }
-        // Names beside the symbols, above and right of them.
-        for m in &d.structures {
-            let (cx, cy) = (f.x(m.station), f.plan_y(m.offset));
-            let name = text(
-                Layer::Structures,
-                [cx + 1.8, cy - 1.8],
-                2.5,
-                Anchor::Start,
-                m.id.clone(),
-            );
-            label(&mut plan, name, plan_rect);
-        }
-        for (p, label) in &d.markers {
-            plan.push(marker([f.x(p[0]), f.plan_y(p[1])], 1.2, label));
+        if faded {
+            let (more, more_ends, _) = plan_content(d, o, f);
+            let mut all = more;
+            all.extend(more_ends);
+            items.push(Item::Clip(Clip {
+                rect: beyond(plan_rect),
+                items: fade(all),
+            }));
         }
         items.push(Item::Clip(Clip {
             rect: plan_rect,
@@ -635,8 +858,9 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     }
 
     // Profile: each part with its own heights.
+    let curves = conductor_curves(d, o);
     for p in &f.parts {
-        let (content, ends) = profile_part(d, o, f, p);
+        let (content, ends) = profile_part(d, o, f, p, &curves);
         let rect = [f.x(p.s0), f.prof_top, (p.s1 - p.s0) * f.h, f.prof_h];
         items.push(Item::Clip(Clip {
             rect,
@@ -649,11 +873,47 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             }));
         }
     }
+    if faded && let Some(last) = f.parts.last() {
+        let (content, ends) = profile_part(d, o, f, last, &curves);
+        let mut all = content;
+        all.extend(ends);
+        items.push(Item::Clip(Clip {
+            rect: beyond(prof_rect),
+            items: fade(all),
+        }));
+    }
+    // The curves' labels, at the middle of the sheet over each.
+    for c in &curves {
+        let mid = 0.5 * (s0 + s1);
+        let at = c
+            .runs
+            .iter()
+            .flatten()
+            .filter(|q| q[0] >= s0 && q[0] <= s1)
+            .min_by(|a, b| (a[0] - mid).abs().total_cmp(&(b[0] - mid).abs()));
+        if let Some(q) = at {
+            let p = f.part_at(q[0]);
+            let y = f.y_in(p, q[1]) - 1.0;
+            if y > f.prof_top + 3.0 && y < prof_bottom {
+                let mut t = text(
+                    Layer::ConductorClearance,
+                    [f.x(q[0]), y],
+                    2.0,
+                    Anchor::Middle,
+                    c.label.clone(),
+                );
+                if let Item::Text(x) = &mut t {
+                    x.color = curve_pen(o).color;
+                }
+                names.push(t);
+            }
+        }
+    }
     // Structures' names over their tops, inside the panel (a top cut at
     // the panel's top: a break mark there).
     let mut prof_names = Vec::new();
-    for m in &d.structures {
-        if m.station < s0 - 1e-6 || m.station > s1 + 1e-6 {
+    for (m, _, named, _) in all_structures(d, o) {
+        if !named || m.station < s0 - 1e-6 || m.station > s1 + 1e-6 {
             continue;
         }
         let p = f.part_at(m.station);
@@ -673,6 +933,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             Anchor::End => -0.8,
             Anchor::Middle => 0.0,
         };
+        let mut sink = Vec::new();
         let name = text(
             Layer::Structures,
             [cx + dx, y - 4.0],
@@ -680,7 +941,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             anchor,
             m.id.clone(),
         );
-        label(&mut prof_names, name, prof_rect);
+        inside_or(&mut prof_names, &mut sink, name, prof_rect);
         if let Item::Text(mut t) = text(
             Layer::Structures,
             [cx + dx, y - 1.5],
@@ -689,7 +950,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             format_station(m.station),
         ) {
             t.color = hex("#555");
-            label(&mut prof_names, Item::Text(t), prof_rect);
+            inside_or(&mut prof_names, &mut sink, Item::Text(t), prof_rect);
         }
         if cut && top_y < f.prof_top {
             // Two short strokes across the mast at the panel's top.
@@ -700,83 +961,177 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
                         [cx - 1.2, f.prof_top + 0.8 + k],
                         [cx + 1.2, f.prof_top + 0.2 + k],
                     ],
-                    pen("#333", 0.25),
+                    lp(o, Layer::Structures, "#333", 0.25),
                     Some(format!("{} cut at the panel's top", m.id)),
                 ));
             }
         }
     }
-    // (Clipped leftovers: none, every name is inside the panel.)
     items.extend(prof_names);
     items.extend(names);
 }
 
+/// Items with their colours faded to 30 % (what lies beyond the match
+/// line).
+fn fade(items: Vec<Item>) -> Vec<Item> {
+    use crate::style::faded;
+    items
+        .into_iter()
+        .map(|i| match i {
+            Item::Path(mut p) => {
+                p.pen.color = faded(p.pen.color, 0.3);
+                Item::Path(p)
+            }
+            Item::Text(mut t) => {
+                t.color = faded(t.color, 0.3);
+                Item::Text(t)
+            }
+            Item::Circle(mut c) => {
+                if let Some(s) = &mut c.stroke {
+                    s.color = faded(s.color, 0.3);
+                }
+                c.fill = c.fill.map(|x| faded(x, 0.3));
+                Item::Circle(c)
+            }
+            Item::Clip(mut c) => {
+                c.items = fade(c.items);
+                Item::Clip(c)
+            }
+            other => other,
+        })
+        .collect()
+}
+
+/// The pen of the lines below the lowest conductor.
+fn curve_pen(o: &Options) -> Pen {
+    o.template
+        .conductor_clearance
+        .pen
+        .over(lp(o, Layer::ConductorClearance, "#a01818", 0.3).dashed("5 1 1 1 1 1"))
+}
+
+/// The lines below the lowest conductor the options ask for (none unless
+/// the template shows them).
+fn conductor_curves(d: &RouteDrawing, o: &Options) -> Vec<crate::curves::Curve> {
+    let spec = &o.template.conductor_clearance;
+    if !spec.show || o.conductor_clearance.is_empty() {
+        return Vec::new();
+    }
+    crate::curves::curves(d, &o.conductor_clearance, &spec.circuits, &spec.label).0
+}
+
+/// What to warn about the lines below the lowest conductor.
+pub(crate) fn curve_warnings(d: &RouteDrawing, o: &Options) -> Vec<String> {
+    let spec = &o.template.conductor_clearance;
+    if !spec.show || o.conductor_clearance.is_empty() {
+        return Vec::new();
+    }
+    crate::curves::curves(d, &o.conductor_clearance, &spec.circuits, &spec.label).1
+}
+
 /// The profile's content of part `p` of frame `f`: what is clipped to the
 /// part, and the structures at the frame's ends (drawn whole).
-fn profile_part(d: &RouteDrawing, o: &Options, f: &Frame, p: &Part) -> (Vec<Item>, Vec<Item>) {
+fn profile_part(
+    d: &RouteDrawing,
+    o: &Options,
+    f: &Frame,
+    p: &Part,
+    curves: &[crate::curves::Curve],
+) -> (Vec<Item>, Vec<Item>) {
     let y = |z: f64| f.y_in(p, z);
     let mut prof = Vec::new();
     let mut ends = Vec::new();
+    let mut legend = f.legend.borrow_mut();
     for (offset, runs) in &d.sides {
+        let side = lp(o, Layer::GroundSide, "#b08850", 0.25).dashed("1.5 1");
         for run in runs {
             prof.push(path(
                 Layer::GroundSide,
                 run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
-                pen("#b08850", 0.25).dashed("1.5 1"),
+                side.clone(),
                 Some(format!("ground at offset {offset:+.1} m")),
             ));
         }
+        legend.add(Sample::Line(side), "ground beside the axis");
     }
+    let instead = o.template.conductor_clearance.mode == "instead" && !curves.is_empty();
     for run in &d.ground {
+        let ground = lp(o, Layer::Ground, "#7a4a1a", 0.45);
         prof.push(path(
             Layer::Ground,
             run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
-            pen("#7a4a1a", 0.45),
+            ground.clone(),
             Some("ground (centreline)".into()),
         ));
-        if let Some(c) = o.clearance {
+        legend.add(Sample::Line(ground), "ground on the axis");
+        if let Some(c) = o.clearance.filter(|_| !instead) {
+            let line = lp(o, Layer::Clearance, "#d22", 0.3).dashed("3 1.5");
             prof.push(path(
                 Layer::Clearance,
                 run.iter().map(|q| [f.x(q[0]), y(q[1] + c)]).collect(),
-                pen("#d22", 0.3).dashed("3 1.5"),
+                line.clone(),
                 Some(format!("ground + {c} m")),
             ));
+            legend.add(
+                Sample::Line(line),
+                format!("ground + {c} m (required clearance)"),
+            );
         }
     }
-    for m in &d.structures {
+    let cp = curve_pen(o);
+    for c in curves {
+        for run in &c.runs {
+            prof.push(path(
+                Layer::ConductorClearance,
+                run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
+                cp.clone(),
+                Some(c.legend.clone()),
+            ));
+        }
+        legend.add(Sample::Line(cp.clone()), c.legend.clone());
+    }
+    drop(legend);
+    for (m, role, _, version) in all_structures(d, o) {
         let cx = f.x(m.station);
         let out = if f.at_end(m) { &mut ends } else { &mut prof };
+        let own = if version {
+            Layer::Versions
+        } else {
+            Layer::Structures
+        };
+        let mast = crate::style::structure_pen(&o.template, role, lp(o, own, "#333", 0.6));
         // The symbol at level 1; members and poles draw the others.
         if !m.has_body() {
             out.push(path(
-                Layer::Structures,
+                own,
                 vec![[cx, y(m.base)], [cx, y(m.top)]],
-                pen("#333", 0.6),
+                mast.clone(),
                 None,
             ));
         }
         for a in &m.attachments {
             out.push(Item::Circle(Circle {
-                layer: Layer::Structures,
+                layer: own,
                 centre: [f.x(a[0]), y(a[2])],
                 radius: 0.4,
                 stroke: None,
-                fill: Some(hex("#333")),
+                fill: Some(mast.color),
                 title: None,
             }));
         }
         // Stick drawings seen along the route; members (levels 2 and 3):
         // the silhouette projected on the profile plane.
-        let (layer, lines) = if m.members.is_empty() {
-            (Layer::Structures, &m.sticks)
-        } else {
-            (Layer::Members, &m.members)
+        let (layer, lines) = match (version, m.members.is_empty()) {
+            (_, true) => (own, &m.sticks),
+            (true, false) => (own, &m.members),
+            (false, false) => (Layer::Members, &m.members),
         };
+        let thin = crate::style::structure_pen(&o.template, role, lp(o, layer, "#555", 0.3));
         for stick in lines {
             out.push(path(
                 layer,
                 stick.iter().map(|q| [f.x(q[0]), y(q[2])]).collect(),
-                pen("#555", 0.3),
+                thin.clone(),
                 Some(m.id.clone()),
             ));
         }
@@ -784,19 +1139,24 @@ fn profile_part(d: &RouteDrawing, o: &Options, f: &Frame, p: &Part) -> (Vec<Item
         let outline = silhouette(&m.pole, 0);
         if !outline.is_empty() {
             out.push(Item::Path(Path {
-                layer: Layer::Members,
+                layer: if version { own } else { Layer::Members },
                 points: outline.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
                 closed: true,
-                pen: pen("#555", 0.3),
+                pen: thin.clone(),
                 title: Some(m.id.clone()),
             }));
         }
     }
-    for w in &d.wires {
+    for (w, role, label) in all_wires(d, o) {
+        let layer = if label.is_some() {
+            Layer::Versions
+        } else {
+            Layer::Wires
+        };
         prof.push(path(
-            Layer::Wires,
+            layer,
             w.points.iter().map(|q| [f.x(q[0]), y(q[2])]).collect(),
-            pen(&w.color, 0.35).dashed(w.dash.as_deref().unwrap_or("")),
+            wire_pen(f, o, w, role, label),
             Some(w.label.clone()),
         ));
     }
@@ -870,16 +1230,24 @@ pub struct ElevationDrawing {
     /// The leader from where it stands to the elevation's base (none:
     /// under half a millimetre on paper).
     pub leader: Option<[[f64; 2]; 2]>,
+    /// Its labels (number, type, height above its top; each suspension
+    /// string's length beside it): where (station, offset), the text,
+    /// whether it is centred on the point (else it starts there).
+    pub labels: Vec<([f64; 2], String, bool)>,
+    /// The role of the version it belongs to (none: the line's own).
+    pub role: Option<String>,
 }
 
 /// The structures' elevations on the plan of `d` with options `o`
 /// ([`crate::Elevations`]; none when off or without a plan): every
-/// structure drawn along the line ([`RouteDrawing::shown`]) seen along the
-/// line — its members, its pole's silhouette, else its stick drawing (a
-/// mast line without one) — true shape at the horizontal scale, its base
-/// at its station `offset_mm` on paper above or below the line, its height
-/// at `rotation_deg` to the line pointing away from it (below: the same
-/// turned half a turn), in the route's (station, offset), m.
+/// structure drawn along the line ([`RouteDrawing::shown`]), those of the
+/// other versions too, seen along the line — its members, its pole's
+/// silhouette, else its stick drawing (a mast line without one) — true
+/// shape at the elevations' scale (the horizontal one unless given), its
+/// base at its station `offset_mm` on paper above or below the line, its
+/// height at `rotation_deg` to the line pointing away from it (below: the
+/// same turned half a turn), with the labels asked for, in the route's
+/// (station, offset), m.
 pub fn elevations(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
     if !o.plan || o.elevations.place == ElevationPlace::Off {
         return Vec::new();
@@ -896,6 +1264,7 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
         1.0
     };
     let h = 1000.0 / o.horizontal_scale; // mm per m along the route
+    let he = 1000.0 / e.scale.unwrap_or(o.horizontal_scale); // the elevations'
     let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
     let (sin, cos) = e.rotation_deg.to_radians().sin_cos();
     // On paper (y down, offsets right of the line down): the height away
@@ -904,12 +1273,12 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
     let across = [-up[1], up[0]];
     // A point `dx`, `dy` mm on paper from `at`, in the route's metres.
     let move_by = |at: [f64; 2], dx: f64, dy: f64| [at[0] + dx / h, at[1] + dy / plan_k];
-    d.structures
-        .iter()
-        .map(|m| {
+    let size = e.text_size.max(0.5);
+    all_structures(d, o)
+        .map(|(m, role, _, version)| {
             let base = [m.station, -side * e.offset_mm / plan_k];
             let at = |u: f64, z: f64| {
-                let (u, z) = (u * h, (z - m.base) * h);
+                let (u, z) = (u * he, (z - m.base) * he);
                 move_by(base, u * across[0] + z * up[0], u * across[1] + z * up[1])
             };
             // Seen along the line: across it (the offset) and up.
@@ -932,20 +1301,61 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
             if lines.is_empty() {
                 lines.push((vec![at(0.0, m.base), at(0.0, m.top)], false));
             }
+            // Labels: above its top, one after the other away from it.
+            let top = structure_top(m);
+            let mut words = Vec::new();
+            if e.labels.number {
+                words.push(m.id.clone());
+            }
+            if e.labels.type_name
+                && let Some(t) = &m.type_name
+            {
+                words.push(t.clone());
+            }
+            if e.labels.height {
+                words.push(format!("{:.1} m", top - m.base));
+            }
+            let head = at(0.0, top);
+            let mut labels: Vec<([f64; 2], String, bool)> = words
+                .into_iter()
+                .enumerate()
+                .map(|(k, w)| {
+                    let away = 2.0 + 0.36 * size + 1.25 * size * k as f64;
+                    (move_by(head, up[0] * away, up[1] * away), w, true)
+                })
+                .collect();
+            if e.labels.string_length {
+                for s in m.strings.iter().filter(|s| s.suspension) {
+                    let mid_u = 0.5 * (s.top[1] + s.bottom[1]) - m.offset;
+                    let mid_z = 0.5 * (s.top[2] + s.bottom[2]);
+                    let p = at(mid_u, mid_z);
+                    labels.push((
+                        move_by(p, across[0] * 1.2, across[1] * 1.2 + 0.36 * size),
+                        format!("{:.2} m", s.length),
+                        false,
+                    ));
+                }
+            }
             let stand = [m.station, m.offset];
             let paper = ((stand[0] - base[0]) * h).hypot((stand[1] - base[1]) * plan_k);
             ElevationDrawing {
                 id: m.id.clone(),
                 station: m.station,
                 lines,
-                leader: (paper > 0.5).then_some([stand, base]),
+                leader: (paper > 0.5 && !version).then_some([stand, base]),
+                labels,
+                role: if version {
+                    role.map(str::to_owned)
+                } else {
+                    None
+                },
             }
         })
         .collect()
 }
 
 /// The elevations of `d` (drawn already) within frame `f`'s station range,
-/// on paper: each one's lines, leader and box.
+/// on paper: each one's lines, leader and box (its labels in it).
 #[allow(clippy::type_complexity)]
 fn elevations_on_paper(
     d: &RouteDrawing,
@@ -956,6 +1366,7 @@ fn elevations_on_paper(
         return Vec::new();
     }
     let end = f.s1;
+    let size = o.elevations.text_size;
     let to_paper = |p: &[f64; 2]| [f.x(p[0]), f.plan_y(p[1])];
     elevations_of(d, o)
         .into_iter()
@@ -978,17 +1389,29 @@ fn elevations_on_paper(
                     bb[3].max(p[1]),
                 ];
             }
+            for (p, _, _) in &e.labels {
+                let q = to_paper(p);
+                bb = [
+                    bb[0].min(q[0]),
+                    bb[1].min(q[1] - size),
+                    bb[2].max(q[0]),
+                    bb[3].max(q[1]),
+                ];
+            }
             (e, lines, bb)
         })
         .collect()
 }
 
-/// What to warn about the elevations of `d` in frame `f`: two that
-/// overlap, one reaching into the profile (both kept, drawn anyway).
+/// What to warn about the elevations of `d` in frame `f`: two of the
+/// line's own that overlap, one leaving the plan panel or reaching into
+/// the profile (all kept, drawn anyway).
 fn elevation_warnings(d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
-    let boxes: Vec<(String, [f64; 4])> = elevations_on_paper(d, o, f)
-        .into_iter()
-        .map(|(e, _, bb)| (e.id, bb))
+    let all = elevations_on_paper(d, o, f);
+    let boxes: Vec<(String, [f64; 4])> = all
+        .iter()
+        .filter(|(e, ..)| e.role.is_none())
+        .map(|(e, _, bb)| (e.id.clone(), *bb))
         .collect();
     let mut warnings = Vec::new();
     let overlap =
@@ -1035,16 +1458,26 @@ fn elevation_warnings(d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
 }
 
 /// The elevations of `d` drawn in frame `f` on their own layer, not
-/// clipped, a thin dashed leader from where each structure stands; what to
-/// warn about ([`elevation_warnings`]).
+/// clipped, a thin dashed leader from where each structure stands, their
+/// labels; what to warn about ([`elevation_warnings`]).
 fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) -> Vec<String> {
+    let own = o
+        .template
+        .elevations
+        .pen
+        .over(lp(o, Layer::Elevations, "#555", 0.2));
+    let size = o.elevations.text_size;
     for (e, lines, _) in elevations_on_paper(d, o, f) {
+        let p = match &e.role {
+            Some(r) => crate::style::structure_pen(&o.template, Some(r), own.clone()),
+            None => own.clone(),
+        };
         for (points, closed) in lines {
             items.push(Item::Path(Path {
                 layer: Layer::Elevations,
                 points,
                 closed,
-                pen: pen("#555", 0.2),
+                pen: p.clone(),
                 title: Some(format!("{} elevation", e.id)),
             }));
         }
@@ -1052,9 +1485,24 @@ fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Fra
             items.push(path(
                 Layer::Elevations,
                 vec![[f.x(a[0]), f.plan_y(a[1])], [f.x(b[0]), f.plan_y(b[1])]],
-                pen("#888", 0.13).dashed("1 0.7"),
+                lp(o, Layer::Elevations, "#888", 0.13).dashed("1 0.7"),
                 None,
             ));
+        }
+        for (at, words, centred) in &e.labels {
+            items.push(Item::Text(Text {
+                layer: Layer::Elevations,
+                at: [f.x(at[0]), f.plan_y(at[1])],
+                text: words.clone(),
+                size,
+                anchor: if *centred {
+                    Anchor::Middle
+                } else {
+                    Anchor::Start
+                },
+                bold: false,
+                color: p.color,
+            }));
         }
     }
     elevation_warnings(d, o, f)
@@ -1134,6 +1582,9 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
         plan_k,
         v,
         whole_ends: false,
+        paper_end: s1,
+        bands_h: 0.0,
+        legend: Default::default(),
     };
     let width = 2.0 * margin + f.width();
     let height = f.prof_top + f.prof_h + margin;
@@ -1168,15 +1619,25 @@ pub(crate) fn continuous(d: &RouteDrawing, o: &Options) -> (Drawing, Frame, Vec<
 }
 
 /// The plan panel's room above and below the line's axis, mm: the line
-/// width at the plan's scale across the line, and what the structures'
-/// elevations need (with room for their names).
+/// width at the plan's scale across the line, the corridor (with room for
+/// its labels), and what the structures' elevations need (with room for
+/// their names and labels).
 pub(crate) fn plan_room(d: &RouteDrawing, o: &Options, plan_k: f64) -> (f64, f64) {
-    let half = o.plan_half_width * plan_k;
+    let half = o
+        .corridor
+        .map_or(o.plan_half_width, |w| o.plan_half_width.max(w))
+        * plan_k
+        + if o.corridor.is_some() { 3.0 } else { 0.0 };
     let (mut above, mut below) = (half, half);
     if o.plan && o.elevations.place != ElevationPlace::Off {
+        let size = o.elevations.text_size;
         for e in elevations_of(d, o) {
             for p in e.lines.iter().flat_map(|(l, _)| l) {
                 above = above.max(-p[1] * plan_k + 4.0);
+                below = below.max(p[1] * plan_k + 1.0);
+            }
+            for (p, ..) in &e.labels {
+                above = above.max(-p[1] * plan_k + size + 1.0);
                 below = below.max(p[1] * plan_k + 1.0);
             }
         }
@@ -1208,10 +1669,6 @@ impl Sheet {
         self.drawing.svg()
     }
 }
-
-const SHEET_MARGIN: f64 = 10.0;
-const TITLE_BLOCK: f64 = 32.0;
-const AXIS_ROOM: f64 = 14.0;
 
 /// A place a sheet may start or end: a structure, a free alignment
 /// point, or the end of a station range.
@@ -1344,21 +1801,35 @@ pub struct SheetLayout {
     parts: Vec<Part>,
 }
 
-/// The paper geometry of sheets of `page` with options `o`.
-struct Paper {
+/// The paper geometry of sheets of `page` with options `o` and their
+/// template: where the frame, the title block, the revision table, the
+/// legend, the key map, the scale bars and the panels go.
+pub(crate) struct Paper {
     /// mm per m: along the route, across in the plan.
     h: f64,
     plan_k: f64,
     left: f64,
     /// Width of the drawing area, mm.
     usable: f64,
+    plan_top: f64,
     plan_h: f64,
     plan_axis: f64,
-    draw_top: f64,
     prof_top: f64,
-    /// Height of the profile panel, mm: everything left above the station
-    /// labels and the title block.
+    /// Height of the profile panel, mm.
     available: f64,
+    /// The band rows' height under the profile, mm.
+    bands_h: f64,
+    /// The frame: inside the margins.
+    frame: furniture::Rect,
+    /// Inside the frame's padding.
+    inner: furniture::Rect,
+    /// The title block.
+    pub(crate) title_block: furniture::Rect,
+    /// The revision table, the legend, the key map, the scale bars.
+    revisions: Option<furniture::Rect>,
+    legend: Option<furniture::Rect>,
+    key_map: Option<furniture::Rect>,
+    scale_bars: Option<furniture::Rect>,
 }
 
 impl Paper {
@@ -1369,7 +1840,7 @@ impl Paper {
             s1,
             left: self.left,
             plan: o.plan,
-            plan_top: self.draw_top,
+            plan_top: self.plan_top,
             plan_h: self.plan_h,
             plan_axis: self.plan_axis,
             prof_top: self.prof_top,
@@ -1379,32 +1850,134 @@ impl Paper {
             plan_k: self.plan_k,
             v: 1000.0 / o.vertical_scale,
             whole_ends: true,
+            paper_end: s0 + self.usable / self.h,
+            bands_h: self.bands_h,
+            legend: Default::default(),
         }
     }
 
-    fn new(d: &RouteDrawing, o: &Options, page: &Page) -> Self {
+    pub(crate) fn new(d: &RouteDrawing, o: &Options, page: &Page) -> Self {
+        let t = &o.template;
         let h = 1000.0 / o.horizontal_scale;
         let plan_k = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
-        let left = SHEET_MARGIN + AXIS_ROOM;
-        let (above, below) = plan_room(d, o, plan_k);
-        let plan_h = if o.plan { above + below } else { 0.0 };
-        let draw_top = SHEET_MARGIN + 6.0;
-        let draw_bottom = page.height - SHEET_MARGIN - TITLE_BLOCK - 8.0;
-        let prof_top = if o.plan {
-            draw_top + plan_h + 8.0
+        let m = &t.page.margin;
+        let frame = [
+            m.left.0,
+            m.top.0,
+            page.width - m.left.0 - m.right.0,
+            page.height - m.top.0 - m.bottom.0,
+        ];
+        let pad = t.frame.padding.0;
+        let inner = [
+            frame[0] + pad,
+            frame[1] + pad,
+            frame[2] - 2.0 * pad,
+            frame[3] - 2.0 * pad,
+        ];
+        // The title block in its corner of the frame.
+        let tb_h: f64 = t.title_block.rows.iter().map(|r| r.0).sum();
+        let tb_w = match t.title_block.width {
+            crate::template::Size::Auto => frame[2],
+            crate::template::Size::Fixed(w) => w.min(frame[2]),
+        };
+        let full = tb_w >= frame[2] - 1e-6;
+        let tb_x = match t.title_block.corner {
+            crate::template::Corner::BottomRight => frame[0] + frame[2] - tb_w,
+            crate::template::Corner::BottomLeft => frame[0],
+        };
+        let title_block = [tb_x, frame[1] + frame[3] - tb_h, tb_w, tb_h];
+        // Stacked on the title block: the revisions, the legend.
+        let mut top = title_block[1];
+        let mut stack = |height: f64, width: Option<f64>| {
+            top -= height;
+            let w = width.unwrap_or(tb_w).min(tb_w);
+            [tb_x + tb_w - w, top, w, height]
+        };
+        let revisions = (t.revisions.place == "above_title_block"
+            && !t.revisions.columns.is_empty())
+        .then(|| {
+            stack(
+                furniture::revisions_height(t),
+                Some(t.revisions.columns.iter().map(|c| c.width.0).sum()),
+            )
+        });
+        let legend_w = t.legend.width.map(|w| w.0);
+        let mut legend =
+            (t.legend.place == "above_title_block").then(|| stack(t.legend.height.0, legend_w));
+        let mut lowest = top;
+        // The bottom row, beside the title block (above it when it is as
+        // wide as the frame), from the frame's free side.
+        let row_bottom = if full {
+            top - 3.0
         } else {
-            draw_top
+            frame[1] + frame[3] - pad
+        };
+        let (mut x, dir) = match (full, t.title_block.corner) {
+            (true, _) | (false, crate::template::Corner::BottomRight) => (inner[0], 1.0),
+            (false, crate::template::Corner::BottomLeft) => (inner[0] + inner[2], -1.0),
+        };
+        let mut place = |w: f64, height: f64| {
+            let left = if dir > 0.0 { x } else { x - w };
+            x += dir * (w + 3.0);
+            let r = [left, row_bottom - height, w, height];
+            lowest = lowest.min(r[1]);
+            r
+        };
+        let key_map =
+            (t.key_map.place == "bottom").then(|| place(t.key_map.width.0, t.key_map.height.0));
+        if t.legend.place == "bottom" {
+            legend = Some(place(legend_w.unwrap_or(120.0), t.legend.height.0));
+        }
+        let scale_bars = matches!(t.scale_bar.place.as_str(), "bottom" | "title_block")
+            .then(|| place(70.0, 16.0));
+        // The panels between.
+        let left = inner[0] + t.layout.axis_room.0;
+        let (above, below) = plan_room(d, o, plan_k);
+        let auto = above + below;
+        let plan_h = if o.plan {
+            match t.layout.plan_height {
+                crate::template::Size::Auto => auto,
+                crate::template::Size::Fixed(min) => auto.max(min),
+            }
+        } else {
+            0.0
+        };
+        // The axis: the room above it as the line, corridor and
+        // elevations need, the rest below.
+        let extra = plan_h - auto;
+        let plan_axis_in = above + extra / 2.0;
+        let gap = t.layout.gap.0;
+        let labels = if t.layout.station_labels { 8.0 } else { 2.0 };
+        let bands_h = furniture::bands_height(t, o);
+        let area_top = inner[1] + 6.0;
+        let bottom = lowest - pad;
+        let (plan_top, prof_top, prof_bottom) = if !o.plan {
+            (area_top, area_top, bottom - labels - bands_h)
+        } else if t.layout.plan_below() {
+            let plan_top = bottom - plan_h;
+            (plan_top, area_top, plan_top - gap - labels - bands_h)
+        } else {
+            let prof_top = area_top + plan_h + gap;
+            (area_top, prof_top, bottom - labels - bands_h)
         };
         Self {
             h,
             plan_k,
             left,
-            usable: page.width - left - SHEET_MARGIN,
+            usable: inner[0] + inner[2] - left,
+            plan_top,
             plan_h,
-            plan_axis: draw_top + above,
-            draw_top,
+            plan_axis: plan_top + plan_axis_in,
             prof_top,
-            available: (draw_bottom - prof_top).max(10.0),
+            available: (prof_bottom - prof_top).max(10.0),
+            bands_h,
+            frame,
+            inner,
+            title_block,
+            revisions,
+            legend,
+            key_map,
+            scale_bars,
         }
     }
 }
@@ -1422,7 +1995,7 @@ impl Paper {
 /// back to the last free place that fits, and when none fits the sheet
 /// runs on to the next free one (drawn anyway, with a warning). With a
 /// station range in the options, the first sheet starts and the last
-/// ends at the range.
+/// ends at the range. The sheet template places the panels.
 pub fn sheet_layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
     layout(&d.shown(o.plan_half_width), o, page)
 }
@@ -1455,6 +2028,7 @@ fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
         ranges.push((0, 0));
     }
     let what = if o.plan { "span" } else { "stretch" };
+    let curves = curve_warnings(d, o);
     ranges
         .iter()
         .enumerate()
@@ -1496,6 +2070,9 @@ fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
                 o,
                 &paper.frame(o, s0, s1, parts.clone()),
             ));
+            if k == 0 {
+                warnings.extend(curves.iter().cloned());
+            }
             SheetLayout {
                 number: k + 1,
                 from: s0,
@@ -1531,110 +2108,207 @@ fn end_names(sl: &SheetLayout) -> String {
     }
 }
 
+/// The values of the fields of sheet `sl` of `n` on `page`.
+fn sheet_values(
+    d: &RouteDrawing,
+    o: &Options,
+    page: &Page,
+    sl: &SheetLayout,
+    n: usize,
+) -> furniture::Values {
+    let mut text = std::collections::BTreeMap::new();
+    let mut number = std::collections::BTreeMap::new();
+    let mut station = std::collections::BTreeMap::new();
+    // The user's values first (defaults, then given, then this sheet's):
+    // the computed ones are not theirs to change.
+    for f in &o.template.fields {
+        text.insert(f.key.clone(), f.default.clone());
+    }
+    for (k, v) in &o.fields.values {
+        text.insert(k.clone(), v.clone());
+    }
+    for (k, m) in &o.fields.per_sheet {
+        if let Some(v) = m.get(&sl.number) {
+            text.insert(k.clone(), v.clone());
+        }
+    }
+    let mut put = |k: &str, v: String| {
+        text.insert(k.to_owned(), v);
+    };
+    put("project", o.info.project.clone());
+    put("line", o.info.line.clone());
+    put("route", d.route.clone());
+    put("route_name", d.name.clone());
+    put("heading", heading(d, o));
+    put("title", o.title.join("\n"));
+    for k in 0..3 {
+        put(
+            &format!("title{}", k + 1),
+            o.title.get(k).cloned().unwrap_or_default(),
+        );
+    }
+    let ends = |label: &str, s: f64| {
+        if label == format_station(s) {
+            "–".to_owned()
+        } else {
+            label.to_owned()
+        }
+    };
+    put("from_structure", ends(&sl.structures.0, sl.from));
+    put("to_structure", ends(&sl.structures.1, sl.to));
+    put("ends", end_names(sl));
+    put("scales", scales_text(o));
+    put("format", page.name.clone());
+    put(
+        "date",
+        if o.info.date.is_empty() {
+            crate::today()
+        } else {
+            o.info.date.clone()
+        },
+    );
+    put("cases", o.info.cases.clone());
+    put("crs", o.info.crs.clone());
+    put("height_datum", o.info.height_datum.clone());
+    put("program", format!("OpenOHL {}", env!("CARGO_PKG_VERSION")));
+    for (k, v) in [
+        ("sheet", sl.number as f64),
+        ("sheets", n as f64),
+        ("hscale", o.horizontal_scale),
+        ("vscale", o.vertical_scale),
+        (
+            "plan_scale",
+            o.plan_offset_scale.unwrap_or(o.horizontal_scale),
+        ),
+        ("exaggeration", o.horizontal_scale / o.vertical_scale),
+        ("page_width", page.width.round()),
+        ("page_height", page.height.round()),
+    ] {
+        number.insert(k.to_owned(), v);
+    }
+    station.insert("from".to_owned(), sl.from);
+    station.insert("to".to_owned(), sl.to);
+    furniture::Values {
+        text,
+        number,
+        station,
+    }
+}
+
 /// The route split over sheets of `page` as [`sheet_layout`] says, each
-/// drawn with its own height range and a title block (title lines, route,
-/// sheet n/N, station range, scales, logos).
+/// drawn with its own height range and what the sheet template puts
+/// around the plan and the profile (frame, title block, revisions, notes,
+/// legend, key map, scale bars, north arrows, band rows).
 pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     let d = &d.shown(o.plan_half_width);
     let paper = Paper::new(d, o, page);
     let layout = layout(d, o, page);
     let n = layout.len();
+    let t = &o.template;
     layout
         .into_iter()
         .map(|sl| {
             let (s0, s1) = (sl.from, sl.to);
-            let k = sl.number - 1;
             let f = paper.frame(o, s0, s1, sl.parts.clone());
+            let values = sheet_values(d, o, page, &sl, n);
             let mut drawing = Drawing::sheet(page.width, page.height);
             let items = &mut drawing.items;
-            items.push(rect(
-                Layer::Frame,
-                SHEET_MARGIN / 2.0,
-                SHEET_MARGIN / 2.0,
-                page.width - SHEET_MARGIN,
-                page.height - SHEET_MARGIN,
-                pen("#000", 0.5),
-            ));
+            for b in &t.frame.border {
+                let r = paper.frame;
+                items.push(rect(
+                    Layer::Frame,
+                    r[0] + b.inset.0,
+                    r[1] + b.inset.0,
+                    r[2] - 2.0 * b.inset.0,
+                    r[3] - 2.0 * b.inset.0,
+                    o.template.pen(Layer::Frame, pen("#000", b.width.0)),
+                ));
+            }
             draw(items, d, o, &f);
-            // Match lines at the sheet's ends.
-            let top = if o.plan { f.plan_top } else { f.prof_top };
+            if o.bands && !t.bands.is_empty() {
+                furniture::bands(items, t, &f, d, o, f.prof_top + f.prof_h, sl.number);
+            }
+            // Match lines at the sheet's ends, over every panel.
+            let top = if o.plan {
+                f.plan_top.min(f.prof_top)
+            } else {
+                f.prof_top
+            };
+            let bottom = (f.prof_top + f.prof_h + f.bands_h).max(if o.plan {
+                f.plan_top + f.plan_h
+            } else {
+                0.0
+            });
+            let match_pen = lp(o, Layer::Match, "#06c", 0.3).dashed("2 1");
             for x in [f.x(s0), f.x(s1)] {
                 items.push(path(
                     Layer::Match,
-                    vec![[x, top], [x, f.prof_top + f.prof_h]],
-                    pen("#06c", 0.3).dashed("2 1"),
+                    vec![[x, top], [x, bottom]],
+                    match_pen.clone(),
                     None,
                 ));
             }
+            f.legend.borrow_mut().add(
+                crate::style::Sample::Line(match_pen),
+                "match line (sheet's end)",
+            );
             // The elevations over the match lines (their warnings are the
             // layout's).
             let _ = draw_elevations(items, d, o, &f);
-            // Title block across the bottom: logos, titles, sheet data.
-            let tb_top = page.height - SHEET_MARGIN / 2.0 - TITLE_BLOCK;
-            let tb_left = SHEET_MARGIN / 2.0;
-            let tb_w = page.width - SHEET_MARGIN;
-            items.push(rect(
-                Layer::Frame,
-                tb_left,
-                tb_top,
-                tb_w,
-                TITLE_BLOCK,
-                pen("#000", 0.4),
-            ));
-            let mut cursor = tb_left + 3.0;
-            for logo in &o.logos {
-                items.push(Item::Image(Image {
-                    layer: Layer::Logo,
-                    at: [cursor, tb_top + 3.0],
-                    width: logo.width,
-                    height: TITLE_BLOCK - 6.0,
-                    href: logo.href.clone(),
-                }));
-                cursor += logo.width + 4.0;
+            if o.plan && t.north_arrow.place == "plan" {
+                furniture::plan_north_arrows(items, &f, d, t.north_arrow.size.0);
             }
-            let text_x = cursor + 2.0;
-            items.push(bold(text(
-                Layer::Title,
-                [text_x, tb_top + 7.0],
-                4.5,
-                Anchor::Start,
-                heading(d, o),
-            )));
-            for (t, line) in o.title.iter().enumerate().take(3) {
-                items.push(text(
-                    Layer::Title,
-                    [text_x, tb_top + 13.0 + 5.0 * t as f64],
-                    3.0,
-                    Anchor::Start,
-                    line.clone(),
-                ));
+            // Graphic scales.
+            match t.scale_bar.place.as_str() {
+                "plan" if o.plan => {
+                    let (hl, _) = furniture::scale_lengths(t, o);
+                    furniture::scale_bar(
+                        items,
+                        [f.left + 3.0, f.plan_top + f.plan_h - 4.0],
+                        hl,
+                        f.h,
+                        &format!(
+                            "1:{}",
+                            crate::template::format_number(o.horizontal_scale, "")
+                        ),
+                    );
+                }
+                "profile" => {
+                    let (hl, vl) = furniture::scale_lengths(t, o);
+                    furniture::scale_bar(
+                        items,
+                        [f.left + 8.0, f.prof_top + 8.0],
+                        hl,
+                        f.h,
+                        &format!(
+                            "1:{}",
+                            crate::template::format_number(o.horizontal_scale, "")
+                        ),
+                    );
+                    furniture::vertical_scale_bar(
+                        items,
+                        [f.left + 3.0, f.prof_top + 6.0 + vl * f.v],
+                        vl,
+                        f.v,
+                    );
+                }
+                _ => {
+                    if let Some(r) = paper.scale_bars {
+                        furniture::scale_bars_in(items, t, o, r);
+                    }
+                }
             }
-            let right = tb_left + tb_w - 3.0;
-            for (t, line) in [
-                format!("Sheet {} / {n}", k + 1),
-                format!(
-                    "{} – {}{}",
-                    format_station(s0),
-                    format_station(s1),
-                    end_names(&sl)
-                ),
-                scales_text(o),
-                format!(
-                    "Format {} ({:.0} × {:.0} mm)",
-                    page.name, page.width, page.height
-                ),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let item = text(
-                    Layer::Title,
-                    [right, tb_top + 7.0 + 6.0 * t as f64],
-                    if t == 0 { 4.5 } else { 3.0 },
-                    Anchor::End,
-                    line,
-                );
-                items.push(if t == 0 { bold(item) } else { item });
+            furniture::title_block(items, t, paper.title_block, &values, &o.logos);
+            if let Some(r) = paper.revisions {
+                furniture::revisions(items, t, r, &values, o);
+            }
+            if let Some(r) = paper.key_map {
+                furniture::key_map(items, t, r, d, o, s0, s1);
+            }
+            furniture::notes(items, t, paper.inner, &values);
+            let mut warnings = sl.warnings.clone();
+            if let Some(r) = paper.legend {
+                warnings.extend(furniture::legend(items, t, r, &f.legend.borrow()));
             }
             Sheet {
                 number: sl.number,
@@ -1642,7 +2316,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 to: s1,
                 structures: sl.structures,
                 drawing,
-                warnings: sl.warnings,
+                warnings,
             }
         })
         .collect()

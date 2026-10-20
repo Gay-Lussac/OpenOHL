@@ -486,6 +486,7 @@ fn elevation_settings_are_kept_and_the_preview_shows_them() {
             place: ElevationPlace::Below,
             offset_mm: 14.0,
             rotation_deg: 80.0,
+            ..Elevations::default()
         },
         ..DrawingsWindow::default()
     };

@@ -145,6 +145,11 @@ pub fn write_route(
     budget: &Budget,
 ) -> Result<Written, String> {
     crate::check_break_clearance(o.break_clearance)?;
+    if e.page.is_some()
+        && let Some(why) = o.template.missing_fields(&o.fields)
+    {
+        return Err(why);
+    }
     std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let mut run = budget.start();
     let mut written = Written::default();
@@ -194,22 +199,17 @@ pub fn write_route(
                 }
             }
             Format::Dxf => {
-                let images = drawings
-                    .iter()
-                    .flat_map(|d| d.flat())
-                    .filter(|(i, _)| matches!(i, crate::model::Item::Image(_)))
-                    .count();
-                if images > 0 {
-                    written.warnings.push(format!(
-                        "DXF: {images} logo image(s) left out of the sheets (R12 has no images)"
-                    ));
-                }
+                let mut left_out = 0;
                 for (k, drawing) in drawings.iter().enumerate() {
-                    put(
-                        name(k, "dxf"),
-                        crate::dxf::write(drawing).as_bytes(),
-                        &mut run,
-                    )?;
+                    let (text, images) = crate::dxf::write_counted(drawing);
+                    left_out += images;
+                    put(name(k, "dxf"), text.as_bytes(), &mut run)?;
+                }
+                if left_out > 0 {
+                    written.warnings.push(format!(
+                        "DXF: {left_out} PNG/JPEG logo image(s) left out of the sheets (R12 has \
+                         no images; SVG logos are written as outlines)"
+                    ));
                 }
                 if o.plan {
                     let plan = crate::plan_model(d, o);

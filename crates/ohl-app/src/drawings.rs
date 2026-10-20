@@ -311,6 +311,7 @@ impl DrawingSettings {
                 -180.0..=180.0,
                 d.elevations.rotation_deg,
             ),
+            ..d.elevations
         };
         w.side_offsets = self
             .side_offsets
