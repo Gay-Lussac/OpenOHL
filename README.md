@@ -2,7 +2,7 @@
 
 An open-source, modular set of desktop applications and engines for designing and analysing overhead power lines (OHL = overhead lines).
 
-[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-brightgreen.svg)](LICENSE)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-brightgreen.svg)](LICENSE)
 [![Rust edition 2024](https://img.shields.io/badge/rust-edition%202024-orange.svg)](Cargo.toml)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-lightgrey.svg)](ROADMAP.md)
 
@@ -138,6 +138,6 @@ See also [GOVERNANCE.md](GOVERNANCE.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 ## Licence
 
-[Mozilla Public License 2.0](LICENSE) ([ADR-0001](docs/adr/0001-license.md)). Plugins distributed as separate files may use any licence.
+[GNU Affero General Public License v3.0 or later](LICENSE) ([ADR-0011](docs/adr/0011-license-agpl.md)): anyone may use, study, change and share OpenOHL, and every modified version — also one offered as a network service — must stay open under the same licence. The **plugin interface** (`crates/ohl-plugins/wit/`) and the plugins and their SDK under `plugins/` are under the [Mozilla Public License 2.0](LICENSE-MPL-2.0), so plugins for your own codes and data may keep any licence, closed ones included.
 
 OpenOHL is an independent project. It is not affiliated with, endorsed by, or derived from any commercial software. All product names are trademarks of their respective owners. A qualified engineer must always verify engineering results.

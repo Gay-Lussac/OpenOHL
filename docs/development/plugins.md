@@ -44,6 +44,14 @@ in a column marked "(unused)", typed like text. A check plugin can
 declare a circuit's value its check needs this way (e.g. an insulation
 level read by the distance between conductors).
 
+
+**Licence.** The plugin interface (the WIT files in
+`crates/ohl-plugins/wit/`) and everything under `plugins/` (the shared
+crate `ohl-code-common`, the design-code, example and test plugins) are
+under the [Mozilla Public License 2.0](https://github.com/Gay-Lussac/OpenOHL/blob/main/LICENSE-MPL-2.0):
+a plugin built on them may keep any licence, a closed one included.
+OpenOHL itself is under the AGPL-3.0-or-later
+([ADR-0011](../adr/0011-license-agpl.md)).
 ## Where plugins are found, and the shared settings
 
 Both desktop applications — the line application `ohl-design` (OHL-Design)

@@ -1,6 +1,6 @@
 # ADR-0001: License
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0011](0011-license-agpl.md) (2026-10-20: AGPL-3.0-or-later, the plugin interface MPL-2.0)
 - **Date:** 2026-10-01
 
 ## Context

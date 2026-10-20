@@ -7,6 +7,17 @@ result; this page says *what was decided, when and why*. Nothing here is
 approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (Part 1).
 
+## 2026-10-20
+
+- **Licence:** OpenOHL is under the **AGPL-3.0-or-later** (forks and
+  modified versions, also those offered as a network service, stay open
+  under the same licence). The plugin interface (`crates/ohl-plugins/wit/`)
+  and everything under `plugins/` stay under **MPL-2.0**, so plugins may
+  keep any licence. ([ADR-0011](../adr/0011-license-agpl.md))
+- **Comparison tool for the existing line** (local): the "ice as weight
+  only" variant no longer shows the wind on the bare diameter since an ice
+  load without a density is taken as glaze ice (2026-10-19).
+
 ## 2026-10-19
 
 **Calculations**

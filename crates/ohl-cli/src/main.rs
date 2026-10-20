@@ -1,6 +1,6 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! `ohl` — the OpenOHL command-line interface (formerly `ols`, still built
 //! as an alias that runs this program).
@@ -1234,7 +1234,7 @@ fn crs(command: CrsCommand) -> Result<(), String> {
 fn print_info() {
     println!("OpenOHL {} (ohl)", env!("CARGO_PKG_VERSION"));
     println!("core    {}", ohl_core::VERSION);
-    println!("license MPL-2.0");
+    println!("license AGPL-3.0-or-later (plugin interface: MPL-2.0)");
 }
 
 fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>) -> ExitCode {
