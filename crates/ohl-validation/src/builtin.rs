@@ -1327,6 +1327,8 @@ impl Calculation for FallIn {
             root_ball: k,
             fall_allowance: len("allowance")?,
             max_tree_height: h + 1.0,
+            // The case's ground has its points far from the tree.
+            max_base_ground_distance: None,
             ..VegetationParams::default()
         };
         let mut check = VegetationCheck::new(vec![wire], &[5], params);

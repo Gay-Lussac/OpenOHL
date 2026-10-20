@@ -73,10 +73,11 @@ pub struct VegetationParams {
     /// Look for trees that could fall onto the wires (needs the ground).
     pub fall_in: bool,
     /// Root-ball radius as a fraction k of the grown tree's height (0:
-    /// the tree pivots at its base, as before 2026-10-20).
+    /// the tree pivots at its base, as before 2026-10-20; default
+    /// [`DEFAULT_ROOT_BALL`]).
     pub root_ball: f64,
     /// Clearance allowance A of a falling tree (flashover clearance,
-    /// buffers), m.
+    /// buffers), m (default [`DEFAULT_FALL_ALLOWANCE`]).
     pub fall_allowance: f64,
     /// Points lower than this above the ground are not trees, m.
     pub min_tree_height: f64,
@@ -87,16 +88,33 @@ pub struct VegetationParams {
     /// ground point the ground surface is built from (a TIN vertex: a
     /// LiDAR ground point or a survey point) for its ground height — its
     /// tree base — to be taken, m (none: no limit). Beyond it the point
-    /// has no base and no fall-in check.
+    /// has no base and no fall-in check (default
+    /// [`DEFAULT_MAX_BASE_GROUND_DISTANCE`]).
     pub max_base_ground_distance: Option<f64>,
     /// Worst points kept per span.
     pub keep: usize,
 }
 
-/// Root-ball fraction proposed in the application, k: a hinge at a tenth
-/// of the tree's height from the trunk (a user setting; the command line
-/// keeps 0 unless given).
-pub const PROPOSED_ROOT_BALL: f64 = 0.1;
+// The danger-tree defaults (the owner, 2026-10-20): the utility
+// practice, the same in the application and the command line; a
+// design-code plugin's preset may give others, and a user may set any
+// (k = 0, A = 0 and no limit give the check as before 2026-10-20).
+
+/// Default root-ball fraction k: a hinge at 5 % of the tree's height from
+/// the trunk.
+pub const DEFAULT_ROOT_BALL: f64 = 0.05;
+
+/// Default clearance allowance A of a falling tree, m.
+pub const DEFAULT_FALL_ALLOWANCE: f64 = 2.0;
+
+/// Default largest distance from a tree base to a ground point, m
+/// ([`VegetationParams::max_base_ground_distance`]).
+pub const DEFAULT_MAX_BASE_GROUND_DISTANCE: f64 = 5.0;
+
+/// Default search distance, m: the half width of the corridor around the
+/// spans' chords in which vegetation points are read (and isoclearance
+/// lines drawn).
+pub const DEFAULT_SEARCH_DISTANCE: f64 = 50.0;
 
 impl Default for VegetationParams {
     fn default() -> Self {
@@ -106,11 +124,11 @@ impl Default for VegetationParams {
             years: 0.0,
             buffer: 0.0,
             fall_in: false,
-            root_ball: 0.0,
-            fall_allowance: 0.0,
+            root_ball: DEFAULT_ROOT_BALL,
+            fall_allowance: DEFAULT_FALL_ALLOWANCE,
             min_tree_height: 2.0,
             max_tree_height: 40.0,
-            max_base_ground_distance: None,
+            max_base_ground_distance: Some(DEFAULT_MAX_BASE_GROUND_DISTANCE),
             keep: 10,
         }
     }
@@ -1061,6 +1079,29 @@ mod tests {
     use super::*;
     use ohl_terrain::SurveyPoint;
 
+    /// The check as before the danger trees' defaults (2026-10-20): no
+    /// root ball, no allowance, no limit to a base's ground point — what
+    /// the tests below were written for.
+    fn plain() -> VegetationParams {
+        VegetationParams {
+            root_ball: 0.0,
+            fall_allowance: 0.0,
+            max_base_ground_distance: None,
+            ..VegetationParams::default()
+        }
+    }
+
+    /// The defaults are the utility practice: k = 0.05, A = 2 m, a ground
+    /// point within 5 m of a tree base, a 50 m search distance.
+    #[test]
+    fn the_defaults_are_the_utility_practice() {
+        let p = VegetationParams::default();
+        assert_eq!(p.root_ball, 0.05);
+        assert_eq!(p.fall_allowance, 2.0);
+        assert_eq!(p.max_base_ground_distance, Some(5.0));
+        assert_eq!(DEFAULT_SEARCH_DISTANCE, 50.0);
+    }
+
     fn level_wire() -> Wire {
         Wire {
             section: "S".into(),
@@ -1104,7 +1145,7 @@ mod tests {
             growth_per_year: 0.5,
             years: 2.0,
             fall_in: true,
-            ..VegetationParams::default()
+            ..plain()
         };
         let mut check = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
         // A tree top 3 m below the wire: encroaching (3 < 4 + 1).
@@ -1155,7 +1196,7 @@ mod tests {
             years: 2.0,
             fall_in: true,
             root_ball: 0.1,
-            ..VegetationParams::default()
+            ..plain()
         };
         let mut check = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
         check.visit(Some(&ground), 150.0, 7.0, 15.0, 5);
@@ -1180,7 +1221,7 @@ mod tests {
         let base = VegetationParams {
             clearance: 4.0,
             fall_in: true,
-            ..VegetationParams::default()
+            ..plain()
         };
         let run = |p: &VegetationParams| {
             let mut c = VegetationCheck::new(vec![level_wire()], &[5], p.clone());
@@ -1217,7 +1258,7 @@ mod tests {
             years: 3.0,
             fall_in: true,
             keep: 25,
-            ..VegetationParams::default()
+            ..plain()
         };
         let sloped = {
             let p = |x: f64, y: f64| SurveyPoint {
@@ -1381,7 +1422,7 @@ mod tests {
             clearance: 4.0,
             fall_in: true,
             max_base_ground_distance: Some(5.0),
-            ..VegetationParams::default()
+            ..plain()
         };
         let mut found = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
         found.visit(Some(&ground), 150.0, 0.0, 25.0, 5);
@@ -1417,7 +1458,7 @@ mod tests {
             years: 3.0,
             fall_in: true,
             root_ball: 0.1,
-            ..VegetationParams::default()
+            ..plain()
         };
         // A pseudo-random forest beside the span.
         let mut pts = Vec::new();

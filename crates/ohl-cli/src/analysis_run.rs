@@ -179,36 +179,38 @@ pub struct VegetationArgs {
     #[arg(long, default_value_t = 40.0)]
     pub max_tree_height: f64,
     /// Largest horizontal distance from a tree to the nearest ground
-    /// point for its base to be taken from the ground, m (default: no
+    /// point for its base to be taken from the ground, m (`inf`: no
     /// limit); beyond it no fall-in check.
-    #[arg(long)]
-    pub max_base_ground_distance: Option<f64>,
+    #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_MAX_BASE_GROUND_DISTANCE)]
+    pub max_base_ground_distance: f64,
     /// Buffer added to the clearance for grow-in (e.g. the survey's
     /// accuracy), m.
     #[arg(long, default_value_t = 0.0)]
     pub buffer: f64,
     /// Root-ball radius as a fraction of the grown tree's height: the
     /// tree turns about a hinge this far from its trunk (0: about its
-    /// base; the desktop application proposes 0.1).
-    #[arg(long, default_value_t = 0.0)]
+    /// base).
+    #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_ROOT_BALL)]
     pub root_ball: f64,
     /// Clearance allowance of a falling tree (flashover clearance,
     /// buffers), m.
-    #[arg(long, default_value_t = 0.0)]
+    #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_FALL_ALLOWANCE)]
     pub fall_allowance: f64,
     /// Also check each span anywhere along its swing arc between its left
     /// and right blowout (windy cases).
     #[arg(long)]
     pub swing_arc: bool,
     /// Unbalanced ice on each span with vegetation within reach, solved
-    /// with its section on its own: `case` (the case's ice on that span
-    /// only), `extra=N/m` (an extra load on the span, the whole bundle's)
-    /// or `load=N` (a concentrated load at mid-span).
+    /// with its section on its own, the span in a weather case of its
+    /// own: `case` (the case's ice on that span only), `thickness=m` (the
+    /// case with that much more radial ice on the span), `extra=N/m` (the
+    /// case with that much more ice load per wire on the span) or
+    /// `load=N` (a concentrated load at mid-span, the whole bundle's).
     #[arg(long, value_parser = unbalanced_ice)]
     pub unbalanced_ice: Option<ohl_clearance::positions::UnbalancedIce>,
-    /// Half width of the corridor around the spans' chords, m (the points
-    /// read, and the isoclearance lines).
-    #[arg(long, default_value_t = 60.0)]
+    /// Search distance: half width of the corridor around the spans'
+    /// chords, m (the points read, and the isoclearance lines).
+    #[arg(long, default_value_t = ohl_clearance::vegetation::DEFAULT_SEARCH_DISTANCE)]
     pub corridor: f64,
     /// Write per span the counts and the nearest, worst falling and worst
     /// points, with the case and position of each, as CSV.
@@ -236,7 +238,7 @@ pub struct VegetationArgs {
     pub time_limit: u64,
 }
 
-/// `case`, `extra=N/m` or `load=N`.
+/// `case`, `thickness=m`, `extra=N/m` or `load=N`.
 fn unbalanced_ice(text: &str) -> Result<ohl_clearance::positions::UnbalancedIce, String> {
     use ohl_clearance::positions::UnbalancedIce;
     let number = |v: &str| {
@@ -248,9 +250,16 @@ fn unbalanced_ice(text: &str) -> Result<ohl_clearance::positions::UnbalancedIce,
     };
     match text.trim().split_once('=') {
         None if text.trim() == "case" => Ok(UnbalancedIce::CaseIce),
-        Some(("extra", v)) => Ok(UnbalancedIce::Extra(number(v)?)),
+        Some(("thickness", v)) => match number(v)? {
+            // Metres, as every length here: 10 is not 10 mm.
+            t if t > 0.5 => Err(format!("{text}: the thickness in metres (e.g. 0.01)")),
+            t => Ok(UnbalancedIce::ExtraThickness(t)),
+        },
+        Some(("extra", v)) => Ok(UnbalancedIce::ExtraLoad(number(v)?)),
         Some(("load", v)) => Ok(UnbalancedIce::Concentrated(number(v)?)),
-        _ => Err(format!("{text}: write case, extra=N/m or load=N")),
+        _ => Err(format!(
+            "{text}: write case, thickness=m, extra=N/m or load=N"
+        )),
     }
 }
 
@@ -765,7 +774,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         root_ball: a.root_ball,
         fall_allowance: a.fall_allowance,
         max_tree_height: a.max_tree_height,
-        max_base_ground_distance: a.max_base_ground_distance,
+        max_base_ground_distance: Some(a.max_base_ground_distance).filter(|d| d.is_finite()),
         ..VegetationParams::default()
     };
     // Exit clause of the whole run (solves, checks, lines).

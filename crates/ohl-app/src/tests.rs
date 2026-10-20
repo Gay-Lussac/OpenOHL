@@ -1813,11 +1813,11 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
             let (w, found) = (&veg.positions.spans[0].wire, &veg.results[0]);
             assert_eq!((w.section.as_str(), w.span), ("S1", 0));
             assert_eq!(found.encroaching, 1);
-            // The case shown, as it is, and the root ball proposed.
+            // The case shown, as it is, and the default root ball.
             assert_eq!(veg.positions.cases.len(), 1);
             assert_eq!(
                 veg.params.root_ball,
-                ohl_clearance::vegetation::PROPOSED_ROOT_BALL
+                ohl_clearance::vegetation::DEFAULT_ROOT_BALL
             );
             break;
         }
