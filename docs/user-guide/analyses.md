@@ -310,7 +310,11 @@ The **weather cases** ticked (the list stays open while you tick): a case
 without wind as it is, a windy case blown to the left and to the right.
 **Swing arc**: every position between the two blowouts. **Wind stepped**
 (a step in Pa, the sides): still air and every pressure up to the case's.
-Arc and steps work alone or together. **Unbalanced ice**: off, the case's
+Arc and steps work alone or together — the same wind choice as the
+[vertical and radial clearance windows](desktop-app.md#clearances-wind),
+with the solves a windy case needs said below it and the arc suggested
+when fine steps need many (here the full pressure is solved from both
+sides in any case; the sides apply to the steps). **Unbalanced ice**: off, the case's
 ice on the span alone, more radial ice (mm), more ice load per wire
 (N/m), a load at mid-span (N) — on the spans with vegetation within
 reach. Drawings: the span seen along it with its positions, arc and

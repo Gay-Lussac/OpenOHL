@@ -65,7 +65,7 @@ separately; it is not part of the public code.
 A design-code plugin may also return **clearance presets**: for the
 **Vertical clearances** or the **Radial clearances** window, a rule file
 (`.ohlr`: the rules — LiDAR classes, voltages, distances, the vertical
-zone's half width per rule —, the wind steps and sides, the circuits,
+zone's half width per rule —, the wind steps and sides (and the swing arc, `[wind] arc = true`), the circuits,
 the calculation method and the distance beyond which LiDAR points are
 ignored) and the weather cases its rules name (`.ohlwc`). OpenOHL checks
 them like any such file (each rule's weather cases among the preset's),
