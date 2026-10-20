@@ -63,6 +63,8 @@ pub struct View3d {
     pub vegetation: crate::vegetation::Overlay,
     /// The lines on the ground beside the line (none: not shown).
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
+    /// What Checks › Safety volumes built.
+    pub safety_volume: crate::safety_volume::Overlay,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
     /// What a replacement would remove (Replace structure's window open):
@@ -982,6 +984,9 @@ impl View3d {
                 Layer::Clearances => scene::marks(model.origin, &self.marks, self.marks_stale),
                 Layer::GrowIn | Layer::FallIn | Layer::Isoclearance => {
                     scene::vegetation(model.origin, &self.vegetation, layer)
+                }
+                Layer::SafetyVolume => {
+                    crate::safety_volume::scene(model.origin, &self.safety_volume)
                 }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
                 Layer::GroundLines => crate::ground_lines::scene(

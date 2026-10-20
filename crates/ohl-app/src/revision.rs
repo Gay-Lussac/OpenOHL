@@ -225,6 +225,12 @@ pub fn frame(r: &mut crate::app::Ready) {
             .dirty
             .extend([Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]);
     }
+    let safety = r.safety_volume.out_of_date(&r.model).is_some();
+    if r.view3d.safety_volume.stale != safety {
+        r.view3d.safety_volume.stale = safety;
+        r.plan.safety_volume.stale = safety;
+        r.view3d.dirty.insert(Layer::SafetyVolume);
+    }
     let marks = match r.marks_from {
         crate::app::MarksFrom::Clearances => {
             r.clearances.stale && !r.clearances.running() && r.clearances.report.is_some()

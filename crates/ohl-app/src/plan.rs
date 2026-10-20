@@ -29,6 +29,8 @@ pub struct PlanView {
     pub vegetation: crate::vegetation::Overlay,
     /// The lines on the ground beside the line (none: not shown).
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
+    /// What Checks › Safety volumes built (their outlines).
+    pub safety_volume: crate::safety_volume::Overlay,
     /// Other users (server mode): where each looks, with their name.
     pub peers: Vec<(String, [f64; 3])>,
     /// Where it was drawn in the last frame (its page in front), if it was.
@@ -873,6 +875,9 @@ impl PlanView {
             painter.galley(at, galley, name_color);
         }
         paint_vegetation(&painter, rect, &to_screen, &self.vegetation, visible);
+        if visible.contains(&crate::scene::Layer::SafetyVolume) {
+            crate::safety_volume::paint_plan(&painter, rect, &to_screen, &self.safety_volume);
+        }
         for m in &self.marks {
             let p = to_screen(*m);
             if rect.expand(10.0).contains(p) {

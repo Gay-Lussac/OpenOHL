@@ -300,6 +300,8 @@ pub struct Ready {
     pub check_library: crate::check_library::CheckLibraryWindow,
     /// Checks › Vegetation.
     pub vegetation: crate::vegetation::VegetationWindow,
+    /// Checks › Safety volumes.
+    pub safety_volume: crate::safety_volume::SafetyVolumeWindow,
     /// Checks › As-built wires.
     pub wirefit: crate::wirefit::WireFitWindow,
     /// The ground built again from the LiDAR ground classes after their
@@ -444,6 +446,7 @@ impl Ready {
             phase_distance: Default::default(),
             check_library: Default::default(),
             vegetation: Default::default(),
+            safety_volume: Default::default(),
             wirefit: Default::default(),
             lidar_ground: Default::default(),
             lidar_ground_again: false,
@@ -6708,6 +6711,11 @@ impl Ready {
                         self.status = Some((e, true));
                     }
                 }
+                crate::safety_volume::CHECK_ID => {
+                    if let Err(e) = self.safety_volume.load_saved(&r, &self.model) {
+                        self.status = Some((e, true));
+                    }
+                }
                 other => self
                     .model
                     .log
@@ -7713,6 +7721,17 @@ fn menus(
             ui.close();
         }
         if ui
+            .button("Safety volumes…")
+            .on_hover_text(
+                "The space within a distance (by voltage) of the wires in every position of \
+                 the weather cases, for work near the line; exported as DXF, IFC, KML",
+            )
+            .clicked()
+        {
+            r.safety_volume.show(r.case);
+            ui.close();
+        }
+        if ui
             .button("As-built wires…")
             .on_hover_text("Catenaries fitted to the LiDAR wire points, against the model")
             .clicked()
@@ -8322,6 +8341,7 @@ impl eframe::App for App {
                 }
                 // The vegetation panel (its plugin presets read once).
                 if ready.vegetation.open
+                    || ready.safety_volume.open
                     || ready.vertical_clearances.open
                     || ready.radial_clearances.open
                 {
@@ -8346,6 +8366,17 @@ impl eframe::App for App {
                         .view3d
                         .dirty
                         .extend([Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]);
+                }
+                // The safety volumes: drawn while the window is open.
+                let out =
+                    ready
+                        .safety_volume
+                        .ui(&ctx, &ready.model, &ready.rule_editor.presets.list);
+                crate::safety_volume::handle(ready, out);
+                if let Some(overlay) = ready.safety_volume.overlay_change() {
+                    ready.view3d.safety_volume = overlay.clone();
+                    ready.plan.safety_volume = overlay;
+                    ready.view3d.dirty.insert(Layer::SafetyVolume);
                 }
                 // The checks' pages asked for: opened (floating first).
                 if std::mem::take(&mut ready.phase_distance.open) {
