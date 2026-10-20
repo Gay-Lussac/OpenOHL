@@ -37,6 +37,49 @@ In a line model (`ohl-line`) this is a section **clipped in**. A section still *
 
 **Simplification:** in the blocks, point loads do not take part in sharing the length between the spans. A loaded span would pull length from its neighbours through the blocks; leaving the loads out keeps its length as in still air, so its sag under the load can be a little larger or smaller than with the loads shared. Exact: point loads in the sharing.
 
+## A weather case per span (2026-10-20)
+
+*Built, in active development (not approved yet).* A section can be
+solved with a **weather case per span** (`ohl_line::solve::SpanCases`,
+`solve_section_span_cases`; in the plain section model
+`ohl_wirefe::State::span_states`): the section has its case, and some
+spans carry a case of their own — one span iced while its neighbours are
+not (danger trees' unbalanced ice), unequal ice along a section, later
+galloping's unequal ice. A span's own case sets everything that acts on
+that span: its load per metre (weight, ice, and the wind on its **iced**
+diameter from its side), its temperature (the thermal strain of its
+unstressed length; with stress-strain curves, the curves' strain at its
+tension and temperature), the forces on the bodies on it (their ice and
+wind) and its surface radius. The section's case sets the rest: the wind
+on the strings, the jumpers on the clamps, the core branch of a
+bimetallic cable (one per section) — and the rolling of a section **in
+the blocks**: it rolls in the section's case, and the spans' own cases
+then act on the wire clipped in, as point loads do (ice arriving on one
+span of a strung line swings the strings into it; it cannot draw wire
+from its neighbours through the blocks).
+
+With every span in the section's case the section is solved exactly as
+with that one case, bit for bit (tested on every section of the example
+line, still, hot, iced and windy). The ruling-span method has one tension
+for all spans: spans in different cases are refused there (an error that
+says so), only the finite elements solve them.
+
+**Simplification:** the strings take the wind of the section's case;
+when a span's own case has another wind, the strings at its ends do not
+see it. Exact: each string the wind of the spans next to it. (Unbalanced
+ice keeps the wind of the section's case on its span, so it is exact
+there.)
+
+Checked against an independent evaluation (validation
+`spancases-001`…`003`, `benchmarks/wirefe/span_cases.toml`): two level
+300 m spans, a 3 m suspension string between them, span 0 iced by
+10 N/m more — the string swings 2.89° into span 0, whose horizontal
+tension is 338 N above the other's (\\( H_0 - H_1 = T \sin\varphi \\) at
+the clamp) — and span 0 at 60 °C with span 1 at 15 °C (the string swings
+2.34° towards span 1): the closed-form elastic catenary of each span and
+Newton on the clamp's position, its own implementation; the solver agrees
+to 10⁻⁷.
+
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
 ## Point loads: marker balls and other bodies

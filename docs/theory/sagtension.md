@@ -57,6 +57,11 @@ The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also repor
 
 **Simplification:** one horizontal tension for the whole section, the strings plumb and of no length (the ruling-span model). Unequal spans, inclined spans and swinging strings make the span tensions and sags differ; the error goes either way per span. Exact: the finite-element section ([Finite-element wire systems](wirefe.md)), available as the *FE* calculations.
 
+One case for all spans: a section whose spans carry different weather
+cases (one span iced, unequal ice) is solved by the finite elements only
+([A weather case per span](wirefe.md#a-weather-case-per-span-2026-10-20));
+the ruling span refuses it.
+
 ## Tension criteria
 
 Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w \\)) apply in given load states. Raising the stringing tension raises the tension in every state, so each limit gives one maximum stringing tension; the governing one is the smallest. Nested bisection, exit clauses at both levels.
