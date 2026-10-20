@@ -1,0 +1,246 @@
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
+
+//! Checks › Safety volumes: run on the example line, drawn in the 3D view
+//! and the plan while the window is open, saved in the performed checks
+//! and read back, out of date after an edit of the line, exported.
+
+use std::time::{Duration, Instant};
+
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+
+use crate::app::App;
+use crate::lidar_tests::harness;
+
+/// Steps until `done` (240 s at most).
+fn until(h: &mut Harness<'_, App>, what: &str, done: impl Fn(&mut App) -> bool) {
+    let started = Instant::now();
+    loop {
+        h.step();
+        if done(h.state_mut()) {
+            h.step();
+            return;
+        }
+        assert!(started.elapsed() < Duration::from_secs(240), "{what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn png(h: &mut Harness<'_, App>, name: &str) {
+    if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+        && let Ok(image) = h.render()
+    {
+        let path = std::path::PathBuf::from(dir).join(name);
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}
+
+/// The example line in high wind with its swing arc, 4 m: three volumes
+/// (one per wire), drawn while the window is open and taken off when it
+/// closes; saved and read back (meshes to the millimetre); out of date
+/// once the line changes; exported as DXF, IFC and (with a coordinate
+/// system) KMZ.
+#[test]
+fn safety_volumes_are_built_drawn_saved_and_exported() {
+    let model = crate::tests::synthetic_project("safety-volume");
+    let gpu =
+        ohl_render::headless_device().is_ok() && ohl_core::env::var_os("OHL_RENDER_PNG").is_some();
+    let mut h = harness(model, gpu);
+    h.run_steps(3);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let wind = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "high wind")
+            .unwrap();
+        r.safety_volume.show(wind);
+        let s = &mut r.safety_volume.settings;
+        // No distance is built in.
+        assert_eq!(s.distance, ohl_clearance::rules::Requirement::Fixed(0.0));
+        s.distance = ohl_clearance::rules::Requirement::Fixed(4.0);
+        s.wind = ohl_clearance::safety_volume::WindMode::Arc;
+        s.tolerance = 0.2;
+    }
+    h.run_steps(3);
+    h.get_by_label_contains("No safety distance is built in");
+    h.get_by_label("Run").click();
+    until(&mut h, "a safety-volume run", |a| {
+        matches!(a.ready().unwrap().safety_volume.result(), (Some(_), false))
+    });
+    h.run_steps(3);
+    let triangles = {
+        let r = h.state_mut().ready().unwrap();
+        let rep = match r.safety_volume.result().0 {
+            Some(Ok(rep)) => rep.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(rep.volumes.volumes.len(), 3);
+        for v in &rep.volumes.volumes {
+            assert_eq!(v.mesh.open_edges(), 0);
+            assert!(v.simplified.checked);
+        }
+        let drawn = r
+            .view3d
+            .safety_volume
+            .volumes
+            .as_ref()
+            .expect("drawn in 3D");
+        assert_eq!(drawn.volumes.len(), 3);
+        assert!(r.plan.safety_volume.outlines.iter().all(|o| !o.is_empty()));
+        assert!(!r.view3d.safety_volume.stale);
+        rep.volumes
+            .volumes
+            .iter()
+            .map(|v| v.mesh.triangles.len())
+            .sum::<usize>()
+    };
+    h.get_by_label_contains("volumes from");
+    png(&mut h, "safety-volume-window-3d.png");
+    // The 3D layer alone with the line, headless: in perspective and from
+    // above (the outline the plan draws).
+    if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+        && ohl_render::headless_device().is_ok()
+    {
+        let r = h.state_mut().ready().unwrap();
+        let sel = crate::selection::Selection::None;
+        let mut scenes: Vec<ohl_render::Scene> = [
+            crate::scene::Layer::Ground,
+            crate::scene::Layer::Structures,
+            crate::scene::Layer::Wires,
+        ]
+        .into_iter()
+        .map(|l| crate::scene::layer(&r.model, l, 0, &sel))
+        .collect();
+        scenes.push(crate::safety_volume::scene(
+            r.model.origin,
+            &r.view3d.safety_volume,
+        ));
+        let bounds = scenes.last().unwrap().bounds().unwrap();
+        let refs: Vec<&ohl_render::Scene> = scenes.iter().collect();
+        for (name, pitch, zoom) in [
+            ("safety-volume-3d.png", 25.0, 0.45),
+            ("safety-volume-from-above.png", 89.0, 0.75),
+        ] {
+            let mut camera = ohl_render::Camera::fit(&bounds);
+            camera.pitch = f64::to_radians(pitch);
+            camera.distance *= zoom;
+            let rgba = ohl_render::render_rgba(&refs, &camera, 1600, 1000).unwrap();
+            crate::write_png(
+                &std::path::PathBuf::from(&dir).join(name),
+                1600,
+                1000,
+                &rgba,
+            )
+            .unwrap();
+        }
+    }
+    // The plan: the outlines.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.safety_volume.open = false;
+    }
+    h.run_steps(2);
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(
+            r.view3d.safety_volume.volumes.is_none(),
+            "taken off when closed"
+        );
+        r.safety_volume.open = true;
+    }
+    h.run_steps(2);
+    assert!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .safety_volume
+            .volumes
+            .is_some()
+    );
+    // Saved, read back.
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .safety_volume
+        .set_save_name("work 1");
+    h.run_steps(2);
+    h.get_by_label("Save in Performed checks").click();
+    h.run_steps(3);
+    let saved = {
+        let r = h.state_mut().ready().unwrap();
+        r.model.session().unwrap().report("work 1").expect("saved")
+    };
+    assert_eq!(saved.check, crate::safety_volume::CHECK_ID);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let before = r.safety_volume.report().unwrap().clone();
+        r.safety_volume = Default::default();
+        r.check_library_out(crate::check_library::Out {
+            open: Some(saved.clone()),
+            ..Default::default()
+        });
+        let back = r.safety_volume.report().expect("read back").clone();
+        assert_eq!(back.settings, before.settings);
+        assert_eq!(back.volumes.cases, before.volumes.cases);
+        for (a, b) in back.volumes.volumes.iter().zip(&before.volumes.volumes) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.mesh.triangles, b.mesh.triangles);
+            for (p, q) in a.mesh.vertices.iter().zip(&b.mesh.vertices) {
+                for k in 0..3 {
+                    assert!((p[k] - q[k]).abs() <= 0.0005);
+                }
+            }
+        }
+        assert_eq!(r.safety_volume.out_of_date(&r.model), None);
+    }
+    h.run_steps(3);
+    // Exported.
+    let dir = std::env::temp_dir().join(format!("ohl-sv-export-{}", std::process::id()));
+    {
+        let r = h.state_mut().ready().unwrap();
+        let model = &r.model;
+        let text = r.safety_volume.export_to(model, &dir).unwrap();
+        assert!(text.contains(".dxf") && text.contains(".ifc"), "{text}");
+        // The example line's system is informative: no .prj, KMZ refused.
+        assert!(
+            text.contains("no .prj") && text.contains("no KMZ"),
+            "{text}"
+        );
+    }
+    let dxf = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|e| e.path().extension().is_some_and(|x| x == "dxf"))
+        .expect("a DXF");
+    let read = ohl_background::dxf::read_dxf(&std::fs::read(dxf.path()).unwrap()).unwrap();
+    assert_eq!(read.skipped.get("3DFACE"), Some(&triangles));
+    std::fs::remove_dir_all(&dir).ok();
+    // The line changed: out of date, dimmed, Run again offered.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let mut line = r.model.line.clone();
+        line.structures[1].position[2] += 1.0;
+        assert!(r.perform(crate::edit::Action::Command {
+            what: "raised a structure".into(),
+            command: ohl_session::Command::ReplaceLine {
+                line: Box::new(line)
+            },
+        }));
+    }
+    h.run_steps(3);
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert_eq!(
+            r.safety_volume.out_of_date(&r.model).as_deref(),
+            Some("the line")
+        );
+        assert!(r.view3d.safety_volume.stale);
+    }
+    h.get_by_label("Run again");
+    png(&mut h, "safety-volume-out-of-date.png");
+}

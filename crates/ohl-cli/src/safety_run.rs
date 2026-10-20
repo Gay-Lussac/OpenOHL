@@ -89,6 +89,7 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
     };
     let steps = WindSteps {
         stepped: a.wind.stepped(),
+        arc: false,
         step: a.wind_step,
         sides: a.wind_sides,
     };

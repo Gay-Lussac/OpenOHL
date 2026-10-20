@@ -70,6 +70,7 @@ mod replace;
 mod requirement_ui;
 mod revision;
 mod rule_editor;
+mod safety_volume;
 mod scene;
 mod selection;
 mod sheet_ui;
@@ -119,6 +120,8 @@ mod member_tests;
 mod revision_tests;
 #[cfg(test)]
 mod rule_editor_tests;
+#[cfg(test)]
+mod safety_volume_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

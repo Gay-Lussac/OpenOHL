@@ -51,11 +51,14 @@ pub enum Layer {
     /// Lines on the ground a distance beside the line (View › Lines on
     /// the ground beside the line, [`crate::ground_lines`]).
     GroundLines,
+    /// Safety volumes around the wires (Checks › Safety volumes),
+    /// translucent: drawn last.
+    SafetyVolume,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 17] = [
+    pub const ALL: [Layer; 18] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -73,6 +76,7 @@ impl Layer {
         Layer::FallIn,
         Layer::Isoclearance,
         Layer::GroundLines,
+        Layer::SafetyVolume,
     ];
 
     /// Name in the layer panel.
@@ -95,6 +99,7 @@ impl Layer {
             Layer::FallIn => "Vegetation: danger trees",
             Layer::Isoclearance => "Isoclearance lines",
             Layer::GroundLines => "Ground lines (beside the line)",
+            Layer::SafetyVolume => "Safety volumes",
         }
     }
 }
@@ -1493,7 +1498,8 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         | Layer::GrowIn
         | Layer::FallIn
         | Layer::Isoclearance
-        | Layer::GroundLines => {}
+        | Layer::GroundLines
+        | Layer::SafetyVolume => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
