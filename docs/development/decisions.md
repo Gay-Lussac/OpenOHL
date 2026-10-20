@@ -9,6 +9,53 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Sheet templates: second round of fixes and the owner's additions**
+  (an A1 export of the synthetic line with a title block of 35/55/45/45
+  mm):
+  - The **title block, revision table and legend lie inside the frame's
+    padding** (they sat on the frame's outer edge and crossed its lines;
+    right-aligned values were cut). The built-in full-width title block
+    moves in by the padding too (5 mm; the profile panel 5 mm lower). A
+    text too wide or tall for its cell is made smaller (to 40 %), a
+    revision cell's (to 60 %) then shortened with "…"; a note is broken
+    at the padding, and one lying over the title block, revisions,
+    legend, key map or scale bars is warned.
+  - **No empty field leaves a gap**: `{height_datum}` comes from the
+    coordinate system (the vertical part of `EPSG:h+v`, a proj4 geoid);
+    otherwise every field that comes out empty is written as the
+    template's `[if_empty]` says, built in "unknown datum"
+    (`height_datum`), "unknown coordinate system" (`crs`), "–" (any
+    other); the station range's `ends` and the title lines stay empty
+    unless named. The project has no vertical datum of its own (a core
+    change, not made).
+  - **Templates carry the words of every generated text**: the legend's
+    entries (`[legend.labels]` by entry kind, with placeholders) and the
+    panel titles (`[layout] plan_title`, `profile_title`); English stays
+    the default.
+  - **Structures band row** `format` (`{name}`, `{type}`, `{type_id}`,
+    `{extension}`, `{station}`, `{height}`, two lines at a line break).
+  - **The label of the line below the lowest conductor** is placed clear
+    of the structures, the wires and the ground (`[conductor_clearance]
+    label_at = "auto"`, default; `"middle"` the old place; `"start"`,
+    `"end"`).
+  - **LiDAR points on the sheets** (owner): the classes chosen (template
+    `[lidar] classes`, the export window, `--sheet-lidar-classes`) within
+    the corridor (else the line width), as dots in the profile (by
+    station and height) and optionally the plan, styled per class or
+    group, named in the legend by the class scheme; one dot per class
+    and 0.2 mm paper cell (drawing only; no number changes). The app
+    draws the points it has loaded (its point budget), the command line
+    reads `--lidar` / `--pointcloud`.
+  - **The corridor's sides in the profile** (owner): the ground along
+    both edges, the **near side the right** looking along increasing
+    stations by default (the plan's lower edge, nearest a reader of the
+    profile under the plan; `[corridor] near_side`), each edge in its own
+    pen (`near`, `far`) in the plan, the key map and the profile alike,
+    both in the legend. `--side-offset` stays as it was.
+  - **The centreline** (owner): the ground on the axis always solid
+    (`[centreline] ground = false` only leaves it out); the plan's axis in
+    `[centreline] pen` (the built-in look kept: grey dash-dot; the
+    example: solid black).
 - **Sheet export: the defects fixed** (the review of the sheet export,
   D1–D17): the profile panel takes the whole height; its height range
   fits the ground, the clearance line and the wires' lowest points; tops

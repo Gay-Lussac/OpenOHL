@@ -53,7 +53,8 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--orientation` | `landscape` or `portrait` |
 | `--version LINE=ROLE[:LABEL]` | another version of the line drawn with it in a role (a project line of a project file, or a line file; repeatable) |
 | `--role ROLE` | the role of the line itself (its style) |
-| `--corridor-width M` | the corridor's edges at ± M in the plan and the key map |
+| `--corridor-width M` | the corridor's edges at ± M in the plan and the key map, the ground along them in the profile |
+| `--sheet-lidar-classes 2,3,5` | LiDAR classes drawn as dots where the template draws them (`[lidar]`), from `--lidar` or `--pointcloud`, within the corridor ([Sheet templates](sheet-templates.md#lidar-points)) |
 | `--conductor-clearance` | lines below the lowest conductor from the ground rules (`--rules`, `--clearance`) |
 | `--no-bands` | without the template's band rows |
 | `--out DIR` | output folder (created) |

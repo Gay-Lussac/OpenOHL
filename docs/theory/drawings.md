@@ -60,3 +60,30 @@ rule on its own. The exact treatment would draw one line per rule.
 
 The line is a drawing aid: whether the ground stays below it is read on
 the sheet, not computed; the ground clearance check gives the numbers.
+
+Its label (`label_at = "auto"`) is placed by trying, every 2 mm along
+the sheet, the place just above and just below the line: the one over
+the fewest structures (each structure's width from its base to the room
+for its name), then over the fewest points of the wires, the ground
+lines and the other such lines (every 1 mm along them), then nearest the
+sheet's middle; above before below. Only the label moves.
+
+## The corridor's sides
+
+The ground along the corridor's edges is the ground profile at the
+offsets ± w (w the corridor's half width; right positive) along the
+centreline, made as the side profiles are. The **near side** — nearest
+the reader of the profile — is by default the right one looking along
+increasing stations: with the stations increasing to the right on paper,
+a reader of the profile looks across the line from its right side (and
+that side is the plan's lower edge). The template may say the left.
+
+## LiDAR points
+
+A LiDAR point (x, y, z) of a class drawn is projected on the route's
+centreline (station s, offset o) and kept when |o| ≤ w (the corridor's
+half width, else the line width) and it lies beside the centreline, not
+beyond its ends; the profile shows it at (s, z), the plan at (s, o).
+**Drawing only:** one dot per class is drawn in each square paper cell of
+the template's `cell` (0.2 mm); the points themselves are not changed
+and no number is computed from them here.

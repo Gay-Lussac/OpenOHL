@@ -315,8 +315,21 @@ memory.
   --field --revision --version --role --corridor-width
   --conductor-clearance`, `ohl sheet-templates`; the export window with
   the template, its values, revisions, versions and a sheet preview.
+  *Follow-up 4, built 2026-10-20, in active development (not approved
+  yet)*: title block, revisions and legend inside the frame's padding,
+  texts fitted to their cells; no empty field (`{height_datum}` from the
+  CRS, `[if_empty]`); the legend's and panels' words from the template
+  (`[legend.labels]`, `plan_title`, `profile_title`); a structures band
+  row `format`; the conductor-clearance label clear of the structures
+  (`label_at`); **LiDAR points** of chosen classes within the corridor
+  as dots in the profile and the plan (`[lidar]`,
+  `--sheet-lidar-classes`, the export window); the **ground along the
+  corridor's near and far edges** in the profile, each edge in its pen
+  in plan, key map and profile; the centreline's ground always solid, the
+  plan's axis in its own pen (`[centreline]`).
   Still open: font embedding, a title block editor in the app, an
-  orthophoto under the key map, DXF 2000 images.
+  orthophoto under the key map, DXF 2000 images, a vertical datum of the
+  project (only from the CRS now).
 - **U4. OHL-Structure**: *built, in active development (not approved
   yet)*: the Results tab solves on the chosen extension, with the line's
   pole check (as the line does); wind bands rise with an extension (line
@@ -483,7 +496,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Bundled conductors: `bundle` subconductors on a circle with `bundle_spacing` (e.g. 4 × 400 mm) and optional rotation; insulator weight shared by the subconductors in the solve; clearances to the nearest subconductor
 - [x] Electrical cable data in the wire library (`[cable.electrical]`: AC resistance by temperature, DC resistance, geometric mean radius, emissivity, solar absorptivity; resistance units) — filled by a local importer from another program's files until an importer is decided
 - [ ] Rule editor tool (per LiDAR class)
-- [x] Plan & profile views per route (`ohl-drawing`, `ohl line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures (only at a structure on the line or a free alignment point, the break clearance, `--break-clearance`, default 2 mm on paper, from every other structure drawn; with no free break the sheet runs on, warned; a sheet preview over the app's profile and plan; the line width `--plan-width` decides what is drawn along the line, one setting with the app's profile; the export settings kept in the project per project line), title block with logos, separate plan scale across the line *(DXF, PDF, PNG and XML since Phase 5, `ohl drawing`)*; since 2026-10-20 (built, in active development, not approved yet) sheet templates (`.ohlsheet`; built in, project, library folder, plugin presets) with band rows, legend, key map, scale bars, north arrows, corridor, revisions, fields, the line's versions in roles, wires by kind, lines below the lowest conductor, datum steps
+- [x] Plan & profile views per route (`ohl-drawing`, `ohl line --drawings DIR`): straightened plan + profile with ground, side profiles, clearance line, structures, wires by phase, violation markers — SVG and profile CSV — sheets on A0–A4/custom formats split at structures (only at a structure on the line or a free alignment point, the break clearance, `--break-clearance`, default 2 mm on paper, from every other structure drawn; with no free break the sheet runs on, warned; a sheet preview over the app's profile and plan; the line width `--plan-width` decides what is drawn along the line, one setting with the app's profile; the export settings kept in the project per project line), title block with logos, separate plan scale across the line *(DXF, PDF, PNG and XML since Phase 5, `ohl drawing`)*; since 2026-10-20 (built, in active development, not approved yet) sheet templates (`.ohlsheet`; built in, project, library folder, plugin presets) with band rows, legend, key map, scale bars, north arrows, corridor, revisions, fields, the line's versions in roles, wires by kind, lines below the lowest conductor, datum steps; LiDAR dots in the profile and plan, the ground along the corridor's near and far edges, the template's own legend words, `[if_empty]`
 - [x] Exporter/importer plugin interface (first formats: CSV, KML/KMZ; GeoJSON example plugin)
 - [x] Display: phase colours per circuit/phase, configurable per project (by phase label) and per section, legend in the viewer (DESIGN_GOALS §12)
 - [x] Jumpers connecting sections at dead-ends or taps (slack catenary between solved clamps, length or sag input, optional support string, weather loads, ground clearance; DESIGN_GOALS §12) *(clearance to the structure body still to come)*
