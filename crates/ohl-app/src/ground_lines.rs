@@ -9,10 +9,10 @@
 //! wind sides are shown) or from its axis (the alignment).
 //!
 //! In plan the line on a side is the outer edge of the band within the
-//! distance of the conductors (or of the axis): for each point of the
-//! axis, across it, the point farthest out on that side that is still
-//! within the distance of a conductor ([`offset_side`]); around an angle
-//! of the axis the cross direction turns in steps (a round outer
+//! distance of the conductors (or of the axis): along each span, across
+//! its chord, the point farthest out on that side that is still within
+//! the distance of a wire of that span ([`offset_side`]); around an
+//! angle structure the cross direction turns in steps (a round outer
 //! corner); the loop a sharp inner corner makes is cut off where the
 //! line crosses itself ([`without_loops`]): the outer envelope, never
 //! crossing itself. It is draped on the ground ([`drape`]): the active
