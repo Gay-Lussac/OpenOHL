@@ -69,6 +69,21 @@ pub struct SheetChoice {
     pub elevation_scale: Option<f64>,
     /// What is written at each elevation.
     pub elevation_labels: Vec<String>,
+    /// The LiDAR classes drawn, codes comma separated (none: the
+    /// template's `[lidar] classes`).
+    pub lidar_classes: Option<String>,
+}
+
+/// LiDAR class codes written `2, 3, 5` (empty: none).
+pub fn parse_classes(text: &str) -> Result<Vec<u8>, String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| {
+            t.parse::<u8>()
+                .map_err(|_| format!("LiDAR class \"{t}\": a code from 0 to 255"))
+        })
+        .collect()
 }
 
 impl Default for SheetChoice {
@@ -84,6 +99,7 @@ impl Default for SheetChoice {
             bands: true,
             elevation_scale: None,
             elevation_labels: Vec::new(),
+            lidar_classes: None,
         }
     }
 }

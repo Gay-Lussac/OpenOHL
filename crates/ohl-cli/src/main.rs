@@ -401,6 +401,12 @@ struct LineArgs {
     /// axis in the plan and the key map (default: the template's).
     #[arg(long)]
     corridor_width: Option<f64>,
+    /// LiDAR classes drawn on the sheets as dots, by code (e.g.
+    /// 2,3,5,14; default: the template's `[lidar] classes`; where: the
+    /// template's `[lidar] profile` / `plan`): the points of --lidar or
+    /// --pointcloud within the corridor (else the line width).
+    #[arg(long, value_delimiter = ',')]
+    sheet_lidar_classes: Option<Vec<u8>>,
     /// Another version of the line drawn with it: LINE=ROLE or
     /// LINE=ROLE:LABEL (repeatable) — LINE a project line (of a project
     /// file) or a line file, ROLE a role of the template's [roles]
@@ -1480,6 +1486,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         revision,
         orientation,
         corridor_width,
+        sheet_lidar_classes,
         versions,
         role,
         conductor_clearance,
@@ -2073,9 +2080,20 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     Vec::new()
                 },
                 bands: !*no_bands,
+                lidar_classes: sheet_lidar_classes.clone(),
                 ..Default::default()
             }
             .with_template(template.clone());
+            // LiDAR points on the sheets: read once, within the corridor
+            // (else the line width) of every route drawn.
+            let (options, sheet_lidar) = sheet_run::sheet_lidar(
+                &line,
+                options,
+                lidar.as_deref(),
+                pointcloud.as_deref(),
+                lidar_classes.as_deref(),
+                &spec.routes,
+            )?;
             // The command line's elevations over the template's.
             let options = ohl_drawing::Options {
                 elevations: spec.elevations.over(options.elevations)?,
@@ -2194,6 +2212,13 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
                 d.set_case(&first_case.name);
+                if !sheet_lidar.is_empty() {
+                    d.set_lidar(
+                        sheet_lidar.iter().copied(),
+                        &options.lidar_class_list(),
+                        options.lidar_half_width(),
+                    );
+                }
                 for (name, role, label, vline, solved) in &other_versions {
                     for (k, (case, shapes, jumpers)) in solved.iter().enumerate() {
                         d.add_version(

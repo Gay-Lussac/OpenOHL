@@ -323,6 +323,74 @@ pub fn list(project: Option<&Path>, plugins: &[PathBuf], out: Option<&Path>) -> 
     Ok(())
 }
 
+/// The LiDAR points the sheets draw (`[lidar] profile` / `plan` and some
+/// class chosen): read once from `--pointcloud` or `--lidar`, only the
+/// classes drawn, within the corridor (else the line width) of the routes
+/// drawn (`routes`; none: every one); the options with the class scheme's
+/// names and colours (`--lidar-classes`, else the one stored with the
+/// points, else ASPRS). Nothing is thinned here.
+#[allow(clippy::type_complexity)]
+pub fn sheet_lidar(
+    line: &ohl_line::Line,
+    mut options: ohl_drawing::Options,
+    lidar: Option<&Path>,
+    pointcloud: Option<&str>,
+    scheme_file: Option<&Path>,
+    routes: &[String],
+) -> Result<(ohl_drawing::Options, Vec<([f64; 3], u8)>), String> {
+    if !options.draws_lidar() {
+        return Ok((options, Vec::new()));
+    }
+    let source: Box<dyn ohl_pointcloud::PointSource> = match (pointcloud, lidar) {
+        (Some(spec), _) => ohl_pointcloud::open_source(spec)?,
+        (None, Some(dir)) => Box::new(ohl_pointcloud::TileSource {
+            tiles: ohl_lidar::tiles_in(dir).map_err(|e| e.to_string())?,
+            scheme: None,
+        }),
+        (None, None) => {
+            println!(
+                "  warning: the sheet template draws LiDAR points: give --lidar or --pointcloud"
+            );
+            return Ok((options, Vec::new()));
+        }
+    };
+    let scheme = match (scheme_file, source.class_scheme()) {
+        (Some(p), _) => ohl_lidar::ClassScheme::load(p)?,
+        (None, Some(text)) => ohl_lidar::ClassScheme::parse(&text)?,
+        (None, None) => ohl_lidar::ClassScheme::asprs(),
+    };
+    options.class_names = scheme
+        .classes
+        .iter()
+        .map(|c| (c.code, (c.name.clone(), c.rgb())))
+        .collect();
+    let classes = options.lidar_class_list();
+    let width = options.lidar_half_width();
+    let centrelines: Vec<Vec<[f64; 2]>> = line
+        .alignment_views()
+        .iter()
+        .filter(|r| routes.is_empty() || routes.contains(&r.id))
+        .map(|r| r.centreline(line).iter().map(|p| [p[0], p[1]]).collect())
+        .collect();
+    let corridor = ohl_lidar::Corridor::new(&centrelines, width);
+    // Exit clause: ~1 min per 10⁸ points from LAZ; 30 min is far beyond.
+    let budget = ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(1800));
+    let mut points = Vec::new();
+    let stats = source.visit(
+        Some(&corridor),
+        Some(&classes),
+        &budget,
+        &mut |x, y, z, c| points.push(([x, y, z], c)),
+    )?;
+    println!(
+        "sheet LiDAR: {} — {} points of the classes {classes:?} within ±{width} m ({} decoded)",
+        source.describe(),
+        points.len(),
+        stats.points_read
+    );
+    Ok((options, points))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
