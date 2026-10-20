@@ -221,6 +221,7 @@ fn example() -> (ohl_line::Line, ohl_cables::Library, Vec<WeatherCase>) {
 fn the_arc_holds_the_steps_up_to_the_rigid_swing() {
     let (line, library, cases) = example();
     let steps = WindSteps {
+        arc: false,
         stepped: true,
         step: 100.0,
         sides: crate::rules::WindSides::Both,
@@ -347,6 +348,7 @@ fn each_wire_gets_the_distance_of_its_voltage() {
 fn the_example_line_s_volumes() {
     let (line, library, cases) = example();
     let steps = WindSteps {
+        arc: false,
         stepped: true,
         step: 100.0,
         sides: crate::rules::WindSides::Both,
