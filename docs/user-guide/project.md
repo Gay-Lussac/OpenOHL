@@ -59,6 +59,7 @@ none.
 | `move_alignment_point` | `route`, `index`, `position` | Move an alignment point (`route`: the alignment's id; `"line"`, as in older projects, means `main`); a point shared by other alignments moves on all of them; a tied point is detached. |
 | `insert_alignment_point` / `remove_alignment_point` | `route`, `index` (`position`, or `point`) | Add a point before `index` (a free one, or an existing `point` shared with its other alignments), or remove one. |
 | `tie_alignment_point` / `detach_alignment_point` | `route`, `index` (`structure`) | Tie a point under a structure (it then follows it), or detach it (it stays in place). |
+| `change_points` | `cloud`, `points` (`from`, `to`) | Change points of the project's point cloud `cloud`: each `from`, exactly as stored (`xyz`: integers of the cloud's scale, `class`, `intensity`, `returns`), becomes `to` (other coordinates, another class); refused when a point is not there — see [Changing points](#changing-points). |
 | `batch` | `commands` | Several commands together. |
 
 ### Deleting objects
@@ -182,6 +183,27 @@ import 59 s; project file 647 MB against 938 MB of LAZ tiles; a full
 clearance run (ground TIN from 11.3 million ground points, vegetation,
 buildings, other lines' wires, phase-to-phase) 25 s from the project against
 2 min 44 s from the tiles, with identical results.
+
+### Changing points
+
+Single points of a stored cloud can be changed — their coordinates and
+their class — by the `change_points` command (the desktop app's Edit tool
+on a LiDAR point). A point is named exactly as stored: its integer
+coordinates (of the cloud's scale, e.g. millimetres), class, intensity and
+returns. The change takes it out of the block of its chunk and class and
+puts the new point into the block of its new chunk and class (made when
+missing; a block left empty is removed); the other points of a block keep
+their order, and its levels of detail, its compressed data, and the
+cloud's count and bounds are computed again from the blocks. The command
+is logged with the points' places in their blocks: undo, redo and an
+admin's rollback put every stored byte back as it was. It is refused when
+a point is not there (changed meanwhile), to viewers, and outside the area
+an admin limited a user to (where the points were and where they go).
+
+The point clouds belong to the project, not to a project line: a change
+is logged (and undone) on the line it was made on, every line sees it, and
+revisions of a line do not hold the points. On a server, every replica
+applies it in the server's order.
 
 `--pointcloud FILE#name` chooses a cloud when the project has several. Other
 point sources (a point database, a web service) will be plugins implementing

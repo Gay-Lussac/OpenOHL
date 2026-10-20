@@ -1327,7 +1327,7 @@ keeps them equal to what the exporter writes):
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the section library), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
-| `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007) |
+| `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007); the point cloud tables (`pointcloud`, `pointcloud_block`, `pointcloud_lod`, `pointcloud_source`; `ohl_pointcloud` crate docs) are shared by every project line and changed point by point only by `change_points` (below) |
 
 ### Performed checks (`ohl_session::reports`)
 
@@ -1368,9 +1368,40 @@ points; `wires`: a typed new structure's wire points as placed,
 `{label, set}` — the session does not read the structure library;
 `sets`: `{from, to}` old set → new set, `to` left out: removed;
 `confirm`), `rename`, `rename_attachment`, `rename_point`, `rename_system`,
-`replace_line`, `batch`. Each is expanded into puts and deletes, the whole
+`replace_line`, `change_points`, `batch`. Each is expanded into puts and deletes, the whole
 line is validated, and the log keeps the command, its inverse, the objects
-changed and the sections to recalculate. Example (synthetic):
+changed and the sections to recalculate.
+
+`change_points` (`ohl_session::points`) changes points of the project's
+point cloud, not objects of the line: `cloud` (its name) and `points`, a
+list of `{from, to}`, each a `CloudPoint` exactly as stored — `xyz`
+(integers of the cloud's scale: metres / scale, absolute), `class`,
+`intensity` (default 0), `returns` (return number × 16 + number of
+returns, default 0) and `index` (its place in its block, optional: the
+session writes it into the command as applied). `ohl_pointcloud::edit`
+removes `from` from the block of its chunk and class (at `index` when it is
+there, else the first point equal to it; none: refused), puts `to` into the
+block of its chunk and class (at `index` when that keeps the block's order
+by x and y, else after the points of the same or a lower x, y; a missing
+block is made, an emptied one removed with its levels), keeps the other
+points in their order, encodes the blocks again (`Columns::encode_in_order`),
+builds their levels of detail again when they had them (a new block: when
+the cloud has them) and computes the cloud's count and bounds from the
+blocks as an import does. All of it runs in the transaction of the log
+entry. The entry's objects are `(point_cloud, name)` (`Kind::PointCloud`,
+no `model_object` row; `put` and `delete` refuse it); its inverse is the
+changes back in reverse order with the places found — every stored byte
+back (a block removed and made again gets a new row id). Undo is refused
+when a point the entry left is not there any more. Edit grants limited to
+an area check where the points were and where they go. `Applied::points`
+lists the changes as applied (an undo: the changes back) for the
+applications to follow. Example (synthetic, a 1 mm cloud):
+
+```json
+{"op": "change_points", "cloud": "survey",
+ "points": [{"from": {"xyz": [2600123456, 1200045678, 512345], "class": 2, "intensity": 310, "returns": 17},
+             "to":   {"xyz": [2600123456, 1200045678, 513845], "class": 5, "intensity": 310, "returns": 17}}]}
+``` Example (synthetic):
 
 ```json
 {"op": "batch", "commands": [
