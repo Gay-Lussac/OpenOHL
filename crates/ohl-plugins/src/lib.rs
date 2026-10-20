@@ -98,6 +98,19 @@ mod code_wind_bindings {
 /// plugins.
 pub const STRUCTURE_WIND_EXPORT: &str = "ohl:plugin/structure-wind@0.1.0";
 
+mod rule_presets_bindings {
+    wasmtime::component::bindgen!({
+        world: "rule-presets-export",
+        path: "wit",
+    });
+}
+
+pub use rule_presets_bindings::exports::ohl::plugin::rule_presets::RulePreset;
+
+/// Export name of the optional `rule-presets` interface of design-code
+/// plugins.
+pub const RULE_PRESETS_EXPORT: &str = "ohl:plugin/rule-presets@0.1.0";
+
 mod check_bindings {
     wasmtime::component::bindgen!({
         world: "check-plugin",
@@ -923,34 +936,43 @@ impl WasmHost {
     /// for.
     /// A plugin that also exports `structure-wind` (the
     /// `code-wind-plugin` world) is loaded with it; one built without it
-    /// loads as before and gives no wind factors.
+    /// loads as before and gives no wind factors. The same for the
+    /// optional `rule-presets` export (`code-rules-plugin`): looked for on
+    /// its own, none without it.
     pub fn load_code(&self, dir: &Path) -> Result<WasmCodePlugin, PluginError> {
         let mut p = self.prepare(dir, Some((DESIGN_CODE, "a design-code plugin")))?;
         let fail =
             |e, p: &Prepared| classify(e, &p.manifest.plugin.name, "instantiation", p.limits);
-        let instance = if p
-            .component
-            .get_export_index(None, STRUCTURE_WIND_EXPORT)
-            .is_some()
-        {
+        let has = |name: &str| p.component.get_export_index(None, name).is_some();
+        let (wind, rules) = (has(STRUCTURE_WIND_EXPORT), has(RULE_PRESETS_EXPORT));
+        let component_instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p))?;
+        let instance = if wind {
             CodeInstance::Wind(
-                code_wind_bindings::CodeWindPlugin::instantiate(
-                    &mut p.store,
-                    &p.component,
-                    &self.linker,
-                )
-                .map_err(|e| fail(e, &p))?,
+                code_wind_bindings::CodeWindPlugin::new(&mut p.store, &component_instance)
+                    .map_err(|e| fail(e, &p))?,
             )
         } else {
             CodeInstance::Plain(
-                code_bindings::CodePlugin::instantiate(&mut p.store, &p.component, &self.linker)
+                code_bindings::CodePlugin::new(&mut p.store, &component_instance)
                     .map_err(|e| fail(e, &p))?,
             )
+        };
+        let rule_presets = if rules {
+            Some(
+                rule_presets_bindings::RulePresetsExport::new(&mut p.store, &component_instance)
+                    .map_err(|e| fail(e, &p))?,
+            )
+        } else {
+            None
         };
         Ok(WasmCodePlugin {
             manifest: p.manifest,
             store: p.store,
             instance,
+            rule_presets,
             limits: p.limits,
         })
     }
@@ -968,6 +990,8 @@ pub struct WasmCodePlugin {
     manifest: Manifest,
     store: Store<HostState>,
     instance: CodeInstance,
+    /// The optional `rule-presets` export.
+    rule_presets: Option<rule_presets_bindings::RulePresetsExport>,
     limits: Limits,
 }
 
@@ -1026,6 +1050,30 @@ impl WasmCodePlugin {
         i.ohl_plugin_structure_wind()
             .call_structure_wind(&mut self.store, parameters)
             .map_err(|e| classify(e, &name, "structure-wind", limits))
+    }
+
+    /// Whether the plugin exports `rule-presets` (built for it).
+    pub fn has_rule_presets(&self) -> bool {
+        self.rule_presets.is_some()
+    }
+
+    /// Calls `rule-presets` with a parameter file's text (empty: none
+    /// given): the code's presets of clearance rules, none for a plugin
+    /// built without the export. Inner `Err`: the plugin's own error,
+    /// about the file.
+    pub fn rule_presets(
+        &mut self,
+        parameters: &str,
+    ) -> Result<Result<Vec<RulePreset>, String>, PluginError> {
+        let Some(i) = &self.rule_presets else {
+            return Ok(Ok(Vec::new()));
+        };
+        self.store.set_epoch_deadline(self.limits.deadline_ticks());
+        let name = self.manifest.plugin.name.clone();
+        let limits = self.limits;
+        i.ohl_plugin_rule_presets()
+            .call_rule_presets(&mut self.store, parameters)
+            .map_err(|e| classify(e, &name, "rule-presets", limits))
     }
 }
 
@@ -1253,11 +1301,22 @@ impl WasmHost {
         let mut info: Option<PluginInfo> = None;
         let mut details = Vec::new();
         if has(DESIGN_CODE) {
-            let c = self.load_code(dir)?.describe()?;
+            let mut code = self.load_code(dir)?;
+            let c = code.describe()?;
             details.push(format!(
                 "parameter template: {} lines",
                 c.parameters_template.lines().count()
             ));
+            let optional: Vec<&str> = [
+                (code.has_structure_wind(), "structure-wind"),
+                (code.has_rule_presets(), "rule-presets"),
+            ]
+            .into_iter()
+            .filter_map(|(on, n)| on.then_some(n))
+            .collect();
+            if !optional.is_empty() {
+                details.push(format!("optional exports: {}", optional.join(", ")));
+            }
             info.get_or_insert(PluginInfo {
                 name: c.name,
                 version: c.version,

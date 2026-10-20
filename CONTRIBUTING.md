@@ -46,6 +46,8 @@ Every calculation PR must include:
    (cd plugins/examples/hello-wasm && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/geojson && cargo build --release --target wasm32-wasip2)
    (cd plugins/tests/runaway && cargo build --release --target wasm32-wasip2)
+   (cd plugins/tests/code-presets && cargo build --release --target wasm32-wasip2)
+   (cd plugins/tests/code-old && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/esri-grid && cargo build --release --target wasm32-wasip2)
    (cd plugins/examples/project-bundle && cargo build --release --target wasm32-wasip2)
    for d in plugins/codes/*/; do [ -f "$d/ohl-plugin.toml" ] && (cd "$d" && cargo build --release --target wasm32-wasip2); done

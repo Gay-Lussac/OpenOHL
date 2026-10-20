@@ -47,6 +47,12 @@ fn plugin_info_knows_every_world() {
         ("codes/en50341", "code-plugin", "parameter template:"),
         ("codes/iec60826", "code-plugin", "parameter template:"),
         ("codes/nesc", "code-plugin", "parameter template:"),
+        (
+            "tests/code-presets",
+            "code-plugin",
+            "optional exports: structure-wind, rule-presets",
+        ),
+        ("tests/code-old", "code-plugin", "parameter template:"),
     ];
     for (relative, world, detail) in cases {
         let Some(dir) = built(relative) else {
@@ -74,4 +80,57 @@ fn plugin_info_knows_every_world() {
         );
         assert!(stdout.contains(detail), "{relative}: {stdout}");
     }
+}
+
+/// `ohl code rule-presets` lists a plugin's presets of clearance rules
+/// with their distances and writes them with `--out`; `ohl code generate`
+/// writes them beside the weather cases.
+#[test]
+fn code_rule_presets_are_listed_and_written() {
+    let Some(dir) = built("tests/code-presets") else {
+        return;
+    };
+    let out_dir = std::env::temp_dir().join(format!("ohl-rule-presets-cli-{}", std::process::id()));
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["code", "rule-presets", "--plugin"])
+        .arg(&dir)
+        .arg("--out")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("ground — Ground 6 m"), "{stdout}");
+    assert!(
+        stdout.contains("Test ground: vertical 6.00 m + 0.01 m/kV above 0 kV"),
+        "{stdout}"
+    );
+    assert!(out_dir.join("code-presets-rules-ground.ohlr").is_file());
+    assert!(out_dir.join("code-presets-rules-ground.ohlwc").is_file());
+    let params = out_dir.join("p.toml");
+    std::fs::write(&params, "").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["code", "generate", "--plugin"])
+        .arg(&dir)
+        .arg("--params")
+        .arg(&params)
+        .arg("--weather")
+        .arg(out_dir.join("g/w.ohlwc"))
+        .arg("--load-cases")
+        .arg(out_dir.join("g/l.ohllc"))
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("rule preset →"), "{stdout}");
+    assert!(out_dir.join("g/code-presets-rules-ground.ohlr").is_file());
+    std::fs::remove_dir_all(&out_dir).unwrap();
 }

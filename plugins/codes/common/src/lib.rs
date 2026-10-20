@@ -91,6 +91,26 @@ macro_rules! no_structure_wind {
     };
 }
 
+/// Implements the optional `rule-presets` interface (the
+/// `code-rules-plugin` world, after its `wit_bindgen::generate!`) giving
+/// **none**: the plugin has no presets of clearance rules (ground,
+/// objects, crossings, wire to wire). A plugin that has them replaces
+/// this with its own `rule_presets`, returning rule files (`.ohlr` text)
+/// built from the parameter file or its own data (no values typed into
+/// the plugin from memory).
+#[macro_export]
+macro_rules! no_rule_presets {
+    () => {
+        impl exports::ohl::plugin::rule_presets::Guest for Code {
+            fn rule_presets(
+                _parameters: String,
+            ) -> Result<Vec<exports::ohl::plugin::rule_presets::RulePreset>, String> {
+                Ok(Vec::new())
+            }
+        }
+    };
+}
+
 /// Reads a parameter file into `T` (unknown keys are errors when `T`
 /// says so).
 pub fn parse<T: DeserializeOwned>(text: &str) -> Result<T, String> {
