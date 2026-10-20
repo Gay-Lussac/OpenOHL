@@ -106,11 +106,13 @@ pub enum Layer {
     Versions,
     /// Lines below the lowest conductor (by the ground clearance).
     ConductorClearance,
+    /// LiDAR points within the corridor, as dots (profile, plan).
+    Lidar,
 }
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 27] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -137,6 +139,7 @@ impl Layer {
         Self::Corridor,
         Self::Versions,
         Self::ConductorClearance,
+        Self::Lidar,
     ];
 
     /// Layer name in DXF.
@@ -168,6 +171,7 @@ impl Layer {
             Self::Corridor => "OHL_CORRIDOR",
             Self::Versions => "OHL_VERSIONS",
             Self::ConductorClearance => "OHL_CONDUCTOR_CLEARANCE",
+            Self::Lidar => "OHL_LIDAR",
         }
     }
 
@@ -187,6 +191,7 @@ impl Layer {
             | Self::KeyMap => Color::BLACK,
             Self::Corridor | Self::Versions => Color(0x6a, 0x6a, 0x6a),
             Self::ConductorClearance => Color(0xa0, 0x18, 0x18),
+            Self::Lidar => Color(0x80, 0x80, 0x80),
             Self::Members | Self::Elevations => Color(0x55, 0x55, 0x55),
             Self::Grid => Color(0xdd, 0xdd, 0xdd),
             Self::Panels => Color(0x88, 0x88, 0x88),

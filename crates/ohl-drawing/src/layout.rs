@@ -132,6 +132,11 @@ pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2
         see(&mut essential, p[0], p[2]);
     }
     let mut full = essential;
+    // The ground along the corridor's edges: seen when it fits (the
+    // LiDAR points are not: they are clipped at the panel).
+    for p in d.corridor_ground.iter().flat_map(|(_, r)| r).flatten() {
+        see(&mut full, p[0], p[1]);
+    }
     for w in d
         .wires
         .iter()
@@ -417,6 +422,148 @@ fn lp(o: &Options, layer: Layer, color: &str, width: f64) -> Pen {
     o.template.pen(layer, pen(color, width))
 }
 
+/// The axis's pen in the plan: the template's `[centreline] pen` over its
+/// layer's.
+fn centreline_pen(o: &Options) -> Pen {
+    o.template
+        .centreline
+        .pen
+        .over(lp(o, Layer::Centreline, "#999", 0.25).dashed("4 1 1 1"))
+}
+
+/// The pen of the corridor's edge at `offset` (right positive) and
+/// whether it is the near one: plan, key map and its ground in the
+/// profile alike.
+pub(crate) fn corridor_edge(o: &Options, offset: f64) -> (Pen, bool) {
+    o.template.corridor.edge_pen(
+        offset,
+        lp(o, Layer::Corridor, "#6a6a6a", 0.25).dashed("6 1.5 1 1.5"),
+    )
+}
+
+/// The legend's entries of a corridor of half width `w`: one (its label)
+/// when both edges look alike and no ground is drawn along them, else
+/// the near and the far edge.
+fn corridor_legend(o: &Options, f: &Frame, d: &RouteDrawing, w: f64, label: &str) {
+    let near = o.template.corridor.near_offset(w);
+    let (pn, _) = corridor_edge(o, near);
+    let (pf, _) = corridor_edge(o, -near);
+    let mut legend = f.legend.borrow_mut();
+    if pn == pf && d.corridor_ground.is_empty() {
+        legend.add(Sample::Line(pn), label);
+        return;
+    }
+    let width = crate::template::format_number(w, "");
+    let side = |o: f64| if o >= 0.0 { "right" } else { "left" };
+    let labels = &o.template.legend;
+    legend.add(
+        Sample::Line(pn),
+        labels.label("corridor_near", &[("side", side(near)), ("width", &width)]),
+    );
+    legend.add(
+        Sample::Line(pf),
+        labels.label("corridor_far", &[("side", side(-near)), ("width", &width)]),
+    );
+}
+
+/// The colour and diameter of LiDAR class `code`'s dots: the template's
+/// style, else the class scheme's colour, else grey.
+fn lidar_look(o: &Options, code: u8) -> (Color, f64) {
+    let spec = &o.template.lidar;
+    let style = spec.style(code);
+    let color = style
+        .and_then(|s| s.colour.as_deref())
+        .and_then(Color::parse)
+        .or_else(|| {
+            o.class_names
+                .get(&code)
+                .and_then(|(_, c)| *c)
+                .map(|c| Color(c[0], c[1], c[2]))
+        })
+        .unwrap_or(Color(0x80, 0x80, 0x80));
+    let size = style.and_then(|s| s.size).map_or(spec.size.0, |s| s.0);
+    (color, size)
+}
+
+/// The LiDAR dots of route `d` on frame `f` (from the sheet's start to
+/// the paper's end), each point placed by `at` ((station, offset, z) →
+/// paper; none: not drawn): **one dot per class in each square cell** of
+/// the template's `cell` on paper (what is drawn only; the points are not
+/// changed), each class in its colour, listed in the legend by its name.
+fn lidar_dots(
+    o: &Options,
+    f: &Frame,
+    d: &RouteDrawing,
+    at: impl Fn(&[f64; 3]) -> Option<[f64; 2]>,
+) -> Vec<Item> {
+    let classes = o.lidar_class_list();
+    if classes.is_empty() || d.lidar.is_empty() {
+        return Vec::new();
+    }
+    let mut wanted = [false; 256];
+    for &c in &classes {
+        wanted[c as usize] = true;
+    }
+    let cell = o.template.lidar.cell.0;
+    let (a, b) = (f.s0 - 5.0 / f.h, f.s1.max(f.paper_end) + 5.0 / f.h);
+    let from = d.lidar.partition_point(|p| p.0[0] < a);
+    let to = d.lidar.partition_point(|p| p.0[0] <= b);
+    let mut seen = std::collections::HashSet::new();
+    let mut drawn = [false; 256];
+    let mut out = Vec::new();
+    for (q, c) in &d.lidar[from..to.max(from)] {
+        if !wanted[*c as usize] {
+            continue;
+        }
+        let Some(p) = at(q) else { continue };
+        if cell > 0.0
+            && !seen.insert((
+                (p[0] / cell).floor() as i64,
+                (p[1] / cell).floor() as i64,
+                *c,
+            ))
+        {
+            continue;
+        }
+        let (color, size) = lidar_look(o, *c);
+        drawn[*c as usize] = true;
+        out.push(Item::Circle(Circle {
+            layer: Layer::Lidar,
+            centre: p,
+            radius: 0.5 * size,
+            stroke: None,
+            fill: Some(color),
+            title: None,
+        }));
+    }
+    let mut legend = f.legend.borrow_mut();
+    for c in classes {
+        if !drawn[c as usize] {
+            continue;
+        }
+        let (color, size) = lidar_look(o, c);
+        // A group's label names the group (its key), once.
+        let (name, code) = match o.template.lidar.style_entry(c) {
+            Some((key, s)) if s.label.is_some() => {
+                (s.label.clone().unwrap_or_default(), key.to_owned())
+            }
+            _ => (
+                o.class_names
+                    .get(&c)
+                    .map_or_else(|| format!("class {c}"), |(n, _)| n.clone()),
+                c.to_string(),
+            ),
+        };
+        legend.add(
+            Sample::Dots(color, size),
+            o.template
+                .legend
+                .label("lidar", &[("name", &name), ("class", &code)]),
+        );
+    }
+    out
+}
+
 /// The structures drawn in the plan and the profile: the line's, and
 /// those of the other versions with their roles: (structure, role, its
 /// name written, of another version).
@@ -469,8 +616,9 @@ fn wire_pen(
     let (p, words) = crate::style::wire_pen(&o.template, w, role);
     let p = o.template.pen(Layer::Wires, p);
     let mut legend = f.legend.borrow_mut();
+    let labels = &o.template.legend;
     let words = match label {
-        Some(l) if !l.is_empty() => format!("{l}: {words}"),
+        Some(l) if !l.is_empty() => labels.label("version", &[("label", l), ("words", &words)]),
         _ => words,
     };
     legend.add(
@@ -488,12 +636,12 @@ fn wire_pen(
         };
         legend.add(
             Sample::Line(Pen::new(Color(0x44, 0x44, 0x44), 0.3).dashed(d)),
-            format!("weather case {case}"),
+            labels.label("weather_case", &[("case", case)]),
         );
     } else if !w.case.is_empty() {
         legend.add(
             Sample::Line(Pen::new(Color(0x44, 0x44, 0x44), 0.3)),
-            format!("weather case {}", w.case),
+            labels.label("weather_case", &[("case", &w.case)]),
         );
     }
     p
@@ -506,7 +654,8 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
     let mut plan = Vec::new();
     let mut ends = Vec::new();
     let mut names = Vec::new();
-    let axis = lp(o, Layer::Centreline, "#999", 0.25).dashed("4 1 1 1");
+    let labels = &o.template.legend;
+    let axis = centreline_pen(o);
     plan.push(path(
         Layer::Centreline,
         vec![[f.x(0.0), f.plan_y(0.0)], [f.x(d.length), f.plan_y(0.0)]],
@@ -515,14 +664,13 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
     ));
     f.legend
         .borrow_mut()
-        .add(Sample::Line(axis), "axis of the line");
-    // The corridor's edges.
+        .add(Sample::Line(axis), labels.label("axis", &[]));
+    // LiDAR points seen from above, under everything else.
+    if o.template.lidar.plan {
+        plan.extend(lidar_dots(o, f, d, |q| Some([f.x(q[0]), f.plan_y(q[1])])));
+    }
+    // The corridor's edges, each in its pen (near, far).
     if let Some(w) = o.corridor.filter(|w| *w > 0.0) {
-        let p = o
-            .template
-            .corridor
-            .pen
-            .over(lp(o, Layer::Corridor, "#6a6a6a", 0.25).dashed("6 1.5 1 1.5"));
         let label = crate::template::fill(
             o.template
                 .corridor
@@ -531,8 +679,10 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
                 .unwrap_or("corridor ±{width} m"),
             &|n, _| (n == "width").then(|| crate::template::format_number(w, "")),
         );
-        for side in [-1.0, 1.0] {
-            let y = f.plan_y(side * w);
+        let near = o.template.corridor.near_offset(w);
+        for offset in [near, -near] {
+            let (p, _) = corridor_edge(o, offset);
+            let y = f.plan_y(offset);
             plan.push(path(
                 Layer::Corridor,
                 vec![[f.x(0.0), y], [f.x(d.length), y]],
@@ -541,13 +691,13 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
             ));
             names.push(text(
                 Layer::Corridor,
-                [f.left + 1.0, y + if side < 0.0 { -0.8 } else { 2.4 }],
+                [f.left + 1.0, y + if offset < 0.0 { -0.8 } else { 2.4 }],
                 2.0,
                 Anchor::Start,
                 label.clone(),
             ));
         }
-        f.legend.borrow_mut().add(Sample::Line(p), label);
+        corridor_legend(o, f, d, w, &label);
     }
     // Isoclearance lines under the wires.
     for w in &d.isoclearance {
@@ -562,9 +712,9 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
         ));
         f.legend.borrow_mut().add(
             Sample::Line(pen(&w.color, 0.3)),
-            format!(
-                "isoclearance {}",
-                w.label.trim_start_matches("isoclearance ")
+            labels.label(
+                "isoclearance",
+                &[("level", w.label.trim_start_matches("isoclearance "))],
             ),
         );
     }
@@ -627,8 +777,8 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
                     .and_then(|r| o.template.roles.get(r))
                     .and_then(|r| r.label.clone())
                 {
-                    Some(l) => format!("structure ({l})"),
-                    None => "structure".into(),
+                    Some(l) => labels.label("structure_role", &[("role", &l)]),
+                    None => labels.label("structure", &[]),
                 },
             );
         }
@@ -670,9 +820,10 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
     }
     for (p, label) in &d.markers {
         plan.push(marker([f.x(p[0]), f.plan_y(p[1])], 1.2, label));
-        f.legend
-            .borrow_mut()
-            .add(Sample::Circle(pen("#d00", 0.5)), "clearance violation");
+        f.legend.borrow_mut().add(
+            Sample::Circle(pen("#d00", 0.5)),
+            labels.label("clearance_violation", &[]),
+        );
     }
     (plan, ends, names)
 }
@@ -761,9 +912,10 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
                     Some(format!("datum step at {}", format_station(p.s0))),
                 ));
             }
-            f.legend
-                .borrow_mut()
-                .add(Sample::Line(step), "datum step (heights read on each side)");
+            f.legend.borrow_mut().add(
+                Sample::Line(step),
+                o.template.legend.label("datum_step", &[]),
+            );
         }
     }
     let panel = lp(o, Layer::Panels, "#888", 0.3);
@@ -785,23 +937,27 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
         f.prof_h,
         panel,
     ));
-    // The panels' names above them, clear of what they hold.
-    if f.plan {
+    // The panels' names above them, clear of what they hold (the
+    // template's words).
+    let lay = &o.template.layout;
+    if f.plan && !lay.plan_title.is_empty() {
         items.push(bold(text(
             Layer::Labels,
             [f.left, f.plan_top - 1.5],
             3.0,
             Anchor::Start,
-            "Plan",
+            lay.plan_title.clone(),
         )));
     }
-    items.push(bold(text(
-        Layer::Labels,
-        [f.left, f.prof_top - 1.5],
-        3.0,
-        Anchor::Start,
-        "Profile",
-    )));
+    if !lay.profile_title.is_empty() {
+        items.push(bold(text(
+            Layer::Labels,
+            [f.left, f.prof_top - 1.5],
+            3.0,
+            Anchor::Start,
+            lay.profile_title.clone(),
+        )));
+    }
 
     // Names of the structures shown are written whole, outside the clip
     // regions (a name at a sheet's end is not cut in half).
@@ -882,31 +1038,22 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             items: fade(all),
         }));
     }
-    // The curves' labels, at the middle of the sheet over each.
+    // The curves' labels: where the template says, clear of the
+    // structures, the wires and the ground (`label_at = "auto"`).
+    let obstacles = profile_obstacles(d, o, f, &curves);
     for c in &curves {
-        let mid = 0.5 * (s0 + s1);
-        let at = c
-            .runs
-            .iter()
-            .flatten()
-            .filter(|q| q[0] >= s0 && q[0] <= s1)
-            .min_by(|a, b| (a[0] - mid).abs().total_cmp(&(b[0] - mid).abs()));
-        if let Some(q) = at {
-            let p = f.part_at(q[0]);
-            let y = f.y_in(p, q[1]) - 1.0;
-            if y > f.prof_top + 3.0 && y < prof_bottom {
-                let mut t = text(
-                    Layer::ConductorClearance,
-                    [f.x(q[0]), y],
-                    2.0,
-                    Anchor::Middle,
-                    c.label.clone(),
-                );
-                if let Item::Text(x) = &mut t {
-                    x.color = curve_pen(o).color;
-                }
-                names.push(t);
+        if let Some(at) = curve_label_at(o, f, c, &obstacles) {
+            let mut t = text(
+                Layer::ConductorClearance,
+                at,
+                2.0,
+                Anchor::Middle,
+                c.label.clone(),
+            );
+            if let Item::Text(x) = &mut t {
+                x.color = curve_pen(o).color;
             }
+            names.push(t);
         }
     }
     // Structures' names over their tops, inside the panel (a top cut at
@@ -1010,6 +1157,194 @@ fn curve_pen(o: &Options) -> Pen {
         .over(lp(o, Layer::ConductorClearance, "#a01818", 0.3).dashed("5 1 1 1 1 1"))
 }
 
+/// What a label in the profile stays clear of, on paper (mm): each
+/// structure's box (its width, from its base to the room for its name
+/// over its top) and the points of the wires, the ground lines and the
+/// lines below the lowest conductor (every 1 mm along them), in columns
+/// 2 mm wide.
+struct Obstacles {
+    boxes: Vec<[f64; 4]>,
+    columns: std::collections::HashMap<i64, Vec<[f64; 2]>>,
+}
+
+impl Obstacles {
+    /// How many structures and points lie in `r` (left, top, width,
+    /// height).
+    fn hits(&self, r: [f64; 4]) -> (usize, usize) {
+        let boxes = self
+            .boxes
+            .iter()
+            .filter(|b| {
+                b[0] < r[0] + r[2] && r[0] < b[0] + b[2] && b[1] < r[1] + r[3] && r[1] < b[1] + b[3]
+            })
+            .count();
+        let (a, b) = (
+            (r[0] / 2.0).floor() as i64,
+            ((r[0] + r[2]) / 2.0).floor() as i64,
+        );
+        let points = (a..=b)
+            .filter_map(|k| self.columns.get(&k))
+            .flatten()
+            .filter(|p| crate::model::inside(**p, r))
+            .count();
+        (boxes, points)
+    }
+}
+
+fn profile_obstacles(
+    d: &RouteDrawing,
+    o: &Options,
+    f: &Frame,
+    curves: &[crate::curves::Curve],
+) -> Obstacles {
+    let within = |s: f64| s >= f.s0 - 1e-6 && s <= f.s1 + 1e-6;
+    let y = |s: f64, z: f64| f.y_in(f.part_at(s), z);
+    let mut boxes = Vec::new();
+    for (m, ..) in all_structures(d, o) {
+        if !within(m.station) {
+            continue;
+        }
+        let hw = half_width_mm(m, f.h);
+        let top = y(m.station, structure_top(m)) - LABEL_ROOM_MM;
+        let base = y(m.station, m.base);
+        boxes.push([f.x(m.station) - hw, top, 2.0 * hw, base - top]);
+    }
+    let mut columns: std::collections::HashMap<i64, Vec<[f64; 2]>> = Default::default();
+    let mut add = |run: Vec<[f64; 2]>| {
+        let mut put = |p: [f64; 2]| {
+            columns
+                .entry((p[0] / 2.0).floor() as i64)
+                .or_default()
+                .push(p)
+        };
+        for w in run.windows(2) {
+            let n = ((w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]).ceil() as usize).clamp(1, 500);
+            for k in 0..n {
+                let t = k as f64 / n as f64;
+                put([
+                    w[0][0] + t * (w[1][0] - w[0][0]),
+                    w[0][1] + t * (w[1][1] - w[0][1]),
+                ]);
+            }
+        }
+        if let Some(p) = run.last() {
+            put(*p);
+        }
+    };
+    let paper = |s: f64, z: f64| [f.x(s), y(s, z)];
+    for (w, ..) in all_wires(d, o) {
+        add(w
+            .points
+            .iter()
+            .filter(|p| within(p[0]))
+            .map(|p| paper(p[0], p[2]))
+            .collect());
+    }
+    let clearance = o.clearance.unwrap_or(0.0);
+    for run in d
+        .ground
+        .iter()
+        .chain(d.sides.iter().flat_map(|(_, r)| r))
+        .chain(d.corridor_ground.iter().flat_map(|(_, r)| r))
+    {
+        add(run
+            .iter()
+            .filter(|p| within(p[0]))
+            .map(|p| paper(p[0], p[1]))
+            .collect());
+    }
+    if clearance > 0.0 {
+        for run in &d.ground {
+            add(run
+                .iter()
+                .filter(|p| within(p[0]))
+                .map(|p| paper(p[0], p[1] + clearance))
+                .collect());
+        }
+    }
+    for c in curves {
+        for run in &c.runs {
+            add(run
+                .iter()
+                .filter(|p| within(p[0]))
+                .map(|p| paper(p[0], p[1]))
+                .collect());
+        }
+    }
+    Obstacles { boxes, columns }
+}
+
+/// Where the label of line `c` below the lowest conductor goes (its
+/// text's anchor, centred): `label_at = "middle"` the sheet's middle just
+/// above the line; else, every 2 mm along the sheet, just above or just
+/// below the line, the place hitting the fewest structures, then the
+/// fewest wire and ground points, nearest the sheet's middle (`"auto"`),
+/// start or end — above before below. None: no place in the panel.
+fn curve_label_at(
+    o: &Options,
+    f: &Frame,
+    c: &crate::curves::Curve,
+    obstacles: &Obstacles,
+) -> Option<[f64; 2]> {
+    let size = 2.0;
+    let prof_bottom = f.prof_top + f.prof_h;
+    let within = |s: f64| s >= f.s0 - 1e-6 && s <= f.s1 + 1e-6;
+    let mode = o.template.conductor_clearance.label_at.as_str();
+    if mode == "middle" {
+        let mid = 0.5 * (f.s0 + f.s1);
+        let q = c
+            .runs
+            .iter()
+            .flatten()
+            .filter(|q| within(q[0]))
+            .min_by(|a, b| (a[0] - mid).abs().total_cmp(&(b[0] - mid).abs()))?;
+        let y = f.y_in(f.part_at(q[0]), q[1]) - 1.0;
+        return (y > f.prof_top + 3.0 && y < prof_bottom).then_some([f.x(q[0]), y]);
+    }
+    let pts: Vec<[f64; 2]> = c
+        .runs
+        .iter()
+        .flatten()
+        .filter(|q| within(q[0]))
+        .map(|q| [f.x(q[0]), f.y_in(f.part_at(q[0]), q[1])])
+        .collect();
+    let w = crate::pdf::text_width(&c.label, size, false);
+    let target = match mode {
+        "start" => f.left,
+        "end" => f.left + f.width(),
+        _ => f.left + 0.5 * f.width(),
+    };
+    let (lo, hi) = (f.left + 0.5 * w + 1.0, f.left + f.width() - 0.5 * w - 1.0);
+    let mut best: Option<(f64, [f64; 2])> = None;
+    let mut x = lo;
+    while x <= hi + 1e-9 {
+        let span = pts
+            .iter()
+            .filter(|p| p[0] >= x - 0.5 * w && p[0] <= x + 0.5 * w)
+            .fold([f64::INFINITY, f64::NEG_INFINITY], |r, p| {
+                [r[0].min(p[1]), r[1].max(p[1])]
+            });
+        if span[0].is_finite() {
+            for (below, base) in [(false, span[0] - 1.0), (true, span[1] + 2.6)] {
+                let r = [x - 0.5 * w - 0.5, base - 1.7, w + 1.0, 2.3];
+                if r[1] < f.prof_top + 0.5 || r[1] + r[3] > prof_bottom - 0.5 {
+                    continue;
+                }
+                let (boxes, points) = obstacles.hits(r);
+                let cost = 1000.0 * boxes as f64
+                    + 20.0 * points.min(40) as f64
+                    + (x - target).abs() / f.width().max(1.0)
+                    + if below { 0.3 } else { 0.0 };
+                if best.is_none_or(|b| cost < b.0) {
+                    best = Some((cost, [x, base]));
+                }
+            }
+        }
+        x += 2.0;
+    }
+    best.map(|b| b.1)
+}
+
 /// The lines below the lowest conductor the options ask for (none unless
 /// the template shows them).
 fn conductor_curves(d: &RouteDrawing, o: &Options) -> Vec<crate::curves::Curve> {
@@ -1041,7 +1376,13 @@ fn profile_part(
     let y = |z: f64| f.y_in(p, z);
     let mut prof = Vec::new();
     let mut ends = Vec::new();
+    // LiDAR points by station and height, under everything else (the
+    // legend's entries made as they are drawn).
+    if o.template.lidar.profile {
+        prof.extend(lidar_dots(o, f, d, |q| Some([f.x(q[0]), y(q[2])])));
+    }
     let mut legend = f.legend.borrow_mut();
+    let labels = &o.template.legend;
     for (offset, runs) in &d.sides {
         let side = lp(o, Layer::GroundSide, "#b08850", 0.25).dashed("1.5 1");
         for run in runs {
@@ -1052,18 +1393,44 @@ fn profile_part(
                 Some(format!("ground at offset {offset:+.1} m")),
             ));
         }
-        legend.add(Sample::Line(side), "ground beside the axis");
+        legend.add(
+            Sample::Line(side),
+            labels.label("ground_side", &[("offset", &format!("{offset:+.1}"))]),
+        );
+    }
+    // The ground along the corridor's edges, each in its edge's pen (the
+    // legend's corridor entries name them).
+    for (offset, runs) in &d.corridor_ground {
+        let (p, near) = corridor_edge(o, *offset);
+        for run in runs {
+            prof.push(path(
+                Layer::GroundSide,
+                run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
+                p.clone(),
+                Some(format!(
+                    "ground on the corridor's {} edge ({offset:+.1} m)",
+                    if near { "near" } else { "far" }
+                )),
+            ));
+        }
     }
     let instead = o.template.conductor_clearance.mode == "instead" && !curves.is_empty();
+    // The ground on the axis: always solid (the template may only leave
+    // it out, `[centreline] ground = false`).
+    let ground = Pen {
+        dash: None,
+        ..lp(o, Layer::Ground, "#7a4a1a", 0.45)
+    };
     for run in &d.ground {
-        let ground = lp(o, Layer::Ground, "#7a4a1a", 0.45);
-        prof.push(path(
-            Layer::Ground,
-            run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
-            ground.clone(),
-            Some("ground (centreline)".into()),
-        ));
-        legend.add(Sample::Line(ground), "ground on the axis");
+        if o.template.centreline.ground {
+            prof.push(path(
+                Layer::Ground,
+                run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
+                ground.clone(),
+                Some("ground (centreline)".into()),
+            ));
+            legend.add(Sample::Line(ground.clone()), labels.label("ground", &[]));
+        }
         if let Some(c) = o.clearance.filter(|_| !instead) {
             let line = lp(o, Layer::Clearance, "#d22", 0.3).dashed("3 1.5");
             prof.push(path(
@@ -1074,21 +1441,25 @@ fn profile_part(
             ));
             legend.add(
                 Sample::Line(line),
-                format!("ground + {c} m (required clearance)"),
+                labels.label(
+                    "clearance_line",
+                    &[("distance", &crate::template::format_number(c, ""))],
+                ),
             );
         }
     }
     let cp = curve_pen(o);
     for c in curves {
+        let text = c.legend_with(&o.template.legend);
         for run in &c.runs {
             prof.push(path(
                 Layer::ConductorClearance,
                 run.iter().map(|q| [f.x(q[0]), y(q[1])]).collect(),
                 cp.clone(),
-                Some(c.legend.clone()),
+                Some(text.clone()),
             ));
         }
-        legend.add(Sample::Line(cp.clone()), c.legend.clone());
+        legend.add(Sample::Line(cp.clone()), text);
     }
     drop(legend);
     for (m, role, _, version) in all_structures(d, o) {
@@ -1874,18 +2245,20 @@ impl Paper {
             frame[2] - 2.0 * pad,
             frame[3] - 2.0 * pad,
         ];
-        // The title block in its corner of the frame.
+        // The title block in its corner, inside the frame's padding (as
+        // everything around the panels: the revisions and the legend on
+        // it, the bottom row, the notes).
         let tb_h: f64 = t.title_block.rows.iter().map(|r| r.0).sum();
         let tb_w = match t.title_block.width {
-            crate::template::Size::Auto => frame[2],
-            crate::template::Size::Fixed(w) => w.min(frame[2]),
+            crate::template::Size::Auto => inner[2],
+            crate::template::Size::Fixed(w) => w.min(inner[2]),
         };
-        let full = tb_w >= frame[2] - 1e-6;
+        let full = tb_w >= inner[2] - 1e-6;
         let tb_x = match t.title_block.corner {
-            crate::template::Corner::BottomRight => frame[0] + frame[2] - tb_w,
-            crate::template::Corner::BottomLeft => frame[0],
+            crate::template::Corner::BottomRight => inner[0] + inner[2] - tb_w,
+            crate::template::Corner::BottomLeft => inner[0],
         };
-        let title_block = [tb_x, frame[1] + frame[3] - tb_h, tb_w, tb_h];
+        let title_block = [tb_x, inner[1] + inner[3] - tb_h, tb_w, tb_h];
         // Stacked on the title block: the revisions, the legend.
         let mut top = title_block[1];
         let mut stack = |height: f64, width: Option<f64>| {
@@ -2169,7 +2542,14 @@ fn sheet_values(
     );
     put("cases", o.info.cases.clone());
     put("crs", o.info.crs.clone());
-    put("height_datum", o.info.height_datum.clone());
+    put(
+        "height_datum",
+        if o.info.height_datum.trim().is_empty() {
+            crate::height_datum_of(&o.info.crs)
+        } else {
+            o.info.height_datum.clone()
+        },
+    );
     put("program", format!("OpenOHL {}", env!("CARGO_PKG_VERSION")));
     for (k, v) in [
         ("sheet", sl.number as f64),
@@ -2192,6 +2572,7 @@ fn sheet_values(
         text,
         number,
         station,
+        template: o.template.clone(),
     }
 }
 
@@ -2250,7 +2631,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             }
             f.legend.borrow_mut().add(
                 crate::style::Sample::Line(match_pen),
-                "match line (sheet's end)",
+                o.template.legend.label("match_line", &[]),
             );
             // The elevations over the match lines (their warnings are the
             // layout's).
@@ -2305,8 +2686,28 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             if let Some(r) = paper.key_map {
                 furniture::key_map(items, t, r, d, o, s0, s1);
             }
-            furniture::notes(items, t, paper.inner, &values);
+            let notes = furniture::notes(items, t, paper.inner, &values);
             let mut warnings = sl.warnings.clone();
+            // A note over the title block, the revisions, the legend, the
+            // key map or the scale bars: said (the template places notes).
+            for (k, n) in notes.iter().enumerate() {
+                for (what, r) in [
+                    ("the title block", Some(paper.title_block)),
+                    ("the revision table", paper.revisions),
+                    ("the legend", paper.legend),
+                    ("the key map", paper.key_map),
+                    ("the scale bars", paper.scale_bars),
+                ] {
+                    if let Some(r) = r
+                        && furniture::overlap(*n, r)
+                    {
+                        warnings.push(format!(
+                            "note {} lies over {what}: move it in the template (its `at`)",
+                            k + 1
+                        ));
+                    }
+                }
+            }
             if let Some(r) = paper.legend {
                 warnings.extend(furniture::legend(items, t, r, &f.legend.borrow()));
             }
