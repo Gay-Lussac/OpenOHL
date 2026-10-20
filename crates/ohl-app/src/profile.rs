@@ -517,6 +517,8 @@ impl ProfileView {
         // The sheet preview: the export's sheets of the alignments shown,
         // each moved as its alignment is on this profile.
         let mut sheets: Vec<(f64, &str, &ohl_drawing::SheetLayout)> = Vec::new();
+        // The lines below the lowest conductor the sheets carry.
+        let mut curves: Vec<(f64, &ohl_drawing::curves::Curve)> = Vec::new();
         match drawings.preview(model, case) {
             None => {}
             Some(Err(e)) => {
@@ -541,6 +543,7 @@ impl ProfileView {
                     let id = name.strip_prefix("alignment ").unwrap_or(name);
                     if let Some(r) = p.route(id) {
                         sheets.extend(r.sheets.iter().map(|s| (*at, r.id.as_str(), s)));
+                        curves.extend(r.curves.iter().map(|c| (*at, c)));
                     }
                 }
                 // Those of the alignments shown.
@@ -1047,6 +1050,31 @@ impl ProfileView {
         // The sheet preview: match lines across the view at each sheet's
         // ends, the sheets in a strip along the bottom (warned ones amber,
         // the part beyond what the sheet holds darker), their numbers.
+        for (at, c) in &curves {
+            for run in &c.runs {
+                let pts: Vec<egui::Pos2> = run.iter().map(|q| to_screen(at + q[0], q[1])).collect();
+                painter.extend(egui::Shape::dashed_line(
+                    &pts,
+                    egui::Stroke::new(1.2, egui::Color32::from_rgb(200, 60, 60)),
+                    8.0,
+                    3.0,
+                ));
+            }
+            if let Some(q) = c
+                .runs
+                .iter()
+                .flatten()
+                .nth(c.runs.iter().map(Vec::len).sum::<usize>() / 2)
+            {
+                painter.text(
+                    to_screen(at + q[0], q[1]) + egui::vec2(0.0, -4.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    &c.label,
+                    egui::FontId::proportional(10.0),
+                    egui::Color32::from_rgb(200, 60, 60),
+                );
+            }
+        }
         let match_line = egui::Color32::from_rgb(70, 140, 230);
         let warn = egui::Color32::from_rgb(230, 160, 50);
         let strip = rect.max.y - 18.0..=rect.max.y;

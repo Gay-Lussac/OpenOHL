@@ -15188,6 +15188,24 @@ fn drawings_take_a_sheet_template_its_fields_and_versions() {
     );
     assert!(svg.contains("OHL_VERSIONS") || svg.contains("as built"));
     let _ = std::fs::remove_dir_all(&dir);
+    // The lines below the lowest conductor, from the ground rules: in the
+    // sheet preview over the profile too (a rule naming no case: the
+    // largest sag drawn).
+    w.ground_rules = std::sync::Arc::new(
+        ohl_clearance::RuleSet::parse(
+            "format = \"ohl-clearance-rules\"\nversion = 1\n[[rule]]\nname = \"G\"\ntarget = \"ground\"\nvertical = \"6 m\"",
+        )
+        .unwrap()
+        .rules,
+    );
+    w.sheet.conductor_clearance = true;
+    let p = crate::drawings::preview(&m, 0, &w).unwrap();
+    assert!(!p.routes[0].curves.is_empty());
+    assert!(
+        p.routes[0].curves[0]
+            .label
+            .starts_with("6 m below the lowest conductor")
+    );
     // Kept with the drawing settings.
     let text = serde_json::to_string(&DrawingSettings::of(&w, false)).unwrap();
     let back: DrawingSettings = serde_json::from_str(&text).unwrap();
