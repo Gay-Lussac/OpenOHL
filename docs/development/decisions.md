@@ -9,6 +9,88 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-20
 
+- **Sheet export: the defects fixed** (the review of the sheet export,
+  D1–D17): the profile panel takes the whole height; its height range
+  fits the ground, the clearance line and the wires' lowest points; tops
+  that do not fit are cut (a break mark), and when not even those fit the
+  **datum is stepped** at a structure — the vertical scale is never
+  changed, the ground always seen, each warned; height labels inside the
+  panel; panels and content end at the match lines; a structure at a
+  sheet's end drawn whole on both sheets; elevations drawn after the match
+  lines, the plan panel grown to hold them; heading "Route id — name";
+  the app draws each other weather case from its own solution and takes
+  the markers, side profiles, plan scale, logos and the ground rule's
+  clearance; PDF logos cropped (no hairlines) and only what is seen
+  written; DXF texts in R12's own codes and logos left out warned. The
+  sheets' look changes accordingly (height ranges, panel heights); no
+  computed number changes.
+- **Sheet templates — the owner's answers** (all 14 as recommended):
+  extension **`.ohlsheet`** (format `ohl-sheet-template`, v1); templates
+  **in the project and in a library folder** (the project's with their
+  images embedded); plugin presets **through the WIT and as manifest
+  files**; an **own revision list** per project line with a prefill from
+  the last version commit; **DXF R12** with SVG logos as outlines, raster
+  logos left out with a warning (DXF 2000 later if needed); a **north
+  arrow per straight stretch**; a font **embedded only on request**
+  (Helvetica stays the default — embedding itself not built yet);
+  templates **carry their own texts** (no translation tables); a profile
+  taller than the sheet **steps the datum** and warns; **nothing beyond
+  the match line** by default, faded as an option; **portrait, long
+  formats and a binding edge** yes (the built-in keeps 5 mm margins, the
+  example 20 mm); **templates define the band rows** (the export may
+  switch them off); **scale bars** in the example template, not in the
+  built-in; an **empty required field refuses the export**, naming the
+  fields.
+- **Sheet templates — the owner's additions** (all template or export
+  options, default off or neutral; generic, no third party named):
+  (1) **several versions of the line on one sheet**, each in a **role**
+  (existing, project, to be removed, decommissioned, other …) styled by
+  the template, in plan, profile and elevations, with legend entries;
+  chosen in the export window (project lines) and `--version LINE=ROLE`;
+  (2) the **corridor** at ± W from the axis in the plan and the key map,
+  labelled, the plan at least that wide; (3) **styles by line kind**
+  (high / low voltage, telecom, earth wire) combined with the role,
+  overhead solid and cable dashed, other lines grey with their label; a
+  **legend** made from what each sheet draws, a graphic **scale bar**,
+  **north arrows**; every item settable from a template (the keys
+  documented), the built-in default neutral; (4) a **key map** of the
+  route with the sheet's extent marked; (5) the **structures' elevations
+  above the line, turned 90°**, a first-class template option with their
+  own scale, offset, rotation and labels (number, type, height, the
+  suspension strings' lengths); (6) **lines below the lowest conductor**
+  per circuit or voltage, lowered by the ground clearance of the
+  project's rules (by voltage; the rule's weather cases, else the largest
+  sag drawn, said in the legend; a design code's ground preset fills them
+  in through the existing rule machinery; no new engine calculation), on
+  the sheets and in the sheet preview; options on/off, circuits, style,
+  label, as well as or instead of the line above the ground.
+- **Decided here** (not covered by the requests; the most conservative
+  choice, open to the owner): where several ground rules check a circuit
+  the line below its lowest conductor uses the **largest** distance (a
+  **Conservative:** label in the theory page); a rule naming weather
+  cases that are not drawn gives **no line** and a warning (rather than
+  another case); low voltage has **no default limit** (without one every
+  system with a voltage counts as high voltage); the plugin interface
+  stays at **SDK 0.3** (the export is additive, as `rule-presets`: plugins
+  built before load unchanged — the plan's 0.4 would have refused them
+  under the 0.x rule); the listing is the command **`ohl
+  sheet-templates`** (not `ohl drawing sheet-templates`, which clashes
+  with its file argument); the corridor option is **`--corridor-width`**
+  (`--corridor` is the LiDAR corridor); the band row `ground_clearance`
+  stays empty until check results are given to it; overlap warnings of
+  elevations count the line's own only (another version's elevation at
+  the same structure overlaps by design); a version's wires and
+  structures are those **within the line width** of the route.
+- **Format and interface changes**: new file format `.ohlsheet`; new
+  project library kind `sheet-templates`; the drawing settings
+  (`app.drawings.<line>`) gain `sheet`, `side_offsets`, `plan_scale`,
+  `logos`, `clearance_rule`, `markers` and `page = "template"` (older
+  settings read with the defaults); new optional WIT export
+  `sheet-templates` and manifest `[[sheet-template]]`; new DXF layers
+  (`OHL_TITLE_FIELDS`, `OHL_TITLE_IMAGE`, `OHL_REVISIONS`, `OHL_BANDS`,
+  `OHL_LEGEND`, `OHL_KEY_MAP`, `OHL_CORRIDOR`, `OHL_VERSIONS`,
+  `OHL_CONDUCTOR_CLEARANCE`); DXF text codes `%%nnn` instead of `\U+`.
+
 - **The vegetation and danger-tree panel** (owner's requests): **wind
   steps** for the danger trees — each windy case also solved in still air
   and at every pressure up to its own, by a step, from the sides chosen

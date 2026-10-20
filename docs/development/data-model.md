@@ -936,6 +936,76 @@ warnings, per sheet) report elevations that overlap each other or reach
 into the profile. `ohl drawing --elevations --elevation-offset
 --elevation-rotation`; the app's Export drawings window
 (`DrawingsWindow::elevations`, stored with the drawing settings); `ohl_drawing::elevations` gives them in the route's (station, offset) for the sheet preview, of the structures `RouteDrawing::shown` keeps.
+Since 2026-10-20 `Elevations` also has `scale: Option<f64>` (their own
+scale denominator), `labels: ElevationLabels { number, type_name,
+height, string_length }` and `text_size` (mm); `ElevationDrawing` has
+`labels: Vec<([station, offset], text, centred)>` and `role` (another
+version's). The plan panel grows to hold them (no more warning about
+reaching into the profile; one leaving the plan panel is warned).
+
+**Sheet templates** (2026-10-20; `ohl_drawing::template::SheetTemplate`,
+file `.ohlsheet`, format `ohl-sheet-template` version 1, TOML read with
+`ohl_core::files::check_header`, unknown keys refused): `page`
+(`PageSpec { format, orientation, width, height, margin }`), `frame`,
+`text`, `layout` (`order`, `gap`, `plan_height: Size`, `beyond_match:
+Beyond`, `axis_room`, `station_labels`), `layers: BTreeMap<layer name,
+PenSpec { width, colour, dash }>`, `bands: Vec<BandSpec { kind: BandKind,
+height, label, every, field, decimals }>`, `north_arrow`, `scale_bar`,
+`legend`, `key_map`, `corridor`, `elevations: ElevationSpec`,
+`line_styles: LineStyles { by_kind, low_voltage_up_to_kv, kind_field,
+construction_field, cable_dash, kinds }`, `roles: BTreeMap<role,
+RoleSpec>`, `conductor_clearance`, `title_block: TitleBlockSpec {
+corner, width, columns: Vec<Column (Fixed | Rest | Logos)>, rows, line,
+grid, cells: Vec<CellSpec { at, span, text, size, bold, align, image }>
+}`, `revisions`, `notes`, `fields: Vec<FieldSpec { key, label, default,
+required, per_sheet }>`, `images: Vec<ImageSpec { name, file | data,
+media_type }>`; read: `resolved` (images as data URIs) and `source` (the
+text; `embedded()` the text with every image as `data`). Lengths are
+`Mm` ("10 mm", "1 cm") and `Metres` ("100 m", "1 km"). Placeholders:
+`template::COMPUTED_FIELDS`, `MORE_FIELDS`, `REVISION_FIELDS`; a name
+neither computed nor declared refuses the template. The built-in one is
+`template::BUILTIN` (= `libraries/sheet-templates/default.ohlsheet`,
+checked by a test). Every key: the user guide's [Sheet
+templates](../user-guide/sheet-templates.md) and
+`examples/sheet-templates/example-a1.ohlsheet`.
+
+`ohl_drawing::Options` gained `template: Arc<SheetTemplate>`, `fields:
+SheetFields { values, per_sheet: key → sheet → value, revisions:
+Vec<Revision { index, date, text, by, checked }> }`, `info: SheetInfo {
+project, line, crs, date, cases, height_datum }`, `role: Option<String>`
+(the line's), `corridor: Option<f64>` (half width, m),
+`conductor_clearance: Vec<ConductorClearance { circuit, voltage_kv,
+distance, rule, cases }>` (`curves::conductor_clearances(line, rules)`:
+per circuit the largest of the ground rules' vertical distances at its
+voltage, the rule's weather cases), `bands: bool`; `Options::with_template`
+takes the template's elevations and corridor where the options leave
+theirs at the defaults. `export::write_route` refuses sheets while a
+required field is empty (`SheetTemplate::missing_fields`).
+
+`RouteDrawing` gained `versions: Vec<VersionDrawing { name, role, label,
+structures: Vec<Mark>, wires: Vec<Trace> }>` (`RouteDrawing::add_version`:
+another line's structures and wires within the line width, projected on
+this route's centreline, per weather case) and `clearances: Vec<(station,
+m)>` (the band row `ground_clearance`; none: empty). `Trace` gained
+`case`, `circuit`, `phase`, `voltage_kv` (its system's; none: earthed)
+and `fields` (its section's plugin columns; the template may read the
+kind and the construction there); `Mark` gained `type_name` and
+`strings: Vec<StringMark { label, top, bottom, length, suspension }>`.
+`style::wire_pen` gives a wire's pen and legend words from kind, role and
+case; `curves::curves` the lines below the lowest conductor
+([theory](../theory/drawings.md)).
+
+Sheet layers added (DXF names): `OHL_TITLE_FIELDS`, `OHL_TITLE_IMAGE`
+(SVG logos as outlines), `OHL_REVISIONS`, `OHL_BANDS`, `OHL_LEGEND`,
+`OHL_KEY_MAP`, `OHL_CORRIDOR`, `OHL_VERSIONS`,
+`OHL_CONDUCTOR_CLEARANCE`. DXF texts use R12's own codes (`%%nnn`,
+`%%d`, `%%p`, `%%c`, `%%%`) instead of `\U+XXXX`; `dxf::write_counted`
+also says how many raster images were left out.
+
+Project templates: `library` objects of kind `sheet-templates` (name
+`NAME.ohlsheet`, text with the images embedded), per project line; the
+app's choice key: `default`, `project:NAME`, `library:NAME`,
+`plugin:PLUGIN/NAME`, `file:PATH`.
 
 **Editing a structure file** (`apps/structure/ohl-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
@@ -1363,11 +1433,11 @@ keeps them equal to what the exporter writes):
 
 | Table | Content |
 |---|---|
-| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; missing fields and values out of range take the defaults; absent: the defaults) |
+| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (4; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`); missing fields and values out of range take the defaults; absent: the defaults) |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
 | `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
-| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the section library), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
+| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the section library), `sheet-templates` (`.ohlsheet`, the drawings' sheet templates with their images embedded; 2026-10-20), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
 | `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007); the point cloud tables (`pointcloud`, `pointcloud_block`, `pointcloud_lod`, `pointcloud_source`; `ohl_pointcloud` crate docs) are shared by every project line and changed point by point only by `change_points` (below) |
 
@@ -1540,6 +1610,7 @@ above**.
 | `code-plugin` (`design-code`) | a parameter file (TOML text) | `generated { weather-cases: <.ohlwc text>, load-cases: <.ohllc text>, notes, clearance-presets: [{ name, measure: vertical / radial, rules: <.ohlr text>, weather-cases: <.ohlwc text> }] }` (interface 0.2; the structures' own wind of a case travels in the `.ohllc` text as `[case.structure]`, interface unchanged) |
 | `code-wind-plugin` (`design-code`; optional export `structure-wind`, looked for by the host: a 0.3 plugin without it unchanged) | the same parameter file | `option<string>`: a section library's text with only a `[wind]` table (drag per shape, face drag and shielding by solidity), checked as the section library reads it and written as `<plugin>-wind.ohlsec` into the section library; none: no factors (the member wind keeps its generic drag, no shielding) |
 | `code-rules-plugin` / `code-check-rules-plugin` (`design-code`; optional export `rule-presets`, looked for by the host on its own: a 0.3 plugin without it unchanged) | the same parameter file, or an empty text when the user gave none | `result<list<rule-preset { name, description, rules: <.ohlr text>, weather-cases: <.ohlwc text or empty> }>, string>`: presets of any clearance rule set, checked as rule files (each named case among the preset's) |
+| any world with the optional export `sheet-templates` (`sheet-templates`; world `sheet-template-plugin`; looked for by the host by name: a 0.3 plugin without it unchanged), or `[[sheet-template]] file = "…"` in the manifest (no code) | nothing | `result<list<sheet-template { name, description, template: <.ohlsheet text>, images: [{ name, media-type, bytes }] }>, string>`, each read as a template file (one that does not read is shown with its error) |
 | `check-plugin` / `code-check-plugin` (`check`) | `checks()`: nothing; `value-tables` / `edit-value`: a values file's text (e.g. `.ohlpd`); `evaluate`: the values, the user's choices, a `conductor-pair` (same system / span, kV, plugin column values, altitude, diameters, masses, spacer sags) and per station 6 numbers (distance, system angle, both local sags, both string lengths) | the check list (id, title, menu; the app's Checks menu is built from it); tables; the edited file; per station the required distance and the check's own values, the rule applied |
 
 So a plugin that writes a line follows the line file rules on this page:

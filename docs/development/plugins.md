@@ -343,6 +343,69 @@ macro implementing the world). A plugin for the Swiss LeV exists
 separately; it is not part of the public code. See
 [Design codes](../user-guide/design-codes.md).
 
+## Sheet template presets
+
+*Added 2026-10-20 (built, in active development, not approved yet).* Any
+plugin may offer **sheet templates** ([Sheet
+templates](../user-guide/sheet-templates.md)): the page, title block with
+its logos, band rows, legend, key map, the styles of the line's kinds
+and roles — e.g. an authority's plan-submission layout and colour code.
+Two ways, either or both (extension point `sheet-templates` in the
+manifest):
+
+- **Files, no code**: the manifest lists `.ohlsheet` files inside the
+  plugin's folder; their images are read next to them.
+
+  ```toml
+  [plugin]
+  name = "my-sheets"
+  version = "0.1.0"
+  sdk = "0.3"
+  tier = "wasm"
+  entry = "my_sheets.wasm"      # need not exist for files only
+  extension-points = ["sheet-templates"]
+
+  [[sheet-template]]
+  file = "templates/a1.ohlsheet"
+  ```
+
+- **Code**: the optional export `sheet-templates` of `plugin.wit`
+  (world `sheet-template-plugin`: `describe` and `sheet-templates`, or
+  add `export sheet-templates;` to any world), additive to
+  `ohl:plugin@0.1.0` — the interface version stays **0.3**, plugins built
+  before load unchanged and give none:
+
+  ```wit
+  interface sheet-templates {
+      record sheet-image { name: string, media-type: string, bytes: list<u8> }
+      record sheet-template {
+          name: string,          // unique in the plugin, e.g. "a1-standard"
+          description: string,   // shown before it is chosen
+          template: string,      // the .ohlsheet text (TOML)
+          images: list<sheet-image>,  // the images it names
+      }
+      sheet-templates: func() -> result<list<sheet-template>, string>;
+  }
+  ```
+
+The host (`ohl_plugins::WasmHost::sheet_templates`, found with
+`discover_sheet_templates`) looks for the export by name
+(`ohl:plugin/sheet-templates@0.1.0`, world `sheet-templates-export`), as
+for `rule-presets`. Each template is read with the same reader as a file
+(`ohl_drawing::SheetTemplate::parse`): one that does not read is shown
+with its error, the others are still offered. They are named
+`PLUGIN/PRESET` (`ohl drawing --sheet-template PLUGIN/PRESET --plugin
+DIR`, `ohl sheet-templates --plugin DIR`) and grouped by plugin in the
+export window's template list. Every key a preset may set is in
+`examples/sheet-templates/example-a1.ohlsheet`; an authority's colour
+code goes in `[line_styles]` (kinds: `hv`, `lv`, `telecom`, `earth`;
+`kind_field` and `construction_field` may name a column the plugin adds
+to the sections table, e.g. `my-sheets.line_kind`) and `[roles]`
+(`existing`, `project`, `removal`, `decommissioned`, `other`, or its
+own). The test plugin `plugins/tests/sheet-presets` gives one template
+from its code (an A1 with an SVG logo) and one from its manifest
+(invented values).
+
 ## Check plugins
 
 A plugin that runs a check implements the `check` interface

@@ -46,10 +46,21 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--elevations` | the structures' elevations on the plan: `off` (default), `above` or `below` the line ([Elevations](#elevations)) |
 | `--elevation-offset` | from the line to the elevations' base, mm on paper (default 10) |
 | `--elevation-rotation` | angle between the line and the elevations' height, degrees (default 90: standing perpendicular to the line) |
+| `--elevation-scale` | the elevations' own scale (default the horizontal one) |
+| `--elevation-labels` | written at each elevation: `number`, `type`, `height`, `string_length` (comma-separated) |
+| `--sheet-template NAME` | the [sheet template](sheet-templates.md): `default`, a `.ohlsheet` file, the project's or the library folder's by name, or `PLUGIN/PRESET` (with `--plugin DIR`); its page unless `--page` |
+| `--field KEY=VALUE`, `--fields FILE`, `--revision "A;DATE;TEXT;BY;CHECKED"` | the template's values and the revision table |
+| `--orientation` | `landscape` or `portrait` |
+| `--version LINE=ROLE[:LABEL]` | another version of the line drawn with it in a role (a project line of a project file, or a line file; repeatable) |
+| `--role ROLE` | the role of the line itself (its style) |
+| `--corridor-width M` | the corridor's edges at ± M in the plan and the key map |
+| `--conductor-clearance` | lines below the lowest conductor from the ground rules (`--rules`, `--clearance`) |
+| `--no-bands` | without the template's band rows |
 | `--out DIR` | output folder (created) |
 
 The first weather case is drawn solid, the others dashed (each its own
-dash pattern, named in the title block).
+dash pattern, named in the title block). The elevation options default
+to the sheet template's.
 
 `ohl line --drawings DIR` still writes what it always did: an SVG (or SVG
 sheets with `--page`) and the profile CSV of every route.
@@ -134,10 +145,16 @@ the sheet next to where it stands:
 
 - each structure drawn along the line (every one of the run along the
   alignment, one beside the line only within the [line width](#line-width);
-  of the sheet's station range on a sheet) is drawn **seen along the line**: its members (levels 2 and 3), its pole's
+  of the sheet's station range on a sheet; those of the other
+  [versions](sheet-templates.md#versions-of-the-line-kinds-and-roles) in
+  their role's pen) is drawn **seen along the line**: its members (levels 2 and 3), its pole's
   silhouette across the line, else its stick drawing (level 1: the mast
   and the arms to its attachment points), true shape at the
-  **horizontal scale** (a 30 m tower is 15 mm tall at 1:2000);
+  **horizontal scale** (a 30 m tower is 15 mm tall at 1:2000) or at
+  `--elevation-scale`;
+- on request its **labels** (`--elevation-labels`, the template's
+  `labels`): its number, type and height above its top, and beside each
+  **suspension string** its length (the model's strings);
 - its **base** stands at the structure's station, `--elevation-offset`
   mm on paper (default 10 mm) above or below the line (the route's
   centreline in the plan);
@@ -153,11 +170,13 @@ the sheet next to where it stands:
   in every format (SVG, DXF sheets, PDF, PNG); they are not clipped to
   the plan panel. Not in the model-space files.
 
-Elevations are never moved: when two would **overlap** each other, or
-one would reach into the **profile** band, both are drawn as they are
-and the export reports a warning naming them (a continuous drawing as
-well as sheets, and the sheet preview); draw them above the line, nearer to it, or at another
-scale.
+The **plan panel grows** to hold the elevations and their labels (above
+or below the axis), so they never reach into the profile and are never
+hidden by a match line (they are drawn after the match lines). Elevations
+are never moved: when two of the line's own would **overlap**, both are
+drawn as they are and the export reports a warning naming them (a
+continuous drawing as well as sheets, and the sheet preview); draw them
+on the other side or at another scale.
 
 *Reading of the request, to be confirmed:* "rotated 90°" is read as the
 elevation standing perpendicular to the line on the sheet (its height
@@ -182,14 +201,31 @@ trees](analyses.md#vegetation-and-danger-trees).
 
 ## Sheets
 
-With `--page`, each route (or its station range) is split **at
-structures**: as many whole spans as fit at the horizontal scale, the
-structure that ends a sheet starting the next one (match lines). A station
-range starts the first sheet and ends the last one at its stations. Every
-sheet has its own height range and a title block: logos, line, weather
-cases, route, sheet n/N, station range and structures, scales, format. A
-span longer than the sheet, or a profile taller than it, is drawn anyway
-and reported as a warning: change the scales or the format.
+With `--page` (or a [sheet template](sheet-templates.md) giving a page),
+each route (or its station range) is split **at structures**: as many
+whole spans as fit at the horizontal scale, the structure that ends a
+sheet starting the next one (match lines). A station range starts the
+first sheet and ends the last one at its stations. The sheet template
+draws the frame, title block and the rest around the panels (the
+built-in one: logos, line, weather cases, route, sheet n/N, station range
+and structures, scales, format). A span longer than the sheet is drawn
+anyway and reported as a warning: change the scales or the format.
+
+- The **profile panel takes the whole height** left above the station
+  labels (and the band rows). Its height range fits the ground, the
+  clearance line and the wires' lowest points; when the structures' tops
+  do not fit too they are cut at the panel's top (a break mark, warned);
+  when not even the ground and the wires' lowest points fit, the **datum
+  is stepped** at a structure (a double line across the panel, its own
+  height labels, warned: `datum stepped at T4 (+5 m)`). The vertical
+  scale is never changed and the ground is always on the sheet ([how the
+  height range is chosen](../theory/drawings.md)).
+- The height labels and grid stay inside the panel.
+- The **panels end at the match lines**: what lies beyond belongs to the
+  next sheet (the template may show it faded, `beyond_match = "faded"`).
+  A short station range gives short panels.
+- A **structure at a sheet's end** is drawn whole on both sheets (its
+  drawing reaches past the match line), its name inside the panel.
 
 **Where a sheet may end.** A match line never falls at, or cuts
 through, a structure drawn on the sheet:
@@ -250,7 +286,8 @@ For route `R` (`R-profile…` with `--profile-only`):
 - **SVG**: true size in mm; wires and ground carry their names as tooltips.
 - **PDF**: vector, true size, one page per sheet; texts in the standard
   Helvetica fonts (no fonts embedded; characters outside Windows-1252 show
-  as `?`); logos embedded as images.
+  as `?`); logos embedded as images, cropped to what they cover; only what
+  can be seen is written (lines cut to the page or their panel).
 - **PNG**: the SVG rendered at `--dpi`, with the computer's fonts.
   Images are limited to 40 million pixels: larger ones are drawn at a lower
   resolution (reported).
@@ -261,7 +298,11 @@ For route `R` (`R-profile…` with `--profile-only`):
   `OHL_TITLE`… Colours are
   the nearest of DXF's indexed colours; dashes are line types `OHL_DASH1`…
   R12 has no line weights, true colours or images, so pens become colours
-  only and logos are left out. Three kinds of file:
+  only; SVG logos are written as their outlines (`OHL_TITLE_IMAGE`), PNG
+  and JPEG logos are left out with a warning. Texts other than ASCII use
+  R12's own codes (`%%d` °, `%%p` ±, `%%c` ⌀, `%%nnn` a Windows-1252
+  character). The template's parts have their layers ([Sheet
+  templates](sheet-templates.md#images-per-format)). Three kinds of file:
   - the **sheets** in mm, as printed (what lies outside the panels is cut
     away);
   - `R-plan-model.dxf`: the plan in **project coordinates**, metres —
@@ -319,15 +360,28 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
-**File › Export › Drawings…** opens a window: route (or every route),
-formats, sheets (one continuous drawing, or A0–A4 split at structures),
+**File › Export › Drawings…** opens a window: the **sheet template**
+(Built-in, Project, Library or a plugin's; **Load file…** keeps a
+`.ohlsheet` in the project, **Save as file…** writes the one chosen),
+route (or every route), formats, sheets (one continuous drawing, the
+template's format, or A0–A4 split at structures; **portrait**),
 horizontal and vertical scale, **line width** (± m, the plan's half
 width: the same setting as the Profile page's **line width ±**, see
 [Line width](#line-width)), **sheet breaks** (the break clearance, mm on
-paper), station range, clearance line, the structures'
-[elevations](#elevations) (off, above or below; base offset in mm;
-rotation), PNG resolution, the profile alone,
-the other solved weather cases (dashed), and the output folder.
+paper), station range, clearance line (typed, or **from the ground
+rule** of the project: Checks › Ground clearances, else the rule file
+chosen), **side profiles**, the plan's own scale across the line,
+**logos**, the structures' [elevations](#elevations) (off, above or
+below; base offset in mm; rotation), PNG resolution; then the template's
+**values** (required ones marked `*`, per-sheet values), the
+**revisions** (rows added, deleted, or the last version commit), the
+**versions of the line** (other project lines in their roles, the line's
+own role), **more of the template** (corridor, lines below the lowest
+conductor, band rows, elevation scale and labels), **Preview sheet** (one
+sheet drawn by the export in a window of its own, with its warnings), the
+violations of the last clearance check as markers, the profile alone,
+the other solved weather cases (dashed, each from its own solution), and
+the output folder. A window taller than the screen scrolls.
 **Export** writes the files in the background with a progress window; the
 views stay usable and the window stays open for the next export. It draws
 the weather case shown (solid). The sheet format and scales chosen here
@@ -336,7 +390,9 @@ the route, without sheet breaks.
 
 **The settings are kept in the project**, per project line: formats,
 sheet format, scales, line width, break clearance, station range,
-clearance line, the elevations, PNG resolution, the profile alone, the other cases and
+clearance line, the elevations, PNG resolution, the profile alone, the
+other cases, side profiles, plan scale, logos (their files), the sheet
+template chosen with its values, revisions and versions, and
 the sheet preview on or off (not the route chosen nor the output folder,
 which belongs to the computer). They are written as they change (not
 while a value is being dragged or typed) and are there when the project
@@ -361,7 +417,9 @@ the sheets the export would write now, over the continuous views:
   warnings above the view (a box that scrolls when they are many): a
   sheet that runs on because no free break fits, a span longer than the
   sheet, a profile taller than it. A warned sheet is amber, and the part
-  of a sheet beyond what its paper holds darker amber.
+  of a sheet beyond what its paper holds darker amber. The lines below
+  the lowest conductor, when asked for, are drawn over the profile as
+  the sheets draw them.
 - **Plan**: each sheet's band along its alignment (the line width each
   side, as the sheets' plan shows it), its match lines across the band and
   its number; the structures' [elevations](#elevations) and their
@@ -377,7 +435,6 @@ the export writes one continuous drawing.
 ## What is not there yet
 
 - No DWG files (DXF only); DXF has no line
-  weights, true colours or logos.
-- The sheet layout and title block are fixed; company templates will come
-  as a layout plugin.
+  weights, true colours or raster logos.
+- No title block editor in the app (the template file is edited).
 - PDF fonts are not embedded (the standard Helvetica of every PDF reader).
