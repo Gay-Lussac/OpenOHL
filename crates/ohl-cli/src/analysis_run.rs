@@ -50,7 +50,7 @@ pub struct CaseArgs {
     #[arg(long)]
     pub weather: PathBuf,
     /// Weather case to run, by name (`*` and `?` wildcards; repeatable).
-    #[arg(long)]
+    #[arg(long, alias = "cases")]
     pub case: Vec<String>,
     /// Weather cases to run, by tag (repeatable).
     #[arg(long)]
@@ -325,7 +325,7 @@ pub struct FitArgs {
 /// The line with its structure types resolved, and the wire library: a
 /// project's own libraries unless given, as `ohl line` reads them
 /// ([`crate::project::Libraries`]).
-fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String> {
+pub(crate) fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String> {
     let libs = crate::project::Libraries::resolve(
         &m.file,
         crate::project::GivenLibraries {
@@ -350,7 +350,7 @@ fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String> {
 }
 
 /// The chosen weather cases (the line gets the file's condition cases).
-fn cases(c: &CaseArgs, line: &mut Line) -> Result<Vec<WeatherCase>, String> {
+pub(crate) fn cases(c: &CaseArgs, line: &mut Line) -> Result<Vec<WeatherCase>, String> {
     let set = WeatherCases::load(&c.weather)?;
     line.set_weather_cases(&set.cases);
     let chosen = set.select(&c.case, &c.tag)?;
