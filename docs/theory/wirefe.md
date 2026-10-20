@@ -11,7 +11,9 @@ Unstressed length \\( L_0 \\), axial stiffness \\( EA \\), uniform load \\( \mat
 
 For given end positions, \\( (H, V_0) \\) come from a damped Newton iteration (exit clauses: 100 iterations; the time limit, 10 s, only guards against a loop). The element returns the end forces and the exact 3×3 tangent stiffness (in-plane: inverse of the flexibility matrix; out-of-plane: \\( H/x \\)), verified against finite differences.
 
-*Validation:* `wirefe-001…003` against RK4 integration of the elastic cable along its unstressed length (with a tension jump for a point load).
+*Validation:* `wirefe-001…003` against RK4 integration of the elastic cable along its unstressed length (with a tension jump for a point load); `tbirv-001…003` against Irvine's equations and a quadrature of the cable's tangent ([Textbook and published cases](../validation/textbook.md)).
+
+**Simplification:** in a line's sections the temperature lengthens each span's unstressed length by \\( e^{\alpha\Delta t} \\) (\\( \Delta t \\) from the stringing temperature) and the load stays per unit of that longer length, so a hot span weighs a little more than its cable and a cold one a little less, by \\( e^{\alpha\Delta t} - 1 \\). For a 300 m span strung at 25 kN at 10 °C (EA 30 MN, \\( \alpha \\) = 20·10⁻⁶/K) the horizontal tension is 0.04 % higher at 70 °C and 0.17 % higher at 150 °C (sag 7 mm and 13 mm larger: on the safe side for clearances and tensions), 0.04 % lower at −20 °C (on the unsafe side for tensions, a few newtons per 10 kN). Exact: the load per unit of the unstressed length at the stringing temperature, \\( \mathbf q\\,e^{-\alpha\Delta t} \\) per unit of the longer length. Measured by the textbook cases' reference script (see [Textbook and published cases](../validation/textbook.md#what-the-cases-showed)).
 
 ## Truss elements
 
@@ -36,6 +38,8 @@ A section (dead-end to dead-end, suspension I-strings or V-strings) is built as 
 In a line model (`ohl-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \\( H \\) under the case's load is found exactly, and \\( H \\) is the root of \\( \sum_i L_{0,i}(H) = L_0 \\) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
 
 **Simplification:** in the blocks, point loads do not take part in sharing the length between the spans. A loaded span would pull length from its neighbours through the blocks; leaving the loads out keeps its length as in still air, so its sag under the load can be a little larger or smaller than with the loads shared. Exact: point loads in the sharing.
+
+*Validation* (clipped-in sections against an independent solver, [Textbook and published cases](../validation/textbook.md)): `tbrs-002…003` (three spans with suspension strings against the ruling span: −0.74 % to +0.25 % at 80 °C), `tbins-001…005` (a span's blowout, a suspension string's swing in wind, a V's leg forces and its slack leg), `tbcreep-001` (creep as a temperature shift), `tb324-011` (dead-end strings, CIGRE TB 324).
 
 ## A weather case per span (2026-10-20)
 

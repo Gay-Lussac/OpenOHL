@@ -40,7 +40,8 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 88 validation cases pass; the private Swiss plugin and the importers of
+- 135 validation cases pass (47 textbook and CIGRE TB 324 cases added
+  2026-10-20); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -212,8 +213,13 @@ geometry, and the material (steel, concrete, wood) is chosen per pole.
 
 ### O11. Validation report
 Phase 1 validation against published examples (CIGRE TB 324, textbooks)
-is still open; a full validation report is a goal for 1.0. Needs
-published reference data (no tables typed from memory).
+is started (2026-10-20, built, in active development (not approved yet)):
+31 textbook cases with hand derivations and an independent reference
+script, and the 16 TB 324 examples whose inputs are complete
+([Textbook and published cases](docs/validation/textbook.md), which also
+says which examples were left out and why). A full validation report is
+a goal for 1.0; the non-linear (stress-strain and creep) examples need
+published curves (no tables typed from memory).
 > **Owner:** (2026-10-19) Later: the owner will say when reference data is
 > available.
 
@@ -467,7 +473,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Stringing charts output (CSV; PDF later with drafting)
 - [x] CLI: `ohl sagtension job.toml` (report in metric or US units, CSV chart)
 - [x] Performance: single section re-solve < 10 ms *(~60 µs for 20 spans; loaded span change of state ~1 ms)*
-- [ ] Validation: CIGRE TB 324 examples, textbook cases, hand calcs
+- [x] Validation: CIGRE TB 324 examples, textbook cases, hand calcs (2026-10-20, built, in active development (not approved yet)): 47 cases — catenary and the parabola's error, inclined spans and uplift, Irvine's elastic catenary, change of state (temperature, ice, wind, 150 °C, creep as a temperature), ruling span against the exact section and the FE strings, ice and wind loads, a point load's slope jump, a bimetallic knee point, blowout, I- and V-string swing and leg forces — each with a hand derivation and `benchmarks/reference/textbook_reference.py`; TB 324 sec. 2 (Table 2, dead-end strings), 5.2 and 6.1 *(TB 324's non-linear examples wait for published curves; see [Textbook and published cases](docs/validation/textbook.md))*
 
 **Deliverable:** `ohl` CLI + Rust library + Python bindings, reproducible sag-tension tables validated against published references.
 
@@ -486,7 +492,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Insulator library basics (`.ohli`, DESIGN_GOALS §11): suspension, V-string, strain assemblies used by the solver (V-strings solved in lines with tension-only legs and slack-leg reporting)
 - [x] Insulator assembly model (graph of nodes and elements): structure points (fixed), wire points (free), strings as bars between them — I, V (two strings to one wire point), V + string below, strain (single and multiple), strings hanging from strings, compression allowed per string (flagged beyond its limit); sections sharing an assembly (TAK) solved together, Dirichlet–Neumann by the stiffest section (see [theory](docs/theory/wirefe.md#strings-hanging-from-strings)) *(post insulators and yokes as presets still to add)*
 - [x] Multi-span sections solved in 3D (FE with suspension strings, wind per span, point loads); `ohl line` with 3D HTML viewer and CSV exports — compared with an existing line exported from another program (930 spans, median 1.1 cm)
-- [x] Insulator behaviour in the 3D solve: I-string swing, V-string leg forces & slack detection, strain assembly geometry *(from the FE solve; closed-form checks still to add as validation cases)*
+- [x] Insulator behaviour in the 3D solve: I-string swing, V-string leg forces & slack detection, strain assembly geometry *(from the FE solve; closed-form checks as validation cases since 2026-10-20: `tbins-001…005`, `tbrs-002…003`, `tb324-011`)*
 - [x] `ohl-clearance` v1: vertical ground clearance of every solved span per weather case, violations in `ohl line --terrain --clearance` and in the viewer
 - [x] `ohl-clearance` v2 (DESIGN_GOALS §13): vertical **and** radial clearances; rule files (`.ohlr`) per target — ground, LiDAR classes/roles, other lines, other wires of the same line (same span and between spans)
 - [x] Clearances to the conductor's **surface** (2026-10-19): every check (ground, points, wires, zones, vegetation, galloping, right of way, distance between conductors, the thermal clearance limit) takes the conductor's radius — iced in a case with ice — and the polyline's bound (the solver's `polyline_error`, sagitta on the catenary's smallest radius of curvature H/w) off the distance to the axis; the radial ground distance from 0.5 m samples lowered by its sampling bound; galloping ellipses as circumscribed polygons — each on the safe side, labelled **Conservative** (validation `clearance-surface-001`)

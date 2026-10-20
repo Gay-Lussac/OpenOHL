@@ -13,7 +13,7 @@ Left support at \\( (0,0) \\), right support at \\( (S,h) \\); uniform load \\( 
 
 The product forms avoid cancellation for taut spans. Maximum sag is where the cable is parallel to the chord: \\( x^\* = x_m + C\operatorname{asinh}(h/S) \\). For taut spans the sag tends to \\( wS^2 / (8H\cos\theta) \\) (\\( \theta \\): chord angle — the weight acts per unit of cable length).
 
-*Validation:* `catenary-001…004`.
+*Validation:* `catenary-001…004`; textbook cases `tbcat-001…005` (the parabola's error: 0.08 % of sag at C = 2000 m on 400 m, 2 % at C = 1000 m on 1000 m; a low point beyond the support) and CIGRE TB 324's examples `tb324-001…010`, `tb324-015` ([Textbook and published cases](../validation/textbook.md)).
 
 ## Change of state
 
@@ -26,7 +26,7 @@ The exponential thermal factor is the exact integral of \\( dL/(L\\,dT) = \alpha
 
 The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few µs; the time limit, 10 s, only guards against a loop).
 
-*Validation:* `cos-001…003`.
+*Validation:* `cos-001…003`; `tbcos-001…005` (temperature, ice, wind, 150 °C, an inclined span; the parabolic change-of-state cubic agrees within 0.05 % on level spans), `tb324-016` (CIGRE TB 324 sec. 6.1, within the stated difference of its strain model) ([Textbook and published cases](../validation/textbook.md)).
 
 ### Thermal strain: two forms in use
 
@@ -53,7 +53,7 @@ Suspension insulators equalise the horizontal tension along a section. OpenOHL s
 
 The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also reported. For the inclined 4-span validation section it is 0.116 % off in tension; the exact solution costs about 60 µs for 20 spans.
 
-*Validation:* `section-001`. *Not yet modelled:* insulator string length changing the effective span lengths.
+*Validation:* `section-001`; `tbrs-001` (the ruling span 0.0045 % off on three level spans), `tbrs-004` (the line's ruling-span method) ([Textbook and published cases](../validation/textbook.md)). *Not yet modelled:* insulator string length changing the effective span lengths.
 
 **Simplification:** one horizontal tension for the whole section, the strings plumb and of no length (the ruling-span model). Unequal spans, inclined spans and swinging strings make the span tensions and sags differ; the error goes either way per span. Exact: the finite-element section ([Finite-element wire systems](wirefe.md)), available as the *FE* calculations.
 
@@ -78,13 +78,13 @@ Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \
 
 **Simplification:** ice as a concentric cylinder of uniform thickness along the whole span. Real ice is often eccentric (on the windward or top side) and uneven along the span; the weight is what the case gives, but the wind area and the twist of the wire differ. Exact: an ice shape per case (not modelled); uneven ice along a span can be given as distributed loads (below). No design-code factors are applied here: load factors belong to the load cases ([Load cases](../user-guide/loads.md)), and design-code plugins generate weather and load cases ([Design codes](../user-guide/design-codes.md)).
 
-*Validation:* `weather-001`.
+*Validation:* `weather-001`; `tbwx-001…003` (ice per metre, wind on the iced diameter, blowout), `tb324-014` ([Textbook and published cases](../validation/textbook.md)).
 
 ## Point and distributed loads
 
 Between loads the cable is a catenary with the common \\( H \\); with \\( y' = \sinh\psi \\), \\( \psi \\) grows linearly in each segment, and a point load \\( P \\) makes the slope jump: \\( \sinh\psi^+ = \sinh\psi^- + P/H \\). The start angle is found by bisection so the cable reaches the far support; the change of state iterates on \\( H \\) around it. Vertical loads only: transverse and longitudinal components are rejected rather than ignored. The 3D finite-element model (`ohl-wirefe`) takes loads in any direction at its nodes; point loads in a line file are weights, and bodies with a size (marker balls) also take wind and ice (see [Point loads: marker balls and other bodies](wirefe.md#point-loads-marker-balls-and-other-bodies)).
 
-*Validation:* `loaded-001…002` against an RK4 integration of the cable ODE.
+*Validation:* `loaded-001…002` against an RK4 integration of the cable ODE; `tbpl-001…002` (the slope jump P/H; closed form for a load at mid-span) ([Textbook and published cases](../validation/textbook.md)).
 
 ## Non-linear stress-strain and creep
 
@@ -110,7 +110,7 @@ A section keeps one unstressed length (zero strain, curves' reference temperatur
 
 Curves are cable **data**: OpenOHL ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** cable (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
 
-*Validation:* `nonlinear-001…002`.
+*Validation:* `nonlinear-001…002`; `tbbim-001…002` (a linear bimetallic cable whose outer strands take no compression, below and above its knee point, 140.85 °C) ([Textbook and published cases](../validation/textbook.md)).
 
 The finite-element model follows the same curves: each span's unstressed length is corrected until its length at the span's mean tension is the curves' length in the case's material state, see [Finite-element wire systems](wirefe.md#non-linear-stress-strain-in-the-elements).
 
