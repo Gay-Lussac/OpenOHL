@@ -40,11 +40,19 @@ pub enum Layer {
     Orthophotos,
     /// DXF drawings (Terrain › Backgrounds), in the plan and 3D views.
     Drawings,
+    /// Vegetation growing into the wires (Checks › Vegetation): a cyan dot
+    /// joined to the wire.
+    GrowIn,
+    /// Danger trees (Checks › Vegetation): an orange trunk, a dashed line
+    /// to the wire point it falls to.
+    FallIn,
+    /// Isoclearance lines on the ground (Checks › Vegetation).
+    Isoclearance,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 13] = [
+    pub const ALL: [Layer; 16] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -58,6 +66,9 @@ impl Layer {
         Layer::Selection,
         Layer::Orthophotos,
         Layer::Drawings,
+        Layer::GrowIn,
+        Layer::FallIn,
+        Layer::Isoclearance,
     ];
 
     /// Name in the layer panel.
@@ -76,6 +87,9 @@ impl Layer {
             Layer::Selection => "Selection",
             Layer::Orthophotos => "Orthophotos (plan)",
             Layer::Drawings => "Drawings (DXF)",
+            Layer::GrowIn => "Vegetation: grow-in",
+            Layer::FallIn => "Vegetation: danger trees",
+            Layer::Isoclearance => "Isoclearance lines",
         }
     }
 }
@@ -1468,7 +1482,12 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         }
         // Drawn from the clearance report ([`marks`]); orthophotos in plan
         // only.
-        Layer::Clearances | Layer::Draft | Layer::Orthophotos => {}
+        Layer::Clearances
+        | Layer::Draft
+        | Layer::Orthophotos
+        | Layer::GrowIn
+        | Layer::FallIn
+        | Layer::Isoclearance => {}
         Layer::Drawings => crate::backgrounds::scene(model, &mut s),
         Layer::Selection => {
             let hi = [255, 255, 255, 255];
@@ -1769,6 +1788,45 @@ pub fn marks(origin: [f64; 3], marks: &[([f64; 3], [f64; 3])]) -> Scene {
         s.polyline(&[*at, *target], [255, 60, 50, 255], 2.5);
         s.point(*at, [255, 60, 50, 255], 9.0);
         s.point(*target, [255, 160, 60, 255], 6.0);
+    }
+    s
+}
+
+/// Cyan of grow-in points, orange of danger trees (also in the plan and
+/// the profile).
+pub const GROW_IN: [u8; 3] = [60, 220, 230];
+/// See [`GROW_IN`].
+pub const FALL_IN: [u8; 3] = [255, 150, 40];
+
+/// What Checks › Vegetation found, on layer `layer`: grow-in points (a
+/// cyan dot joined to the wire), danger trees (an orange trunk from base
+/// to top, a line to the wire point it falls to), isoclearance lines in
+/// their colours.
+pub fn vegetation(origin: [f64; 3], overlay: &crate::vegetation::Overlay, layer: Layer) -> Scene {
+    let mut s = Scene::new(origin);
+    let c = |rgb: [u8; 3]| [rgb[0], rgb[1], rgb[2], 255];
+    match layer {
+        Layer::GrowIn => {
+            for (p, q) in &overlay.grow {
+                s.polyline(&[*p, *q], c(GROW_IN), 1.5);
+                s.point(*p, c(GROW_IN), 8.0);
+            }
+        }
+        Layer::FallIn => {
+            for (top, base, q) in &overlay.fall {
+                s.polyline(&[*base, *top], c(FALL_IN), 3.0);
+                s.polyline(&[*base, *q], [255, 150, 40, 140], 1.0);
+                s.point(*top, c(FALL_IN), 7.0);
+            }
+        }
+        Layer::Isoclearance => {
+            for (_, rgb, points) in &overlay.lines {
+                // Lifted a little off the ground.
+                let pts: Vec<[f64; 3]> = points.iter().map(|p| [p[0], p[1], p[2] + 0.2]).collect();
+                s.polyline(&pts, c(*rgb), 1.5);
+            }
+        }
+        _ => {}
     }
     s
 }
