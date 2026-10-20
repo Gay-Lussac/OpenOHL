@@ -101,6 +101,12 @@ pub struct ViewPrefs {
     /// The colours of the vegetation layers: grow-in points, danger trees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vegetation_colors: Option<[[u8; 3]; 2]>,
+    /// The lines on the ground beside the line (View menu).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::ground_lines::Settings::is_default"
+    )]
+    pub ground_lines: crate::ground_lines::Settings,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -468,6 +474,9 @@ pub struct Model {
     /// The colours of the vegetation layers: grow-in points, danger trees
     /// (this user's view setting).
     pub vegetation_colors: [[u8; 3]; 2],
+    /// The lines on the ground beside the line (View › Lines on the
+    /// ground beside the line; this user's view setting).
+    pub ground_lines: crate::ground_lines::Settings,
     /// Another user changed the drawing settings of the project line
     /// worked on (server mode): read them again.
     pub drawings_setting_changed: bool,
@@ -1312,6 +1321,7 @@ impl Model {
             profile_ratio: self.profile_ratio,
             work_route: self.work_route.clone(),
             vegetation_colors: Some(self.vegetation_colors),
+            ground_lines: self.ground_lines.clone(),
             line: self.session().map(|s| s.current_line().to_owned()),
             shown_lines: self.other_lines.iter().map(|o| o.name.clone()).collect(),
         }
@@ -2217,6 +2227,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .and_then(|v| v.vegetation_colors)
         .unwrap_or([crate::scene::GROW_IN, crate::scene::FALL_IN]);
+    let ground_lines = sources
+        .view
+        .as_ref()
+        .map(|v| v.ground_lines.clone())
+        .unwrap_or_default();
     let work_route = sources
         .view
         .as_ref()
@@ -2256,6 +2271,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         hidden_backgrounds,
         profile_ratio,
         vegetation_colors,
+        ground_lines,
         drawings_setting_changed: false,
         work_route,
         points,

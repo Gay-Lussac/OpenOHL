@@ -39,6 +39,7 @@ mod edit;
 mod editors;
 mod files;
 mod galloping;
+mod ground_lines;
 mod handles;
 mod help;
 mod icons;
@@ -106,6 +107,8 @@ mod area_tests;
 mod bench;
 #[cfg(test)]
 mod glyph_tests;
+#[cfg(test)]
+mod ground_lines_tests;
 #[cfg(test)]
 mod handle_tests;
 #[cfg(test)]

@@ -61,6 +61,8 @@ pub struct View3d {
     pub marks_stale: bool,
     /// What Checks › Vegetation found.
     pub vegetation: crate::vegetation::Overlay,
+    /// The lines on the ground beside the line (none: not shown).
+    pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
     /// A wire being strung: its points so far.
     pub draft: Vec<[f64; 3]>,
     /// What a replacement would remove (Replace structure's window open):
@@ -982,6 +984,11 @@ impl View3d {
                     scene::vegetation(model.origin, &self.vegetation, layer)
                 }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
+                Layer::GroundLines => crate::ground_lines::scene(
+                    model.origin,
+                    self.ground_lines.as_deref(),
+                    &model.ground_lines,
+                ),
                 _ => scene::layer(model, layer, case, selection),
             };
             self.gpu.insert(layer, GpuScene::new(device, &s));
