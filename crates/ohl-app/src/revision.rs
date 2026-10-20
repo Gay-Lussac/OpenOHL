@@ -133,6 +133,13 @@ impl Stamp {
         }
     }
 
+    /// The result shown was computed at revision `now` (a saved one read
+    /// unchanged since: tracked from now on).
+    pub fn set(&mut self, now: Revision) {
+        self.pending = None;
+        self.from = Some(now);
+    }
+
     /// No revision known (a saved report shown: compared with the line
     /// by its own state).
     pub fn clear(&mut self) {

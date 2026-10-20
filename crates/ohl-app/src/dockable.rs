@@ -39,17 +39,20 @@ pub enum Panel {
     RadialClearances,
     /// View › Display weather cases.
     DisplayCases,
+    /// Checks › Vegetation (the danger-tree panel).
+    Vegetation,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 6] = [
+    pub const ALL: [Panel; 7] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
         Panel::VerticalClearances,
         Panel::RadialClearances,
         Panel::DisplayCases,
+        Panel::Vegetation,
     ];
 
     /// A name until its window gave its title.
@@ -61,6 +64,7 @@ impl Panel {
             Panel::VerticalClearances => "Vertical clearances",
             Panel::RadialClearances => "Radial clearances",
             Panel::DisplayCases => "Display weather cases",
+            Panel::Vegetation => "Vegetation and danger trees",
         }
     }
 }

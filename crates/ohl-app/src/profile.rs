@@ -49,8 +49,13 @@ pub struct ProfileView {
     pub(crate) sheets_drawn: Vec<(String, usize, f64, f64, bool)>,
     /// What Checks › Vegetation found ...
     pub vegetation: crate::vegetation::Overlay,
-    /// ... and whether its grow-in and danger-tree layers are shown.
+    /// ... and whether its grow-in and danger-tree layers are shown;
     pub vegetation_layers: [bool; 2],
+    /// its points' stations and offsets along a route (route, the
+    /// report's serial, grow-in, danger trees),
+    vegetation_along: Option<VegetationAlong>,
+    /// counted up when another report is shown.
+    vegetation_serial: u64,
     /// A box or lasso being drawn to select LiDAR points
     /// ([`crate::area`]).
     pub area: Option<crate::area::AreaDrag>,
@@ -58,6 +63,10 @@ pub struct ProfileView {
     /// long finding them took; taken by the app.
     pub area_picked: Option<(Vec<crate::model::LidarPoint>, usize, std::time::Duration)>,
 }
+
+/// The stations and offsets of the vegetation points along a route: the
+/// route, the report's serial, grow-in, danger trees.
+type VegetationAlong = (String, u64, Vec<(f64, f64)>, Vec<(f64, f64)>);
 
 /// Where the view is: stations, heights, its rectangle (bits of each).
 type ViewKey = [u64; 8];
@@ -311,6 +320,12 @@ impl ProfileView {
     #[cfg(test)]
     pub fn lidar_dots(&self) -> &[(egui::Pos2, crate::model::LidarPoint)] {
         &self.lidar_dots
+    }
+
+    /// Draws what Checks › Vegetation found (nothing: the default).
+    pub fn set_vegetation(&mut self, overlay: crate::vegetation::Overlay) {
+        self.vegetation = overlay;
+        self.vegetation_serial += 1;
     }
 
     /// Shows stations `range` (tests).
@@ -681,28 +696,53 @@ impl ProfileView {
         // What Checks › Vegetation found within the line width: grow-in
         // points (cyan dots), danger trees (an orange trunk).
         let [grows, falls] = self.vegetation_layers;
-        let near = |p: [f64; 3]| {
-            let (st, off) = ohl_line::route::project(&d.centreline, p);
-            (off.abs() <= depth && st >= s0 && st <= s1).then_some(st)
-        };
         let stale = self.vegetation.stale;
         let color = |c: [u8; 3]| {
             crate::revision::dimmed32(egui::Color32::from_rgb(c[0], c[1], c[2]), stale)
         };
-        if grows {
-            for (p, _) in &self.vegetation.grow {
-                if let Some(st) = near(*p) {
-                    painter.circle_filled(to_screen(st, p[2]), 3.0, color(crate::scene::GROW_IN));
+        // Each point's station and offset along this route, worked out
+        // once per report and route; one mark a pixel.
+        if self
+            .vegetation_along
+            .as_ref()
+            .is_none_or(|v| v.0 != d.route || v.1 != self.vegetation_serial)
+        {
+            let along = |p: &[f64; 3]| ohl_line::route::project(&d.centreline, *p);
+            self.vegetation_along = Some((
+                d.route.clone(),
+                self.vegetation_serial,
+                self.vegetation.grow.iter().map(along).collect(),
+                self.vegetation.fall.iter().map(|f| along(&f.0)).collect(),
+            ));
+        }
+        let near =
+            |(st, off): (f64, f64)| (off.abs() <= depth && st >= s0 && st <= s1).then_some(st);
+        if let Some((_, _, grow_at, fall_at)) = &self.vegetation_along {
+            if grows {
+                let mut dotted = PixelSet::new(rect);
+                let c = color(self.vegetation.colors[0]);
+                for (p, at) in self.vegetation.grow.iter().zip(grow_at) {
+                    if let Some(st) = near(*at) {
+                        let q = to_screen(st, p[2]);
+                        if dotted.insert(q) {
+                            painter.circle_filled(q, 3.0, c);
+                        }
+                    }
                 }
             }
-        }
-        if falls {
-            for (top, base, _) in &self.vegetation.fall {
-                if let Some(st) = near(*top) {
-                    painter.line_segment(
-                        [to_screen(st, base[2]), to_screen(st, top[2])],
-                        egui::Stroke::new(2.5, color(crate::scene::FALL_IN)),
-                    );
+            if falls {
+                let mut dotted = PixelSet::new(rect);
+                let c = color(self.vegetation.colors[1]);
+                for ((top, base), at) in self.vegetation.fall.iter().zip(fall_at) {
+                    if let Some(st) = near(*at) {
+                        let q = to_screen(st, top[2]);
+                        if dotted.insert(q) {
+                            painter.line_segment(
+                                [to_screen(st, base[2]), q],
+                                egui::Stroke::new(2.0, c),
+                            );
+                        }
+                    }
                 }
             }
         }

@@ -60,11 +60,13 @@ pub enum Load {
     Replace,
 }
 
-/// The "Load preset…" window.
+/// The "Load preset…" window, and the presets every window offers.
 #[derive(Default)]
 pub struct PresetsWindow {
     /// Shown.
     pub open: bool,
+    /// The plugins were asked (read again with [`PresetsWindow::read`]).
+    pub asked: bool,
     /// The presets read, per plugin.
     pub list: Vec<PluginPresets>,
     /// The preset shown (plugin, preset).
@@ -629,20 +631,19 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     }
 }
 
-/// The "Load preset…" window: the rule presets of the enabled design-code
-/// plugins (read with the Design code window's parameter file, if one is
-/// chosen), one previewed, then merged or replacing the rules.
-pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plugins) {
-    if !r.rule_editor.presets.open {
-        return;
-    }
+/// The presets of every enabled design-code plugin, read once (on a
+/// worker thread) for every window offering them: the rule editor's Load
+/// preset…, the vertical and radial clearance windows, the vegetation
+/// panel ([`preset_dropdown`]).
+pub fn ensure_presets(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plugins) {
     let w = &mut r.rule_editor.presets;
-    if w.list.is_empty() && !w.busy() {
+    if w.list.is_empty() && !w.busy() && !w.asked {
         let dirs: Vec<(String, PathBuf)> = crate::codes::choices(plugins)
             .into_iter()
             .filter(|c| c.problem.is_none())
             .map(|c| (c.name, c.dir))
             .collect();
+        w.asked = true;
         if !dirs.is_empty() {
             w.read(dirs, r.design_code.params.clone());
         }
@@ -651,6 +652,79 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
     if w.busy() {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     }
+}
+
+/// A dropdown of the presets of every enabled design-code plugin
+/// (`list`), grouped by plugin, each with its description on hover; only
+/// those `keep` keeps are offered (a plugin with none says so). Shown
+/// even with one preset. True when another was chosen.
+pub fn preset_dropdown(
+    ui: &mut egui::Ui,
+    id: &str,
+    list: &[PluginPresets],
+    keep: impl Fn(&RulePresetChecked) -> bool,
+    chosen: &mut Option<(usize, usize)>,
+) -> bool {
+    let before = *chosen;
+    let shown = chosen
+        .and_then(|(p, k)| {
+            let pp = list.get(p)?;
+            let x = pp.presets.as_ref().ok()?.get(k)?;
+            Some(format!("{}: {}", pp.plugin, x.name))
+        })
+        .unwrap_or_else(|| "Choose a preset…".into());
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(shown)
+        .width(300.0)
+        .height(420.0)
+        .show_ui(ui, |ui| {
+            if list.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "No design-code plugin turned on (Plugins › Plugin manager)",
+                    )
+                    .weak(),
+                );
+            }
+            for (p, pp) in list.iter().enumerate() {
+                ui.label(egui::RichText::new(&pp.plugin).strong());
+                match &pp.presets {
+                    Err(e) => {
+                        crate::menu::error_label(ui, e.as_str());
+                    }
+                    Ok(presets) => {
+                        let mut any = false;
+                        for (k, x) in presets.iter().enumerate().filter(|(_, x)| keep(x)) {
+                            any = true;
+                            let r = ui
+                                .selectable_label(*chosen == Some((p, k)), format!("   {}", x.name))
+                                .on_hover_text(if x.description.is_empty() {
+                                    x.name.as_str()
+                                } else {
+                                    x.description.as_str()
+                                });
+                            if r.clicked() {
+                                *chosen = Some((p, k));
+                            }
+                        }
+                        if !any {
+                            ui.label(egui::RichText::new("   no preset for this").small().weak());
+                        }
+                    }
+                }
+            }
+        });
+    *chosen != before
+}
+
+/// The "Load preset…" window: the rule presets of the enabled design-code
+/// plugins (read with the Design code window's parameter file, if one is
+/// chosen), one previewed, then merged or replacing the rules.
+pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plugins) {
+    if !r.rule_editor.presets.open {
+        return;
+    }
+    ensure_presets(ctx, r, plugins);
     let voltages = ohl_clearance::zone::line_voltages(&r.model.line);
     let target = r
         .rule_editor
@@ -679,108 +753,84 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                     ui.spinner();
                     ui.label("reading the plugins…");
                 });
-            } else if w.list.is_empty() {
-                ui.label("No design-code plugin turned on (Plugins › Plugin manager).");
             }
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(220.0);
-                    for (p, pp) in w.list.iter().enumerate() {
-                        ui.strong(&pp.plugin);
-                        match &pp.presets {
-                            Err(e) => {
-                                crate::menu::error_label(ui, e.as_str());
-                            }
-                            Ok(list) if list.is_empty() => {
-                                ui.label(egui::RichText::new("no rule presets").small().weak());
-                            }
-                            Ok(list) => {
-                                for (k, x) in list.iter().enumerate() {
-                                    if ui
-                                        .selectable_label(w.chosen == Some((p, k)), &x.name)
-                                        .clicked()
-                                    {
-                                        w.chosen = Some((p, k));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-                ui.separator();
-                ui.vertical(|ui| {
-                    let Some((plugin, p)) = w.preset() else {
-                        ui.label("Choose a preset to see its rules.");
-                        return;
-                    };
-                    ui.strong(format!("{plugin}: {}", p.name));
-                    crate::menu::message(ui, p.description.as_str(), None);
-                    egui::ScrollArea::vertical()
-                        .id_salt("rule-preset-preview")
-                        .max_height(300.0)
-                        .show(ui, |ui| {
-                            for rule in &p.rules.rules {
-                                ui.label(egui::RichText::new(&rule.name).strong());
-                                for (m, q) in
-                                    [("vertical", &rule.vertical), ("radial", &rule.radial)]
-                                {
-                                    if let Some(q) = q {
-                                        ui.label(format!("{m}: {q}"));
-                                        ui.label(
-                                            egui::RichText::new(
-                                                crate::requirement_ui::preview_text(q, &voltages),
-                                            )
-                                            .small(),
-                                        );
-                                    }
-                                }
-                                if !rule.cases.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label("Preset");
+                preset_dropdown(
+                    ui,
+                    "rule-preset-choice",
+                    &w.list,
+                    |p| !p.rules.rules.is_empty(),
+                    &mut w.chosen,
+                );
+            });
+            ui.separator();
+            ui.vertical(|ui| {
+                let Some((plugin, p)) = w.preset() else {
+                    ui.label("Choose a preset to see its rules.");
+                    return;
+                };
+                ui.strong(format!("{plugin}: {}", p.name));
+                crate::menu::message(ui, p.description.as_str(), None);
+                egui::ScrollArea::vertical()
+                    .id_salt("rule-preset-preview")
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for rule in &p.rules.rules {
+                            ui.label(egui::RichText::new(&rule.name).strong());
+                            for (m, q) in [("vertical", &rule.vertical), ("radial", &rule.radial)] {
+                                if let Some(q) = q {
+                                    ui.label(format!("{m}: {q}"));
                                     ui.label(
-                                        egui::RichText::new(format!(
-                                            "cases: {}",
-                                            rule.cases.join(", ")
+                                        egui::RichText::new(crate::requirement_ui::preview_text(
+                                            q, &voltages,
                                         ))
-                                        .small()
-                                        .weak(),
+                                        .small(),
                                     );
                                 }
                             }
+                            if !rule.cases.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "cases: {}",
+                                        rule.cases.join(", ")
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                            }
+                        }
+                    });
+                if let Some(wc) = &p.weather {
+                    let names: Vec<&str> = wc.cases.iter().map(|c| c.name.as_str()).collect();
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "its weather cases (added to the model where missing): {}",
+                            names.join(", ")
+                        ))
+                        .small(),
+                    );
+                }
+                ui.separator();
+                match &target {
+                    Some(file) => {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(format!("Merge into {file}"))
+                                .on_hover_text("A rule of the same name replaced, the others added")
+                                .clicked()
+                            {
+                                load = Some(Load::Merge);
+                            }
+                            if ui.button(format!("Replace the rules of {file}")).clicked() {
+                                load = Some(Load::Replace);
+                            }
                         });
-                    if let Some(wc) = &p.weather {
-                        let names: Vec<&str> = wc.cases.iter().map(|c| c.name.as_str()).collect();
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "its weather cases (added to the model where missing): {}",
-                                names.join(", ")
-                            ))
-                            .small(),
-                        );
                     }
-                    ui.separator();
-                    match &target {
-                        Some(file) => {
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .button(format!("Merge into {file}"))
-                                    .on_hover_text(
-                                        "A rule of the same name replaced, the others added",
-                                    )
-                                    .clicked()
-                                {
-                                    load = Some(Load::Merge);
-                                }
-                                if ui.button(format!("Replace the rules of {file}")).clicked() {
-                                    load = Some(Load::Replace);
-                                }
-                            });
-                        }
-                        None => {
-                            ui.label(
-                                "Choose a rule file in the Clearances tab first (or add one).",
-                            );
-                        }
+                    None => {
+                        ui.label("Choose a rule file in the Clearances tab first (or add one).");
                     }
-                });
+                }
             });
         });
     if !open {
@@ -829,10 +879,11 @@ pub fn apply_preset(r: &mut Ready, how: Load) {
     r.rule_editor.status = Some((text, false));
 }
 
-/// The preset's weather cases missing from the model: added to the
-/// model's weather case file (or the preset's file used when the model
-/// has none). What was done.
-fn preset_cases(
+/// The preset's weather cases missing from the model (by name): added to
+/// the model's weather case file (or the preset's file used when the
+/// model has none) — one change of the project's weather case file, one
+/// undo step. What was done.
+pub(crate) fn preset_cases(
     r: &mut Ready,
     plugin: &str,
     name: &str,

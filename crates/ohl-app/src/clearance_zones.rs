@@ -64,6 +64,9 @@ pub struct Out {
     /// A preset's weather case file to use for the model (the model has
     /// none).
     pub weather_use: Option<PathBuf>,
+    /// A design-code plugin's preset loaded (its plugin, the preset): its
+    /// weather cases missing from the model to add.
+    pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
 }
 
 struct Running {
@@ -102,6 +105,10 @@ pub struct ZoneWindow {
     rules_hash: (Option<u64>, Option<u64>),
     /// The "Add a rule" helper's fields.
     pub draft: ZoneRule,
+    /// The plugin preset chosen in the dropdown (plugin, preset).
+    pub plugin_preset: Option<(usize, usize)>,
+    /// A plugin preset loaded this frame, for [`Out::plugin_preset`].
+    loaded_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
 }
 
 /// A rule's distance not set yet (the placeholder of a window's first
@@ -156,6 +163,8 @@ impl ZoneWindow {
             confirm: None,
             running: None,
             report: None,
+            plugin_preset: None,
+            loaded_preset: None,
             stamp: Default::default(),
             rules_hash: (None, None),
             draft: first_rule(),
@@ -488,9 +497,84 @@ impl ZoneWindow {
         (self.report.as_ref(), self.running.is_some())
     }
 
+    /// The presets of the design-code plugins for this window (those with
+    /// rules of its measure): a dropdown grouped by plugin, the preset's
+    /// rules previewed, then loaded (its rules replace those listed, its
+    /// weather cases missing from the model added).
+    fn plugin_presets_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        presets: &[crate::rule_editor::PluginPresets],
+    ) {
+        let measure = self.zone.measure;
+        let ours = move |p: &ohl_io::codes::RulePresetChecked| {
+            p.rules.rules.iter().any(|x| match measure {
+                Measure::Vertical => x.vertical.is_some(),
+                Measure::Radial => x.radial.is_some(),
+            })
+        };
+        ui.horizontal(|ui| {
+            ui.label("Plugin preset");
+            crate::rule_editor::preset_dropdown(
+                ui,
+                &format!("{}-plugin-preset", self.title()),
+                presets,
+                ours,
+                &mut self.plugin_preset,
+            );
+            let chosen = self.plugin_preset.and_then(|(i, k)| {
+                let pp = presets.get(i)?;
+                Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
+            });
+            if let Some((plugin, p)) = chosen {
+                let voltages = ohl_clearance::zone::line_voltages(&model.line);
+                let preview: Vec<String> = p
+                    .rules
+                    .rules
+                    .iter()
+                    .filter_map(|x| {
+                        let q = match measure {
+                            Measure::Vertical => x.vertical.as_ref(),
+                            Measure::Radial => x.radial.as_ref(),
+                        }?;
+                        Some(format!(
+                            "{}: {}",
+                            x.name,
+                            crate::requirement_ui::preview_text(q, &voltages)
+                        ))
+                    })
+                    .collect();
+                if ui
+                    .button("Load")
+                    .on_hover_text(format!(
+                        "{}\n{}\nIts rules replace those listed; its weather cases go to the \
+                         model where missing",
+                        p.description,
+                        preview.join("\n")
+                    ))
+                    .clicked()
+                {
+                    self.take(model, &p.rules);
+                    self.dirty = true;
+                    self.status = Some((format!("preset {plugin} {} loaded", p.name), false));
+                    self.loaded_preset = Some((plugin, p));
+                }
+            }
+        });
+    }
+
     /// The window.
-    pub fn ui(&mut self, ctx: &egui::Context, model: &mut Model) -> Out {
-        let mut out = Out::default();
+    pub fn ui(
+        &mut self,
+        ctx: &egui::Context,
+        model: &mut Model,
+        presets: &[crate::rule_editor::PluginPresets],
+    ) -> Out {
+        let mut out = Out {
+            plugin_preset: self.loaded_preset.take(),
+            ..Out::default()
+        };
         if self.poll()
             && let Some(Ok(r)) = &self.report
         {
@@ -514,6 +598,7 @@ impl ZoneWindow {
             self.wind_ui(ui);
             self.check_ui(ui, model);
             ui.separator();
+            self.plugin_presets_ui(ui, model, presets);
             if let Some(chosen) = self.rules_ui(ui, model) {
                 preset = Some(chosen);
             }

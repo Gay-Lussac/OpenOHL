@@ -98,6 +98,9 @@ pub struct ViewPrefs {
     /// The route worked on (View › Work on route); none: all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_route: Option<String>,
+    /// The colours of the vegetation layers: grow-in points, danger trees.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vegetation_colors: Option<[[u8; 3]; 2]>,
 }
 
 /// The [`ViewPrefs`] of every project opened, by file (remembered).
@@ -462,6 +465,9 @@ pub struct Model {
     /// times larger than stations, kept when zooming); none: heights
     /// fitted to the stretch shown.
     pub profile_ratio: Option<f64>,
+    /// The colours of the vegetation layers: grow-in points, danger trees
+    /// (this user's view setting).
+    pub vegetation_colors: [[u8; 3]; 2],
     /// Another user changed the drawing settings of the project line
     /// worked on (server mode): read them again.
     pub drawings_setting_changed: bool,
@@ -1305,6 +1311,7 @@ impl Model {
             hidden_backgrounds: self.hidden_backgrounds.clone(),
             profile_ratio: self.profile_ratio,
             work_route: self.work_route.clone(),
+            vegetation_colors: Some(self.vegetation_colors),
             line: self.session().map(|s| s.current_line().to_owned()),
             shown_lines: self.other_lines.iter().map(|o| o.name.clone()).collect(),
         }
@@ -2205,6 +2212,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .and_then(|v| v.profile_ratio)
         .filter(|k| k.is_finite() && *k > 0.0);
+    let vegetation_colors = sources
+        .view
+        .as_ref()
+        .and_then(|v| v.vegetation_colors)
+        .unwrap_or([crate::scene::GROW_IN, crate::scene::FALL_IN]);
     let work_route = sources
         .view
         .as_ref()
@@ -2243,6 +2255,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         backgrounds,
         hidden_backgrounds,
         profile_ratio,
+        vegetation_colors,
         drawings_setting_changed: false,
         work_route,
         points,

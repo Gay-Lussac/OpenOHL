@@ -163,11 +163,15 @@ fn results_are_out_of_date_after_point_and_line_edits_not_view_settings() {
         assert!(!r.vegetation.result().1 && r.vegetation.result().0.is_some());
     }
     // Run again (the vegetation window's): up to date.
-    let n = h.query_all_by_label("Run again").count();
-    assert!(n >= 3, "{n}");
-    for k in 0..n {
-        h.query_all_by_label("Run again").nth(k).unwrap().click();
+    assert!(h.query_all_by_label("Run again").count() >= 3);
+    // The vegetation panel's (the others closed: they lie over it).
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.wirefit.open = false;
+        r.bom.open = false;
     }
+    h.run_steps(3);
+    h.get_by_label("Run again").click();
     until(&mut h, "a vegetation run again", |a| {
         let r = a.ready().unwrap();
         matches!(r.vegetation.result(), (Some(Ok(_)), false))

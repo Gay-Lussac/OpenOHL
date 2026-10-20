@@ -1790,10 +1790,14 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
     harness.run();
     let r = harness.state_mut().ready().unwrap();
     r.wirefit.open = true;
-    r.vegetation.show(0);
-    r.vegetation.iso.0 = true;
     harness.run();
     harness.get_by_label("Fit").click();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    r.vegetation.show(0);
+    r.vegetation.settings.iso.0 = true;
+    harness.step();
+    harness.step();
     harness.get_by_label("Check").click();
     let started = std::time::Instant::now();
     loop {
@@ -1810,13 +1814,15 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
             }
             let veg = veg.as_ref().unwrap();
             assert_eq!(veg.points, 1);
-            let (w, found) = (&veg.positions.spans[0].wire, &veg.results[0]);
-            assert_eq!((w.section.as_str(), w.span), ("S1", 0));
+            let found = &veg.spans[0];
+            assert_eq!((found.section.as_str(), found.span), ("S1", 0));
             assert_eq!(found.encroaching, 1);
+            // Every grow-in point listed (one here).
+            assert_eq!(veg.grow.len(), 1);
             // The case shown, as it is, and the default root ball.
-            assert_eq!(veg.positions.cases.len(), 1);
+            assert_eq!(veg.cases.len(), 1);
             assert_eq!(
-                veg.params.root_ball,
+                veg.settings.root_ball,
                 ohl_clearance::vegetation::DEFAULT_ROOT_BALL
             );
             break;
