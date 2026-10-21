@@ -417,6 +417,7 @@ pub fn command(
                         label: label.clone(),
                         position: global,
                         description: r.description.clone(),
+                        ..Default::default()
                     });
                     own.push(format!("point {label}"));
                 }

@@ -526,6 +526,7 @@ fn a_v_wire_point_stays_and_its_string_changes_length() {
             label: "A3".into(),
             position: [a2[0] + 1.0, a2[1] + 0.5, a2[2]],
             description: String::new(),
+            ..Default::default()
         });
         s.strings.push(ohl_line::InsulatorString {
             label: "S2b".into(),

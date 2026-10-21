@@ -35,6 +35,8 @@ pub mod incremental;
 pub mod jumper;
 pub mod legacy;
 pub mod library;
+#[cfg(test)]
+mod link_tests;
 pub mod objects;
 mod rod;
 pub mod route;
@@ -62,7 +64,9 @@ use legacy::{SpanLoad, SpreadLoad};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// Latest line file version: 7 adds the optional `height_datum`
-/// ([`HeightDatum`]); 6 adds a string's optional limits, not
+/// ([`HeightDatum`]) and an attachment point's link to its joint (`joint`,
+/// `offset`, `unlinked`: [`StructurePoint`]; 2026-10-21, the same unreleased
+/// raise); 6 adds a string's optional limits, not
 /// checked by OpenOHL (`max_load`, `max_swing_deg`,
 /// `max_swing_across_deg`, `max_swing_along_deg`: [`StringLimits`]); 5 writes a jumper's tap end as its `from` /
 /// `to` ([`JumperEnd`]), its supports as points holding a held clamp

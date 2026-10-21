@@ -1577,6 +1577,7 @@ impl StructureForm {
                 description: p.description.clone(),
                 label: p.label.trim().to_owned(),
                 position: to_global(self.position, self.orientation_deg, p.at),
+                ..Default::default()
             })
             .collect()
     }
@@ -2373,6 +2374,7 @@ impl StringForm {
                 description: p.description.clone(),
                 label: p.label.clone(),
                 position,
+                ..Default::default()
             });
         }
         let (strings, wires) = &self.opened;

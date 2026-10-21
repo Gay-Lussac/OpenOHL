@@ -301,13 +301,24 @@
               </xs:element>
               <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>A point of the structure where strings
-                    hang (label unique among points and wire points).</xs:documentation>
+                  <xs:documentation>An attachment point: where strings hang
+                    (label unique among points and wire points). On a typed
+                    structure it is linked to a joint of the type (joint;
+                    none: as its type's point of the label, or a joint at
+                    its position), at an offset from it in the structure's
+                    axes (offset_x, offset_y, offset_z, m: a rigid link);
+                    unlinked: kept where it is, its structure's loads
+                    refused until it is linked again (line file 7).</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="label" type="xs:string" use="required"/>
                   <xs:attribute name="description" type="xs:string"/>
                   <xs:attributeGroup ref="ohl:xyz"/>
+                  <xs:attribute name="joint" type="xs:string"/>
+                  <xs:attribute name="offset_x" type="xs:double" default="0"/>
+                  <xs:attribute name="offset_y" type="xs:double" default="0"/>
+                  <xs:attribute name="offset_z" type="xs:double" default="0"/>
+                  <xs:attribute name="unlinked" type="xs:boolean" default="false"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="wire" minOccurs="0" maxOccurs="unbounded">
@@ -326,8 +337,8 @@
               </xs:element>
               <xs:element name="string" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>A string (insulator) from its top (a
-                    structure point, or another string's wire point) to a
+                  <xs:documentation>A string (insulator) from its top (an
+                    attachment point, or another string's wire point) to a
                     wire point, of a length (m) and a direction: angle_deg
                     from straight down (0 hanging, 90 level), direction_deg
                     in plan in the structure's axes (0 ahead, 90 right).
