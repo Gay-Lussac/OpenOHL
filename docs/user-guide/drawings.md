@@ -70,8 +70,8 @@ sheets with `--page`) and the profile CSV of every route.
 
 A structure whose type is at level 1 (a stick figure,
 [detail levels](structure-library.md#detail-levels)) is drawn with its
-**symbol**: a mast line from its foot to its highest attachment point in
-the profile, a small square in the plan, and its stick drawing (mast and
+**symbol**: a shaft line from its foot to its highest attachment point in
+the profile, a small square in the plan, and its stick drawing (shaft and
 arms) as before. A structure whose type is at **level 2 or 3** (members,
 or a separate `.ohlfe` model) is drawn with its **members** instead of the
 symbol, placed as the line places the type (position, orientation,
@@ -88,7 +88,7 @@ layer `OHL_MEMBERS`:
 A **pole at level 2 or 3** (a `[pole]` outline with diameters at two
 heights at least, or a named `.ohlp` file) is drawn with its **outline**
 instead of the symbol, on the same layer `OHL_MEMBERS` (the members'
-layer: the outline is the pole's body, as the members are a tower's):
+layer: the outline is the pole's body, as the members are a lattice tower's):
 
 - in the **profile**, its silhouette by height: at each height of its
   outline the outline's extent along the route, up one side and down the
@@ -99,14 +99,14 @@ layer: the outline is the pole's body, as the members are a tower's):
 
 The pole is drawn from the ground line up (the part in the ground left
 out), at the structure's position, orientation and height adjustment,
-raised by its extension. Its stick drawing (the mast line and the arms
+raised by its extension. Its stick drawing (the shaft line and the arms
 to the attachment points) stays on `OHL_STRUCTURES`, as before.
 
 The name, station and attachment points stay on `OHL_STRUCTURES` (the
 name above the highest member or the pole's top). In SVG the members and
 poles carry `class="OHL_MEMBERS"`. The members' profiles (their sections) are not
 drawn on the sheets: at the usual scales they are thinner than the pen.
-`ohl drawing` reads the section library from `--sections` or the
+`ohl drawing` reads the cross-section library from `--sections` or the
 `Sections` folder next to the line (only for a type with a separate
 model, whose members it needs to read).
 
@@ -134,7 +134,7 @@ Profile page it also decides how far left and right the ground, the
 survey and LiDAR points and the 3D drawings are shown. On the command
 line it is `--plan-width` (or `--line-width`). The line width does not
 decide where sheets end (below). The LiDAR corridor of the analyses
-(`--corridor`, the points read for the ground surface and the clearance
+(`--corridor`, the points read for the terrain surface and the clearance
 checks) is a separate setting and is not changed by it.
 
 ## Elevations
@@ -149,9 +149,9 @@ the sheet next to where it stands:
   of the sheet's station range on a sheet; those of the other
   [versions](sheet-templates.md#versions-of-the-line-kinds-and-roles) in
   their role's pen) is drawn **seen along the line**: its members (levels 2 and 3), its pole's
-  silhouette across the line, else its stick drawing (level 1: the mast
+  silhouette across the line, else its stick drawing (level 1: the shaft
   and the arms to its attachment points), true shape at the
-  **horizontal scale** (a 30 m tower is 15 mm tall at 1:2000) or at
+  **horizontal scale** (a 30 m structure is 15 mm tall at 1:2000) or at
   `--elevation-scale`;
 - on request its **labels** (`--elevation-labels`, the template's
   `labels`): its number, type and height above its top, and beside each
@@ -233,14 +233,14 @@ through, a structure drawn on the sheet:
 
 - by default a sheet ends at a **structure standing on the line**: one of
   the run along the alignment (on one of its points, such as an angle
-  pylon, or standing on the alignment between them);
+  structure, or standing on the alignment between them);
 - a structure **beside the line** never ends a sheet, however near it
   stands — a connection or termination of the route away from the
   alignment (more than 5 m beside it and not on one of its points, see
   [Desktop app](desktop-app.md)), within the line width or not: a match
   line there would cut through the span of the line passing it;
 - the only other place a sheet may end is an **alignment point without a
-  structure** (an angle point without a pylon); the alignment's first and
+  structure** (an alignment point without a structure); the alignment's first and
   last points are no breaks of their own (the sheets start at the first
   structure and end at the last);
 - breaks never fall in the middle of a span;
@@ -354,7 +354,7 @@ A simple, open format for the same numbers (version 1):
 - `s` station along the route's centreline, `o` offset from it (right
   positive), `z` height, `x`/`y` project coordinates; all in metres.
 - `<ground>` and `<clearance>` hold **runs**: a run ends where there is no
-  ground surface.
+  terrain surface.
 - A `<wire>` is one span or jumper of one weather case; `dash` is set for
   the cases drawn dashed. A wire leaving the station range is cut at its
   ends (it may then appear as more than one `<wire>`).

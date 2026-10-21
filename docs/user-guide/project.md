@@ -69,7 +69,7 @@ One rule for every deletion: an object that takes others with it is not deleted 
 ```text
 $ ohl project delete project.ohl --user ana structure T7
 Deleting structure T7 would also affect:
-  attachments and insulators:
+  attachments and strings:
     - 1:1 dead-end
   sections:
     - S3
@@ -82,7 +82,7 @@ Deleting structure T7 would also affect:
 Nothing was changed. Repeat with --confirm to apply all of this (it is logged and can be undone).
 ```
 
-- **structure**: its attachments and insulators, the sections through it (a section cannot lose a point), jumpers at its attachments or at points of those sections; routes lose it (or are deleted when fewer than two structures are left); tied alignment points are detached.
+- **structure**: its attachments and strings, the sections through it (a section cannot lose a point), jumpers at its attachments or at points of those sections; routes lose it (or are deleted when fewer than two structures are left); tied alignment points are detached.
 - **section**: the jumpers at its points.
 - **jumper**, **route**: nothing else — deleted directly (still logged).
 
@@ -90,7 +90,7 @@ With `--confirm` (`"confirm": true`) everything listed is applied as **one log e
 
 ### Alignments
 
-The alignment of a route is the base of its plan and profile drawings, kept apart from the line design. Usually its points sit under the pylons, **tied** to them: they follow when a pylon moves. Any point can be moved (which detaches it), detached, re-tied, inserted or removed:
+The alignment of a route is the base of its plan and profile drawings, kept apart from the line design. Usually its points sit under the structures, **tied** to them: they follow when a structure moves. Any point can be moved (which detaches it), detached, re-tied, inserted or removed:
 
 ```bash
 ohl project apply project.ohl --user ana '{"op": "align_under_structures", "route": "main"}'
@@ -116,7 +116,7 @@ ohl project apply project.ohl --user ana --solve --temperature 40 \
   '{"op": "move_structure", "id": "T40", "position": [2598496.0, 1120627.6, 649.5]}'
 ```
 
-On a real 554-section line, moving a pylon carrying 28 sections re-solved
+On a real 554-section line, moving a structure carrying 28 sections re-solved
 those 28 in 4.6 ms (command, log and solve), against 11.7 ms for all 554.
 
 ## Undo, redo, rollback, users
@@ -222,7 +222,7 @@ data (intensities and returns are stored once). A view far away reads a
 level instead of the whole block — the 3D view streams by them under a
 point budget (see the desktop app's [Level of detail](desktop-app.md#level-of-detail)),
 and opening a cloud of more than 20 million points takes the points shown
-from them (the ground surface still from every ground point in the corridor).
+from them (the terrain surface still from every ground point in the corridor).
 
 Imports build the levels. Projects from before (point-cloud schema 1) are
 read as they are — the levels are then picked from the whole blocks while

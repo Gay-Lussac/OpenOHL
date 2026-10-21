@@ -86,7 +86,7 @@ description and a **kind**:
 | Kind | What it is | Properties |
 | --- | --- | --- |
 | `body` | marker ball, obstruction light, bird diverter, weight, sensor | mass (N weight); its **shape** for wind and ice: `sphere` (diameter), `cylinder` (diameter, length, along or across the wire), `box` (three sizes), or `areas` (wind area, ice surface given); drag coefficient (default by shape) |
-| `clamp` | where a jumper or a spacer is held on a span or a jumper (a tap clamp, a spacer's end clamp) | mass; its size for wind and ice (a template); length along the host wire; which cables it takes (diameters, optional); a **hinge**: it passes forces, no moment |
+| `clamp` | where a jumper or a spacer is held on a span or a jumper (a tap clamp, a spacer's end clamp) | mass; its size for wind and ice (a template); length along the host wire; which wire types it takes (diameters, optional); a **hinge**: it passes forces, no moment |
 | `spread` | a heated stretch, a cable lashed on, covers, a bird-diverter run as N/m | load N/m; for the wind an added diameter (or none); for the ice whether it takes ice and on what diameter |
 
 A **spread object** lies between **two points** of the same span (or
@@ -149,8 +149,8 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
 
 ### Everything else a tap touches
 
-- **Electrical circuits:** a tap connects the jumper's circuit to the
-  host's conductor (the circuit tracing follows taps; a tap on a jumper
+- **Conductor paths:** a tap connects the jumper's conductor path to the
+  host's conductor (the tracing of conductor paths follows taps; a tap on a jumper
   joins that jumper's path).
 - **Checks:** a jumper and its host are connected at the tap: not paired
   in the distance between conductors (as two wires sharing a clamp), the

@@ -15,7 +15,7 @@
 - [Structure and insulator libraries (.ohls, .ohli)](user-guide/structure-library.md)
 - [Structure analysis (.ohlfe, .ohlp)](user-guide/structure-analysis.md)
 - [OHL-Structure, the structure application (ohl-structure)](user-guide/structure-app.md)
-- [Section library (.ohlsec)](user-guide/section-library.md)
+- [Cross-section library (.ohlsec)](user-guide/section-library.md)
 - [Structure load cases (.ohlslc)](user-guide/structure-load-cases.md)
 - [Terrain and ground clearance](user-guide/terrain.md)
 - [Thermal rating (.ohlta)](user-guide/thermal.md)
@@ -29,7 +29,7 @@
   - [OHL XML schema](schema/ohl-line.md)
 - [Project files and point clouds (.ohl)](user-guide/project.md)
 - [Server mode (pre-alpha)](user-guide/server.md)
-- [Project lines and phases](user-guide/project-lines.md)
+- [Project lines and stages](user-guide/project-lines.md)
 - [Versions, branches and reviews](user-guide/versions.md)
 
 # Theory manual

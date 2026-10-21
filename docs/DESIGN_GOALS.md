@@ -43,7 +43,7 @@ Nothing in OpenOHL may run forever or freeze the application. Every function tha
 - Sensible defaults and templates; a new user can produce a sag-tension table in minutes.
 - Keyboard-driven workflows and a command palette for power users.
 
-## 3. Loads on cables
+## 3. Loads on wires
 
 In addition to self-weight, wind and ice, the core must support **additional loads applied on wires**, in every analysis (sag-tension, clearances, FE wire system, structure loads):
 
@@ -99,14 +99,14 @@ Large projects (hundreds of km, billions of LiDAR points) must open fast and sta
 
 The **engineering model is never simplified** by LOD: calculations always use full-fidelity data. LOD affects display and loading only.
 
-## 6. Insulator strings and linked assemblies
+## 6. Strings and linked assemblies
 
 The core must support all common string types, and strings must be **linkable** to each other to form assemblies:
 
 | Type | Behaviour |
 |---|---|
-| **Suspension (I-string)** | Single pinned string, free to swing transversely and longitudinally |
-| **V-string** | Two legs from separate structure points to one yoke; restrains transverse swing; legs can go slack in compression |
+| **Suspension string** | Single pinned string, free to swing transversely and longitudinally |
+| **Two strings to one wire point** | From separate structure points to one yoke; restrains transverse swing; each can go slack in compression |
 | **Tension / strain (dead-end)** | In-line with the conductor, carries full tension; single or multiple (double/triple) strings |
 | **Post insulator** | Rigid/cantilever, line post (fixed or braced) |
 | Others via plugins | Y-strings, horizontal V, braced post, 2-part strings, etc. |
@@ -119,7 +119,7 @@ The core must support all common string types, and strings must be **linkable** 
 
 **Model**: an insulator assembly is a small **graph** of nodes (structure attachment points, yoke plates, wire attachment) and elements (insulator links, rigid links, pinned links, cable/jumper segments, tension-only elements). Each element has length, weight, wind area, strength and properties: rigid/pinned/tension-only.
 
-- Simple cases (I-string swing, V-string legs) are solved analytically for speed.
+- Simple cases (one string's swing, two strings' forces) are solved analytically for speed.
 - The general linked case is solved by the FE wire system (`ohl-wirefe`), which treats the assembly as part of the wire model.
 - Assemblies are reusable library items, and plugin-extensible.
 
@@ -161,24 +161,24 @@ Profiles must be exportable on their own, not only as part of drawing sheets:
 
 A line can have **several routes**. A route is an alignment (PIs) plus the ordered list of structures along it; it defines stationing, offsets and line angles for its structures, and is the basis for profile drawings and clearance reports.
 
-- **A structure may belong to several routes.** A *Y pylon* (branch point) is listed by the main route and by the branch; two systems carried by one pylon that split onto two parallel pylon lines and rejoin later are modelled as parallel routes sharing their end structures.
+- **A structure may belong to several routes.** A *Y structure* (branch point) is listed by the main route and by the branch; two systems carried by one structure that split onto two parallel structure lines and rejoin later are modelled as parallel routes sharing their end structures.
 - **Wire sections are independent of routes**: they reference structures by id, so a section can run along one route, cross onto another at a shared structure, or follow a parallel route.
 - Stationing, line angles and offsets are computed **per route**; a shared structure has one station per route it belongs to.
 - Lines without explicit routes have one implicit route through all structures in file order (backwards compatible).
-- **Alignments are independent of the line design.** The alignment drives the plan and profile drawings; its points are usually placed under the pylons and **tied** to them (they follow when a pylon moves), but each point can be moved, detached, inserted or removed on its own, so drawings and stationing do not have to change with every design change.
+- **Alignments are independent of the line design.** The alignment drives the plan and profile drawings; its points are usually placed under the structures and **tied** to them (they follow when a structure moves), but each point can be moved, detached, inserted or removed on its own, so drawings and stationing do not have to change with every design change.
 
 ## 9a. Deleting objects
 
 One rule for every deletion: when an object takes others with it, the deletion is **refused with the full list** of what would go (or be changed) and must be confirmed; then everything is deleted as **one logged command** with a note, undoable as a whole.
 
-- A **structure** takes its attachments and insulators, the sections through it (a section cannot lose a point), the jumpers at its attachments or at points of those sections; it is taken out of routes (routes left with fewer than two structures are deleted), and alignment points tied to it are detached (they stay in place).
+- A **structure** takes its attachments and strings, the sections through it (a section cannot lose a point), the jumpers at its attachments or at points of those sections; it is taken out of routes (routes left with fewer than two structures are deleted), and alignment points tied to it are detached (they stay in place).
 - A **section** takes the jumpers at its points.
 - Jumpers and routes take nothing else; the line settings cannot be deleted.
 - Undo, redo and rollback replay exactly what was recorded (no new cascade), and restore objects in their original order.
 
 ## 10. Structure library (`.ohls`)
 
-Each **structure type** (pylon, pole, portal…) is a file of its own (`*.ohls`, "OHL structure", TOML) in a structure library directory (default the project's `Structures/` folder), so it can be reused, shared and version-controlled individually.
+Each **structure type** (structure, pole, portal…) is a file of its own (`*.ohls`, "OHL structure", TOML) in a structure library directory (default the project's `Structures/` folder), so it can be reused, shared and version-controlled individually.
 
 - **Local axes**: origin at the ground centre, x transverse, y along the line (ahead), z up.
 - **Attachments**: set, phase, label, the insulator attachment point (local), the default insulator assembly (from the insulator library), and for strain sets the side (`ahead` / `back`).
@@ -188,27 +188,27 @@ Each **structure type** (pylon, pole, portal…) is a file of its own (`*.ohls`,
 - **Deriving types from an existing line**: attachment points of instances are transformed back to local coordinates and identical geometries are grouped into one type — a draft library from any imported line.
 - Strength data: allowable spans and load trees (`[capacity]`, Methods 1 and 2), structure models and poles (`ohl-structures-fe`) — see [Structure libraries](user-guide/structure-library.md#capacity) and [Structure analysis](user-guide/structure-analysis.md).
 
-### Simple pylon files
+### Simple structure files
 
-How much string detail is useful depends on the pylon. A pylon file can therefore stand alone: a stick drawing (centre point, mast, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each pylon is one file; a project keeps them in its `Structures` folder. Detailed assemblies (`.ohli`, linked strings) stay available when a pylon needs them.
+How much string detail is useful depends on the structure. A structure file can therefore stand alone: a stick drawing (centre point, shaft, crossarms to the suspension points) and, per attachment, the string's length and a label at its top (insulator attachment point) and bottom (wire attachment point). Each structure is one file; a project keeps them in its `Structures` folder. Detailed assemblies (`.ohli`, linked strings) stay available when a structure needs them.
 
 ## 11. Insulator assembly library (`.ohli`)
 
 Each **insulator assembly** is a file of its own (`*.ohli`, TOML) in an insulator library directory (default `libraries/insulators/`).
 
-- **Basic kinds (now)**: `suspension` (I-string: length, weight, axial stiffness, wind area), `v_string` (two legs: half width, leg length, leg weight, stiffness; legs tension-only), `strain` (dead-end: length, weight, stiffness; single or multiple strings).
+- **Basic kinds (now)**: `suspension` (one string: length, weight, axial stiffness, wind area), `v_string` (two legs: half width, leg length, leg weight, stiffness; legs tension-only), `strain` (dead-end: length, weight, stiffness; single or multiple strings).
 - Structure-type attachments name their default assembly; a structure instance can override it per attachment.
 - **Later (DESIGN_GOALS §6)**: general linked assemblies as a graph of nodes and elements — yokes, multiple strings, jumper support strings, counterweights — solved by `ohl-wirefe`.
 
 ## 12. Display and connections
 
 - **Phase colours**: wires are displayed in colours by phase (and per circuit); the colour scheme is configurable per project (e.g. L1/L2/L3 conventions differ between utilities) and per section.
-- **Jumpers at dead-ends**: jumpers connect the end of one section to the start of the next at a strain structure (or between circuits). They are modelled as short slack cable elements between the two wire points (with optional jumper support strings, §6), are drawn in 3D and included in clearance checks; their length or sag is a design input.
+- **Jumpers at dead-ends**: jumpers connect the end of one section to the start of the next at a strain structure (or between circuits). They are modelled as short slack wire elements between the two wire points (with optional jumper support strings, §6), are drawn in 3D and included in clearance checks; their length or sag is a design input.
 
 ## 13. Clearances
 
 - **Two measures, always**: **vertical** clearance (wire height above a target directly below it) and **radial** clearance (shortest 3D distance between wire and target). Each rule requires one or both.
-- **Targets**: the ground surface (TIN); LiDAR / survey points selected by class or by class role (§ LiDAR class schemes) — vegetation, buildings, roads, water, objects…; wires of **other lines** (crossings, parallel lines); and other wires of the **same line** — within the same span (phase to phase, circuit to circuit) and between spans (e.g. a branch passing under the main line).
+- **Targets**: the terrain surface (TIN); LiDAR / survey points selected by class or by class role (§ LiDAR class schemes) — vegetation, buildings, roads, water, objects…; wires of **other lines** (crossings, parallel lines); and other wires of the **same line** — within the same span (phase to phase, circuit to circuit) and between spans (e.g. a branch passing under the main line).
 - **Rules are data** (`.ohlr` files): a rule names its target and required distances; a later tool (GUI or plugin) edits them per LiDAR class, per crossing, per design code. Design codes (EN 50341, Swiss LeV, NESC…) are plugins that produce rule sets.
 - **Per weather case**, and as **envelopes** over several cases (hot, iced, blown-out wires), including different cases for the two wires of a wire-to-wire check (e.g. upper wire iced, lower wire cold).
 - **Exclusion zones**: parts of a wire near supports, terminations and cable transitions (where wires converge and come down to the ground by design) can be excluded from a rule, e.g. within a distance of the attachment points.

@@ -9,10 +9,10 @@ their tests run separately from the core's.
 | Crate | What | Depends on |
 |---|---|---|
 | `ohl-structure-loads` | Load-case recipes (`[[load_case]]` in a `.ohls`, `.ohlslc` on their own), `LineValues` and `LoadTable` (plain, serde-able data), `evaluate`, CSV of the table and the recipes | `ohl-core`, `ohl-structures` only: no line, no `ohl-loads` |
-| `ohl-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ohl_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ohl_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the section library for surface loads) | core crates + `ohl-structure-loads` |
-| `ohl-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry` (standing on an extension: `geometry_with`; the pole's wireframe), picking; `missing(level)` (what the next level lacks — also the pole's outline and design, extension members without sections — and advice: points on no joint, joints on one member, members crossing without a joint, an extension without members at level 3); the pole's edits (`pole`: outline rows, shape, fields, a `.ohlp` brought in) and the extensions' (`extension_edits`: joints, members, the piece in one go, legs); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`); the sections of the section library typed (`section_library`: `SectionDraft`, `put_section`, `remove_section`, `SHAPES`). No UI | `ohl-core`, `ohl-structures` (the file format only), `ohl-sections` (a typed section checked and computed by the library). `ohl-app`'s structure screen depends on it, so there is one implementation of the edits |
+| `ohl-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ohl_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ohl_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its cross-section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the cross-section library for surface loads) | core crates + `ohl-structure-loads` |
+| `ohl-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry` (standing on an extension: `geometry_with`; the pole's wireframe), picking; `missing(level)` (what the next level lacks — also the pole's outline and design, extension members without cross-sections — and advice: points on no joint, joints on one member, members crossing without a joint, an extension without members at level 3); the pole's edits (`pole`: outline rows, shape, fields, a `.ohlp` brought in) and the extensions' (`extension_edits`: joints, members, the piece in one go, legs); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`); the cross-sections of the cross-section library typed (`section_library`: `SectionDraft`, `put_section`, `remove_section`, `SHAPES`). No UI | `ohl-core`, `ohl-structures` (the file format only), `ohl-sections` (a typed cross-section checked and computed by the library). `ohl-app`'s structure screen depends on it, so there is one implementation of the edits |
 | `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](structure-exports.md)): IFC4 (members with profile solids and the structural analysis model with load cases), IFC2x3 (members, for steel-detailing programs that take IFC2x3 only), SAF (xlsx, its own small writer on `zip`), CSV tables; the tool `ohl-structure-export` (not `ohl structures export`: `ohl-cli` is a core crate) | `ohl-structure-link` (`export_structure`, the plain `ExportStructure`), `ohl-structure-loads`, `ohl-sections`, `ohl-structures` (parsing the file only) |
-| `ohl-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes, the Level panel with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line values), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `section_editor.rs` (the section library typed: Sections & materials › Section library), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ohl-structure-edit`, `ohl-structure-loads`, `ohl-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.ohlp` / `.ohlfe` files), `ohl-structure-export`, `ohl-structures`, `ohl-sections`, `ohl-plugins` (core: manifests, discovery, the host, the shared settings), `ohl-render` (drawing only) |
+| `ohl-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes, the Level panel with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line values), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `section_editor.rs` (the cross-section library typed: Cross-sections & materials › Cross-section library), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ohl-structure-edit`, `ohl-structure-loads`, `ohl-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.ohlp` / `.ohlfe` files), `ohl-structure-export`, `ohl-structures`, `ohl-sections`, `ohl-plugins` (core: manifests, discovery, the host, the shared settings), `ohl-render` (drawing only) |
 | `ohl-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos; a body built by the generators solved by the FE model (`body_fe.rs`) | everything above, as dev-dependencies |
 
 Rules:
@@ -40,14 +40,14 @@ Rules:
   Recent files are kept in eframe storage (`RECENT_KEY`
   `ols-structure-recent`, ten, canonical paths, added by
   `StructureApp::open`). **New structure** writes `start::minimal` (one
-  point, level 1) or a pylon template built with
+  point, level 1) or a structure template built with
   `PylonTemplate::build(defaults(role))` from `ohl-structures` (no
-  dependency on `ohl-app`'s pylon builder); `start::create` refuses an
+  dependency on `ohl-app`'s structure builder); `start::create` refuses an
   existing file and checks the result opens. The launcher
   `Start OHL-Structure.command` builds `ohl-structure-app` and runs `ohl-structure`.
 - **Libraries** (`libraries.rs`): `Folders::new(file, --sections,
   --insulators)` gives where each `LibKind` is read and imported into
-  (sections: the folder given or `Sections/`; insulators: the folder
+  (cross-sections: the folder given or `Sections/`; insulators: the folder
   given, else the file's folder and `Insulators/`; poles, models, recipes:
   the file's folder; templates: `PylonTemplates/`). `scan` reads and
   checks each file (`check_file`: `SectionLibrary::parse`,
@@ -57,25 +57,25 @@ Rules:
   `import` checks every file and the ids against the other files of the
   folder before copying anything; `export` writes the line application's
   layout (`structures/`, `sections/`, `insulators/`, `pylon-templates/`),
-  sections filtered by `sections_subset` (`toml_edit`: the sections used
+  cross-sections filtered by `sections_subset` (`toml_edit`: the cross-sections used
   and their materials, comments kept). After an import
-  `StructureApp::reload_libraries` reads the insulators and sections
+  `StructureApp::reload_libraries` reads the insulators and cross-sections
   again (`load_libraries`, shared with `open`). The listing is cached by
   a hash of the file text and the folders.
-- **Section library typed** (`section_editor.rs`, Design › Sections &
-  materials › Section library): the `.ohlsec` files where `Folders`
-  reads the sections (looked at again every second), each section
+- **Cross-section library typed** (`section_editor.rs`, Design › Sections &
+  materials › Cross-section library): the `.ohlsec` files where `Folders`
+  reads the cross-sections (looked at again every second), each cross-section
   editable as a `SectionDraft` (`ohl_structure_edit::section_library`:
   the fields as text, `SectionDraft::section` checked and computed by
   `SectionLibrary::parse` itself, `put_section` / `remove_section` with
-  `toml_edit`, the section's other keys and the file's comments kept).
+  `toml_edit`, the cross-section's other keys and the file's comments kept).
   Each change is written at once (`save_section`, `delete_section`), the
   libraries read again, and is a `LibraryEdit` (path, text before and
   after, `at`: the structure file's `undo_steps()` then). `undo` / `redo`
   of the window take the library's step when it is the later one
   (`SectionEditor::undo_first`, `redo_first`: by `at` against the file's
   undo and redo steps; a library step no longer reachable is dropped);
-  a file changed outside since is not undone. Members' section lists
+  a file changed outside since is not undone. Members' cross-section lists
   (`section_choices`) hold the library's ids, then the file's.
 - **Started from a project**: the line application passes the working
   copy's folders (`--insulators`, `--sections`, the structure file in
@@ -112,7 +112,7 @@ structure app: reads the JSON when its mtime changes (twice a second):
   `ohl-structure-line-values`, version 3): the structure, the line, its
   type, the line's cases and their sources (version 2), the values
   (`LineValues`), the other places of the same type with theirs, a note
-  (no values yet, no load case file, sections a case did not solve) and
+  (no values yet, no load case file, cross-sections a case did not solve) and
   `missing` (version 3): per case, the sections and jumpers at the
   structure that did not solve (`MissingWire`). The application marks
   such a case incomplete in the status block, on its load-table rows
@@ -124,7 +124,7 @@ structure app: reads the JSON when its mtime changes (twice a second):
   the structure files.
 - Member areas for surface loads (`SectionAreas`): profile width for the
   load's direction × length × sin θ (`Model::projected_area`, shared with
-  member wind); a member whose section is not in the library gets "no
+  member wind); a member whose cross-section is not in the library gets "no
   area" with the reason.
 
 ## The window: menus and panels

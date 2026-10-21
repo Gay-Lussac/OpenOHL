@@ -1,9 +1,9 @@
-# Section library (`.ohlsec`)
+# Cross-section library (`.ohlsec`)
 
-A **section library** holds standard profiles — angles, channels, I and
-H sections, tubes, round bars, pole shafts — and their materials. A
+A **cross-section library** holds standard profiles — angles, channels, I and
+H cross-sections, tubes, round bars, pole shafts — and their materials. A
 structure at [level 3](structure-library.md#detail-levels) refers to its
-sections there by id, so every structure of a project line shares one
+cross-sections there by id, so every structure of a project line shares one
 set of profiles
 (see [How structures refer to it](#how-structures-refer-to-it)).
 OpenOHL computes each profile's properties from its dimensions; values
@@ -49,8 +49,8 @@ use them; OpenOHL itself does not read them.
 
 ## Shapes
 
-Section axes: **y** along the width `b`, **z** along the height `h`.
-`iy` is about y — the strong axis of an I section. Positions (the
+Cross-section axes: **y** along the width `b`, **z** along the height `h`.
+`iy` is about y — the strong axis of an I-section. Positions (the
 centroid) are measured from the lower left of the profile's outline box:
 the heel of an angle, the back of a channel's web at its bottom flange.
 
@@ -98,13 +98,13 @@ What is exact and what is approximate:
   include those, give the table's values.
 - **Torsion constant**: exact for tubes and round bars; Bredt's formula
   on the mid-wall line for rectangular and polygonal tubes; the sum of
-  b·t³/3 over the plates for angles, channels and I sections (fillets
+  b·t³/3 over the plates for angles, channels and I-sections (fillets
   left out).
 - **Shear areas**: the plates parallel to the shear for angles, channels,
-  I sections (web between the flanges; both flanges) and rectangular
+  I-sections (web between the flanges; both flanges) and rectangular
   tubes (in proportion to the sides); half the area for round and
   polygonal tubes; 0.9 A for a round bar.
-- A `general` section has only what you give; its elastic and plastic
+- A `general` cross-section has only what you give; its elastic and plastic
   moduli and torsion constant stay unknown unless given.
 
 ## Wind on the profile
@@ -113,7 +113,7 @@ The body wind of a level 3 structure is computed from the surface of its
 profiles (the [member wind](structure-analysis.md#member-wind-body-wind-at-level-3)
 of the finite-element check). `Section::wind_width(direction)` gives the profile's **width
 seen by the wind**: the extent of its outline normal to a wind blowing
-in the section's plane at `direction` (from y towards z). Per metre of
+in the cross-section's plane at `direction` (from y towards z). Per metre of
 member, the projected area is that width × 1 m
 (`wind_area_per_length`).
 
@@ -122,14 +122,14 @@ do not shield each other (at 45° the width is the diagonal extent of the
 legs), a tube's width is its diameter in every direction, and no drag
 factor is applied here — the member wind applies the drag factor: the
 structure model's `drag`, or the library's wind factors below. A
-`general` section's width is that of its outline box.
+`general` cross-section's width is that of its outline box.
 
 ## Wind factors for structures (`[wind]`)
 
 A library file may hold one `[wind]` table: the **drag and shielding
 factors** of a design code for the member wind of lattice structures. They
 are **data** — from a design-code plugin (its `structure-wind`, written as
-`<plugin>-wind.ohlsec` into the section library, see [Design
+`<plugin>-wind.ohlsec` into the cross-section library, see [Design
 codes](design-codes.md#wind-factors-for-structures)) or typed from your
 standard. OpenOHL ships none.
 
@@ -154,7 +154,7 @@ Values between the table's points are interpolated linearly (bilinear with
 solidity outside `face_drag` falls back to the shape's drag, a member
 behind a face outside `shielding` is not shielded, and the notes count
 them. Shielding factors are 0–1 (0: a code that puts the whole force on
-the near faces, with a face drag for the whole section). A folder holds one
+the near faces, with a face drag for the whole cross-section). A folder holds one
 `[wind]` table at most: a second one in another file is an error naming
 it.
 
@@ -164,59 +164,59 @@ member — is in [Wind on lattice structures](../theory/structure-wind.md).
 Without a `[wind]` table the member wind keeps one generic drag factor and
 no shielding, and the results say so.
 
-## Typing sections in OHL-Structure
+## Typing cross-sections in OHL-Structure
 
-**Design › Sections & materials…**, tab **Section library**, lists the
-sections of the library the structure reads (`--sections`, else
+**Design › Sections & materials…**, tab **Cross-section library**, lists the
+cross-sections of the library the structure reads (`--sections`, else
 `Sections/` beside the structure file; started from the line application,
 the project line's library, which OHL-Design keeps in the project when a
 file there changes) with their shape, material, area, file and how many
 members of the structure use them; one line says which wind factors the
 library has.
 
-- **+ New section** opens the form: id, name, description, **shape** (the
+- **+ New cross-section** opens the form: id, name, description, **shape** (the
   shapes above), **material** (the library's materials, or the file's
   `default_material`) and the shape's dimensions typed with their units
-  (`61 mm`; `sides` a number); a `general` section takes its area and
+  (`61 mm`; `sides` a number); a `general` cross-section takes its area and
   second moments. The **properties** are computed as you type — area,
   second moments about y, z and the principal axes, torsion constant,
   elastic and plastic moduli, radii of gyration, centroid, and the weight
-  per metre (area × the material's density) — by the section library
+  per metre (area × the material's density) — by the cross-section library
   itself, so they are the values the checks use. What is wrong is said in
   the library's words (a missing dimension, plates that do not fit, a
   length without its unit, an id another file of the library has); a
-  material the library lacks is a warning. **Save** writes the section
-  into its file (new sections go into the file chosen, the first by
+  material the library lacks is a warning. **Save** writes the cross-section
+  into its file (new cross-sections go into the file chosen, the first by
   default; with no file yet, `sections.ohlsec` is made).
-- **✏** edits a section in place (its other keys — properties given,
+- **✏** edits a cross-section in place (its other keys — properties given,
   comments — kept; dimensions the new shape does not take removed),
   **copy** duplicates it (a free id, `L-61x7-copy`), **🗑** deletes it after
   asking (saying how many members of the structure use it).
 - Each change is written at once and is **one step of Edit › Undo**, in
   order with the structure file's edits (a change made outside since is
   not undone, and said).
-- Members then pick the section in **Design › Member sections** and
-  **Groups**: their section lists hold the library's sections first, then
+- Members then pick the cross-section in **Design › Member cross-sections** and
+  **Groups**: their cross-section lists hold the library's cross-sections first, then
   the file's own `[[section]]` tables.
 
 Materials are not typed here: add a `[[material]]` to a library file.
 
 ## Several files
 
-The applications and `ohl` read one section library: the project
+The applications and `ohl` read one cross-section library: the project
 line's, or the file or folder given. Libraries can be merged in code
-(`SectionLibrary::merge`: a section or material whose id is already
-there is left out, the earlier one wins); a user's own section library
+(`SectionLibrary::merge`: a cross-section or material whose id is already
+there is left out, the earlier one wins); a user's own cross-section library
 beside the project's is not read yet. In one file
 an id given twice is an error; a folder of `.ohlsec` files is read in
-name order, an id in two of them an error. A material a section names
+name order, an id in two of them an error. A material a cross-section names
 may be in another file read together; a material missing from all of
 them is reported.
 
 ## How structures refer to it
 
 A member of a structure (in its type's `.ohls`, or a separate `.ohlfe`
-model) names its section by id,
+model) names its cross-section by id,
 
 ```toml
 [[member]]
@@ -225,7 +225,7 @@ nodes = ["B1", "A1"]
 section = "L-61x7"
 ```
 
-and the id is looked up **in the project's section library first, then in
+and the id is looked up **in the project's cross-section library first, then in
 the structure's own `[[section]]` tables** (read by the finite-element
 check, [Structure analysis](structure-analysis.md#structure-models-ohlfe)):
 the profile's properties and its material's E, G, density and yield. An
@@ -233,7 +233,7 @@ id in neither is refused, naming it. A structure file alone does not
 check its ids against a library: the structure model does, when it is
 built.
 
-In a project the section library is stored like the other library kinds
+In a project the cross-section library is stored like the other library kinds
 of the project file, per project line (kind `sections`), so every
 structure of the line uses the same profiles: when the project opens
 without one, the `.ohlsec` files of the `Sections/` folder next to it
@@ -244,6 +244,6 @@ folder (else the files next to it) is read directly. `ohl line` and `ohl
 structures fe` take `--sections <file|folder>`; `ohl line` reads the
 `Sections/` folder next to the line by default.
 
-Member groups (one section for many members) are set in the structure
-application (**Design › Groups**): the group's section is written on
+Member groups (one cross-section for many members) are set in the structure
+application (**Design › Groups**): the group's cross-section is written on
 each of its members, so it resolves the same way.

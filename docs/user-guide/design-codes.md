@@ -151,7 +151,7 @@ rule of 2026-10-21):
 
 The previews list each preset case as *uses your case X* or *creates Y*;
 the status after applying repeats it. The same weather means: the same
-cable temperature; the same ice — none on both (a thickness or a load of
+wire temperature; the same ice — none on both (a thickness or a load of
 0), or both a radial thickness with the same thickness and density, or
 both a load per metre with the same load and density (a density not
 given is glaze ice, 913 kg/m³, as the loads take it); the same wind
@@ -170,7 +170,7 @@ structures** (its optional `structure-wind`, from the same parameter
 file): the drag factor per profile shape, a lattice face's drag factor by
 its solidity ratio, and the shielding factor of a face behind another by
 the solidity ratio of the face in front (and the spacing ratio) — as a
-section library's `[wind]` table ([Section
+cross-section library's `[wind]` table ([Section
 library](section-library.md#wind-factors-for-structures-wind)). OpenOHL
 checks it and writes it as `<plugin>-wind.ohlsec` into the **section
 library** (the project line's, else the `Sections` folder next to the
@@ -196,7 +196,7 @@ ohl line line.ohl.json --weather my-line.ohlwc --load-cases my-line.ohllc --load
 `generate` checks both files as OpenOHL reads them (and that each load
 case names one of the weather cases) before writing them, writes the
 clearance presets and the rule presets next to the weather case file and the wind factors for
-structures, if the code gives them, into the section library (`--sections
+structures, if the code gives them, into the cross-section library (`--sections
 DIR`, default `Sections` beside the weather case file), and prints the
 notes (and that the code gives no wind factors, when it gives none).
 
@@ -217,7 +217,7 @@ uses them: the weather cases are solved, and Structure loads uses the
 load cases. The code's clearance presets go into the project's rule and
 weather case files (for the clearance windows' Load preset…; its rule
 presets are read when the Clearances tab's Load preset… opens), its wind
-factors for structures into the project line's section library. The
+factors for structures into the project line's cross-section library. The
 code's notes are shown in the window. In OHL-Structure, **Load cases ›
 Load cases from a design code…** writes the wind factors into the section
 library the structure reads when the files are written (the tick), and

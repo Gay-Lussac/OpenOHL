@@ -1,6 +1,6 @@
 # Jumpers
 
-Implemented in `crates/ohl-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack cable joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
+Implemented in `crates/ohl-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack wire joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
 
 **Its load on the clamps** (Criteria › Calculation options, the line's `solver.jumper_loads`). The sections at a jumper's ends carry it at their clamps — clamps hanging from strings; a wire clamped to the structure leaves it to the structure — in one of two ways:
 
@@ -20,15 +20,15 @@ Either way the jumper is not there at stringing (jumpers are hung after the wire
 With the estimate, **sections are solved first** and each jumper is then solved on its own between the sections' solved clamps (a jumper's pull, tens to a few hundred newtons, is small next to a section's tension). The steps, in every weather case:
 
 1. **Ends.** Each end is the solved clamp of the section through that attachment, so the jumper follows strain assemblies as they settle and suspension clamps as they swing. If no section uses the attachment, the end is the attachment's wire point.
-2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\\, e^{\varepsilon(t - t_0)} \\), with the cable's thermal strain without tension \\( \varepsilon \\), the same as the line's cables have (below). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
-3. **Load.** The case's weight, ice and wind per metre. The wind is the line's: horizontal, across the line from the case's side (left or right looking ahead along the routes), whichever way the jumper was entered. The jumper takes the part normal to itself, by \\( \cos^2 \\) of the angle between the wind and its normal, on the iced diameter. In a bundle, each subconductor carries its own load and a share of the support string's weight. The own weight is the data sheet's (at its reference temperature, 20 °C unless the cable gives one) per metre of the jumper as cut at its `temperature`, \\( w_{ref}\\, e^{-\alpha (t_0 - t_{ref})} \\), conserved as it lengthens or shortens (2026-10-21, owner decision; [Sag-tension](sagtension.md#the-weight-from-the-data-sheet)). Where a jumper is solved as elastic catenaries (taut, or on a support string) its ice and wind act per metre of its stretched length, as the sections' ([Finite-element wire systems](wirefe.md#elastic-catenary-element)); the rod is inextensible, so there the two are the same.
+2. **Length.** The jumper's unstressed length at its temperature \\( t_0 \\) is the given `length`, or is **cut** from the given `sag` (below). In a case at temperature \\( t \\) it is \\( L_0 = L_{cut}\\, e^{\varepsilon(t - t_0)} \\), with the wire's thermal strain without tension \\( \varepsilon \\), the same as the line's wires have (below). The jumper therefore lengthens when hot and shortens when cold, and its sag follows the weather like a wire's.
+3. **Load.** The case's weight, ice and wind per metre. The wind is the line's: horizontal, across the line from the case's side (left or right looking ahead along the routes), whichever way the jumper was entered. The jumper takes the part normal to itself, by \\( \cos^2 \\) of the angle between the wind and its normal, on the iced diameter. In a bundle, each subconductor carries its own load and a share of the support string's weight. The own weight is the data sheet's (at its reference temperature, 20 °C unless the wire type gives one) per metre of the jumper as cut at its `temperature`, \\( w_{ref}\\, e^{-\alpha (t_0 - t_{ref})} \\), conserved as it lengthens or shortens (2026-10-21, owner decision; [Sag-tension](sagtension.md#the-weight-from-the-data-sheet)). Where a jumper is solved as elastic catenaries (taut, or on a support string) its ice and wind act per metre of its stretched length, as the sections' ([Finite-element wire systems](wirefe.md#elastic-catenary-element)); the rod is inextensible, so there the two are the same.
 4. **Shape.** Solved with one of the two models below.
 
-## The same cable model as the spans
+## The same wire model as the spans
 
-A jumper uses the cable as the line's spans do, as far as it matters at a jumper's tension:
+A jumper uses the wire as the line's spans do, as far as it matters at a jumper's tension:
 
-- **Thermal behaviour, bimetallic cables included.** At \\( t_0 \\) the jumper's components are taken as unstressed. Without tension, both components share one strain and their forces balance, which gives the composite expansion \\( \varepsilon = \bar\alpha\,\Delta t \\) with \\( \bar\alpha = \sum E_iA_i\alpha_i / \sum E_iA_i \\). In a bimetallic cable warmer than \\( t_0 \\), the outer strands, which expand more, are pushed into compression. The line's **bimetallic conductor model** (Criteria › Bimetallic conductor model, or the cable's own) limits that compression, as it does for the spans. Past the limit the outer strands carry only the limit force \\( F_{lim} \\) and the core sets the length: \\( \varepsilon = \alpha_c\,\Delta t + F_{lim}/E_cA_c \\). As a **bird cage** (no compression) the warmer jumper lengthens like its core alone. With the default compression limit it keeps the composite expansion. The limit is the one the spans use: the bimetallic model's, or the outer curves' own `max_compression` when lower (a non-linear cable). Colder than \\( t_0 \\), the outer strands are in tension and the composite expansion holds.
+- **Thermal behaviour, bimetallic wires included.** At \\( t_0 \\) the jumper's components are taken as unstressed. Without tension, both components share one strain and their forces balance, which gives the composite expansion \\( \varepsilon = \bar\alpha\,\Delta t \\) with \\( \bar\alpha = \sum E_iA_i\alpha_i / \sum E_iA_i \\). In a bimetallic wire warmer than \\( t_0 \\), the outer strands, which expand more, are pushed into compression. The line's **bimetallic conductor model** (Criteria › Bimetallic conductor model, or the wire's own) limits that compression, as it does for the spans. Past the limit the outer strands carry only the limit force \\( F_{lim} \\) and the core sets the length: \\( \varepsilon = \alpha_c\,\Delta t + F_{lim}/E_cA_c \\). As a **bird cage** (no compression) the warmer jumper lengthens like its core alone. With the default compression limit it keeps the composite expansion. The limit is the one the spans use: the bimetallic model's, or the outer curves' own `max_compression` when lower (a non-linear wire). Colder than \\( t_0 \\), the outer strands are in tension and the composite expansion holds.
 - **Stretch, stress-strain curves and creep are left out.** A jumper's tension, tens to a few hundred newtons, strains it by ~10⁻⁶, against ~10⁻³ in a span. The non-linear curves and creep would change its length by micrometres while making each rod solve far costlier, so the rod is inextensible.
 
 **Compared** on the example's Drake 26/7 tap jumper (sag 1.5 m at 15 °C; release build; the sections at its ends follow the same model):
@@ -40,7 +40,7 @@ A jumper uses the cable as the line's spans do, as far as it matters at a jumper
 | 80 °C | L₀ 10.8133 m, sag 0.961 m | L₀ 10.8081 m, sag 0.949 m | −5.2 mm, −12 mm |
 | Time per solve | ~5 ms | ~5 ms | none: the strain is a closed form |
 
-The bimetallic model is used: it costs nothing and keeps jumpers consistent with their spans. It only makes a difference for two-component cables as a bird cage or with a low compression limit, and there by up to about a centimetre of sag.
+The bimetallic model is used: it costs nothing and keeps jumpers consistent with their spans. It only makes a difference for two-component wires as a bird cage or with a low compression limit, and there by up to about a centimetre of sag.
 
 ## Hinged jumper: one catenary element
 
@@ -48,7 +48,7 @@ If neither end is clamped (both ends are taps on through wires), or `bending_sti
 
 ## Clamped jumper: an elastic rod
 
-Where an end is the first or last point of a section, the clamp holds the jumper. It leaves at `angle_from_deg` / `angle_to_deg` (default 30°) from its tension string's line (from the clamp towards the string's top; two strings: the middle of their tops; none: the conductor's axis at the clamp), turned within the conductor's plane towards the weather case's load on it (straight down in still air, tilted with the wind as the conductor swings): with the string's base direction \\( \\hat s \\) and the load per metre \\( \\mathbf q \\), the exit direction is \\( \\hat s\\cos\\alpha + \\hat n\\sin\\alpha \\), \\( \\hat n \\) the unit part of \\( \\mathbf q \\) square to \\( \\hat s \\) (along the string: no turn). The load is the jumper's own cable's in the case (a jumper of the line's cable: the conductor's). The cable's bending stiffness \\( EI \\) carries that direction into the jumper. The jumper can therefore not swing in the wind as if hinged.
+Where an end is the first or last point of a section, the clamp holds the jumper. It leaves at `angle_from_deg` / `angle_to_deg` (default 30°) from its tension string's line (from the clamp towards the string's top; two strings: the middle of their tops; none: the conductor's axis at the clamp), turned within the conductor's plane towards the weather case's load on it (straight down in still air, tilted with the wind as the conductor swings): with the string's base direction \\( \\hat s \\) and the load per metre \\( \\mathbf q \\), the exit direction is \\( \\hat s\\cos\\alpha + \\hat n\\sin\\alpha \\), \\( \\hat n \\) the unit part of \\( \\mathbf q \\) square to \\( \\hat s \\) (along the string: no turn). The load is the jumper's own wire's in the case (a jumper of the line's wire: the conductor's). The wire's bending stiffness \\( EI \\) carries that direction into the jumper. The jumper can therefore not swing in the wind as if hinged.
 
 The model is an **inextensible elastic rod**:
 
@@ -62,11 +62,11 @@ The model is an **inextensible elastic rod**:
   - **If neither converges: through springs** (below, [A jumper locked on its way to its strings](#a-jumper-locked-on-its-way-to-its-strings)).
 - **Tolerance.** Moments to \\( 10^{-9} \\) of the load and bending scale; closure gap to \\( 10^{-10} \\) of the length. The solve runs in coordinates relative to \\( A \\): in project coordinates (~10⁶ m) rounding would swamp these tolerances.
 - **Exit clauses.** 150 iterations and 60 s per solve (400 through springs). The error says in words what is wrong where it can (a jumper too short for its strings), else states the residual as a multiple of the tolerance.
-- **Stretch.** The cable's stretch is left out, because it is ~10⁻⁶ at a jumper's tension. **Simplification:** an inextensible rod; the jumper is longer by its stretch in reality (micrometres to millimetres: more sag, either way for clearances). Exact: an extensible rod.
+- **Stretch.** The wire's stretch is left out, because it is ~10⁻⁶ at a jumper's tension. **Simplification:** an inextensible rod; the jumper is longer by its stretch in reality (micrometres to millimetres: more sag, either way for clearances). Exact: an extensible rod.
 
 ## Support clamps: a rod with rigid pieces
 
-A jumper can pass through clamps between its ends (`supports`), each hanging on **suspension strings of the structure** — ordinary strings, nothing of their own ("helping strings" is only a name for what they do): one string (an I) or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The cable runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+A jumper can pass through clamps between its ends (`supports`), each hanging on **suspension strings of the structure** — ordinary strings, nothing of their own ("helping strings" is only a name for what they do): one string or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The wire runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
 
 **Which wire points a jumper passes through.** A clamp hangs on a **wire point without a set**. A wire point with a set is where a wire ends: a section's end, or a jumper's. So:
 
@@ -79,14 +79,14 @@ A jumper with support clamps is always solved as the rod above, also with \\( EI
 
 - **Pieces.** The pieces now have their own lengths \\( \ell_i \\); node \\( m \\) is at \\( A + \sum_{i<m} \ell_i d_i \\). Each clamp is **one piece** of its length (`clamp_length`, default 0.1 m). One straight piece has one direction, so the jumper is straight through the clamp by construction, whatever its stiffness. The stretches between the clamps and the ends are cut into pieces of equal length, 16 to 40 in all (~0.12 m), at least one each, in proportion to their lengths.
 - **Bending.** \\( c_i = EI / \bar\ell \\) at the node between pieces \\( i \\) and \\( i+1 \\), with \\( \bar\ell \\) the mean of their lengths; \\( 2EI/\ell \\) at a clamped end, with that end piece's length. With equal pieces this is the rod above.
-- **Where the strings hold.** At the clamp's middle: \\( p = x_k + \tfrac12 \ell_k d_k \\) for the clamp's piece \\( k \\). The strings therefore turn the clamp too: it settles where the cable's pulls at its two ends and the strings balance.
-- **Strings.** Each string is a rigid, tension-only distance constraint from its fixed top (a structure point) to the clamp's middle: an I is a pendulum, a V two such constraints. A string is **slack** while the clamp is nearer its top than its length, or while its force would push. The solve keeps an **active set**: all strings are first left out; a string whose point then hangs beyond its length goes taut and is shortened to its length in steps (as a single support string is); a taut string whose force would push is let go; this repeats until no string changes. A V leg on the lee side of a strong wind goes slack this way. A string with a `compression` (it may push) is taut from the start and never let go: it holds the clamp at its length whichever way, its force negative when it pushes.
+- **Where the strings hold.** At the clamp's middle: \\( p = x_k + \tfrac12 \ell_k d_k \\) for the clamp's piece \\( k \\). The strings therefore turn the clamp too: it settles where the wire's pulls at its two ends and the strings balance.
+- **Strings.** Each string is a rigid, tension-only distance constraint from its fixed top (a structure point) to the clamp's middle: one string is a pendulum, two strings to one clamp two such constraints. A string is **slack** while the clamp is nearer its top than its length, or while its force would push. The solve keeps an **active set**: all strings are first left out; a string whose point then hangs beyond its length goes taut and is shortened to its length in steps (as a single support string is); a taut string whose force would push is let go; this repeats until no string changes. A V leg on the lee side of a strong wind goes slack this way. A string with a `compression` (it may push) is taut from the start and never let go: it holds the clamp at its length whichever way, its force negative when it pushes.
 - **Loads on a clamp.** Half of each string's weight, half of the wind on each string (the weather case's pressure × the string's `wind_area`, horizontal across the line from the case's wind side, as on the line's suspension strings), and the wire point's own `weight` (a counterweight), shared by the subconductors. The clamp itself takes no wind (it is small). **Simplification:** the clamp's own wind left out: the jumper swings a little less than it would (unsafe for its clearance to the structure, by little). Exact: the clamp's wind area as a load.
 - **Forces.** A string's tension is \\( T = -2 \mu L \\) from its multiplier \\( \mu \\) (constraint \\( |p - t|^2 = L^2 \\)); 0 when slack. The Jacobian of the system, with the strings' rows and columns, is checked against finite differences in the tests.
-- **A string that may push** holds its point on a sphere about its top; a V of two such legs, on a circle about the line through their tops. When the tops are one above the other the V swings like a gate about them, and the circle lies across: which way it swings depends on where the jumper is pulled from (see below).
-- **Limits.** A clamp's strings hang from structure points: a string below another string (a V with a string below, a TAK) does not hold a clamp yet. The strings' pull on the structure goes into the structure loads, at their tops; the jumper's pull on the sections does not (sections are solved first).
+- **A string that may push** holds its point on a sphere about its top; two such strings to one clamp, on a circle about the line through their tops. When the tops are one above the other the two swing like a gate about them, and the circle lies across: which way it swings depends on where the jumper is pulled from (see below).
+- **Limits.** A clamp's strings hang from structure points: a string below another string does not hold a clamp yet. The strings' pull on the structure goes into the structure loads, at their tops; the jumper's pull on the sections does not (sections are solved first).
 
-**Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the cable between two limits:
+**Default \\( EI \\).** Without a `bending_stiffness`, \\( EI \\) is estimated from the wire between two limits:
 
 - **Strands locked together** (a solid bar): \\( EI_{max} = E\\,\pi d^4/64 \\), with the composite modulus \\( E = \sum E_i A_i / \sum A_i \\) and the overall diameter \\( d \\).
 - **Strands slipping**, each bending on its own: \\( EI_{min} = \sum_i n_i E_i\\,\pi d_i^4/64 \\) over the components, with \\( n_i \\) strands of diameter \\( d_i = \sqrt{4A_i/(\pi n_i)} \\). This needs the strand counts (`strands` in the [wire library](../user-guide/wire-library.md)).
@@ -155,7 +155,7 @@ What the wire it hangs on carries (Criteria › Calculation options,
 
 Jumpers on jumpers are solved after the jumper they hang on, level by
 level (each level over the cores); a ring is refused. A tap joins the
-jumper to its wire's conductor path (electrical circuits) and connects
+jumper to its wire's conductor path and connects
 it to that wire for the checks (not paired with it in the distance
 between conductors, as two wires sharing a clamp). A span with a tap is
 solved by finite elements only (not the ruling span).
@@ -174,10 +174,10 @@ A `sag` is the jumper's largest vertical distance below its end-to-end chord, in
 
 **Kept until something changes.** The cut is kept, in memory, for every weather case. It is cut again only when one of these changes:
 
-- the jumper itself (its sag, temperature, cable, ends, angles, \\( EI \\), support);
+- the jumper itself (its sag, temperature, wire, ends, angles, \\( EI \\), support);
 - the sections at its ends;
 - the structures they or the jumper hang on;
-- the cables;
+- the wires;
 - the line's creep-stretch and bimetallic settings.
 
 All of these form the key the cut is kept under, so a change to any of them recuts the jumper. Each case still solves the jumper's shape from its own hanging catenary. Starting instead from the design-case shape was measured on a 433-jumper line: about 6 % faster per case, at the cost of one more solve per jumper when the project opens. It was left out.
@@ -188,11 +188,11 @@ An edit re-solves its own sections. A jumper is solved again only if one of thes
 
 ## Taut jumpers
 
-- **Taut.** The clamps end up at least as far apart as the jumper's unstressed length in that weather case: \\( |B - A| \ge L_0\,(1 - 10^{-5}) \\) (a jumper's stretch at its tension is ~10⁻⁶; a 4 m jumper with 2 cm of sag still has ~7·10⁻⁵; the same floor bounds the cut from a sag). This is decided from the length and the clamps' distance alone, before the rod is solved. The jumper is then solved as an elastic catenary between its clamps (its bending stiffness, small beside its tension, left out — **Simplification**, either way and small; exact: the extensible rod): stretched, at a tension \\( T \approx EA\,(|B-A| - L_0)/L_0 \\). Its pull holds the clamps back: the sections at its ends are solved again with the jumper's end forces on their clamps, whatever the jumper option (the estimate means nothing for a taut jumper), the step relaxed with Aitken's method (the coupling is stiff: a small move of a clamp changes the pull much), up to 40 passes, until the loads change less than 0.5 N (or 10⁻⁴ of themselves). Its largest tension is compared with the cable's rated tensile strength (`JumperShape::strength_use`). With helping strings or points along it, a taut jumper is not solved (said so). Two situations lead there:
+- **Taut.** The clamps end up at least as far apart as the jumper's unstressed length in that weather case: \\( |B - A| \ge L_0\,(1 - 10^{-5}) \\) (a jumper's stretch at its tension is ~10⁻⁶; a 4 m jumper with 2 cm of sag still has ~7·10⁻⁵; the same floor bounds the cut from a sag). This is decided from the length and the clamps' distance alone, before the rod is solved. The jumper is then solved as an elastic catenary between its clamps (its bending stiffness, small beside its tension, left out — **Simplification**, either way and small; exact: the extensible rod): stretched, at a tension \\( T \approx EA\,(|B-A| - L_0)/L_0 \\). Its pull holds the clamps back: the sections at its ends are solved again with the jumper's end forces on their clamps, whatever the jumper option (the estimate means nothing for a taut jumper), the step relaxed with Aitken's method (the coupling is stiff: a small move of a clamp changes the pull much), up to 40 passes, until the loads change less than 0.5 N (or 10⁻⁴ of themselves). Its largest tension is compared with the wire's rated tensile strength (`JumperShape::strength_use`). With helping strings or points along it, a taut jumper is not solved (said so). Two situations lead there:
   - **Wind.** Free strain strings swing their clamps apart.
   - **Cold, on a nearly straight jumper.** A jumper with little slack loses it from both sides when it is cold. Its length shrinks with the temperature, and the dead-end clamps move apart as the colder, tighter sections pull their strain strings straighter. For example, a 4.2 m jumper given a 10 cm sag at 15 °C is only \\( \approx 8s^2/3c = 6 \\) mm longer than its chord. At −20 °C it is 3 mm shorter, and its clamps are a few millimetres further apart, so it is taut.
 
-  A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a cable with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
+  A jumper that is really a stiff bar (a rigid or tubular jumper) has no slack to lose, so it should not be modelled as a wire with a token sag. Give it `rigid` (below): it is then the straight member between its clamps and is never taut.
 
 ## A jumper locked on its way to its strings
 
@@ -206,7 +206,7 @@ Where the steps and the steps in \\( EI \\) both fail, the jumper is solved **th
 
 Newton solves on this path that stall or run out of steps within \\( 10^3 \\) times the tolerance (\\( 10^{-6} \\) of the loads' moments: micrometres) are taken as converged: next to a string just taut, carrying next to nothing, the iteration creeps there (100–150× on the first existing line). The first two attempts (the steps, the steps in \\( EI \\)) are unchanged, so a jumper that solved before keeps its shape.
 
-On the first existing line (99 weather cases, the wind from both sides): before, one jumper with a V that may push failed in most cases with the wind from one side, another (an I string) in a few cases; now all solve but one jumper in one extreme case, a few millimetres too short for its two Vs that may push, said so. Every jumper that solved before has the same shape.
+On the first existing line (99 weather cases, the wind from both sides): before, one jumper on two strings that may push failed in most cases with the wind from one side, another (on one string) in a few cases; now all solve but one jumper in one extreme case, a few millimetres too short for its two Vs that may push, said so. Every jumper that solved before has the same shape.
 
 ## When a jumper fails
 
@@ -240,7 +240,7 @@ Computation (release build; times for one core — jumpers are independent, so a
 | Rod Newton iteration (\\( 2n+3 \\) unknowns, \\( n \approx 24 \\)) | ~50 µs | — |
 | Rod solve (5–30 iterations) | 0.25–1.5 ms; ~0.75 ms on average | 150 iterations, 60 s |
 | Rod solve with a support string | a few times the above | string steps no smaller than 1/64 of the way |
-| Rod solve with support clamps (I or V) | 2–5 ms for a 10.8 m jumper (sections included) | the same per solve; 8 rounds of strings going taut or slack |
+| Rod solve with support clamps (one or two strings) | 2–5 ms for a 10.8 m jumper (sections included) | the same per solve; 8 rounds of strings going taut or slack |
 | Through springs (only where the above fail) | 7–10 rough Newton solves more: 20–150 ms for a 17 m jumper | 400 iterations, 60 s per solve |
 | Cut from a sag, hinged | ~50 µs | 200 iterations; 20× chord |
 | Cut from a sag, clamped | 5–15 ms (end sections plus 5–15 rod solves) | 40 iterations; 20× chord |

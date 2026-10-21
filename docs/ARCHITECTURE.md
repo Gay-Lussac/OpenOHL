@@ -41,15 +41,15 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | Crate | Responsibility |
 |---|---|
 | `ohl-core` | Units (SI inside, US customary and SI at the boundary), geometry, the project grid of spatial chunks, time budgets and cancellation (exit clauses), text and file helpers |
-| `ohl-cables` | Cable library (`.ohlw`): components, composite properties, stress-strain and creep curves, cable models, electrical data |
+| `ohl-cables` | Wire library (`.ohlw`): components, composite properties, stress-strain and creep curves, wire models, electrical data |
 | `ohl-weather` | Weather cases (`.ohlwc`: temperature, wind, ice) and the loads they put on wires; code-agnostic |
 | `ohl-wireloads` | Additional loads on wires: point loads (N) and distributed loads (N/m), permanent or per load case |
-| `ohl-sagtension` | Catenary (also segmented, with point loads), change of state, tension sections (ruling span and exact equal-H), non-linear cables, tension criteria, stringing charts |
+| `ohl-sagtension` | Catenary (also segmented, with point loads), change of state, tension sections (ruling span and exact equal-H), non-linear wires, tension criteria, stringing charts |
 | `ohl-wirefe` | Finite-element wire systems: exact elastic catenary elements, truss strings, 3D Newton solver |
 | `ohl-line` | Line model (`.ohl.json`): routes, structures, attachments, sections, jumpers, electrical systems; 3D solving (RS and FE, elements following the curves), incremental re-solving, exports |
 | `ohl-structures` | Structure type library (`.ohls`) and insulator library (`.ohli`); placement of types into a line; deriving types from a line |
 | `ohl-structures-fe` | Structure analysis: 3D truss/frame/cable finite elements (members of a full-design `.ohls`, or `.ohlfe`; P-Delta, skyline solver), member usage, poles (`.ohlp`) and the pole check |
-| `ohl-sections` | Section library (`.ohlsec`): standard profiles and materials shared by a project, cross-section properties from the dimensions, projected widths for wind |
+| `ohl-sections` | Cross-section library (`.ohlsec`): standard profiles and materials shared by a project, cross-section properties from the dimensions, projected widths for wind |
 | `ohl-loads` | Load cases (`.ohllc`: weather × wire condition × load factors), the loads on the structures at every attachment, wind on structures, capacity checks (Method 1 allowable spans, Method 2 load trees, FE and pole) |
 | `ohl-terrain` | Survey points (CSV/XYZ, feature codes, breaklines), TIN, ground heights and exact profiles |
 | `ohl-lidar` | LAS/LAZ reading, class schemes (`.ohlc`), corridors, classification (ground filter, height classes) |
@@ -92,7 +92,7 @@ both programs and runs them together.
 | Crate | Responsibility |
 |---|---|
 | `ohl-structure-loads` | A structure's load-case recipes (`[[load_case]]`, `.ohlslc`), their evaluation into the load table, CSV of both; plain data, no line |
-| `ohl-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the section library and saving back) |
+| `ohl-structure-link` | Where the application meets the core: the line's structure loads as line values, a table case as finite-element loads (later the cross-section library and saving back) |
 | `ohl-structure-tests` | Tests of the application with the core (test-only) |
 | `ohl-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ohl-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
 | `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](development/structure-exports.md)): IFC4, IFC2x3, SAF, CSV tables; the tool `ohl-structure-export`; the structure report and the tool `ohl-structure-report`, which also answers `ohl`'s JSON requests (`--request`) |
@@ -132,7 +132,7 @@ Three tiers, same API surface:
 | **WebAssembly** | Third-party calculations, design codes, checks | Near-native speed, any language (Rust, C, C++, Zig…), sandboxed — safe to run on a shared server |
 | **Python** | Scripts, reports, glue, prototyping, I/O formats | Easiest for engineers; not in hot loops |
 
-WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plugin` (file formats, extension point `io`), `terrain-plugin` (`terrain`), `project-plugin` (`project`, projects from other programs), `code-plugin` (`design-code`), `check-plugin` (`check`) and `code-check-plugin` (a design code that also runs checks); the package is `ohl:plugin`, SDK 0.3. Python plugins are scripts run by the application's console. Each plugin declares the interface version it targets in its manifest; see [Writing plugins](development/plugins.md). Further extension points (cable models, reports, solvers, GUI tools) are planned.
+WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plugin` (file formats, extension point `io`), `terrain-plugin` (`terrain`), `project-plugin` (`project`, projects from other programs), `code-plugin` (`design-code`), `check-plugin` (`check`) and `code-check-plugin` (a design code that also runs checks); the package is `ohl:plugin`, SDK 0.3. Python plugins are scripts run by the application's console. Each plugin declares the interface version it targets in its manifest; see [Writing plugins](development/plugins.md). Further extension points (wire models, reports, solvers, GUI tools) are planned.
 
 ## Tech stack (ADR-0002)
 

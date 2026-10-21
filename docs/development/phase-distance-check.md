@@ -32,9 +32,10 @@ case checked on its own, both conductors always from the same case):
    conductor — 0 at the clamps.
 5. **l_k** of each conductor at its point: the length of the suspension
    string, linear along its span between its two ends. At an end: a
-   suspension I-string, its length; a V-string, a tension string or a
-   wire clamped straight to the structure, 0; a V with a string below,
-   that string's length; a TAK, its suspension string's length.
+   suspension string alone, its length; two strings to one wire point, a
+   tension string or a wire clamped straight to the structure, 0; a
+   string below two, that string's length; two tension strings from a
+   string's wire point, that string's length.
 6. **β**: the angle of PQ from the vertical.
 7. With **phase spacers** joining the two conductors in the span, each
    one's largest sag between its spacer clamps (each spacer taken as an

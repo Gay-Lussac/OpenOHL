@@ -37,7 +37,7 @@ project's Default values and their file.
 
 The sections joined by spacers (`solve::spacer_groups`) are solved in
 turn, not in one model (so every model feature — stress-strain curves,
-bimetallic cables, rolling in the blocks, the jumpers' pull — keeps
+bimetallic wires, rolling in the blocks, the jumpers' pull — keeps
 working): the section at a spacer's end `a` **holds** it, as a bar from
 its span point to a fixed point where the section at end `b` puts its
 span point; the section at `b` is **pulled** there by the bar's force.
@@ -54,11 +54,11 @@ temperatures. Reported on the holding section (`SectionShape::spacers`):
 its ends, its axial force (tension positive), slack (tension only,
 pushed), over its compression limit (flagged). Also in the incremental
 solve and in each pass of the jumpers' pull. Not yet: spacers on a
-section that shares an assembly with another (a TAK) — refused with an
+section that shares an assembly with another — refused with an
 error.
 
 Original proposal: What it would take to model an
-insulator string held between two conductors in a span (an interphase
+string held between two conductors in a span (an interphase
 spacer, *Phasenabstandhalter*), used to keep conductors apart (against
 galloping, conductors swinging together, or to reduce the distance a
 line needs). Written to be discussed before anything is changed; every
@@ -95,19 +95,19 @@ renaming follows. OHL XML element and XSD; data model page.
 ## Solver
 
 Today each section is its own finite-element model; groups sharing an
-assembly (TAKs) are solved together by passes (Dirichlet–Neumann). A
+assembly are solved together by passes (Dirichlet–Neumann). A
 spacer joins two sections in the middle of a span, stiffly:
 
 1. **Nodes on the wires at the spacer's places.** The section's span is
    cut there (as for point loads now): a node at the given unstressed
    length, so the clamp stays at the same place on the wire.
 2. **One model for the sections joined by spacers.** The spacer is a
-   bar between a node of each section's cable (both ways when it takes
+   bar between a node of each section's wire (both ways when it takes
    compression, tension-only otherwise; `ohl_wirefe` already has both
    kinds of truss). Joined sections are solved **in one model** rather
    than by passes: a stiff bar between two wires would make the passes
    converge slowly. `coupled_groups` is extended to sections joined by
-   spacers (with the TAK groups).
+   spacers (with the groups of sections sharing an assembly).
 3. **Loads:** its weight (half at each end) and the wind on it, across
    the line from the case's side (as on strings and jumpers).
 4. **Stringing reference:** spacers are fitted after stringing, so the

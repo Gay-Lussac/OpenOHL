@@ -133,7 +133,7 @@ onto a panel (next to Properties, for example) to dock it. When the
 plugin needs a value per circuit (a plugin column, e.g. an insulation
 level), **Circuits checked** lists the ticked circuits with their
 voltage and that value, chosen there for all the circuit's sections —
-the same value as the Electrical circuits table's column. **Check** runs
+the same value as the Conductor paths table's column. **Check** runs
 in the background; the pairs come worst first: the two spans and
 circuits, kV, d, the required distance, the margin, the length of
 conductor below it, and at the worst station the measured values, the

@@ -8,7 +8,7 @@ An open-source, modular set of desktop applications and engines for designing an
 
 ![OHL-Design, the line application, with the synthetic example line](docs/images/ohl-design-window.png)
 
-**Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (pylons and their loading) and `ohl` the command line. The project was formerly called "OLS CAD": the old program names `ols-cad`, `ols-structure` and `ols` still work for a while (they say so and run the new ones), and the launchers are now `Start OHL-Design.command` and `Start OHL-Structure.command`. File extensions and format ids changed from ols to ohl on 2026-10-18 (`.ohl`, `.ohls`, `.ohlw`…, `ohl-structure`…); older files still open.
+**Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (structures and their loading) and `ohl` the command line. The project was formerly called "OLS CAD": the old program names `ols-cad`, `ols-structure` and `ols` still work for a while (they say so and run the new ones), and the launchers are now `Start OHL-Design.command` and `Start OHL-Structure.command`. File extensions and format ids changed from ols to ohl on 2026-10-18 (`.ohl`, `.ohls`, `.ohlw`…, `ohl-structure`…); older files still open.
 
 OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open and documented in a theory manual; validation cases with reference results check them (88 cases so far).
 
@@ -25,7 +25,7 @@ OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire sys
 - **More engineering**: thermal rating (IEEE 738, CIGRE TB 601 / 207, clearance-limited temperature), optimum structure spotting, bill of materials and cost estimate.
 - **Drawings and exchange**: plan and profile sheets (SVG, DXF, PDF, PNG); OHL XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC, KML/KMZ, CSV, XLSX; file-format and project plugins.
 - **Projects and collaboration**: a SQLite project file with an operation log and per-user undo, git-like versions (branches, merges, reviews, edit grants), a server mode for several users and a browser client.
-- **OHL-Design** (`ohl-design`), the line application: 3D, plan and profile views, editing tools, tables, library and pylon editors, a Python console and a plugin manager.
+- **OHL-Design** (`ohl-design`), the line application: 3D, plan and profile views, editing tools, tables, library and structure editors, a Python console and a plugin manager.
 - **OHL-Structure** (`ohl-structure`), the structure application: one structure file from stick figure to full design, its load cases and analysis.
 
 ## Quick start
@@ -84,15 +84,15 @@ One Rust crate per module, in [`crates/`](crates/) (the structure application's 
 | Crate | What it holds |
 |---|---|
 | `ohl-core` | Units, geometry, project grid, time budgets (exit clauses) |
-| `ohl-cables` | Cable library (`.ohlw`), stress-strain and creep models |
+| `ohl-cables` | Wire library (`.ohlw`), stress-strain and creep models |
 | `ohl-weather` | Weather cases (`.ohlwc`) and the loads they put on wires |
 | `ohl-wireloads` | Point and distributed loads on wires |
 | `ohl-sagtension` | Catenary, change of state, tension sections, criteria |
-| `ohl-wirefe` | Finite-element wire systems: catenary elements, insulator strings, 3D Newton solver |
+| `ohl-wirefe` | Finite-element wire systems: catenary elements, strings, 3D Newton solver |
 | `ohl-line` | Line model (`.ohl.json`): structures, attachments, sections; 3D solving |
 | `ohl-structures` | Structure types (`.ohls`) and insulator assemblies (`.ohli`) |
 | `ohl-structures-fe` | Structure analysis: frame/truss/cable finite elements, poles (`.ohlp`) |
-| `ohl-sections` | Section library: standard profiles, cross-section properties (`.ohlsec`) |
+| `ohl-sections` | Cross-section library: standard profiles, cross-section properties (`.ohlsec`) |
 | `ohl-loads` | Load cases (`.ohllc`), structure loads, capacity checks |
 | `ohl-terrain` | Survey points, TIN, ground heights and profiles |
 | `ohl-lidar` | LAS/LAZ reading, class schemes (`.ohlc`), ground classification |
@@ -114,7 +114,7 @@ One Rust crate per module, in [`crates/`](crates/) (the structure application's 
 | `ohl-cli` | Command-line tool `ohl` |
 | `ohl-py` | Python bindings (`import ohl`) |
 
-Other folders: [`plugins/`](plugins/) (design codes, examples, tests), [`libraries/`](libraries/) (shipped example libraries: cables, insulators, objects, pylon templates, sections; LiDAR class schemes), [`benchmarks/`](benchmarks/) (validation cases with reference results), [`examples/`](examples/) (synthetic lines and job files), [`docs/`](docs/) (the book).
+Other folders: [`plugins/`](plugins/) (design codes, examples, tests), [`libraries/`](libraries/) (shipped example libraries: wire types, insulators, objects, structure templates, sections; LiDAR class schemes), [`benchmarks/`](benchmarks/) (validation cases with reference results), [`examples/`](examples/) (synthetic lines and job files), [`docs/`](docs/) (the book).
 
 ## Plugins
 
@@ -134,7 +134,7 @@ See also [GOVERNANCE.md](GOVERNANCE.md) and the [Code of Conduct](CODE_OF_CONDUC
 
 ## Roadmap
 
-[ROADMAP.md](ROADMAP.md) lists the phases, what is built and what is next: pylons in three levels of detail, structure–line interaction, foundations, more server and version-control features, and a stable plugin SDK for 1.0.
+[ROADMAP.md](ROADMAP.md) lists the phases, what is built and what is next: structures at three detail levels, structure–line interaction, foundations, more server and version-control features, and a stable plugin SDK for 1.0.
 
 ## Licence
 

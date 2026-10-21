@@ -153,7 +153,7 @@ label`, the corridor's plan label from `[corridor] label`.
 Kinds, all from what the drawing holds (no new engineering number):
 `structures` (names and types), `stations`, `ground_height` (at the
 structures and every `every`), `span_length`, `structure_height`,
-`line_angle` (at the alignment's angle points), `lowest_wire_height` (the
+`line_angle` (at the alignment's alignment points), `lowest_wire_height` (the
 solid case's lowest wire in each span), `ground_clearance` (only from a
 clearance check's results; empty otherwise, for now always empty in the
 app), `text` (a field of the user, per sheet). The export window and

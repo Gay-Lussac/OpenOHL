@@ -14,7 +14,7 @@ Every textbook case has two independent checks:
 - a **hand derivation** written out in the case's comments (`notes`):
   closed forms evaluated, or for the iterative calculations a classical
   approximation (the parabolic change-of-state cubic, the pendulum formula
-  of a suspension string, the statics of a V) with its known error stated;
+  of a suspension string, the statics of two strings to one wire point) with its known error stated;
 - an **independent numerical reference**,
   `benchmarks/reference/textbook_reference.py` (Python standard library
   only; run `python3 -I benchmarks/reference/textbook_reference.py`, about
@@ -47,7 +47,7 @@ the engines are unchanged.
 | TB 324 | half a unit of the printed last digit | the brochure's rounding (tb324-016: within it since 2026-10-21, below) |
 
 No tolerance was widened to make a case pass. One was tightened: tb324-016
-from 2.5 N to the printed rounding, 0.5 N, once the cable's own weight was
+from 2.5 N to the printed rounding, 0.5 N, once the wire's own weight was
 conserved (2026-10-21, below).
 
 ## Cases
@@ -77,7 +77,7 @@ conserved (2026-10-21, below).
 | tbheat-002 | the same, finite elements | the same weight; 0.013 N from tbheat-001 + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbheat-003 | the same, the line's ruling-span method | the same weight; +8.28 N (the additive thermal form) + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbwref-001 | tbcos-001 with the weight given at 20 °C (strung at 10 °C) | \\( w_s = w\\,e^{10\alpha} \\) = 15.69378 N/m, parabolic cubic + reference; +1.38 N on tbcos-001 | \\( 10^{-7} \\) |
-| tbwref-002 | tbheat-002 with the library cable's mass at 40 °C | \\( w_s = w\\,e^{30\alpha} \\), the span's weight 6291.26 N + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbwref-002 | tbheat-002 with the library wire's mass at 40 °C | \\( w_s = w\\,e^{30\alpha} \\), the span's weight 6291.26 N + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbice-001 | the span of tbcos-002 (12 mm of ice at −5 °C) by finite elements, the ice per stretched metre | the closed form (tbcos-002) to 4.2·10⁻⁷, an integration of the ice following the local stretch to 3.3·10⁻⁷ + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
 ### Ruling span (`benchmarks/sagtension/textbook-ruling-span.toml`)
@@ -137,7 +137,7 @@ by hand and by the reference.
 |---|---|---|---|
 | tbins-001 | dead-end span blown out by \\( \arctan(qd/w) \\) = 41.741° | exact plane of the load + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbins-002 | suspension string 3 m, 800 N, 0.4 m² in 500 Pa: 36.86° | pendulum formula (40.10°) corrected for the chords' skew + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m/° |
-| tbins-003 | V-string in still air | \\( V / (2\cos\beta) \\) + reference | \\( 10^{-7} \\) |
+| tbins-003 | Two strings to one wire point in still air | \\( V / (2\cos\beta) \\) + reference | \\( 10^{-7} \\) |
 | tbins-004 | V in 300 Pa, both legs taut | two-bar statics + reference | \\( 10^{-7} \\) |
 | tbins-005 | V in 1000 Pa: the lee leg slack, the tip on the other leg | pendulum on one leg + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
@@ -161,11 +161,11 @@ Two cases need a word:
   \\( \alpha_{AS} \\) = 18.84·10⁻⁶/K, the latter evaluated with the
   rounded 74 GPa. Its equations with its printed inputs give 73.956 GPa
   and 18.851·10⁻⁶/K; the case checks these.
-- **tb324-016**: the brochure's linear model stretches the cable by its
+- **tb324-016**: the brochure's linear model stretches the wire by its
   horizontal tension, additively; OpenOHL by its mean tension,
   multiplicatively ([Sag-tension](../theory/sagtension.md#thermal-strain-two-forms-in-use)),
-  and keeps the cable's own weight (10.89 N/m per metre of unstressed
-  cable; of the printed 15.6 N/m resultant the rest is wind,
+  and keeps the wire's own weight (10.89 N/m per metre of unstressed
+  wire; of the printed 15.6 N/m resultant the rest is wind,
   \\( \sqrt{15.6^2 - 10.89^2} \\) = 11.170 N/m, given as the input `wind`).
   The reference reproduces the brochure's 20745 N with its model
   (20744.73 N) and gives 20745.36 N with OpenOHL's: 0.62 N from the
@@ -190,7 +190,7 @@ Two cases need a word:
   balance is the one tbins-002 and tbrs-002 check.
 - *sec. 5.3* (component tensions with 300 µstrain of aluminium set): no
   calculation of OpenOHL takes a plastic strain of the outer strands
-  alone; the linear models take creep as a stretch of the whole cable.
+  alone; the linear models take creep as a stretch of the whole wire.
 - *sec. 6.2* (SPE model, Fig. 28): a graphical solution, and its
   installation stress (48 MPa, which gives the printed 8.0 m sag) and its
   "28.0 kN" disagree. Read as 48 MPa, the reference and OpenOHL agree
@@ -215,30 +215,30 @@ Two cases need a word:
 - **The weight of a heated span** (found by these cases, corrected
   2026-10-21 by owner decision; see
   [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)
-  and [Sag-tension](../theory/sagtension.md#the-cables-own-weight-is-conserved)):
+  and [Sag-tension](../theory/sagtension.md#the-wires-own-weight-is-conserved)):
   in the finite elements a span's unstressed length grew by
   \\( e^{\alpha\Delta t} \\) and its load stayed per unit of that
   length, so a hot span weighed more (and a cold one less) by
-  \\( e^{\alpha\Delta t} - 1 \\): for the textbook cable strung at
+  \\( e^{\alpha\Delta t} - 1 \\): for the textbook wire strung at
   10 °C, +0.04 % on H at 70 °C, +0.17 % at 150 °C (sag +7 mm and +13 mm),
   −0.04 % at −20 °C. The closed form and the ruling-span method took the
-  weight per metre of stretched cable, so their spans grew heavier with
+  weight per metre of stretched wire, so their spans grew heavier with
   every lengthening, thermal or elastic (+0.25 % of weight at 150 °C).
-  Every calculation now keeps the cable's weight (per metre of unstressed
-  cable at the stringing temperature); the cases check that value, to the
+  Every calculation now keeps the wire's weight (per metre of unstressed
+  wire at the stringing temperature); the cases check that value, to the
   same tolerances as before, and tbheat-001…003 check it by hand (the
   supports carry \\( wL_0 \\)).
 - **The weight's temperature and the ice per stretched metre**
   (2026-10-21, owner decisions; [Sag-tension](../theory/sagtension.md#the-weight-from-the-data-sheet),
   [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)):
-  a cable's mass per metre is its data sheet's at its reference
-  temperature (20 °C unless given), so strung at 10 °C the textbook cable
+  a wire's mass per metre is its data sheet's at its reference
+  temperature (20 °C unless given), so strung at 10 °C the textbook wire
   weighs 15.69378 N/m per metre (+0.020 %); the line-model cases take it
   so (the engine-level cases keep their weight as given at their known
   state, tbwref-001 and tbheat-001 give it at 20 °C). The finite elements
   carried the ice and wind per unstressed metre, \\( T/EA \\) (10⁻³)
-  too little: an iced 300 m span 0.047 % low in tension (tbice-001), a V
-  in 1000 Pa 0.075 % (tbins-005). Every changed case's previous value is
+  too little: an iced 300 m span 0.047 % low in tension (tbice-001), two strings
+  to one wire point in 1000 Pa 0.075 % (tbins-005). Every changed case's previous value is
   in its notes; the line-model cases moved by up to +0.075 % (wind and
   ice) and +0.02 % (still air), the references from the reference
   scripts, the tolerances unchanged. The finite elements now spread the

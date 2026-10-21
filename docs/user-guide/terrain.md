@@ -1,6 +1,6 @@
 # Terrain and ground clearance
 
-OpenOHL builds a ground surface from survey points and checks how far every
+OpenOHL builds a terrain surface from survey points and checks how far every
 solved wire is above it.
 
 ```bash
@@ -97,7 +97,7 @@ radial = "4.5 m"
 | `wires` | Which wires are checked: `"sections"` (the spans), `"jumpers"`, or `"both"` (default). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
-| `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit tower; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |
+| `circuits` | `same_line`: `"different"` checks only pairs of wires of different circuits (circuit to circuit, e.g. the two circuits of a double-circuit structure; a phase and an earth wire), `"same"` only pairs of the same circuit (phase to phase); default `"any"`. Combine with `case_pairs` for one circuit iced and the other not. |
 | `cases` | Weather cases the rule applies to, by name (`*` `?` wildcards); default: all cases run. |
 | `exclude_near_ends` | Exclusion zone: the wire within this horizontal distance of its ends (clamps) is not checked, e.g. `"10 m"` — where wires converge at supports by design. |
 | `exclude_spans_at` | Exclusion zone: spans ending at these structures are not checked, e.g. `["con_*"]` for down-leads into cable terminations (wildcards). |
@@ -147,7 +147,7 @@ set every distance in the three forms below
 
 ### Clearances by voltage
 
-Each section belongs to an electrical system ([systems](line-file.md#electrical-systems): AC or DC, voltage, phase angles) through its conductor path, independent of the cable; its spans and jumpers are checked with the requirement for the system's nominal voltage. `vertical` and `radial` can be a distance, a table by voltage, or a formula:
+Each section belongs to an electrical system ([systems](line-file.md#electrical-systems): AC or DC, voltage, phase angles) through its conductor path, independent of the wire type; its spans and jumpers are checked with the required clearance for the system's nominal voltage. `vertical` and `radial` can be a distance, a table by voltage, or a formula:
 
 ```toml
 [[rule]]
@@ -160,19 +160,19 @@ vertical = { by_voltage = [[0, "5 m"], [150, "6 m"], [245, "6.5 m"], [420, "7.5 
 radial = { base = "5 m", per_kv = "0.01 m", above_kv = 50 }
 ```
 
-With one rule per group of LiDAR classes (vegetation, buildings, roads, railways…), each with its own voltage table, the requirement follows both the class and the voltage. Earthed sections (no system: earth wires, OPGW) are checked as 0 kV — give a `0` row for them. Between wires, `pair_voltage = "difference"` uses the voltage actually between the two conductors: two phases of a 380 kV system meet the 380 kV row, the same phase of two parallel systems the 0 kV row, a phase and an earth wire 219 kV. A voltage above a table's last row stops the run with an error naming the rule, before any check (`ohl line`, `ohl zones` and the windows alike).
+With one rule per group of LiDAR classes (vegetation, buildings, roads, railways…), each with its own voltage table, the required clearance follows both the class and the voltage. Earthed sections (no system: earth wires, OPGW) are checked as 0 kV — give a `0` row for them. Between wires, `pair_voltage = "difference"` uses the voltage actually between the two conductors: two phases of a 380 kV system meet the 380 kV row, the same phase of two parallel systems the 0 kV row, a phase and an earth wire 219 kV. A voltage above a table's last row stops the run with an error naming the rule, before any check (`ohl line`, `ohl zones` and the windows alike).
 
-How a requirement is evaluated for a nominal voltage U (kV; earthed wires U = 0; wire rules: the pair's voltage):
+How a required clearance is evaluated for a nominal voltage U (kV; earthed wires U = 0; wire rules: the pair's voltage):
 
 - a distance d: d at every voltage;
 - a table of rows (U₁, d₁), (U₂, d₂), … with U₁ < U₂ < …: the d of the first row with U ≤ Uᵢ (a row "up to" its voltage, that voltage included); no row when U is above the last one — an error, not the last row's distance;
 - a formula: base + per_kv · max(0, U − above_kv). Example: base 7 m, per_kv 0.01 m, above_kv 0 gives 7 + 0.01 · 220 = 9.2 m at 220 kV, 10.8 m at 380 kV, 7 m for earth wires. `per_kv` is written as a length (`"0.01 m"`, meaning metres per kV).
 
-Nothing is interpolated between the rows of a table: a voltage between two rows takes the upper row's distance (the larger one when distances grow with the voltage). A requirement that cannot be written in these forms (a larger of two values, a term depending on something other than the voltage) needs two rules, each checked on its own. The report prints the voltages found; the CSV's `required_m` and the envelope rows give the requirement of each wire or pair.
+Nothing is interpolated between the rows of a table: a voltage between two rows takes the upper row's distance (the larger one when distances grow with the voltage). A required clearance that cannot be written in these forms (a larger of two values, a term depending on something other than the voltage) needs two rules, each checked on its own. The report prints the voltages found; the CSV's `required_m` and the envelope rows give the required clearance of each wire or pair.
 
 ### Envelopes over weather cases
 
-With several weather cases (`--weather`), each case is reported in turn, then the **envelope**: for every rule and every wire (or wire pair), the lowest vertical and radial clearance over all cases with the **case that governs** it, and the cases in which a requirement is not met:
+With several weather cases (`--weather`), each case is reported in turn, then the **envelope**: for every rule and every wire (or wire pair), the lowest vertical and radial clearance over all cases with the **case that governs** it, and the cases in which a required clearance is not met:
 
 ```text
 envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 1 case pairs (glaze ice × max temperature):
@@ -217,7 +217,7 @@ solved 3 section(s) in 2 wind position(s) in 283.8ms; checked in 10.0ms; 0 LiDAR
 The rule file is read as the windows import it: its ground and point
 rules with a clearance of one measure — **vertical** or **radial**, the
 only one the file has (a file with both needs `--measure vertical` or
-`--measure radial`); a requirement by voltage stays one row, each wire
+`--measure radial`); a required clearance by voltage stays one row, each wire
 checked with the distance of its voltage (a rule that lists `voltages`
 gives one row per voltage); roles become the classes of the class scheme; the first rule's
 `vertical_band` and `vertical_depth` are the zone's width and depth. The
@@ -304,7 +304,7 @@ cargo run --release -p ohl-cli -- line LINE.ohl.json --lidar TILES_DIR \
 |---|---|
 | `--lidar PATH` | LAS / LAZ file or directory of tiles. (`--pointcloud` instead reads a project's point cloud or a COPC file, only the blocks or octree nodes of the corridor: [Point clouds](project.md#point-clouds).) |
 | `--lidar-classes FILE` | Class scheme (below); default: ASPRS LAS 1.4 standard classes. |
-| `--ground-role ROLE` | Classes with this role make the ground surface (default `ground`). |
+| `--ground-role ROLE` | Classes with this role make the terrain surface (default `ground`). |
 | `--corridor M` | Only points within M of the spans (default 60 m). Every tile is read (the bounds in tile headers are not trusted); points flagged *withheld* are left out. |
 | `--max-edge M` | Longest triangle side (default 50 m): no ground is invented across larger gaps. |
 | `--thin M` | Optional: keep the lowest ground point per M × M cell. |
@@ -333,13 +333,13 @@ name = "Asphalt road"
 roles = ["ground", "road"]
 ```
 
-The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.ohlc`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/lidar-classes/asprs-las-1.4.ohlc) (ground: 2, water 9, road surface 11). Used by OpenOHL: `ground` (the ground surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
+The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.ohlc`](https://github.com/Gay-Lussac/OpenOHL/blob/main/libraries/lidar-classes/asprs-las-1.4.ohlc) (ground: 2, water 9, road surface 11). Used by OpenOHL: `ground` (the terrain surface), `vegetation` (vegetation analysis), `conductor` and `shield_wire` (as-built wire fitting), and any role a clearance rule names; the application also colours points by role. Suggested: `vegetation`, `building`, `water`, `road`, `railway`, `bridge`, `structure`, `insulator`, `conductor`, `shield_wire`, `load_object`, `other_line_structure`, `other_line_conductor`, `object`, `noise`, `temporary`, `unclassified`.
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
 A class may have a display **colour**, `color = "#rrggbb"`; without one, its colour comes from its roles (ground brown, vegetation green, buildings red, water blue, wires yellow…). In the application, Terrain › Survey data › **Class colours…** edits them per class and saves the scheme to a file; the scheme used is each user's choice (for a project or every project), so the same point cloud can be read with another scheme (e.g. a utility's own class numbers stored as ASPRS).
 
-## The ground surface
+## The terrain surface
 
 The points are triangulated (constrained Delaunay, the
 [spade](https://crates.io/crates/spade) library) into a TIN. A finished

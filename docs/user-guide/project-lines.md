@@ -1,13 +1,13 @@
-# Project lines and phases (the Versions menu)
+# Project lines and stages (the Versions menu)
 
 A project (`.ohl`) can hold several designs of the line side by side:
 **project lines**. The first is the **main line**. Others are made from it,
-typically one per **phase** of the project (*phase 1*, *phase 2*…) or per
+typically one per **stage** of the project (*stage 1*, *stage 2*…) or per
 alternative (*route B*). They are often shown next to the main line, for
 example the line *as built* next to the line *as planned*.
 
-Every project line is **edited on its own**: moving a structure on *phase 1*
-changes *phase 1* only.
+Every project line is **edited on its own**: moving a structure on *stage 1*
+changes *stage 1* only.
 
 ## The ideas in short
 
@@ -23,18 +23,18 @@ changes *phase 1* only.
 - **A new line is a copy.** It starts as the line it is made from is at that
   moment, including changes not yet committed. From then on the two are
   independent: a correction made later on the main line does **not** appear
-  in the phase by itself.
+  in the stage by itself.
 - **Bringing in changes** updates a line with what changed on another since
   they parted. Changes to different objects combine by themselves. Where
   both lines changed the same object, you choose which version to keep.
-- **Back into the main line through a review.** When a phase is ready, it
+- **Back into the main line through a review.** When a stage is ready, it
   is submitted for review. A reviewer or an admin approves it, then merges
   it into the main line.
 
 What all lines share: the terrain surfaces, the point clouds, the
 backgrounds and the project settings. What each line has of its own: the
 line itself (structures, sections, jumpers, routes, line settings), its
-libraries (cables, structures, insulators, weather cases…) and its history
+libraries (wire types, structures, insulators, weather cases…) and its history
 of edits. A new line starts with the libraries of the line it is made from;
 a library changed on one line leaves the others as they are.
 
@@ -48,9 +48,9 @@ The menu stays open while you tick lines to show.
 | **Project lines ›** **Project lines…** | The window listing every line: choose the one you work on and those shown; rename, delete (below). |
 | **Project lines ›** **Working tree…** | The lines through time (below). |
 | **Description of *name*…** | What the line you work on is for (below). |
-| **New line from *name*…** | A copy of the line you work on, under a new name (e.g. *phase 1*). You keep working on your line until you choose the new one. |
+| **New line from *name*…** | A copy of the line you work on, under a new name (e.g. *stage 1*). You keep working on your line until you choose the new one. |
 | **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
-| **Submit this line for review into the main line…** | When a phase is ready to go into the main line (greyed out on the main line itself). |
+| **Submit this line for review into the main line…** | When a stage is ready to go into the main line (greyed out on the main line itself). |
 | ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
 | **History…** | The operation log: who did what; admins reverse entries. |
 | **Revisions and branches…** | Revisions, branches, tags, diff, merge, reviews and edit rights (see [Versions, branches and reviews](versions.md#in-the-desktop-app)). |
@@ -149,14 +149,14 @@ It is kept in the project and follows a rename.
 Admins can also **protect** a line (Versions › Revisions and branches): it then changes only
 through admins or approved reviews.
 
-## A phase, step by step
+## A stage, step by step
 
-1. On the main line, **Versions › New line from main…**, name it *phase 1*,
+1. On the main line, **Versions › New line from main…**, name it *stage 1*,
    **Create**.
-2. **Versions › Project lines…**, click *phase 1* under **work on**. Edit it:
-   replace towers, restring sections… The main line does not change. Tick
-   *main* under **show** to see it next to your phase.
-3. Meanwhile, a colleague corrects tower T3 on the main line. Your phase does
+2. **Versions › Project lines…**, click *stage 1* under **work on**. Edit it:
+   replace structures, restring sections… The main line does not change. Tick
+   *main* under **show** to see it next to your stage.
+3. Meanwhile, a colleague corrects structure T3 on the main line. Your stage does
    not change. When you want the correction, choose **Versions › Bring in
    changes from another line…**, *changes of: main*.
    - If you did not change T3 yourself, it simply comes in: the window says
@@ -166,11 +166,11 @@ through admins or approved reviews.
      then **Bring in**.
 
    It is refused, changing nothing, while an object is not settled.
-4. When the phase is ready, choose **Versions › Submit this line for review
+4. When the stage is ready, choose **Versions › Submit this line for review
    into the main line…**, with a note. Uncommitted work is committed first.
 5. A reviewer or an admin opens **Versions › Revisions and branches › Reviews**, checks the
    changes (**Changes**, with the engineering impact), **approves**, and
-   **merges**. Only then does the main line change. If the phase changes
+   **merges**. Only then does the main line change. If the stage changes
    after approval, it must be submitted again.
 
 Starting a line, bringing in changes and submitting a review record the
@@ -185,7 +185,7 @@ Each user works on their own line, and their requests carry it.
 Edits of a line reach everyone, but they only change what users who work on
 that line, or show it, see. When someone renames the line you work on, you
 follow it. When someone deletes it, you are moved to another line and told
-so. Soft locks are per line: holding T3 on *phase 1* does not block T3 on
+so. Soft locks are per line: holding T3 on *stage 1* does not block T3 on
 the main line. The web client shows the main line.
 
 ## On the drawings
@@ -216,12 +216,12 @@ whole objects.
 ## On the command line
 
 ```bash
-ohl project branch project.ohl "phase 1" --user ben          # a new line from the one the file opens on
-ohl project checkout project.ohl "phase 1" --user ben        # the commands act on it from now on
+ohl project branch project.ohl "stage 1" --user ben          # a new line from the one the file opens on
+ohl project checkout project.ohl "stage 1" --user ben        # the commands act on it from now on
 ohl project apply project.ohl --user ben '{"op": "move_structure", "id": "T6", "position": [1500, 400, 505]}'
 ohl project checkout project.ohl main --user ana             # back to the main line
 ohl project branch project.ohl                               # list the lines (branches) and tags
-ohl project branch project.ohl "phase 1" --delete --confirm --user ben
+ohl project branch project.ohl "stage 1" --delete --confirm --user ben
 ohl project history project.ohl                              # the revisions with their lines and tags
 ```
 

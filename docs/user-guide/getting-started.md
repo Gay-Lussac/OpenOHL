@@ -17,7 +17,7 @@ applications and starts the line application on its start page.
 ### The structure application
 
 **OHL-Structure** (`ohl-structure`) edits one structure file on its own —
-its points and insulators, body, design, loads and finite-element results,
+its points and strings, body, design, loads and finite-element results,
 its libraries and plugins. Without a file it opens on a start page (Open a
 structure…, the recent files, New structure…).
 
@@ -42,7 +42,7 @@ A line is made in the steps below, most needing the one before. Its layout is th
 1. **The route** — File › New project, then name its route (the first window of a new project asks for it; Terrain › Routes later). A route is the path of the line; everything else is put on it.
 2. **Its alignment and its points** — the New alignment tool is held: right-click its points in order (an existing alignment point is used as it is — shared, a junction; a survey or LiDAR point or a structure snaps; elsewhere you type E, N and height), Enter, choose its route (with no route yet, it offers to create one). Or place the points first with the **Add alignment point** tool (not connected), then pick them one after another with New alignment; **Edit alignment** later reroutes a stretch, extends an end, or branches off; or type them in Terrain › Alignments and Terrain › Alignment points.
 3. **The ground and survey** — Terrain › Terrain surfaces, LiDAR point clouds (they can come before step 2, to snap the points to them).
-4. **The structures** — Tools › **New pylon from a template…** (the face of the pylon: its crossarm levels and lengths; build the suspension type, switch to Strain, build the strain type), then the **Add structure** tool (Tools › Structures) and a right-click on the alignment's first point: in the structure window choose the suspension type, open **Also on other points of this alignment**, tick **All** and give the angle points the strain type in their rows — one command; each turned along the line, then it stays as placed (Properties › Placement… › Put it on the line again). One at a time: the same tool, with nothing ticked there. They go on the route of the alignment they stand on.
+4. **The structures** — Tools › **New structure from a template…** (the face of the structure: its crossarm levels and lengths; build the suspension type, switch to Strain, build the strain type), then the **Add structure** tool (Tools › Structures) and a right-click on the alignment's first point: in the structure window choose the suspension type, open **Also on other points of this alignment**, tick **All** and give the alignment points the strain type in their rows — one command; each turned along the line, then it stays as placed (Properties › Placement… › Put it on the line again). One at a time: the same tool, with nothing ticked there. They go on the route of the alignment they stand on.
 5. **Their strings** — the Add string tool, or the structure's type.
 6. **The wires** — the String wire tool, section by section, then the jumpers.
 7. **The electrical systems**, then **the checks** (clearances, loads, …).
@@ -89,7 +89,7 @@ cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml
 cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml --units us --csv chart.csv
 ```
 
-The job file names the cable (from the `.ohlw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
+The job file names the wire type (from the `.ohlw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
 
 ## Python
 

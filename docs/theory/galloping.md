@@ -51,7 +51,7 @@ ellipse at mid-span for the whole span).
 ### Clearance between ellipses
 
 Wires hanging between the same two structures are paired (phases of one
-circuit, circuits on one tower, phases and earth wires). At `stations − 1`
+circuit, circuits on one structure, phases and earth wires). At `stations − 1`
 inner points of the span (default 19) both ellipses are drawn in the plane
 square to the first wire's chord, each around its own wire at rest there,
 and their distance is found: zero when they overlap (a vertex of one inside
@@ -62,7 +62,7 @@ outer radius — its bundle radius, its conductor's radius (iced in a case
 with ice) and its polyline's bound ([Clearance](../user-guide/terrain.md#clearance))
 — and zero when that is not above zero.
 The smallest over the stations is reported per pair and method, with the
-requirement (a distance, or by voltage as in rule files, with the pair's
+required clearance (a distance, or by voltage as in rule files, with the pair's
 voltage taken as the higher, sum or difference of the two systems').
 
 Accuracy: the ellipses are 72-sided circumscribed polygons — the regular

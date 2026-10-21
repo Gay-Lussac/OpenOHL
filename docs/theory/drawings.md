@@ -18,7 +18,7 @@ band rows. Its **vertical scale is never changed**. On each sheet:
    wire's **lowest point** in the sheet (what the ground clearance is
    about): one height range from the lowest of them; the structures' tops
    (and the wires near their attachments) are cut at the panel's top, a
-   break mark on each mast cut, a warning naming the structures.
+   break mark on each shaft cut, a warning naming the structures.
 3. **Not even the essentials fit** — the **datum is stepped**: the sheet
    is split at structures on the line into parts, each as long as its
    essentials fit, each with its own height range, a double line across
@@ -42,9 +42,9 @@ solved points), lowered by d, the vertical ground clearance its rule
 requires. Jumpers are left out (they hang at the structures).
 
 - d: the clearance rules for the ground (`target = "ground"`, a `vertical`
-  requirement) that check the circuit's voltage (`voltages`, none: all),
+  required clearance) that check the circuit's voltage (`voltages`, none: all),
   at the circuit's nominal voltage (the highest of its sections' systems;
-  earthed: 0 kV) by the requirement's form — a distance, a table by
+  earthed: 0 kV) by the required clearance's form — a distance, a table by
   voltage (`by_voltage`), or `base + per_kv · (U − above_kv)` — as the
   clearance checks read it ([Terrain and ground
   clearance](../user-guide/terrain.md)). A voltage above a table's last
