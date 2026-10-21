@@ -495,6 +495,13 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         .map(|s| SpanGeometry::inclined(s.span, s.rise))
         .collect();
     let reference_case = find_case(&job.weather, &job.reference.weather)?;
+    // The data sheet's weight is at its reference temperature; strung at
+    // the reference case's temperature, a metre of the cable holds
+    // w e^(-alpha (t_s - t_ref)) (owner decision 2026-10-21), conserved
+    // from there. The non-linear model takes the additive form's.
+    let datasheet = cable;
+    let strung_at = reference_case.temperature;
+    let cable = &datasheet.with_mass_at(strung_at, datasheet.weight_factor_at(strung_at));
     let reference = state(reference_case, cable);
 
     let mut out = String::new();
@@ -502,11 +509,14 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let _ = writeln!(out, "Cable: {} ({})", cable.name, cable.id);
     let _ = writeln!(
         out,
-        "  EA {:.2} MN, α {:.2e} /K, RTS {}, weight {}",
+        "  EA {:.2} MN, α {:.2e} /K, RTS {}, weight {} at {} (data sheet), {} at stringing ({})",
         elastic.axial_stiffness.si() / 1e6,
         elastic.thermal_expansion,
         show(rts, units, 1),
-        show(cable.weight(), units, 3)
+        show(datasheet.weight(), units, 3),
+        show(datasheet.mass_reference_temperature(), units, 0),
+        show(cable.weight(), units, 4),
+        show(strung_at, units, 0)
     );
     let ruling = ruling_span(&spans).map_err(|e| e.to_string())?;
     let _ = writeln!(
@@ -614,10 +624,14 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let mechanics =
         ohl_cables::mechanics::Mechanics::from_cable(cable).map_err(|e| e.to_string())?;
     if mechanics.is_nonlinear() {
+        // The additive form's weight at stringing.
+        let factor = mechanics
+            .weight_factor(datasheet.mass_reference_temperature(), strung_at)
+            .map_err(|e| e.to_string())?;
         nonlinear_report(
             &mut out,
             &job,
-            cable,
+            &datasheet.with_mass_at(strung_at, factor),
             mechanics,
             &spans,
             stringing,

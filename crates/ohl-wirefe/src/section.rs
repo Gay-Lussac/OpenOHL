@@ -109,8 +109,9 @@ pub struct State {
     /// [`CableSpec::weight`], which is per metre of the cable as strung:
     /// the solve spreads it over the span's unstressed length at the
     /// state's temperature (\\( w e^{-\alpha\Delta t} \\) per metre of
-    /// it), so a span weighs the same hot or cold; ice and wind stay per
-    /// metre of the (longer or shorter) cable.
+    /// it), so a span weighs the same hot or cold; ice and wind act per
+    /// metre of the real cable, longer or shorter with the temperature and
+    /// longer by its elastic strain ([`crate::CableElement::stretched_load`]).
     pub cable_load: Vector3<f64>,
     /// Transverse wind force on each insulator string (per leg for V), N.
     pub insulator_wind: f64,
@@ -537,6 +538,7 @@ impl FeSection {
             let thermal = (self.spec.cable.thermal_expansion
                 * (temperature - self.spec.stringing_temperature))
                 .exp();
+            let weight = self.spec.cable.weight;
             model.cables.push(CableElement {
                 i: piece.i,
                 j: piece.j,
@@ -545,9 +547,10 @@ impl FeSection {
                     axial_stiffness: self.spec.cable.axial_stiffness,
                     // The own weight conserved: w / e^{αΔt} per metre of
                     // the thermally longer unstressed length.
-                    load: load
-                        + Vector3::new(0.0, 0.0, self.spec.cable.weight * (1.0 - 1.0 / thermal)),
+                    load: Vector3::new(0.0, 0.0, -weight / thermal),
                 },
+                // Ice and wind per metre of the stretched cable.
+                stretched_load: load + Vector3::new(0.0, 0.0, weight),
             });
         }
         // Load sites of broken spans are dropped; their nodes stay free but
@@ -599,7 +602,8 @@ impl FeSection {
             for &(e, i) in &pieces {
                 let element = &model.cables[e];
                 let d = p[element.j] - p[i];
-                for point in element.properties.shape(d, &solution.cables[e], 64) {
+                let props = solution.cable_properties(model, e);
+                for point in props.shape(d, &solution.cables[e], 64) {
                     let r = p[i] + point - a;
                     // Vertical distance below the chord at the same horizontal position.
                     let t = r.dot(&horizontal_dir) / Vector3::new(chord.x, chord.y, 0.0).norm();
@@ -890,7 +894,8 @@ mod tests {
                 cable_load: Vector3::new(0.0, 0.0, -(W + 10.0)),
             },
         )];
-        check(&cold, [38955.83357, 38617.55835], 299.8485682, -2.892976345);
+        // The ice per stretched metre (2026-10-21; before: 38955.83 N, 38617.56 N).
+        check(&cold, [38964.13886, 38625.44942], 299.8484214, -2.895781995);
         let mut hot = State::bare(section.spec(), 15.0);
         hot.span_states = vec![(
             0,

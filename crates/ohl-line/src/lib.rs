@@ -263,6 +263,16 @@ impl StructureLoads {
     }
 }
 
+/// The stringing temperature the program gives new data, °C: a new
+/// section's stringing condition, a new jumper's temperature (owner
+/// decision 2026-10-21; before, 15 °C). Values given in data are kept.
+pub const DEFAULT_STRINGING_TEMPERATURE: f64 = 20.0;
+
+/// A jumper's temperature in a line file that does not give one, °C. It
+/// stays 15 °C, as files were written with it: an old file reads as it
+/// did (OpenOHL always writes the temperature; only hand-written files
+/// leave it out). New jumpers made by the program take
+/// [`DEFAULT_STRINGING_TEMPERATURE`].
 fn default_jumper_temperature() -> f64 {
     15.0
 }

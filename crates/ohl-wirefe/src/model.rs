@@ -64,8 +64,27 @@ pub struct CableElement {
     pub i: usize,
     /// End node index.
     pub j: usize,
-    /// Properties (unstressed length, EA, load per unstressed length).
+    /// Properties (unstressed length, EA, load per unstressed length: the
+    /// cable's own weight and what is fixed to it).
     pub properties: CableProperties,
+    /// Load per metre of the **stretched** (real) cable: ice and wind,
+    /// N/m, global axes. The solver applies it per unit unstressed length
+    /// times the element's stretch \\( L / L_0 \\), iterated with the
+    /// solution ([`Model::solve`]). Zero: none.
+    pub stretched_load: Vector3<f64>,
+}
+
+impl CableElement {
+    /// An element from `i` to `j` with all its load per unit unstressed
+    /// length (`properties.load`), none per stretched metre.
+    pub fn new(i: usize, j: usize, properties: CableProperties) -> Self {
+        Self {
+            i,
+            j,
+            properties,
+            stretched_load: Vector3::zeros(),
+        }
+    }
 }
 
 /// A straight bar between two nodes (insulator, link, V-string leg).
@@ -107,10 +126,29 @@ pub struct Solution {
     pub truss_forces: Vec<f64>,
     /// Reaction forces on fixed nodes (force the support exerts), N; zero for free nodes.
     pub reactions: Vec<Vector3<f64>>,
-    /// Newton iterations used.
+    /// Newton iterations used (of every pass on the stretches).
     pub iterations: u64,
     /// Largest unbalanced force on a free node at the end, N.
     pub residual: f64,
+    /// The load per unit unstressed length each cable element was solved
+    /// with, N/m: its `properties.load` and its `stretched_load` times its
+    /// stretch ([`Solution::cable_properties`]).
+    pub cable_loads: Vec<Vector3<f64>>,
+    /// Passes of the fixed point on the elements' stretches (1: no load
+    /// per stretched metre).
+    pub stretch_passes: usize,
+}
+
+impl Solution {
+    /// The properties cable element `e` of `model` was solved with: its
+    /// load per unit unstressed length including the ice and wind per
+    /// stretched metre (for its shape, [`CableProperties::shape`]).
+    pub fn cable_properties(&self, model: &Model, e: usize) -> CableProperties {
+        CableProperties {
+            load: self.cable_loads[e],
+            ..model.cables[e].properties
+        }
+    }
 }
 
 /// Errors of the wire-system solver.
@@ -140,6 +178,16 @@ pub enum FeError {
         /// Newton iteration.
         iteration: u64,
     },
+    /// The ice and wind per stretched metre did not settle: the elements'
+    /// stretches still changed after [`STRETCH_PASSES`] solves.
+    StretchUnsettled {
+        /// Solves done.
+        passes: usize,
+        /// Largest change of an element's stretch in the last pass.
+        change: f64,
+        /// Its element.
+        element: usize,
+    },
 }
 
 impl fmt::Display for FeError {
@@ -160,11 +208,31 @@ impl fmt::Display for FeError {
                 "stiffness matrix singular at Newton iteration {iteration}: a free node is not restrained \
                  in some direction (e.g. only connected to slack legs)"
             ),
+            Self::StretchUnsettled {
+                passes,
+                change,
+                element,
+            } => write!(
+                f,
+                "the ice and wind per stretched metre did not settle in {passes} solves: the stretch \
+                 of cable element {element} still changed by {change:.3e}"
+            ),
         }
     }
 }
 
 impl std::error::Error for FeError {}
+
+/// Exit clause of the fixed point on the cable elements' stretches (ice and
+/// wind per stretched metre, [`Model::solve`]): it settles in three or
+/// four solves.
+pub const STRETCH_PASSES: usize = 20;
+
+/// The fixed point on the stretches is settled when no element's stretch
+/// \\( L / L_0 \\) changes by more than this in a pass: its ice and wind
+/// then within 10⁻¹¹ of themselves (the solver's tolerance is 10⁻⁹ of the
+/// loads; the stretch's own rounding noise is ~10⁻¹³).
+pub const STRETCH_TOLERANCE: f64 = 1e-11;
 
 /// Default exit clauses for a structure solve: Newton usually converges in
 /// 5–20 iterations; 100 iterations cover difficult cases (broken wire)
@@ -484,10 +552,97 @@ impl Model {
 
     /// Solves the equilibrium of the free nodes.
     ///
+    /// Cable elements with a load per stretched metre
+    /// ([`CableElement::stretched_load`], the ice and wind) carry it per
+    /// unit unstressed length times their stretch \\( k = L / L_0 \\)
+    /// ([`CableProperties::stretched_length`]), which depends on the
+    /// solution: a fixed point, each pass solved from the last one's
+    /// positions, until no element's stretch changes by more than
+    /// [`STRETCH_TOLERANCE`] (the load then within ~10⁻¹¹ of itself, far
+    /// below the solver's tolerance; it contracts by about \\( T/EA \\),
+    /// 10⁻³, a pass: three or four solves). Exit clause:
+    /// [`STRETCH_PASSES`] solves, then [`FeError::StretchUnsettled`].
+    ///
     /// Expected cost: each Newton iteration evaluates every element (~1 µs)
     /// and solves a dense system of 3 × (free nodes); a 10-span section with
-    /// suspension strings converges in well under 10 ms.
+    /// suspension strings converges in well under 10 ms (with ice or wind,
+    /// the passes after the first start at the solution: a few iterations
+    /// each).
     pub fn solve(&self, budget: &Budget) -> Result<Solution, FeError> {
+        if self
+            .cables
+            .iter()
+            .all(|c| c.stretched_load == Vector3::zeros())
+        {
+            return self.solve_loaded(budget);
+        }
+        let mut model = self.clone();
+        // First stretches: each element alone between its nodes as given,
+        // under its whole load (a start only: the passes settle them).
+        let element_budget = crate::catenary_element::default_element_budget();
+        let mut stretch: Vec<f64> = self
+            .cables
+            .iter()
+            .map(|c| {
+                let props = CableProperties {
+                    load: c.properties.load + c.stretched_load,
+                    ..c.properties
+                };
+                let d = self.nodes[c.j].position - self.nodes[c.i].position;
+                props
+                    .solve(d, None, &element_budget)
+                    .map(|s| props.stretched_length(&s) / props.unstressed_length)
+                    .ok()
+                    .filter(|k| k.is_finite() && *k > 0.0)
+                    .unwrap_or(1.0)
+            })
+            .collect();
+        let (mut change, mut worst) = (f64::INFINITY, 0);
+        let mut iterations = 0;
+        for pass in 1..=STRETCH_PASSES {
+            for ((c, own), k) in model.cables.iter_mut().zip(&self.cables).zip(&stretch) {
+                c.properties.load = own.properties.load + own.stretched_load * *k;
+            }
+            let mut solution = model.solve_loaded(budget)?;
+            iterations += solution.iterations;
+            (change, worst) = (0.0, 0);
+            for (e, (c, state)) in model.cables.iter().zip(&solution.cables).enumerate() {
+                if self.cables[e].stretched_load == Vector3::zeros() {
+                    continue;
+                }
+                let k = c.properties.stretched_length(state) / c.properties.unstressed_length;
+                let d = (k - stretch[e]).abs();
+                if d > change || d.is_nan() {
+                    (change, worst) = (d, e);
+                }
+                stretch[e] = k;
+            }
+            if ohl_core::env::var_os("OHL_FE_TRACE").is_some() {
+                eprintln!(
+                    "stretch pass {pass}: {} Newton iterations, largest change {change:.3e} (element {worst})",
+                    solution.iterations
+                );
+            }
+            if change <= STRETCH_TOLERANCE {
+                solution.stretch_passes = pass;
+                // Every pass's Newton iterations.
+                solution.iterations = iterations;
+                return Ok(solution);
+            }
+            for (node, p) in model.nodes.iter_mut().zip(&solution.positions) {
+                node.position = *p;
+            }
+        }
+        Err(FeError::StretchUnsettled {
+            passes: STRETCH_PASSES,
+            change,
+            element: worst,
+        })
+    }
+
+    /// [`Model::solve`] with every cable's load as given per unit
+    /// unstressed length.
+    fn solve_loaded(&self, budget: &Budget) -> Result<Solution, FeError> {
         match self.solve_direct(budget) {
             Ok(solution) => Ok(solution),
             Err(
@@ -906,6 +1061,8 @@ impl Model {
             reactions,
             iterations: run.iterations(),
             residual,
+            cable_loads: self.cables.iter().map(|c| c.properties.load).collect(),
+            stretch_passes: 1,
         })
     }
 }
@@ -918,19 +1075,79 @@ mod tests {
     const EA: f64 = 34.64e6;
 
     fn cable(i: usize, j: usize, l0: f64, load: Vector3<f64>) -> CableElement {
-        CableElement {
+        CableElement::new(
             i,
             j,
-            properties: CableProperties {
+            CableProperties {
                 unstressed_length: l0,
                 axial_stiffness: EA,
                 load,
             },
-        }
+        )
     }
 
     fn gravity() -> Vector3<f64> {
         Vector3::new(0.0, 0.0, -W)
+    }
+
+    /// Ice per metre of the stretched cable (owner decision 2026-10-21):
+    /// the span carries its own weight per unstressed metre and its ice per
+    /// stretched metre, so the supports carry W L0 + q_i L with the span's
+    /// real length L (hand check: the vertical reactions); the fixed point
+    /// settles in a few solves, and the solution is the plain solve with
+    /// the ice times the settled stretch.
+    #[test]
+    fn ice_acts_per_stretched_metre() {
+        let ice = Vector3::new(0.0, 0.0, -13.5);
+        let mut model = Model {
+            nodes: vec![
+                Node::fixed(Vector3::zeros()),
+                Node::fixed(Vector3::new(300.0, 0.0, 0.0)),
+            ],
+            cables: vec![cable(0, 1, 300.4, gravity())],
+            trusses: vec![],
+        };
+        model.cables[0].stretched_load = ice;
+        let s = model.solve(&default_fe_budget()).unwrap();
+        assert!((2..=5).contains(&s.stretch_passes), "{}", s.stretch_passes);
+        let props = s.cable_properties(&model, 0);
+        let length = props.stretched_length(&s.cables[0]);
+        let k = length / 300.4;
+        // Stretched by about the mean tension over EA (~30 kN / 34.64 MN).
+        assert!((k - 1.0 - 8.8e-4).abs() < 2e-4, "{k}");
+        assert!((props.load - (gravity() + ice * k)).norm() < 1e-9);
+        let total: Vector3<f64> = s.reactions.iter().sum();
+        assert!(
+            (total.z - (W * 300.4 + 13.5 * length)).abs() < 1e-6,
+            "{total} vs {}",
+            W * 300.4 + 13.5 * length
+        );
+        // The same as a plain solve with that load per unstressed metre.
+        let mut plain = model.clone();
+        plain.cables[0] = cable(0, 1, 300.4, props.load);
+        let p = plain.solve(&default_fe_budget()).unwrap();
+        assert!((p.cables[0].horizontal - s.cables[0].horizontal).abs() < 1e-6);
+        assert_eq!(p.stretch_passes, 1);
+        // Before 2026-10-21 (ice per unstressed metre): less tension.
+        let mut before = model.clone();
+        before.cables[0] = cable(0, 1, 300.4, gravity() + ice);
+        let b = before.solve(&default_fe_budget()).unwrap();
+        let more = s.cables[0].horizontal / b.cables[0].horizontal - 1.0;
+        assert!(more > 3e-4 && more < 6e-4, "{more}");
+    }
+
+    #[test]
+    fn an_unsettled_stretch_says_which_element() {
+        let e = FeError::StretchUnsettled {
+            passes: STRETCH_PASSES,
+            change: 2.5e-9,
+            element: 3,
+        };
+        let text = e.to_string();
+        assert!(
+            text.contains("did not settle in 20 solves") && text.contains("element 3"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1118,16 +1335,8 @@ mod jacobian_check {
                 Node::fixed(Vector3::new(600.0, 0.0, 27.0)),
             ],
             cables: vec![
-                CableElement {
-                    i: 0,
-                    j: 2,
-                    properties: props,
-                },
-                CableElement {
-                    i: 2,
-                    j: 3,
-                    properties: props,
-                },
+                CableElement::new(0, 2, props),
+                CableElement::new(2, 3, props),
             ],
             trusses: vec![TrussElement {
                 i: 1,

@@ -242,6 +242,23 @@ impl CableProperties {
         })
     }
 
+    /// Stretched (real) length of the solved element:
+    /// \\( L = L_0 + \frac{1}{EA}\int_0^{L_0} T\,ds_0 \\) with
+    /// \\( T = \sqrt{H^2 + V^2} \\), \\( V = V_0 + w s_0 \\):
+    /// \\( \int T\,ds_0 = [G(V_1) - G(V_0)] / w \\),
+    /// \\( G(V) = \tfrac12 (V T + H^2 \operatorname{asinh}(V/H)) \\).
+    pub fn stretched_length(&self, state: &ElementState) -> f64 {
+        let (l0, ea, w) = (
+            self.unstressed_length,
+            self.axial_stiffness,
+            self.load.norm(),
+        );
+        let (h, v0) = (state.horizontal, state.v0);
+        let v1 = v0 + w * l0;
+        let g = |v: f64| 0.5 * (v * h.hypot(v) + h * h * (v / h).asinh());
+        l0 + (g(v1) - g(v0)) / w / ea
+    }
+
     /// Point of the cable at unstressed arc length `s0` from node i,
     /// relative to node i (global axes), for a solved element with chord `d`.
     pub fn point_at(&self, d: Vector3<f64>, state: &ElementState, s0: f64) -> Vector3<f64> {
@@ -369,6 +386,32 @@ impl CableProperties {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The stretched length's closed form against a midpoint sum of
+    /// 1 + T(s)/EA along the unstressed length (200 000 pieces).
+    #[test]
+    fn stretched_length_is_the_integral_of_the_strain() {
+        let props = CableProperties {
+            unstressed_length: 306.5,
+            axial_stiffness: 30e6,
+            load: Vector3::new(0.0, 0.0, -15.69064),
+        };
+        let d = Vector3::new(300.0, 0.0, 60.0);
+        let state = props.solve(d, None, &default_element_budget()).unwrap();
+        let (h, v0, w, l0) = (state.horizontal, state.v0, 15.69064, 306.5);
+        let n = 200_000;
+        let ds = l0 / n as f64;
+        let sum: f64 = (0..n)
+            .map(|i| {
+                let v = v0 + w * (i as f64 + 0.5) * ds;
+                (1.0 + h.hypot(v) / 30e6) * ds
+            })
+            .sum();
+        let closed = props.stretched_length(&state);
+        assert!((closed - sum).abs() < 1e-9, "{closed} vs {sum}");
+        // About L0 (1 + Tmean / EA): Tmean near 19 kN.
+        assert!(closed > l0 * (1.0 + 18e3 / 30e6) && closed < l0 * (1.0 + 21e3 / 30e6));
+    }
 
     /// Short pieces of tight wires (catenary parameter H/w of 1–2 km)
     /// converge to the exact answer (end points from the element's own

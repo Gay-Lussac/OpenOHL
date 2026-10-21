@@ -79,6 +79,7 @@ pub fn end_loads<'a>(
         let Some(c) = cable(&j.cable) else {
             continue;
         };
+        let c = &cut_cable(c, j);
         let (Some(a), Some(b)) = (
             approximate_end(line, &j.from, 0),
             approximate_end(line, &j.to, 0),
@@ -1205,6 +1206,7 @@ fn cut_length(
     cable: &Cable,
 ) -> Result<f64, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    let cable = &cut_cable(cable, jumper);
     let sag = jumper
         .sag
         .ok_or_else(|| invalid("needs a length or a sag".into()))?;
@@ -1227,6 +1229,16 @@ fn cut_length(
         Some(stiff) => stiff_length_for_sag(&stiff, still, a, b, sag, hinged).map_err(invalid),
         None => Ok(hinged),
     }
+}
+
+/// The jumper's cable with its own weight per metre of unstressed cable at
+/// the jumper's temperature (that of its cut length or sag): the data
+/// sheet's, at its reference temperature, over the thermal stretch between
+/// them, \\( w_{ref}\\, e^{-\alpha (t - t_{ref})} \\) (owner decision
+/// 2026-10-21). Applied again, nothing changes.
+pub fn cut_cable(cable: &Cable, jumper: &Jumper) -> Cable {
+    let t = ohl_core::units::Temperature::from_celsius(jumper.temperature);
+    cable.with_mass_at(t, cable.weight_factor_at(t))
 }
 
 /// Solves one jumper in a weather case, between the solved section ends.
@@ -1253,6 +1265,8 @@ pub fn solve_jumper_in(
     context: &TapContext,
 ) -> Result<JumperShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    // Its own weight per metre at its temperature.
+    let cable = &cut_cable(cable, jumper);
     // Its ends are the solved clamps: a section through an end that did not
     // solve leaves no clamp (the attachment's data point would be a wrong,
     // plausible-looking end).
@@ -1343,6 +1357,11 @@ pub fn solve_jumper_in(
         .exp();
     let load = wire_load_in_line_wind(case, cable, d, along)
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
+    // As catenary elements (taut, or on a support string): the own weight
+    // per unit unstressed length, the ice and wind per metre of the
+    // stretched jumper (the rod is inextensible: the same there).
+    let own = Vector3::new(0.0, 0.0, -cable.weight().si() / thermal);
+    let stretched = load - own;
     // A tap is a hinge: no direction held there.
     let hinged = |mut s: Stiff| {
         if jumper.from.as_tap().is_some() {
@@ -1470,9 +1489,27 @@ pub fn solve_jumper_in(
     };
     let (points, max_tension, supports, end_forces, off) = match &support {
         None => {
-            let state = props
-                .solve(d, None, &default_element_budget())
-                .map_err(|e| invalid(e.to_string()))?;
+            // Its ice and wind per stretched metre: a fixed point on its
+            // stretch (as the sections' elements, [`Model::solve`]).
+            let mut props = props;
+            let mut k = 1.0;
+            let mut settled = None;
+            for _ in 0..ohl_wirefe::model::STRETCH_PASSES {
+                props.load = own + stretched * k;
+                let state = props
+                    .solve(d, None, &default_element_budget())
+                    .map_err(|e| invalid(e.to_string()))?;
+                let next = props.stretched_length(&state) / l0;
+                let change = (next - k).abs();
+                k = next;
+                if change <= ohl_wirefe::model::STRETCH_TOLERANCE {
+                    settled = Some(state);
+                    break;
+                }
+            }
+            let state = settled.ok_or_else(|| {
+                invalid("its ice and wind per stretched metre did not settle".into())
+            })?;
             let points: Vec<Vector3<f64>> = props
                 .shape(d, &state, 64)
                 .into_iter()
@@ -1508,8 +1545,10 @@ pub fn solve_jumper_in(
                     j,
                     properties: CableProperties {
                         unstressed_length: length,
+                        load: own,
                         ..props
                     },
+                    stretched_load: stretched,
                 });
             }
             model.trusses.push(TrussElement {
@@ -1537,10 +1576,11 @@ pub fn solve_jumper_in(
                 max_tension = max_tension.max(state.tension_i).max(state.tension_j);
                 let d = pos[element.j] - pos[element.i];
                 let skip = usize::from(!points.is_empty());
-                let samples = element.properties.shape(d, state, 64);
+                let props = solution.cable_properties(&model, e);
+                let samples = props.shape(d, state, 64);
                 off = off.max(crate::solve::polyline_error(
                     &samples,
-                    state.horizontal / element.properties.load.norm(),
+                    state.horizontal / props.load.norm(),
                 ));
                 points.extend(samples.into_iter().skip(skip).map(|q| pos[element.i] + q));
             }
