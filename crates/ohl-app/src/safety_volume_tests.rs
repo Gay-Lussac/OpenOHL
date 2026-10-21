@@ -169,7 +169,7 @@ fn safety_volumes_are_built_drawn_saved_and_exported() {
         .safety_volume
         .set_save_name("work 1");
     h.run_steps(2);
-    h.get_by_label("Save in Performed checks").click();
+    h.get_by_label("Save in Performed checks").click_accesskit();
     h.run_steps(3);
     let saved = {
         let r = h.state_mut().ready().unwrap();
@@ -243,4 +243,138 @@ fn safety_volumes_are_built_drawn_saved_and_exported() {
     }
     h.get_by_label("Run again");
     png(&mut h, "safety-volume-out-of-date.png");
+}
+
+/// Chosen by system, then by span (2026-10-21): the toggle shows the
+/// line's systems with their voltage; None ticked refuses to run; the
+/// system ticked and one volume per system give the example's one system
+/// (both circuits) as one volume, named after it; the run records the
+/// choice and reads it back; a run saved before reads as every circuit.
+/// By span, the search and All tick the span found only, and the run
+/// takes that span alone.
+#[test]
+fn safety_volumes_by_system() {
+    use crate::safety_volume::{Scope, Settings};
+    use ohl_clearance::safety_volume::Grouping;
+    let model = crate::tests::synthetic_project("safety-volume-system");
+    let mut h = harness(model, false);
+    h.run_steps(3);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let hot = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "max temperature")
+            .unwrap();
+        r.safety_volume.show(hot);
+        let s = &mut r.safety_volume.settings;
+        s.distance = ohl_clearance::rules::Requirement::Fixed(3.0);
+        s.tolerance = 0.3;
+    }
+    h.run_steps(3);
+    // The groups and their user-guide links.
+    for title in [
+        "Wire positions",
+        "Distance",
+        "What is included",
+        "Mesh",
+        "Export",
+    ] {
+        h.get_by_label(&format!("{title}: user guide ↗"));
+    }
+    h.get_by_label("Systems").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("220 kV example system — 220 kV");
+    h.get_by_label("None").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("Run").click();
+    h.run_steps(2);
+    match h.state_mut().ready().unwrap().safety_volume.result().0 {
+        Some(Err(e)) => assert!(e.contains("tick a system"), "{e}"),
+        other => panic!("{other:?}"),
+    }
+    h.get_by_label("220 kV example system — 220 kV")
+        .click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("system").click_accesskit();
+    h.run_steps(2);
+    {
+        let s = &h.state_mut().ready().unwrap().safety_volume.settings;
+        assert_eq!(s.scope, Scope::Systems);
+        assert_eq!(s.systems.as_deref(), Some(&["ex220".to_owned()][..]));
+        assert_eq!(s.grouping, Grouping::System);
+    }
+    h.get_by_label("Run").click();
+    until(&mut h, "a run by system", |a| {
+        matches!(a.ready().unwrap().safety_volume.result(), (Some(_), false))
+    });
+    let settings = {
+        let r = h.state_mut().ready().unwrap();
+        let rep = match r.safety_volume.result().0 {
+            Some(Ok(rep)) => rep.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(rep.volumes.volumes.len(), 1);
+        let v = &rep.volumes.volumes[0];
+        assert_eq!(v.name, "220 kV example system");
+        // Both circuits' sections: every section of the line.
+        assert_eq!(v.sections.len(), r.model.line.sections.len());
+        rep.settings
+    };
+    // Recorded with the run, read back.
+    let saved = settings.to_json(&["max temperature".into()]);
+    assert_eq!(saved["scope"], "systems");
+    assert_eq!(saved["per"], "system");
+    assert_eq!(saved["systems"][0], "ex220");
+    let (back, cases) = Settings::from_json(&saved).unwrap();
+    assert_eq!(back, settings);
+    assert_eq!(cases, ["max temperature"]);
+    // A run saved before: by circuit, every circuit.
+    let mut old = saved.clone();
+    old.as_object_mut().unwrap().remove("scope");
+    old.as_object_mut().unwrap().remove("systems");
+    old["circuits"] = serde_json::json!([]);
+    let (back, _) = Settings::from_json(&old).unwrap();
+    assert_eq!(
+        (back.scope, back.circuits, back.systems),
+        (Scope::Circuits, None, None)
+    );
+    // By span: the search finds S1's first span, All ticks it alone; the
+    // run takes that span's wire only (one volume, of S1), and records it.
+    h.get_by_label("Spans").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("10 of 10 ticked");
+    h.get_by_label("None").click_accesskit();
+    h.run_steps(2);
+    h.get_by_role_and_label(eframe::egui::accesskit::Role::TextInput, "search")
+        .focus();
+    h.run_steps(1);
+    h.get_by_role_and_label(eframe::egui::accesskit::Role::TextInput, "search")
+        .type_text("s1 SPAN 1:");
+    h.run_steps(2);
+    h.get_by_label("0 of 10 ticked (1 shown)");
+    h.get_by_label("All").click_accesskit();
+    h.run_steps(2);
+    h.get_by_label("wire").click_accesskit();
+    h.run_steps(2);
+    assert_eq!(
+        h.state_mut().ready().unwrap().safety_volume.settings.spans,
+        Some(vec!["S1:1".to_owned()])
+    );
+    h.get_by_label("Run").click();
+    until(&mut h, "a run by span", |a| {
+        matches!(a.ready().unwrap().safety_volume.result(), (Some(_), false))
+    });
+    let r = h.state_mut().ready().unwrap();
+    let rep = match r.safety_volume.result().0 {
+        Some(Ok(rep)) => rep.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(rep.volumes.volumes.len(), 1);
+    assert_eq!(rep.volumes.volumes[0].sections, ["S1"]);
+    assert_eq!(rep.volumes.volumes[0].positions, 1);
+    let saved = rep.settings.to_json(&[]);
+    assert_eq!(saved["scope"], "spans");
+    assert_eq!(saved["spans"][0], "S1:1");
 }
