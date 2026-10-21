@@ -8,11 +8,15 @@
 //! the joint kept as its offset (a rigid link, whose moment the structure
 //! analysis applies at the joint) — one edit, one undo step. Relinking a
 //! linked point is the same two clicks. A right-click or Escape cancels
-//! (a second one leaves the tool). While a point is chosen the joints it
-//! may be linked to (every joint but a support joint) are ringed; the one
-//! under the pointer shows the offset's length and its moment arm. A
+//! (a second one leaves the tool). While a point is chosen the attach
+//! joints are ringed — only they take a link (owner decision
+//! 2026-10-21); the one under the pointer shows the offset's length and
+//! its moment arm, another joint under it says "not an attach joint: set
+//! its kind to attach in OHL-Structure" (its kind in the Joints table). A
 //! point is unlinked from its context menu (in the view or the Points
-//! table): it keeps its place as a joint of its own.
+//! table): it keeps its place as a joint of its own. A point cannot be
+//! put on a member: **Insert a joint** on the member first (the member's
+//! menu in the view, or the Members table), then link the point.
 
 use ohl_structure_edit::Handle;
 use ohl_structures::StructureType;
@@ -35,9 +39,9 @@ pub enum LinkAction {
     Start(String),
 }
 
-/// The joints attachment points may be linked to (all but support
-/// joints), with their positions (local axes, m) and whether each is an
-/// attach joint already.
+/// The joints of the type but support joints, with their positions
+/// (local axes, m) and whether each is an attach joint (only those take
+/// a link; the others say why not under the pointer).
 pub fn linkable(t: &StructureType) -> Vec<(String, [f64; 3], bool)> {
     t.linkable_joints()
         .into_iter()
@@ -126,7 +130,9 @@ impl StructureApp {
             (Some(l), Some(Handle::Joint(j))) => self.link_point(&l, &j),
             (Some(_), _) => {
                 self.message = Some((
-                    "Link: click a ringed joint (a support joint takes no strings)".into(),
+                    "Link: click a ringed joint (an attach joint; a support joint takes no \
+                     strings)"
+                        .into(),
                     true,
                 ));
             }

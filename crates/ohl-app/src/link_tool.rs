@@ -8,13 +8,16 @@
 //!
 //! - **Link tool**: the tool click (a right-click; a left-click with
 //!   "Tools act on left-click") on an attachment point of a typed
-//!   structure chooses it; the joints of its type it may be linked to
-//!   (every joint but a support joint) are ringed in the 3D view, the one
-//!   under the pointer showing the offset's length and its moment arm;
-//!   the tool click on one links the point there where it is, the
-//!   distance kept as its offset ([`ohl_session::Command::LinkPoint`]: one
-//!   command, one undo). Relinking a linked point is the same. Escape, or
-//!   the tool click elsewhere, cancels. A point is unlinked from
+//!   structure chooses it; the attach joints of its type are ringed in
+//!   the 3D view (only attach joints take links: owner decision
+//!   2026-10-21), the one under the pointer showing the offset's length
+//!   and its moment arm; the tool click on one links the point there
+//!   where it is, the distance kept as its offset
+//!   ([`ohl_session::Command::LinkPoint`]: one command, one undo).
+//!   Another joint is neither ringed nor clickable: under the pointer it
+//!   says "not an attach joint: set its kind to attach in OHL-Structure".
+//!   Relinking a linked point is the same. Escape, or the tool click
+//!   elsewhere, cancels. A point is unlinked from
 //!   Properties (Unlink), the command
 //!   [`ohl_session::Command::UnlinkPoint`].
 //! - **Rigid links** ([`crate::scene::Layer::RigidLinks`]): a solid rod
@@ -42,15 +45,15 @@ pub const RIGID: [u8; 4] = [230, 80, 220, 255];
 /// The colour of an unlinked attachment point (red).
 pub const UNLINKED: [u8; 4] = [240, 50, 50, 255];
 
-/// A joint a point may be linked to, as drawn.
+/// A joint of the type, as the Link tool sees it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkJoint {
     /// Its id.
     pub id: String,
     /// Where it is, global, m.
     pub at: [f64; 3],
-    /// An attach joint already (else a joint without a kind: it becomes
-    /// one).
+    /// An attach joint: ringed, a point may be linked to it. Else (a
+    /// joint without a kind) only its hover says why not.
     pub attach: bool,
 }
 
@@ -67,11 +70,12 @@ pub struct LinkOverlay {
     pub point: [f64; 3],
     /// Its structure's orientation, degrees (the offset in its axes).
     pub orientation_deg: f64,
-    /// The joints it may be linked to.
+    /// The joints of its type but support joints (attach joints ringed
+    /// and clickable).
     pub joints: Vec<LinkJoint>,
-    /// The joint under the pointer.
+    /// The joint under the pointer (any of [`LinkOverlay::joints`]).
     pub hovered: Option<String>,
-    /// The joint clicked with the tool.
+    /// The attach joint clicked with the tool.
     pub clicked: Option<String>,
 }
 
@@ -81,6 +85,34 @@ impl LinkOverlay {
     pub fn offset_to(&self, id: &str) -> Option<[f64; 3]> {
         let j = self.joints.iter().find(|j| j.id == id)?;
         Some(offset(self.orientation_deg, j.at, self.point))
+    }
+
+    /// What the joint under the pointer says: the link it would make, or
+    /// (not an attach joint) why it makes none.
+    pub fn hover_text(&self) -> Option<String> {
+        let id = self.hovered.as_ref()?;
+        let j = self.joints.iter().find(|j| &j.id == id)?;
+        if !j.attach {
+            return Some(format!("joint {id}: {}", ohl_structures::NOT_ATTACH));
+        }
+        let o = self.offset_to(id)?;
+        Some(format!(
+            "link {} of {} to joint {id}: {}",
+            self.label,
+            self.structure,
+            offset_words(o)
+        ))
+    }
+
+    /// The tool click on the joint under the pointer: an attach joint is
+    /// clicked; another one is not (none).
+    pub fn click(&mut self) -> Option<String> {
+        let id = self.hovered.clone()?;
+        let attach = self.joints.iter().any(|j| j.id == id && j.attach);
+        attach.then(|| {
+            self.clicked = Some(id.clone());
+            id
+        })
     }
 }
 
@@ -136,8 +168,9 @@ fn typed<'a>(
     Ok((s, t))
 }
 
-/// The joints attachment point `label` of structure `id` may be linked to
-/// (every joint of its type but support joints), where they are.
+/// The joints of structure `id`'s type but support joints, where they
+/// are, each marked whether it is an attach joint (only those take a
+/// link).
 pub fn joints(model: &Model, id: &str) -> Vec<LinkJoint> {
     let Ok((s, t)) = typed(model, id) else {
         return Vec::new();

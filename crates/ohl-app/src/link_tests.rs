@@ -64,6 +64,20 @@ fn use_tool(h: &mut Harness<'_, App>, tool: Tool, target: Selection) {
     h.run();
 }
 
+/// [`typed_project`] with joint L10B of type-02 an attach joint (only
+/// attach joints take a link: owner decision 2026-10-21).
+fn l10b_attach(name: &str) -> crate::model::Model {
+    crate::tests::typed_project_with(name, |dir| {
+        let p = dir.join("type-02.ohls");
+        let text = std::fs::read_to_string(&p).unwrap().replacen(
+            "id = \"L10B\"\n",
+            "id = \"L10B\"\nkind = \"attach\"\n",
+            1,
+        );
+        std::fs::write(&p, text).unwrap();
+    })
+}
+
 fn point(structure: &str, label: &str) -> Selection {
     Selection::Point {
         structure: structure.into(),
@@ -105,16 +119,43 @@ fn click(h: &mut Harness<'_, App>, at: egui::Pos2, button: egui::PointerButton) 
     h.run();
 }
 
+/// Only attach joints take a link (owner decision 2026-10-21): on type-02
+/// as shipped, joint L10B (no kind) is offered to the pointer but not
+/// clickable, its hover says why, the command is refused.
+#[test]
+fn only_attach_joints_take_a_link() {
+    let m = typed_project("link-attach-only");
+    let mut o = crate::link_tool::overlay(&m, "T2", "A1").unwrap();
+    let j = o.joints.iter().find(|j| j.id == "L10B").unwrap();
+    assert!(!j.attach);
+    assert!(o.joints.iter().any(|j| j.attach && j.id == "A2"));
+    o.hovered = Some("L10B".into());
+    let text = o.hover_text().unwrap();
+    assert!(text.contains(ohl_structures::NOT_ATTACH), "{text}");
+    assert_eq!(o.click(), None);
+    assert_eq!(o.clicked, None);
+    let e = crate::link_tool::link_command(&m, "T2", "A1", "L10B").unwrap_err();
+    assert!(e.contains(ohl_structures::NOT_ATTACH), "{e}");
+    o.hovered = Some("A2".into());
+    assert_eq!(o.click().as_deref(), Some("A2"));
+    assert!(
+        o.hover_text()
+            .unwrap()
+            .contains("link A1 of T2 to joint A2")
+    );
+}
+
 /// The Link tool: the tool click on attachment point A1 of T2 chooses it
 /// (a wire point is refused, Escape and a click on nothing cancel); the
-/// second, on joint L10B of its type, links it there where it is — one
-/// command, the point not moved, its distance the offset; one undo takes
-/// it back. With a GPU, through the 3D view: the joint under the pointer
-/// is named with the offset and moment arm, a right-click on it links.
+/// second, on joint L10B of its type (made an attach joint), links it
+/// there where it is — one command, the point not moved, its distance the
+/// offset; one undo takes it back. With a GPU, through the 3D view: the
+/// joint under the pointer is named with the offset and moment arm, a
+/// right-click on it links.
 #[test]
 fn the_link_tool_links_with_two_clicks_cancels_and_undoes() {
     let gpu = gpu();
-    let mut h = harness(typed_project("link-tool"), gpu);
+    let mut h = harness(l10b_attach("link-tool"), gpu);
     let before = h
         .state_mut()
         .ready()
@@ -201,7 +242,7 @@ fn the_link_tool_links_with_two_clicks_cancels_and_undoes() {
 /// does the same in the type's file.
 #[test]
 fn dragging_changes_the_offset_and_relinks_on_drop() {
-    let m = typed_project("link-drag");
+    let m = l10b_attach("link-drag");
     let s = m.line.structure("T2").unwrap().clone();
     let a1 = s.point("A1").unwrap().position;
     let local = to_local(s.position, s.orientation_deg, a1);
@@ -282,7 +323,7 @@ fn the_rigid_link_is_drawn_and_picked() {
     use crate::scene::Layer;
     use crate::selection::{Snap, Snaps, pick_in_model_case};
     let gpu = gpu();
-    let mut h = harness(typed_project("link-drawn"), gpu);
+    let mut h = harness(l10b_attach("link-drawn"), gpu);
     // None at zero offset.
     assert!(crate::link_tool::drawn_links(&h.state_mut().ready().unwrap().model).is_empty());
     use_tool(&mut h, Tool::Link, point("T2", "A1"));
@@ -501,19 +542,22 @@ fn a_new_point_is_offered_only_attach_joints() {
     assert!((p.offset[2] - 0.3).abs() < 1e-9, "{:?}", p.offset);
 }
 
-/// The structure screen (Strings and points… on T2, type-02): the
-/// hotbar's Link tool held holds the screen's; a click on attachment point
-/// A1 in its view, then on joint L10B, links A1 there in the type's file
-/// (as edited) where it is; a right-click cancels a point chosen. The
-/// Attachment points table shows the joint, the offset and its length,
-/// the rigid link drawn.
+/// The structure screen (Strings and points… on T2, type-02, its joint
+/// L10B made an attach joint): the hotbar's Link tool held holds the
+/// screen's; a click on attachment point A1 in its view, then on joint
+/// L10B, links A1 there in the type's file (as edited) where it is; a
+/// right-click cancels a point chosen. Joint L10A (no kind) is not
+/// ringed: under the pointer it says it is not an attach joint, a click
+/// on it links nothing (owner decision 2026-10-21). The Attachment
+/// points table shows the joint, the offset and its length, the rigid
+/// link drawn.
 #[test]
 fn the_structure_screen_links_with_two_clicks() {
     use crate::library::LibraryKind;
     if !gpu() {
         return;
     }
-    let mut h = harness(typed_project("link-screen"), true);
+    let mut h = harness(l10b_attach("link-screen"), true);
     h.state_mut().ready().unwrap().selection = Selection::Structure("T2".into());
     h.run();
     h.get_by_label(crate::properties::STRINGS_AND_POINTS)
@@ -553,6 +597,30 @@ fn the_structure_screen_links_with_two_clicks() {
         .shown()
         .unwrap()
         .clone();
+    // L10A: not an attach joint, its hover says so, a click links nothing.
+    let plain = screen(&mut h, t.joint("L10A").unwrap().position);
+    h.input_mut().events.push(egui::Event::PointerMoved(plain));
+    h.run();
+    assert_eq!(
+        h.state_mut().ready().unwrap().libraries[&LibraryKind::StructureTypes]
+            .workspace
+            .link_hover
+            .as_deref(),
+        Some("L10A")
+    );
+    let before = workspace(&mut h).1;
+    click(&mut h, plain, egui::PointerButton::Primary);
+    assert_eq!(workspace(&mut h), (Some(Some("A1".into())), before));
+    let message = h.state_mut().ready().unwrap().libraries[&LibraryKind::StructureTypes]
+        .workspace
+        .message
+        .clone();
+    assert!(
+        message
+            .as_ref()
+            .is_some_and(|m| m.0.contains(ohl_structures::NOT_ATTACH)),
+        "{message:?}"
+    );
     let j = t.joint("L10B").unwrap().position;
     let at = screen(&mut h, j);
     h.input_mut().events.push(egui::Event::PointerMoved(at));
@@ -623,4 +691,61 @@ fn an_unlinked_point_is_drawn_red_and_listed() {
     let r = h.state_mut().ready().unwrap();
     assert!(r.perform(crate::edit::Action::Undo));
     assert_eq!(red(&r.model), 0);
+}
+
+/// The link follows edits in the Edit tool's windows (owner decision
+/// 2026-10-21): A1 of T2, linked to L10B, moved 0.3 m along x in its
+/// structure window stays on L10B, its offset 0.3 m more in x; in a
+/// string window a type's point moved stays on its type's joint at the
+/// offset moved.
+#[test]
+fn the_edit_windows_keep_a_moved_point_on_its_joint() {
+    let m = l10b_attach("link-edit-windows");
+    let mut h = harness(m, false);
+    let r = h.state_mut().ready().unwrap();
+    let (what, command) = crate::link_tool::link_command(&r.model, "T2", "A1", "L10B").unwrap();
+    assert!(r.perform(crate::edit::Action::Command { what, command }));
+    let linked = r
+        .model
+        .line
+        .structure("T2")
+        .unwrap()
+        .point("A1")
+        .unwrap()
+        .clone();
+    let mut f = crate::editors::StructureForm::of(&r.model, "T2").unwrap();
+    let row = f.points.iter_mut().find(|p| p.label == "A1").unwrap();
+    row.at[0] += 0.3;
+    let (_, command) = f.command(r.model.stored_line()).unwrap();
+    assert!(r.perform(crate::edit::Action::Command {
+        what: "moved".into(),
+        command
+    }));
+    let p = r.model.line.structure("T2").unwrap().point("A1").unwrap();
+    assert_eq!(p.joint.as_deref(), Some("L10B"));
+    let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
+    assert!(
+        close(
+            p.offset,
+            [linked.offset[0] + 0.3, linked.offset[1], linked.offset[2]]
+        ),
+        "{:?} from {:?}",
+        p.offset,
+        linked.offset
+    );
+    // A string window: A11 (the type's, on joint A2) moved 0.2 m up.
+    let mut f = crate::editors::StringForm::new_on(&r.model, "T2").unwrap();
+    let row = f.points.iter_mut().find(|p| p.label == "A11").unwrap();
+    row.at[2] += 0.2;
+    let mut s = r
+        .model
+        .stored_line()
+        .unwrap()
+        .structure("T2")
+        .unwrap()
+        .clone();
+    f.apply_to(&mut s, r.model.line.structure("T2"));
+    let p = s.point("A11").unwrap();
+    assert_eq!(p.joint.as_deref(), Some("A2"));
+    assert!(close(p.offset, [0.0, 0.0, 0.2]), "{:?}", p.offset);
 }

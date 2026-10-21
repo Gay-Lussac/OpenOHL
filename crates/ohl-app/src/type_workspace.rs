@@ -20,13 +20,16 @@
 //! **Attachment points and their joints** (2026-10-21): each attachment
 //! point is linked to a joint of the type, at an optional offset (a rigid
 //! link, drawn as a magenta rod; Show › rigid links). The Attachment
-//! points table gives its joint (chosen among the joints it may be linked
-//! to), its offset and its length; dragging a linked point changes its
-//! offset, releasing it on another joint relinks it there. The **Link**
-//! tool (its button, or the hotbar's Link tool held): click a point, then
-//! a ringed joint — the point is linked there where it is; a right-click
-//! or Escape cancels. A row's menu unlinks a point (it keeps its place as
-//! a joint of its own).
+//! points table gives its joint (chosen among the attach joints), where
+//! it is, its offset and its length; moving a linked point (typing where
+//! it is, or dragging it) keeps it on its joint and changes its offset
+//! (owner decision 2026-10-21), releasing it on another attach joint
+//! relinks it there. The **Link** tool (its button, or the hotbar's Link
+//! tool held): click a point, then a ringed joint — the point is linked
+//! there where it is; a right-click or Escape cancels. Only attach joints
+//! are ringed and take a link; another joint under the pointer says "not
+//! an attach joint: set its kind to attach in OHL-Structure". A row's
+//! menu unlinks a point (it keeps its place as a joint of its own).
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -651,16 +654,18 @@ impl Workspace {
                 (j.id, j.position, attach)
             })
             .collect();
-        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3])> {
+        // The joint under the pointer (any but a support joint; only an
+        // attach joint takes the link).
+        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3], bool)> {
             linkable
                 .iter()
-                .filter_map(|(id, p, _)| {
+                .filter_map(|(id, p, attach)| {
                     let q = project(*p)?;
                     let d = (q[0] - at[0]).hypot(q[1] - at[1]);
-                    (d <= 12.0).then_some((d, id.clone(), *p))
+                    (d <= 12.0).then_some((d, id.clone(), *p, *attach))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|(_, id, p)| (id, p))
+                .map(|(_, id, p, attach)| (id, p, attach))
         };
         let chosen = self.link.clone().flatten();
         let hover = response
@@ -695,8 +700,13 @@ impl Workspace {
                         ));
                         self.link = Some(Some(l));
                     }
+                    (_, Some(_)) if joint_at(at).is_some_and(|j| !j.2) => {
+                        let j = joint_at(at).map(|j| j.0).unwrap_or_default();
+                        self.message =
+                            Some((format!("joint {j}: {}", ohl_structures::NOT_ATTACH), true));
+                    }
                     (_, Some(l)) => match joint_at(at) {
-                        Some((j, jp)) => {
+                        Some((j, jp, _)) => {
                             let p = t
                                 .points
                                 .iter()
@@ -801,11 +811,13 @@ impl Workspace {
                     if self.grid > 0.0 {
                         at = at.map(|v| (v / self.grid).round() * self.grid);
                     }
-                    // Onto a joint near the pointer (a point: linked there).
+                    // Onto an attach joint near the pointer (a point:
+                    // linked there); another joint: snapped to.
                     let here = local(pos);
                     let mut onto: Option<String> = None;
                     if let Some((id, p, _)) = linkable.iter().find(|j| {
                         Handle::Joint(j.0.clone()) != m.handle
+                            && j.2
                             && project(j.1)
                                 .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
                     }) {
@@ -987,22 +999,26 @@ impl Workspace {
                 );
             }
         }
-        // The Link tool with a point chosen: the joints it may be linked
-        // to ringed, the one under the pointer joined to it with the
-        // offset and its moment arm.
+        // The Link tool with a point chosen: the attach joints ringed, the
+        // one under the pointer joined to it with the offset and its
+        // moment arm; another joint under the pointer says why not.
         if let Some(l) = &chosen {
             let green = egui::Color32::from_rgb(120, 240, 140);
-            for (_, p, attach) in &linkable {
+            for (_, p, _) in linkable.iter().filter(|j| j.2) {
                 if let Some(q) = at(*p) {
-                    let c = if *attach {
-                        green
-                    } else {
-                        green.gamma_multiply(0.55)
-                    };
-                    painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, c));
+                    painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, green));
                 }
             }
-            if let Some((id, j)) = &hover
+            if let Some((id, j, false)) = &hover
+                && let Some(a) = at(*j)
+            {
+                note(
+                    &painter,
+                    a + egui::vec2(14.0, -24.0),
+                    format!("joint {id}: {}", ohl_structures::NOT_ATTACH),
+                );
+            }
+            if let Some((id, j, true)) = &hover
                 && let Some(from) = g.points.iter().find(|p| &p.0 == l).map(|p| p.1)
                 && let (Some(a), Some(b)) = (at(*j), at(from))
             {
@@ -1182,10 +1198,10 @@ fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
 }
 
 /// A point or wire point dragged to `at` (local axes) in type `t`: an
-/// attachment point on a joint or along a member keeps its link, its
-/// offset the distance from the joint; released `onto` a joint it may be
-/// linked to it is linked there (no offset); a point that is its own
-/// joint, or a wire point, moves.
+/// attachment point on a joint keeps its link, its offset the distance
+/// from the joint (`edit::move_to`); released `onto` an attach joint it
+/// is linked there (no offset); a point that is its own joint, or a wire
+/// point, moves.
 fn drag_point(
     doc: &mut DocumentMut,
     t: &StructureType,
@@ -1193,39 +1209,17 @@ fn drag_point(
     at: [f64; 3],
     onto: Option<&str>,
 ) -> Result<(), String> {
-    let Handle::Point(l) = h else {
-        return edit::move_to(doc, t, h, at);
-    };
-    let p = t
-        .points
-        .iter()
-        .find(|p| &p.label == l)
-        .ok_or_else(|| format!("no attachment point {l}"))?;
-    if let Some(j) = onto {
-        return edit::links::link_point(doc, t, l, j, [0.0; 3]);
+    match (h, onto) {
+        (Handle::Point(l), Some(j)) => edit::links::link_point(doc, t, l, j, [0.0; 3]),
+        _ => edit::move_to(doc, t, h, at),
     }
-    if p.node.is_none() && p.member.is_none() {
-        return edit::move_to(doc, t, h, at);
-    }
-    let j = t
-        .joint(&p.joint)
-        .ok_or_else(|| format!("no joint {}", p.joint))?;
-    let o = [0, 1, 2].map(|k| {
-        let v = at[k] - j.position[k];
-        if v.abs() < ohl_structures::SAME_JOINT {
-            0.0
-        } else {
-            v
-        }
-    });
-    edit::links::link_point(doc, t, l, &p.joint, o)
 }
 
 impl Workspace {
     /// The Attachment points sheet: each point's label, where it is
-    /// (typed for one that is its own joint), its joint (chosen among the
-    /// joints it may be linked to), its offset from it (typed for one on a
-    /// joint or member), the offset's length, whether it is linked to a
+    /// (typed: a point on a joint stays on it, its offset follows), its
+    /// joint (chosen among the attach joints), its offset from it (typed
+    /// for one on a joint), the offset's length, whether it is linked to a
     /// joint of the body, the strings hanging from it; a row's menu links
     /// (the Link tool) or unlinks it. Each change one edit.
     fn points_sheet(
@@ -1236,7 +1230,9 @@ impl Workspace {
     ) -> bool {
         let mut changed = false;
         let joints = t.joints();
-        let linkable: Vec<String> = t.linkable_joints().into_iter().map(|j| j.id).collect();
+        // Only attach joints take a link (a joint's kind is set in
+        // OHL-Structure).
+        let linkable: Vec<String> = t.attach_joints().into_iter().map(|j| j.id).collect();
         let coord = |ui: &mut egui::Ui, v: &mut f64| {
             ui.add(
                 egui::DragValue::new(v)
@@ -1250,7 +1246,7 @@ impl Workspace {
         egui::Grid::new("type-points").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("attachment point", "Where strings hang; right-click: link, unlink"),
-                ("x", "Where it is (typed for a point that is its own joint)"),
+                ("x", "Where it is: typed, a point on a joint stays on it and its offset follows"),
                 ("y", ""),
                 ("z", ""),
                 ("joint", "The joint it is linked to (the Link tool, or chosen here)"),
@@ -1284,17 +1280,17 @@ impl Workspace {
                     }
                 });
                 let mut at = p.position().map(|v| v.si());
-                let free = p.node.is_none() && p.member.is_none();
+                let free = p.node.is_none();
                 let mut moved = false;
                 for v in &mut at {
-                    if free {
-                        moved |= coord(ui, v);
-                    } else {
-                        ui.label(format!("{v:.3} m"));
-                    }
+                    moved |= coord(ui, v);
                 }
-                if moved && edit::move_to(doc, t, &h, at).is_ok() {
-                    changed = true;
+                // On a joint: the link stays, the offset follows.
+                if moved {
+                    match edit::move_to(doc, t, &h, at) {
+                        Ok(()) => changed = true,
+                        Err(e) => self.message = Some((e, true)),
+                    }
                 }
                 // Its joint, chosen among those it may be linked to: linked
                 // there where it is.
@@ -1876,17 +1872,27 @@ node = "N3"
     /// wire point, the point moved (its wire point follows), read back (the
     /// edits themselves are tested in `ohl-structure-edit`); the body is
     /// left as it was.
-    /// A point on a joint dragged: its offset changes, the link stays;
-    /// released on another joint: relinked there at no offset; a point of
+    /// A point on a joint dragged: its offset changes, the link stays, the
+    /// joint does not move; released on another joint: relinked there at
+    /// no offset when it is an attach joint, refused otherwise; a point of
     /// its own moves (2026-10-21).
     #[test]
     fn a_dragged_point_changes_its_offset_or_is_relinked() {
         let mut doc: DocumentMut = PYLON.parse().unwrap();
         let t = read(&doc);
         let a1 = Handle::Point("A1".into());
+        let n3 = t.joint("N3").unwrap().position;
         super::drag_point(&mut doc, &t, &a1, [-6.0, 0.4, 30.0], None).unwrap();
         let t = read(&doc);
         assert_eq!(t.point_link("A1"), Some(("N3", [0.0, 0.4, 0.0])));
+        assert_eq!(t.joint("N3").unwrap().position, n3);
+        // N2 has no kind: not an attach joint, the link refused.
+        let e =
+            super::drag_point(&mut doc.clone(), &t, &a1, [6.0, 0.0, 30.0], Some("N2")).unwrap_err();
+        assert!(e.contains(ohl_structures::NOT_ATTACH), "{e}");
+        edit::links::set_joint_kind(&mut doc, &t, "N2", Some(ohl_structures::JointKind::Attach))
+            .unwrap();
+        let t = read(&doc);
         super::drag_point(&mut doc, &t, &a1, [6.0, 0.0, 30.0], Some("N2")).unwrap();
         let t = read(&doc);
         assert_eq!(t.point_link("A1"), Some(("N2", [0.0; 3])));

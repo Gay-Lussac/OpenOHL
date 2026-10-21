@@ -647,10 +647,11 @@ impl StructureApp {
         }
     }
 
-    /// The attachment points: label, where (typed for one of its own),
-    /// its joint, its offset from it (typed for one on a joint or member),
-    /// the offset's length, the strings hanging from it; a row's menu
-    /// links or unlinks it.
+    /// The attachment points: label, where (typed: a point on a joint
+    /// stays on it, its offset follows — owner decision 2026-10-21), its
+    /// joint, its offset from it (typed for one on a joint), the offset's
+    /// length, the strings hanging from it; a row's menu links or unlinks
+    /// it.
     fn points_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
         let Some(f) = &mut self.file else {
             return;
@@ -660,7 +661,7 @@ impl StructureApp {
         egui::Grid::new("points").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("attachment point", "Where strings hang; right-click: link, unlink"),
-                ("x", "Where it is (typed for a point that is its own joint)"),
+                ("x", "Where it is: typed, a point on a joint stays on it and its offset follows"),
                 ("y", ""),
                 ("z", ""),
                 ("joint", "The joint it is linked to (Link tool, or its menu)"),
@@ -694,17 +695,12 @@ impl StructureApp {
                     }
                 });
                 let mut at = p.position().map(|v| v.si());
-                let free = p.node.is_none() && p.member.is_none();
+                let free = p.node.is_none();
                 let mut moved = false;
                 for v in &mut at {
-                    if free {
-                        let r = coord(ui, v);
-                        hold(f, &r, &format!("move point {}", p.label));
-                        moved |= r.changed();
-                    } else {
-                        ui.label(format!("{v:.3} m"))
-                            .on_hover_text("On a joint or member: moved with it (or by its offset)");
-                    }
+                    let r = coord(ui, v);
+                    hold(f, &r, &format!("move point {}", p.label));
+                    moved |= r.changed();
                 }
                 if moved
                     && let Err(e) = f.edit(&format!("move point {}", p.label), |doc, t| {
@@ -716,10 +712,10 @@ impl StructureApp {
                 let own = joints
                     .iter()
                     .any(|j| j.id == p.joint && j.source == ohl_structures::JointSource::Point);
-                ui.label(match (&p.member, p.at) {
-                    _ if own => format!("{} (its own)", p.joint),
-                    (Some(m), Some(x)) => format!("{} (member {m} at {x})", p.joint),
-                    _ => p.joint.clone(),
+                ui.label(if own {
+                    format!("{} (its own)", p.joint)
+                } else {
+                    p.joint.clone()
                 });
                 let mut o = t.point_offset(p);
                 let mut shifted = false;
@@ -1541,6 +1537,7 @@ impl StructureApp {
                 self.message = Some((e, true));
             }
         });
+        let mut insert: Option<String> = None;
         egui::Grid::new("design").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("member", ""),
@@ -1563,13 +1560,42 @@ impl StructureApp {
             }
             ui.end_row();
             for m in &t.members {
-                row(
+                let r = row(
                     ui,
                     &mut self.selected,
                     &mut self.scroll_to,
                     Handle::Member(m.id.clone()),
                     &m.id,
                 );
+                // A point cannot be put on a member: a joint is inserted
+                // on it (the member split there, continuous), then linked.
+                r.on_hover_text("Right-click: insert a joint on it")
+                    .context_menu(|ui| {
+                        ui.label("Insert a joint on this member (an attach joint)");
+                        ui.horizontal(|ui| {
+                            ui.label("at");
+                            ui.add(
+                                egui::DragValue::new(&mut self.insert_at)
+                                    .range(0.001..=0.999)
+                                    .speed(0.01)
+                                    .max_decimals(3),
+                            )
+                            .on_hover_text("Fraction of its length from its first joint");
+                        });
+                        if ui
+                            .button("Insert a joint")
+                            .on_hover_text(
+                                "The member is split there into two pieces of the same fields \
+                                 (continuous: a rigid connection, each piece buckling over the \
+                                 whole member's length); link a point to the joint with the Link \
+                                 tool",
+                            )
+                            .clicked()
+                        {
+                            insert = Some(m.id.clone());
+                            ui.close();
+                        }
+                    });
                 let current = m.section.clone().unwrap_or_else(|| "—".into());
                 let mut chosen = current.clone();
                 egui::ComboBox::from_id_salt(("section", &m.id))
@@ -1642,6 +1668,22 @@ impl StructureApp {
                 ui.end_row();
             }
         });
+        if let Some(m) = insert {
+            let at = self.insert_at;
+            let what = format!("insert a joint on member {m}");
+            self.message = Some(
+                match f.edit(&what, |doc, t| edit::links::insert_joint(doc, t, &m, at)) {
+                    Ok(id) => (
+                        format!(
+                            "{what}: joint {id} (attach) at {at:.3} of its length; the member is \
+                             split there, continuous — link a point to it with the Link tool"
+                        ),
+                        false,
+                    ),
+                    Err(e) => (e, true),
+                },
+            );
+        }
         if t.members.is_empty() {
             ui.label(egui::RichText::new("No member yet: build the body first (Body).").weak());
         } else if sections.is_empty() {

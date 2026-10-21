@@ -729,7 +729,16 @@ impl LibraryPage {
         self.message = None;
         match std::fs::read_to_string(path) {
             Ok(text) => match text.parse::<DocumentMut>() {
-                Ok(doc) => {
+                Ok(mut doc) => {
+                    // Points a structure file places along a member (written
+                    // before 2026-10-21): on a joint inserted there, as the
+                    // structure reads them (shown as a change not saved).
+                    if self.kind == LibraryKind::StructureTypes
+                        && let Err(e) =
+                            ohl_structure_edit::links::insert_joints_on_members(&mut doc)
+                    {
+                        self.message = Some((e, true));
+                    }
                     self.saved = text;
                     self.doc = Some(doc);
                     self.file = Some(path.to_path_buf());

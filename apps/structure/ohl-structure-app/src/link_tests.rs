@@ -30,10 +30,12 @@ fn text(h: &egui_kittest::Harness<'_, StructureApp>) -> String {
 }
 
 /// The Link tool from the Geometry menu: a click on point A1, Escape
-/// cancels it (the tool stays held), A1 again, then joint L10B: A1 is
-/// linked there where it is (its distance kept as its offset) in one
-/// edit, its rigid link drawn and picked; Undo takes it back. Escape
-/// with no point chosen lets go of the tool; a support joint is refused.
+/// cancels it (the tool stays held), A1 again, then joint L10B — no kind:
+/// refused, not an attach joint (owner decision 2026-10-21) — made an
+/// attach joint, then L10B again: A1 is linked there where it is (its
+/// distance kept as its offset) in one edit, its rigid link drawn and
+/// picked; Undo takes it back. Escape with no point chosen lets go of the
+/// tool; a support joint is refused.
 #[test]
 fn the_link_tool_links_cancels_and_undoes() {
     let path = copy_of("type-02.ohls", "link-tool");
@@ -57,6 +59,27 @@ fn the_link_tool_links_cancels_and_undoes() {
     h.run();
     assert_eq!(text(&h), before);
     assert!(h.state().message.as_ref().unwrap().1, "refused");
+    // A joint without a kind: not an attach joint, refused.
+    h.state_mut().link_click(Some(Handle::Point("A1".into())));
+    h.state_mut().link_click(Some(Handle::Joint("L10B".into())));
+    h.run();
+    assert_eq!(text(&h), before);
+    let m = h.state().message.clone().unwrap();
+    assert!(m.1 && m.0.contains(ohl_structures::NOT_ATTACH), "{m:?}");
+    h.state_mut()
+        .file
+        .as_mut()
+        .unwrap()
+        .edit("kind", |doc, t| {
+            ohl_structure_edit::links::set_joint_kind(
+                doc,
+                t,
+                "L10B",
+                Some(ohl_structures::JointKind::Attach),
+            )
+        })
+        .unwrap();
+    let attach = text(&h);
     // Point, then joint: linked where it is.
     h.state_mut().link_click(Some(Handle::Point("A1".into())));
     h.state_mut().link_click(Some(Handle::Joint("L10B".into())));
@@ -102,7 +125,7 @@ fn the_link_tool_links_cancels_and_undoes() {
     // One undo step.
     h.state_mut().undo();
     h.run();
-    assert_eq!(text(&h), before);
+    assert_eq!(text(&h), attach);
     // Right-click (or Escape) twice: the tool let go.
     h.state_mut().link_click(Some(Handle::Point("A11".into())));
     h.state_mut().cancel_link();

@@ -165,17 +165,18 @@ impl View {
         let projector = cam.projector(size);
         let project = |p: [f64; 3]| projector(p).map(|(q, _)| q);
         let linking = v.link.as_ref().map(|l| l.point.clone());
-        // The joint a chosen point may be linked to under the pointer.
-        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3])> {
+        // The joint under the pointer while a point is chosen (any but a
+        // support joint; only an attach joint takes the link).
+        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3], bool)> {
             v.linkable
                 .iter()
-                .filter_map(|(id, p, _)| {
+                .filter_map(|(id, p, attach)| {
                     let q = project(*p)?;
                     let d = (q[0] - at[0]).hypot(q[1] - at[1]);
-                    (d <= 12.0).then_some((d, id.clone(), *p))
+                    (d <= 12.0).then_some((d, id.clone(), *p, *attach))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|(_, id, p)| (id, p))
+                .map(|(_, id, p, attach)| (id, p, attach))
         };
         let hover = response
             .hover_pos()
@@ -194,7 +195,7 @@ impl View {
                 let picked = match pick(g, &project, at, 12.0) {
                     Some(Handle::Point(l)) => Some(Handle::Point(l)),
                     _ if matches!(linking, Some(Some(_))) => {
-                        joint_at(at).map(|(id, _)| Handle::Joint(id))
+                        joint_at(at).map(|(id, _, _)| Handle::Joint(id))
                     }
                     other => other,
                 };
@@ -487,9 +488,10 @@ fn marks(
     }
 }
 
-/// The Link tool with a point chosen: the joints it may be linked to
-/// ringed (attach joints brighter), a line to the one under the pointer
-/// with the offset's length and moment arm.
+/// The Link tool with a point chosen: the attach joints ringed (only
+/// they take a link), a line to the one under the pointer with the
+/// offset's length and moment arm; another joint under the pointer says
+/// why it takes none.
 fn link_marks(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -497,25 +499,30 @@ fn link_marks(
     g: &Geometry,
     linkable: &[(String, [f64; 3], bool)],
     point: &str,
-    hover: Option<&(String, [f64; 3])>,
+    hover: Option<&(String, [f64; 3], bool)>,
 ) {
     let at =
         |p: [f64; 3]| projector(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
     let green = egui::Color32::from_rgb(120, 240, 140);
-    for (_, p, attach) in linkable {
+    for (_, p, _) in linkable.iter().filter(|j| j.2) {
         if let Some(q) = at(*p) {
-            let c = if *attach {
-                green
-            } else {
-                green.gamma_multiply(0.55)
-            };
-            painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, c));
+            painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, green));
         }
     }
     let Some(from) = g.points.iter().find(|p| p.0 == point).map(|p| p.1) else {
         return;
     };
-    let Some((id, j)) = hover else { return };
+    let Some((id, j, attach)) = hover else { return };
+    if !attach {
+        if let Some(a) = at(*j) {
+            note(
+                painter,
+                a + egui::vec2(14.0, -24.0),
+                format!("joint {id}: {}", ohl_structures::NOT_ATTACH),
+            );
+        }
+        return;
+    }
     if let (Some(a), Some(b)) = (at(*j), at(from)) {
         painter.circle_stroke(a, 13.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
         painter.line_segment([a, b], egui::Stroke::new(2.0, egui::Color32::WHITE));
