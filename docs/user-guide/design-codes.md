@@ -73,7 +73,8 @@ and writes each as `<plugin>-<name>.ohlr` among the project's rule files
 and `<plugin>-<name>.ohlwc` among its weather case files (next to a line
 file; `ohl code generate`: next to the weather case file). In a window,
 **Load preset…** takes one in a click: its rules replace the window's,
-its weather cases missing from the model are added to it; you can change
+its weather cases are matched to the project's ([A preset's weather
+cases](#a-presets-weather-cases)) and those with no equal created; you can change
 everything afterwards (see [Vertical and radial
 clearances](desktop-app.md#vertical-and-radial-clearances)). The plugins
 in `plugins/codes` give none.
@@ -109,7 +110,58 @@ ohl code rule-presets --plugin DIR [--params my-line.toml] [--out rules/]
 lists each preset with its rules and their distances, and with `--out`
 writes them as `<plugin>-rules-<name>.ohlr` (and `.ohlwc` for their
 weather cases); `ohl code generate` writes them next to the weather case
-file too. The plugins in `plugins/codes` give none (a stub).
+file too. The plugins in `plugins/codes` give none (a stub). These
+commands only write files: none puts a preset's cases into a project.
+
+### Presets per check
+
+A preset brings **only what the check it is applied in needs**. The
+vegetation panel lists the presets with vegetation settings, the
+Vertical clearances window those with vertical rules, the Radial window
+those with radial rules, the rule editor every preset. Applied in the
+Vertical window, a preset gives its vertical rules and the weather cases
+those rules name; in the Radial window its radial rules and theirs; in
+the vegetation panel its vegetation settings, its wind steps and its own
+weather cases — never a case only another check uses. So one preset may
+hold the rules of many checks (dozens of rules, each with its own cases)
+and the vegetation settings together. The previews group the rules by
+what they are to (the ground, LiDAR classes, the line's own wires, other
+lines) and give per rule the weather cases it uses. A preset's rule file
+may also say which checks it is for (`checks = ["vertical", "radial",
+"vegetation"]`) and the vegetation settings which cases they run in
+(`cases` under `[vegetation]`); see
+[Plugins](../development/plugins.md#presets-per-check).
+
+### A preset's weather cases
+
+When a preset is applied in the desktop application — the rule editor's
+Load preset…, the Vertical and Radial clearance windows (Load preset…
+and Plugin preset), the vegetation panel — its weather cases are
+matched to the project's **by weather first, then by name** (the owner's
+rule of 2026-10-21):
+
+- A preset case with **the same weather** as one of your cases — whatever
+  the names — **uses your case**: the preset's rules are rewritten to
+  name it (a rule naming "Utility 80 °C" names your "80 °C"), and it is
+  ticked for the run. Nothing is created. When several of your cases are
+  the same, the **first in your list** is used, and the preview says so.
+- Only a case none of yours equals is **created**. If you already have a
+  case of its name with other values, yours is kept and the preset's is
+  created as **"name (preset)"**, its rules naming it so.
+
+The previews list each preset case as *uses your case X* or *creates Y*;
+the status after applying repeats it. The same weather means: the same
+cable temperature; the same ice — none on both (a thickness or a load of
+0), or both a radial thickness with the same thickness and density, or
+both a load per metre with the same load and density (a density not
+given is glaze ice, 913 kg/m³, as the loads take it); the same wind
+pressure, and with wind the same side and air density factor; the same
+ambient temperature. Numbers are compared within one part in a million.
+The name, the description and the tags never matter. Ice given as a
+thickness and ice given as a load are **never** the same, even when they
+weigh the same on one wire: the weight of a thickness depends on the
+wire's diameter. A factor not given (air density, ambient temperature)
+equals only another not given.
 
 ## Wind factors for structures
 

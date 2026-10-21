@@ -53,6 +53,56 @@ approved as finished: everything is built and in active development
   `session_schema` **5** — older files and projects read unchanged, with
   none; an empty datum is refused. Nothing is converted with it
   (informative, like the coordinate system): reprojecting keeps it.
+- **Presets are per check** (owner, "test dependent": the vegetation
+  preset's 80 °C and 60 °C + 200 Pa are not the ground-clearance cases).
+  Each place lists only the presets for its check — the vegetation panel
+  those with `[vegetation]`, the Vertical window those with a vertical
+  rule, the Radial window those with a radial rule, the rule editor all —
+  and applying one takes only that check's part: the Vertical window its
+  vertical rules and the cases they name, the Radial window its radial
+  rules and theirs, the vegetation panel its `[vegetation]`, `[wind]` and
+  its own cases; no case only another check uses is created. A rule file
+  may declare its checks (`checks = ["vertical", "radial",
+  "vegetation"]`, optional, top level; files without it classified by
+  content), and `[vegetation]` may name its own cases (`cases`, optional).
+  So one big preset may carry many checks in a row (dozens of rules, each
+  with its own cases); the previews group the rules by target and give
+  each rule's cases. Decided here (left open): a rule naming no case
+  needs none of the preset's (it applies to the project's); without
+  `[vegetation] cases`, the vegetation check's are the preset's cases no
+  rule names (all of them without rules); a rule with both distances goes
+  to both windows; the rule editor takes every rule but not
+  `[vegetation]`. ([plugins](plugins.md#presets-per-check), [data
+  model](data-model.md))
+- **A preset's weather cases are matched by physics first, then by
+  name** (owner: "if the ones needed already exist, do not recreate
+  them, but use the existing ones"). **Replaces** the name-only rule of
+  2026-10-20, which filled projects with duplicates ("80 °C" next to
+  "Utility vegetation 80 °C" of the same weather). Wherever a preset is
+  applied (the rule editor's Load preset…, the Vertical / Radial
+  clearance windows, the vegetation panel): a preset case equivalent to
+  one of the project's uses it — the preset's rules rewritten to name
+  the project's case, the case ticked for the run, nothing created; with
+  several equivalent, the first in the project's order, said in the
+  preview; only a case with no equivalent is created, as
+  `"<name> (preset)"` when the project gives its name to a case of other
+  values. The previews list "uses your case X" / "creates Y".
+  Equivalent (`WeatherCase::same_physics`): temperature, ice (none on
+  both; or the same thickness and density; or the same load and density;
+  glaze ice when no density is given), wind pressure, with wind its side
+  and air density factor, ambient temperature — within 1e-6 relative;
+  never the name, description or tags. Decided here (the request left it
+  open), each on the side of creating a case rather than reusing a
+  different one: ice as a **thickness and as a load are never
+  equivalent** (the weight of a thickness depends on the wire); an air
+  density factor or ambient temperature given is never equivalent to one
+  not given (the project's default could differ); a rule's `*` `?`
+  pattern matching a renamed case becomes the names it matched. No
+  command-line path writes a preset's cases into a project, so the CLI is
+  unchanged. A "Merge duplicates" helper for existing projects is not
+  built (proposal in the roadmap). ([user
+  guide](../user-guide/design-codes.md#a-presets-weather-cases),
+  [plugins](plugins.md#matching-a-presets-weather-cases))
 
 ## 2026-10-20
 
