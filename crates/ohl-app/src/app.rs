@@ -2477,7 +2477,11 @@ impl Ready {
         if done
             && matches!(
                 kind,
-                TableKind::Sections | TableKind::Systems | TableKind::Circuits | TableKind::Jumpers
+                TableKind::Sections
+                    | TableKind::Systems
+                    | TableKind::ConductorPaths
+                    | TableKind::Circuits
+                    | TableKind::Jumpers
             )
         {
             let warnings = self.model.line.system_warnings();
@@ -7635,6 +7639,7 @@ fn menus(
         item(ui, Command::Table(TableKind::LoadTypes), out);
         item(ui, Command::Table(TableKind::Spacers), out);
         item(ui, Command::Table(TableKind::Systems), out);
+        item(ui, Command::Table(TableKind::ConductorPaths), out);
         item(ui, Command::Table(TableKind::Circuits), out);
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {

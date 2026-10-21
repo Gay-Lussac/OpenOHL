@@ -45,7 +45,11 @@ pub enum TableKind {
     Jumpers,
     /// Electrical systems.
     Systems,
-    /// Electrical circuits: the conductor paths, from the connections.
+    /// Conductor paths, from the connections (key `circuits`, the name of
+    /// before 2026-10-21).
+    ConductorPaths,
+    /// Circuits: the named groups of conductor paths
+    /// ([`ohl_line::circuits`]).
     Circuits,
     /// Alignments: each on one route, in their order.
     Alignments,
@@ -727,18 +731,59 @@ const ROUTES: &[Column] = &[
     ),
 ];
 
+const CIRCUIT_LIST: &[Column] = &[
+    (
+        "id",
+        110.0,
+        Yes,
+        "unique id (--circuits takes it or the name)",
+    ),
+    (
+        "name",
+        140.0,
+        Yes,
+        "unique name, what its sections give (renaming: they follow). Circuits are not merged: they become one only when connected (a jumper, a wire strung through)",
+    ),
+    (
+        "system",
+        110.0,
+        Yes,
+        "the electrical system its conductor paths are of (empty: not said); a path of another system is refused",
+    ),
+    (
+        "members",
+        200.0,
+        Yes,
+        "its conductor paths, each by its first section (as the Conductor paths table); a section typed takes its whole path. A path in another circuit: take it out there in the same Apply, or use Assign to circuit in Properties. Two paths of one phase that are not connected are refused",
+    ),
+    ("phases", 90.0, Derived, "its conductor paths' phases"),
+    ("sections", 200.0, Derived, "its sections"),
+    (
+        "notes",
+        260.0,
+        Derived,
+        "no conductor path (allowed), or what contradicts the connections (files written before)",
+    ),
+    (
+        "description",
+        220.0,
+        Yes,
+        "what it is, in words (free text)",
+    ),
+];
+
 const CIRCUITS: &[Column] = &[
     (
-        "circuit",
+        "path",
         70.0,
         Derived,
         "one per conductor path: sections joined by jumpers or a shared attachment (counted from the connections)",
     ),
     (
-        "name",
+        "circuit",
         110.0,
         Yes,
-        "circuit name, for all its sections (\"mixed: …\" when they differ)",
+        "the name of the circuit it is in, for all its sections (\"mixed: …\" when they differ; empty: none). A new name makes a circuit (Circuits table); a circuit's other path of the same phase, not connected, is refused",
     ),
     (
         "phase",
@@ -1173,13 +1218,14 @@ fn defaults(kind: TableKind, model: &Model, case: usize, rows: &mut [Row]) {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 14] = [
+    pub const ALL: [TableKind; 15] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
         TableKind::Insulators,
         TableKind::Jumpers,
         TableKind::Systems,
+        TableKind::ConductorPaths,
         TableKind::Circuits,
         TableKind::Routes,
         TableKind::Alignments,
@@ -1199,7 +1245,8 @@ impl TableKind {
             TableKind::Insulators => "String library",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
-            TableKind::Circuits => "Conductor paths",
+            TableKind::ConductorPaths => "Conductor paths",
+            TableKind::Circuits => "Circuits",
             TableKind::Alignments => "Alignments",
             TableKind::AlignmentPoints => "Alignment points",
             TableKind::Routes => "Routes",
@@ -1219,7 +1266,8 @@ impl TableKind {
             TableKind::Insulators => "insulators",
             TableKind::Jumpers => "jumpers",
             TableKind::Systems => "systems",
-            TableKind::Circuits => "circuits",
+            TableKind::ConductorPaths => "circuits",
+            TableKind::Circuits => "circuit_list",
             TableKind::Alignments => "alignment_list",
             TableKind::AlignmentPoints => "alignments",
             TableKind::Routes => "routes",
@@ -1239,7 +1287,8 @@ impl TableKind {
             TableKind::Insulators => INSULATORS,
             TableKind::Jumpers => JUMPERS,
             TableKind::Systems => SYSTEMS,
-            TableKind::Circuits => CIRCUITS,
+            TableKind::ConductorPaths => CIRCUITS,
+            TableKind::Circuits => CIRCUIT_LIST,
             TableKind::Alignments => ALIGNMENTS,
             TableKind::AlignmentPoints => POINTS,
             TableKind::Routes => ROUTES,
@@ -1268,7 +1317,7 @@ impl TableKind {
     /// the cases shown; a circuit's starts need one).
     fn none_choice(self, column: usize) -> Option<&'static str> {
         match (self, self.columns()[column].0) {
-            (TableKind::Circuits, _) => None,
+            (TableKind::ConductorPaths | TableKind::Circuits, _) => None,
             (TableKind::Structures, "routes") => Some("none (from the alignments)"),
             (_, "routes") => None,
             _ => Some("none (the cases shown)"),
@@ -1278,7 +1327,7 @@ impl TableKind {
     /// Its rows follow the model (the circuits, from the connections):
     /// none added or deleted here.
     pub fn fixed_rows(self) -> bool {
-        self == TableKind::Circuits
+        self == TableKind::ConductorPaths
     }
 
     /// Rows can be added here (not those added with a tool in the views).
@@ -1294,7 +1343,8 @@ impl TableKind {
         }
         let n = self.columns().len();
         let line = &model.line;
-        let circuits = (self == TableKind::Circuits).then(|| ohl_line::electrical::circuits(line));
+        let circuits =
+            (self == TableKind::ConductorPaths).then(|| ohl_line::electrical::circuits(line));
         for r in &mut rows {
             let objects = self.fields_of(line, circuits.as_deref(), &r.key);
             r.defaulted.resize(n, false);
@@ -1326,7 +1376,7 @@ impl TableKind {
         Some(match self {
             TableKind::Structures => "structures",
             TableKind::Sections => "sections",
-            TableKind::Circuits => "circuits",
+            TableKind::ConductorPaths => "circuits",
             TableKind::Systems => "systems",
             TableKind::Jumpers => "jumpers",
             TableKind::Alignments => "alignments",
@@ -1353,7 +1403,7 @@ impl TableKind {
         let mut take = |f: &ohl_line::Fields| found.extend(f.keys().cloned());
         match self {
             TableKind::Structures => line.structures.iter().for_each(|s| take(&s.fields)),
-            TableKind::Sections | TableKind::Circuits => {
+            TableKind::Sections | TableKind::ConductorPaths => {
                 line.sections.iter().for_each(|s| take(&s.fields));
             }
             TableKind::Systems => line.systems.iter().for_each(|s| take(&s.fields)),
@@ -1407,7 +1457,7 @@ impl TableKind {
                 .find(|a| a.id == key)
                 .map(|a| &a.fields),
             TableKind::Routes => line.routes.iter().find(|r| r.id == key).map(|r| &r.fields),
-            TableKind::Circuits => {
+            TableKind::ConductorPaths => {
                 let Some(c) = circuits
                     .unwrap_or_default()
                     .iter()
@@ -1746,7 +1796,8 @@ impl TableKind {
                     ],
                 })
                 .collect(),
-            TableKind::Circuits => circuit_rows(line),
+            TableKind::ConductorPaths => circuit_rows(line),
+            TableKind::Circuits => circuit_list_rows(line),
             TableKind::Alignments => line
                 .alignments
                 .iter()
@@ -1859,8 +1910,14 @@ impl TableKind {
                 cells[6] = "15".into();
                 cells[13] = "no".into();
             }
-            // Circuits follow the connections: no rows of their own.
-            TableKind::Circuits => {}
+            // Conductor paths follow the connections: no rows of their own.
+            TableKind::ConductorPaths => {}
+            TableKind::Circuits => {
+                cells[0] = taken_after(line.circuits.iter().map(|c| c.id.as_str()).collect(), "C0");
+                if !line.circuits.iter().any(|c| c.name == cells[0]) {
+                    cells[1] = cells[0].clone();
+                }
+            }
             TableKind::Routes => {
                 let mut taken = line.clone();
                 for r in added {
@@ -2389,6 +2446,12 @@ impl TableKind {
                 out.commands.push(("changed electrical systems".into(), {
                     let mut line = stored.clone();
                     line.systems = systems;
+                    // A circuit of a system deleted: of none said.
+                    for c in &mut line.circuits {
+                        if c.system.as_ref().is_some_and(|s| page.deleted.contains(s)) {
+                            c.system = None;
+                        }
+                    }
                     ohl_session::line_settings_change(stored, &line)
                 }));
             }
@@ -2396,7 +2459,8 @@ impl TableKind {
             TableKind::AlignmentPoints => {
                 point_commands(model, stored, rows, page, &mut out)?;
             }
-            TableKind::Circuits => circuit_commands(stored, rows, page, &mut out)?,
+            TableKind::ConductorPaths => circuit_commands(stored, rows, page, &mut out)?,
+            TableKind::Circuits => circuit_list_commands(stored, page, &mut out)?,
             TableKind::Routes => {
                 for key in &page.deleted {
                     let i = session
@@ -2488,7 +2552,7 @@ impl TableKind {
         }
         let n = self.columns().len();
         let circuits =
-            (self == TableKind::Circuits).then(|| ohl_line::electrical::circuits(stored));
+            (self == TableKind::ConductorPaths).then(|| ohl_line::electrical::circuits(stored));
         let value_of = |c: &PluginColumn, text: &str| -> Result<String, String> {
             let v = text.trim();
             if v.is_empty() || c.values.is_empty() {
@@ -2558,7 +2622,7 @@ impl TableKind {
     ) -> Result<(), String> {
         let kind = match self {
             TableKind::Structures => Kind::Structure,
-            TableKind::Sections | TableKind::Circuits => Kind::Section,
+            TableKind::Sections | TableKind::ConductorPaths => Kind::Section,
             TableKind::Jumpers => Kind::Jumper,
             TableKind::Alignments => Kind::Alignment,
             TableKind::Routes => Kind::Route,
@@ -2582,7 +2646,7 @@ impl TableKind {
                     TableKind::Structures => {
                         serde_json::to_value(stored.structure(id).ok_or_else(missing)?)
                     }
-                    TableKind::Sections | TableKind::Circuits => serde_json::to_value(
+                    TableKind::Sections | TableKind::ConductorPaths => serde_json::to_value(
                         stored
                             .sections
                             .iter()
@@ -2753,8 +2817,12 @@ fn choices(
         ),
         (TableKind::Strings, "clamp") => (vec!["suspension".into(), "strain".into()], false),
         (TableKind::Jumpers, "rigid") => (vec!["no".into(), "yes".into()], false),
-        (TableKind::Circuits, "starts") => (circuit_ends(cells), true),
+        (TableKind::ConductorPaths, "starts") => (circuit_ends(cells), true),
         (TableKind::Circuits, "system") => (
+            with_none(model.line.systems.iter().map(|x| x.id.clone()).collect()),
+            false,
+        ),
+        (TableKind::ConductorPaths, "system") => (
             with_none(model.line.systems.iter().map(|x| x.id.clone()).collect()),
             false,
         ),
@@ -2912,7 +2980,7 @@ fn route_list(text: &str) -> Vec<String> {
     out
 }
 
-/// The circuits (conductor paths), one row each: C1, C2… in the order of
+/// The conductor paths, one row each: P1, P2… in the order of
 /// their first sections; keyed by their first section (stable when turned).
 fn circuit_rows(line: &ohl_line::Line) -> Vec<Row> {
     ohl_line::electrical::circuits(line)
@@ -2948,7 +3016,7 @@ fn circuit_rows(line: &ohl_line::Line) -> Vec<Row> {
                         span: 0,
                     }),
                 cells: vec![
-                    format!("C{}", k + 1),
+                    format!("P{}", k + 1),
                     common(&|s| s.circuit_name.clone()),
                     common(&|s| s.phase_label.clone()),
                     common(&|s| s.system.clone().unwrap_or_default()),
@@ -2976,6 +3044,211 @@ fn circuit_ends(cells: &[String]) -> Vec<String> {
 /// A circuit's key: its first section in the line's order.
 fn circuit_key(c: &ohl_line::electrical::Circuit) -> String {
     c.sections.iter().min().cloned().unwrap_or_default()
+}
+
+/// The circuits (named groups of conductor paths), one row each, in the
+/// order of the line's list; keyed by id.
+fn circuit_list_rows(line: &ohl_line::Line) -> Vec<Row> {
+    let mut line = Cow::Borrowed(line);
+    if line.sections.iter().any(|s| {
+        !s.circuit_name.is_empty() && !line.circuits.iter().any(|c| c.name == s.circuit_name)
+    }) {
+        line.to_mut().adopt_circuits();
+    }
+    let notes = line.circuit_notes();
+    line.circuits
+        .iter()
+        .map(|c| {
+            let members = line.circuit_members(&c.name);
+            let about_it = |n: &&String| {
+                n.starts_with(&format!("circuit {} ", c.id))
+                    || n.starts_with(&format!("circuit {}:", c.id))
+                    || members
+                        .iter()
+                        .any(|m| n.starts_with(&format!("conductor path {} (", m.key)))
+            };
+            let mut phases: Vec<&str> = members
+                .iter()
+                .flat_map(|m| m.phases.iter().map(String::as_str))
+                .collect();
+            phases.dedup();
+            Row {
+                defaulted: Vec::new(),
+                key: c.id.clone(),
+                select: members.first().and_then(|m| m.sections.first()).map_or(
+                    Selection::None,
+                    |s| Selection::Span {
+                        section: s.clone(),
+                        span: 0,
+                    },
+                ),
+                cells: vec![
+                    c.id.clone(),
+                    c.name.clone(),
+                    c.system.clone().unwrap_or_default(),
+                    members
+                        .iter()
+                        .map(|m| m.key.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    phases.join(" "),
+                    members
+                        .iter()
+                        .flat_map(|m| m.sections.iter().map(String::as_str))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    notes
+                        .iter()
+                        .filter(about_it)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    c.description.clone(),
+                ],
+            }
+        })
+        .collect()
+}
+
+/// The Circuits table's changes as one command ([`ohl_session::line_circuits_change`]):
+/// circuits deleted (their conductor paths in none after), renamed, given a
+/// system, a description or another id, added; their members taken out,
+/// then put in (a conductor path still in another circuit is refused).
+fn circuit_list_commands(
+    stored: &ohl_line::Line,
+    page: &TablePage,
+    out: &mut Changes,
+) -> Result<(), String> {
+    use ohl_line::circuits::{Circuit, path_key};
+    let mut line = stored.clone();
+    line.adopt_circuits();
+    let paths = ohl_line::electrical::conductor_paths(&line);
+    let members_of = |text: &str| -> Result<Vec<String>, String> {
+        let mut v: Vec<String> = Vec::new();
+        for t in text
+            .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+            .filter(|t| !t.is_empty())
+        {
+            let k = paths
+                .iter()
+                .find(|p| p.iter().any(|s| s == t))
+                .map(|p| path_key(p))
+                .ok_or_else(|| format!("members: no section {t}"))?;
+            if !v.contains(&k) {
+                v.push(k);
+            }
+        }
+        Ok(v)
+    };
+    for key in &page.deleted {
+        let name = line
+            .circuit(key)
+            .map(|c| c.name.clone())
+            .ok_or_else(|| format!("no circuit {key}"))?;
+        let n = line.circuit_members(&name).len();
+        if n > 0 {
+            out.takes.push(format!(
+                "circuit {key}: its {n} conductor paths are in no circuit after"
+            ));
+        }
+        line.delete_circuit(key)?;
+    }
+    let mut wanted: Vec<(String, Vec<String>)> = Vec::new();
+    for (key, edit) in page
+        .edits
+        .iter()
+        .filter(|(k, _)| !page.deleted.contains(*k))
+    {
+        let cell = |k: usize| edit.get(&k).map(|v| v.trim().to_owned());
+        if let Some(n) = cell(1) {
+            line.rename_circuit(key, &n)?;
+        }
+        let id = cell(0).unwrap_or_else(|| key.clone());
+        if id != *key {
+            if id.is_empty() {
+                return Err(format!("circuit {key}: give it an id"));
+            }
+            if line.circuits.iter().any(|c| c.id == id) {
+                return Err(format!("circuit {key}: the id {id} is taken"));
+            }
+        }
+        let c = line
+            .circuits
+            .iter_mut()
+            .find(|c| &c.id == key)
+            .ok_or_else(|| format!("no circuit {key}"))?;
+        c.id = id.clone();
+        if let Some(s) = cell(2) {
+            c.system = (!s.is_empty()).then_some(s);
+        }
+        if let Some(d) = cell(7) {
+            c.description = d;
+        }
+        if let Some(m) = cell(3) {
+            wanted.push((id, members_of(&m)?));
+        }
+    }
+    for cells in &page.added {
+        let get = |k: usize| cells.get(k).map_or(String::new(), |s| s.trim().to_owned());
+        let c = Circuit {
+            id: get(0),
+            name: get(1),
+            system: Some(get(2)).filter(|s| !s.is_empty()),
+            description: get(7),
+        };
+        if c.id.is_empty() || c.name.is_empty() {
+            return Err("a new circuit: give it an id and a name".into());
+        }
+        line.add_circuit(c)?;
+        if !get(3).is_empty() {
+            wanted.push((get(0), members_of(&get(3))?));
+        }
+    }
+    // Members: those taken out first (they may go to another circuit in
+    // the same Apply), then those put in.
+    let name_of = |line: &ohl_line::Line, id: &str| {
+        line.circuit(id)
+            .map(|c| c.name.clone())
+            .ok_or_else(|| format!("no circuit {id}"))
+    };
+    for (id, keys) in &wanted {
+        let name = name_of(&line, id)?;
+        let leaving: Vec<String> = line
+            .circuit_members(&name)
+            .into_iter()
+            .map(|m| m.key)
+            .filter(|k| !keys.contains(k))
+            .collect();
+        line.assign_to_circuit(&leaving, None)?;
+    }
+    for (id, keys) in &wanted {
+        let name = name_of(&line, id)?;
+        let mut coming = Vec::new();
+        for k in keys {
+            let now = line
+                .sections
+                .iter()
+                .find(|s| &s.id == k)
+                .map_or("", |s| s.circuit_name.as_str());
+            if now == name {
+                continue;
+            }
+            if !now.is_empty() {
+                return Err(format!(
+                    "circuit {id}: conductor path {k} is in circuit \"{now}\" — take it out \
+                     there in the same Apply, or use Assign to circuit in Properties (it moves)"
+                ));
+            }
+            coming.push(k.clone());
+        }
+        line.assign_to_circuit(&coming, Some(id))
+            .map_err(|e| format!("circuit {id}: {e}"))?;
+    }
+    out.commands.push((
+        "changed circuits".into(),
+        ohl_session::line_circuits_change(stored, &line)?,
+    ));
+    Ok(())
 }
 
 /// Circuits turned ("reversed" changed): their starts in the line's
@@ -3026,7 +3299,9 @@ fn circuit_commands(
         }
         turned.push(row.key.clone());
     }
-    // Name, phase and system: on all its sections.
+    // Name, phase and system: on all its sections (`sim`: the line as
+    // they make it, for the circuits).
+    let mut sim = stored.clone();
     for row in rows {
         let Some(edit) = page.edits.get(&row.key) else {
             continue;
@@ -3083,6 +3358,9 @@ fn circuit_commands(
             }
             if sec != before {
                 changed.push(id.clone());
+                if let Some(x) = sim.sections.iter_mut().find(|x| &x.id == id) {
+                    *x = sec.clone();
+                }
                 out.commands.push((
                     format!("section {id}: as its conductor path {}", row.cells[0]),
                     Command::Put {
@@ -3127,6 +3405,16 @@ fn circuit_commands(
                 changed.join(", ")
             ));
         }
+    }
+    // Its circuit: a new name makes a circuit (in the same command); what
+    // contradicts the connections is refused.
+    sim.adopt_circuits();
+    sim.check_circuit_change(stored)?;
+    if sim.circuits != stored.circuits {
+        out.commands.push((
+            "circuits of the conductor paths".into(),
+            ohl_session::line_settings_change(stored, &sim),
+        ));
     }
     if turned.is_empty() {
         return Ok(());
@@ -5117,7 +5405,7 @@ impl TablePage {
                                     _ => TableAction::Select(row.select.clone()),
                                 });
                             }
-                            if kind == TableKind::Circuits {
+                            if kind == TableKind::ConductorPaths {
                                 // Reverse: its starts become its ends and
                                 // back (pending until Apply).
                                 let shown = self
