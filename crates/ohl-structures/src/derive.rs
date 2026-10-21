@@ -12,11 +12,21 @@
 //! suspension of that length; otherwise strain of that length, on the side
 //! the clamp points to — and grouped to 1 cm into insulator assemblies.
 //! Weights are unknown from geometry and set to 0: fill them in.
+//!
+//! The structure types are written in the form of version 2 and on
+//! (owner decision 2026-10-21): per attachment a joint of kind `attach`
+//! (`[[node]]`, its id the point's label `A<set>-<phase>`), the
+//! attachment point on it (`[[point]]` `node`), its wire point
+//! (`[[wire]]`, the set) and its string (`[[string]]`: the assembly, or
+//! with `inline` its length and weight; a strain string level, ahead or
+//! back). An attachment whose wire point is at its attachment point (no
+//! string) is a wire point fixed there, as before. Files written in the
+//! version 1 form (`[[attachment]]`) are still read.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::structures::to_local;
+use crate::structures::{set_from_v1, to_local};
 
 /// One attachment of a structure to derive from (global coordinates).
 #[derive(Debug, Clone, PartialEq)]
@@ -209,7 +219,7 @@ pub fn derive(structures: &[SourceStructure], inline: bool) -> Derived {
         );
         let _ = writeln!(
             out,
-            "format = \"ohl-structure\"\nversion = 1\nid = \"{}\"",
+            "format = \"ohl-structure\"\nversion = 6\nid = \"{}\"",
             layout.id
         );
         let _ = writeln!(
@@ -225,48 +235,70 @@ pub fn derive(structures: &[SourceStructure], inline: bool) -> Derived {
             "source = \"derived from: {}\"",
             layout.members.join(", ")
         );
+        // No "-0.000 m" from rounding noise.
+        let c = |v: f64| if v.abs() < 5e-4 { 0.0 } else { v };
+        let point = |p: [f64; 3]| {
+            format!(
+                "[\"{:.3} m\", \"{:.3} m\", \"{:.3} m\"]",
+                c(p[0]),
+                c(p[1]),
+                c(p[2])
+            )
+        };
         for k in &layout.keys {
-            let _ = writeln!(
-                out,
-                "\n[[attachment]]\nset = {}\nphase = {}",
-                k.set, k.phase
-            );
-            if let Some(label) = layout
+            let top = format!("A{}-{}", k.set, k.phase);
+            let given = layout
                 .labels
                 .get(&format!("{}:{}", k.set, k.phase))
-                .filter(|l| !l.is_empty())
-            {
-                let _ = writeln!(out, "label = {label:?}");
+                .filter(|l| !l.is_empty());
+            let set = set_from_v1(k.set, k.phase);
+            if k.insulator.is_empty() {
+                // No string: a wire point fixed to the structure there.
+                let wire = given
+                    .cloned()
+                    .unwrap_or_else(|| format!("W{}-{}", k.set, k.phase));
+                let _ = writeln!(
+                    out,
+                    "\n[[wire]]\nlabel = {wire:?}\nset = {set}\npoint = {}",
+                    point(k.point)
+                );
+                continue;
             }
-            // No "-0.000 m" from rounding noise.
-            let c = |v: f64| if v.abs() < 5e-4 { 0.0 } else { v };
+            let assembly = assemblies.iter().find(|a| a.id == k.insulator);
+            // The wire point's label: an inline string's bottom, else the
+            // attachment's label (as version 1 files read).
+            let wire = match (inline, given) {
+                (false, Some(l)) => l.clone(),
+                _ => format!("W{}-{}", k.set, k.phase),
+            };
             let _ = writeln!(
                 out,
-                "point = [\"{:.3} m\", \"{:.3} m\", \"{:.3} m\"]",
-                c(k.point[0]),
-                c(k.point[1]),
-                c(k.point[2])
+                "\n[[node]]\nid = {top:?}\npoint = {}\nkind = \"attach\"\n\n\
+                 [[point]]\nlabel = {top:?}\nnode = {top:?}\n\n\
+                 [[wire]]\nlabel = {wire:?}\nset = {set}\n\n\
+                 [[string]]\nlabel = \"S{}-{}\"\ntop = {top:?}\nwire = {wire:?}",
+                point(k.point),
+                k.set,
+                k.phase
             );
-            if !k.insulator.is_empty() {
-                match assemblies
-                    .iter()
-                    .find(|a| a.id == k.insulator)
-                    .filter(|_| inline)
-                {
-                    Some(a) => {
-                        let _ = writeln!(
-                            out,
-                            "string = {{ length = \"{:.3} m\", weight = \"{:.1} N\", top = \"A{}-{}\", bottom = \"W{}-{}\" }}",
-                            a.length, a.weight, k.set, k.phase, k.set, k.phase
-                        );
-                    }
-                    None => {
-                        let _ = writeln!(out, "insulator = \"{}\"", k.insulator);
-                    }
+            match assembly.filter(|_| inline) {
+                Some(a) => {
+                    let _ = writeln!(
+                        out,
+                        "length = \"{:.3} m\"\nweight = \"{:.1} N\"",
+                        a.length, a.weight
+                    );
+                }
+                None => {
+                    let _ = writeln!(out, "insulator = \"{}\"", k.insulator);
                 }
             }
             if let Some(side) = k.side {
-                let _ = writeln!(out, "side = \"{side}\"");
+                let direction = if side == "ahead" { 0 } else { 180 };
+                let _ = writeln!(
+                    out,
+                    "strain = true\nangle = \"90 deg\"\ndirection = \"{direction} deg\""
+                );
             }
         }
         structure_types.insert(layout.id.clone(), out);
@@ -297,7 +329,7 @@ fn assembly_toml(id: &str, kind: &str, length: f64, weight: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::structures::{StructureType, to_global};
+    use crate::structures::{JointKind, JointSource, StructureType, to_global};
     use crate::{InsulatorAssembly, InsulatorLibrary, LibraryItem};
     use std::path::Path;
 
@@ -349,39 +381,64 @@ mod tests {
         assert_eq!(derived.insulators.len(), 2);
     }
 
-    #[test]
-    fn inline_strings_make_simple_pylon_files() {
-        let derived = derive(&[source("A", [100.0, 50.0, 400.0], 25.0)], true);
-        assert!(derived.insulators.is_empty());
-        let (id, text) = derived.structure_types.iter().next().unwrap();
-        assert!(
-            text.contains("string = { length = \"5.000 m\"") && text.contains("top = \"A1-1\""),
-            "{text}"
-        );
-        let t = StructureType::parse(Path::new(id), text).unwrap();
-        // Placed without any insulator library: same points and lengths.
+    /// The derived type placed back where its source stands: per
+    /// attachment, the point where the insulator hung (on an attach joint
+    /// of its label), the string's length, a suspension string's wire
+    /// point where it was, a section end a strain string.
+    fn placed_back(t: &StructureType, insulators: &InsulatorLibrary) {
         let placed = t
-            .place(
-                [100.0, 50.0, 400.0],
-                25.0,
-                None,
-                &InsulatorLibrary::default(),
-            )
+            .place_strings([100.0, 50.0, 400.0], 25.0, None, insulators)
             .unwrap();
         let src = source("A", [100.0, 50.0, 400.0], 25.0);
         let dist = |a: [f64; 3], b: [f64; 3]| {
             ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
         };
-        for (p, s) in placed.iter().zip(&src.attachments) {
-            assert!(dist(p.insulator_point, s.insulator_point) < 0.01);
+        assert_eq!(placed.points.len(), src.attachments.len());
+        assert_eq!(placed.strings.len(), src.attachments.len());
+        for (k, s) in src.attachments.iter().enumerate() {
+            let label = format!("A{}-{}", s.set, s.phase);
+            let p = placed.points.iter().find(|p| p.label == label).unwrap();
+            assert!(dist(p.position, s.insulator_point) < 0.01, "{p:?} vs {s:?}");
+            // Its own attach joint, of its label, the point on it.
+            assert_eq!(t.point_link(&label), Some((label.as_str(), [0.0; 3])));
+            assert_eq!(
+                t.joint(&label).map(|j| (j.kind, j.source)),
+                Some((Some(JointKind::Attach), JointSource::Node))
+            );
+            let x = placed.strings.iter().find(|x| x.top == label).unwrap();
+            let w = placed.wires.iter().find(|w| w.label == x.wire).unwrap();
+            assert_eq!(w.set, Some(s.set));
             let (lp, ls) = (
-                dist(p.wire_point, p.insulator_point),
+                dist(w.position, p.position),
                 dist(s.wire_point, s.insulator_point),
             );
-            assert!((lp - ls).abs() < 0.01);
+            assert!((lp - ls).abs() < 0.01, "length {lp} vs {ls}");
             // The section end is a strain string (free member in the solver).
-            assert_eq!(p.strain, s.section_end);
+            assert_eq!(x.strain, s.section_end, "{k}");
+            if !s.section_end {
+                assert!(dist(w.position, s.wire_point) < 0.01, "{w:?} vs {s:?}");
+            }
         }
+    }
+
+    /// Version 2 and on, a joint per point (owner decision 2026-10-21):
+    /// inline strings carry their length and weight.
+    #[test]
+    fn inline_strings_make_simple_pylon_files() {
+        let derived = derive(&[source("A", [100.0, 50.0, 400.0], 25.0)], true);
+        assert!(derived.insulators.is_empty());
+        let (id, text) = derived.structure_types.iter().next().unwrap();
+        assert!(text.contains("version = 6"), "{text}");
+        assert!(!text.contains("[[attachment]]"), "{text}");
+        assert!(
+            text.contains("[[node]]\nid = \"A1-1\"") && text.contains("kind = \"attach\""),
+            "{text}"
+        );
+        assert!(text.contains("length = \"5.000 m\""), "{text}");
+        let t = StructureType::parse(Path::new(id), text).unwrap();
+        assert!(t.attachments.is_empty());
+        // Placed without any insulator library: same points and lengths.
+        placed_back(&t, &InsulatorLibrary::default());
     }
 
     #[test]
@@ -398,29 +455,31 @@ mod tests {
         }
         let (id, text) = derived.structure_types.iter().next().unwrap();
         let t = StructureType::parse(Path::new(id), text).unwrap();
-        // Placing the derived type reproduces the attachment points and the
-        // assembly lengths; suspension clamps hang below, while a strain
-        // clamp's direction comes from equilibrium in the solver.
-        let placed = t
-            .place([100.0, 50.0, 400.0], 25.0, None, &insulators)
-            .unwrap();
-        let src = source("A", [100.0, 50.0, 400.0], 25.0);
-        let dist = |a: [f64; 3], b: [f64; 3]| {
-            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
-        };
-        for (p, s) in placed.iter().zip(&src.attachments) {
-            assert!(
-                dist(p.insulator_point, s.insulator_point) < 0.01,
-                "{p:?} vs {s:?}"
-            );
-            let (lp, ls) = (
-                dist(p.wire_point, p.insulator_point),
-                dist(s.wire_point, s.insulator_point),
-            );
-            assert!((lp - ls).abs() < 0.01, "length {lp} vs {ls}");
-            if !s.section_end {
-                assert!(dist(p.wire_point, s.wire_point) < 0.01, "{p:?} vs {s:?}");
-            }
-        }
+        // The wire points keep the attachments' labels.
+        assert_eq!(
+            t.wires.iter().map(|w| w.label.as_str()).collect::<Vec<_>>(),
+            ["L1", "L1 ahead"]
+        );
+        placed_back(&t, &insulators);
+    }
+
+    /// An attachment without a string (its wire point at its attachment
+    /// point) is a wire point fixed there, as before; the version 1 form
+    /// (`[[attachment]]`) is still read.
+    #[test]
+    fn fixed_wire_points_and_the_old_form() {
+        let mut src = source("A", [0.0; 3], 0.0);
+        src.attachments[0].wire_point = src.attachments[0].insulator_point;
+        let derived = derive(&[src], true);
+        let (id, text) = derived.structure_types.iter().next().unwrap();
+        let t = StructureType::parse(Path::new(id), text).unwrap();
+        let w = t.wires.iter().find(|w| w.set == Some(1)).unwrap();
+        assert_eq!(w.point.map(|p| p.map(|v| v.si())), Some([-10.0, 0.0, 40.0]));
+        assert_eq!(t.points.len(), 1);
+        let old = "format = \"ohl-structure\"\nversion = 1\nid = \"o\"\nname = \"o\"\n\
+                   kind = \"other\"\n[[attachment]]\nset = 1\nphase = 1\n\
+                   point = [\"-10 m\", \"0 m\", \"40 m\"]\n";
+        let t = StructureType::parse(Path::new("o"), old).unwrap();
+        assert_eq!(t.attachments.len(), 1);
     }
 }
