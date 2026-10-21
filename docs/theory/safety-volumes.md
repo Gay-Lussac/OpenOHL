@@ -68,14 +68,20 @@ beyond the band's ends and beyond the span's ends the volume is rounded
 A **jumper's band** (2026-10-21, the owner's decision) is the same
 closed form about the axis through the jumper's two end clamps (blown to
 the left, the first solve; `positions::jumper_band`), from the smallest
-to the largest radius of its three positions, widened by the same
-\\( m_b \\), meshed as a span's. **Not conservative with the default
-margin on the example line:** its jumper's 10 Pa steps lie up to
-0.293 m outside its band, 0.143 m more than the default margin covers
-([the swing arc](lidar-analysis.md#wire-positions-checked)); reported to
-the owner, the margin not widened without the owner's decision. The
-jumper's solved positions (blown left and right, every step) remain
-tubes of their own, so the volume holds them exactly.
+to the largest radius of its three positions, widened by a margin of its
+own \\( m_j \\) (the window's **jumper band margin**,
+`--jumper-band-margin`, recorded with a saved run; **0 m by default**),
+meshed as a span's.
+
+**Simplification** (the jumpers' margin; on the user's responsibility;
+exact: the wind steps): with \\( m_j = 0 \\) a jumper's band is **not
+conservative between its blowouts** — on the example line its jumper's
+10 Pa steps lie up to 0.293 m outside it
+([the swing arc](lidar-analysis.md#wire-positions-checked)). The user
+enters a value for their jumpers. The jumper's solved positions (blown
+left and right, every step) remain tubes of their own, so the volume
+holds them exactly; only the positions between them depend on
+\\( m_j \\).
 
 As built, the band's boundary is cut into triangles: its outer and inner
 surfaces (radius \\( R \\) and \\( r \\)), its two end edges swept along
@@ -235,15 +241,18 @@ outward.
   mesh); with a jumper sagging 1.5 m between the clamps, one closed piece
   holding every point within 0.95 m of the jumper.
 - `the_volume_s_positions_include_the_jumpers` (the example line, high
-  wind, swing arc, a band margin of 0.4 m): the branch's jumper is taken
-  blown left, blown right and on its own swing band (2026-10-21), every
-  band with the margin asked for; the danger-tree check's positions leave
-  jumpers out, as before.
+  wind, swing arc, a band margin of 0.4 m and a jumper band margin of
+  0.25 m): the branch's jumper is taken blown left, blown right and on
+  its own swing band (2026-10-21) with its own margin, every span's band
+  with the spans'; the danger-tree check's positions leave jumpers out,
+  as before.
 - `chosen_and_grouped_by_system`: two earth wires of two circuits make
   one volume "(no system)" per system, and ticking "(no system)" takes
   them alone (2026-10-21).
-- Validation `jumperband-001`, `-002` (2026-10-21): a jumper's band about
-  its end clamps blown to the left, by hand (`benchmarks/clearance/danger-trees.toml`).
+- Validation `jumperband-001`, `-002`, `-003` (2026-10-21): a jumper's
+  band about its end clamps blown to the left, by hand, with the
+  jumpers' default margin 0 and a margin of 0.35 m entered
+  (`benchmarks/clearance/danger-trees.toml`).
 
 ## The files
 

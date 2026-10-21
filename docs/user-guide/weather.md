@@ -71,4 +71,6 @@ Each case is solved and checked against the clearance rules in turn; the ground 
 
 Without `--weather`, one case comes from `--temperature`, `--wind-pressure` (with `--wind-from left|right`) and `--ice-thickness` or `--ice-load` (with `--ice-density`).
 
+The finite elements carry the ice and wind per metre of the **stretched** wire (exact, the default) or, with the line's calculation option (Criteria › Calculation options, the line file's `solver.loads_per`, `ohl line --loads-per unstretched`), per metre of the **unstretched** wire, as other programs appear to do it: about 0.1 % less ice and wind, slightly less sag and swing — a simplification on the unsafe side, for comparison ([Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)).
+
 `ohl sagtension` jobs use the same case fields in their `[[case]]` lists.

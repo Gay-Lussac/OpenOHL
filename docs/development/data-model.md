@@ -257,7 +257,7 @@ files](../user-guide/line-file.md).
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic wire types above the transition temperature, for wire types that do not say | — |
-| `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); in the project's line settings and OHL XML `<solver taps>` | — |
+| `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
 | `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `load_cases` — the load cases (`.ohllc`) sent, by name (absent: all, the default); `weather_cases` — the weather cases sent on their own, by name (default none), each as `ohl_loads::LoadCase::from_weather` (`weather: <name>`, initial, every factor 1); sent load cases first, then the weather cases (`ohl_structure_link::structure_cases`); a name no longer in the line is skipped and named in the file's note. Line file `{"structure_loads": {"load_cases": [...], "weather_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>` and `<weather_case name>` | load case and weather case **names** |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
@@ -804,9 +804,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   before; older programs refuse a file with it, an unknown key): the
   swing band's margin, for the clearance windows, `ohl zones`, the
   vegetation panel (a preset's `[wind]`) and the safety volumes; a
-  negative one refused. `zone::run_zone_check` takes the arc as
-  `Option<f64>` (the margin; none: no arc), its `ZoneCheckResult` has
-  `band_margin`; `zone_arcs` takes the jumpers solved and the margin.
+  negative one refused. Since 2026-10-21 (the owner's decision)
+  `jumper_band_margin` (a length ≥ 0, `WindSteps::jumper_band_margin`,
+  default `positions::JUMPER_BAND_MARGIN` 0 m; written only when not 0):
+  the jumpers' bands' own margin. `WindSteps::margins()` gives both as
+  `positions::BandMargins { span, jumper }` (its `problem()` refuses a
+  negative one). `zone::run_zone_check` takes the arc as
+  `Option<BandMargins>` (none: no arc), its `ZoneCheckResult` has
+  `band_margin: Option<BandMargins>`; `zone_arcs` takes the jumpers
+  solved and the margins.
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
@@ -942,7 +948,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   end clamps blown left; a jumper without one keeps its still air, kind
   `still`, noted). `PositionOptions::band_margin` (2026-10-21, default
   0.15 m; `PositionOptions` no longer derives `Default`, its `Default`
-  sets it): every band's margin. `VegetationParams::clearance_by_voltage` and
+  sets it): every span's band's margin; `PositionOptions::jumper_band_margin`
+  (2026-10-21, default 0 m): every jumper's band's. `VegetationParams::clearance_by_voltage` and
   `allowance_by_voltage` (a `rules::Requirement`, else `clearance` and
   `fall_allowance`) give each span its distance by its wire's voltage
   (`VegetationCheck::required`). Results per span:
@@ -1596,8 +1603,9 @@ the system and its `circuit` lists its circuits); `WindMode` (`None`, `Steps`, `
 gives the positions (`positions::solve_positions`, with
 `PositionOptions::jumpers` since 2026-10-21: a volume's `sections` then
 names its jumpers, `jumper:<id>`, too; `WindSteps::band_margin` the
-bands' margin, `wind_text` the wind in words with it — the exports'
-`Description::wind`). `SafetyVolumes`:
+spans' bands' margin, `WindSteps::jumper_band_margin` the jumpers'
+(2026-10-21), `wind_text` the wind in words with both
+(`BandMargins`) — the exports' `Description::wind`). `SafetyVolumes`:
 `volumes`, `cases`, `positions`, `notes`; each `SafetyVolume`: `name`,
 `circuit`, `phases`, `sections`, `kv`, `distance`, `margin`, `outer`,
 `positions`, `arc_error`, `arc_error_median`, `allowance`, `stats`
@@ -1698,7 +1706,10 @@ distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
 `growth_per_year`, `years`, `buffer`, `fall_in`, `root_ball`,
 `min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
 no limit), `search_distance`, `swing_arc`, `band_margin` (m, since
-2026-10-21; absent in older runs: 0.15 m), `wind_steps`, `wind_step`
+2026-10-21; absent in older runs: 0.15 m), `jumper_band_margin` (m,
+since 2026-10-21, kept from the shared wind choice: the check takes no
+jumpers), `loads_per` (2026-10-21: the line's calculation option the run
+used; absent in older runs), `wind_steps`, `wind_step`
 (Pa), `wind_sides`, `unbalanced_ice` (`off`, `case`, `thickness`,
 `extra`, `load`) and `unbalanced_ice_value`, `keep`, `isoclearance`
 (`interval`, `max_level`, `spacing`; null: none) — and what the run read:
@@ -1723,7 +1734,10 @@ volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
 `parameters`: `version` (1), `cases` (weather case names), `distance` (as
 a rule file writes a distance), `margin`, `tolerance` (m), `wind`
 (`none`, `steps`, `arc`, `both`), `band_margin` (m, since 2026-10-21;
-absent in older runs: 0.15 m), `wind_step` (Pa), `wind_sides`, `per`
+absent in older runs: 0.15 m), `jumper_band_margin` (m, since
+2026-10-21; absent in older runs: their `band_margin`, as their jumpers
+took it), `loads_per` (2026-10-21: the line's calculation option the run
+used; absent in older runs), `wind_step` (Pa), `wind_sides`, `per`
 (`wire`, `circuit`, `system`), `scope` (`systems`, `circuits` or `spans`,
 2026-10-21; absent: circuits), `circuits`, `systems` (ids; since
 2026-10-21 `(no system)`, `safety_volume::NO_SYSTEM`, for the wires

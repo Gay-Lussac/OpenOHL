@@ -671,8 +671,8 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- 158 validation cases pass (47 textbook and CIGRE TB 324 cases added
-  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21); the private Swiss plugin and the importers of
+- 160 validation cases pass (47 textbook and CIGRE TB 324 cases added
+  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21; 1 on the jumpers' own band margin and 1 on the ice and wind per unstretched metre, 2026-10-21); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -720,7 +720,8 @@ Also 2026-10-21 (owner decisions; built, in active development (not
 approved yet)): the weight is the data sheet's at its reference
 temperature (20 °C unless the wire type gives one), taken at the stringing
 temperature (`tbwref-001…002`), and the finite elements carry the ice and
-wind per metre of the stretched conductor (`tbice-001`).
+wind per metre of the stretched conductor (`tbice-001`), with an option
+per unstretched metre as other programs (`tbice-002`, a Simplification).
 A full validation report is
 a goal for 1.0; the non-linear (stress-strain and creep) examples need
 published curves (no tables typed from memory).

@@ -65,12 +65,18 @@ alone or together:
   **Jumpers** (2026-10-21): the jumpers a rule checks (`wires` jumpers or
   both) have a band of their own, about the line through their two end
   clamps (blown to the left, the first solve), from the smallest to the
-  largest radius of their three positions, widened by the same margin
-  (`positions::jumper_band`). Before, they were checked at their solved
-  positions only. On the example line the jumper's band does **not**
-  hold its 10 Pa steps within the default margin: up to 0.293 m outside
-  ([the swing arc](lidar-analysis.md#wire-positions-checked)) — reported
-  to the owner, the margin not widened without the owner's decision.
+  largest radius of their three positions (`positions::jumper_band`),
+  widened by a margin of **their own** \\( m_j \\) (the owner's decision
+  of 2026-10-21: `[wind] jumper_band_margin`, the windows' **jumper band
+  margin**, `ohl zones --jumper-band-margin`), **0 m by default**. Before,
+  they were checked at their solved positions only.
+
+  **Simplification** (on the user's responsibility; exact: the wind
+  steps): with \\( m_j = 0 \\) the jumper's band is **not conservative
+  between its blowouts** — on the example line its 10 Pa steps lie up to
+  0.293 m outside it ([the swing arc](lidar-analysis.md#wire-positions-checked)).
+  The value that holds a jumper is the user's to enter for their jumpers
+  (the wind steps show it).
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\).

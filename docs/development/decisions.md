@@ -95,6 +95,70 @@ of Parts A, B and C).
     a connection leaves empty be deleted with it? Should the section
     editor and the Sections table refuse a change that leaves a path in
     two circuits (today only the circuit commands refuse it)?
+- **The jumpers' band margin: a value of its own, default 0, entered by
+  hand** (owner decision 7). Jumpers' swing bands get their own margin
+  (`positions::JUMPER_BAND_MARGIN`, **0 m**: no widening), separate from
+  the spans' band margin (0.15 m, unchanged). Shown beside the band
+  margin wherever the arc is used — the Vertical and Radial windows and
+  the safety volumes (`check_help::jumper_band_margin_ui`, its hover text
+  quoting the measured worst excess on the example line's jumper, 0.293 m
+  at 230 Pa, and that a value is the user's to enter for their jumpers);
+  in the vegetation panel shown greyed, as the danger-tree check leaves
+  the jumpers out (a choice of the agent: the field kept visible as asked,
+  but not editable where it has no effect). Rule files
+  `[wind] jumper_band_margin` (written only when not 0), `--jumper-band-margin`
+  on `ohl zones` and `ohl safety-volume` (not on `ohl lidar vegetation`:
+  no jumpers there), saved runs (`jumper_band_margin`; a safety-volume run
+  saved before reads its `band_margin`, as its jumpers then took it).
+  Engine: `WindSteps::jumper_band_margin`, `PositionOptions::jumper_band_margin`,
+  `BandMargins { span, jumper }` (`WindSteps::margins()`),
+  `run_zone_check`'s arc and `zone_arcs` take `BandMargins`; the safety
+  volumes' wind text says both ("band margin 0.15 m, jumpers 0.00 m").
+  Labelled in the theory a **Simplification** (on the user's
+  responsibility; exact: the wind steps): with 0 the jumper's band is not
+  conservative between its blowouts. **Results change**: jumpers' bands
+  are 0.15 m narrower by default (clearances to them 0.15 m larger, the
+  safety volumes' jumper bands 0.15 m thinner); validation
+  `jumperband-001` 1.25 → 1.40 m, `-002` 0.3797 → 0.5297 m (by hand, the
+  margin 0), `jumperband-003` added (0.35 m entered: 1.05 m); the
+  jumper test (`tests/arc_band.rs`) asserts the excess over the default
+  (0.28–0.31 m).
+- **Option: ice and wind per unstretched metre ("as other programs")**
+  (owner decision 8). A project-level solver setting (Criteria ›
+  Calculation options, the line's `SolverOptions::loads_per`,
+  `LoadsPer`): **per stretched metre** (default, exact, as since the
+  decision of this morning) or **per unstretched metre** (the former
+  treatment, which other programs appear to use — the comparison of a
+  real line with another program suggested it). In the finite elements
+  only: the line's sections (`solve::Reference::loads_per`, set in
+  `solve_fe`; rolling in the blocks alike) and the jumpers' catenary
+  pieces (`solve_jumper_in`); the closed forms (ruling span, the
+  sag-tension job) keep the stretched metre, and the wire FE's own
+  section model (`ohl_wirefe::FeSection`, the `ohl sagtension` job's FE)
+  has no option (an open question). Line file `solver.loads_per`
+  (`stretched` / `unstretched`, written only when not the default; in the
+  project's line settings), OHL XML `<solver loads_per>`, `ohl line
+  --loads-per`. Results say which was used: `ohl line` prints
+  `calculation: ice and wind per … metre` before solving; the app's
+  results keep it in their revision (`Revision::loads_per`, the line's
+  hash taken without it) and a change marks them out of date naming it
+  ("the calculation options (now ice and wind per unstretched metre …)");
+  saved check reports (vegetation, safety volumes) keep `loads_per` in
+  their parameters, and one opened later is out of date when the line's
+  option differs. Theory: the exact one the default, the other a
+  **Simplification** for comparison (about \\( T/EA \approx 0.1\\,\\% \\) less
+  ice and wind: slightly less sag and swing, on the unsafe side).
+  Validation `tbice-002` (tbice-001 with the option: 42551.16362 N, sag
+  7.715133902 m — tbice-001's value before this morning; hand check: the
+  supports carry the ice on the unstressed length, 8762.04 N). Measured
+  on the example line and the crossing line (every span, the five
+  example cases; the wire's mass given at its 15 °C stringing temperature
+  so that the weight's temperature change is neutral) against the program
+  before this morning's change: per unstretched metre reproduces it
+  exactly to the spans CSV's digits (0.01 N, 0.1 mm) and the jumper's
+  sag; per stretched metre +0.03 to +0.07 % on H in the iced and windy
+  cases (max tension up to +38.7 N), sags −3.1 to +1.4 mm, still air
+  unchanged.
 
 - **Attachment points in the applications: the Link tool and the
   rigid links drawn** (plan steps 5–8 of O3 item 6, the owner's

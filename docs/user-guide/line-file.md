@@ -8,7 +8,7 @@ cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
     --html line.html --spans-csv spans.csv --csv wires.csv
 ```
 
-`--html` writes a standalone 3D viewer (rotate, pan, zoom, vertical exaggeration); `--spans-csv` one row per span (tensions, sag, mid-point, low point); `--csv` every wire point. More formats (KML/KMZ, CSV of every weather case, plugin formats) with `--export`: see [Import and export](import-export.md).
+`--html` writes a standalone 3D viewer (rotate, pan, zoom, vertical exaggeration); `--spans-csv` one row per span (tensions, sag, mid-point, low point); `--csv` every wire point. `--loads-per stretched|unstretched` (2026-10-21) overrides the file's `solver.loads_per` (below); the output's first lines say which was used (`calculation: ice and wind per stretched metre (exact)`). More formats (KML/KMZ, CSV of every weather case, plugin formats) with `--export`: see [Import and export](import-export.md).
 
 ## Conventions
 
@@ -38,7 +38,7 @@ cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … }, "ahead_deg": 270 }` — wire colours (`#rrggbb`) by section `phase_label`; `ahead_deg`, the angle that means ahead along the line for angles in plan around a structure, which turn clockwise seen from above (default 0: right 90°; 270: right 0°, ahead 270°). |
 | `creep_stretch` | no | The weather cases for the permanent stretch due to creep and due to load ([below](#calculations-condition-and-method)). |
 | `bimetallic` | no | The line's bimetallic conductor model ([below](#calculations-condition-and-method)). |
-| `solver` | no | How the whole line is calculated (Criteria › Calculation options): `{ "jumper_loads": "estimate" \| "pull", "taps": "loop" \| "once" }` — what of the jumpers the sections carry at their clamps (default `estimate`), and how a jumper on a tap is solved (default `loop`). |
+| `solver` | no | How the whole line is calculated (Criteria › Calculation options): `{ "jumper_loads": "estimate" \| "pull", "taps": "loop" \| "once", "loads_per": "stretched" \| "unstretched" }` — what of the jumpers the sections carry at their clamps (default `estimate`), how a jumper on a tap is solved (default `loop`), and per what metre of the wire the finite elements carry the ice and wind (2026-10-21): `stretched`, the real wire (default, exact), or `unstretched`, as other programs appear to do it (about 0.1 % less ice and wind: slightly less sag and swing, a simplification on the unsafe side; see [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)). |
 | `defaults` | no | The project's default values (Criteria › Default values): `spacer_compression`, `jumper_exit_angle_deg`, `jumper_stiffness_factor`, `jumper_clamp_length`, `insulator_stiffness`, `air_density_factor`, `thermal_emissivity`, `thermal_absorptivity`, `thermal_roughness`, `thermal_albedo`, `thermal_time_step`, `clearance_wind_step`, `clearance_vertical_band`, `clearance_search_margin`, `clearance_zone_width`, `clearance_zone_depth`; those left out take the program's values. Exported and imported as a `.ohldef` file (`format = "ohl-defaults"`). |
 | `structure_loads` | no | What the line sends to its placed structures ([below](#calculations-condition-and-method)). |
 
