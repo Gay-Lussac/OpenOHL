@@ -23,6 +23,7 @@ use eframe::egui;
 use ohl_loads::CaseLoads;
 use ohl_loads::capacity::{CaseUsage, StructureUsage, UsageStatus};
 
+use crate::check_help as help;
 use crate::model::Model;
 
 /// What its results are computed from ([`crate::revision`]).
@@ -324,33 +325,20 @@ impl LoadsPage {
             .flatten()
     }
 
-    /// The page; returns a structure to go to.
+    /// The page; returns a structure to go to. Run in the footer at the
+    /// bottom left, always visible (owner, 2026-10-21); the rest scrolls
+    /// above it.
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
-        let mut go = None;
-        ui.horizontal(|ui| {
-            let label = if self.results.is_some() {
-                "Compute again"
-            } else {
-                "Compute"
-            };
-            if ui
-                .add_enabled(!self.running(), egui::Button::new(label))
-                .on_hover_text("Solve every section in every load case (finite elements)")
-                .clicked()
-            {
+        let go = help::body(ui, "loads-page", |ui| self.body_ui(ui, model));
+        help::footer(ui, "loads-page", |ui| {
+            if help::run_button(
+                ui,
+                !self.running(),
+                "Solve every section in every load case (finite elements)",
+                None,
+            ) {
                 self.start(model, ui.ctx());
             }
-            match &model.sources.load_cases {
-                Some(p) => ui.label(
-                    egui::RichText::new(format!(
-                        "load cases: {}",
-                        p.file_name()
-                            .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-                    ))
-                    .small(),
-                ),
-                None => ui.label(egui::RichText::new("no load case file").small().weak()),
-            };
             if let Some((t, _)) = &self.running {
                 ui.spinner();
                 ui.label(format!("{:.1} s", t.elapsed().as_secs_f64()));
@@ -363,6 +351,25 @@ impl LoadsPage {
                         .weak(),
                 );
             }
+        });
+        go
+    }
+
+    /// The page above its footer.
+    fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
+        let mut go = None;
+        ui.horizontal(|ui| {
+            match &model.sources.load_cases {
+                Some(p) => ui.label(
+                    egui::RichText::new(format!(
+                        "load cases: {}",
+                        p.file_name()
+                            .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+                    ))
+                    .small(),
+                ),
+                None => ui.label(egui::RichText::new("no load case file").small().weak()),
+            };
         });
         if model.sources.load_cases.is_none() {
             // Expected in a new project: not an error.
@@ -387,7 +394,7 @@ impl LoadsPage {
             None => {
                 ui.label(
                     "The loads the wires and strings put on the structures, at every \
-                     attachment, in each load case. Compute to see them.",
+                     attachment, in each load case. Run to see them.",
                 );
                 return None;
             }

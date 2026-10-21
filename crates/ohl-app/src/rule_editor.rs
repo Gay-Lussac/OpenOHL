@@ -12,6 +12,15 @@
 //! others added) or replacing its rules. Its weather cases are matched to
 //! the project's by physics first, then by name ([`crate::preset_cases`]).
 //!
+//! Each rule's **voltage filter** ("only for these voltages", empty:
+//! every wire) is shown with its distances: optional with one distance,
+//! behind "Only for some voltages…" with a table or base + per kV, which
+//! already depend on the voltage (owner, 2026-10-21;
+//! [`crate::requirement_ui::voltage_filter_ui`]). **Merge rules by
+//! voltage** ([`merge_groups`]) turns rules alike but for one voltage and
+//! a plain distance into one table rule without a filter, previewed
+//! first, undoable.
+//!
 //! The file is edited in place (`toml_edit`): its comments, the fields
 //! the editor does not show and the order stay as they are. Each change
 //! is written once the mouse is released, when every rule is complete;
@@ -41,6 +50,134 @@ pub struct EditRule {
     pub vertical: Option<Requirement>,
     /// Radial clearance.
     pub radial: Option<Requirement>,
+    /// Only the wires of these nominal voltages, kV (0: earthed); empty:
+    /// every wire.
+    pub voltages: Vec<f64>,
+    /// The rest of the rule as read (every field but the name, the
+    /// distances and the voltages), to find rules alike
+    /// ([`merge_groups`]).
+    rest: String,
+}
+
+impl EditRule {
+    /// Whether a distance of the rule depends on the voltage (a table or
+    /// base + per kV).
+    pub fn by_voltage(&self) -> bool {
+        [&self.vertical, &self.radial]
+            .into_iter()
+            .flatten()
+            .any(Requirement::by_voltage)
+    }
+}
+
+/// Rules that "Merge rules by voltage" turns into one: alike in every
+/// field but the name, each for one voltage (a different one) with plain
+/// distances, the same measures (vertical, radial) set. The indices of
+/// each group of two or more, in the file's order.
+pub fn merge_groups(rules: &[EditRule]) -> Vec<Vec<usize>> {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for (k, r) in rules.iter().enumerate() {
+        let plain = [&r.vertical, &r.radial]
+            .into_iter()
+            .flatten()
+            .all(|q| matches!(q, Requirement::Fixed(_)));
+        if r.voltages.len() != 1 || !plain || (r.vertical.is_none() && r.radial.is_none()) {
+            continue;
+        }
+        let alike = |g: &Vec<usize>| {
+            let o = &rules[g[0]];
+            o.rest == r.rest
+                && o.target == r.target
+                && o.vertical.is_some() == r.vertical.is_some()
+                && o.radial.is_some() == r.radial.is_some()
+                && !g
+                    .iter()
+                    .any(|&j| (rules[j].voltages[0] - r.voltages[0]).abs() < 1e-6)
+        };
+        match groups.iter_mut().find(|g| alike(g)) {
+            Some(g) => g.push(k),
+            None => groups.push(vec![k]),
+        }
+    }
+    groups.retain(|g| g.len() > 1);
+    groups
+}
+
+/// The table rule of a group ([`merge_groups`]): rows (voltage up to,
+/// distance) by voltage, no voltage filter; the first rule's name (the
+/// common one, when every name is the same).
+pub fn merged(rules: &[EditRule], group: &[usize]) -> EditRule {
+    let mut g: Vec<&EditRule> = group.iter().map(|&k| &rules[k]).collect();
+    g.sort_by(|a, b| a.voltages[0].total_cmp(&b.voltages[0]));
+    let table = |pick: fn(&EditRule) -> &Option<Requirement>| {
+        pick(g[0]).as_ref().map(|_| {
+            Requirement::ByVoltage(
+                g.iter()
+                    .map(|r| {
+                        let d = match pick(r) {
+                            Some(Requirement::Fixed(d)) => *d,
+                            _ => 0.0,
+                        };
+                        (r.voltages[0], d)
+                    })
+                    .collect(),
+            )
+        })
+    };
+    let first = &rules[group[0]];
+    EditRule {
+        name: first.name.clone(),
+        target: first.target.clone(),
+        vertical: table(|r| &r.vertical),
+        radial: table(|r| &r.radial),
+        voltages: Vec::new(),
+        rest: first.rest.clone(),
+    }
+}
+
+/// What a merge changes for the wires of the line's voltages (and
+/// earthed ones): per voltage, the distance before (its rule's, or not
+/// checked) and after (the table's, or none above its last row).
+pub fn merge_preview(rules: &[EditRule], group: &[usize], voltages: &[f64]) -> Vec<String> {
+    let after = merged(rules, group);
+    let mut kvs = vec![0.0];
+    kvs.extend(voltages.iter().copied().filter(|v| *v > 0.0));
+    kvs.dedup();
+    let mut out = Vec::new();
+    for (m, now, then) in [
+        (
+            "vertical",
+            after.vertical.as_ref(),
+            (|r| r.vertical.clone()) as fn(&EditRule) -> Option<Requirement>,
+        ),
+        ("radial", after.radial.as_ref(), |r: &EditRule| {
+            r.radial.clone()
+        }),
+    ] {
+        let Some(now) = now else { continue };
+        for &kv in &kvs {
+            let before = group
+                .iter()
+                .map(|&k| &rules[k])
+                .find(|r| (r.voltages[0] - kv).abs() < 1e-6)
+                .and_then(then)
+                .map_or("not checked by these rules".to_owned(), |q| match q {
+                    Requirement::Fixed(d) => format!("{d:.2} m"),
+                    _ => "?".into(),
+                });
+            let after = match now.at(kv) {
+                Ok(d) => format!("{d:.2} m"),
+                Err(_) => "no distance (above the table: the check stops)".into(),
+            };
+            let changed = before != after;
+            out.push(format!(
+                "{m}, {}: {before}, merged {after}{}",
+                crate::requirement_ui::voltage_name(kv),
+                if changed { "  (changes)" } else { "" }
+            ));
+        }
+    }
+    out
 }
 
 /// The rule presets of one design-code plugin, or why there are none.
@@ -152,6 +289,8 @@ pub struct RuleEditor {
     confirm: Option<usize>,
     /// "Remove all rules" asked, waiting for its confirmation.
     confirm_all: bool,
+    /// "Merge rules by voltage" asked: the group previewed.
+    merge: Option<usize>,
     /// When the file was read or written (undo writes it again).
     stamp: Option<std::time::SystemTime>,
     /// The "Load preset…" window.
@@ -231,13 +370,28 @@ impl RuleEditor {
             .rules
             .into_iter()
             .zip(targets)
-            .map(|(r, target)| EditRule {
-                name: r.name,
-                target,
-                vertical: r.vertical,
-                radial: r.radial,
+            .map(|(r, target)| {
+                let rest = format!(
+                    "{:?}",
+                    ohl_clearance::Rule {
+                        name: String::new(),
+                        vertical: None,
+                        radial: None,
+                        voltages: Vec::new(),
+                        ..r.clone()
+                    }
+                );
+                EditRule {
+                    name: r.name,
+                    target,
+                    vertical: r.vertical,
+                    radial: r.radial,
+                    voltages: r.voltages,
+                    rest,
+                }
             })
             .collect();
+        self.merge = None;
         self.doc = Some(doc);
         Ok(())
     }
@@ -273,6 +427,27 @@ impl RuleEditor {
         for (t, r) in list.iter_mut().zip(&self.rules) {
             if t.get("name").and_then(Item::as_str) != Some(r.name.as_str()) {
                 t["name"] = toml_edit::value(r.name.clone());
+            }
+            // The voltage filter: left as written while it is the same.
+            let written: Option<Vec<f64>> = t.get("voltages").and_then(Item::as_array).map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_float().or(v.as_integer().map(|i| i as f64)))
+                    .collect()
+            });
+            if written.as_deref().unwrap_or(&[]) != r.voltages.as_slice() {
+                if r.voltages.is_empty() {
+                    t.remove("voltages");
+                } else {
+                    let mut a = toml_edit::Array::new();
+                    for v in &r.voltages {
+                        if v.fract() == 0.0 && v.abs() < 1e9 {
+                            a.push(*v as i64);
+                        } else {
+                            a.push(*v);
+                        }
+                    }
+                    t["voltages"] = toml_edit::value(a);
+                }
             }
             for (key, q) in [("vertical", &r.vertical), ("radial", &r.radial)] {
                 match q {
@@ -368,6 +543,8 @@ impl RuleEditor {
             target: target.to_owned(),
             vertical: (!wire).then_some(Requirement::Fixed(0.0)),
             radial: wire.then_some(Requirement::Fixed(0.0)),
+            voltages: Vec::new(),
+            rest: String::new(),
         });
     }
 
@@ -379,6 +556,25 @@ impl RuleEditor {
         }
         self.rules.clear();
         self.confirm = None;
+    }
+
+    /// Merges the rules of `group` ([`merge_groups`]) into one table rule
+    /// without a voltage filter, in the first one's place (its comments
+    /// and other fields kept); the others removed.
+    pub fn merge_rules(&mut self, group: &[usize]) {
+        if group.len() < 2 || group.iter().any(|&k| k >= self.rules.len()) {
+            return;
+        }
+        let one = merged(&self.rules, group);
+        let first = group[0];
+        self.rules[first] = one;
+        let mut rest: Vec<usize> = group[1..].to_vec();
+        rest.sort_unstable();
+        for &k in rest.iter().rev() {
+            self.remove_rule(k);
+        }
+        self.confirm = None;
+        self.merge = None;
     }
 
     /// Removes rule `k`.
@@ -505,7 +701,8 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
             if e.file.is_none() {
                 ui.label("Choose a rule file above.");
             }
-            ui.horizontal(|ui| {
+            // Wrapped: the Clearances tab is narrow.
+            ui.horizontal_wrapped(|ui| {
                 ui.add_enabled_ui(editable && e.doc.is_some(), |ui| {
                     ui.menu_button("Add rule", |ui| {
                         for (target, what) in [
@@ -541,6 +738,19 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     e.presets.open = true;
                     e.presets.list.clear();
                 }
+                let groups = merge_groups(&e.rules);
+                if !groups.is_empty()
+                    && ui
+                        .add_enabled(editable, egui::Button::new("Merge rules by voltage…"))
+                        .on_hover_text(
+                            "Rules alike but for one voltage and a plain distance each, made \
+                             one rule with a table by voltage and no voltage filter (previewed \
+                             first; Edit › Undo takes it back)",
+                        )
+                        .clicked()
+                {
+                    e.merge = Some(0);
+                }
                 if ui
                     .add_enabled(
                         editable && !e.rules.is_empty(),
@@ -559,7 +769,7 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                 return;
             }
             if e.confirm_all {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.colored_label(
                         ui.visuals().warn_fg_color,
                         format!("Remove all {} rules of this file?", e.rules.len()),
@@ -574,6 +784,7 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     }
                 });
             }
+            merge_ui(ui, e, &voltages);
             let mut remove = None;
             egui::ScrollArea::vertical()
                 .id_salt("rule-editor-rules")
@@ -630,6 +841,23 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                                     });
                                 });
                             }
+                            // Its voltages: optional, behind a toggle when
+                            // a distance depends on the voltage.
+                            ui.add_enabled_ui(editable, |ui| {
+                                ui.horizontal(|ui| {
+                                    let depends = rule.by_voltage();
+                                    if !depends {
+                                        ui.label("only for");
+                                    }
+                                    e.dirty |= crate::requirement_ui::voltage_filter_ui(
+                                        ui,
+                                        ("rule-editor", k),
+                                        &mut rule.voltages,
+                                        depends,
+                                        &voltages,
+                                    );
+                                });
+                            });
                         });
                     }
                 });
@@ -671,6 +899,88 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
             r.clearances.choose(k);
         }
     }
+}
+
+/// "Merge rules by voltage": the group chosen previewed (what changes at
+/// each of the line's voltages), merged on Merge, or left.
+fn merge_ui(ui: &mut egui::Ui, e: &mut RuleEditor, voltages: &[f64]) {
+    let Some(mut at) = e.merge else {
+        return;
+    };
+    let groups = merge_groups(&e.rules);
+    if groups.is_empty() {
+        e.merge = None;
+        return;
+    }
+    at = at.min(groups.len() - 1);
+    let group = groups[at].clone();
+    let mut close = false;
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.strong("Merge rules by voltage");
+            if groups.len() > 1 {
+                ui.label(format!("group {} of {}", at + 1, groups.len()));
+                if ui.small_button("Next group").clicked() {
+                    at = (at + 1) % groups.len();
+                }
+            }
+        });
+        let names: Vec<String> = group
+            .iter()
+            .map(|&k| {
+                format!(
+                    "\"{}\" ({})",
+                    e.rules[k].name,
+                    crate::requirement_ui::voltage_name(e.rules[k].voltages[0])
+                )
+            })
+            .collect();
+        ui.label(format!(
+            "{} become one rule \"{}\" with a table by voltage and no voltage filter:",
+            names.join(", "),
+            e.rules[group[0]].name
+        ));
+        let one = merged(&e.rules, &group);
+        for q in [&one.vertical, &one.radial].into_iter().flatten() {
+            ui.label(egui::RichText::new(q.to_string()).monospace().small());
+        }
+        ui.label(
+            egui::RichText::new(
+                "Without the filter every wire is checked: a voltage between two rows takes \
+                 the next row up, earthed wires (0 kV) the first; above the last row there is \
+                 no distance. At the line's voltages:",
+            )
+            .small()
+            .weak(),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("rule-editor-merge-preview")
+            .max_height(120.0)
+            .show(ui, |ui| {
+                for line in merge_preview(&e.rules, &group, voltages) {
+                    ui.label(egui::RichText::new(line).small());
+                }
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("Merge")
+                .on_hover_text("Edit › Undo takes it back")
+                .clicked()
+            {
+                e.merge_rules(&group);
+                e.status = Some((
+                    format!("{} rules merged into one table rule", group.len()),
+                    false,
+                ));
+                e.dirty = true;
+                close = true;
+            }
+            if ui.button("Leave them").clicked() {
+                close = true;
+            }
+        });
+    });
+    e.merge = (!close).then_some(at);
 }
 
 /// The presets of every enabled design-code plugin, read once (on a

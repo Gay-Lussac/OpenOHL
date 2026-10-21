@@ -14,6 +14,7 @@ use std::sync::mpsc::{Receiver, channel};
 use eframe::egui;
 use ohl_bom::{CostData, CostEstimate};
 
+use crate::check_help as help;
 use crate::model::Model;
 
 /// What its results are computed from ([`crate::revision`]).
@@ -88,7 +89,8 @@ impl BomWindow {
         self.running = Some(rx);
     }
 
-    fn poll(&mut self) {
+    /// Takes the answer, when it came.
+    pub(crate) fn poll(&mut self) {
         let Some(rx) = &self.running else {
             return;
         };
@@ -124,7 +126,19 @@ impl BomWindow {
             .open(&mut open)
             .default_width(760.0)
             .default_height(520.0)
-            .show(ctx, |ui| self.ui(ui, model));
+            .show(ctx, |ui| {
+                // Run in the footer at the bottom left, always visible
+                // (owner, 2026-10-21); the rest scrolls above it.
+                help::body(ui, "bom-window", |ui| self.ui(ui, model));
+                help::footer(ui, "bom-window", |ui| {
+                    if help::run_button(ui, !self.running(), "From the line as it is now", None) {
+                        self.start(model, ui.ctx());
+                    }
+                    if self.running() {
+                        ui.spinner();
+                    }
+                });
+            });
         self.open = open;
     }
 
@@ -158,16 +172,6 @@ impl BomWindow {
                 self.start(model, ui.ctx());
             }
             ui.separator();
-            if ui
-                .add_enabled(!self.running(), egui::Button::new("Compute again"))
-                .on_hover_text("From the line as it is now")
-                .clicked()
-            {
-                self.start(model, ui.ctx());
-            }
-            if self.running() {
-                ui.spinner();
-            }
             let estimate = self.result.as_ref().and_then(|r| r.as_ref().ok());
             if ui
                 .add_enabled(estimate.is_some(), egui::Button::new("Export CSV…"))

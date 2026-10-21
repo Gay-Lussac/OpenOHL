@@ -70,8 +70,12 @@ pub type Report = zone::ZoneCheckResult;
 pub struct Out {
     /// Go to a span (and look at this point).
     pub go: Option<(Selection, [f64; 3])>,
-    /// New violations to draw (wire point, target).
+    /// New violations to draw (wire point, target): a new report, or
+    /// the window opened again.
     pub marks: Option<Vec<([f64; 3], [f64; 3])>>,
+    /// The window closed: its violations off the views (when they are
+    /// the ones drawn).
+    pub hide_marks: bool,
     /// The model's weather case file was written (a preset's cases
     /// added): read it again.
     pub weather_saved: Option<PathBuf>,
@@ -94,6 +98,9 @@ struct Running {
     /// Stopped by the user: the previous results stay.
     stopped: bool,
 }
+
+/// Violations drawn: (wire point, target) each.
+type Marks = Vec<([f64; 3], [f64; 3])>;
 
 /// One clearance window.
 pub struct ZoneWindow {
@@ -127,6 +134,11 @@ pub struct ZoneWindow {
     pub plugin_preset: Option<(usize, usize)>,
     /// A plugin preset loaded this frame, for [`Out::plugin_preset`].
     loaded_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
+    /// Reports arrived (a new one to draw).
+    generation: u64,
+    /// What the views draw of this window: shown (open with a report),
+    /// the report's generation.
+    drawn: Option<(bool, u64)>,
 }
 
 /// A rule's distance not set yet (the placeholder of a window's first
@@ -141,7 +153,7 @@ pub fn unset(r: &ZoneRule) -> bool {
 pub fn first_rule() -> ZoneRule {
     ZoneRule {
         name: "Ground".into(),
-        voltage: None,
+        voltages: Vec::new(),
         cases: Vec::new(),
         distance: Requirement::Fixed(0.0),
         classes: Vec::new(),
@@ -186,6 +198,42 @@ impl ZoneWindow {
             stamp: Default::default(),
             rules_hash: (None, None),
             draft: first_rule(),
+            generation: 0,
+            drawn: None,
+        }
+    }
+
+    /// The violations to draw when what the views should show of this
+    /// window changed: drawn while it is open (docked or moved too),
+    /// taken off once it is closed, back when it is opened again (as the
+    /// vegetation panel's layers). `Some(None)`: take them off.
+    fn marks_change(&mut self) -> Option<Option<Marks>> {
+        let report = match &self.report {
+            Some(Ok(r)) if self.open => Some(r),
+            _ => None,
+        };
+        let key = (report.is_some(), self.generation);
+        if self.drawn == Some(key) {
+            return None;
+        }
+        // Nothing drawn yet and nothing to draw: leave the views alone.
+        let first = self.drawn.is_none();
+        self.drawn = Some(key);
+        match report {
+            Some(r) => Some(Some(
+                r.zone.findings.iter().map(|f| (f.wire, f.target)).collect(),
+            )),
+            None if first => None,
+            None => Some(None),
+        }
+    }
+
+    /// [`Self::marks_change`] into `out`.
+    fn marks_out(&mut self, out: &mut Out) {
+        match self.marks_change() {
+            Some(Some(m)) => out.marks = Some(m),
+            Some(None) => out.hide_marks = true,
+            None => {}
         }
     }
 
@@ -673,12 +721,11 @@ impl ZoneWindow {
             plugin_preset: self.loaded_preset.take(),
             ..Out::default()
         };
-        if self.poll()
-            && let Some(Ok(r)) = &self.report
-        {
-            out.marks = Some(r.zone.findings.iter().map(|f| (f.wire, f.target)).collect());
+        if self.poll() {
+            self.generation += 1;
         }
         if !self.open {
+            self.marks_out(&mut out);
             return out;
         }
         let mut open = true;
@@ -692,60 +739,61 @@ impl ZoneWindow {
             .default_width(820.0)
             .default_height(760.0);
         let mut guide = None;
+        let footer = self.title();
         crate::dockable::show(ctx, panel, self.title(), window, Some(&mut open), |ui| {
             // Scrolled: with the distance editors in place a window may be
-            // taller than the screen; it stays closable.
-            egui::ScrollArea::vertical()
-                .id_salt((self.title(), "window"))
-                .show(ui, |ui| {
+            // taller than the screen; it stays closable. Run in the footer
+            // at the bottom left, always visible (owner, 2026-10-21).
+            help::body(ui, footer, |ui| {
+                {
+                    self.help(ui);
+                    // Out of date: said at the top, Run again beside.
+                    // Run again as Run: greyed alike.
+                    let can_run = self.running.is_none() && self.why_not_run().is_none();
+                    if let Some(what) = self.out_of_date(model)
+                        && crate::revision::banner(ui, &what, can_run)
                     {
-                        self.help(ui);
-                        // Run at the top, as in the vegetation panel; out of
-                        // date: said there, Run again beside.
-                        run = self.run_ui(ui);
-                        if let Some(what) = self.out_of_date(model)
-                            && crate::revision::banner(ui, &what, self.running.is_none())
-                        {
-                            run = self.why_not_run().is_none();
-                        }
-                        // The results right under Run.
-                        guide = guide.or(help::heading(ui, "Results", "clearances-results"));
-                        self.results_help(ui);
-                        if let Some(go) = self.results_ui(ui, model) {
-                            out.go = Some(go);
-                        }
-                        ui.separator();
-                        guide = guide.or(help::heading(
-                            ui,
-                            "Rules and presets",
-                            "clearances-rules-and-presets",
-                        ));
-                        self.plugin_presets_ui(ui, model, presets);
-                        if let Some(chosen) = self.rules_ui(ui, model) {
-                            preset = Some(chosen);
-                        }
-                        ui.separator();
-                        guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
-                        self.wind_ui(ui, model);
-                        ui.separator();
-                        guide = guide.or(help::heading(
-                            ui,
-                            match self.zone.measure {
-                                Measure::Vertical => "Zone",
-                                Measure::Radial => "Distance",
-                            },
-                            "clearances-zone",
-                        ));
-                        self.zone_ui(ui);
-                        ui.separator();
-                        guide = guide.or(help::heading(
-                            ui,
-                            "What is solved",
-                            "clearances-what-is-solved",
-                        ));
-                        self.check_ui(ui, model);
+                        run = true;
                     }
-                });
+                    // The results first, the settings below.
+                    guide = guide.or(help::heading(ui, "Results", "clearances-results"));
+                    self.results_help(ui);
+                    if let Some(go) = self.results_ui(ui, model) {
+                        out.go = Some(go);
+                    }
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        "Rules and presets",
+                        "clearances-rules-and-presets",
+                    ));
+                    self.plugin_presets_ui(ui, model, presets);
+                    if let Some(chosen) = self.rules_ui(ui, model) {
+                        preset = Some(chosen);
+                    }
+                    ui.separator();
+                    guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
+                    self.wind_ui(ui, model);
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        match self.zone.measure {
+                            Measure::Vertical => "Zone",
+                            Measure::Radial => "Distance",
+                        },
+                        "clearances-zone",
+                    ));
+                    self.zone_ui(ui);
+                    ui.separator();
+                    guide = guide.or(help::heading(
+                        ui,
+                        "What is solved",
+                        "clearances-what-is-solved",
+                    ));
+                    self.check_ui(ui, model);
+                }
+            });
+            run |= help::footer(ui, footer, |ui| self.run_ui(ui));
         });
         out.guide = guide;
         self.open = open;
@@ -764,6 +812,7 @@ impl ZoneWindow {
             self.dirty = false;
             self.save(model);
         }
+        self.marks_out(&mut out);
         out
     }
 
@@ -1121,7 +1170,7 @@ impl ZoneWindow {
                         let vertical = self.zone.measure == Measure::Vertical;
                         for h in [
                             "name",
-                            "voltage",
+                            "voltages",
                             "weather cases",
                             "distance",
                             "width m",
@@ -1223,9 +1272,10 @@ impl ZoneWindow {
                          LiDAR points of some classes (vegetation, buildings…). Take the \
                          distance from the regulation you work to — none is given here: one \
                          distance, a table \"up to kV: distance\" or a base plus an amount \
-                         per kV, so that one rule covers every voltage. The voltage and the \
-                         weather cases narrow where it applies (any voltage, every case: \
-                         everywhere).",
+                         per kV, so that one rule covers every voltage: no voltage is needed \
+                         then. The voltages (optional; with a table or a formula behind \
+                         \"Only for some voltages…\") and the weather cases narrow where it \
+                         applies (none, every case: everywhere).",
                     )
                     .small()
                     .weak(),
@@ -1244,9 +1294,8 @@ impl ZoneWindow {
                         ui.label("What");
                         targets_ui(ui, (measure, usize::MAX), d, &classes, &model.scheme);
                         ui.end_row();
-                        ui.label("Voltage");
-                        voltage_ui(ui, (measure, usize::MAX), d, &voltages);
-                        ui.end_row();
+                        // The distance first: whether a voltage means
+                        // anything follows from it.
                         ui.label("Distance");
                         crate::requirement_ui::requirement_ui(
                             ui,
@@ -1254,6 +1303,9 @@ impl ZoneWindow {
                             &mut d.distance,
                             &voltages,
                         );
+                        ui.end_row();
+                        ui.label("Voltages");
+                        voltage_ui(ui, (measure, usize::MAX), d, &voltages);
                         ui.end_row();
                         ui.label("Weather cases");
                         cases_ui(ui, (measure, usize::MAX), d, &cases);
@@ -1285,7 +1337,7 @@ impl ZoneWindow {
     fn run_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut run = false;
         let mut stop_now = false;
-        ui.horizontal(|ui| match &self.running {
+        match &self.running {
             Some(r) => {
                 ui.spinner();
                 let done = r.done.load(Ordering::Relaxed);
@@ -1303,10 +1355,7 @@ impl ZoneWindow {
                 } else {
                     ui.label(format!("checking the clearances… {elapsed:.0} s"));
                 }
-                let stop = ui
-                    .button("Stop")
-                    .on_hover_text("Stop this check: the previous results stay");
-                if stop.clicked() {
+                if help::stop_button(ui, "Stop this check: the previous results stay") {
                     r.cancel.cancel();
                     stop_now = true;
                 }
@@ -1314,14 +1363,13 @@ impl ZoneWindow {
             }
             None => {
                 let why = self.why_not_run();
-                run = ui
-                    .add_enabled(why.is_none(), egui::Button::new("Run"))
-                    .on_hover_text(
-                        "Solve the wind positions of the rules' weather cases and check \
-                             every span (in the background)",
-                    )
-                    .on_disabled_hover_text(why.clone().unwrap_or_default())
-                    .clicked();
+                run = help::run_button(
+                    ui,
+                    true,
+                    "Solve the wind positions of the rules' weather cases and check every span \
+                     (in the background)",
+                    why.as_deref(),
+                );
                 if let Some(w) = &why {
                     ui.colored_label(
                         ui.visuals().warn_fg_color,
@@ -1346,7 +1394,7 @@ impl ZoneWindow {
                     );
                 }
             }
-        });
+        }
         if stop_now && let Some(r) = self.running.as_mut() {
             r.stopped = true;
         }
@@ -1539,15 +1587,6 @@ fn line_voltages(model: &Model) -> Vec<f64> {
     zone::line_voltages(&model.line)
 }
 
-/// "220 kV", "earthed (0 kV)".
-fn voltage_name(kv: f64) -> String {
-    if kv == 0.0 {
-        "earthed (0 kV)".into()
-    } else {
-        format!("{kv} kV")
-    }
-}
-
 /// The classes to tick: (code, name) of the point cloud's classes, else
 /// the class scheme's, and those the rules use.
 fn cloud_classes(model: &Model, rules: &[ZoneRule]) -> Vec<(u8, String)> {
@@ -1572,27 +1611,17 @@ fn cloud_classes(model: &Model, rules: &[ZoneRule]) -> Vec<(u8, String)> {
         .collect()
 }
 
-/// The voltage of a rule: any, or one of the line's.
+/// The voltages of a rule ([`crate::requirement_ui::voltage_filter_ui`]):
+/// optional, hidden behind a toggle when its distance depends on the
+/// voltage.
 fn voltage_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, voltages: &[f64]) -> bool {
-    let mut changed = false;
-    egui::ComboBox::from_id_salt(("zone-voltage", id.0.as_str(), id.1))
-        .selected_text(r.voltage.map_or("any".into(), voltage_name))
-        .width(120.0)
-        .show_ui(ui, |ui| {
-            changed |= ui.selectable_value(&mut r.voltage, None, "any").changed();
-            let mut all: Vec<f64> = voltages.to_vec();
-            if let Some(v) = r.voltage
-                && !all.iter().any(|x| (x - v).abs() < 1e-6)
-            {
-                all.push(v);
-            }
-            for v in all {
-                changed |= ui
-                    .selectable_value(&mut r.voltage, Some(v), voltage_name(v))
-                    .changed();
-            }
-        });
-    changed
+    crate::requirement_ui::voltage_filter_ui(
+        ui,
+        ("zone-voltage", id.0.as_str(), id.1),
+        &mut r.voltages,
+        r.distance.by_voltage(),
+        voltages,
+    )
 }
 
 /// The weather cases of a rule, ticked (none ticked: every case).

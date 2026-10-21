@@ -38,6 +38,12 @@ impl<T: Send + 'static> Job<T> {
         self.running.is_some()
     }
 
+    /// Whether it was started: running, or with an answer (tests).
+    #[cfg(test)]
+    pub fn started(&self) -> bool {
+        self.running() || self.result.is_some()
+    }
+
     /// Runs `work` on its own thread (unless it runs already), on the
     /// model at revision `now`: its answer is out of date once what it
     /// uses changes ([`crate::revision::Stamp`]).

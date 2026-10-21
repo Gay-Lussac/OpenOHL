@@ -15,6 +15,7 @@ use ohl_core::budget::CancelToken;
 use ohl_spotting::Spotting;
 use ohl_spotting::route::{RouteOptions, RouteProblem};
 
+use crate::check_help as help;
 use crate::model::Model;
 
 /// What its results are computed from ([`crate::revision`]).
@@ -187,7 +188,29 @@ impl SpotWindow {
         egui::Window::new("Spot structures")
             .open(&mut open)
             .default_width(680.0)
-            .show(ctx, |ui| self.ui(ui, model));
+            .default_height(600.0)
+            .show(ctx, |ui| {
+                // Run in the footer at the bottom left, always visible
+                // (owner, 2026-10-21); the rest scrolls above it.
+                help::body(ui, "spot-window", |ui| self.ui(ui, model));
+                help::footer(ui, "spot-window", |ui| {
+                    if self.running() {
+                        ui.spinner();
+                        if help::stop_button(ui, "Stop spotting")
+                            && let Some((token, _)) = &self.running
+                        {
+                            token.cancel();
+                        }
+                    } else if help::run_button(
+                        ui,
+                        true,
+                        "Spot the least-cost structures along the route",
+                        None,
+                    ) {
+                        self.start(model, ui.ctx());
+                    }
+                });
+            });
         self.open = open;
         if !open && let Some((token, _)) = &self.running {
             token.cancel();
@@ -294,16 +317,6 @@ impl SpotWindow {
                 ui.end_row();
             });
         ui.horizontal(|ui| {
-            if self.running() {
-                ui.spinner();
-                if ui.button("Cancel").clicked()
-                    && let Some((token, _)) = &self.running
-                {
-                    token.cancel();
-                }
-            } else if ui.button("Spot").clicked() {
-                self.start(model, ui.ctx());
-            }
             let ready = matches!(&self.result, Some(Ok(_)));
             if ui
                 .add_enabled(ready, egui::Button::new("Save as line file…"))

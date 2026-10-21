@@ -21,6 +21,12 @@
 //! - A **live line** under it: the distance at each of the line's own
 //!   system voltages ("At 220 kV: 7.00 m; at 380 kV: 9.00 m"), a formula
 //!   written out, and what is missing.
+//! - A rule's **voltage filter** ([`voltage_filter_ui`]), "only for
+//!   these voltages" (none ticked: every voltage): optional with one
+//!   distance; with a table or base + per kV, which already depend on the
+//!   voltage, hidden behind **Only for some voltages…** (off unless a
+//!   filter is set, as in an older file) — no voltage is ever needed
+//!   (owner, 2026-10-21).
 //! - A **read-only** form ([`requirement_view`]) for places that only show
 //!   a rule (a preset before it is applied): greyed, on a faint
 //!   background, marked [`PREVIEW_NOTE`].
@@ -41,6 +47,96 @@ const FORM_TIPS: [&str; 3] = [
 
 /// A table row's remove button (narrow: the Clearances tab).
 pub const REMOVE: &str = "×";
+
+/// The toggle that shows a voltage filter beside a distance that
+/// depends on the voltage.
+pub const ONLY_SOME_VOLTAGES: &str = "Only for some voltages…";
+
+/// A voltage in a filter: "earthed (0 kV)", "220 kV".
+pub fn voltage_name(kv: f64) -> String {
+    if kv == 0.0 {
+        "earthed (0 kV)".into()
+    } else {
+        format!("{kv} kV")
+    }
+}
+
+/// A rule's voltage filter (`filter`: the nominal voltages of the wires
+/// checked, kV, 0 for earthed wires; empty: every wire), ticked among the
+/// line's `voltages`. `depends`: the rule's distance is a table by voltage
+/// or base + per kV — then no voltage is needed and the ticks hide behind
+/// [`ONLY_SOME_VOLTAGES`], off by default and shown on while a filter is
+/// set (an older file's: the user may clear it). Turning it off clears the
+/// filter. True when the filter changed.
+pub fn voltage_filter_ui(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    filter: &mut Vec<f64>,
+    depends: bool,
+    voltages: &[f64],
+) -> bool {
+    let key = ui.make_persistent_id(("voltage-filter", id));
+    let mut changed = false;
+    ui.vertical(|ui| {
+        // One line each, also in a narrow column.
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        if depends {
+            let asked = ui.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+            let mut on = asked || !filter.is_empty();
+            if ui
+                .checkbox(&mut on, ONLY_SOME_VOLTAGES)
+                .on_hover_text(
+                    "The distance already depends on each wire's voltage: no voltage is needed. \
+                     Tick to check only the wires of some voltages (off: every wire).",
+                )
+                .changed()
+            {
+                ui.data_mut(|d| d.insert_temp(key, on));
+                if !on && !filter.is_empty() {
+                    filter.clear();
+                    changed = true;
+                }
+            }
+            if !on {
+                return;
+            }
+        }
+        let title = if filter.is_empty() {
+            "every voltage".to_owned()
+        } else {
+            ohl_clearance::zone::voltages_text(filter)
+        };
+        let mut all: Vec<f64> = voltages.to_vec();
+        for v in filter.iter() {
+            if !all.iter().any(|x| (x - v).abs() < 1e-6) {
+                all.push(*v);
+            }
+        }
+        all.sort_by(f64::total_cmp);
+        ui.push_id(key, |ui| {
+            crate::menu::options_menu(ui, &title, |ui| {
+                ui.label(
+                    egui::RichText::new("Only for these voltages; none ticked: every voltage")
+                        .small()
+                        .weak(),
+                );
+                for v in all {
+                    let mut on = filter.iter().any(|x| (x - v).abs() < 1e-6);
+                    if ui.checkbox(&mut on, voltage_name(v)).changed() {
+                        if on {
+                            filter.push(v);
+                            filter.sort_by(f64::total_cmp);
+                        } else {
+                            filter.retain(|x| (x - v).abs() >= 1e-6);
+                        }
+                        changed = true;
+                    }
+                }
+            });
+        });
+    });
+    changed
+}
 
 /// The mark of a rule shown read-only.
 pub const PREVIEW_NOTE: &str = "(preview — Apply to edit)";

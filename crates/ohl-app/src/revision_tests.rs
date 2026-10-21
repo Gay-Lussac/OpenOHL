@@ -71,8 +71,8 @@ fn results_are_out_of_date_after_point_and_line_edits_not_view_settings() {
         r.bom.open(&r.model, &ctx);
     }
     h.run_steps(3);
-    h.get_by_label("Fit").click();
-    h.get_by_label("Check").click();
+    crate::tests::run_in(&h, "As-built wires").click_accesskit();
+    crate::tests::run_in(&h, crate::vegetation::CHECK_TITLE).click_accesskit();
     until(&mut h, "the three results", |a| {
         let r = a.ready().unwrap();
         matches!(r.vegetation.result(), (Some(Ok(_)), false))

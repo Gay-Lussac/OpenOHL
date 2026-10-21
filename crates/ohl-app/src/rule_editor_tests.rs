@@ -5,11 +5,13 @@
 //! Clearance rules by voltage in the application: the Clearances tab's
 //! rule editor (a table "up to kV", a base plus an amount per kV, their
 //! preview, Undo), the clearance windows' "Add a rule", and a design-code
-//! plugin's rule preset loaded into the rule file.
+//! plugin's rule preset loaded into the rule file; the voltage filter
+//! (no voltage needed with a table or a formula), Merge rules by voltage
+//! and Remove all rules.
 
 use eframe::egui;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use ohl_clearance::RuleSet;
 use ohl_clearance::rules::Requirement;
 
@@ -35,6 +37,11 @@ radial = "3 m" # phase to phase
 /// A project with rule file `test.ohlr`, the Clearances tab shown and its
 /// editor open; the file's path.
 fn harness_with_rules(name: &str) -> (Harness<'static, App>, std::path::PathBuf) {
+    harness_with(name, RULES)
+}
+
+/// [`harness_with_rules`] with the rule file `text`.
+fn harness_with(name: &str, text: &str) -> (Harness<'static, App>, std::path::PathBuf) {
     let mut model = synthetic_project(name);
     // The weather cases a preset adds go to a copy, never the example's.
     let weather = model.sources.file.with_file_name("weather.ohlwc");
@@ -43,7 +50,7 @@ fn harness_with_rules(name: &str) -> (Harness<'static, App>, std::path::PathBuf)
     let work = model.library_dir.clone().unwrap();
     std::fs::create_dir_all(work.join("rules")).unwrap();
     let file = work.join("rules/test.ohlr");
-    std::fs::write(&file, RULES).unwrap();
+    std::fs::write(&file, text).unwrap();
     model.store_libraries().unwrap();
     let mut app = App::with_model(model, None);
     {
@@ -444,4 +451,257 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
     harness.run();
     assert_eq!(rules_of(&file).rules.len(), 2);
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+/// Toggled state of a checkbox node.
+fn ticked(node: &egui_kittest::Node<'_>) -> bool {
+    node.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+}
+
+/// A table rule needs no voltage: its filter hides behind "Only for some
+/// voltages…", off. An older file's table rule with a filter keeps it
+/// (shown ticked, it applies); unticked, the filter is cleared from the
+/// file, and Undo brings it back. A rule of one distance offers the
+/// filter as it is (every voltage when none is ticked).
+#[test]
+fn a_table_rule_needs_no_voltage() {
+    const TEXT: &str = r#"format = "ohl-clearance-rules"
+version = 1
+
+[[rule]]
+name = "Table"
+target = "ground"
+vertical = { by_voltage = [[0, "5 m"], [400, "7 m"]] }
+
+[[rule]]
+name = "Older table"
+target = "ground"
+vertical = { by_voltage = [[0, "5 m"], [400, "7 m"]] }
+voltages = [220]
+
+[[rule]]
+name = "One distance"
+target = "ground"
+vertical = "6 m"
+"#;
+    let (mut harness, file) = harness_with("voltage-filter", TEXT);
+    // The old filter read, and applied by the check.
+    let set = rules_of(&file);
+    assert_eq!(set.rules[1].voltages, vec![220.0]);
+    assert!(!set.rules[1].checks_voltage(None));
+    assert_eq!(
+        harness.state_mut().ready().unwrap().rule_editor.rules[1].voltages,
+        vec![220.0]
+    );
+    // Two toggles (the table rules), the first off, the older one on.
+    let toggles: Vec<bool> = harness
+        .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+        .map(|n| ticked(&n))
+        .collect();
+    assert_eq!(toggles, vec![false, true]);
+    // The older rule's voltages shown; the plain rule's filter: every
+    // voltage.
+    harness.get_by_label("220 kV");
+    harness.get_by_label("every voltage");
+    // Unticked: the filter cleared in the file.
+    harness
+        .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+        .nth(1)
+        .unwrap()
+        .click_accesskit();
+    harness.run();
+    harness.run();
+    assert!(rules_of(&file).rules[1].voltages.is_empty());
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("voltages"), "{text}");
+    // Undo: back.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .perform(crate::edit::Action::Undo);
+    harness.run();
+    harness.run();
+    assert_eq!(rules_of(&file).rules[1].voltages, vec![220.0]);
+}
+
+/// The vertical window's rule rows and "Add a rule": with one distance
+/// the voltages are a tick menu (every voltage when none is ticked); with
+/// a table, behind "Only for some voltages…", off.
+#[test]
+fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
+    let model = synthetic_project("zone-voltage-filter");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.vertical_clearances.show(&r.model);
+    }
+    harness.run();
+    // The first rule and the helper: one distance each.
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
+    assert_eq!(
+        harness
+            .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+            .count(),
+        0
+    );
+    {
+        let w = &mut harness.state_mut().ready().unwrap().vertical_clearances;
+        w.rules[0].distance = Requirement::ByVoltage(vec![(400.0, 7.0)]);
+    }
+    harness.run();
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
+    assert!(!ticked(
+        &harness.get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+    ));
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .vertical_clearances
+            .rules[0]
+            .voltages
+            .is_empty()
+    );
+    // Ticked: the filter's voltages offered.
+    harness
+        .get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
+        .click();
+    harness.run();
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
+}
+
+/// "Merge rules by voltage": offered only with rules alike but for one
+/// voltage and a plain distance; previewed (what changes at the line's
+/// voltages); merged into one table rule without a filter, in the first
+/// one's place; Undo takes it back.
+#[test]
+fn rules_by_voltage_merge_into_one_table_rule() {
+    const TEXT: &str = r#"format = "ohl-clearance-rules"
+version = 1
+
+# Earthed wires.
+[[rule]]
+name = "Ground"
+target = "ground"
+vertical = "5 m"
+voltages = [0]
+
+[[rule]]
+name = "Ground 220"
+target = "ground"
+vertical = "7 m"
+voltages = [220]
+
+[[rule]]
+name = "Wires"
+target = "same_line"
+radial = "3 m"
+"#;
+    let (mut harness, file) = harness_with("merge-by-voltage", TEXT);
+    harness.get_by_label("Merge rules by voltage…").click();
+    harness.run();
+    harness.get_by_label_contains(
+        "\"Ground\" (earthed (0 kV)), \"Ground 220\" (220 kV) become one rule",
+    );
+    harness.get_by_label("vertical, 220 kV: 7.00 m, merged 7.00 m");
+    harness.get_by_label("vertical, earthed (0 kV): 5.00 m, merged 5.00 m");
+    harness.get_by_label("Merge").click();
+    harness.run();
+    harness.run();
+    let set = rules_of(&file);
+    assert_eq!(set.rules.len(), 2);
+    assert_eq!(set.rules[0].name, "Ground");
+    assert_eq!(
+        set.rules[0].vertical,
+        Some(Requirement::ByVoltage(vec![(0.0, 5.0), (220.0, 7.0)]))
+    );
+    assert!(set.rules[0].voltages.is_empty());
+    assert_eq!(set.rules[1].name, "Wires");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("# Earthed wires."), "{text}");
+    // Nothing left to merge: not offered.
+    assert!(
+        harness
+            .query_all_by_label("Merge rules by voltage…")
+            .next()
+            .is_none()
+    );
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .perform(crate::edit::Action::Undo);
+    harness.run();
+    harness.run();
+    assert_eq!(rules_of(&file).rules.len(), 3);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().rule_editor.rules.len(),
+        3
+    );
+}
+
+/// "Remove all rules", beside Add rule and Load preset…: asks first
+/// (Keep them leaves them), then removes every rule of the file (its
+/// other tables kept); Undo brings them back.
+#[test]
+fn remove_all_rules_asks_and_undoes() {
+    let (mut harness, file) = harness_with_rules("remove-all-rules");
+    // After Add rule and Load preset…, on their row (wrapped to the next
+    // one in the narrow tab).
+    let (add, load, all) = (
+        harness.get_by_label("Add rule").rect(),
+        harness.get_by_label("Load preset…").rect(),
+        harness.get_by_label("Remove all rules").rect(),
+    );
+    assert!(add.right() < load.left());
+    assert!(
+        (load.right() < all.left() && (load.center().y - all.center().y).abs() < 2.0)
+            || (all.top() >= load.bottom() && all.top() - load.bottom() < 12.0),
+        "{load:?} {all:?}"
+    );
+    harness.get_by_label("Remove all rules").click();
+    harness.run();
+    harness.get_by_label("Remove all 2 rules of this file?");
+    harness.get_by_label("Keep them").click();
+    harness.run();
+    assert_eq!(rules_of(&file).rules.len(), 2);
+    harness.get_by_label("Remove all rules").click();
+    harness.run();
+    harness.get_by_label("Remove them").click();
+    harness.run();
+    harness.run();
+    assert!(rules_of(&file).rules.is_empty());
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("name = \"Test rules\""), "{text}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .perform(crate::edit::Action::Undo);
+    harness.run();
+    harness.run();
+    assert_eq!(rules_of(&file).rules.len(), 2);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().rule_editor.rules.len(),
+        2
+    );
+}
+
+/// The Clearances tab's Run: in its footer, under the rules, running the
+/// check of the rule file.
+#[test]
+fn the_clearances_tab_runs_from_its_footer() {
+    let (mut harness, _file) = harness_with_rules("clearances-footer");
+    let run = harness.get_by_label("Run").rect();
+    let edit = harness.get_by_label("Edit rules").rect();
+    assert!(run.top() > edit.bottom());
+    harness.get_by_label("Run").click();
+    harness.step();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.clearances.running() || r.clearances.report.is_some());
 }

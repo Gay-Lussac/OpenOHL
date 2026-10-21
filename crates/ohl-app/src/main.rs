@@ -111,6 +111,8 @@ mod area_tests;
 #[cfg(test)]
 mod bench;
 #[cfg(test)]
+mod check_footer_tests;
+#[cfg(test)]
 mod glyph_tests;
 #[cfg(test)]
 mod ground_lines_tests;

@@ -47,7 +47,7 @@ fn opened(name: &str) -> (std::path::PathBuf, Harness<'static, App>) {
 }
 
 fn run(h: &mut Harness<'_, App>) {
-    h.get_by_label("Check").click();
+    h.get_by_label("Run").click();
     until(h, "a vegetation run", |a| {
         let r = a.ready().unwrap();
         matches!(r.vegetation.result(), (Some(_), false))
@@ -224,7 +224,8 @@ fn a_saved_run_reads_back_and_tells_when_the_points_changed() {
         r.vegetation.set_save_name("trees 1");
     }
     h.run_steps(2);
-    h.get_by_label("Save in Performed checks").click();
+    // Under the results (above the Run footer, scrolled out of sight).
+    h.get_by_label("Save in Performed checks").click_accesskit();
     h.run_steps(3);
     let saved = {
         let r = h.state_mut().ready().unwrap();

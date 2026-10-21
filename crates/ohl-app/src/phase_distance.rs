@@ -27,6 +27,7 @@ use ohl_plugins::{ValueTable, WasmCheckPlugin, WasmHost};
 use ohl_session::reports::{self, CheckReport, LineState, ReportStatus};
 use serde::{Deserialize, Serialize};
 
+use crate::check_help as help;
 use crate::job::{Job, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -353,7 +354,7 @@ pub struct PhaseDistanceWindow {
     pending_values: Option<(String, Option<String>)>,
     /// The line's state against the saved report's, for this line version.
     since: Option<(u64, String, bool)>,
-    job: Job<Report>,
+    pub(crate) job: Job<Report>,
 }
 
 impl Default for PhaseDistanceWindow {
@@ -1067,8 +1068,27 @@ impl PhaseDistanceWindow {
         }
     }
 
-    /// The page (a dock page: floating first, it may be docked).
+    /// The page (a dock page: floating first, it may be docked). Run in
+    /// the footer at the bottom left, always visible (owner, 2026-10-21);
+    /// the rest scrolls above it.
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
+        let out = help::body(ui, "phase-distance-page", |ui| self.body_ui(ui, model));
+        help::footer(ui, "phase-distance-page", |ui| {
+            if help::run_button(
+                ui,
+                !self.job.running(),
+                "Compute the distances between the conductors with the plugin's values",
+                None,
+            ) {
+                self.start(model, ui.ctx());
+            }
+            self.job.status_ui(ui);
+        });
+        out
+    }
+
+    /// The page above its footer.
+    fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         self.job.poll();
         self.ensure_plugin(model);
         if let Err(e) = self.check() {
@@ -1088,15 +1108,6 @@ impl PhaseDistanceWindow {
         let mut out = Out::default();
         self.settings_ui(ui, model);
         self.levels_ui(ui, model, &mut out);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!self.job.running(), egui::Button::new("Check"))
-                .clicked()
-            {
-                self.start(model, ui.ctx());
-            }
-            self.job.status_ui(ui);
-        });
         self.library_ui(ui, model, &mut out);
         ui.separator();
         // How it computes and with which values: open, in a box of
@@ -1171,7 +1182,7 @@ impl PhaseDistanceWindow {
                     t.color(ui.visuals().warn_fg_color)
                 });
                 ui.label(
-                    egui::RichText::new("Check runs it again with its parameters")
+                    egui::RichText::new("Run runs it again with its parameters")
                         .small()
                         .weak(),
                 );
