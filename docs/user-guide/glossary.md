@@ -55,7 +55,11 @@ the user chooses per point. Editable in both applications.
 *Replaces:* structure point (retired, 2026-10-21; read as "attachment
 point" in older texts). *German:* Aufhängepunkt (to confirm). *In files:*
 `points` (line file: `joint`, `offset`, `unlinked`), `[[point]]` (`.ohls`:
-`node`, or `member` and `at`, or its own `point`; `offset`).
+`node`, or its own `point`; `offset`; files written before may give
+`member` and `at`: read as a joint inserted on that member).
+A point cannot be put on a member: it needs a joint (2026-10-21). When
+a linked point is moved (dragged, typed, put by a command) it stays on
+its joint and its offset follows; a joint moved takes its points along.
 In both applications the **Attachment points** table gives each one's
 joint, offset and the offset's length; the **Link tool** links a point
 to a joint where it is (OHL-Design: Tools › Structures › Link attachment
@@ -69,14 +73,16 @@ a **kind**, or none: **attach** (strings hang here, through the
 attachment points linked to it) or **support** (where the structure
 stands on its foundation; its fixity is the joint's support). A joint
 carrying attachment points is an attach joint, a supported one a support
-joint, unless its kind is given. A point along a member makes a joint
-there (the analysis splits the member at it); a stick figure's point is
-its own joint. Set in OHL-Structure's Joints table (*auto*, *attach*,
+joint, unless its kind is given. A joint can be **inserted on a member**
+(OHL-Structure): the member is split there into two continuous pieces (a
+rigid connection, not a hinge; each buckling over the whole member); a
+file written before with a point along a member is read so. A stick
+figure's point is its own joint. Set in OHL-Structure's Joints table (*auto*, *attach*,
 *support*); attach joints are ringed in orange in the 3D views, support
 joints marked green. Only attach joints are offered when a new string's
-point is added to a structure with a type; the Link tool offers every
-joint but support joints (a joint without a kind becomes an attach
-joint when a point is linked to it). *German:* Knoten (to confirm). *In
+point is added to a structure with a type, and only attach joints are
+ringed and take a link in the Link tool (2026-10-21; another joint says
+"not an attach joint: set its kind to attach in OHL-Structure"). *German:* Knoten (to confirm). *In
 files:* `[[node]]`, its `kind` (`.ohls` version 6). *Built (engine and
 both applications, 2026-10-21; in active development, not approved
 yet).*
