@@ -835,9 +835,12 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
                 sides: a.wind_sides,
                 arc: false,
                 band_margin: a.band_margin,
+                ..Default::default()
             }),
+            // The danger-tree check leaves the jumpers out.
             jumpers: false,
             band_margin: a.band_margin,
+            ..Default::default()
         },
         &budget,
     )?;

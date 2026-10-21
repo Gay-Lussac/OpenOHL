@@ -12,7 +12,9 @@
 //! shared, not copied. The band is widened by its margin, the user's
 //! since 2026-10-21 ([`crate::rules::WindSteps::band_margin`]); the
 //! jumpers a rule checks have bands of their own since 2026-10-21, about
-//! the line through their end clamps.
+//! the line through their end clamps, widened by the jumpers' own margin
+//! ([`crate::rules::WindSteps::jumper_band_margin`], 0 by default: a
+//! Simplification on the user's responsibility).
 //!
 //! - **LiDAR points**: one closed form per point and span — radially
 //!   [`SwingArc::nearest`], vertically [`SwingArc::vertical`] (the band's
@@ -113,8 +115,9 @@ pub struct ZoneArc {
 /// The swing arcs (bands) of every span of the sections solved
 /// (`shapes`, per state, as [`crate::zone::solve_states`] gives them) and,
 /// since 2026-10-21, of every jumper solved (`jumpers`, per state; may
-/// be empty: none) for `cases`, each widened by the band's margin
-/// `margin` (m; [`crate::positions::BAND_MARGIN`] by default), and what
+/// be empty: none) for `cases`, each widened by its margin in `margins`
+/// (m; a span's [`crate::positions::BAND_MARGIN`] by default, a jumper's
+/// [`crate::positions::JUMPER_BAND_MARGIN`]), and what
 /// could not be made. A jumper's band is about the line through its two
 /// end clamps in still air; a jumper without one (not solved blown to a
 /// side asked for, or not running steadily along that line) is checked
@@ -124,7 +127,7 @@ pub fn zone_arcs(
     shapes: &[Vec<SectionShape>],
     jumpers: &[Vec<JumperShape>],
     cases: &[ArcCase],
-    margin: f64,
+    margins: crate::positions::BandMargins,
 ) -> (Vec<ZoneArc>, Vec<String>) {
     let mut out = Vec::new();
     let mut notes = Vec::new();
@@ -168,7 +171,7 @@ pub fn zone_arcs(
             // through its end clamps blown to the left (else in still
             // air), as the safety volumes take it ([`jumper_band`]).
             let arc = if jumper {
-                jumper_band(l.as_ref(), w, r.as_ref(), margin)
+                jumper_band(l.as_ref(), w, r.as_ref(), margins.jumper)
             } else {
                 shapes[case.still]
                     .iter()
@@ -179,7 +182,7 @@ pub fn zone_arcs(
                         let mid = shape(w);
                         let l = l.as_ref().map_or_else(|| mid.clone(), shape);
                         let r = r.as_ref().map_or_else(|| mid.clone(), shape);
-                        SwingArc::with_margin(axis, &l, &mid, &r, margin)
+                        SwingArc::with_margin(axis, &l, &mid, &r, margins.span)
                     })
             };
             match arc {

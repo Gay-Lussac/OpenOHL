@@ -124,7 +124,7 @@ fn run_with(
         &Default::default(),
         rules,
         states,
-        wind.arc.then_some(wind.band_margin),
+        wind.arc.then_some(wind.margins()),
         Some(&read),
         Some(&terrain),
         None,
@@ -270,14 +270,16 @@ fn the_arc_against_the_steps_on_the_example_line() {
     }
 }
 
-/// The band's margin is an input, and the jumpers have bands of their own
-/// (2026-10-21): rules of 100 m to 200 invented points (every span and
-/// the jumper break them), one on the sections, one on the jumpers, the
-/// swing arc on, margins 0.15 m and 0.40 m. Each span's and the jumper's
-/// lowest clearance is on its band (an angle given), and with the larger
-/// margin exactly 0.25 m lower: the band holds the solved positions, and
-/// every distance to it is taken the margin smaller. By hand:
-/// 0.40 − 0.15 = 0.25 m.
+/// The bands' margins are inputs, and the jumpers have bands of their own
+/// with a margin of their own (2026-10-21): rules of 100 m to 200 invented
+/// points (every span and the jumper break them), one on the sections, one
+/// on the jumpers, the swing arc on; the spans' margin 0.15 m then 0.40 m
+/// with the jumpers' 0 (its default) then 0.30 m. Each span's and the
+/// jumper's lowest clearance is on its band (an angle given); with the
+/// larger margins the spans' exactly 0.25 m lower and the jumper's exactly
+/// 0.30 m lower: the band holds the solved positions, and every distance
+/// to it is taken its own margin smaller. By hand: 0.40 − 0.15 = 0.25 m,
+/// 0.30 − 0 = 0.30 m.
 #[test]
 fn the_margin_is_an_input_and_the_jumpers_have_bands() {
     let (line, library, _) = example();
@@ -298,10 +300,11 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
     jumpers.name = "jumpers".into();
     jumpers.wires = ohl_clearance::Wires::Jumpers;
     rules.push(jumpers);
-    let check = |margin: f64| {
+    let check = |margin: f64, jumper: f64| {
         let wind = WindSteps {
             arc: true,
             band_margin: margin,
+            jumper_band_margin: jumper,
             ..WindSteps::default()
         };
         let states = wind_states(&[windy()], |_| true, &wind);
@@ -312,7 +315,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
             &Default::default(),
             rules.clone(),
             states,
-            Some(margin),
+            Some(wind.margins()),
             Some(&read),
             None,
             None,
@@ -321,8 +324,11 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         )
         .unwrap()
     };
-    let (a, b) = (check(0.15), check(0.40));
-    assert_eq!(a.band_margin, Some(0.15));
+    let (a, b) = (check(0.15, 0.0), check(0.40, 0.30));
+    assert_eq!(
+        a.band_margin,
+        Some(ohl_clearance::positions::BandMargins::default())
+    );
     assert!(
         !a.zone.notes.iter().any(|n| n.contains("jumper")),
         "{:?}",
@@ -342,7 +348,12 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
     for (x, y) in la.iter().zip(&lb) {
         assert_eq!(x.0, y.0);
         assert!(x.2.is_some() && y.2.is_some(), "{x:?} on the band");
-        assert!((x.1 - y.1 - 0.25).abs() < 1e-9, "{x:?} {y:?}");
+        let more = if x.0.1.starts_with("jumper:") {
+            0.30
+        } else {
+            0.25
+        };
+        assert!((x.1 - y.1 - more).abs() < 1e-9, "{x:?} {y:?}");
     }
     // A negative margin is refused.
     let e = run_zone_check(
@@ -352,7 +363,10 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         &Default::default(),
         rules.clone(),
         wind_states(&[windy()], |_| true, &WindSteps::default()),
-        Some(-0.1),
+        Some(ohl_clearance::positions::BandMargins {
+            span: -0.1,
+            jumper: 0.0,
+        }),
         Some(&read),
         None,
         None,
@@ -361,4 +375,23 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
     )
     .unwrap_err();
     assert!(e.contains("band margin"), "{e}");
+    let e = run_zone_check(
+        &line,
+        &library,
+        Zone::new(Measure::Radial),
+        &Default::default(),
+        rules.clone(),
+        wind_states(&[windy()], |_| true, &WindSteps::default()),
+        Some(ohl_clearance::positions::BandMargins {
+            span: 0.15,
+            jumper: -0.1,
+        }),
+        Some(&read),
+        None,
+        None,
+        &Budget::new(),
+        &AtomicUsize::new(0),
+    )
+    .unwrap_err();
+    assert!(e.contains("jumper band margin"), "{e}");
 }

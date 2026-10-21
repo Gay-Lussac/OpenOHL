@@ -295,6 +295,7 @@ impl Settings {
             "tolerance": self.tolerance,
             "wind": self.wind.as_str(),
             "band_margin": self.steps.band_margin,
+            "jumper_band_margin": self.steps.jumper_band_margin,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
             "per": self.grouping.as_str(),
@@ -339,6 +340,12 @@ impl Settings {
                         .unwrap_or(WindSides::Both),
                     // Runs saved before 2026-10-21: the margin then fixed.
                     band_margin: num("band_margin", d.steps.band_margin),
+                    // Runs saved before the jumpers' own margin
+                    // (2026-10-21): their bands took the spans' margin.
+                    jumper_band_margin: num(
+                        "jumper_band_margin",
+                        num("band_margin", d.steps.band_margin),
+                    ),
                 },
                 grouping: text("per").map_or(Ok(d.grouping), Grouping::parse)?,
                 // Runs saved before 2026-10-21: by circuit.
@@ -353,15 +360,24 @@ impl Settings {
 
     /// The wind in words, with the band's margin when the arc is taken.
     pub fn wind_text(&self) -> String {
-        ohl_clearance::safety_volume::wind_text(self.wind, self.steps.band_margin)
+        ohl_clearance::safety_volume::wind_text(self.wind, self.steps.margins())
     }
 
     /// What of `self` (the settings now) differs from `run`'s (a report's)
-    /// that the report does not show by itself: the band's margin with
-    /// the arc on.
+    /// that the report does not show by itself: the bands' margins with
+    /// the arc on (the spans', the jumpers').
     pub fn changed_since(&self, run: &Settings) -> Option<String> {
-        (run.wind.arc() && self.steps.band_margin != run.steps.band_margin)
-            .then(|| "the band margin".to_owned())
+        if !run.wind.arc() {
+            return None;
+        }
+        let span = self.steps.band_margin != run.steps.band_margin;
+        let jumper = self.steps.jumper_band_margin != run.steps.jumper_band_margin;
+        match (span, jumper) {
+            (true, true) => Some("the band margins".to_owned()),
+            (true, false) => Some("the band margin".to_owned()),
+            (false, true) => Some("the jumper band margin".to_owned()),
+            (false, false) => None,
+        }
     }
 
     /// The distance and margin in words.
@@ -637,7 +653,16 @@ impl SafetyVolumeWindow {
         {
             self.saved_stale = Some("the line".into());
         }
-        self.job.stamp.set(model.revision());
+        // The ice and wind per stretched or unstretched metre (2026-10-21).
+        if let Some(o) = crate::revision::saved_loads_per_changed(&r.parameters, model) {
+            self.saved_stale = Some(match self.saved_stale.take() {
+                Some(l) => format!("{l} and {o}"),
+                None => o,
+            });
+        }
+        self.job
+            .stamp
+            .set(crate::revision::saved_revision(&r.parameters, model));
         self.settings = settings.clone();
         self.cases = cases
             .iter()
@@ -667,6 +692,8 @@ impl SafetyVolumeWindow {
         let s = &editing.session;
         let mut parameters = report.settings.to_json(&report.volumes.cases);
         parameters["version"] = json!(SAVED_VERSION);
+        // The ice and wind per stretched or unstretched metre (2026-10-21).
+        parameters["loads_per"] = json!(self.job.stamp.loads_per(model).as_str());
         let triangles: usize = report
             .volumes
             .volumes
@@ -879,7 +906,7 @@ impl SafetyVolumeWindow {
                     stepped: s.wind.stepped(),
                     ..s.steps
                 };
-                help::wind_choice(ui, "safety-volume", &mut wind, false, full);
+                help::wind_choice(ui, "safety-volume", &mut wind, false, full, true);
                 s.wind = match (wind.arc, wind.stepped) {
                     (false, false) => WindMode::None,
                     (false, true) => WindMode::Steps,

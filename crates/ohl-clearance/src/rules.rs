@@ -69,8 +69,10 @@
 //!   windows apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line`
 //!   ignores it. `arc = true` (2026-10-20) adds each span's swing arc;
 //!   `band_margin = "0.15 m"` (2026-10-21, optional, written only when not
-//!   the default [`crate::positions::BAND_MARGIN`]) is the swing band's
-//!   margin.
+//!   the default [`crate::positions::BAND_MARGIN`]) is the spans' swing
+//!   band margin; `jumper_band_margin = "0.3 m"` (2026-10-21, optional,
+//!   written only when not the default
+//!   [`crate::positions::JUMPER_BAND_MARGIN`], 0) the jumpers'.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
@@ -737,6 +739,8 @@ struct RawWind {
     arc: bool,
     #[serde(default)]
     band_margin: Option<Length>,
+    #[serde(default)]
+    jumper_band_margin: Option<Length>,
 }
 
 /// The sides the wind blows from, looking ahead along the line.
@@ -808,6 +812,14 @@ pub struct WindSteps {
     /// excess of the intermediate pressures plus an allowance;
     /// conservative); a smaller value is on the user's responsibility.
     pub band_margin: f64,
+    /// The jumpers' swing band margin, m (`[wind] jumper_band_margin`,
+    /// 2026-10-21, the owner's decision: a value of its own): every
+    /// distance to a jumper's band is taken this much smaller. Default
+    /// [`crate::positions::JUMPER_BAND_MARGIN`], 0 — a Simplification on
+    /// the user's responsibility (the band does not hold a jumper between
+    /// its blowouts; exact: the wind steps); the user enters a value for
+    /// their jumpers.
+    pub jumper_band_margin: f64,
 }
 
 /// Default step of the wind pressure, Pa.
@@ -821,6 +833,7 @@ impl Default for WindSteps {
             sides: WindSides::Both,
             arc: false,
             band_margin: crate::positions::BAND_MARGIN,
+            jumper_band_margin: crate::positions::JUMPER_BAND_MARGIN,
         }
     }
 }
@@ -832,6 +845,14 @@ pub fn band_margin_problem(m: f64) -> Option<String> {
 }
 
 impl WindSteps {
+    /// The bands' margins: the spans' and the jumpers'.
+    pub fn margins(&self) -> crate::positions::BandMargins {
+        crate::positions::BandMargins {
+            span: self.band_margin,
+            jumper: self.jumper_band_margin,
+        }
+    }
+
     /// The wind pressures checked for a case of wind pressure `full` (Pa),
     /// increasing: 0 and every step up to `full` when stepped (the last
     /// one `full`), else `full` alone. At most `max` steps above 0 (the
@@ -1306,8 +1327,15 @@ impl RuleSet {
                 if let Some(e) = band_margin_problem(band_margin) {
                     return Err(format!("[wind] {e}"));
                 }
+                let jumper_band_margin = w
+                    .jumper_band_margin
+                    .map_or(crate::positions::JUMPER_BAND_MARGIN, |l| l.si());
+                if let Some(e) = band_margin_problem(jumper_band_margin) {
+                    return Err(format!("[wind] jumper {e}"));
+                }
                 Ok(WindSteps {
                     band_margin,
+                    jumper_band_margin,
                     stepped: w.steps,
                     step,
                     sides: w
@@ -1433,6 +1461,9 @@ impl RuleSet {
             // without it is written as before.
             if w.band_margin != crate::positions::BAND_MARGIN {
                 let _ = writeln!(t, "band_margin = {}", length(w.band_margin));
+            }
+            if w.jumper_band_margin != crate::positions::JUMPER_BAND_MARGIN {
+                let _ = writeln!(t, "jumper_band_margin = {}", length(w.jumper_band_margin));
             }
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
@@ -1631,6 +1662,32 @@ mod tests {
         assert_eq!(RuleSet::parse(&set.to_toml()).unwrap().wind, set.wind);
         let e = RuleSet::parse(&format!("{head}[wind]\nband_margin = \"-0.1 m\"\n")).unwrap_err();
         assert!(e.contains("band margin"), "{e}");
+    }
+
+    /// `[wind] jumper_band_margin` (2026-10-21, the owner's decision): a
+    /// value of its own, default 0 — a file without it reads 0 and is
+    /// written without it; another value is read and written back,
+    /// independent of the spans' margin; a negative one is refused.
+    #[test]
+    fn the_jumper_band_margin_in_the_wind_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let old = RuleSet::parse(&format!("{head}[wind]\narc = true\n")).unwrap();
+        let w = old.wind.unwrap();
+        assert_eq!(w.jumper_band_margin, 0.0);
+        assert_eq!(w.margins(), crate::positions::BandMargins::default());
+        assert!(!old.to_toml().contains("jumper_band_margin"));
+        let set = RuleSet::parse(&format!(
+            "{head}[wind]\narc = true\njumper_band_margin = \"0.35 m\"\n"
+        ))
+        .unwrap();
+        let w = set.wind.unwrap();
+        assert_eq!((w.band_margin, w.jumper_band_margin), (0.15, 0.35));
+        assert!(set.to_toml().contains("jumper_band_margin = \"0.35 m\""));
+        assert!(!set.to_toml().contains("\nband_margin"));
+        assert_eq!(RuleSet::parse(&set.to_toml()).unwrap().wind, set.wind);
+        let e = RuleSet::parse(&format!("{head}[wind]\njumper_band_margin = \"-0.1 m\"\n"))
+            .unwrap_err();
+        assert!(e.contains("jumper band margin"), "{e}");
     }
 
     /// A rule file read with a project's default values: its search

@@ -30,7 +30,9 @@
 //! where it is smooth. Structures are not included; the jumpers are
 //! (2026-10-21), at their solved positions and, with the swing arc, on a
 //! band of their own about the line through their end clamps. Every band
-//! is widened by its margin ([`crate::rules::WindSteps::band_margin`]).
+//! is widened by its margin: a span's [`crate::rules::WindSteps::band_margin`],
+//! a jumper's [`crate::rules::WindSteps::jumper_band_margin`] (0 by
+//! default: a Simplification, on the user's responsibility).
 //!
 //! The arc is read through [`SwingArc`]'s public closed form
 //! ([`SwingArc::place`], [`SwingArc::point`]): a small adapter here, to
@@ -124,7 +126,7 @@ impl WindMode {
     }
 
     /// The positions solved, the wind stepped by `steps` (and the swing
-    /// band's margin `steps.band_margin`).
+    /// bands' margins `steps.band_margin` and `steps.jumper_band_margin`).
     pub fn options(self, steps: WindSteps) -> PositionOptions {
         PositionOptions {
             swing_arc: self.arc(),
@@ -135,16 +137,22 @@ impl WindMode {
             // The volume is continuous at the structures (2026-10-21).
             jumpers: true,
             band_margin: steps.band_margin,
+            jumper_band_margin: steps.jumper_band_margin,
         }
     }
 }
 
-/// The wind in words, with the swing band's margin when the arc is taken
-/// ("swing arc (band margin 0.15 m)"): as the exports and the command
-/// line say it.
-pub fn wind_text(wind: WindMode, band_margin: f64) -> String {
+/// The wind in words, with the swing bands' margins when the arc is taken
+/// ("swing arc (band margin 0.15 m, jumpers 0.00 m)"): as the exports and
+/// the command line say it.
+pub fn wind_text(wind: WindMode, margins: crate::positions::BandMargins) -> String {
     if wind.arc() {
-        format!("{} (band margin {band_margin:.2} m)", wind.describe())
+        format!(
+            "{} (band margin {:.2} m, jumpers {:.2} m)",
+            wind.describe(),
+            margins.span,
+            margins.jumper
+        )
     } else {
         wind.describe().to_owned()
     }

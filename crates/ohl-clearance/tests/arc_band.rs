@@ -12,7 +12,8 @@
 use std::path::Path;
 
 use ohl_clearance::positions::{
-    BAND_MARGIN, PositionKind, PositionOptions, Shape, SwingArc, solve_positions,
+    BAND_MARGIN, JUMPER_BAND_MARGIN, PositionKind, PositionOptions, Shape, SwingArc,
+    solve_positions,
 };
 use ohl_clearance::rules::{WindSides, WindSteps};
 use ohl_core::budget::Budget;
@@ -204,11 +205,16 @@ fn the_band_holds_the_steps_at_10_pa() {
 /// as the spans' above: every jumper has a band. Measured 2026-10-21: a
 /// step's centre line lies up to **0.293 m** outside the jumper's band
 /// (high wind, blown right at 230 Pa, inside its inner radius; rime ice
-/// and wind: 0.127 m) — more than the default margin [`BAND_MARGIN`]
-/// (0.15 m), against 2.54 m from the arc alone at the largest radius.
-/// The margin is not widened without the owner's decision (reported);
-/// this test records the excess and fails when it changes much. Numbers
-/// printed, see the theory.
+/// and wind: 0.127 m), against 2.54 m from the arc alone at the largest
+/// radius. The owner's decision of 2026-10-21: the jumpers' band margin
+/// is a value of its own ([`JUMPER_BAND_MARGIN`]), **0 by default** —
+/// a Simplification on the user's responsibility (exact: the wind
+/// steps), the user entering a value for their jumpers; the hover text
+/// and the theory quote this measured excess. So with the default the
+/// jumper's band is *not* conservative between its blowouts: this test
+/// records the excess (more than the default jumper margin; the
+/// spans' 0.15 m would not hold it either) and fails when it changes
+/// much. Numbers printed, see the theory.
 #[test]
 fn the_jumper_bands_hold_the_steps_at_10_pa() {
     let mut worst = (0.0f64, String::new());
@@ -234,9 +240,12 @@ fn the_jumper_bands_hold_the_steps_at_10_pa() {
         worst.0, worst.1, worst_arc.0, worst_arc.1
     );
     assert!(bands > 0 && n > 0);
-    // The jumper's band misses its steps by more than the default
-    // margin (0.293 m measured): recorded, the owner to decide.
-    assert!(worst.0 > BAND_MARGIN && worst.0 < 0.4, "{worst:?}");
+    // The jumper's band misses its steps (0.293 m measured): more than
+    // its default margin (0: not conservative between the blowouts, the
+    // user's value to enter) and the spans' default alike.
+    assert_eq!(JUMPER_BAND_MARGIN, 0.0);
+    assert!(worst.0 > BAND_MARGIN, "{worst:?}");
+    assert!(worst.0 > 0.28 && worst.0 < 0.31, "{worst:?}");
     // The arc alone misses them by far more.
     assert!(worst_arc.0 > 1.0, "{worst_arc:?}");
 }

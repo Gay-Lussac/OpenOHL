@@ -458,8 +458,8 @@ impl ZoneWindow {
             model.cases.iter().map(|c| c.case.clone()).collect();
         let rules = self.rules.clone();
         let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &self.wind);
-        // The swing arc with its band's margin (2026-10-21).
-        let arc = self.wind.arc.then_some(self.wind.band_margin);
+        // The swing arc with its bands' margins (2026-10-21).
+        let arc = self.wind.arc.then_some(self.wind.margins());
         if let Some(why) = self.why_not_run() {
             self.report = Some(Err(format!("not run: {why}")));
             return;
@@ -899,7 +899,7 @@ impl ZoneWindow {
             .fold(0.0, f64::max);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                self.dirty |= help::wind_choice(ui, self.title(), &mut self.wind, true, full);
+                self.dirty |= help::wind_choice(ui, self.title(), &mut self.wind, true, full, true);
             });
             let n = if self.wind.stepped {
                 (full / self.wind.step.max(1.0)).ceil() as usize
@@ -1493,7 +1493,7 @@ fn run(
     check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
-    arc: Option<f64>,
+    arc: Option<ohl_clearance::positions::BandMargins>,
     cloud: Option<String>,
     ground: Option<Arc<ohl_terrain::Terrain>>,
     scope: Option<std::collections::BTreeSet<String>>,

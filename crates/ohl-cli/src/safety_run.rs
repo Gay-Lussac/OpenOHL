@@ -42,6 +42,13 @@ pub struct SafetyArgs {
     /// (conservative); a smaller value is on the user's responsibility.
     #[arg(long, default_value_t = ohl_clearance::positions::BAND_MARGIN)]
     pub band_margin: f64,
+    /// The jumpers' swing band margin, m (--wind arc or both): every
+    /// distance to a jumper's band is taken this much smaller. Default 0 m,
+    /// no widening: the jumper's band then does not hold it between its
+    /// blowouts (on the user's responsibility; a value to enter for their
+    /// jumpers; exact: the wind steps).
+    #[arg(long, default_value_t = ohl_clearance::positions::JUMPER_BAND_MARGIN)]
+    pub jumper_band_margin: f64,
     /// The distance from the conductors' surface (required; none is built
     /// in): a distance (`5`, `"5 m"`), or by the voltage of each wire's
     /// system as a rule file writes it (`'{ by_voltage = [[110, 3], [380,
@@ -117,17 +124,21 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
     if let Some(e) = ohl_clearance::rules::band_margin_problem(a.band_margin) {
         return Err(format!("--band-margin: {e}"));
     }
+    if let Some(e) = ohl_clearance::rules::band_margin_problem(a.jumper_band_margin) {
+        return Err(format!("--jumper-band-margin: {e}"));
+    }
     let steps = WindSteps {
         stepped: a.wind.stepped(),
         arc: false,
         step: a.wind_step,
         sides: a.wind_sides,
         band_margin: a.band_margin,
+        jumper_band_margin: a.jumper_band_margin,
     };
     let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
     let t = Instant::now();
     let v = safety_volume::run(&line, &library, &chosen, a.wind, steps, &params, &budget)?;
-    let wind = safety_volume::wind_text(a.wind, a.band_margin);
+    let wind = safety_volume::wind_text(a.wind, steps.margins());
     println!(
         "safety volumes of {}: {} weather cases, {wind}, {} positions ({:.2?})",
         line.name,

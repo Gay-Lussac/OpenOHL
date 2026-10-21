@@ -80,13 +80,16 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
 /// sides; how many solves a windy case of the largest pressure `full`
 /// needs, and the arc suggested when the steps need many. `sides_all`:
 /// the sides apply to every position (the clearance windows), else to
-/// the steps only (the danger-tree check). True when something changed.
+/// the steps only (the danger-tree check). `jumpers`: the check includes
+/// jumpers (their band margin then editable; else shown greyed, as the
+/// check leaves them out). True when something changed.
 pub fn wind_choice(
     ui: &mut egui::Ui,
     id: &str,
     wind: &mut WindSteps,
     sides_all: bool,
     full: f64,
+    jumpers: bool,
 ) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -136,6 +139,7 @@ pub fn wind_choice(
     });
     if wind.arc {
         changed |= band_margin_ui(ui, id, &mut wind.band_margin);
+        changed |= jumper_band_margin_ui(ui, id, &mut wind.jumper_band_margin, jumpers);
     }
     let what = match (wind.arc, wind.stepped) {
         (false, false) => "None ticked: each case's own pressure, blown to each side.",
@@ -247,10 +251,71 @@ pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the lar
     measured with steps of 10 Pa on the example lines, a span's wire lies up to 0.089 m outside \
     it (the strings swing and the sag changes). The margin covers that worst excess plus an \
     allowance for other lines: 0.15 m by default, conservative — every distance to the band is \
-    taken this much smaller, as if the conductor were that much thicker. A jumper's band (about \
-    the line through its end clamps) was measured up to 0.29 m outside on the example line: more \
-    than the default, not yet decided. A smaller value is less safe and on your responsibility; \
-    to be sure on your line, compare with the wind steps.";
+    taken this much smaller, as if the conductor were that much thicker. The jumpers' bands have \
+    a margin of their own (below). A smaller value is less safe and on your responsibility; to \
+    be sure on your line, compare with the wind steps.";
+
+/// The jumpers' swing band margin (2026-10-21, the owner's decision: a
+/// value of its own, default 0, entered by the user): a field in metres
+/// beside the spans' margin, with the shared explanation — at 0 the
+/// jumper's band is not conservative between its blowouts (a
+/// Simplification on the user's responsibility; exact: the wind steps),
+/// the excess measured on the example line's jumper. `enabled` false:
+/// shown greyed (a check without jumpers). True when changed.
+pub fn jumper_band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, enabled: bool) -> bool {
+    let default = ohl_clearance::positions::JUMPER_BAND_MARGIN;
+    let mut changed = false;
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("jumper band margin");
+            changed |= ui
+                .push_id((id, "jumper-band-margin"), |ui| {
+                    ui.add(
+                        egui::DragValue::new(margin)
+                            .speed(0.01)
+                            .range(0.0..=5.0)
+                            .suffix(" m"),
+                    )
+                })
+                .inner
+                .on_hover_text(JUMPER_BAND_MARGIN_HELP)
+                .on_disabled_hover_text(
+                    "This check leaves the jumpers out: their band margin does not apply here.",
+                )
+                .changed();
+            if *margin != default
+                && ui
+                    .small_button(format!("{default} m"))
+                    .on_hover_text("Back to the default (no widening)")
+                    .clicked()
+            {
+                *margin = default;
+                changed = true;
+            }
+        });
+        if enabled {
+            let short = if *margin > 0.0 {
+                "Jumper band margin: every distance to a jumper's band taken this much smaller \
+                 (your value, on your responsibility)."
+            } else {
+                "Jumper band margin 0: a jumper's band is not widened and does not hold the \
+                 jumper between its blowouts (on your responsibility)."
+            };
+            explain(ui, short, JUMPER_BAND_MARGIN_HELP);
+        }
+    });
+    changed
+}
+
+/// The jumpers' band margin's longer explanation (hover).
+pub const JUMPER_BAND_MARGIN_HELP: &str = "A jumper's swing band (about the line through its end \
+    clamps, from the smallest to the largest radius of its still and blown positions) does not \
+    hold the jumper at intermediate wind pressures: it swings with its clamps and changes its \
+    shape. Measured with steps of 10 Pa on the example line's jumper, it lies up to 0.293 m \
+    outside its band (high wind, blown right at 230 Pa). The default is 0 m, no widening: a \
+    simplification on your responsibility, the band not conservative between the blowouts. \
+    Enter a value for your jumpers — compare with the wind steps to find it (exact: the wind \
+    steps). Separate from the spans' band margin.";
 
 /// Size of a drawing, px.
 pub const SIZE: egui::Vec2 = egui::vec2(120.0, 80.0);
@@ -875,7 +940,7 @@ mod tests {
                     band_margin: margin,
                     ..WindSteps::default()
                 };
-                wind_choice(ui, "test", &mut w, true, 600.0);
+                wind_choice(ui, "test", &mut w, true, 600.0, true);
             });
             h.run();
             assert_eq!(h.query_by_label("band margin").is_some(), arc);
@@ -892,6 +957,41 @@ mod tests {
                 margin < 0.15
             );
             assert_eq!(h.query_by_label("0.15 m").is_some(), margin < 0.15);
+            // The jumpers' own margin beside it (2026-10-21), default 0:
+            // said not to hold the jumper between its blowouts.
+            assert_eq!(h.query_by_label("jumper band margin").is_some(), arc);
+            assert_eq!(
+                h.query_all_by_label_contains("does not hold the jumper between its blowouts")
+                    .next()
+                    .is_some(),
+                arc
+            );
+        }
+    }
+
+    /// The jumpers' band margin (2026-10-21, the owner's decision): a
+    /// value entered is said to be the user's, and the default (0 m) is a
+    /// click away; in a check without jumpers it is greyed.
+    #[test]
+    fn the_jumper_band_margin_is_the_users() {
+        for (margin, jumpers) in [(0.35, true), (0.35, false)] {
+            let mut h = Harness::new_ui(move |ui| {
+                let mut w = WindSteps {
+                    arc: true,
+                    jumper_band_margin: margin,
+                    ..WindSteps::default()
+                };
+                wind_choice(ui, "test", &mut w, false, 600.0, jumpers);
+            });
+            h.run();
+            assert!(h.query_by_label("jumper band margin").is_some());
+            assert_eq!(
+                h.query_all_by_label_contains("your value, on your responsibility")
+                    .next()
+                    .is_some(),
+                jumpers
+            );
+            assert!(h.query_by_label("0 m").is_some());
         }
     }
 }
