@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use eframe::egui;
 use ohl_clearance::galloping::{self, GallopingParams};
 
+use crate::check_help as help;
 use crate::job::{Job, case_combo, or_dash, save_csv};
 use crate::model::Model;
 use crate::selection::Selection;
@@ -61,7 +62,7 @@ pub struct GallopingWindow {
     pub case: usize,
     /// Only pairs below the requirement.
     pub only_short: bool,
-    job: Job<Report>,
+    pub(crate) job: Job<Report>,
 }
 
 impl GallopingWindow {
@@ -150,7 +151,11 @@ impl GallopingWindow {
         egui::Window::new("Galloping ellipses")
             .open(&mut open)
             .default_width(760.0)
+            .default_height(600.0)
             .show(ctx, |ui| {
+                // Run in the footer at the bottom left, always visible
+                // (owner, 2026-10-21); the rest scrolls above it.
+                help::body(ui, "galloping-window", |ui| {
                 ui.horizontal(|ui| {
                     let name = self.file.as_ref().map_or("no parameter file".into(), |p| {
                         p.file_name()
@@ -172,13 +177,6 @@ impl GallopingWindow {
                     let names: Vec<String> =
                         model.cases.iter().map(|c| c.case.name.clone()).collect();
                     case_combo(ui, "galloping-case", &names, &mut self.case);
-                    if ui
-                        .add_enabled(!self.job.running(), egui::Button::new("Check"))
-                        .clicked()
-                    {
-                        self.start(model, ui.ctx());
-                    }
-                    self.job.status_ui(ui);
                 });
                 let report = match &self.job.result {
                     None => {
@@ -275,6 +273,11 @@ impl GallopingWindow {
                                 }
                             });
                     });
+                });
+                help::footer(ui, "galloping-window", |ui| {
+                    again |= help::run_button(ui, !self.job.running(), "Size the ellipses of every span by the parameter file in the case chosen and check their clearances", None);
+                    self.job.status_ui(ui);
+                });
             });
         self.open = open;
         if again {

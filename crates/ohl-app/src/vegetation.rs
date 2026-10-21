@@ -665,7 +665,7 @@ pub struct VegetationWindow {
     pub cases: Vec<usize>,
     /// The settings.
     pub settings: Settings,
-    job: Job<Report>,
+    pub(crate) job: Job<Report>,
     /// Counts the reports taken (a new one is drawn).
     generation: u64,
     /// What the views draw now: shown, report, colours.
@@ -1060,45 +1060,49 @@ impl VegetationWindow {
             window,
             Some(&mut open),
             |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("vegetation-panel")
-                    .show(ui, |ui| {
-                        self.run_ui(ui, model, &mut out);
-                        // Out of date: said at the top, Run again beside.
-                        if let Some(what) = &stale
-                            && self.report().is_some()
-                        {
-                            again = crate::revision::banner(ui, what, !self.job.running());
-                        }
-                        self.preset_ui(ui, model, presets, &mut out);
-                        ui.separator();
-                        egui::CollapsingHeader::new("Settings")
-                            .id_salt("vegetation-settings")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                self.settings_ui(ui, model, &mut out);
-                                ui.separator();
-                                self.colors_ui(ui, model);
-                            });
-                        ui.separator();
-                        match &self.job.result {
-                            None => {
-                                ui.label(
-                                    "Vegetation near the wires of the cases ticked, now and after \
+                // Run in the footer at the bottom left, always visible
+                // (owner, 2026-10-21); the rest scrolls above it.
+                help::body(ui, "vegetation-panel", |ui| {
+                    // Out of date: said at the top, Run again beside.
+                    if let Some(what) = &stale
+                        && self.report().is_some()
+                    {
+                        again = crate::revision::banner(ui, what, !self.job.running());
+                    }
+                    self.preset_ui(ui, model, presets, &mut out);
+                    ui.separator();
+                    egui::CollapsingHeader::new("Settings")
+                        .id_salt("vegetation-settings")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            self.settings_ui(ui, model, &mut out);
+                            ui.separator();
+                            self.colors_ui(ui, model);
+                        });
+                    ui.separator();
+                    match &self.job.result {
+                        None => {
+                            ui.label(
+                                "Vegetation near the wires of the cases ticked, now and after \
                                      growth, and trees that could fall onto them turning about \
                                      their root ball.",
-                                );
-                            }
-                            Some(Err(e)) => {
-                                crate::menu::error_label(ui, e);
-                            }
-                            Some(Ok(report)) => {
-                                if let Some(go) = report_ui(ui, report) {
-                                    out.go = Some(go);
-                                }
+                            );
+                        }
+                        Some(Err(e)) => {
+                            crate::menu::error_label(ui, e);
+                        }
+                        Some(Ok(report)) => {
+                            if let Some(go) = report_ui(ui, report) {
+                                out.go = Some(go);
                             }
                         }
-                    });
+                    }
+                    if self.report().is_some() {
+                        ui.separator();
+                        self.save_ui(ui, model, &mut out);
+                    }
+                });
+                again |= help::footer(ui, "vegetation-panel", |ui| self.run_ui(ui));
             },
         );
         if shown == crate::dockable::Shown::Closed {
@@ -1612,20 +1616,21 @@ impl VegetationWindow {
         );
     }
 
-    /// Run, its status, saving.
-    fn run_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+    /// The Run footer: Run, its status. True to run.
+    fn run_ui(&self, ui: &mut egui::Ui) -> bool {
+        let run = help::run_button(
+            ui,
+            !self.job.running(),
+            "Solve the cases, read the vegetation points again and check every span",
+            None,
+        );
+        self.job.status_ui(ui);
+        run
+    }
+
+    /// Saving the run shown in Performed checks.
+    fn save_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!self.job.running(), egui::Button::new("Check"))
-                .on_hover_text(
-                    "Solve the cases, read the vegetation points again and check every span",
-                )
-                .clicked()
-            {
-                self.start(model, ui.ctx());
-            }
-            self.job.status_ui(ui);
-            ui.separator();
             ui.label("save as");
             ui.add(egui::TextEdit::singleline(&mut self.save_name).desired_width(160.0));
             let ready = self.report().is_some() && model.editing.is_ok();

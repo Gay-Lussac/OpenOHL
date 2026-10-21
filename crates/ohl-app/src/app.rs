@@ -315,6 +315,9 @@ pub struct Ready {
     pub lidar_ground: crate::job::Job<Option<ohl_terrain::Terrain>>,
     /// The check whose clearance violations the views draw.
     pub marks_from: MarksFrom,
+    /// The Clearances tab's violations drawn (the tab open with a
+    /// report); `None` before the first frame.
+    pub clearances_drawn: Option<bool>,
     /// The ground is to be built again from the LiDAR ground classes
     /// (their points changed).
     pub lidar_ground_again: bool,
@@ -467,6 +470,7 @@ impl Ready {
             lidar_ground: Default::default(),
             lidar_ground_again: false,
             marks_from: MarksFrom::Clearances,
+            clearances_drawn: None,
             lidar_ground_rev: 0,
             // Tried when the project was read.
             lidar_ground_tried: model.ground.is_none().then(|| {
@@ -7026,16 +7030,24 @@ fn move_window(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// Clearances: takes a finished check, starts one when the model changed
-/// (with "check after edits" on) or no check ran yet.
-fn clearance_frame(ctx: &egui::Context, r: &mut Ready) {
-    if r.clearances.poll() {
+/// (with "check after edits" on) or no check ran yet. Its violations are
+/// drawn while the Clearances tab is open (docked or moved too), taken off
+/// the views once it is closed, back when it is opened again (as the
+/// vegetation panel's layers).
+fn clearance_frame(ctx: &egui::Context, r: &mut Ready, tab_open: bool) {
+    let arrived = r.clearances.poll();
+    let shown = tab_open && r.clearances.report.is_some();
+    if (arrived || r.clearances_drawn != Some(shown))
+        && (shown || r.marks_from == MarksFrom::Clearances)
+    {
         r.marks_from = MarksFrom::Clearances;
-        let f = r.clearances.findings();
+        let f = if shown { r.clearances.findings() } else { &[] };
         r.view3d.marks = f.iter().map(|f| (f.at, f.target)).collect();
         r.plan.marks = f.iter().map(|f| f.at).collect();
         r.view3d.dirty.insert(Layer::Clearances);
     }
-    // Checks run on demand (Check now, Checks menu), or after every edit
+    r.clearances_drawn = Some(shown);
+    // Checks run on demand (Run, Checks menu), or after every edit
     // when asked.
     if r.clearances.stale && r.clearances.auto && r.clearances.report.is_some() {
         start_clearance_check(ctx, r);
@@ -7142,6 +7154,12 @@ pub(crate) fn clearance_zone_out(
                 Err(e) => (e, true),
             },
         );
+    }
+    if out.hide_marks && r.marks_from == MarksFrom::Zone(measure) {
+        // Its window closed: its violations off the views.
+        r.plan.marks.clear();
+        r.view3d.marks.clear();
+        r.view3d.dirty.insert(Layer::Clearances);
     }
     if let Some(marks) = out.marks {
         r.marks_from = MarksFrom::Zone(measure);
@@ -7262,6 +7280,33 @@ fn keep_rule_file(
 /// The Clearances tab: rule file, the violations of the shown case (click
 /// one to go there).
 fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
+    // Run in the footer at the bottom left, always visible (owner,
+    // 2026-10-21); the rest scrolls above it.
+    let mut check =
+        crate::check_help::body(ui, "clearances-page", |ui| clearance_panel_body(ui, r));
+    if !r.clearances.files.is_empty() {
+        crate::check_help::footer(ui, "clearances-page", |ui| {
+            let c = &mut r.clearances;
+            check |= crate::check_help::run_button(
+                ui,
+                !c.running(),
+                "Check wire clearances: the rules of this file, the weather case shown",
+                None,
+            );
+            ui.checkbox(&mut c.auto, "after every edit");
+            if c.running() {
+                ui.spinner();
+            }
+        });
+    }
+    if check {
+        r.clearances.stale = true;
+        start_clearance_check(ui.ctx(), r);
+    }
+}
+
+/// The Clearances tab above its footer: true to run the check (Run again).
+fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     r.clearances.set_defaults(&r.model.line.defaults);
     if r.clearances.files.is_empty() {
         ui.label(egui::RichText::new("No clearance rule file in the project yet.").strong());
@@ -7297,7 +7342,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 r.radial_clearances.show(&r.model);
             }
         });
-        return;
+        return false;
     }
     let c = &mut r.clearances;
     let name = |p: &std::path::Path| {
@@ -7324,16 +7369,6 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         c.choose(k);
     }
     let mut check = false;
-    ui.horizontal(|ui| {
-        check = ui
-            .button("Check now")
-            .on_hover_text("Check wire clearances: the rules of this file, the weather case shown")
-            .clicked();
-        ui.checkbox(&mut c.auto, "after every edit");
-        if c.running() {
-            ui.spinner();
-        }
-    });
     match &c.rules {
         Some(Err(e)) => {
             crate::menu::error_label(ui, e);
@@ -7421,10 +7456,6 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         }
         None => {}
     }
-    if check {
-        r.clearances.stale = true;
-        start_clearance_check(ui.ctx(), r);
-    }
     if let Some(f) = go {
         r.selection = f.wire;
         r.view3d.dirty.insert(Layer::Selection);
@@ -7434,6 +7465,7 @@ fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
         }
         r.plan.centre_on(f.at);
     }
+    check
 }
 
 /// Shows `tab`: brings it to the front if it is open; library pages open
@@ -8605,7 +8637,8 @@ impl eframe::App for App {
                 edit_keys(ui.ctx(), ready);
                 {
                     let _t = crate::perf::span("hooks: clearances");
-                    clearance_frame(ui.ctx(), ready);
+                    let tab_open = self.dock.find_tab(&Tab::Clearances).is_some();
+                    clearance_frame(ui.ctx(), ready, tab_open);
                 }
                 {
                     let _t = crate::perf::span("hooks: popups");

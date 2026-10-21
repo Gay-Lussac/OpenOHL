@@ -470,7 +470,7 @@ pub struct SafetyVolumeWindow {
     pub cases: Vec<usize>,
     /// The settings.
     pub settings: Settings,
-    job: Job<Report>,
+    pub(crate) job: Job<Report>,
     /// Counts the reports taken (a new one is drawn).
     generation: u64,
     /// What the views draw now: shown, report.
@@ -792,54 +792,50 @@ impl SafetyVolumeWindow {
             .default_width(620.0)
             .default_height(640.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("safety-volume-window")
-                    .show(ui, |ui| {
-                        if let Some(what) = &stale {
-                            again = crate::revision::banner(ui, what, !self.job.running());
-                        }
-                        // Run and the results at the top, as in the
-                        // clearance windows; the settings below.
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(!self.job.running(), egui::Button::new("Run"))
-                                .on_hover_text(
-                                    "Solve the cases ticked and build the volumes (in the \
-                                     background)",
-                                )
-                                .clicked()
-                            {
-                                again = true;
-                            }
-                            self.job.status_ui(ui);
-                        });
-                        match &self.job.result {
-                            None => {
-                                ui.label(
-                                    "The space within the distance of the wires in every \
+                // Run in the footer at the bottom left, always visible
+                // (owner, 2026-10-21); the rest scrolls above it.
+                help::body(ui, "safety-volume-window", |ui| {
+                    if let Some(what) = &stale {
+                        again = crate::revision::banner(ui, what, !self.job.running());
+                    }
+                    // The results at the top, as in the clearance
+                    // windows; the settings below.
+                    match &self.job.result {
+                        None => {
+                            ui.label(
+                                "The space within the distance of the wires in every \
                                      position of the cases ticked, for work near the line: \
                                      one closed volume per wire, circuit or system, shown in \
                                      the 3D view and the plan, exported as DXF, IFC or KML. Set \
                                      it up below, then Run.",
-                                );
-                            }
-                            Some(Err(e)) => {
-                                crate::menu::error_label(ui, e);
-                            }
-                            Some(Ok(_)) => {
-                                self.report_ui(ui);
-                                ui.separator();
-                                self.save_ui(ui, model, &mut out);
-                            }
+                            );
                         }
-                        ui.separator();
-                        self.settings_ui(ui, model, presets, &mut out);
-                        ui.separator();
-                        if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
-                            out.guide = Some(a);
+                        Some(Err(e)) => {
+                            crate::menu::error_label(ui, e);
                         }
-                        self.export_ui(ui, model);
-                    });
+                        Some(Ok(_)) => {
+                            self.report_ui(ui);
+                            ui.separator();
+                            self.save_ui(ui, model, &mut out);
+                        }
+                    }
+                    ui.separator();
+                    self.settings_ui(ui, model, presets, &mut out);
+                    ui.separator();
+                    if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
+                        out.guide = Some(a);
+                    }
+                    self.export_ui(ui, model);
+                });
+                help::footer(ui, "safety-volume-window", |ui| {
+                    again |= help::run_button(
+                        ui,
+                        !self.job.running(),
+                        "Solve the cases ticked and build the volumes (in the background)",
+                        None,
+                    );
+                    self.job.status_ui(ui);
+                });
             });
         self.open = open;
         if again {

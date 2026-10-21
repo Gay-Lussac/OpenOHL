@@ -34,7 +34,24 @@ fn switch(m: &mut model::Model, name: &str) {
     }
 }
 
-fn synthetic() -> model::Model {
+/// The Run button of the check window titled `title` (in its footer, at
+/// the bottom left): of the Run buttons in the window (its accessible
+/// node is named by its title), the one nearest its bottom left corner
+/// (several check windows may be open, overlapping).
+pub(crate) fn run_in<'h>(h: &'h Harness<'_, App>, title: &str) -> egui_kittest::Node<'h> {
+    let w = h.get_by_label(title).rect();
+    h.query_all_by_label("Run")
+        .filter(|n| w.contains_rect(n.rect()))
+        .min_by(|a, b| {
+            let d = |n: &egui_kittest::Node<'_>| {
+                (n.rect().left() - w.left()).abs() + (w.bottom() - n.rect().bottom()).abs()
+            };
+            d(a).total_cmp(&d(b))
+        })
+        .unwrap_or_else(|| panic!("no Run in \"{title}\""))
+}
+
+pub(crate) fn synthetic() -> model::Model {
     let ex = root().join("examples/synthetic-line");
     solved_all(
         model::load(
@@ -1482,7 +1499,8 @@ fn the_checks_menu_runs_the_clearance_check() {
         "{:?}",
         rep.notes
     );
-    harness.get_by_label_contains("Check now");
+    // Run, in the tab's footer.
+    harness.get_by_label("Run");
 }
 
 #[test]
@@ -1513,7 +1531,7 @@ fn the_checks_menu_opens_the_galloping_window() {
         .position(|c| c.case.name == "glaze ice")
         .unwrap();
     harness.run();
-    harness.get_by_label("Check").click();
+    harness.get_by_label("Run").click();
     let started = std::time::Instant::now();
     loop {
         harness.step();
@@ -1593,7 +1611,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
         };
         w.rules.push(ohl_clearance::ZoneRule {
             name: "High ground".into(),
-            voltage: Some(220.0),
+            voltages: vec![220.0],
             cases: vec!["high wind".into()],
             distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
@@ -1661,7 +1679,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
         };
         w.rules.push(ohl_clearance::ZoneRule {
             name: "High ground".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: vec!["high wind".into()],
             distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
@@ -1820,6 +1838,13 @@ fn the_radial_clearances_window_keeps_its_rules() {
     harness.run();
     harness.query_all_by_label("Remove").next().unwrap().click();
     harness.run();
+    // The question under the rules (scrolled to: the window is long).
+    harness
+        .query_all_by_label("Remove")
+        .last()
+        .unwrap()
+        .scroll_to_me();
+    harness.run();
     harness.query_all_by_label("Remove").last().unwrap().click();
     harness.run();
     harness.run();
@@ -1894,14 +1919,14 @@ fn vegetation_and_as_built_wires_from_a_point_cloud() {
     let r = harness.state_mut().ready().unwrap();
     r.wirefit.open = true;
     harness.run();
-    harness.get_by_label("Fit").click();
+    harness.get_by_label("Run").click();
     harness.step();
     let r = harness.state_mut().ready().unwrap();
     r.vegetation.show(0);
     r.vegetation.settings.iso.0 = true;
     harness.step();
     harness.step();
-    harness.get_by_label("Check").click();
+    run_in(&harness, crate::vegetation::CHECK_TITLE).click_accesskit();
     let started = std::time::Instant::now();
     loop {
         harness.step();
@@ -6202,9 +6227,7 @@ fn thermal_rating_window() {
         assert!(matches!(&r.thermal.ambient, Some(Ok(set)) if set.cases.len() == 3));
     }
     harness.get_by_label("summer noon at 80 °C");
-    harness
-        .get_by_label("Clearance-limited temperature")
-        .click();
+    harness.get_by_label("Run").click();
     harness.step();
     run_until(&mut harness, |a| {
         let r = a.ready().unwrap();
@@ -6290,7 +6313,8 @@ fn bill_of_materials_and_spotting_windows() {
     harness.run();
     harness.get_by_label("Spot structures…").click();
     harness.run();
-    harness.get_by_label("Spot").click();
+    // The bill's window is open too: the spotting window's Run.
+    run_in(&harness, "Spot structures").click_accesskit();
     run_until(&mut harness, |a| {
         let r = a.ready().unwrap();
         r.spot.result.is_some() && !r.spot.running()
@@ -13690,7 +13714,7 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         assert_ne!(other, r.case);
         w.cases = std::iter::once(other).collect();
     }
-    harness.get_by_label("Check").click();
+    harness.get_by_label("Run").click();
     let started = std::time::Instant::now();
     let (row, below) = loop {
         harness.step();

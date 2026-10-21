@@ -18,6 +18,12 @@
 //! safety-volume window, the distance around a conductor, the volumes
 //! per wire, circuit or system, and the mesh outside the exact volume
 //! where two tubes meet.
+//!
+//! Every check window ends with the same **Run footer** ([`body`],
+//! [`footer`], [`run_button`], [`stop_button`]): Run (Stop and the
+//! progress while it runs) at the bottom left, under the scrolled body,
+//! always visible however long the window's content is (owner,
+//! 2026-10-21).
 
 use eframe::egui;
 use ohl_clearance::rules::{WindSides, WindSteps};
@@ -41,6 +47,68 @@ pub fn heading(ui: &mut egui::Ui, title: &str, anchor: &'static str) -> Option<&
         }
     });
     out
+}
+
+/// The memory key of a check window's footer height.
+fn footer_key(id: &str) -> egui::Id {
+    egui::Id::new(("check-footer", id))
+}
+
+/// The smallest height of a check window's body, px (the footer goes
+/// below it when the window is shorter).
+const MIN_BODY: f32 = 80.0;
+
+/// The body of a check window, above its Run [`footer`] (same `id`): a
+/// scroll area filling the window down to the footer, so that
+/// the footer stays at the bottom and never scrolls away.
+pub fn body<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let key = footer_key(id);
+    let footer = ui
+        .data(|d| d.get_temp::<f32>(key))
+        .unwrap_or(ui.spacing().interact_size.y + 3.0 * ui.spacing().item_spacing.y + 6.0);
+    let below = ui.available_rect_before_wrap();
+    // The room left: the window's, or what is visible of it (docked in a
+    // scrolled page, or taller than the screen).
+    let room = below.height().min(ui.clip_rect().bottom() - below.top());
+    let height = (room - footer).max(MIN_BODY);
+    // Across too: a narrow docked page (the Clearances tab) scrolls
+    // sideways rather than cutting its rows.
+    egui::ScrollArea::both()
+        .id_salt((key, "body"))
+        .auto_shrink([false, false])
+        .max_height(height)
+        .show(ui, add)
+        .inner
+}
+
+/// The Run footer of a check window, under its [`body`] (same `id`): a
+/// line, then `add` from the left (Run, Stop, the progress).
+pub fn footer<R>(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let top = ui.cursor().top();
+    ui.separator();
+    let inner = ui.horizontal_wrapped(add).inner;
+    let height = ui.cursor().top() - top;
+    if height.is_finite() && height > 0.0 {
+        ui.data_mut(|d| d.insert_temp(footer_key(id), height));
+    }
+    inner
+}
+
+/// The Run button of a footer: greyed with `why_not` on hover when it
+/// cannot run (`None` and `enabled` false: a run under way). True when
+/// clicked.
+pub fn run_button(ui: &mut egui::Ui, enabled: bool, hover: &str, why_not: Option<&str>) -> bool {
+    let enabled = enabled && why_not.is_none();
+    ui.add_enabled(enabled, egui::Button::new("Run"))
+        .on_hover_text(hover)
+        .on_disabled_hover_text(why_not.unwrap_or("A run is under way"))
+        .clicked()
+}
+
+/// The Stop button of a footer, while a run is under way. True when
+/// clicked.
+pub fn stop_button(ui: &mut egui::Ui, hover: &str) -> bool {
+    ui.button("Stop").on_hover_text(hover).clicked()
 }
 
 /// A LiDAR class's colour swatch (as drawn in the views), before its tick.

@@ -22,6 +22,7 @@ use ohl_core::budget::CancelToken;
 use ohl_thermal::limit::{Limit, LimitOptions, SectionLimit, Targets};
 use ohl_thermal::{AmbientCases, Conductor, Method};
 
+use crate::check_help as help;
 use crate::model::Model;
 
 /// What its results are computed from ([`crate::revision`]).
@@ -275,146 +276,162 @@ pub fn window(
         .open(&mut open)
         .resizable(true)
         .default_width(640.0)
+        .default_height(600.0)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Ambient cases");
-                let name = w.file.as_ref().map_or("none".to_owned(), |p| {
-                    p.file_name()
-                        .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-                });
-                ui.label(egui::RichText::new(name).strong());
-                if ui
-                    .button("Choose…")
-                    .on_hover_text("An ambient case file (.ohlta): air, wind, sun")
-                    .clicked()
-                    && let Some(p) = rfd::FileDialog::new()
-                        .add_filter(
-                            "Thermal ambient cases",
-                            &ohl_core::files::open_extensions(
-                                ohl_thermal::ambient::AMBIENT_FILE_EXTENSION,
-                            ),
-                        )
-                        .pick_file()
-                {
-                    w.choose(p);
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Method");
-                egui::ComboBox::from_id_salt("thermal-method")
-                    .selected_text(w.method.title())
-                    .show_ui(ui, |ui| {
-                        for m in Method::ALL {
-                            ui.selectable_value(&mut w.method, m, m.title());
-                        }
-                    });
-                ui.label("Maximum temperature");
-                ui.add(
-                    egui::DragValue::new(&mut w.max_temperature)
-                        .range(-20.0..=300.0)
-                        .suffix(" °C"),
-                );
-            });
-            let cases = match &w.ambient {
-                Some(Ok(set)) => set.cases.clone(),
-                Some(Err(e)) => {
-                    ui.colored_label(ui.visuals().error_fg_color, e);
-                    Vec::new()
-                }
-                None => {
-                    ui.label(
-                        egui::RichText::new("Choose an ambient case file (.ohlta).")
-                            .small()
-                            .weak(),
-                    );
-                    Vec::new()
-                }
-            };
-            for c in &cases {
-                ui.label(
-                    egui::RichText::new(format!("{}: {}", c.name, c.summary()))
-                        .small()
-                        .weak(),
-                );
-            }
-            ui.separator();
-
-            // Clearance limit controls (fixed while a search runs).
-            let running = w.running();
-            ui.add_enabled_ui(!running, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Weather case heated");
-                    let name = |k: usize| model.cases.get(k).map_or("", |c| c.case.name.as_str());
-                    egui::ComboBox::from_id_salt("thermal-base")
-                        .selected_text(name(w.base_case))
-                        .show_ui(ui, |ui| {
-                            for k in 0..model.cases.len() {
-                                ui.selectable_value(&mut w.base_case, k, name(k));
-                            }
-                        });
-                    ui.label("from");
-                    ui.add(
-                        egui::DragValue::new(&mut w.options.min_temperature)
-                            .range(-50.0..=w.options.max_temperature - 1.0)
-                            .suffix(" °C"),
-                    );
-                    ui.label("to");
-                    ui.add(
-                        egui::DragValue::new(&mut w.options.max_temperature)
-                            .range(w.options.min_temperature + 1.0..=400.0)
-                            .suffix(" °C"),
-                    );
-                })
-            });
-            ui.horizontal(|ui| {
-                let usable = match rules {
-                    Some(Ok(r)) => Some(r.clone()),
-                    _ => None,
-                };
-                if let Some(job) = &w.job {
-                    let done = job.done.load(Ordering::Relaxed);
-                    ui.add(
-                        egui::ProgressBar::new(done as f32 / job.sections.max(1) as f32)
-                            .text(format!("section {done} of {}", job.sections))
-                            .desired_width(240.0),
-                    );
-                    if ui.button("Cancel").clicked() {
-                        job.cancel.cancel();
-                    }
-                } else if ui
-                    .add_enabled(
-                        usable.is_some(),
-                        egui::Button::new("Clearance-limited temperature"),
-                    )
-                    .on_hover_text(
-                        "Per section, the highest conductor temperature at which the ground and \
-                         point rules of the rule file are met (to 0.5 °C)",
-                    )
-                    .on_disabled_hover_text(
-                        "Choose a rule file: Checks › Wire clearances › Rule file",
-                    )
-                    .clicked()
-                    && let Some(r) = usable
-                {
-                    w.start(model, r, ui.ctx());
-                }
-                if let Some(t) = w.took {
-                    ui.label(egui::RichText::new(format!("{t:.1?}")).small().weak());
-                }
-            });
-            if let Some(Err(e)) = &w.limits {
-                ui.colored_label(ui.visuals().error_fg_color, e);
-            }
-            if let Some(what) = w.out_of_date(model)
-                && crate::revision::banner(ui, &what, !w.running())
-                && let Some(Ok(r)) = rules
-            {
-                w.start(model, r.clone(), ui.ctx());
-            }
-            ui.separator();
-            table(ui, w, model, &cases);
+            // Run in the footer at the bottom left, always visible (owner,
+            // 2026-10-21); the rest scrolls above it.
+            help::body(ui, "thermal-window", |ui| body(ui, w, model, rules));
+            help::footer(ui, "thermal-window", |ui| run_ui(ui, w, model, rules));
         });
     w.open = open;
+}
+
+/// The window's body (above the Run footer): the ambient cases, the
+/// method, the clearance-limit settings, the table.
+fn body(
+    ui: &mut egui::Ui,
+    w: &mut ThermalWindow,
+    model: &Model,
+    rules: Option<&Result<Vec<Rule>, String>>,
+) {
+    ui.horizontal(|ui| {
+        ui.label("Ambient cases");
+        let name = w.file.as_ref().map_or("none".to_owned(), |p| {
+            p.file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+        });
+        ui.label(egui::RichText::new(name).strong());
+        if ui
+            .button("Choose…")
+            .on_hover_text("An ambient case file (.ohlta): air, wind, sun")
+            .clicked()
+            && let Some(p) = rfd::FileDialog::new()
+                .add_filter(
+                    "Thermal ambient cases",
+                    &ohl_core::files::open_extensions(ohl_thermal::ambient::AMBIENT_FILE_EXTENSION),
+                )
+                .pick_file()
+        {
+            w.choose(p);
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label("Method");
+        egui::ComboBox::from_id_salt("thermal-method")
+            .selected_text(w.method.title())
+            .show_ui(ui, |ui| {
+                for m in Method::ALL {
+                    ui.selectable_value(&mut w.method, m, m.title());
+                }
+            });
+        ui.label("Maximum temperature");
+        ui.add(
+            egui::DragValue::new(&mut w.max_temperature)
+                .range(-20.0..=300.0)
+                .suffix(" °C"),
+        );
+    });
+    let cases = match &w.ambient {
+        Some(Ok(set)) => set.cases.clone(),
+        Some(Err(e)) => {
+            ui.colored_label(ui.visuals().error_fg_color, e);
+            Vec::new()
+        }
+        None => {
+            ui.label(
+                egui::RichText::new("Choose an ambient case file (.ohlta).")
+                    .small()
+                    .weak(),
+            );
+            Vec::new()
+        }
+    };
+    for c in &cases {
+        ui.label(
+            egui::RichText::new(format!("{}: {}", c.name, c.summary()))
+                .small()
+                .weak(),
+        );
+    }
+    ui.separator();
+
+    // Clearance limit controls (fixed while a search runs).
+    let running = w.running();
+    ui.add_enabled_ui(!running, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Weather case heated");
+            let name = |k: usize| model.cases.get(k).map_or("", |c| c.case.name.as_str());
+            egui::ComboBox::from_id_salt("thermal-base")
+                .selected_text(name(w.base_case))
+                .show_ui(ui, |ui| {
+                    for k in 0..model.cases.len() {
+                        ui.selectable_value(&mut w.base_case, k, name(k));
+                    }
+                });
+            ui.label("from");
+            ui.add(
+                egui::DragValue::new(&mut w.options.min_temperature)
+                    .range(-50.0..=w.options.max_temperature - 1.0)
+                    .suffix(" °C"),
+            );
+            ui.label("to");
+            ui.add(
+                egui::DragValue::new(&mut w.options.max_temperature)
+                    .range(w.options.min_temperature + 1.0..=400.0)
+                    .suffix(" °C"),
+            );
+        })
+    });
+    if let Some(Err(e)) = &w.limits {
+        ui.colored_label(ui.visuals().error_fg_color, e);
+    }
+    if let Some(what) = w.out_of_date(model)
+        && crate::revision::banner(ui, &what, !w.running())
+        && let Some(Ok(r)) = rules
+    {
+        w.start(model, r.clone(), ui.ctx());
+    }
+    ui.separator();
+    table(ui, w, model, &cases);
+}
+
+/// The Run footer: the clearance-limited temperature of every section
+/// (Stop and the progress while it runs).
+fn run_ui(
+    ui: &mut egui::Ui,
+    w: &mut ThermalWindow,
+    model: &Model,
+    rules: Option<&Result<Vec<Rule>, String>>,
+) {
+    let usable = match rules {
+        Some(Ok(r)) => Some(r.clone()),
+        _ => None,
+    };
+    if let Some(job) = &w.job {
+        let done = job.done.load(Ordering::Relaxed);
+        ui.add(
+            egui::ProgressBar::new(done as f32 / job.sections.max(1) as f32)
+                .text(format!("section {done} of {}", job.sections))
+                .desired_width(240.0),
+        );
+        if help::stop_button(ui, "Stop the search: the previous results stay") {
+            job.cancel.cancel();
+        }
+    } else if help::run_button(
+        ui,
+        true,
+        "The clearance-limited temperature: per section, the highest conductor temperature at \
+         which the ground and point rules of the rule file are met (to 0.5 °C)",
+        usable
+            .is_none()
+            .then_some("Choose a rule file: Checks › Wire clearances › Rule file"),
+    ) && let Some(r) = usable
+    {
+        w.start(model, r, ui.ctx());
+    }
+    if let Some(t) = w.took {
+        ui.label(egui::RichText::new(format!("{t:.1?}")).small().weak());
+    }
 }
 
 /// Per section: cable, ampacity at the maximum temperature per case, the
