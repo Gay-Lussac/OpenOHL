@@ -287,6 +287,9 @@ fn safety_volumes_by_system() {
     h.get_by_label("Systems").click_accesskit();
     h.run_steps(2);
     h.get_by_label("220 kV example system — 220 kV");
+    // The wires without a system, a row of their own (2026-10-21); the
+    // example line has none.
+    h.get_by_label("(no system) — earthed wires (none on this line)");
     h.get_by_label("None").click_accesskit();
     h.run_steps(2);
     h.get_by_label("Run").click();
@@ -335,6 +338,23 @@ fn safety_volumes_by_system() {
     let (back, cases) = Settings::from_json(&saved).unwrap();
     assert_eq!(back, settings);
     assert_eq!(cases, ["max temperature"]);
+    // The band's margin recorded (2026-10-21); a run saved before reads
+    // the margin then fixed; another margin with the arc: out of date.
+    assert_eq!(saved["band_margin"], 0.15);
+    let mut old = saved.clone();
+    old.as_object_mut().unwrap().remove("band_margin");
+    let (back, _) = Settings::from_json(&old).unwrap();
+    assert_eq!(
+        back.steps.band_margin,
+        ohl_clearance::positions::BAND_MARGIN
+    );
+    let mut arc = settings.clone();
+    arc.wind = ohl_clearance::safety_volume::WindMode::Arc;
+    let mut now = arc.clone();
+    now.steps.band_margin = 0.3;
+    assert_eq!(now.changed_since(&arc).as_deref(), Some("the band margin"));
+    assert_eq!(now.changed_since(&settings), None, "no arc: no band");
+    assert_eq!(arc.wind_text(), "swing arc (band margin 0.15 m)");
     // A run saved before: by circuit, every circuit.
     let mut old = saved.clone();
     old.as_object_mut().unwrap().remove("scope");
