@@ -150,6 +150,8 @@ pub struct RuleEditor {
     /// A change not written yet.
     pub dirty: bool,
     confirm: Option<usize>,
+    /// "Remove all rules" asked, waiting for its confirmation.
+    confirm_all: bool,
     /// When the file was read or written (undo writes it again).
     stamp: Option<std::time::SystemTime>,
     /// The "Load preset…" window.
@@ -369,6 +371,16 @@ impl RuleEditor {
         });
     }
 
+    /// Removes every rule (the file's other tables, `[wind]`, `[check]`,
+    /// `[vegetation]`, stay).
+    pub fn remove_all_rules(&mut self) {
+        if let Some(d) = self.doc.as_mut() {
+            d.remove("rule");
+        }
+        self.rules.clear();
+        self.confirm = None;
+    }
+
     /// Removes rule `k`.
     pub fn remove_rule(&mut self, k: usize) {
         if let Some(list) = self
@@ -529,9 +541,38 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     e.presets.open = true;
                     e.presets.list.clear();
                 }
+                if ui
+                    .add_enabled(
+                        editable && !e.rules.is_empty(),
+                        egui::Button::new("Remove all rules"),
+                    )
+                    .on_hover_text(
+                        "Every rule of this file removed (after a confirmation; Edit › Undo \
+                         brings them back); its wind and check settings stay",
+                    )
+                    .clicked()
+                {
+                    e.confirm_all = true;
+                }
             });
             if e.doc.is_none() {
                 return;
+            }
+            if e.confirm_all {
+                ui.horizontal(|ui| {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        format!("Remove all {} rules of this file?", e.rules.len()),
+                    );
+                    if ui.button("Remove them").clicked() {
+                        e.remove_all_rules();
+                        e.confirm_all = false;
+                        e.dirty = true;
+                    }
+                    if ui.button("Keep them").clicked() {
+                        e.confirm_all = false;
+                    }
+                });
             }
             let mut remove = None;
             egui::ScrollArea::vertical()
@@ -1028,6 +1069,21 @@ radial = "3 m"
 
     /// Merge replaces a rule of the same name and adds the others;
     /// Replace takes the preset's rules alone.
+    /// Remove all rules empties the file's rules and keeps the rest of
+    /// it readable (a rule file without rules).
+    #[test]
+    fn all_rules_are_removed() {
+        let d = ohl_clearance::rules::RuleDefaults::default();
+        let mut e = RuleEditor::default();
+        e.take(FILE, &d).unwrap();
+        assert_eq!(e.rules.len(), 2);
+        e.remove_all_rules();
+        assert!(e.rules.is_empty());
+        let text = e.text().unwrap();
+        assert!(!text.contains("[[rule]]"), "{text}");
+        assert!(RuleSet::parse(&text).unwrap().rules.is_empty());
+    }
+
     #[test]
     fn presets_merge_or_replace() {
         let d = ohl_clearance::rules::RuleDefaults::default();

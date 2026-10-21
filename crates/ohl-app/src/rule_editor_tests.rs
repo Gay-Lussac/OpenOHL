@@ -329,9 +329,16 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
                 .poll(std::time::Duration::from_secs(60))
         );
         let list = r.rule_editor.presets.list[0].presets.as_ref().unwrap();
+        // The preset holding the ground rules (the plugin offers its
+        // general presets; their names are the plugin's).
         let k = list
             .iter()
-            .position(|p| p.name == "lev-ground-span-line")
+            .position(|p| {
+                p.rules
+                    .rules
+                    .iter()
+                    .any(|r| r.name.starts_with("Ground vertical"))
+            })
             .unwrap();
         r.rule_editor.presets.chosen = Some((0, k));
         crate::rule_editor::apply_preset(r, crate::rule_editor::Load::Merge);
