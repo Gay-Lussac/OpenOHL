@@ -5650,6 +5650,54 @@ fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+            ui.separator();
+            ui.strong("Ice and wind on the wires");
+            ui.label(
+                "Per what metre of the wire the finite elements carry the ice and the wind \
+                 (the own weight is per metre of unstressed wire either way: it is conserved).",
+            );
+            for (choice, text, help) in [
+                (
+                    ohl_line::LoadsPer::Stretched,
+                    "Per stretched metre (default, exact)",
+                    "Ice and wind act on the conductor as it is, longer by its elastic strain: \
+                     each element carries them times its stretch L/L0, found by a fixed point \
+                     (three solves in practice)",
+                ),
+                (
+                    ohl_line::LoadsPer::Unstretched,
+                    "Per unstretched metre (as other programs)",
+                    "The former treatment, which other programs appear to use: about T/EA, \
+                     0.1 %, less ice and wind, so slightly less sag and swing than the exact \
+                     treatment (on the unsafe side for clearances). A simplification, for \
+                     comparing with other programs",
+                ),
+            ] {
+                ui.radio_value(&mut draft.loads_per, choice, text)
+                    .on_hover_text(help);
+            }
+            if draft.loads_per == ohl_line::LoadsPer::Unstretched {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    egui::RichText::new(
+                        "Per unstretched metre: about 0.1 % less ice and wind than the conductor \
+                         carries — slightly less sag and swing (unsafe side). Results say which \
+                         was used.",
+                    )
+                    .small(),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new(
+                        "The effect of the choice: about T/EA, 0.1 %, of the ice and wind (iced \
+                         and windy cases about +0.03 to +0.07 % on the tension, sags within a few \
+                         mm on the example line); still air is the same either way. The closed \
+                         forms (ruling span) always take the stretched metre.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            }
             if let Err(why) = r.model.can_edit() {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
             }

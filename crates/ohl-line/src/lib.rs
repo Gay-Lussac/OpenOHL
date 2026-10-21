@@ -306,6 +306,69 @@ pub struct SolverOptions {
     /// are solved.
     #[serde(default, skip_serializing_if = "TapLoads::is_default")]
     pub taps: TapLoads,
+    /// Per what metre of the wire the finite elements carry the ice and
+    /// wind (owner decision 2026-10-21): the stretched (real) wire, exact,
+    /// the default; or the unstretched wire, the former treatment, as
+    /// other programs appear to do it.
+    #[serde(default, skip_serializing_if = "LoadsPer::is_default")]
+    pub loads_per: LoadsPer,
+}
+
+/// Per what metre of the wire the finite elements carry the ice and wind
+/// ([`SolverOptions::loads_per`]; owner decision 2026-10-21). The own
+/// weight is per metre of unstressed wire either way (it is conserved);
+/// the closed forms (ruling span, the sag-tension job) always carry the
+/// ice and wind per metre of the stretched catenary.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadsPer {
+    /// Per metre of the stretched (real) wire, the default and exact: ice
+    /// and wind act on the conductor as it is, longer by its elastic
+    /// strain (each element's load times its stretch \( L/L_0 \), a fixed
+    /// point).
+    #[default]
+    Stretched,
+    /// Per metre of the unstretched wire (the former treatment, as other
+    /// programs appear to do it): about \( T/EA \approx 0.1 \% \) less
+    /// ice and wind, so slightly less sag and swing than the exact
+    /// treatment — on the unsafe side for clearances. A Simplification,
+    /// for comparison with other programs.
+    Unstretched,
+}
+
+impl LoadsPer {
+    /// Every choice.
+    pub const ALL: [Self; 2] = [Self::Stretched, Self::Unstretched];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stretched => "stretched",
+            Self::Unstretched => "unstretched",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
+
+    /// In words, for report headers: "ice and wind per stretched metre
+    /// (exact)".
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Stretched => "ice and wind per stretched metre (exact)",
+            Self::Unstretched => {
+                "ice and wind per unstretched metre (as other programs; a simplification, \
+                 about T/EA ≈ 0.1 % less, unsafe side)"
+            }
+        }
+    }
 }
 
 /// How taps are solved ([`Tap`]).

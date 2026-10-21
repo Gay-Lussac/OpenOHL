@@ -222,6 +222,8 @@ fn rich_line() -> Line {
     }));
     line.jumpers.push(tap);
     line.solver.taps = ohl_line::TapLoads::Once;
+    // Ice and wind per unstretched metre (2026-10-21): kept.
+    line.solver.loads_per = ohl_line::LoadsPer::Unstretched;
     line.sections[0].add_spread_load(&ohl_line::legacy::SpreadLoad {
         span: 0,
         start: ohl_line::SpanPlace::at_fraction(0.1),

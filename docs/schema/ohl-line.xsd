@@ -746,6 +746,17 @@
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>
+            <!-- Ice and wind in the finite elements per metre of the
+                 stretched wire (default, exact) or of the unstretched wire
+                 (as other programs; a simplification, 2026-10-21). -->
+            <xs:attribute name="loads_per" default="stretched">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="stretched"/>
+                  <xs:enumeration value="unstretched"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 
