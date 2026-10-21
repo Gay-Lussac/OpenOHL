@@ -56,9 +56,13 @@ the user chooses per point. Editable in both applications.
 point" in older texts). *German:* Aufhängepunkt (to confirm). *In files:*
 `points` (line file: `joint`, `offset`, `unlinked`), `[[point]]` (`.ohls`:
 `node`, or `member` and `at`, or its own `point`; `offset`).
-*Built (engine and command line, 2026-10-21; in active development, not
-approved yet): the Link tool and the drawn links in the applications are
-coming.*
+In both applications the **Attachment points** table gives each one's
+joint, offset and the offset's length; the **Link tool** links a point
+to a joint where it is (OHL-Design: Tools › Structures › Link attachment
+point; OHL-Structure: Geometry › Link tool); a point's menu unlinks it;
+an unlinked point is drawn red in OHL-Design.
+*Built (engine, command line and both applications, 2026-10-21; in
+active development, not approved yet).*
 
 **Joint** — a node of the structure's model (OHL-Structure). A joint has
 a **kind**, or none: **attach** (strings hang here, through the
@@ -67,9 +71,34 @@ stands on its foundation; its fixity is the joint's support). A joint
 carrying attachment points is an attach joint, a supported one a support
 joint, unless its kind is given. A point along a member makes a joint
 there (the analysis splits the member at it); a stick figure's point is
-its own joint. *German:* Knoten (to confirm). *In files:* `[[node]]`,
-its `kind` (`.ohls` version 6). *Built (engine, 2026-10-21; in active
-development, not approved yet).*
+its own joint. Set in OHL-Structure's Joints table (*auto*, *attach*,
+*support*); attach joints are ringed in orange in the 3D views, support
+joints marked green. Only attach joints are offered when a new string's
+point is added to a structure with a type; the Link tool offers every
+joint but support joints (a joint without a kind becomes an attach
+joint when a point is linked to it). *German:* Knoten (to confirm). *In
+files:* `[[node]]`, its `kind` (`.ohls` version 6). *Built (engine and
+both applications, 2026-10-21; in active development, not approved
+yet).*
+
+**Rigid link** — the straight, rigid connection from a joint to an
+attachment point at an offset: the string's force at the point reaches
+the joint as the same force plus the moment r × F (applied where a frame
+member meets the joint; where only trusses meet it the moment is left
+out, with a note). Drawn as a magenta rod in both applications' 3D views
+and OHL-Design's structure screen, on its own layer (OHL-Design: View ›
+Layers › Rigid links; OHL-Structure: View › Rigid links), none at zero
+offset; a click on it selects its attachment point, which shows the
+joint, the offset vector, its length and its moment per load case where
+computed. *Replaces:* eccentricity (of an attachment). *German:* starre
+Verbindung (to confirm). *In files:* the attachment point's `offset`.
+*Built (2026-10-21; in active development, not approved yet).*
+
+![Left: a structure's joints, an attach joint at the crossarm's tip and
+support joints at its feet; right, enlarged: an attachment point at an
+offset e from its attach joint, joined to it by a rigid link, the
+string's force F at the point and the moment M = F · e at the
+joint](../images/glossary/rigid-link.svg)
 
 **Body** — the structure type's lattice or shaft above its feet (its
 joints and members, or its `[[body]]` polylines). *German:* Mastschaft

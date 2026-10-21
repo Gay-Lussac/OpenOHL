@@ -91,8 +91,13 @@ From the review of 2026-10-18 (quick wins are being done now):
   nearest attach joint offered on a structure change, link / relink /
   unlink commands (`ohl structures points`, `ohl structures link`,
   session `link_point`, `unlink_point`, `relink_points`): built in the
-  engine, in active development (not approved yet); the Link tool and
-  the drawn links in both applications are next.*
+  engine, in active development (not approved yet). In both
+  applications: the Link tool, the rigid links drawn (their own layer,
+  clickable), the Attachment points tables, joint kinds in
+  OHL-Structure's Joints table, the offset moments in its results, a
+  drag changing the offset or relinking on a joint, Replace structure's
+  Attachment points list: built, in active development (not approved
+  yet).*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;
