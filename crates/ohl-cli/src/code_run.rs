@@ -202,6 +202,17 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
     }
     for p in &presets {
         println!("{} — {}", p.name, p.description);
+        // The checks it is for (declared, else by its content).
+        let checks: Vec<&str> = [
+            ohl_clearance::rules::PresetCheck::Vertical,
+            ohl_clearance::rules::PresetCheck::Radial,
+            ohl_clearance::rules::PresetCheck::Vegetation,
+        ]
+        .into_iter()
+        .filter(|c| p.rules.is_for(*c))
+        .map(|c| c.as_str())
+        .collect();
+        println!("  for: {}", checks.join(", "));
         for r in &p.rules.rules {
             let mut parts = Vec::new();
             if let Some(v) = &r.vertical {

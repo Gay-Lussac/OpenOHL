@@ -211,6 +211,7 @@ pub fn to_rule_set(
         })
         .filter(|c| !c.is_empty()),
         vegetation: None,
+        checks: Vec::new(),
     }
 }
 

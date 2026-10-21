@@ -153,6 +153,20 @@ impl RulePresetChecked {
                 }
             }
         }
+        // The vegetation check's own cases (`[vegetation] cases`).
+        for c in rules.vegetation.iter().flat_map(|v| &v.cases) {
+            let found = weather.as_ref().is_some_and(|w| {
+                w.cases
+                    .iter()
+                    .any(|x| ohl_core::pattern::matches(c, &x.name))
+            });
+            if !found {
+                return Err(bad(
+                    "rules",
+                    format!("[vegetation]: no weather case \"{c}\" in the preset"),
+                ));
+            }
+        }
         Ok(Self {
             name: p.name,
             description: p.description,
