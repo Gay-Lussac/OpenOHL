@@ -434,7 +434,10 @@ once resolved every structure is checked in full (`check_strings`).
 `SectionPoint { structure, set }` names the wire point with set `set` on
 structure `structure`. Spans are between consecutive points.
 
-`Stringing` is tagged by `kind`:
+`Stringing` is tagged by `kind` (its `temperature` is always given in
+files; a section made in the app starts at
+`ohl_line::DEFAULT_STRINGING_TEMPERATURE`, 20 °C since 2026-10-21, 15 °C
+before):
 
 | `kind` | Fields | Meaning |
 |---|---|---|
@@ -491,7 +494,7 @@ ids (Sections › Point and spread load types).
 | `from`, `to` | `JumperEnd` | — | the two ends (different): a wire point `{"structure", "set"}`, or a tap `{"tap": {"span": {"section", "point"}}}` (a span point) / `{"tap": {"jumper": {"jumper", "point"}}}` (another jumper's point); a tap's point holds a clamp object (a hinge: forces only); a span's section by FE; a jumper on a tap is given by its `length` (or rigid); jumpers hanging on each other in a ring refused; solved after what they hang on (`Line::jumper_order`); their loads keyed `solve::LoadAt::{Clamp, Span, Jumper}`. Version 4 files gave a tap as `from_tap` / `to_tap` beside a placeholder `from` / `to` (read: the tap) | structure id + set, or point labels |
 | `length` | f64? | m | cut length at `temperature` | — |
 | `sag` | f64? | m | or: sag below the chord in still air (no supports) | — |
-| `temperature` | f64 | °C | of `length` / `sag` | — |
+| `temperature` | f64 | °C | of `length` / `sag`; left out of a file: 15 °C, as files were written (the program writes it always; new jumpers made in the app: `DEFAULT_STRINGING_TEMPERATURE`, 20 °C, since 2026-10-21) | — |
 | `rigid` | bool | — | a tube or bar: no length, sag or supports | — |
 | `points` | `[JumperPoint]` | — | labelled points along it — its **supports** among them: a clamp object with a `hold`, placed by a `fraction` (`Jumper::supports` gives those on strings as `JumperClamp`s in order, `Jumper::support` the string from a fixed point as a `JumperSupport`; `set_supports` / `edit_supports` change them); version 4 files gave `support` and `supports` of their own, read into points `S1` and `C1`, `C2`… — (`at`: `JumperPlace` — `fraction` of its length from `from`, `length` along it, m, or `distance`, m horizontally from `from`'s clamp — one of them, `{"length": 3}`; older files giving several: a distance over a length over the fraction), each with its `object` or bare | label unique on the jumper |
 | `bending_stiffness` | f64? | N·m² | EI; default estimated from the cable; 0: hinged | — |
@@ -662,7 +665,7 @@ One directory per kind; TOML with units in the values. Each item has an
 
 | Kind (`LibraryKind`) | Extension | Format id | Items per file | Rust type | Guide |
 |---|---|---|---|---|---|
-| `Cables` | `.ohlw` | `ohl-wire` | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
+| `Cables` | `.ohlw` | `ohl-wire` (version 2: a cable's optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
 | `Insulators` | `.ohli` | `ohl-insulator` | one | `ohl_structures::InsulatorAssembly` | [Structure library](../user-guide/structure-library.md#insulator-assemblies-ohli) |
 | `StructureTypes` | `.ohls` | `ohl-structure` | one | `ohl_structures::StructureType` | [Structure library](../user-guide/structure-library.md) |
 | (pylon templates: shipped `libraries/pylon-templates`, the project's `Pylon templates` folder; not kept in the project file) | `.ohlpt` | `ohl-pylon-template` | one | `ohl_structures::templates::PylonTemplate` | [Pylon templates](../user-guide/structure-library.md#pylon-templates-ohlpt) |
@@ -672,6 +675,20 @@ One directory per kind; TOML with units in the values. Each item has an
 | (structure application; not a library kind yet) | `.ohlslc` | `ohl-structure-load-cases` | several (`[[load_case]]`) | `ohl_structure_loads::LoadCaseRecipe` | [Structure load cases](../user-guide/structure-load-cases.md) |
 | (structure application: typed loads; project kind `loads`, beside the structure types) | `*.loads.csv` | CSV, the load table's columns | typed rows (`Override`) of one structure type or one placed structure | `ohl_structure_loads::LoadTable` | [Structure load cases](../user-guide/structure-load-cases.md#the-load-table) |
 | (line application → structure application, derived, not kept) | `*.line-values.json` | `ohl-structure-line-values` (JSON) | one placed structure | `ohl_structure_loads::PlacedValues` | [Structure application](../user-guide/structure-app.md#started-for-a-placed-structure) |
+
+**Wire library version 2** (2026-10-21, owner decision): a cable's
+optional `reference_temperature` (`Cable::reference_temperature`,
+`Option<Temperature>`), the data sheet's temperature of its
+`mass_per_length`; none: 20 °C (`ohl_cables::DEFAULT_REFERENCE_TEMPERATURE_C`,
+`Cable::mass_reference_temperature`). The calculations take the weight per
+metre at the stringing temperature from it (`Cable::weight_at`,
+`Cable::weight_factor_at` in the multiplicative thermal form,
+`Mechanics::weight_factor` in the curves' additive one,
+`Cable::with_mass_at`; `ohl_line::solve::strung_cable`,
+`ohl_line::jumper::cut_cable`). Files of version 1 read unchanged (their
+cables' mass at 20 °C). The app's wire library editor raises a file to 2
+when one of its cables gives the field (`LibraryPage::save`); without it a
+file keeps its version.
 
 Other data files: structure models `.ohlfe` (`ohl-structure-model`,
 version 2: the member kind `tension`; version 3: a member's `bending` and

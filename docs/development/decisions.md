@@ -93,6 +93,61 @@ approved as finished: everything is built and in active development
   replaces the agent's choice of earlier today (left out by system, per
   circuit). "By system" exists nowhere else (the clearance checks choose
   by voltage and circuit), so nothing else changes.
+- **The weight from the data sheet's temperature; stringing at 20 °C by
+  default** (owner decision 4). A cable's mass per metre is its data
+  sheet's, at the data sheet's reference temperature: the wire library's
+  new optional `reference_temperature` of a cable (wire library version
+  2), else 20 °C. The calculations take it per metre of unstressed cable
+  at the stringing temperature, \\( w_s = w_{ref}\\, e^{-\alpha (t_s -
+  t_{ref})} \\) (multiplicative: the linear finite elements, the closed
+  forms, jumpers at their own temperature, the spotting at its
+  condition's), or \\( w_{ref} (1 + \varepsilon(0, t_{ref})) / (1 +
+  \varepsilon(0, t_s)) \\) in the stress-strain curves' additive form
+  (the ruling-span method, the finite elements of a cable with curves);
+  from there the weight is conserved as before. The engines keep their
+  API (the weight as given at the known state); the line
+  (`solve::strung_cable`, `jumper::cut_cable`), the CLI's sag-tension job
+  and the spotting convert. **Defaults changed** to 20 °C (from 15 °C): a
+  new section made in the app with no section to copy, a new jumper made
+  by the Add jumper tool or the Jumpers table
+  (`ohl_line::DEFAULT_STRINGING_TEMPERATURE`). **Not changed:** values
+  given in data (every file keeps its stringing and jumper temperatures);
+  a jumper temperature left out of a line or OHL XML file still reads as
+  15 °C (files were written with that meaning; OpenOHL always writes the
+  value) — *a choice of the agent, open to the owner* (a file version
+  raise could make it 20 °C for new files); weather-case temperatures
+  that are not stringing temperatures (`ohl line --temperature` 15 °C,
+  the app's default still-air case at 15 °C, the survey temperature of the
+  wire fit, the spotting window's design condition at 80 °C) are left as
+  they are. Effect: the textbook cable strung at 10 °C weighs 0.020 %
+  more than its 20 °C data sheet value; the example line (strung at
+  15 °C) +0.009 % on H in still air, sag +0.9 mm at most. Validation
+  `tbwref-001…002`; the line-model cases' references updated through the
+  reference scripts, tolerances unchanged.
+- **Ice and wind per stretched metre in the finite elements** (owner
+  decision 5). The FE carried ice and wind per metre of unstressed length,
+  about \\( T/EA \\) (10⁻³) too little (a stated Simplification, on the
+  unsafe side). Now each cable element carries its own weight per unit
+  unstressed length and its ice and wind per metre of its stretched
+  length (`ohl_wirefe::CableElement::stretched_load`), applied as
+  \\( \mathbf q_s\\, L/L_0 \\) with the element's exact stretched length
+  (`CableProperties::stretched_length`); the solve is a fixed point on
+  the elements' stretches (`Model::solve`: settled when no stretch
+  changes by more than 10⁻¹¹, three solves in practice; exit clause 20
+  solves, then an error naming the element). A section in the blocks
+  shares its length out with the same loads; jumper pieces solved as
+  catenaries too. The closed forms were checked: they already carry ice
+  and wind per metre of the stretched catenary. What remains is stated as
+  a smaller Simplification: the ice and wind spread evenly at each
+  element's mean stretch (3.3·10⁻⁷ of the tension on a level 300 m span
+  under 12 mm of ice against an integration following the local stretch;
+  FE and closed form 4.2·10⁻⁷ apart there, 2.8·10⁻⁸ on 100 m — the owner
+  asked for 1e-7 between them: met on short spans, not on 300 m; an open
+  question). Effect on the example line: iced and windy cases +0.03 to
+  +0.07 % on H, sags within ±2.6 mm; validation `tbice-001`, the changed
+  cases in [Textbook and published cases](../validation/textbook.md).
+  Cost: a 60-span section in the blocks 32 → 39 ms (glaze ice), 40 →
+  49 ms (rime ice and wind), 44 → 55 ms (high wind); still air unchanged.
 
 - **Lines on the ground beside the line without a terrain surface**
   (owner request: "make sure the line on the side of the conductors also

@@ -73,9 +73,12 @@ conserved (2026-10-21, below).
 | tbcos-005 | inclined 300 m, +50 m, 80 °C | \\( T_B - T_A = wh \\) + reference | \\( 10^{-7} \\) |
 | tbcreep-001 | creep as +25 °C (linear model), FE | equals the initial state at 35 °C to 0.003 % + reference | \\( 10^{-7} \\) |
 | tbcreep-002 | the same, ruling-span method | additive strain + reference; 0.0004 % from tbcreep-001 | \\( 10^{-7} \\) |
-| tbheat-001 | level 400 m, 25 kN at 10 °C → 150 °C, closed form | the span's weight \\( 2\sqrt{T_{max}^2 - H^2} = wL_0 \\) = 6287.47 N + reference | \\( 10^{-7} \\) |
+| tbheat-001 | level 400 m, 25 kN at 10 °C → 150 °C, closed form, the weight given at 20 °C | the span's weight \\( 2\sqrt{T_{max}^2 - H^2} = w_sL_0 \\) = 6288.73 N + reference | \\( 10^{-7} \\) |
 | tbheat-002 | the same, finite elements | the same weight; 0.013 N from tbheat-001 + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbheat-003 | the same, the line's ruling-span method | the same weight; +8.28 N (the additive thermal form) + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbwref-001 | tbcos-001 with the weight given at 20 °C (strung at 10 °C) | \\( w_s = w\\,e^{10\alpha} \\) = 15.69378 N/m, parabolic cubic + reference; +1.38 N on tbcos-001 | \\( 10^{-7} \\) |
+| tbwref-002 | tbheat-002 with the library cable's mass at 40 °C | \\( w_s = w\\,e^{30\alpha} \\), the span's weight 6291.26 N + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbice-001 | the span of tbcos-002 (12 mm of ice at −5 °C) by finite elements, the ice per stretched metre | the closed form (tbcos-002) to 4.2·10⁻⁷, an integration of the ice following the local stretch to 3.3·10⁻⁷ + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
 ### Ruling span (`benchmarks/sagtension/textbook-ruling-span.toml`)
 
@@ -224,7 +227,25 @@ Two cases need a word:
   Every calculation now keeps the cable's weight (per metre of unstressed
   cable at the stringing temperature); the cases check that value, to the
   same tolerances as before, and tbheat-001…003 check it by hand (the
-  supports carry \\( wL_0 \\)). With it, the closed form and the finite
+  supports carry \\( wL_0 \\)).
+- **The weight's temperature and the ice per stretched metre**
+  (2026-10-21, owner decisions; [Sag-tension](../theory/sagtension.md#the-weight-from-the-data-sheet),
+  [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)):
+  a cable's mass per metre is its data sheet's at its reference
+  temperature (20 °C unless given), so strung at 10 °C the textbook cable
+  weighs 15.69378 N/m per metre (+0.020 %); the line-model cases take it
+  so (the engine-level cases keep their weight as given at their known
+  state, tbwref-001 and tbheat-001 give it at 20 °C). The finite elements
+  carried the ice and wind per unstressed metre, \\( T/EA \\) (10⁻³)
+  too little: an iced 300 m span 0.047 % low in tension (tbice-001), a V
+  in 1000 Pa 0.075 % (tbins-005). Every changed case's previous value is
+  in its notes; the line-model cases moved by up to +0.075 % (wind and
+  ice) and +0.02 % (still air), the references from the reference
+  scripts, the tolerances unchanged. The finite elements now spread the
+  ice and wind evenly at each element's mean stretch: 3.3·10⁻⁷ from an
+  integration of the ice following the local stretch on tbice-001, and
+  4.2·10⁻⁷ from the closed form, which spreads the own weight evenly
+  instead (stated as a Simplification). With it, the closed form and the finite
   elements agree to \\( 10^{-6} \\) on a single span, and the FE and RS
   creep cases to 0.0004 % (0.008 % before).
 - The textbook model differences are as documented: the ruling-span
