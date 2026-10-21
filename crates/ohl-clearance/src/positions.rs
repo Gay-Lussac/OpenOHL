@@ -24,6 +24,7 @@ use ohl_weather::{WeatherCase, WindSide};
 
 use crate::checks::{Wire, wires_of};
 use crate::geometry::{P3, closest_on_segment, distance};
+use ohl_line::jumper::JumperShape;
 
 fn sub(a: P3, b: P3) -> P3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -747,9 +748,24 @@ impl WireShape {
     }
 }
 
-/// The swing arc of a span: the span swinging as one about its axis
-/// between its left and right blowout, through its still-air position,
-/// at the largest of the three radii at each place.
+/// The band's margin, m: every distance to a swing arc's band is taken
+/// this much smaller (as if the conductor were this much thicker), on
+/// every side. **Conservative:** the band from the smallest to the largest
+/// radius of the left, still and right positions does not quite hold the
+/// solver's positions at intermediate pressures: measured 2026-10-21 on
+/// the example lines with steps of 10 Pa from both sides, a step's
+/// centre line lies up to 0.089 m outside it (inside its inner radius,
+/// at mid-pressures: the strings swing and the sag changes; and 0.041 m
+/// beyond its end angle at a dead end, whose clamp moves with the wind);
+/// the margin is that worst excess plus an allowance of 0.061 m for
+/// other lines (`tests/arc_band.rs`). Exact: a solve at every pressure.
+pub const BAND_MARGIN: f64 = 0.15;
+
+/// The swing arc of a span, a **band** since 2026-10-21: the span
+/// swinging as one about its axis between its left and right blowout,
+/// through its still-air position, at every radius from the smallest to
+/// the largest of the three at each place (an annular sector in the
+/// plane square to the axis, swept along it).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwingArc {
     /// The span's axis.
@@ -764,11 +780,12 @@ pub struct SwingArc {
     /// At each station, the wire blown left, in still air and blown right
     /// (each in the plane square to the axis there).
     pub points: Vec<[P3; 3]>,
-    /// Bundle radius and the largest allowance of the three wires, m.
+    /// Bundle radius, the largest allowance of the three wires and the
+    /// band's margin [`BAND_MARGIN`], m.
     pub outer: f64,
     /// Bundle radius, m.
     radius: f64,
-    /// The largest allowance of the three wires, m.
+    /// The largest allowance of the three wires and [`BAND_MARGIN`], m.
     allowance: f64,
 }
 
@@ -777,8 +794,10 @@ pub struct SwingArc {
 pub struct ArcPlace {
     /// Centre C(s) on the axis.
     pub centre: P3,
-    /// Arc radius R = max(R_L, R_0, R_R), m.
+    /// The band's outer radius R = max(R_L, R_0, R_R), m.
     pub radius: f64,
+    /// The band's inner radius r = min(R_L, R_0, R_R), m.
+    pub inner: f64,
     /// Arc ends' angles (from the downward vertical, positive to the
     /// right), rad: the smallest and the largest of φ_L, φ_0, φ_R.
     pub from: f64,
@@ -839,9 +858,11 @@ impl SwingArc {
             right: right_dir,
             stations,
             points,
-            outer: left.radius + left.allowance.max(still.allowance).max(right.allowance),
+            outer: left.radius
+                + left.allowance.max(still.allowance).max(right.allowance)
+                + BAND_MARGIN,
             radius: left.radius,
-            allowance: left.allowance.max(still.allowance).max(right.allowance),
+            allowance: left.allowance.max(still.allowance).max(right.allowance) + BAND_MARGIN,
         })
     }
 
@@ -857,18 +878,21 @@ impl SwingArc {
             self.axis.a1[1] + s * self.axis.u[1],
             self.axis.a1[2] + s * self.axis.u[2],
         ];
-        let (mut radius, mut from, mut to) = (0.0f64, f64::INFINITY, f64::NEG_INFINITY);
+        let (mut radius, mut inner) = (0.0f64, f64::INFINITY);
+        let (mut from, mut to) = (f64::INFINITY, f64::NEG_INFINITY);
         for i in 0..3 {
             let p = lerp(self.points[k - 1][i], self.points[k][i], t);
             let v = sub(p, centre);
             let (r, phi) = self.polar(v);
             radius = radius.max(r);
+            inner = inner.min(r);
             from = from.min(phi);
             to = to.max(phi);
         }
         ArcPlace {
             centre,
             radius,
+            inner,
             from,
             to,
         }
@@ -898,28 +922,50 @@ impl SwingArc {
         ]
     }
 
-    /// The distance from `q` to the arc (to the wire's centre line on
-    /// it): `q` projected on the axis at s_q (clamped to the stations),
-    /// at radius ρ_q and angle φ_q in the plane there; within the arc's
-    /// angles |ρ_q − R| (and the part along the axis beyond its ends),
-    /// else the nearer of its ends. (distance, the arc's point).
+    /// The distance from `q` to the band (to the wire's centre line
+    /// anywhere on it): `q` projected on the axis at s_q (clamped to the
+    /// stations), at radius ρ_q and angle φ_q in the plane there; within
+    /// the band's angles the radial gap — 0 for r ≤ ρ_q ≤ R, r − ρ_q
+    /// inside it, ρ_q − R outside it — (and the part along the axis
+    /// beyond its ends), else the nearer of its two end edges (the radial
+    /// segments from r to R at φ_L and φ_R). (distance, the band's
+    /// point).
     pub fn nearest(&self, q: P3) -> (f64, P3) {
         let place = self.place(self.axis.along(q));
         let v = sub(q, place.centre);
         let along = dot(v, self.axis.u);
         let (rho, phi) = self.polar(v);
         if place.from <= phi && phi <= place.to {
-            let p = self.point(place.centre, place.radius, phi);
-            ((rho - place.radius).hypot(along), p)
+            let r = rho.clamp(place.inner, place.radius);
+            let p = self.point(place.centre, r, phi);
+            ((rho - r).hypot(along), p)
         } else {
-            let a = self.point(place.centre, place.radius, place.from);
-            let b = self.point(place.centre, place.radius, place.to);
-            let (da, db) = (distance(q, a), distance(q, b));
-            if da <= db { (da, a) } else { (db, b) }
+            let edge = |a: f64| {
+                let (p, _) = closest_on_segment(
+                    q,
+                    self.point(place.centre, place.inner, a),
+                    self.point(place.centre, place.radius, a),
+                );
+                (distance(q, p), p)
+            };
+            let (a, b) = (edge(place.from), edge(place.to));
+            if a.0 <= b.0 { a } else { b }
         }
     }
 
-    /// The largest allowance of its three wires ([`Wire::allowance`]), m.
+    /// The band's largest thickness R − r over its stations, m.
+    pub fn thickness(&self) -> f64 {
+        self.stations
+            .iter()
+            .map(|&s| {
+                let p = self.place(s);
+                p.radius - p.inner
+            })
+            .fold(0.0, f64::max)
+    }
+
+    /// The largest allowance of its three wires ([`Wire::allowance`]) and
+    /// the band's margin [`BAND_MARGIN`], m.
     pub fn allowance(&self) -> f64 {
         self.allowance
     }
@@ -939,26 +985,34 @@ impl SwingArc {
         )
     }
 
-    /// The centre line of the wire swung to angle `phi` (rad): at every
-    /// station the arc's point at `phi`, clamped to the arc's angles
-    /// there — a polyline lying on the arc at every station.
+    /// The centre line of the wire swung to angle `phi` (rad) at the
+    /// band's outer radius: at every station the band's point at `phi`,
+    /// clamped to its angles there — a polyline lying on the band's
+    /// outer surface at every station.
     pub fn line_at(&self, phi: f64) -> Vec<P3> {
+        self.line_at_radius(phi, 1.0)
+    }
+
+    /// As [`SwingArc::line_at`], at the fraction `t` of the way from the
+    /// band's inner radius (0) to its outer one (1) at every station.
+    pub fn line_at_radius(&self, phi: f64, t: f64) -> Vec<P3> {
         self.stations
             .iter()
             .map(|&s| {
                 let p = self.place(s);
-                self.point(p.centre, p.radius, phi.clamp(p.from, p.to))
+                let r = p.inner + t * (p.radius - p.inner);
+                self.point(p.centre, r, phi.clamp(p.from, p.to))
             })
             .collect()
     }
 
-    /// The angles of the arc at `place` whose point lies within `band`
-    /// across the line of `y` (its offset to the right of the axis, m):
-    /// up to three intervals (the lower half of the circle, and the two
-    /// upper quarters an arc rarely reaches), each within the arc's ends.
-    fn angles_within(place: &ArcPlace, y: f64, band: f64) -> Vec<(f64, f64)> {
+    /// The angles of the circle of radius `r` at `place` whose point lies
+    /// within `band` across the line of `y` (its offset to the right of
+    /// the axis, m): up to three intervals (the lower half of the circle,
+    /// and the two upper quarters an arc rarely reaches), each within the
+    /// band's ends.
+    fn angles_within(place: &ArcPlace, r: f64, y: f64, band: f64) -> Vec<(f64, f64)> {
         use std::f64::consts::PI;
-        let r = place.radius;
         if r <= 0.0 {
             // On the axis: every angle is the same point.
             return if y.abs() <= band {
@@ -979,16 +1033,21 @@ impl SwingArc {
             .collect()
     }
 
-    /// The lowest (`low`) or highest point of the arc over the plan
+    /// The lowest (`low`) or highest point of the band over the plan
     /// position `h` m along the axis's plan direction from A₁ and `y` m to
     /// its right, within `band` across: (point, angle). At a station s
-    /// the arc's point at angle φ lies \\( R\cos\varphi\,u_z \\) further
-    /// along in plan than \\( s\,|u_h| \\) and \\( R\cos\varphi\,|u_h| \\)
-    /// below the centre (\\( u_h, u_z \\): the axis's horizontal and
-    /// vertical parts); its height is lowest where \\( R\cos\varphi \\)
-    /// is largest — the admissible angle nearest the vertical. The
-    /// station whose point lies over `h` is found by fixed-point steps
-    /// \\( s \leftarrow (h - R\cos\varphi\,u_z)/|u_h| \\) (each a
+    /// the band's point at radius ρ and angle φ lies
+    /// \\( \rho\cos\varphi\,u_z \\) further along in plan than
+    /// \\( s\,|u_h| \\) and \\( \rho\cos\varphi\,|u_h| \\) below the centre
+    /// (\\( u_h, u_z \\): the axis's horizontal and vertical parts); its
+    /// height is lowest where \\( x = \rho\cos\varphi \\) is largest.
+    /// Over the band's cross-section (the annular sector r ≤ ρ ≤ R,
+    /// φ_L ≤ φ ≤ φ_R, cut to the strip within `band` of `y`) x is linear
+    /// in the plane, so its extremes lie on the boundary: on the two
+    /// circles (the admissible angles' ends, and φ = 0) or on the two end
+    /// edges (where the strip cuts them). The station whose point lies
+    /// over `h` is found by fixed-point steps
+    /// \\( s \leftarrow (h - x\,u_z)/|u_h| \\) (each a
     /// contraction by about \\( |dR/ds|\,|u_z|/|u_h| \\), well below 1 on
     /// a span), to 10⁻⁶ m. `None`: no point of the arc there (beyond the
     /// span's ends, or farther than `band` across), or a vertical axis.
@@ -999,31 +1058,50 @@ impl SwingArc {
             return None;
         }
         let uz = u[2];
-        let pick = |place: &ArcPlace| -> Option<f64> {
-            let mut best: Option<(f64, f64)> = None;
-            for (lo, hi) in Self::angles_within(place, y, band) {
-                let mut cands = vec![lo, hi];
-                if lo <= 0.0 && 0.0 <= hi {
-                    cands.push(0.0);
+        // (radius, angle) of the band's lowest or highest admissible
+        // point at a place.
+        let pick = |place: &ArcPlace| -> Option<(f64, f64)> {
+            let mut best: Option<(f64, f64, f64)> = None;
+            let mut take = |r: f64, phi: f64| {
+                // Lowest: x = ρ cos φ largest; highest: smallest.
+                let x = r * phi.cos();
+                let key = if low { -x } else { x };
+                if best.is_none_or(|(k, ..)| key < k) {
+                    best = Some((key, r, phi));
                 }
-                for phi in cands {
-                    // Lowest: cos largest; highest: cos smallest.
-                    let key = if low { -phi.cos() } else { phi.cos() };
-                    if best.is_none_or(|(k, _)| key < k) {
-                        best = Some((key, phi));
+            };
+            for r in [place.inner, place.radius] {
+                for (lo, hi) in Self::angles_within(place, r, y, band) {
+                    take(r, lo);
+                    take(r, hi);
+                    if lo <= 0.0 && 0.0 <= hi {
+                        take(r, 0.0);
                     }
                 }
             }
-            best.map(|b| b.1)
+            // The end edges where the strip cuts them.
+            for a in [place.from, place.to] {
+                let sa = a.sin();
+                if sa.abs() < 1e-12 {
+                    continue;
+                }
+                let (r0, r1) = ((y - band) / sa, (y + band) / sa);
+                let (lo, hi) = (r0.min(r1).max(place.inner), r0.max(r1).min(place.radius));
+                if lo <= hi {
+                    take(lo, a);
+                    take(hi, a);
+                }
+            }
+            best.map(|b| (b.1, b.2))
         };
         let n = self.stations.len();
         let (first, last) = (self.stations[0], self.stations[n - 1]);
         let mut s = h / uh;
-        let mut phi = 0.0;
+        let mut rp = (0.0, 0.0);
         for _ in 0..50 {
             let place = self.place(s);
-            phi = pick(&place)?;
-            let next = (h - place.radius * phi.cos() * uz) / uh;
+            rp = pick(&place)?;
+            let next = (h - rp.0 * rp.1.cos() * uz) / uh;
             let done = (next - s).abs() < 1e-6;
             s = next;
             if done {
@@ -1034,14 +1112,14 @@ impl SwingArc {
             return None;
         }
         let place = self.place(s);
-        let phi = pick(&place).unwrap_or(phi);
-        Some((self.point(place.centre, place.radius, phi), phi))
+        let (r, phi) = pick(&place).unwrap_or(rp);
+        Some((self.point(place.centre, r, phi), phi))
     }
 
-    /// The vertical clearance of `q` to the arc (to the centre line): the
-    /// height of the arc's lowest point above it, or `q`'s height above
-    /// the arc's highest point, over `q`'s plan position — counting the
-    /// arc's points within `band` across the line and within half of
+    /// The vertical clearance of `q` to the band (to the centre line
+    /// anywhere on it): the height of the band's lowest point above it,
+    /// or `q`'s height above the band's highest point, over `q`'s plan
+    /// position — counting the band's points within `band` across the line and within half of
     /// `depth` along it — 0 where `q` lies between the two. With a depth,
     /// the lowest height over the slice is bounded from the heights at
     /// its ends and middle, \\( f_0 - \max(|f_0 - f_-|, |f_+ - f_0|) \\)
@@ -1368,6 +1446,12 @@ pub struct PositionOptions {
     /// names (the case's full pressure is checked from both sides in any
     /// case). Alongside the swing arc or instead of it.
     pub wind_steps: Option<crate::rules::WindSteps>,
+    /// The jumpers too, at their solved positions in every solve (blown
+    /// left and right, still air, every step; never on a swing arc): the
+    /// safety volumes' (2026-10-21). Each jumper is a span of its own
+    /// (section `jumper:<id>`, span 0), its axis from its first to its
+    /// last point.
+    pub jumpers: bool,
 }
 
 /// The attachment of section point `i` of `shape` a span swings about:
@@ -1520,16 +1604,28 @@ pub fn solve_positions(
     let fe = ohl_wirefe::default_fe_budget();
     let solved = parallel(jobs.len(), budget, |k| {
         let (_, _, case, _) = &jobs[k];
-        Ok(ohl_line::solve::solve_line_with(line, library, case, &fe))
+        let results = ohl_line::solve::solve_line_with(line, library, case, &fe);
+        let jumpers = if options.jumpers && !line.jumpers.is_empty() {
+            let ok: Vec<SectionShape> = results.iter().filter_map(|r| r.clone().ok()).collect();
+            ohl_line::jumper::solve_jumpers(line, library, case, &ok)
+        } else {
+            Vec::new()
+        };
+        Ok((results, jumpers))
     })?;
     let mut out = Positions {
         cases: cases.iter().map(|c| c.name.clone()).collect(),
         ..Positions::default()
     };
     // Per case: its solved shapes by kind (and pressure).
-    type Solved = (PositionKind, Option<f64>, Vec<SectionShape>);
+    type Solved = (
+        PositionKind,
+        Option<f64>,
+        Vec<SectionShape>,
+        Vec<JumperShape>,
+    );
     let mut by_case: Vec<Vec<Solved>> = vec![Vec::new(); cases.len()];
-    for ((c, kind, case, pressure), results) in jobs.iter().zip(solved) {
+    for ((c, kind, case, pressure), (results, jumper_results)) in jobs.iter().zip(solved) {
         let mut shapes = Vec::new();
         for (section, r) in line.sections.iter().zip(results) {
             match r {
@@ -1542,22 +1638,42 @@ pub fn solve_positions(
                 )),
             }
         }
-        by_case[*c].push((*kind, *pressure, shapes));
+        let mut jumpers = Vec::new();
+        for (def, r) in line.jumpers.iter().zip(jumper_results) {
+            match r {
+                Ok(j) => jumpers.push(j),
+                Err(e) => out.notes.push(format!(
+                    "case \"{}\" ({}): jumper {} not solved: {e}",
+                    case.name,
+                    kind.name(),
+                    def.id
+                )),
+            }
+        }
+        by_case[*c].push((*kind, *pressure, shapes, jumpers));
     }
     for (c, variants) in by_case.iter().enumerate() {
         let windy = is_windy(&cases[c]);
         // Still air of a windy case: for the arc, not checked itself.
         type Kept<'a> = (PositionKind, Vec<Wire>, &'a Vec<SectionShape>, Option<f64>);
         let mut kept: Vec<Kept> = Vec::new();
-        for (kind, pressure, shapes) in variants {
-            kept.push((*kind, wires_of(line, shapes, &[]), shapes, *pressure));
+        for (kind, pressure, shapes, jumpers) in variants {
+            kept.push((*kind, wires_of(line, shapes, jumpers), shapes, *pressure));
         }
         let mut span_ids: Vec<Vec<Option<usize>>> = Vec::new();
         for (kind, wires, shapes, pressure) in &kept {
             let mut ids = Vec::new();
             for w in wires {
+                let jumper = w.section.starts_with("jumper:");
                 let id = match out.span_of(&w.section, w.span) {
                     Some(id) => Some(id),
+                    // A jumper: about the line through its ends.
+                    None if jumper => match (w.points.first(), w.points.last()) {
+                        (Some(a), Some(b)) => {
+                            Axis::new(*a, *b).map(|axis| out.add_span(w.clone(), axis))
+                        }
+                        _ => None,
+                    },
                     None => shapes
                         .iter()
                         .find(|s| s.section == w.section)
@@ -1566,9 +1682,16 @@ pub fn solve_positions(
                 };
                 ids.push(id);
                 let Some(id) = id else { continue };
-                if windy && *kind == PositionKind::Case {
-                    continue;
-                }
+                // Still air of a windy case solved for the arc: kept for a
+                // jumper (it has no arc), as still air.
+                let kind = if windy && *kind == PositionKind::Case {
+                    if !jumper {
+                        continue;
+                    }
+                    &PositionKind::Still
+                } else {
+                    kind
+                };
                 let axis = out.spans[id].axis;
                 out.add_at(
                     id,
@@ -1594,6 +1717,10 @@ pub fn solve_positions(
         let mut left_out = 0;
         for (w, id) in kept[s].1.iter().zip(&span_ids[s]) {
             let Some(id) = *id else { continue };
+            // Jumpers: at their solved positions only.
+            if w.section.starts_with("jumper:") {
+                continue;
+            }
             let pick = |k: usize| {
                 kept[k]
                     .1
@@ -1841,11 +1968,16 @@ mod tests {
     }
 
     /// Hand-built span: still sag 4 m, blown ±40° with sag 5 m. At
-    /// mid-span (s = 50 m) the arc has R = 5, from −40° to +40°. A point
-    /// straight below the axis 8 m down is at φ = 0, ρ = 8: 3 m from the
-    /// arc. A point 6 m out to the right at the axis height (φ = 90°)
-    /// is beyond the arc's end: distance to the end (5 sin 40°, 5 cos 40°
-    /// below) = √((6 − 3.214)² + 3.830²) = 4.736.
+    /// mid-span (s = 50 m) the band runs from r = 4 (still air) to R = 5
+    /// (blown), from −40° to +40°. A point straight below the axis 8 m
+    /// down is at φ = 0, ρ = 8: 3 m outside the band. A point 6 m out to
+    /// the right at the axis height (φ = 90°) is beyond the band's end:
+    /// its nearest point is on the end edge at 40° (radii 4…5); projected
+    /// on the edge's direction (cos 40°, sin 40°) it lies at
+    /// 6 sin 40° = 3.857 < 4, so the nearest point is the edge's inner end
+    /// (4 cos 40° = 3.064 below, 4 sin 40° = 2.571 right):
+    /// √(3.064² + (6 − 2.571)²) = 4.598 (the arc alone: 4.736 to its
+    /// end at R = 5).
     #[test]
     fn the_swing_arc_by_hand() {
         let ax = axis();
@@ -1856,25 +1988,48 @@ mod tests {
         let arc = SwingArc::new(ax, &left, &still, &right).unwrap();
         let place = arc.place(50.0);
         assert!((place.radius - 5.0).abs() < 1e-12);
+        assert!((place.inner - 4.0).abs() < 1e-12);
         assert!((place.from + phi).abs() < 1e-12 && (place.to - phi).abs() < 1e-12);
         let (d, p) = arc.nearest([50.0, 0.0, 12.0]);
         assert!((d - 3.0).abs() < 1e-12, "{d}");
         assert!(distance(p, [50.0, 0.0, 15.0]) < 1e-12);
         // To the right is −y.
         let (d, _) = arc.nearest([50.0, -6.0, 20.0]);
-        let end = [5.0 * phi.sin(), 5.0 * phi.cos()];
-        assert!((d - (6.0 - end[0]).hypot(end[1])).abs() < 1e-12, "{d}");
-        assert!((d - 4.736).abs() < 1e-3);
-        // Inside the arc at 25 m: R = 4·5·0.25·0.75 = 3.75, a point 1 m
-        // below the axis at φ = 20° is 2.75 m from it.
+        let inner_end = [4.0 * phi.cos(), 4.0 * phi.sin()];
+        assert!(
+            (d - inner_end[0].hypot(6.0 - inner_end[1])).abs() < 1e-12,
+            "{d}"
+        );
+        assert!((d - 4.598).abs() < 1e-3, "{d}");
+        // Within the band (ρ = 4.5 at φ = 10°): 0.
+        let a = 10f64.to_radians();
+        let (d, _) = arc.nearest([50.0, -4.5 * a.sin(), 20.0 - 4.5 * a.cos()]);
+        assert!(d.abs() < 1e-12, "{d}");
+        // Between the axis and the band at 25 m: R = 4·5·0.25·0.75 =
+        // 3.75, r = 4·4·0.25·0.75 = 3.0; a point 1 m below the axis at
+        // φ = 20° is r − 1 = 2.0 m from it (the arc alone: 2.75).
         let a = 20f64.to_radians();
         let q = [25.0, -a.sin(), 20.0 - a.cos()];
         let (d, _) = arc.nearest(q);
-        assert!((d - 2.75).abs() < 1e-12, "{d}");
+        assert!((d - 2.0).abs() < 1e-12, "{d}");
         // Beyond the span's end: the end's plane, the part along the axis
         // counted.
         let (d, _) = arc.nearest([-3.0, 0.0, 16.0]);
         assert!((d - 5.0).abs() < 1e-12, "{d}");
+        // Vertically, under mid-span within 0.5 m across the axis: the
+        // band's lowest point is at R = 5 straight down (15 m); its
+        // highest within the strip |ρ sin φ| ≤ 0.5 is on the inner circle
+        // at sin φ = 0.5/4 (the 40° edges cross the strip only at
+        // ρ = 0.5 / sin 40° = 0.778 < r, outside the band):
+        // 20 − 4 cos(asin 0.125) = 16.031 m.
+        let v = arc.vertical([50.0, 0.0, 10.0], 0.5, 0.0).unwrap();
+        assert!((v.gap - 5.0).abs() < 1e-9, "{v:?}");
+        let v = arc.vertical([50.0, 0.0, 16.5], 0.5, 0.0).unwrap();
+        let top = 20.0 - 4.0 * (0.125f64).asin().cos();
+        assert!((top - 16.031).abs() < 1e-3);
+        assert!((v.gap - (16.5 - top)).abs() < 1e-9, "{v:?} {top}");
+        let v = arc.vertical([50.0, 0.0, 15.5], 0.5, 0.0).unwrap();
+        assert_eq!(v.gap, 0.0);
     }
 
     /// The bands never claim more than the exact distance: random points
@@ -2152,6 +2307,7 @@ mod tests {
             PositionOptions {
                 swing_arc: false,
                 wind_steps: Some(steps),
+                jumpers: false,
             },
             &Budget::new(),
         )

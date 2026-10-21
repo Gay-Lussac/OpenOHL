@@ -10,11 +10,24 @@
 # D + 0.052 m, a ratio between 1 and (3.067 / 3.015)^2 ~ 1.0348.
 #
 # A swing arc of radius R = 10 m about a level axis 40 m long, from -40
-# to +40 degrees, d = 2 m, r = 0, tolerance 0.1 m: at mid-span the volume
-# reaches R sin 40 + d = 8.427876 m to each side and R + d = 12 m below
-# the axis; the mesh is never inside (reach at least that), outside by at
-# most about the tolerance with the rounding and the arc's own
-# triangulation error (at most 0.15 m allowed here).
+# to +40 degrees, d = 2 m, r = 0, tolerance 0.1 m; the band's margin
+# m = 0.15 m (2026-10-21) is added: D = d + m = 2.15 m. At mid-span the
+# volume reaches R sin 40 + D = 8.577876 m to each side and R + D =
+# 12.15 m below the axis; the mesh is never inside (reach at least that),
+# outside by at most about the tolerance with the rounding and the arc's
+# own triangulation error (at most 0.15 m allowed here).
+#
+# safetyvolume-003, the band: as 002 with the wire hanging in still air
+# at r = 8 m (R = 10 m blown): the band from 8 to 10 m. At mid-span the
+# volume reaches 8.577876 m to each side, 12.15 m below, and its top is
+# r cos 40 - D = 6.128356 - 2.15 = 3.978356 m below the axis (the band's
+# inner end corners; the arc alone at R: R cos 40 - d = 5.660 m); the
+# mesh lies outside, so its top is at most that deep (0 to 0.15 m less).
+#
+# safetyvolume-004, a dead end: two straight wires 40 m long end to end,
+# their ends 6 m apart (the clamps either side of the structure), d = 1 m:
+# alone their capsules leave a gap of 6 - 2 = 4 m (two pieces); a jumper
+# between the ends sagging 1.5 m joins them (one piece).
 
 [[case]]
 id = "safetyvolume-001"
@@ -40,5 +53,33 @@ reference = "Hand calculation (this file)"
 inputs = { shape = "arc", length = "40 m", radius = "0 m", distance = "2 m", tolerance = "0.1 m", arc_radius = "10 m", blowout_angle = 40.0 }
 expected.open_edges = { value = 0.0, abs_tol = 0.0 }
 expected.exact_inside = { value = 1.0, abs_tol = 0.0 }
-expected.lateral_m = { value = 8.502876, abs_tol = 0.075 }
-expected.below_m = { value = 12.075, abs_tol = 0.075 }
+expected.lateral_m = { value = 8.652876, abs_tol = 0.075 }
+expected.below_m = { value = 12.225, abs_tol = 0.075 }
+
+[[case]]
+id = "safetyvolume-003"
+title = "A swing band from 8 to 10 m: its reach and its top at mid-span"
+calculation = "safety_volume.mesh"
+reference = "Hand calculation (this file)"
+inputs = { shape = "arc", length = "40 m", radius = "0 m", distance = "2 m", tolerance = "0.1 m", arc_radius = "10 m", still_radius = "8 m", blowout_angle = 40.0 }
+expected.open_edges = { value = 0.0, abs_tol = 0.0 }
+expected.lateral_m = { value = 8.652876, abs_tol = 0.075 }
+expected.below_m = { value = 12.225, abs_tol = 0.075 }
+expected.top_below_m = { value = 3.903356, abs_tol = 0.075 }
+
+[[case]]
+id = "safetyvolume-004"
+title = "A dead end: the jumper joins the two sections' volumes"
+calculation = "safety_volume.mesh"
+reference = "Hand calculation (this file)"
+inputs = { shape = "dead_end", length = "40 m", radius = "0 m", distance = "1 m", tolerance = "0.1 m", gap = "6 m", jumper = 1.0, jumper_sag = "1.5 m" }
+expected.open_edges = { value = 0.0, abs_tol = 0.0 }
+expected.pieces = { value = 1.0, abs_tol = 0.0 }
+
+[[case]]
+id = "safetyvolume-005"
+title = "A dead end without the jumper: the gap between the two volumes"
+calculation = "safety_volume.mesh"
+reference = "Hand calculation (this file)"
+inputs = { shape = "dead_end", length = "40 m", radius = "0 m", distance = "1 m", tolerance = "0.1 m", gap = "6 m", jumper = 0.0, jumper_sag = "1.5 m" }
+expected.pieces = { value = 2.0, abs_tol = 0.0 }

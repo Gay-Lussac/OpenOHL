@@ -1367,8 +1367,10 @@ impl Calculation for FallIn {
 /// `vegetation.swing_arc`: a level span along x from (0, 0, z) to
 /// (`span`, 0, z), z = `attachment_height`, hanging as a parabola of sag
 /// `still_sag` in still air and `blown_sag` blown by ±`blowout_angle`
-/// about its axis (21 points each); the swing arc at the place of point
-/// (`point_s`, `point_y`, `point_z`) and the point's distance to it.
+/// about its axis (21 points each); the swing arc (a band from the
+/// smallest to the largest radius) at the place of point (`point_s`,
+/// `point_y`, `point_z`), the point's distance to it (to the centre line)
+/// and its clearance (less the band's margin; a conductor of radius 0).
 struct SwingArcCase;
 
 impl Calculation for SwingArcCase {
@@ -1379,7 +1381,8 @@ impl Calculation for SwingArcCase {
     fn description(&self) -> &'static str {
         "The swing arc of a level span and a point's distance to it (inputs: span, \
          attachment_height, still_sag, blown_sag, blowout_angle, point_s, point_y, point_z); \
-         outputs arc_radius_m, arc_from_deg, arc_to_deg, distance_m"
+         outputs arc_radius_m, arc_inner_radius_m, arc_from_deg, arc_to_deg, distance_m, \
+         clearance_m"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -1423,11 +1426,14 @@ impl Calculation for SwingArcCase {
         let q = [len("point_s")?, len("point_y")?, len("point_z")?];
         let place = arc.place(q[0]);
         let (d, _) = arc.nearest(q);
+        let shape = ohl_clearance::positions::Shape::Arc(arc);
         Ok(outputs([
             ("arc_radius_m", place.radius),
+            ("arc_inner_radius_m", place.inner),
             ("arc_from_deg", place.from.to_degrees()),
             ("arc_to_deg", place.to.to_degrees()),
             ("distance_m", d),
+            ("clearance_m", shape.off_surface(d)),
         ]))
     }
 }
@@ -1606,14 +1612,47 @@ outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
     }
 }
 
+/// The number of pieces of a mesh: triangles joined through shared
+/// vertices.
+fn mesh_pieces(mesh: &ohl_clearance::safety_volume::Mesh) -> usize {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..mesh.vertices.len()).collect();
+    for t in &mesh.triangles {
+        let a = root(&mut parent, t[0] as usize);
+        for &k in &t[1..] {
+            let b = root(&mut parent, k as usize);
+            parent[b] = a;
+        }
+    }
+    let mut roots: Vec<usize> = mesh
+        .triangles
+        .iter()
+        .map(|t| root(&mut parent, t[0] as usize))
+        .collect();
+    roots.sort_unstable();
+    roots.dedup();
+    roots.len()
+}
+
 /// `safety_volume.mesh`: the safety volume of a straight level wire
 /// along x (`length`, 30 m up, conductor radius `radius`, distance
 /// `distance`, tolerance `tolerance`; `shape` `still`: the wire alone, a
 /// capsule; `arc`: the swing arc of the wire turned rigidly by
-/// ±`blowout_angle` about an axis `arc_radius` above it). Outputs: the
-/// mesh's open edges, whether every sampled point of the exact surface is
-/// inside, its volume over the capsule's (`still`), and at mid-span the
-/// section's reach to the side and below the axis (`arc`).
+/// ±`blowout_angle` about an axis `arc_radius` above it, hanging in still
+/// air `still_radius` below it (optional, else `arc_radius`): a band;
+/// `dead_end`: two such wires end to end with a gap of `gap` between their
+/// ends, joined or not (`jumper` 1 or 0) by a jumper sagging `jumper_sag`).
+/// Outputs: the mesh's open edges, whether every sampled point of the
+/// exact surface is inside, its volume over the capsule's (`still`), at
+/// mid-span the section's reach to the side and below the axis and the
+/// least depth of its top below the axis (`arc`), the mesh's pieces
+/// (`dead_end`).
 struct SafetyVolumeCase;
 
 impl Calculation for SafetyVolumeCase {
@@ -1622,9 +1661,10 @@ impl Calculation for SafetyVolumeCase {
     }
 
     fn description(&self) -> &'static str {
-        "The safety volume of a straight wire, still or on a swing arc (inputs: shape, length, \
-         radius, distance, tolerance, arc_radius, blowout_angle); outputs open_edges, \
-         exact_inside, volume_ratio, lateral_m, below_m"
+        "The safety volume of a straight wire, still, on a swing arc or at a dead end with a \
+         jumper (inputs: shape, length, radius, distance, tolerance, arc_radius, still_radius, \
+         blowout_angle, gap, jumper, jumper_sag); outputs open_edges, exact_inside, \
+         volume_ratio, lateral_m, below_m, top_below_m, pieces"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -1686,17 +1726,25 @@ impl Calculation for SafetyVolumeCase {
                 let ra = len("arc_radius")?;
                 let phi = float_input(inputs, "blowout_angle")?.to_radians();
                 let axis = Axis::new([0.0, 0.0, z0], [l, 0.0, z0]).ok_or("no axis")?;
-                let turned = |p: f64| WireShape::new(wire(-ra * p.sin(), z0 - ra * p.cos()), &axis);
-                let arc = SwingArc::new(axis, &turned(-phi), &turned(0.0), &turned(phi))
-                    .ok_or("no arc")?;
+                let rs = if inputs.contains_key("still_radius") {
+                    len("still_radius")?
+                } else {
+                    ra
+                };
+                let turned =
+                    |p: f64, r: f64| WireShape::new(wire(-r * p.sin(), z0 - r * p.cos()), &axis);
+                let arc =
+                    SwingArc::new(axis, &turned(-phi, ra), &turned(0.0, rs), &turned(phi, ra))
+                        .ok_or("no arc")?;
                 let mut pos = Positions::default();
                 pos.cases.push("wind".into());
-                let k = pos.add_span(wire(0.0, z0 - ra), axis);
+                let k = pos.add_span(wire(0.0, z0 - rs), axis);
                 pos.add(k, 0, PositionKind::Arc, Shape::Arc(arc));
                 let v = build(&pos, &params, &budget)?;
                 let m = &v.volumes[0].mesh;
                 // The section at mid-span: where the edges cross x = l/2.
                 let (mut lateral, mut below) = (0.0f64, 0.0f64);
+                let mut top = f64::INFINITY;
                 let x = 0.5 * l;
                 for t in &m.triangles {
                     let c = m.corners(t);
@@ -1706,6 +1754,7 @@ impl Calculation for SafetyVolumeCase {
                             let s = (x - a[0]) / (b[0] - a[0]);
                             lateral = lateral.max((a[1] + s * (b[1] - a[1])).abs());
                             below = below.max(z0 - (a[2] + s * (b[2] - a[2])));
+                            top = top.min(z0 - (a[2] + s * (b[2] - a[2])));
                         }
                     }
                 }
@@ -1719,9 +1768,39 @@ impl Calculation for SafetyVolumeCase {
                     ("exact_inside", f64::from(u8::from(inside))),
                     ("lateral_m", lateral),
                     ("below_m", below),
+                    ("top_below_m", top),
                 ]))
             }
-            other => Err(format!("shape \"{other}\": still or arc")),
+            "dead_end" => {
+                let gap = len("gap")?;
+                let sag = len("jumper_sag")?;
+                let a = wire(0.0, z0);
+                let mut b = wire(0.0, z0);
+                b.section = "T".into();
+                for p in &mut b.points {
+                    p[0] += l + gap;
+                }
+                let mut wires = vec![a.clone(), b];
+                if float_input(inputs, "jumper")? > 0.0 {
+                    wires.push(ohl_clearance::Wire {
+                        section: "jumper:J".into(),
+                        points: (0..=12)
+                            .map(|k| {
+                                let t = f64::from(k) / 12.0;
+                                [l + gap * t, 0.0, z0 - 4.0 * sag * t * (1.0 - t)]
+                            })
+                            .collect(),
+                        ..a
+                    });
+                }
+                let v = build(&Positions::of_wires("still", wires), &params, &budget)?;
+                let m = &v.volumes[0].mesh;
+                Ok(outputs([
+                    ("open_edges", m.open_edges() as f64),
+                    ("pieces", mesh_pieces(m) as f64),
+                ]))
+            }
+            other => Err(format!("shape \"{other}\": still, arc or dead_end")),
         }
     }
 }

@@ -791,6 +791,7 @@ impl VegetationWindow {
         let options = PositionOptions {
             swing_arc: settings.arc,
             wind_steps: settings.steps.stepped.then_some(settings.steps),
+            jumpers: false,
         };
         let ice = match settings.ice.0 {
             Ice::Off => None,

@@ -17,11 +17,13 @@
 //! - a **tube** around each solved wire: every point within
 //!   \\( D = d + m + r_{\text{outer}} \\) of its polyline (capsules along
 //!   it);
-//! - the **swept arc**: every point within \\( D \\) of the swing arc's
-//!   surface (the circle sections of radius \\( R(s) \\) between
-//!   \\( \varphi_L(s) \\) and \\( \varphi_R(s) \\) about the span's axis,
-//!   [`SwingArc`]), the surface cut in thin triangles whose distance to
-//!   the closed form is added to \\( D \\);
+//! - the **swept band**: every point within \\( D \\) of the swing arc
+//!   (a band since 2026-10-21: the annular sectors from radius
+//!   \\( r(s) \\) to \\( R(s) \\) between \\( \varphi_L(s) \\) and
+//!   \\( \varphi_R(s) \\) about the span's axis, [`SwingArc`]), its
+//!   boundary (and, in a band thicker than \\( 2D \\), surfaces between)
+//!   cut in thin triangles whose distance to the closed form is added to
+//!   \\( D \\);
 //!
 //! and its mesh ([`mesher`]) holds it whole: no point of the envelope is
 //! outside the mesh, and the mesh is outside it by at most the tolerance
@@ -126,6 +128,8 @@ impl WindMode {
                 stepped: true,
                 ..steps
             }),
+            // The volume is continuous at the structures (2026-10-21).
+            jumpers: true,
         }
     }
 }
@@ -326,12 +330,73 @@ pub struct SafetyVolumes {
     pub notes: Vec<String>,
 }
 
-/// The prims of one swing arc, of radius `radius`: the arc's surface cut
-/// in triangles (rails at equal fractions of the angle, at every station
-/// and every [`ARC_STEP`] between), each cell's two triangles grown by
-/// twice the largest distance found from the closed form to them (at the
-/// middle of the cell and of its sides). Returns the prims, the largest
-/// and the median of those doubled distances.
+/// The prims of one cut surface: the surface `exact(a, b)` over the grid
+/// `av` × `bv` cut in cells of two triangles, each cell's two triangles
+/// grown by twice the largest distance found from the closed form to them
+/// (at the middle of the cell and of its sides); the doubled distances
+/// pushed on `errors`.
+fn surface_prims(
+    av: &[f64],
+    bv: &[f64],
+    exact: impl Fn(f64, f64) -> P3,
+    radius: f64,
+    prims: &mut Vec<Prim>,
+    errors: &mut Vec<f64>,
+) {
+    let mut row: Vec<P3> = bv.iter().map(|&b| exact(av[0], b)).collect();
+    for k in 0..av.len().saturating_sub(1) {
+        let (a0, a1) = (av[k], av[k + 1]);
+        let next: Vec<P3> = bv.iter().map(|&b| exact(a1, b)).collect();
+        let am = 0.5 * (a0 + a1);
+        for j in 0..bv.len().saturating_sub(1) {
+            let (b0, b1) = (bv[j], bv[j + 1]);
+            let (a, b, c, d) = (row[j], next[j], next[j + 1], row[j + 1]);
+            let pair = [[a, b, c], [a, c, d]];
+            let bm = 0.5 * (b0 + b1);
+            let mut worst = 0.0f64;
+            for q in [
+                exact(am, bm),
+                exact(am, b0),
+                exact(am, b1),
+                exact(a0, bm),
+                exact(a1, bm),
+            ] {
+                let d = pair
+                    .iter()
+                    .map(|t| {
+                        let c = closest_on_triangle(q, t[0], t[1], t[2]);
+                        crate::geometry::distance(q, c)
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                worst = worst.max(d);
+            }
+            let e = 2.0 * worst;
+            errors.push(e);
+            for [x, y, z] in pair {
+                prims.push(Prim::triangle(x, y, z, radius + e));
+            }
+        }
+        row = next;
+    }
+}
+
+/// Fractions 0, 1/n, …, 1.
+fn fractions(n: usize) -> Vec<f64> {
+    let n = n.max(1);
+    (0..=n).map(|k| k as f64 / n as f64).collect()
+}
+
+/// The prims of one swing arc (a band, [`SwingArc`]), of radius
+/// `radius`: the band's boundary cut in triangles — its outer and inner
+/// surfaces (rails at equal fractions of the angle, at every station and
+/// every [`ARC_STEP`] between), its two end edges swept along the span
+/// and its two end faces across the span's ends (where the band is not
+/// a line there) — and, where the band is thicker than 2 `radius`,
+/// surfaces between at most 2 `radius` apart, so that every point of
+/// the band lies within `radius` of one of them. Each cell's two
+/// triangles grown by twice the largest distance found from the closed
+/// form to them ([`surface_prims`]). Returns the prims, the largest and
+/// the median of those doubled distances.
 pub fn arc_prims(arc: &SwingArc, radius: f64, tolerance: f64) -> (Vec<Prim>, f64, f64) {
     // Stations: the arc's own, refined.
     let mut stations: Vec<f64> = Vec::new();
@@ -347,6 +412,10 @@ pub fn arc_prims(arc: &SwingArc, radius: f64, tolerance: f64) -> (Vec<Prim>, f64
     let places: Vec<_> = stations.iter().map(|&s| arc.place(s)).collect();
     let r_max = places.iter().map(|p| p.radius).fold(0.0, f64::max);
     let sweep = places.iter().map(|p| p.to - p.from).fold(0.0, f64::max);
+    let thick = places
+        .iter()
+        .map(|p| p.radius - p.inner)
+        .fold(0.0, f64::max);
     // Rails: a chord's sag R(1 − cos δ/2) of at most a quarter of the
     // tolerance.
     let sag = 0.25 * tolerance;
@@ -356,51 +425,73 @@ pub fn arc_prims(arc: &SwingArc, radius: f64, tolerance: f64) -> (Vec<Prim>, f64
         std::f64::consts::PI
     };
     let rails = ((sweep / delta.max(1e-6)).ceil() as usize).clamp(1, 4000);
-    let point = |k: usize, t: f64| {
-        let p = &places[k];
-        arc.point(p.centre, p.radius, p.from + t * (p.to - p.from))
-    };
-    let exact = |s: f64, t: f64| {
+    let along = fractions(rails);
+    // (radius fraction t from the inner to the outer radius, angle
+    // fraction u from φ_L to φ_R) at place s.
+    let at = |s: f64, t: f64, u: f64| {
         let p = arc.place(s);
-        arc.point(p.centre, p.radius, p.from + t * (p.to - p.from))
+        arc.point(
+            p.centre,
+            p.inner + t * (p.radius - p.inner),
+            p.from + u * (p.to - p.from),
+        )
     };
     let mut prims = Vec::new();
     let mut errors = Vec::new();
-    for k in 0..places.len().saturating_sub(1) {
-        let s_mid = 0.5 * (stations[k] + stations[k + 1]);
-        for j in 0..rails {
-            let (t0, t1) = (j as f64 / rails as f64, (j + 1) as f64 / rails as f64);
-            let (a, b, c, d) = (
-                point(k, t0),
-                point(k + 1, t0),
-                point(k + 1, t1),
-                point(k, t1),
+    // The surfaces at constant radius fraction: the outer, the inner and
+    // those between (at most 2·radius apart where the band is thicker).
+    let layers = if thick > 1e-9 {
+        ((thick / (2.0 * radius.max(1e-3))).ceil() as usize).clamp(1, 400)
+    } else {
+        0
+    };
+    for k in (0..=layers).rev() {
+        let t = if layers == 0 {
+            1.0
+        } else {
+            k as f64 / layers as f64
+        };
+        surface_prims(
+            &stations,
+            &along,
+            |s, u| at(s, t, u),
+            radius,
+            &mut prims,
+            &mut errors,
+        );
+    }
+    if thick > 1e-9 {
+        // The end edges swept along the span (linear across: one cell per
+        // metre of thickness).
+        let across = fractions((thick.ceil() as usize).clamp(1, 1000));
+        for u in [0.0, 1.0] {
+            surface_prims(
+                &stations,
+                &across,
+                |s, t| at(s, t, u),
+                radius,
+                &mut prims,
+                &mut errors,
             );
-            let pair = [[a, b, c], [a, c, d]];
-            // The closed form at the cell's middle and its sides'
-            // middles, against the two triangles.
-            let tm = 0.5 * (t0 + t1);
-            let mut worst = 0.0f64;
-            for q in [
-                exact(s_mid, tm),
-                exact(s_mid, t0),
-                exact(s_mid, t1),
-                exact(stations[k], tm),
-                exact(stations[k + 1], tm),
-            ] {
-                let d = pair
-                    .iter()
-                    .map(|t| {
-                        let c = closest_on_triangle(q, t[0], t[1], t[2]);
-                        crate::geometry::distance(q, c)
-                    })
-                    .fold(f64::INFINITY, f64::min);
-                worst = worst.max(d);
-            }
-            let e = 2.0 * worst;
-            errors.push(e);
-            for [x, y, z] in pair {
-                prims.push(Prim::triangle(x, y, z, radius + e));
+        }
+        // The end faces across the span's ends, where the band has a
+        // thickness there.
+        for (s, p) in [
+            (stations[0], places[0]),
+            (
+                *stations.last().expect("stations"),
+                places[places.len() - 1],
+            ),
+        ] {
+            if p.radius - p.inner > 1e-9 {
+                surface_prims(
+                    &across,
+                    &along,
+                    |t, u| at(s, t, u),
+                    radius,
+                    &mut prims,
+                    &mut errors,
+                );
             }
         }
     }

@@ -7,17 +7,21 @@
 //! positions checked, and Terrain › Vertical and radial clearances on the
 //! swing arc): each span of a windy case swung as one about its
 //! attachment axis between still air and the full blowouts of the sides
-//! chosen, at the largest of their radii — the danger-tree check's arc
-//! ([`SwingArc`]), shared, not copied.
+//! chosen, at every radius from the smallest to the largest of theirs (a
+//! band, since 2026-10-21) — the danger-tree check's arc ([`SwingArc`]),
+//! shared, not copied.
 //!
 //! - **LiDAR points**: one closed form per point and span — radially
-//!   [`SwingArc::nearest`], vertically [`SwingArc::vertical`] (the arc's
+//!   [`SwingArc::nearest`], vertically [`SwingArc::vertical`] (the band's
 //!   lowest point over the point's plan position within the zone's
 //!   width; its highest for a point above).
-//! - **The ground** (a TIN): the wire swung to angles every Δφ, each
-//!   checked as a solved wire ([`crate::checks::ground_check`]'s check,
-//!   exact for its polyline), Δφ such that every point of the arc lies
-//!   within [`ARC_TOLERANCE`] of one of them at its station.
+//! - **The ground** (a TIN): the band's boundary — the wire swung to
+//!   angles every Δφ at the outer and at the inner radius, and the two
+//!   end edges at radii every Δr — each line checked as a solved wire
+//!   ([`crate::checks::ground_check`]'s check, exact for its polyline),
+//!   Δφ and Δr such that every point of the boundary lies within
+//!   [`ARC_TOLERANCE`] of one of them at its station (a ground that
+//!   reaches into the band crosses its boundary).
 //!   **Conservative:** each is taken [`ARC_TOLERANCE`] thicker (its
 //!   clearance that much smaller), vertically each piece also that times
 //!   its slope lower, and the zone that much wider and deeper on each
@@ -182,7 +186,8 @@ pub(crate) fn arcs_of_rule(def: &Rule, arcs: &[ZoneArc], used: &[usize]) -> Vec<
 }
 
 /// The polylines in plan of the arcs, for reading the points around them:
-/// the wire swung to angles whose plan positions are at most 1 m apart.
+/// the wire swung to angles whose plan positions are at most 1 m apart,
+/// at the band's outer and inner radius.
 pub fn arc_polylines(arcs: &[ZoneArc]) -> Vec<Vec<[f64; 2]>> {
     let mut out = Vec::new();
     for a in arcs {
@@ -190,7 +195,15 @@ pub fn arc_polylines(arcs: &[ZoneArc]) -> Vec<Vec<[f64; 2]>> {
         let n = (((to - from) * r).ceil().max(1.0) as usize).min(1000);
         for k in 0..=n {
             let phi = from + (to - from) * k as f64 / n as f64;
-            out.push(a.arc.line_at(phi).iter().map(|p| [p[0], p[1]]).collect());
+            for t in [1.0, 0.0] {
+                out.push(
+                    a.arc
+                        .line_at_radius(phi, t)
+                        .iter()
+                        .map(|p| [p[0], p[1]])
+                        .collect(),
+                );
+            }
         }
     }
     out
@@ -381,11 +394,14 @@ impl ArcPointCheck {
     }
 }
 
-/// Rule `def`'s clearances of arc `a` to the ground: the wire swung to
-/// angles every Δφ ≤ 2e / R (e = [`ARC_TOLERANCE`], R the arc's largest
-/// radius), each checked as a solved wire ([`ground_wire`], exact for its
-/// polyline): every point of the arc lies within e of one of them at its
-/// station. Each is taken e thicker, in a zone e wider (and 2e deeper);
+/// Rule `def`'s clearances of arc `a` (a band) to the ground: its
+/// boundary — the wire swung to angles every Δφ ≤ 2e / R (e =
+/// [`ARC_TOLERANCE`], R the band's largest radius) at its outer and its
+/// inner radius, and its two end edges at fractions of the thickness
+/// every Δr ≤ 2e — each line checked as a solved wire ([`ground_wire`],
+/// exact for its polyline): every point of the boundary lies within e of
+/// one of them at its station (and a ground reaching into the band
+/// crosses its boundary). Each is taken e thicker, in a zone e wider (and 2e deeper);
 /// vertically each piece also e·s lower (s its rise per plan length: an
 /// arc point e away from the wire's point lies over ground the piece
 /// passes over up to e·s higher or lower; s the steeper of the piece and
@@ -416,7 +432,7 @@ pub(crate) fn arc_ground(
         },
         ..def.clone()
     };
-    let mut angles: Vec<f64> = (0..=n)
+    let angles: Vec<f64> = (0..=n)
         .map(|k| {
             if n == 0 {
                 from
@@ -425,11 +441,44 @@ pub(crate) fn arc_ground(
             }
         })
         .collect();
-    angles.sort_by(|x, y| x.abs().total_cmp(&y.abs()));
+    // (angle, fraction from the inner to the outer radius): the outer
+    // surface, then (where the band has a thickness) the inner one at
+    // angles every 2e / r (r its largest inner radius) and the end edges
+    // between.
+    let mut lines: Vec<(f64, f64)> = angles.iter().map(|&phi| (phi, 1.0)).collect();
+    let thick = a.arc.thickness();
+    if thick > 1e-9 {
+        let inner = a
+            .arc
+            .stations
+            .iter()
+            .map(|&s| a.arc.place(s).inner)
+            .fold(0.0, f64::max);
+        let n = if to > from && inner > 0.0 {
+            (((to - from) * inner / (2.0 * e)).ceil() as usize).clamp(1, 20_000)
+        } else {
+            0
+        };
+        lines.extend((0..=n).map(|k| {
+            if n == 0 {
+                (from, 0.0)
+            } else {
+                (from + (to - from) * k as f64 / n as f64, 0.0)
+            }
+        }));
+        let m = ((thick / (2.0 * e)).ceil() as usize).clamp(1, 20_000);
+        for k in 1..m {
+            let t = k as f64 / m as f64;
+            lines.push((from, t));
+            lines.push((to, t));
+        }
+    }
+    // The outer surface nearest the hanging position first.
+    lines.sort_by(|x, y| (y.1).total_cmp(&x.1).then(x.0.abs().total_cmp(&y.0.abs())));
     let mut best = WireResult::with(def.required(a.wire.kv()));
-    for phi in angles {
+    for (phi, t) in lines {
         let line = Wire {
-            points: a.arc.line_at(phi),
+            points: a.arc.line_at_radius(phi, t),
             polyline_error: a.arc.allowance() - a.wire.surface_radius + e,
             ..a.wire.clone()
         };

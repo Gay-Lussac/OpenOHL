@@ -148,7 +148,8 @@ pub fn wind_choice(
         if sides_all {
             "Alongside each other or alone. The swing arc swings each span as one about the line \
              through its attachment points, between still air and the full blowouts of the sides \
-             chosen, at the largest of their radii (conservative): every angle is covered. The \
+             chosen, at every radius from the smallest to the largest of theirs, widened by \
+             0.15 m (conservative): every angle and radius between is covered. The \
              steps solve the wires at 0, step, 2 × step … up to the case's pressure: the exact \
              positions at those pressures, nothing between them. Left and right looking ahead \
              along the line."
@@ -170,7 +171,7 @@ pub fn wind_choice(
                 ui.visuals().warn_fg_color,
                 egui::RichText::new(format!(
                     "{text} The swing arc needs 3 and covers every angle between the blowouts \
-                     (a rigid swing at the largest radius: conservative, not exact between)."
+                     (a rigid swing over the band of radii: conservative, not exact between)."
                 ))
                 .small(),
             )

@@ -150,7 +150,8 @@ fn lowest(r: &ZoneCheckResult) -> Vec<Lowest> {
 }
 
 /// A point on the wire at half the wind (300 Pa from the right): 1 m and
-/// more from the full blowouts, 0.47 m from the swing arc (three solves).
+/// more from the full blowouts, inside the swing arc's band (three
+/// solves; 0.47 m from the arc at the largest radius before 2026-10-21).
 #[test]
 fn the_arc_finds_the_wire_at_half_the_wind() {
     let (line, library, _) = example();
@@ -177,11 +178,10 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
     let angle = f.arc.expect("found on the arc");
     assert!(angle < -5.0, "{angle}");
     // The wire at 300 Pa sags less than at 600 Pa: it lies 0.47 m nearer
-    // the axis than the arc (the largest radius), and the point on it is
-    // 0.47 m inside the arc — the arc is conservative for targets
-    // outside it (below and beside the wire), not for one between the
-    // axis and the arc (theory: Arc or steps).
-    assert!(f.distance < 0.5, "{f:?}");
+    // the axis than the largest radius, between the smallest and the
+    // largest — in the band (within its margin): its clearance below 0
+    // (theory: Arc or steps).
+    assert!(f.distance <= 0.0, "{f:?}");
     assert!(f.position(&r.states).contains("swing arc at"));
     // Without the arc: the full blowouts only, far from it.
     let plain = run(Measure::Radial, &WindSteps::default(), &[p]);
@@ -196,9 +196,10 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
 
 /// The arc against the steps (50 Pa, both sides) on the example line, to
 /// the ground and to 4000 invented points, vertically and radially: per
-/// span and rule, the arc's lowest clearance is never above the steps' by
-/// more than the rigid swing's simplification (the largest difference
-/// printed; measured 2026-10-20: see the theory).
+/// span and rule, the arc's lowest clearance (the band with its margin,
+/// 2026-10-21) is never above the steps' (the largest difference printed;
+/// measured 2026-10-21: see the theory; before, at the largest radius
+/// only, up to 2.1 cm above).
 #[test]
 fn the_arc_against_the_steps_on_the_example_line() {
     let (line, library, _) = example();
@@ -253,7 +254,7 @@ fn the_arc_against_the_steps_on_the_example_line() {
             worst.1,
             gain
         );
-        assert!(worst.0 <= 0.05, "{}", worst.1);
+        assert!(worst.0 <= 0.0, "{}", worst.1);
         // The time with rules of 7 m (most spans keep them).
         let a = run_with(measure, &arc, &points, 7.0);
         let s = run_with(measure, &steps, &points, 7.0);

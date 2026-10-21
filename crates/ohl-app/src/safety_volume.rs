@@ -1054,9 +1054,11 @@ impl SafetyVolumeWindow {
                 );
                 help::explain(
                     ui,
-                    "Structures and jumpers are not included.",
-                    "Only the spans of the sections: the structures, their strings and the \
-                     jumpers across them are not part of the volumes (yet).",
+                    "Jumpers included, structures not.",
+                    "The jumpers at their solved positions in every case and wind position, so \
+                     the volume is continuous at the structures (a jumper gets no swing arc: its \
+                     blowouts, still air and steps). The structures and their strings are not \
+                     part of the volumes.",
                 );
             });
             help::volume_grouping(ui, s.grouping);
