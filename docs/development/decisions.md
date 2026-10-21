@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-10-21
 
+- **A cross-section view** (owner request of 2026-10-21). Built, in
+  active development (not approved yet). **C** (or View ›
+  Cross-section…, a structure's menu, the profile's right-click with
+  Select held) opens a window: a station on an alignment or a structure
+  (a searchable list, or clicked in a view), the depth (**±10 m** by
+  default) and the width across (the line width by default); **Open
+  cut** opens a 2D view as a tab of its own (several at once).
+  - **Orientation.** At a station the plane is perpendicular to the
+    alignment; within 1 cm of an alignment point, along the bisector of
+    the two legs (as structures stand). At a structure, the plane holds
+    its local x axis (its cross-arms); turned to look ahead when the
+    structure is turned round. The view always looks ahead (increasing
+    stations): the left of the line on the left; said on the view.
+  - **What it shows** (within ± the depth along, ± the width across,
+    projected): the ground (the active terrain surface cut exactly by
+    the plane, else the lowest LiDAR ground point every 0.5 m), the
+    LiDAR points (class visibility honoured), the wires of the cases
+    shown (both wind sides: the blowout; a marker and label where each
+    crosses the plane, the curve within the slab), jumpers, structures
+    (members or stick figure, strings as solved, attachment points,
+    joints), the corridor's edges, the crossings of the lines on the
+    ground. Same scale both ways by default (exaggeration 2–20
+    optional). Hover: offset, height, height above ground, distance to
+    the nearest conductor crossing. Clicks select as in the other views.
+  - **Navigation**: zoom, pan, fit; no rotation. ◀ ▶ (and , .) step the
+    cut by a step (twice the depth by default), ⏮ ⏭ to the structure
+    before or after. C was free (G, M, E, 1–9, W A S D, Space are
+    taken; ⌘C is left alone); , and . were free.
+  - **Performance**: the LiDAR points of a slab come from a grid index
+    of the points loaded (8 m cells, made once, again when points
+    move); draw-only thinning (one dot per pixel and colour). Wires and
+    structures are taken every frame, so the cut follows edits and
+    re-solves.
+  - **Not yet** (follow-ups): the swing band and the clearance circle
+    around the conductors (optional in the request, left off); the
+    export of a cut (SVG / PNG / DXF through the drawing model); points
+    streamed only for the 3D view are not in the cut.
+
 - **Attachment points: the link follows edits, only attach joints take
   a link, `derive` writes joints, no point on a member** (owner
   decisions of 2026-10-21, after the Link tool). Built, in active
