@@ -2949,6 +2949,11 @@ impl Ready {
         let mut need = self.model.shown(self.case);
         need.push(self.case);
         need.extend(self.model.display_cases.values().flatten().copied());
+        // The weather cases the lines on the ground are measured from.
+        let g = &self.model.ground_lines;
+        if g.on && g.from == crate::ground_lines::From::OutermostConductor {
+            need.extend(g.chosen_in(&self.model, self.case));
+        }
         self.model.want(need, ctx);
         let done = self.model.poll_solving();
         if !done.is_empty() {
@@ -2958,14 +2963,16 @@ impl Ready {
         }
     }
 
-    /// Every frame: the lines on the ground beside the line in the
-    /// weather case shown (View › Lines on the ground beside the line),
-    /// made when the case, the line, its solution, the ground or the
-    /// settings change, handed to the views. Display only.
-    pub fn ground_lines_frame(&mut self) {
+    /// Every frame: the lines on the ground beside the line round the
+    /// weather cases chosen (View › Lines on the ground beside the line),
+    /// made when the cases, the line, its solutions, the ground or the
+    /// settings change, handed to the views. Display only. The other
+    /// wind side of a windy case is solved in the background (`ctx`
+    /// repainted when done; none: now).
+    pub fn ground_lines_frame(&mut self, ctx: Option<&egui::Context>) {
         if self
             .ground_lines
-            .frame(&self.model, self.case, &self.model.ground_lines)
+            .frame(&self.model, self.case, &self.model.ground_lines, ctx)
         {
             self.view3d.ground_lines = self.ground_lines.drawn.clone();
             self.plan.ground_lines = self.ground_lines.drawn.clone();
@@ -7400,10 +7407,13 @@ fn menus(
         // Ticks keep it open; this user's, remembered with the project.
         crate::menu::options_menu(ui, "Lines on the ground beside the line", |ui| {
             let routes: Vec<String> = r.model.line.routes.iter().map(|x| x.id.clone()).collect();
+            let cases: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
             crate::ground_lines::menu(
                 ui,
                 &mut r.model.ground_lines,
                 &routes,
+                &cases,
+                r.case,
                 r.ground_lines.drawn.as_deref(),
             );
         });
@@ -8507,7 +8517,7 @@ impl eframe::App for App {
                 // The structure being edited: its handles in the 3D view.
                 let dock = &self.dock;
                 ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
-                ready.ground_lines_frame();
+                ready.ground_lines_frame(Some(&ctx));
                 let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)

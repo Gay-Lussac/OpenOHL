@@ -62,13 +62,17 @@ fn first_chord(m: &model::Model) -> ([f64; 2], [f64; 2]) {
 /// its middle (left positive; the largest for the left side, the
 /// smallest for the right): the wires of that span in `case` (each
 /// subconductor), interpolated where they cross the perpendicular there.
-fn outermost_at_middle(m: &model::Model, k: usize, (a, b): ([f64; 2], [f64; 2])) -> (f64, f64) {
+fn outermost_at_middle(m: &model::Model, k: usize, chord: ([f64; 2], [f64; 2])) -> (f64, f64) {
+    outermost_of(&m.cases[k], chord)
+}
+
+/// [`outermost_at_middle`] of one solution.
+fn outermost_of(solved: &model::Solved, (a, b): ([f64; 2], [f64; 2])) -> (f64, f64) {
     let l = (b[0] - a[0]).hypot(b[1] - a[1]);
     let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
     let n = [-u[1], u[0]];
     let mid = l / 2.0;
     let (mut most, mut least) = (f64::NEG_INFINITY, f64::INFINITY);
-    let solved = &m.cases[k];
     for subs in solved.bundles.spans.values() {
         for pl in subs {
             for w in pl.windows(2) {
@@ -122,7 +126,9 @@ fn line_at_middle(d: &ground_lines::Drawn, side: Side, (a, b): ([f64; 2], [f64; 
 /// (everyday) and in high wind (600 Pa from the right), each line at the
 /// middle of the first span is 10 m beyond the outermost conductor on its
 /// side there — so the wind moves it by that conductor's blowout — and
-/// on the ground surface (its height there).
+/// on the ground surface (its height there). One solution per case here
+/// (the side shown; no other side given): the envelope of both sides is
+/// [`the_envelope_over_several_cases_and_both_wind_sides`].
 #[test]
 fn the_lines_follow_the_outermost_conductor_and_lie_on_the_ground() {
     let m = example();
@@ -135,7 +141,7 @@ fn the_lines_follow_the_outermost_conductor_and_lie_on_the_ground() {
     let mut shift = Vec::new();
     for name in ["everyday", "high wind"] {
         let k = case(&m, name);
-        let d = ground_lines::compute(&m, k, &settings);
+        let d = ground_lines::compute(&m, &[k], &[], &settings);
         assert_eq!(d.ground, ground_lines::Ground::Surface);
         // Two lines per alignment.
         assert_eq!(d.lines.len(), 2 * m.line.alignment_views().len());
@@ -182,7 +188,7 @@ fn from_the_axis_on_the_example() {
         distance: 25.0,
         ..Settings::default()
     };
-    let d = ground_lines::compute(&m, 0, &settings);
+    let d = ground_lines::compute(&m, &[0], &[], &settings);
     for l in &d.lines {
         let mut n = 0;
         let mut exact = 0;
@@ -213,11 +219,230 @@ fn from_the_axis_on_the_example() {
     }
 }
 
+/// Distance in plan from `p` to the segment `s`.
+fn to_segment(p: [f64; 2], s: ground_lines::Seg) -> f64 {
+    let e = [s[1][0] - s[0][0], s[1][1] - s[0][1]];
+    let l2 = e[0] * e[0] + e[1] * e[1];
+    let q = [p[0] - s[0][0], p[1] - s[0][1]];
+    let t = if l2 > 0.0 {
+        ((q[0] * e[0] + q[1] * e[1]) / l2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (q[0] - t * e[0]).hypot(q[1] - t * e[1])
+}
+
+/// Whether two plan segments cross (not at a shared end).
+fn cross(a: [[f64; 2]; 2], b: [[f64; 2]; 2]) -> bool {
+    let c = |o: [f64; 2], p: [f64; 2], q: [f64; 2]| {
+        (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+    };
+    let (d1, d2) = (c(b[0], b[1], a[0]), c(b[0], b[1], a[1]));
+    let (d3, d4) = (c(a[0], a[1], b[0]), c(a[0], a[1], b[1]));
+    d1 * d2 < -1e-12 && d3 * d4 < -1e-12
+}
+
+/// No piece of `d`'s lines crosses itself in plan.
+fn assert_no_self_crossing(d: &ground_lines::Drawn) {
+    for l in &d.lines {
+        for run in &l.runs {
+            let segs: Vec<[[f64; 2]; 2]> = run
+                .windows(2)
+                .map(|w| [[w[0][0], w[0][1]], [w[1][0], w[1][1]]])
+                .collect();
+            for i in 0..segs.len() {
+                for j in i + 2..segs.len() {
+                    assert!(
+                        !cross(segs[i], segs[j]),
+                        "{} {:?}: segments {i} and {j} cross",
+                        l.alignment,
+                        l.side
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Several weather cases, both wind sides: everyday and high wind chosen
+/// (the case shown not), the views showing the wind from the right only,
+/// so the wind from the left is solved for the lines
+/// ([`ground_lines::other_sides_now`]). At the middle of the first span
+/// each line is 10 m beyond the outermost conductor on its side over the
+/// three solutions (everyday; high wind from the right; from the left):
+/// the left line beyond the wires the wind from the right blows left,
+/// the right line beyond those the wind from the left blows right — so
+/// it lies farther out than with either case alone, the right one by the
+/// blowout (more than 1 m). Every point of every line is 10 m from the
+/// nearest wire or jumper of the three solutions (the band's outer edge)
+/// — less only on the straight pieces between the line's points (every
+/// 2 m, 5° round a corner: 10 m · (1 − cos 2.5°) = 9.5 mm there), by
+/// 5 cm at most where a blown-out conductor curves sharply near its clamp
+/// — and never farther; no line crosses itself.
+#[test]
+fn the_envelope_over_several_cases_and_both_wind_sides() {
+    let m = example();
+    let (still, windy) = (case(&m, "everyday"), case(&m, "high wind"));
+    let settings = Settings {
+        on: true,
+        shown_case: false,
+        cases: ["everyday", "high wind"].map(String::from).into(),
+        ..Settings::default()
+    };
+    let chosen = settings.chosen_in(&m, 0);
+    assert_eq!(chosen, vec![still.min(windy), still.max(windy)]);
+    let others = ground_lines::other_sides_now(&m, &chosen);
+    assert_eq!(
+        others.len(),
+        1,
+        "the wind from the other side of high wind only"
+    );
+    assert_eq!(others[0].0, windy);
+    assert_eq!(m.cases[windy].case.wind_from, ohl_weather::WindSide::Right);
+    assert_eq!(others[0].1.case.wind_from, ohl_weather::WindSide::Left);
+    let d = ground_lines::compute(&m, &chosen, &others, &settings);
+    assert!(d.notes.is_empty(), "{:?}", d.notes);
+    let chord = first_chord(&m);
+    let all = [&m.cases[still], &m.cases[windy], &*others[0].1];
+    let most = all.map(|s| outermost_of(s, chord));
+    let left_most = most.iter().map(|x| x.0).fold(f64::NEG_INFINITY, f64::max);
+    let right_most = most.iter().map(|x| x.1).fold(f64::INFINITY, f64::min);
+    let (left, _) = line_at_middle(&d, Side::Left, chord);
+    let (right, _) = line_at_middle(&d, Side::Right, chord);
+    assert!(
+        (left - (left_most + 10.0)).abs() < 0.05,
+        "{left} {left_most}"
+    );
+    assert!(
+        (right - (right_most - 10.0)).abs() < 0.05,
+        "{right} {right_most}"
+    );
+    for k in [still, windy] {
+        let one = ground_lines::compute(&m, &[k], &[], &settings);
+        let (l, _) = line_at_middle(&one, Side::Left, chord);
+        let (r, _) = line_at_middle(&one, Side::Right, chord);
+        assert!(
+            left >= l - 1e-6 && right <= r + 1e-6,
+            "{k}: {left} {l} {right} {r}"
+        );
+        if k == windy {
+            // The wind from the left blows the wires out on the right.
+            assert!(r - right > 1.0, "{r} {right}");
+        }
+    }
+    // The band's outer edge, over every wire and jumper of the three.
+    let solutions: Vec<&model::Solved> = all.to_vec();
+    let (mut n, mut exact) = (0, 0);
+    for view in m.line.alignment_views() {
+        let run: Vec<&String> = view.run().collect();
+        let chain = ground_lines::Chain::of_wires(&m.line, &solutions, &run);
+        let sources: Vec<ground_lines::Seg> = chain
+            .spans
+            .iter()
+            .chain(&chain.joints)
+            .flatten()
+            .copied()
+            .collect();
+        for l in d.lines.iter().filter(|l| l.alignment == view.id) {
+            for p in l.runs.iter().flatten() {
+                let near = sources
+                    .iter()
+                    .map(|s| to_segment([p[0], p[1]], *s))
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    near > 10.0 - 0.05 && near < 10.0 + 1e-6,
+                    "{} {:?}: {p:?} at {near}",
+                    l.alignment,
+                    l.side
+                );
+                n += 1;
+                if (near - 10.0).abs() < 5e-3 {
+                    exact += 1;
+                }
+            }
+        }
+    }
+    assert!(n > 1000 && exact * 10 > n * 9, "{exact} of {n}");
+    assert_no_self_crossing(&d);
+}
+
+/// The jumpers count as conductors, so the lines go on round the
+/// structures. On the example the branch's conductor ends at the Y pylon
+/// T3 in a dead-end string (its wire point 6.5 m along the branch from
+/// the pylon's centre, on the branch's axis) and the jumper J-T3-branch
+/// joins it across the pylon to the main line's conductor. 2 m away in
+/// still air, the branch's lines reach back to T3 (their first point
+/// within 0.5 m of the branch's start, the jumper passing within 0.5 m
+/// of the axis there); without the jumper they would begin only where
+/// the conductor comes within 2 m of the cross line: 6.5 − 2 = 4.5 m
+/// along, at the next point every 2 m, beyond 4 m. T3 is also an angle
+/// tower of the main route (≈ 10°): its lines go on round it in one
+/// piece (from 20 m before to 20 m after it), and no line crosses
+/// itself.
+#[test]
+fn the_jumper_counts_at_the_dead_end_and_the_angle_tower() {
+    let mut m = example();
+    let still = case(&m, "everyday");
+    assert!(
+        m.cases[still]
+            .jumpers
+            .iter()
+            .any(|j| j.jumper == "J-T3-branch")
+    );
+    let settings = Settings {
+        on: true,
+        distance: 2.0,
+        ..Settings::default()
+    };
+    let start = |d: &ground_lines::Drawn, side: Side| {
+        let l = d
+            .lines
+            .iter()
+            .find(|l| l.alignment == "branch" && l.side == side)
+            .unwrap();
+        l.runs
+            .iter()
+            .flatten()
+            .map(|p| ohl_line::route::project(&l.axis, *p).0)
+            .fold(f64::INFINITY, f64::min)
+    };
+    let d = ground_lines::compute(&m, &[still], &[], &settings);
+    for side in [Side::Left, Side::Right] {
+        let s = start(&d, side);
+        assert!(s < 0.5, "{side:?}: begins {s} m along the branch");
+    }
+    // The main route at T3 (station 640 along it).
+    for l in d.lines.iter().filter(|l| l.alignment == "main") {
+        let through = l.runs.iter().any(|run| {
+            let st: Vec<f64> = run
+                .iter()
+                .map(|p| ohl_line::route::project(&l.axis, *p).0)
+                .collect();
+            st.iter().any(|s| *s < 620.0) && st.iter().any(|s| *s > 660.0)
+        });
+        assert!(through, "{:?}: broken at T3", l.side);
+    }
+    assert_no_self_crossing(&d);
+    // Without the jumper.
+    let c = &mut m.cases[still];
+    c.jumpers.clear();
+    c.bundles.jumpers.clear();
+    let bare = ground_lines::compute(&m, &[still], &[], &settings);
+    for side in [Side::Left, Side::Right] {
+        let s = start(&bare, side);
+        assert!(s > 4.0, "{side:?}: begins {s} m along the branch");
+    }
+}
+
 /// The option from View › Lines on the ground beside the line: ticked,
 /// the menu stays open and the views get the lines (the 3D layer made
-/// again); another weather case shown makes them for it, and back again
-/// they are the ones kept; unticked, they are gone. Remembered with the
-/// view settings, not in the project.
+/// again); another weather case shown makes them for it (a windy one
+/// with its wind from both sides), and back again they are the ones kept.
+/// The weather cases from the menu: None leaves none (no lines, said); a
+/// case ticked by name, the case shown unticked, no longer follows the
+/// case shown (the lines are kept by the set of cases); All takes every
+/// case; the case shown ticked again. Unticked, they are gone. Remembered
+/// with the view settings, not in the project.
 #[test]
 fn the_option_shows_and_hides_and_follows_the_weather_case() {
     let model = example();
@@ -242,18 +467,25 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
     assert!(!first.lines.is_empty());
     assert!(r.view3d.ground_lines.is_some() && r.plan.ground_lines.is_some());
     assert_eq!(r.ground_lines.made, 1);
-    // Another case shown.
+    // Another case shown (windy: its wind from the left solved for the
+    // lines in the background, then taken: made once or twice).
     r.case = windy;
-    h.run();
+    settle(&mut h);
     let r = h.state_mut().ready().unwrap();
     let second = r.ground_lines.drawn.clone().unwrap();
     assert!(!std::sync::Arc::ptr_eq(&first, &second));
     assert_ne!(first.lines, second.lines);
+    assert!(second.notes.is_empty(), "{:?}", second.notes);
     assert!(std::sync::Arc::ptr_eq(
         r.view3d.ground_lines.as_ref().unwrap(),
         &second
     ));
-    assert_eq!(r.ground_lines.made, 2);
+    let made = r.ground_lines.made;
+    assert!((2..=3).contains(&made), "{made}");
+    // The same as made here with both wind sides.
+    let both = ground_lines::other_sides_now(&r.model, &[windy]);
+    let here = ground_lines::compute(&r.model, &[windy], &both, &r.model.ground_lines);
+    assert_eq!(here.lines, second.lines);
     // Back: kept, not made again.
     r.case = 0;
     h.run();
@@ -262,7 +494,61 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
         r.ground_lines.drawn.as_ref().unwrap(),
         &first
     ));
-    assert_eq!(r.ground_lines.made, 2);
+    assert_eq!(r.ground_lines.made, made);
+    // None: no case, no lines, said; the menu stays open.
+    h.get_by_label("None").click();
+    h.run();
+    assert!(h.query_by_label("Show the lines").is_some());
+    let r = h.state_mut().ready().unwrap();
+    let g = &r.model.ground_lines;
+    assert!(!g.shown_case && g.cases.is_empty());
+    let none = r.ground_lines.drawn.clone().unwrap();
+    assert!(none.lines.is_empty());
+    assert!(
+        none.notes
+            .iter()
+            .any(|n| n.contains("no weather case chosen"))
+    );
+    // A case by name: high wind, whatever case is shown.
+    h.get_by_label("high wind").click();
+    settle(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    assert_eq!(
+        r.model.view_prefs().ground_lines.cases,
+        ["high wind".to_owned()].into()
+    );
+    let named = r.ground_lines.drawn.clone().unwrap();
+    assert_eq!(named.lines, second.lines);
+    let made = r.ground_lines.made;
+    r.case = windy;
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        r.ground_lines.drawn.as_ref().unwrap(),
+        &named
+    ));
+    assert_eq!(r.ground_lines.made, made, "keyed by the set of cases");
+    r.case = 0;
+    // All: every case.
+    h.get_by_label("All").click();
+    settle(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    let names: std::collections::BTreeSet<String> =
+        r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    assert_eq!(r.model.ground_lines.cases, names);
+    let every = r.ground_lines.drawn.clone().unwrap();
+    // Made for this set; on the example high wind from both sides holds
+    // every other case's conductors inside its envelope: the same lines.
+    assert!(r.ground_lines.made > made);
+    assert!(!std::sync::Arc::ptr_eq(&every, &named));
+    assert_eq!(every.lines, named.lines);
+    assert!(every.notes.is_empty(), "{:?}", every.notes);
+    // The case shown again (and the names kept).
+    h.get_by_label_contains("The case shown").click();
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.model.ground_lines.shown_case);
+    assert!(r.model.view_prefs().ground_lines.shown_case);
     // Unticked: gone.
     h.get_by_label("Show the lines").click();
     h.run();
@@ -270,6 +556,20 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
     assert!(r.ground_lines.drawn.is_none() && r.view3d.ground_lines.is_none());
     assert!(r.plan.ground_lines.is_none() && r.profile.ground_lines.is_none());
     assert!(!r.model.ground_lines.on);
+}
+
+/// Runs frames until the weather cases and the other wind sides are
+/// solved (at most 20 s).
+fn settle(h: &mut Harness<'_, App>) {
+    for _ in 0..1000 {
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        if r.model.solving.is_empty() && !r.ground_lines.solving() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.run();
 }
 
 /// An edit of the line makes them again. Without a ground surface they
@@ -315,9 +615,11 @@ fn an_edit_makes_them_again() {
 }
 
 /// In the profile too when ticked: the ground along the lines of both
-/// sides; the 3D view, the plan and the profile drawn with them
-/// (OHL_RENDER_PNG: images of the window with the 3D view, then the plan,
-/// in front).
+/// sides; the 3D view, the plan and the profile drawn with them, round
+/// several weather cases (high wind shown, everyday and glaze ice ticked,
+/// both wind sides) — OHL_RENDER_PNG: images of the window with the 3D
+/// view, then the plan, in front, and the plan at the Y pylon T3 (the
+/// angle tower where the branch's jumper is) with the lines 5 m away.
 #[test]
 fn the_profile_shows_both_sides_and_the_views_draw_them() {
     let gpu = ohl_render::headless_device().is_ok();
@@ -330,6 +632,7 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
         on: true,
         distance: 15.0,
         profile: true,
+        cases: ["everyday", "glaze ice"].map(String::from).into(),
         ..Settings::default()
     };
     let windy = case(&model, "high wind");
@@ -340,6 +643,9 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
     let mut h = builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
     h.state_mut().ready().unwrap().case = windy;
     h.run_steps(4);
+    settle(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    assert_eq!(r.model.ground_lines.chosen_in(&r.model, windy).len(), 3);
     let [left, right] = h.state_mut().ready().unwrap().profile.ground_profiles();
     assert!(left > 0 && right > 0, "{left} {right}");
     let dir = ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| gpu);
@@ -353,6 +659,18 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
     if let Some(dir) = &dir {
         let image = h.render().unwrap();
         let path = PathBuf::from(dir).join("ground-lines-plan.png");
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.model.ground_lines.distance = 5.0;
+        r.plan.set_view([640.0, 20.0], 9.0);
+    }
+    settle(&mut h);
+    h.run_steps(3);
+    if let Some(dir) = &dir {
+        let image = h.render().unwrap();
+        let path = PathBuf::from(dir).join("ground-lines-plan-t3.png");
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }
     // Not in the profile when unticked.
