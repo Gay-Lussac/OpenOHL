@@ -19,10 +19,14 @@
 //! angle structure the cross direction turns in steps (a round outer
 //! corner); the loop a sharp inner corner makes is cut off where the
 //! line crosses itself ([`without_loops`]): the outer envelope, never
-//! crossing itself. It is draped on the ground ([`drape`]): the active
-//! terrain surface (or the ground built from the LiDAR ground classes),
-//! at every edge of its triangles crossed; without a ground surface the
-//! heights of the alignment's points, every 2 m.
+//! crossing itself. It is draped on the ground ([`drape_counted`]): the active
+//! terrain surface (TIN), else the ground built from the LiDAR ground
+//! classes of the whole corridor (not the points drawn: the ground the
+//! checks use, [`crate::model::Model::ground`]), at every edge of its
+//! triangles crossed, broken where no ground lies under it (the gaps
+//! counted); without either, the heights of the alignment's points,
+//! every 2 m — and the menu offers to build a terrain surface from the
+//! LiDAR when there is a point cloud ([`Drawn::offer_build`]).
 //!
 //! Display only: kept per set of weather cases and made again when the
 //! line, the solutions, the ground or the settings change; never written
@@ -220,14 +224,87 @@ pub struct GroundLine {
 }
 
 /// Where the heights come from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ground {
-    /// The ground surface (a terrain surface or survey file).
-    Surface,
-    /// The ground built from the LiDAR ground classes.
-    Lidar,
+    /// The ground surface: a terrain surface (TIN) or survey file, by its
+    /// name.
+    Surface(String),
+    /// The ground built from the LiDAR ground classes of the corridor:
+    /// its points (the lowest of each cell).
+    Lidar(usize),
     /// No ground surface: the heights of the alignment's points.
     Alignment,
+}
+
+impl Ground {
+    /// Where the heights come from, as the menu says it: "TIN (name)",
+    /// "LiDAR ground classes (n points)" or "alignment heights only".
+    pub fn label(&self) -> String {
+        match self {
+            Self::Surface(name) => format!("TIN ({name})"),
+            Self::Lidar(n) => format!("LiDAR ground classes ({n} points)"),
+            Self::Alignment => "alignment heights only".into(),
+        }
+    }
+
+    /// Where the model's heights come from ([`Model::ground`]): the
+    /// surface loaded as the ground, else the ground built from the
+    /// LiDAR, else none.
+    pub fn of(model: &Model) -> Self {
+        match model.ground.as_deref() {
+            None => Self::Alignment,
+            Some(g) if model.ground_from_lidar && model.ground_source.is_empty() => {
+                Self::Lidar(g.points().len())
+            }
+            Some(_) => Self::Surface(surface_name(&model.ground_source)),
+        }
+    }
+}
+
+/// The name of the surface `source` says the ground is from
+/// ([`Model::ground_source`]: "surface NAME" or "survey file PATH").
+fn surface_name(source: &str) -> String {
+    if let Some(name) = source.strip_prefix("surface ") {
+        return name.to_owned();
+    }
+    if let Some(path) = source.strip_prefix("survey file ") {
+        return std::path::Path::new(path)
+            .file_name()
+            .map_or_else(|| path.to_owned(), |n| n.to_string_lossy().into_owned());
+    }
+    if source.is_empty() {
+        "the ground shown".into()
+    } else {
+        source.to_owned()
+    }
+}
+
+/// Why the model has no ground from its LiDAR points, in words (none
+/// without a point cloud).
+fn no_lidar_ground(model: &Model) -> Option<String> {
+    model.cloud.as_ref()?;
+    let classes = model.scheme.codes_with_role("ground");
+    Some(if classes.is_empty() {
+        format!(
+            "the LiDAR class scheme ({}) has no class with the ground role",
+            model.scheme.name
+        )
+    } else if !model
+        .class_counts
+        .iter()
+        .any(|(c, n)| *n > 0 && classes.contains(c))
+    {
+        format!(
+            "the point cloud has no point of a ground class ({})",
+            classes
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        "no point of the LiDAR ground classes within the corridor read".into()
+    })
 }
 
 /// The lines of one set of weather cases.
@@ -237,6 +314,15 @@ pub struct Drawn {
     pub lines: Vec<GroundLine>,
     /// Where the heights come from.
     pub ground: Ground,
+    /// The stretches of the lines with no ground under them (beyond the
+    /// surface's edge, outside the LiDAR corridor, or where the ground
+    /// points are farther apart than the ground's longest triangle side):
+    /// the lines are broken there.
+    pub gaps: usize,
+    /// Neither a terrain surface nor the LiDAR ground lies under the
+    /// lines, and the model has a point cloud: why, in words — the menu
+    /// offers to build a terrain surface from the LiDAR.
+    pub offer_build: Option<String>,
     /// What could not be drawn, in words.
     pub notes: Vec<String>,
 }
@@ -466,6 +552,11 @@ fn key(
         .as_ref()
         .map(|g| (Arc::as_ptr(g) as usize, g.num_triangles()))
         .hash(&mut h);
+    // What the menu says of the ground (and why there is none).
+    (&model.ground_source, model.ground_from_lidar).hash(&mut h);
+    model.cloud.hash(&mut h);
+    model.scheme.codes_with_role("ground").hash(&mut h);
+    model.class_counts.hash(&mut h);
     h.finish()
 }
 
@@ -509,16 +600,15 @@ pub fn compute(
     settings: &Settings,
 ) -> Drawn {
     let line = &model.line;
-    let ground = match model.ground.as_deref() {
-        Some(_) if model.ground_from_lidar => Ground::Lidar,
-        Some(_) => Ground::Surface,
-        None => Ground::Alignment,
-    };
     let mut out = Drawn {
         lines: Vec::new(),
-        ground,
+        ground: Ground::of(model),
+        gaps: 0,
+        offer_build: None,
         notes: Vec::new(),
     };
+    // Some line made in plan (to drape).
+    let mut planned = false;
     let d = settings.distance.clamp(0.0, MAX_DISTANCE);
     let solutions = if settings.from == From::OutermostConductor {
         if chosen.is_empty() {
@@ -559,7 +649,10 @@ pub fn compute(
             let mut runs = Vec::new();
             for piece in offset_side(&chain, d, side) {
                 let piece = without_loops(&piece);
-                runs.extend(drape(&piece, model.ground.as_deref(), &axis));
+                let (draped, gaps) = drape_counted(&piece, model.ground.as_deref(), &axis);
+                runs.extend(draped);
+                out.gaps += gaps;
+                planned = true;
             }
             out.lines.push(GroundLine {
                 route: view.route.clone(),
@@ -569,6 +662,35 @@ pub fn compute(
                 axis: axis.clone(),
             });
         }
+    }
+    let on_ground = out.lines.iter().any(|l| !l.runs.is_empty());
+    match out.ground {
+        Ground::Alignment => {
+            out.offer_build = no_lidar_ground(model);
+            if out.offer_build.is_none() {
+                out.notes.push(
+                    "no terrain surface and no LiDAR point cloud: import a surface in \
+                     Terrain › Terrain surfaces (TIN)"
+                        .into(),
+                );
+            }
+        }
+        _ if planned && !on_ground => {
+            let ground = out.ground.label();
+            out.offer_build = model
+                .cloud
+                .as_ref()
+                .map(|_| format!("the ground ({ground}) does not reach the lines"));
+            out.notes.push(format!(
+                "no ground under the lines ({ground}): nothing drawn"
+            ));
+        }
+        _ if out.gaps > 0 => out.notes.push(format!(
+            "{} gap{} where no ground lies under the lines (broken there)",
+            out.gaps,
+            if out.gaps == 1 { "" } else { "s" }
+        )),
+        _ => {}
     }
     out
 }
@@ -1028,12 +1150,33 @@ pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
     out
 }
 
+/// [`drape_counted`] without the gaps (tests).
+#[cfg(test)]
+pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> Vec<Vec<[f64; 3]>> {
+    drape_counted(plan, ground, axis).0
+}
+
 /// `plan` on the ground: on `ground`, a point where it crosses each edge
 /// of its triangles (the ground is flat between them), broken where it
 /// leaves the surface; without one, every [`STEP`] at the height of the
 /// alignment `axis` (its points' heights, linear along it) where it is
-/// beside it.
-pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> Vec<Vec<[f64; 3]>> {
+/// beside it. With the number of stretches of `plan` that have no ground
+/// under them (each counted once, however many segments it spans; none
+/// without a ground).
+pub fn drape_counted(
+    plan: &[[f64; 2]],
+    ground: Option<&Terrain>,
+    axis: &[[f64; 3]],
+) -> (Vec<Vec<[f64; 3]>>, usize) {
+    let mut gaps = 0;
+    // In a stretch without ground (counted already).
+    let mut off = false;
+    let mut miss = |off: &mut bool| {
+        if !*off {
+            gaps += 1;
+            *off = true;
+        }
+    };
     let mut runs: Vec<Vec<[f64; 3]>> = Vec::new();
     let mut current: Vec<[f64; 3]> = Vec::new();
     let flush = |current: &mut Vec<[f64; 3]>, runs: &mut Vec<Vec<[f64; 3]>>| {
@@ -1057,15 +1200,20 @@ pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> 
                 let pieces = g.profile(w[0], w[1]);
                 if pieces.is_empty() {
                     flush(&mut current, &mut runs);
+                    miss(&mut off);
                     continue;
                 }
                 for (i, run) in pieces.iter().enumerate() {
                     let joins = i == 0 && run.first().is_some_and(|p| p.t < 1e-9);
                     if !joins {
                         flush(&mut current, &mut runs);
+                        miss(&mut off);
                     }
                     for p in run {
                         push(&mut current, p.point);
+                    }
+                    if !run.is_empty() {
+                        off = false;
                     }
                 }
                 if pieces
@@ -1074,6 +1222,7 @@ pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> 
                     .is_none_or(|p| p.t < 1.0 - 1e-9)
                 {
                     flush(&mut current, &mut runs);
+                    miss(&mut off);
                 }
             }
         }
@@ -1094,7 +1243,7 @@ pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> 
         }
     }
     flush(&mut current, &mut runs);
-    runs
+    (runs, gaps)
 }
 
 /// The height of the alignment `axis` at the station of `p` (linear
@@ -1199,7 +1348,9 @@ pub fn along(drawn: &Drawn, alignment: &str, at: f64) -> Vec<(Side, Vec<Vec<[f64
 
 /// The menu (View › Lines on the ground beside the line), `cases` the
 /// weather cases' names, `shown` the case shown: whether the settings
-/// changed.
+/// changed. `build` set when **Build a terrain surface from the LiDAR…**
+/// is clicked (offered when neither a surface nor the LiDAR ground lies
+/// under the lines and there is a point cloud, [`Drawn::offer_build`]).
 pub fn menu(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -1207,6 +1358,7 @@ pub fn menu(
     cases: &[String],
     shown: usize,
     drawn: Option<&Drawn>,
+    build: &mut bool,
 ) -> bool {
     let before = settings.clone();
     ui.label(
@@ -1298,14 +1450,37 @@ pub fn menu(
     if settings.on
         && let Some(d) = drawn
     {
-        let from = match d.ground {
-            Ground::Surface => "on the ground surface",
-            Ground::Lidar => "on the ground from the LiDAR points",
-            Ground::Alignment => "no ground surface: at the heights of the alignment's points",
-        };
-        ui.label(egui::RichText::new(from).small().weak());
+        ui.label(
+            egui::RichText::new(format!("Ground: {}", d.ground.label()))
+                .small()
+                .weak(),
+        )
+        .on_hover_text(
+            "The active terrain surface, else the ground built from the LiDAR ground classes \
+             of the whole corridor (the lowest point of each 1 m cell, as the checks use it), \
+             else the heights of the alignment's points",
+        );
         for n in &d.notes {
             ui.label(egui::RichText::new(n).small().weak());
+        }
+        if let Some(why) = &d.offer_build {
+            ui.label(
+                egui::RichText::new(format!("No ground under the lines: {why}"))
+                    .small()
+                    .color(ui.visuals().warn_fg_color),
+            );
+            if ui
+                .button("Build a terrain surface from the LiDAR…")
+                .on_hover_text(
+                    "Terrain › Terrain surfaces (TIN), Build from LiDAR: tick the classes of \
+                     the ground and build; the surface becomes the ground and the lines are \
+                     draped on it",
+                )
+                .clicked()
+            {
+                *build = true;
+                ui.close();
+            }
         }
     }
     *settings != before

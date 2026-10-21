@@ -694,6 +694,22 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
             r.lidar_ground_again = true;
         }
     }
+    // No ground at all (the active surface deleted, a class scheme with
+    // ground classes chosen, ground points classified): built from the
+    // LiDAR ground classes, once for each revision of the ground points
+    // and set of ground classes.
+    if r.model.ground.is_some() {
+        r.lidar_ground_tried = None;
+    } else if r.model.ground_source.is_empty() && r.model.cloud.is_some() {
+        let tried = (
+            r.model.revisions.ground_points,
+            r.model.scheme.codes_with_role("ground"),
+        );
+        if !tried.1.is_empty() && r.lidar_ground_tried.as_ref() != Some(&tried) {
+            r.lidar_ground_tried = Some(tried);
+            r.lidar_ground_again = true;
+        }
+    }
     // The ground built again (once the build under way, if any, is done:
     // it read the points before this change).
     if r.lidar_ground_again
@@ -713,17 +729,20 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
     r.lidar_ground.poll();
     if running && !r.lidar_ground.running() {
         match r.lidar_ground.result.take() {
-            Some(Ok(Some(g))) => {
+            // Taken unless a surface became the ground meanwhile.
+            Some(Ok(Some(g))) if r.model.ground_source.is_empty() => {
                 r.model.ground = Some(std::sync::Arc::new(g));
+                r.model.ground_from_lidar = true;
                 r.model.revisions.ground = r.lidar_ground_rev;
                 r.view3d.dirty.insert(Layer::Ground);
                 r.profile.invalidate();
                 r.clearances.stale = true;
                 r.status = Some((
-                    "the ground was built again from the changed LiDAR points".into(),
+                    "the ground was built from the LiDAR ground classes".into(),
                     false,
                 ));
             }
+            Some(Ok(Some(_))) => {}
             Some(Ok(None)) => {}
             Some(Err(e)) => r.status = Some((format!("ground from LiDAR not built: {e}"), true)),
             None => {}

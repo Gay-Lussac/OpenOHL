@@ -314,6 +314,12 @@ pub struct Ready {
     pub lidar_ground_again: bool,
     /// The revision of the ground being built ([`crate::revision`]).
     pub lidar_ground_rev: u64,
+    /// With no ground: what the ground was last built from the LiDAR for
+    /// (the ground points' revision, the ground classes; none while there
+    /// is a ground). With no ground (the active surface deleted, the
+    /// class scheme changed) it is built once for each
+    /// ([`crate::lidar_edit::frame`]).
+    pub lidar_ground_tried: Option<(u64, Vec<u8>)>,
     /// Checks › Ground clearances › Vertical clearances.
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
     /// Checks › Ground clearances › Radial clearances.
@@ -452,6 +458,13 @@ impl Ready {
             lidar_ground_again: false,
             marks_from: MarksFrom::Clearances,
             lidar_ground_rev: 0,
+            // Tried when the project was read.
+            lidar_ground_tried: model.ground.is_none().then(|| {
+                (
+                    model.revisions.ground_points,
+                    model.scheme.codes_with_role("ground"),
+                )
+            }),
             vertical_clearances: crate::clearance_zones::ZoneWindow::new(
                 ohl_clearance::Measure::Vertical,
             ),
@@ -7408,6 +7421,7 @@ fn menus(
         crate::menu::options_menu(ui, "Lines on the ground beside the line", |ui| {
             let routes: Vec<String> = r.model.line.routes.iter().map(|x| x.id.clone()).collect();
             let cases: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+            let mut build = false;
             crate::ground_lines::menu(
                 ui,
                 &mut r.model.ground_lines,
@@ -7415,7 +7429,12 @@ fn menus(
                 &cases,
                 r.case,
                 r.ground_lines.drawn.as_deref(),
+                &mut build,
             );
+            // Terrain › Terrain surfaces, at Build from LiDAR.
+            if build {
+                r.surfaces.show(&r.model);
+            }
         });
         crate::menu::options_menu(ui, "Layers", |ui| {
             for layer in Layer::ALL {
