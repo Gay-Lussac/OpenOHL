@@ -53,7 +53,13 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
     }
     let ifc = std::fs::read_to_string(dir.join("safety-volume.ifc")).unwrap();
     assert!(ifc.contains("IFCPROJECTEDCRS('EPSG:2056'"));
-    assert_eq!(ifc.matches("IFCBUILDINGELEMENTPROXY(").count(), 2);
+    // Each volume a spatial zone (2026-10-21), referenced in the site.
+    assert_eq!(ifc.matches("IFCSPATIALZONE(").count(), 2);
+    assert_eq!(ifc.matches("IFCBUILDINGELEMENTPROXY(").count(), 0);
+    assert_eq!(
+        ifc.matches("IFCRELREFERENCEDINSPATIALSTRUCTURE(").count(),
+        1
+    );
     // No distance: refused, none is built in.
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .arg("safety-volume")

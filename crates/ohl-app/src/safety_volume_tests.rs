@@ -14,7 +14,8 @@ use egui_kittest::kittest::Queryable;
 use crate::app::App;
 use crate::lidar_tests::harness;
 
-/// Steps until `done` (240 s at most).
+/// Steps until `done` (600 s at most: a debug build on a loaded computer;
+/// the swing arc's band, 2026-10-21, meshes more surfaces).
 fn until(h: &mut Harness<'_, App>, what: &str, done: impl Fn(&mut App) -> bool) {
     let started = Instant::now();
     loop {
@@ -23,7 +24,7 @@ fn until(h: &mut Harness<'_, App>, what: &str, done: impl Fn(&mut App) -> bool) 
             h.step();
             return;
         }
-        assert!(started.elapsed() < Duration::from_secs(240), "{what}");
+        assert!(started.elapsed() < Duration::from_secs(600), "{what}");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
