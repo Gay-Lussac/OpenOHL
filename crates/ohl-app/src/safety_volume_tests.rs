@@ -319,8 +319,12 @@ fn safety_volumes_by_system() {
         assert_eq!(rep.volumes.volumes.len(), 1);
         let v = &rep.volumes.volumes[0];
         assert_eq!(v.name, "220 kV example system");
-        // Both circuits' sections: every section of the line.
-        assert_eq!(v.sections.len(), r.model.line.sections.len());
+        // Both circuits' sections: every section of the line, and its
+        // jumpers (`jumper:<id>`, part of the volumes since 2026-10-21).
+        let (jumpers, sections): (Vec<_>, Vec<_>) =
+            v.sections.iter().partition(|s| s.starts_with("jumper:"));
+        assert_eq!(sections.len(), r.model.line.sections.len());
+        assert_eq!(jumpers.len(), r.model.line.jumpers.len());
         rep.settings
     };
     // Recorded with the run, read back.
