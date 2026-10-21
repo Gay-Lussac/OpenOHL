@@ -1711,8 +1711,10 @@ read with the case shown; left out while all are the defaults). The
 lines themselves are display only: made in the app per set of weather
 cases (the plan envelope over each case chosen, both wind sides, the
 jumpers counting as conductors; the wind side the views do not show
-solved for them in the background, `ground_lines::GroundLines`), never
-stored.
+solved for them in the background, `ground_lines::GroundLines`), draped
+on the model's ground (`Model::ground`: the active surface, else the
+ground built from the LiDAR ground classes of the corridor, else the
+alignment's heights; `ground_lines::Ground`), never stored.
 
 The structure application reads a structure's libraries beside its file
 (`Sections/`, `Insulators/`, poles `.ohlp`, models `.ohlfe`, recipes

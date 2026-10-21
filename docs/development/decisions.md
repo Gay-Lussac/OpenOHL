@@ -9,6 +9,40 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-21
 
+- **Lines on the ground beside the line without a terrain surface**
+  (owner request: "make sure the line on the side of the conductors also
+  works if the TIN is not loaded, purely based on the LiDAR, or at least
+  ask to create a TIN when it is not given"). Checked on the example line
+  with a synthetic LAS tile (a sloped, waved ground with ±5 cm noise,
+  vegetation 4–14 m above it), no terrain surface, 2000 points shown:
+  the lines already lay on the ground the project builds from the LiDAR
+  ground classes when it opens — every ground point within the corridor
+  of the spans read from the whole cloud (not from the points shown; the
+  same ground the checks use, the lowest point per 1 m cell, triangle
+  sides ≤ 50 m), within the noise of the synthetic ground, the vegetation
+  ignored (`ground_lines_tests.rs`). What was broken, and is changed:
+  (1) the active terrain surface deleted, the lines fell back to the
+  alignment's heights although the project has LiDAR — with no ground,
+  the ground is now built again from the LiDAR ground classes in the
+  background, once per revision of the ground points and set of ground
+  classes (also after a class scheme with ground classes is chosen;
+  `lidar_edit::frame`), and a LiDAR ground built in the background no
+  longer replaces a terrain surface made the ground meanwhile; (2) the
+  menu said "on the ground from the LiDAR points" after a terrain surface
+  was made the ground in a project opened with the LiDAR ground; it now
+  says **Ground: TIN (name)**, **LiDAR ground classes (n points)** or
+  **alignment heights only** from what the ground is. Added: the
+  stretches of the lines with no ground under them are counted and said
+  (the lines broken there, as at a surface's edge); with no ground under
+  the lines and a point cloud, the menu says why (no ground class in the
+  scheme, no point of a ground class, none in the corridor, or the ground
+  does not reach the lines) and offers **Build a terrain surface from the
+  LiDAR…**, which opens Terrain › Terrain surfaces at Build from LiDAR;
+  the surface built becomes the ground and the lines are draped on it.
+  The LiDAR ground keeps the model's corridor (`--corridor`, 60 m): lines
+  farther from the conductors break there (an open question: whether
+  the corridor should widen with the distance chosen). Display only;
+  nothing stored changes.
 - **Lines on the ground beside the line: a set of weather cases** (owner):
   the lines are the plan envelope over every weather case chosen in the
   menu, **both wind sides** where a case has wind (whatever side Display
