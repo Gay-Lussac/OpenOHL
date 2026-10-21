@@ -4777,6 +4777,8 @@ pub enum TableAction {
     /// Open this structure in the structure application (one without a
     /// type: made a structure file first).
     EditInStructureApp(String),
+    /// Open a cross-section at this structure ([`crate::xsection`]).
+    CrossSection(String),
 }
 
 impl TablePage {
@@ -5359,7 +5361,7 @@ impl TablePage {
                                     TableKind::Structures => {
                                         "Select it and bring the views to it (right-click: \
                                          Replace structure…, Open this type in \
-                                         OHL-Structure…)"
+                                         OHL-Structure…, Cross-section here)"
                                     }
                                     _ => "Select it and bring the views to it",
                                 });
@@ -5393,6 +5395,17 @@ impl TablePage {
                                     {
                                         action =
                                             Some(TableAction::EditInStructureApp(id.clone()));
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .button("Cross-section here")
+                                        .on_hover_text(
+                                            "A cut across the line in the plane of its \
+                                             cross-arms, in a tab of its own",
+                                        )
+                                        .clicked()
+                                    {
+                                        action = Some(TableAction::CrossSection(id.clone()));
                                         ui.close();
                                     }
                                 });

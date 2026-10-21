@@ -68,6 +68,13 @@ pub struct ProfileView {
     /// The LiDAR points a box or lasso selected (its dots), how many, how
     /// long finding them took; taken by the app.
     pub area_picked: Option<(Vec<crate::model::LidarPoint>, usize, std::time::Duration)>,
+    /// A right-click opens a menu with "Cross-section here" (set by the
+    /// app: the Select tool held, the right button selecting or using it).
+    pub cut_menu: bool,
+    /// Where the last right-click was: alignment, station on it.
+    cut_at: Option<(String, f64)>,
+    /// "Cross-section here" chosen: alignment, station; taken by the app.
+    pub cut_request: Option<(String, f64)>,
 }
 
 /// The stations and offsets of the vegetation points along a route: the
@@ -103,6 +110,31 @@ pub enum Show {
     Alignment(String),
     /// Every alignment, one after the other, in their order.
     All,
+}
+
+/// What the profile shows first: the route with most structures (a main
+/// run, not a short spur); `routes`: the line's alignments.
+pub(crate) fn default_show(
+    line: &ohl_line::Line,
+    routes: &[ohl_line::route::AlignmentView],
+) -> Show {
+    let has = |r: &str| routes.iter().any(|a| a.route == r);
+    let count = |r: &str| {
+        let mut ids: Vec<&String> = routes
+            .iter()
+            .filter(|a| a.route == *r)
+            .flat_map(|a| &a.structures)
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids.len()
+    };
+    line.routes
+        .iter()
+        .filter(|r| has(&r.id))
+        .rev()
+        .max_by_key(|r| count(&r.id))
+        .map_or(Show::All, |r| Show::Route(r.id.clone()))
 }
 
 /// The profile drawing and what is seen in the corridor around it.
@@ -397,25 +429,7 @@ impl ProfileView {
             Show::All => true,
         };
         if !self.show.as_ref().is_some_and(valid) {
-            // The route with most structures (a main run, not a short spur).
-            let count = |r: &str| {
-                let mut ids: Vec<&String> = routes
-                    .iter()
-                    .filter(|a| a.route == *r)
-                    .flat_map(|a| &a.structures)
-                    .collect();
-                ids.sort();
-                ids.dedup();
-                ids.len()
-            };
-            self.show = Some(
-                line.routes
-                    .iter()
-                    .filter(|r| has(&r.id))
-                    .rev()
-                    .max_by_key(|r| count(&r.id))
-                    .map_or(Show::All, |r| Show::Route(r.id.clone())),
-            );
+            self.show = Some(default_show(line, &routes));
         }
         let show = self.show.clone().expect("chosen above");
         ui.horizontal(|ui| {
@@ -1301,6 +1315,46 @@ impl ProfileView {
             && let Some(pos) = response.interact_pointer_pos()
         {
             *selection = pick(pos);
+        }
+        // A right-click: where it was along which alignment, for the menu.
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let s = s0 + f64::from(pos.x - rect.min.x) / width * (s1 - s0);
+            self.cut_at = built
+                .joints
+                .iter()
+                .rev()
+                .find(|(at, _)| *at <= s)
+                .or(built.joints.first())
+                .map(|(at, name)| {
+                    let id = name.strip_prefix("alignment ").unwrap_or(name);
+                    (id.to_owned(), (s - at).max(0.0))
+                });
+        }
+        if self.cut_menu
+            && let Some((alignment, station)) = self.cut_at.clone()
+        {
+            let mut chosen = false;
+            response.context_menu(|ui| {
+                if ui
+                    .button(format!(
+                        "Cross-section here (station {})",
+                        ohl_drawing::format_station(station)
+                    ))
+                    .on_hover_text(
+                        "A cut across the line at this station, perpendicular to the \
+                         alignment, in a tab of its own (C: the window)",
+                    )
+                    .clicked()
+                {
+                    chosen = true;
+                    ui.close();
+                }
+            });
+            if chosen {
+                self.cut_request = Some((alignment, station));
+            }
         }
         if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()

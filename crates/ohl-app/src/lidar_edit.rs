@@ -680,6 +680,7 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
         let classes = changed.classes;
         r.view3d.recolor_points();
         r.profile.invalidate();
+        r.xsections.invalidate_points();
         r.clearances.stale = true;
         let ground: BTreeSet<u8> = r
             .model
@@ -736,6 +737,7 @@ pub fn frame(ctx: &egui::Context, r: &mut crate::app::Ready) {
                 r.model.revisions.ground = r.lidar_ground_rev;
                 r.view3d.dirty.insert(Layer::Ground);
                 r.profile.invalidate();
+                r.xsections.invalidate();
                 r.clearances.stale = true;
                 r.status = Some((
                     "the ground was built from the LiDAR ground classes".into(),

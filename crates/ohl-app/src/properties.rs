@@ -46,6 +46,8 @@ pub struct PointExtras<'a> {
     pub editable: bool,
     /// Link… clicked: (structure, label).
     pub start_link: &'a mut Option<(String, String)>,
+    /// "Cross-section here" chosen in a structure's menu: the structure.
+    pub cut_at: &'a mut Option<String>,
 }
 
 pub fn ui(
@@ -83,7 +85,19 @@ pub fn ui(
                 ui.label(format!("{id}: not in the line"));
                 return;
             };
-            ui.heading(format!("Structure {id}"));
+            ui.heading(format!("Structure {id}")).context_menu(|ui| {
+                if ui
+                    .button("Cross-section here")
+                    .on_hover_text(
+                        "A cut across the line in the plane of its cross-arms, in a tab of its \
+                         own (C: the window)",
+                    )
+                    .clicked()
+                {
+                    *point.cut_at = Some(id.clone());
+                    ui.close();
+                }
+            });
             description(ui, &s.description);
             // Attachment points whose joint is gone (or unlinked): drawn red,
             // the structure's loads refused until they are linked again.
