@@ -226,7 +226,7 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
     }
     match wind {
         Some(p) => done.push_str(&format!(
-            "; wind factors for structures in the section library ({})",
+            "; wind factors for structures in the cross-section library ({})",
             p.file_name()
                 .map_or(String::new(), |n| n.to_string_lossy().into_owned())
         )),

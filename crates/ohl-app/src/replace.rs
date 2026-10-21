@@ -239,7 +239,7 @@ impl Replace {
             .is_none_or(|(t, _)| t.iter().next().is_none())
         {
             return Err(
-                "Replace structure: no structure type in the library (make a pylon type first)"
+                "Replace structure: no structure type in the library (make a structure type first)"
                     .into(),
             );
         }
@@ -344,7 +344,7 @@ impl Replace {
                     .map(|j| format!("jumper {}", j.id)),
             );
             if line.circuit_starts.contains(&p) {
-                out.push("circuit start".into());
+                out.push("conductor path start".into());
             }
             out.join(", ")
         };

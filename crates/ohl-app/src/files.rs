@@ -484,12 +484,12 @@ impl Template {
     pub fn about(self) -> &'static str {
         match self {
             Template::Empty => {
-                "An empty line and empty libraries: add cables, structure types and weather \
+                "An empty line and empty libraries: add wire types, structure types and weather \
                  cases from the library pages (e.g. Sections › Wires library › Browse…)."
             }
             Template::Starter => {
-                "Example libraries with invented values, clearly marked: cables, two \
-                 structure types, pylon templates, insulators, weather and load cases, \
+                "Example libraries with invented values, clearly marked: wire types, two \
+                 structure types, structure templates, insulator assemblies, weather and load cases, \
                  clearance rules, and survey points of invented ground beside the project. \
                  No route, alignment, structure or wire: you add them (a tutorial is planned)."
             }

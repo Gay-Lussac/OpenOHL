@@ -137,10 +137,7 @@ impl SectionDisplay {
             for (name, ticks) in [
                 ("Structure id", &mut self.structure_label),
                 ("Structure points (label)", &mut self.point_label),
-                (
-                    "Insulator tops (string, hangs from)",
-                    &mut self.insulator_label,
-                ),
+                ("String tops (hangs from)", &mut self.insulator_label),
                 ("Library labels (strings)", &mut self.library_label),
                 ("Alignment points (name)", &mut self.alignment_point_label),
                 ("Strings (label)", &mut self.string_label),
@@ -176,9 +173,9 @@ impl SectionDisplay {
         let mut changed = false;
         ui.label(egui::RichText::new("Wire colours").small().weak());
         changed |= ui
-            .radio_value(&mut self.coloring, Coloring::Circuits, "Circuits")
+            .radio_value(&mut self.coloring, Coloring::Circuits, "Conductor paths")
             .on_hover_text(
-                "Each section's colour (a circuit's sections share one), else its phase's",
+                "Each section's colour (a conductor path's sections share one), else its phase's",
             )
             .changed();
         changed |= ui

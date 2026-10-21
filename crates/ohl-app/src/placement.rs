@@ -160,7 +160,7 @@ impl MorePoints {
         ui.label(
             egui::RichText::new(
                 "The points ticked get a structure too, in the same command (one undo): the \
-                 type above, or a row's own (a strain type at an angle point). Each stands on \
+                 type above, or a row's own (a strain type at an alignment point). Each stands on \
                  its point, tied to it, turned along the line (the bisector at an angle); then \
                  it stays as placed — Properties › Placement… › Put it on the line again turns \
                  it again.",

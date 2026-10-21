@@ -160,7 +160,7 @@ pub struct RuleEditor {
 fn requirement_item(r: &Requirement) -> Item {
     let doc: DocumentMut = format!("x = {}", r.to_toml())
         .parse()
-        .expect("a requirement's text reads");
+        .expect("a required clearance's text reads");
     doc["x"].clone()
 }
 

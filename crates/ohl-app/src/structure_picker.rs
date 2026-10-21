@@ -102,7 +102,7 @@ impl Column {
             }
             Column::Sets => "Sets of wire points / wire points",
             Column::Height => "Height of the highest point above the feet",
-            Column::Extensions => "Height extensions it can be placed with",
+            Column::Extensions => "Extensions it can be placed with",
             Column::Description => {
                 "What it is: the notes at the top of its file, else where it comes from"
             }
@@ -182,7 +182,7 @@ impl TypeRow {
         let detail = t.detail();
         let lacks = match detail {
             ohl_structures::Detail::Stick => {
-                vec!["the pylon's joints and members (or [[body]] polylines)".to_owned()]
+                vec!["the structure's joints and members (or [[body]] polylines)".to_owned()]
             }
             ohl_structures::Detail::Outline => match t.pole.as_ref().and_then(|p| p.inline()) {
                 // A pole's outline: what its design lacks.

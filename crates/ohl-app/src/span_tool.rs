@@ -930,7 +930,7 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
                     );
                 ui.radio_value(&mut f.per_subconductor, true, "each subconductor")
                     .on_hover_text(
-                        "On every cable of the bundle: the bundle carries the load × the bundle",
+                        "On every subconductor of the bundle: the bundle carries the load × the bundle",
                     );
             });
             if f.per_subconductor != before {

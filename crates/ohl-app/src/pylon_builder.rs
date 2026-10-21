@@ -359,7 +359,7 @@ impl PylonBuilder {
             .templates
             .iter()
             .position(|t| t.id == template)
-            .ok_or_else(|| format!("no pylon template {template} (any more)"))?;
+            .ok_or_else(|| format!("no structure template {template} (any more)"))?;
         self.template = k;
         self.role = role;
         // Values of parameters the template has now; new ones: defaults.
@@ -396,8 +396,8 @@ impl PylonBuilder {
         crate::dockable::show(
             ctx,
             crate::dockable::Panel::PylonBuilder,
-            "New pylon from a template",
-            egui::Window::new("New pylon from a template").default_width(820.0),
+            "New structure from a template",
+            egui::Window::new("New structure from a template").default_width(820.0),
             Some(open),
             |ui| {
                 out = self.content(ui, model);
@@ -409,7 +409,7 @@ impl PylonBuilder {
     fn content(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<BuilderAction> {
         let mut out = None;
         if self.templates.is_empty() {
-            ui.label("No pylon template found (libraries/pylon-templates, or the project's Pylon templates folder).");
+            ui.label("No structure template found (libraries/pylon-templates, or the project's Pylon templates folder).");
             return None;
         }
         for e in &self.errors {
@@ -484,11 +484,11 @@ impl PylonBuilder {
                     ui.label("For");
                     let before = self.role;
                     ui.selectable_value(&mut self.role, Role::Suspension, "Suspension")
-                        .on_hover_text("A string hanging down at each phase; sets: the slots");
+                        .on_hover_text("A string hanging down at each phase; sets: the template's sets");
                     ui.selectable_value(&mut self.role, Role::Strain, "Strain")
                         .on_hover_text(format!(
-                            "Two level strain strings at each phase along the line (directions \
-                             180° and 0°); sets: the slots + {} and + {}",
+                            "Two level tension strings at each phase along the line (directions \
+                             180° and 0°); sets: the template's sets + {} and + {}",
                             t.first_offset, t.second_offset
                         ));
                     if self.role != before {

@@ -3796,7 +3796,7 @@ fn a_jumper_joining_two_circuits_asks_which_stays() {
         assert_eq!(r.model.line.jumpers.len(), n, "nothing added yet");
     }
     harness.run();
-    harness.get_by_label("You are trying to connect 2 different circuits");
+    harness.get_by_label("You are trying to connect 2 different conductor paths");
     // Cancel: nothing changes.
     harness.get_by_label("Cancel").click();
     harness.run();
@@ -6249,7 +6249,7 @@ fn bill_of_materials_and_spotting_windows() {
     harness.run();
     harness.get_by_label_contains("Bill of materials").hover();
     harness.run();
-    harness.get_by_label("Cables…").click();
+    harness.get_by_label("Wires…").click();
     run_until(&mut harness, |a| {
         let r = a.ready().unwrap();
         r.bom.result.is_some() && !r.bom.running()
@@ -8772,7 +8772,7 @@ fn add_structure_without_types_offers_a_new_pylon() {
     harness.run();
     harness.get_by_label_contains("No structure type in the library yet");
     harness
-        .query_all_by_label("New pylon from a template…")
+        .query_all_by_label("New structure from a template…")
         .last()
         .unwrap()
         .click();
@@ -9730,12 +9730,7 @@ fn the_structure_screen_shows_the_basics_left_of_the_pylon() {
     harness.get_by_label("Level 3 — full design");
     harness.get_by_label("used by 2 structures of the line (they follow when saved)");
     // The basics, and nothing of the body but its drawing.
-    for sheet in [
-        "Attachment points",
-        "Insulators",
-        "Wire points",
-        "Set points",
-    ] {
+    for sheet in ["Attachment points", "Strings", "Wire points", "Sets"] {
         assert!(
             harness.query_all_by_label(sheet).next().is_some(),
             "{sheet}"
@@ -10879,13 +10874,13 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     harness.get_by_label("its own points, wire points and strings, in its axes");
     // The four tables: attachment points, insulators (top, kind,
     // assembly, length, angles…), wire points, set points.
-    harness.get_by_label("Insulators").click();
+    harness.get_by_label("Strings").click();
     harness.run();
     harness.get_by_label("hangs from");
     harness.get_by_label("angle");
     harness.get_by_label("kind");
-    harness.get_by_label("+ New insulator");
-    for sheet in ["Attachment points", "Wire points", "Set points"] {
+    harness.get_by_label("+ New string");
+    for sheet in ["Attachment points", "Wire points", "Sets"] {
         // (The sheet's tab: the first of that name.)
         harness.query_all_by_label(sheet).next().unwrap().click();
         harness.run();
@@ -11302,7 +11297,7 @@ fn the_structures_menu_holds_no_tools() {
     harness.run();
     let gone = [
         "Add structure…",
-        "New pylon from a template…",
+        "New structure from a template…",
         "Place on alignment points…",
     ];
     let names: Vec<&str> = Tool::ALL.iter().map(|t| t.name()).chain(gone).collect();
@@ -11332,7 +11327,9 @@ fn the_structures_menu_holds_no_tools() {
     for (k, n) in names.iter().enumerate().take(Tool::ALL.len()) {
         assert!(open[k] > closed[k], "{n} in the Tools menu");
     }
-    harness.get_by_label("New pylon from a template…").click();
+    harness
+        .get_by_label("New structure from a template…")
+        .click();
     harness.run();
     assert!(harness.state_mut().ready().unwrap().pylon_builder.is_some());
 }

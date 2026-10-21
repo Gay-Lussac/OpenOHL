@@ -216,7 +216,7 @@ impl SpotWindow {
                         }
                     });
                 ui.end_row();
-                ui.label("Cable");
+                ui.label("Wire type");
                 egui::ComboBox::from_id_salt("spot-cable")
                     .selected_text(&self.cable)
                     .show_ui(ui, |ui| {

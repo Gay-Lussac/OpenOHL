@@ -110,7 +110,7 @@ fn a_starter_project_has_the_libraries_and_nothing_else() {
     let steps = crate::next_steps::steps(&m, true);
     let done = |t: &str| steps.iter().find(|s| s.title == t).unwrap().done;
     assert!(!done("A route") && !done("An alignment") && !done("Structures on the line"));
-    assert!(done("Cables") && done("Structure types") && done("Weather cases"));
+    assert!(done("Wire types") && done("Structure types") && done("Weather cases"));
     assert!(done("Load cases"));
     // An empty project: nothing but its line.
     let empty =
@@ -137,7 +137,7 @@ fn next_steps_follow_the_model() {
         "An alignment",
         "Structures on the line",
         "Strings on the structures",
-        "Cables",
+        "Wire types",
         "Wires strung",
         "Jumpers",
         "Weather cases",

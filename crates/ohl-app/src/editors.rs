@@ -246,10 +246,10 @@ impl Preset {
     /// Name in menus.
     pub fn name(self) -> &'static str {
         match self {
-            Preset::I => "I-string",
-            Preset::V => "V-string",
-            Preset::VAndString => "V + string below",
-            Preset::Tak => "TAK (two strain strings on a string)",
+            Preset::I => "One string",
+            Preset::V => "Two strings to one wire point",
+            Preset::VAndString => "Two strings to one wire point, a string below",
+            Preset::Tak => "A string, two tension strings from its wire point",
         }
     }
 }
@@ -407,7 +407,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     .hint_text("what it is (free text)"),
             );
             ui.end_row();
-            ui.label("cable");
+            ui.label("wire type");
             egui::ComboBox::from_id_salt("jumper-cable")
                 .selected_text(&j.cable)
                 .height(400.0)
@@ -498,7 +498,7 @@ fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                             if ui
                                 .add(egui::DragValue::new(&mut k).speed(0.01).range(0.01..=1.0))
                                 .on_hover_text(
-                                    "Share of the cable's solid-bar stiffness (0.2–0.35 usual)",
+                                    "Share of the wire's solid-bar stiffness (0.2–0.35 usual)",
                                 )
                                 .changed()
                             {
@@ -593,8 +593,8 @@ fn clamps_ui(
 ) {
     ui.separator();
     ui.label("Suspension strings holding it").on_hover_text(
-        "Insulator strings of the structure holding the jumper between its tension clamps, \
-         like suspension strings on the line: an I or a V to a wire point without a set. \
+        "Strings of the structure holding the jumper between its tension clamps, \
+         like suspension strings on the line: one or two to a wire point without a set. \
          Each holds the jumper in a clamp that swings and turns freely; the jumper runs \
          straight through the clamp. The strings take their weight and wind area.",
     );
@@ -635,7 +635,7 @@ fn clamps_ui(
                         }
                     })
                     .response
-                    .on_hover_text("A wire point without a set, on one string or a V");
+                    .on_hover_text("A wire point without a set, on one string or two");
                 ui.horizontal(|ui| {
                     ui.label("at");
                     ui.add(
@@ -2129,7 +2129,7 @@ impl StringForm {
                 }
                 _ => {
                     return Err(format!(
-                        "{} cannot end at {wire}: two strings meet there already (a V's tip)",
+                        "{} cannot end at {wire}: two strings meet there already",
                         x.label
                     ));
                 }
@@ -2550,7 +2550,7 @@ impl SectionForm {
                 m.system = self.system.clone();
             }
             out.push((
-                format!("section {id}: {} as its circuit", what.join(", ")),
+                format!("section {id}: {} as its conductor path", what.join(", ")),
                 Command::Put {
                     kind: Kind::Section,
                     id,
@@ -2682,7 +2682,7 @@ impl SectionForm {
         let cable = model
             .library
             .get(&self.cable)
-            .ok_or_else(|| format!("cable {} is not in the wire library", self.cable))?;
+            .ok_or_else(|| format!("wire type {} is not in the wire library", self.cable))?;
         let section = self.section(None)?;
         let (lengths, temperature) = ohl_line::solve::clip_lengths(&model.line, &section, cable)
             .map_err(|e| e.to_string())?;
@@ -2852,7 +2852,7 @@ impl Form {
                         _ => None,
                     })
                     .collect();
-                let what = format!("{what}, and its circuit's {}", ids.join(", "));
+                let what = format!("{what}, and its conductor path's {}", ids.join(", "));
                 let mut commands = vec![cmd];
                 commands.extend(mates.into_iter().map(|(_, c)| c));
                 Ok((what, Command::Batch { commands }))
@@ -3054,12 +3054,12 @@ fn structure_ui(
         ui.colored_label(
             ui.visuals().warn_fg_color,
             "No structure type in the library yet: without a type the structure has no \
-             strings, so no wire can hang on it (only strings added by hand). Make a pylon \
+             strings, so no wire can hang on it (only strings added by hand). Make a structure \
              type first.",
         );
         new_pylon = ui
-            .button("New pylon from a template…")
-            .on_hover_text("Tools › New pylon from a template…: this window stays open")
+            .button("New structure from a template…")
+            .on_hover_text("Tools › New structure from a template…: this window stays open")
             .clicked();
         ui.separator();
     }
@@ -3714,7 +3714,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
             ui.strong("Strings");
             help(
                 ui,
-                "A string is an insulator chain: from the point it hangs from (on the structure, \
+                "A string is one straight insulating member: from the point it hangs from (on the structure, \
                  or the bottom of another string) to its wire point, which it makes: placed from \
                  its top by an angle from straight down, a direction and its length (where it is \
                  before the wire is strung; once strung it is drawn where the calculation puts \
@@ -3831,7 +3831,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                             a.0,
                                             a.2.length,
                                             a.2.weight,
-                                            if a.2.strain { ", tension" } else if a.1 { ", V leg" } else { "" }
+                                            if a.2.strain { ", tension" } else if a.1 { ", one of two strings" } else { "" }
                                         );
                                         if ui
                                             .selectable_label(x.insulator.as_deref() == Some(a.2.id.as_str()), text)
@@ -3886,8 +3886,8 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             });
                         ui.label("ends at").on_hover_text(
                             "Its own wire point (made by it), or another wire point of the structure: \
-                             where a string ends already the two make a V (both keep their lengths); \
-                             strings chain (a V under a V)",
+                             where a string ends already, two strings end at one wire point (both keep their lengths); \
+                             strings chain (a string below two)",
                         );
                         let shown = if owns {
                             format!("its own wire point ({})", x.wire)
@@ -3913,13 +3913,13 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                             .on_hover_text("Its own weight, half at each end");
                         ui.label("wind area");
                         value(ui, &mut x.wind_area, 0.01, " m²").on_hover_text(
-                            "Area the wind blows on (0: its insulator's, if any); half at each end",
+                            "Area the wind blows on (0: its assembly's, if any); half at each end",
                         );
                         let mut both = x.compression.is_some();
                         if ui
                             .checkbox(&mut both, "may push, up to")
                             .on_hover_text(
-                                "It acts both ways (e.g. a V leg designed to push); beyond this it \
+                                "It acts both ways (e.g. one of two strings to a wire point, designed to push); beyond this it \
                                  is flagged. Unticked: tension only, slack when pushed",
                             )
                             .changed()
@@ -4071,7 +4071,7 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                                 .checkbox(&mut has, "set")
                                 .on_hover_text(
                                     "A wire is clamped here: sections and jumpers end on its set number. \
-                                     Without: other strings may hang from it (a V's tip, a TAK's node)",
+                                     Without: other strings may hang from it",
                                 )
                                 .changed()
                             {
@@ -4282,12 +4282,12 @@ pub fn empty_wire_library(ui: &mut egui::Ui) {
     ui.vertical(|ui| {
         ui.colored_label(
             ui.visuals().warn_fg_color,
-            "The wire library is empty: no cable to choose.",
+            "The wire library is empty: no wire type to choose.",
         );
         if ui
             .button(OPEN_WIRE_LIBRARY)
             .on_hover_text(
-                "Sections › Wires library: Browse… for a cable file (.ohlw), e.g. \
+                "Sections › Wires library: Browse… for a wire library file (.ohlw), e.g. \
                  libraries/cables/acsr-examples.ohlw (typical example values), or add one",
             )
             .clicked()
@@ -4321,7 +4321,7 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
                     .hint_text("what it is (free text)"),
             );
             ui.end_row();
-            ui.label("cable");
+            ui.label("wire type");
             egui::ComboBox::from_id_salt("section-cable")
                 .selected_text(&f.cable)
                 .width(240.0)
@@ -4354,7 +4354,7 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
                 })
                 .response
                 .on_hover_text(
-                    "Cable condition (Initial, after Creep, after Load, Max Sag of the two) and \
+                    "Wire condition (Initial, after Creep, after Load, Max Sag of the two) and \
                      method (RS: ruling span; FE: finite elements)",
                 );
             ui.end_row();
@@ -4757,7 +4757,7 @@ pub fn new_jumper(
         .or_else(|| line.sections.iter().find(|s| s.points.contains(to)))
         .map(|s| s.cable.clone())
         .or_else(|| model.library.iter().next().map(|c| c.id.clone()))
-        .ok_or("no cable for the jumper")?;
+        .ok_or("no wire type for the jumper")?;
     let like = line.jumpers.last().map_or("J0", |j| j.id.as_str());
     let id = next_id(
         line.jumpers
@@ -4809,7 +4809,7 @@ pub fn new_tap_jumper(
         .or_else(|| section(&to))
         .map(|s| s.cable.clone())
         .or_else(|| model.library.iter().next().map(|c| c.id.clone()))
-        .ok_or("no cable for the jumper")?;
+        .ok_or("no wire type for the jumper")?;
     let like = line.jumpers.last().map_or("J0", |j| j.id.as_str());
     let id = next_id(line.jumpers.iter().map(|j| j.id.as_str()), like);
     let j: ohl_line::Jumper = serde_json::from_value(serde_json::json!({

@@ -184,7 +184,7 @@ impl Snap {
             Snap::Attachment => "Strings and attachment points",
             Snap::AlignmentPoint => "Alignment points",
             Snap::LidarPoint => "LiDAR points",
-            Snap::SurveyPoint => "Survey points (ground surface)",
+            Snap::SurveyPoint => "Survey points (terrain surface)",
             Snap::Point => "Structure and wire points",
         }
     }

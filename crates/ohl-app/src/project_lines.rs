@@ -767,7 +767,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     ui.label("note");
                     ui.add(
                         egui::TextEdit::singleline(note)
-                            .hint_text("e.g. phase 1 ready: towers 12 to 20 replaced")
+                            .hint_text("e.g. stage 1 ready: structures 12 to 20 replaced")
                             .desired_width(360.0),
                     );
                 });

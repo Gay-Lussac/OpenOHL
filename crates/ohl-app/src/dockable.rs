@@ -59,7 +59,7 @@ impl Panel {
     pub fn name(self) -> &'static str {
         match self {
             Panel::Editor => "Editor",
-            Panel::PylonBuilder => "New pylon from a template",
+            Panel::PylonBuilder => "New structure from a template",
             Panel::Replace => "Replace structure",
             Panel::VerticalClearances => "Vertical clearances",
             Panel::RadialClearances => "Radial clearances",

@@ -194,7 +194,7 @@ impl Command {
             Command::Library(k) => k.library_name(),
             Command::Table(k) => format!("{} table", k.title()),
             Command::Hold(t) => t.name().into(),
-            Command::NewPylon => "New pylon from a template…".into(),
+            Command::NewPylon => "New structure from a template…".into(),
         }
     }
 
@@ -208,7 +208,7 @@ impl Command {
             ),
             Command::FitViews => Some("Show the whole line in the 3D view and the plan"),
             Command::NewPylon => Some(
-                "A structure type of level 1 from a pylon template: the face's dimensions, \
+                "A structure type of level 1 from a structure template: the face's dimensions, \
                  suspension or strain",
             ),
             Command::Save => {

@@ -99,7 +99,7 @@ const STRUCTURES: &[Column] = &[
         "extension",
         80.0,
         Yes,
-        "height extension of the type (empty: none)",
+        "extension of the type (empty: none)",
     ),
     (
         "orientation °",
@@ -138,8 +138,13 @@ const STRUCTURES: &[Column] = &[
 
 const SECTIONS: &[Column] = &[
     ("id", 90.0, Yes, "unique id"),
-    ("cable", 170.0, Yes, "cable id from the wire library"),
-    ("circuit", 150.0, Yes, "circuit"),
+    ("cable", 170.0, Yes, "wire type id from the wire library"),
+    (
+        "circuit",
+        150.0,
+        Yes,
+        "circuit name (the same on the sections of its conductor path)",
+    ),
     ("phase", 50.0, Yes, "phase label"),
     (
         "system",
@@ -202,13 +207,13 @@ const SECTIONS: &[Column] = &[
         "calculation",
         100.0,
         Yes,
-        "cable condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Criteria › Creep-Stretch",
+        "wire condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Criteria › Creep-Stretch",
     ),
     (
         "colour",
         100.0,
         Yes,
-        "display colour #rrggbb (empty: its phase's); typed for one section, every section of its circuit takes it",
+        "display colour #rrggbb (empty: its phase's); typed for one section, every section of its conductor path takes it",
     ),
     (
         "description",
@@ -230,19 +235,19 @@ const INSULATORS: &[Column] = &[
         "kind",
         90.0,
         Yes,
-        "suspension (an I-string), strain (a dead end) or v_string (one leg of two)",
+        "suspension (one string), strain (a dead end) or v_string (one of two strings to a wire point)",
     ),
     (
         "length",
         70.0,
         Yes,
-        "m, top to wire point: the strings with this label take it (their wire points move; a V's tip where both legs meet)",
+        "m, top to wire point: the strings with this label take it (their wire points move; two strings to one wire point: where both meet)",
     ),
     (
         "weight",
         70.0,
         Yes,
-        "N, the whole assembly (a V: shared by its legs)",
+        "N, the whole assembly (two strings: shared by them)",
     ),
     ("wind area", 70.0, Yes, "m², the area the wind blows on"),
     ("stiffness", 90.0, Yes, "N, axial stiffness EA"),
@@ -250,13 +255,13 @@ const INSULATORS: &[Column] = &[
         "half width",
         70.0,
         Yes,
-        "m, a V's: across from the centre to each leg's top",
+        "m, two strings to one wire point: across from the centre to each one's top",
     ),
     (
         "max load",
         80.0,
         Yes,
-        "N, the tension it is rated for (a V: each leg's) — strings with this label take it unless they give their own; not checked by OpenOHL (for a plugin or a report); empty: not given",
+        "N, the tension it is rated for (two strings: each one's) — strings with this label take it unless they give their own; not checked by OpenOHL (for a plugin or a report); empty: not given",
     ),
     (
         "max swing",
@@ -325,31 +330,31 @@ const STRINGS: &[Column] = &[
         "wind area m²",
         80.0,
         Yes,
-        "area the wind blows on, half at each end (empty: its insulator's, if any)",
+        "area the wind blows on, half at each end (empty: its assembly's, if any)",
     ),
     (
         "max load N",
         85.0,
         Yes,
-        "the tension it is rated for — kept, not checked by OpenOHL (for a plugin or a report); empty: not given. Shown dimmed: its insulator's",
+        "the tension it is rated for — kept, not checked by OpenOHL (for a plugin or a report); empty: not given. Shown dimmed: its assembly's",
     ),
     (
         "max swing °",
         80.0,
         Yes,
-        "the swing from straight down it may take, any direction — kept, not checked; empty: not given. Shown dimmed: its insulator's",
+        "the swing from straight down it may take, any direction — kept, not checked; empty: not given. Shown dimmed: its assembly's",
     ),
     (
         "max across °",
         85.0,
         Yes,
-        "the swing across the line it may take, either side — kept, not checked; empty: not given. Shown dimmed: its insulator's",
+        "the swing across the line it may take, either side — kept, not checked; empty: not given. Shown dimmed: its assembly's",
     ),
     (
         "max along °",
         80.0,
         Yes,
-        "the swing along the line it may take, either way — kept, not checked; empty: not given. Shown dimmed: its insulator's",
+        "the swing along the line it may take, either way — kept, not checked; empty: not given. Shown dimmed: its assembly's",
     ),
     (
         "sections",
@@ -373,7 +378,7 @@ const SPACERS: &[Column] = &[
         "insulator",
         150.0,
         Yes,
-        "insulator library id (empty: its own values)",
+        "insulator assembly id (empty: its own values)",
     ),
     (
         "length m",
@@ -528,7 +533,7 @@ const JUMPERS: &[Column] = &[
         "cable",
         170.0,
         Yes,
-        "cable id (new rows, empty: the section's at from)",
+        "wire type id (new rows, empty: the section's at from)",
     ),
     ("length m", 75.0, Yes, "length (or give a sag)"),
     ("sag m", 65.0, Yes, "sag (or give a length)"),
@@ -544,13 +549,13 @@ const JUMPERS: &[Column] = &[
         "EI N·m²",
         70.0,
         Yes,
-        "bending stiffness (empty: estimated from the cable with the factor; 0: hinged ends)",
+        "bending stiffness (empty: estimated from the wire type with the factor; 0: hinged ends)",
     ),
     (
         "EI factor",
         65.0,
         Yes,
-        "estimated EI: this share of the cable's solid-bar stiffness, 0–1 (empty: 0.2)",
+        "estimated EI: this share of the wire's solid-bar stiffness, 0–1 (empty: 0.2)",
     ),
     (
         "angle from °",
@@ -757,7 +762,7 @@ const CIRCUITS: &[Column] = &[
         "ends",
         200.0,
         Derived,
-        "its other ends (power flows out), along it; a circuit with taps has several",
+        "its other ends (power flows out), along it; a conductor path with taps has several",
     ),
     ("sections", 240.0, Derived, "its sections, from its starts"),
     ("jumpers", 200.0, Derived, "its jumpers, from its starts"),
@@ -835,7 +840,7 @@ const WEATHER: &[Column] = &[
         Yes,
         "or: ice load per length (instead of a thickness; empty: none)",
     ),
-    ("Wire temp\n°C", 80.0, Yes, "cable temperature"),
+    ("Wire temp\n°C", 80.0, Yes, "wire temperature"),
     (
         "Ambient temp\n°C",
         90.0,
@@ -1194,7 +1199,7 @@ impl TableKind {
             TableKind::Insulators => "String library",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
-            TableKind::Circuits => "Electrical circuits",
+            TableKind::Circuits => "Conductor paths",
             TableKind::Alignments => "Alignments",
             TableKind::AlignmentPoints => "Alignment points",
             TableKind::Routes => "Routes",
@@ -1914,7 +1919,7 @@ impl TableKind {
                     .map(|(_, i)| i.iter().map(|a| a.id.as_str()).collect())
                     .unwrap_or_default();
                 cells[0] = taken_after(ids, "string-1");
-                cells[1] = "I-string".into();
+                cells[1] = "Suspension string".into();
                 cells[2] = "suspension".into();
                 cells[3] = "3".into();
                 cells[4] = "0".into();
@@ -2081,7 +2086,7 @@ impl TableKind {
                         .collect();
                     if !mates.is_empty() {
                         out.takes.push(format!(
-                            "section {key}: its circuit's {} change too",
+                            "section {key}: its conductor path's {} change too",
                             mates
                                 .iter()
                                 .map(|(id, what)| format!("{id} ({})", what.join(", ")))
@@ -2114,7 +2119,10 @@ impl TableKind {
                                     let mut m = s.clone();
                                     m.color = form.color.clone();
                                     mate_puts.push((
-                                        format!("section {}: the colour of its circuit", s.id),
+                                        format!(
+                                            "section {}: the colour of its conductor path",
+                                            s.id
+                                        ),
                                         Command::Put {
                                             kind: Kind::Section,
                                             id: s.id.clone(),
@@ -2129,7 +2137,7 @@ impl TableKind {
                         }
                         if !taking.is_empty() {
                             out.takes.push(format!(
-                                "section {key}: its circuit {}'s sections take its colour: {}",
+                                "section {key}: its conductor path {}'s sections take its colour: {}",
                                 form.circuit,
                                 taking.join(", ")
                             ));
@@ -3030,7 +3038,10 @@ fn circuit_commands(
         let (name, phase, system) = (set(1), set(2), set(3));
         let color = match set(8) {
             Some(v) if v.starts_with("mixed:") => {
-                return Err(format!("{}: give one colour for the circuit", row.cells[0]));
+                return Err(format!(
+                    "{}: give one colour for the conductor path",
+                    row.cells[0]
+                ));
             }
             Some(v) => Some(parse_color(&v, &row.cells[0])?),
             None => None,
@@ -3040,7 +3051,10 @@ fn circuit_commands(
         }
         for v in [&name, &phase].into_iter().flatten() {
             if v.starts_with("mixed:") {
-                return Err(format!("{}: give one value for the circuit", row.cells[0]));
+                return Err(format!(
+                    "{}: give one value for the conductor path",
+                    row.cells[0]
+                ));
             }
         }
         let system = match system {
@@ -3070,7 +3084,7 @@ fn circuit_commands(
             if sec != before {
                 changed.push(id.clone());
                 out.commands.push((
-                    format!("section {id}: as its circuit {}", row.cells[0]),
+                    format!("section {id}: as its conductor path {}", row.cells[0]),
                     Command::Put {
                         kind: Kind::Section,
                         id: id.clone(),
@@ -3093,7 +3107,10 @@ fn circuit_commands(
                 j.color = col.clone();
                 changed.push(format!("jumper {id}"));
                 out.commands.push((
-                    format!("jumper {id}: the colour of its circuit {}", row.cells[0]),
+                    format!(
+                        "jumper {id}: the colour of its conductor path {}",
+                        row.cells[0]
+                    ),
                     Command::Put {
                         kind: Kind::Jumper,
                         id: id.clone(),
@@ -3105,7 +3122,7 @@ fn circuit_commands(
         }
         if !changed.is_empty() {
             out.takes.push(format!(
-                "circuit {}: sections {}",
+                "conductor path {}: sections {}",
                 row.cells[0],
                 changed.join(", ")
             ));
@@ -3115,7 +3132,7 @@ fn circuit_commands(
         return Ok(());
     }
     out.commands.push((
-        "changed the starts and ends of electrical circuits".into(),
+        "changed the starts and ends of conductor paths".into(),
         ohl_session::line_settings_change(stored, &line),
     ));
     // Their jumpers along them: `from` the end nearer a start.
@@ -3166,7 +3183,7 @@ fn circuit_commands(
                 std::mem::swap(&mut j.from, &mut j.to);
                 std::mem::swap(&mut j.angle_from_deg, &mut j.angle_to_deg);
                 out.commands.push((
-                    format!("jumper {} along its circuit", j.id),
+                    format!("jumper {} along its conductor path", j.id),
                     Command::Put {
                         kind: Kind::Jumper,
                         id: j.id.clone(),
@@ -3267,7 +3284,7 @@ fn section_cells(
     };
     if model.library.get(&form.cable).is_none() {
         return Err(format!(
-            "{name}: cable \"{}\" is not in the wire library",
+            "{name}: wire type \"{}\" is not in the wire library",
             form.cable
         ));
     }
@@ -3574,7 +3591,7 @@ fn jumper_cells(
             .line
             .jumper_section(j)
             .map(|s| s.cable.clone())
-            .ok_or_else(|| format!("{name}: give its cable"))?,
+            .ok_or_else(|| format!("{name}: give its wire type"))?,
     };
     j.length = opt_num(&c.get(4), &format!("{name} length"))?;
     j.sag = opt_num(&c.get(5), &format!("{name} sag"))?;

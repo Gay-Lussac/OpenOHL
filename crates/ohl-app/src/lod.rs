@@ -94,8 +94,8 @@ impl DetailKind {
             (DetailKind::Tolerance, _) => format!(
                 "lines simplified to {value} m; lines and points smaller than that left out"
             ),
-            (DetailKind::Structure, 1) => "mast, arms and strings".into(),
-            (DetailKind::Structure, _) => "mast line".into(),
+            (DetailKind::Structure, 1) => "shaft, arms and strings".into(),
+            (DetailKind::Structure, _) => "shaft line".into(),
             (DetailKind::PerSpan, level) => format!(
                 "{value:.0} points per span, one line per bundle, line codes {}× longer{}",
                 DASH_SCALE[level.min(2)],

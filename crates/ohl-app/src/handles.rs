@@ -574,7 +574,7 @@ impl Hanging {
         }
         if !self.stays.is_empty() {
             out.push_str(&format!(
-                "; wire point{} {} also held by a string from elsewhere (a V): not moved, \
+                "; wire point{} {} also held by a string from elsewhere: not moved, \
                  string{} {} change{} length",
                 s(self.stays.len()),
                 self.stays.join(", "),
