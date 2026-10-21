@@ -42,20 +42,34 @@ Mastvorlage (to confirm). *In files:* the format id `ohl-structure-template` and
 (`ohl-pylon-template`, `pylon-templates/`, `Pylon templates`,
 `PylonTemplates/`) still read.
 
-**Structure point** — a point fixed on the structure where strings hang;
-the structure screens show them as *Attachment points* (and the drawings
-above label them so). *In files:* `points`
-(line file), `[[point]]` (`.ohls`). *German:* Aufhängepunkt (to confirm).
+**Attachment point** — where strings hang on a structure, linked to a
+**joint** of the structure (its type's), optionally at an **offset** from
+it: a rigid link whose moment the structure analysis applies at the
+joint. Several attachment points may share a joint. A point the
+structure no longer has a joint for is **unlinked**: it keeps its place,
+and the structure's loads are refused until it is linked again. When a
+structure is replaced by another type, its attachment points are matched
+to the new joints: exactly (a joint at the same position), else the
+nearest attach joint is offered with the distance left as the offset;
+the user chooses per point. Editable in both applications.
+*Replaces:* structure point (retired, 2026-10-21; read as "attachment
+point" in older texts). *German:* Aufhängepunkt (to confirm). *In files:*
+`points` (line file: `joint`, `offset`, `unlinked`), `[[point]]` (`.ohls`:
+`node`, or `member` and `at`, or its own `point`; `offset`).
+*Built (engine and command line, 2026-10-21; in active development, not
+approved yet): the Link tool and the drawn links in the applications are
+coming.*
 
-**Joint** *(planned, 2026-10-21)* — in OHL-Structure, a node of the
-structure's model, each with a type: *attach* (where an attachment point
-of the line may be linked), *foot*, and others. Not built yet.
-
-**Attachment point** *(planned, 2026-10-21)* — in OHL-Design, an object of
-its own on a structure, editable there, linked to an *attach* joint of the
-structure; strings hang from attachment points. When the structure
-changes, its attachment points are matched to the new structure's attach
-joints. Not built yet: today strings hang from **structure points**.
+**Joint** — a node of the structure's model (OHL-Structure). A joint has
+a **kind**, or none: **attach** (strings hang here, through the
+attachment points linked to it) or **support** (where the structure
+stands on its foundation; its fixity is the joint's support). A joint
+carrying attachment points is an attach joint, a supported one a support
+joint, unless its kind is given. A point along a member makes a joint
+there (the analysis splits the member at it); a stick figure's point is
+its own joint. *German:* Knoten (to confirm). *In files:* `[[node]]`,
+its `kind` (`.ohls` version 6). *Built (engine, 2026-10-21; in active
+development, not approved yet).*
 
 **Body** — the structure type's lattice or shaft above its feet (its
 joints and members, or its `[[body]]` polylines). *German:* Mastschaft
@@ -93,8 +107,8 @@ height adjustment of its feet; right: detail levels 1, 2 and
 point; a string below two strings; two tension strings hanging from a
 string's wire point](../images/glossary/string-combinations.svg)
 
-**String** — one straight insulating member from its **top** (a structure
-point, or another string's wire point) to its **wire point**, by its
+**String** — one straight insulating member from its **top** (an
+attachment point, or another string's wire point) to its **wire point**, by its
 length and direction. It is a **suspension string** (the wire runs
 through its wire point) or a **tension string** (the wire ends there).
 Its weight, wind area and stiffness are its own or those of its

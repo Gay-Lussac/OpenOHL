@@ -68,7 +68,7 @@ Options:
 
 ### IFC
 
-`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a shaft with arms to the structure points) and its strings, with property set `OHL_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OHL_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
+`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a shaft with arms to the attachment points) and its strings, with property set `OHL_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OHL_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
 
 ### Tables (XLSX)
 

@@ -9,6 +9,70 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-21
 
+- **Attachment points linked to typed joints — engine** (owner's
+  answers of 2026-10-21 to the plan, O3 item 6). Built in the engine and
+  on the command line; the Link tool and the drawn links in the
+  applications are next.
+  - **Joint kinds**: only `attach` and `support` (`[[node]] kind`,
+    `.ohls` 6, the unreleased raise); a joint without one has its kind
+    worked out (attach when a point is linked to it, support when it has
+    a support). A point on a support joint is refused.
+  - **Every attachment point is linked to a joint**: its node; along a
+    member, one joint per place; a stick figure's point is its own joint
+    (id = its label; `-a`, `-a2`… when a node has it). A point given by
+    position exactly at a node (1 µm) is linked to that node — before,
+    its load was left out of the finite-element check with a note; now
+    it reaches that node. Several points may share a joint (the "one
+    point per joint" refusal goes).
+  - **A point along a frame member splits the member** for the analysis
+    (answer 3): a node there, pieces of its properties, each buckling
+    over the whole member's effective length (so no capacity changes);
+    results per member, its usage the worst piece's. Along a truss
+    member the force is shared to its ends as before. Changes the
+    results of points along frame members (the member's own bending
+    under the point is now in them); `every-profile.ohls` is the only
+    shipped file with one.
+  - **Offset = rigid link** (answer 9): the force at the point goes to
+    the joint as the same force plus r × F where a frame member meets
+    it; where only trusses meet it the moment is left out with a note
+    naming the point and asking for a frame joint (a Simplification,
+    marked in the theory page). OHL-Structure's notes name every
+    offset's moment.
+  - **A point on no joint of the members** keeps a structure with
+    members from a full design (answer 6).
+  - **Line model**: `StructurePoint` `joint`, `offset`, `unlinked` (line
+    file 7, project schema 5, OHL XML: the unreleased raise, answer 8);
+    nothing written before changes when read. An override written before
+    takes its type point's joint, the offset the exact difference (it
+    stays where it was); a point of its own at a joint is linked to it,
+    elsewhere it is unlinked. A written position is kept while it agrees
+    with joint + offset to 1 µm (round trips move nothing; the typed
+    example resolves and solves bit for bit, links written or not).
+  - **Unlinked points** keep their position; the structure's
+    finite-element check is refused (usage infinite, the reason said)
+    until they are linked (answer 12). **Conservative:** a failing
+    check rather than a pass with a load left out. An attachment point
+    no joint of a separate model (`.ohlfe`) carries is refused the same
+    way (before: left out with a note).
+  - **Matching** (answer 7): exact by default (a joint at the same
+    position, 1 µm — positions, not a tolerance); otherwise the nearest
+    attach joint is offered with the distance kept as the offset (two
+    equally near: none offered); the user chooses per point. No other
+    tolerance. Joint ids are not matched across types (a type's `J1` is
+    not another's).
+  - **Commands**: `link_point` (also relink), `unlink_point`,
+    `relink_points`, `replace_structure` `points`; each one undoable log
+    entry. `ohl structures points` (links, or the matches of a type
+    swap with `--to`) and `ohl structures link` (`--joint` and
+    `--offset`, `--nearest`, `--unlink`) on line files.
+  - **Not done yet, most conservative choice made**: a structure without
+    a type gets no `joints` list (its points stay their own joints; the
+    placed editor would drop one until it learns it); OHL-Structure's
+    analysis from the line takes the type's links (a placed structure's
+    own relink is applied by OHL-Design's structure check only); the
+    pole check takes the type's point positions as before.
+  - **"Structure point"** is retired; texts say attachment point.
+
 - **One name per object: the glossary** (owner decisions on the
   proposal of 2026-10-21, roadmap O3 item 2: "same object, same name
   everywhere; unify"). The terms are in the
