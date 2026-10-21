@@ -202,7 +202,7 @@ fn zones_by_a_rule_file_with_its_check() {
         &check,
         imported.rules,
         states,
-        false,
+        None,
         Some(&read),
         Some(&ground),
         None,
@@ -297,6 +297,26 @@ fn exit_codes() {
         String::from_utf8_lossy(&radial.stdout)
     );
     assert!(String::from_utf8_lossy(&radial.stdout).starts_with("radial clearances"));
+    // The band's margin (2026-10-21): said with the swing arc; a negative
+    // one refused.
+    let arc = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(args(&[
+            "--measure",
+            "radial",
+            "--swing-arc",
+            "--band-margin",
+            "0.3",
+        ]))
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&arc.stdout);
+    assert!(said.contains("swing arc (band margin 0.3 m)"), "{said}");
+    let refused = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(args(&["--measure", "radial", "--band-margin=-1"]))
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--band-margin"));
     // No weather case file: an error.
     let none = ohl(&["zones", &text(&line), "--rules", &text(&kept)]);
     assert_eq!(none.status.code(), Some(2));

@@ -36,6 +36,12 @@ pub struct SafetyArgs {
     /// The sides the stepped wind blows from: both, left or right.
     #[arg(long, default_value = "both", value_parser = WindSides::parse)]
     pub wind_sides: WindSides,
+    /// The swing band's margin, m (--wind arc or both): every distance to
+    /// a band is taken this much smaller. Default 0.15 m, the measured
+    /// worst excess of the intermediate pressures plus an allowance
+    /// (conservative); a smaller value is on the user's responsibility.
+    #[arg(long, default_value_t = ohl_clearance::positions::BAND_MARGIN)]
+    pub band_margin: f64,
     /// The distance from the conductors' surface (required; none is built
     /// in): a distance (`5`, `"5 m"`), or by the voltage of each wire's
     /// system as a rule file writes it (`'{ by_voltage = [[110, 3], [380,
@@ -51,16 +57,19 @@ pub struct SafetyArgs {
     #[arg(long, default_value_t = DEFAULT_TOLERANCE)]
     pub tolerance: f64,
     /// One volume per `wire` (a circuit's phase), per `circuit` or per
-    /// `system` (an electrical system's circuits together; earthed wires
-    /// per circuit).
+    /// `system` (an electrical system's circuits together; the wires
+    /// without a system — earthed wires — together in one volume named
+    /// "(no system)").
     #[arg(long, default_value = "wire", value_parser = Grouping::parse)]
     pub per: Grouping,
     /// Only these circuits (repeatable; default all).
     #[arg(long)]
     pub circuit: Vec<String>,
     /// Only these electrical systems, by id or name (repeatable; default
-    /// all; earthed wires are left out when given). With --circuit too, a
-    /// wire must be in both.
+    /// all). `none` (or `"(no system)"`) takes the wires without a system
+    /// (earthed wires, sections without one), which are left out when
+    /// systems are given without it (a system called `none` takes
+    /// precedence). With --circuit too, a wire must be in both.
     #[arg(long)]
     pub system: Vec<String>,
     /// Only these spans, `SECTION:N` with N from 1 (repeatable; default
@@ -102,20 +111,24 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
         spans: a.span.clone(),
         ..SafetyParams::default()
     };
+    if let Some(e) = ohl_clearance::rules::band_margin_problem(a.band_margin) {
+        return Err(format!("--band-margin: {e}"));
+    }
     let steps = WindSteps {
         stepped: a.wind.stepped(),
         arc: false,
         step: a.wind_step,
         sides: a.wind_sides,
+        band_margin: a.band_margin,
     };
     let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
     let t = Instant::now();
     let v = safety_volume::run(&line, &library, &chosen, a.wind, steps, &params, &budget)?;
+    let wind = safety_volume::wind_text(a.wind, a.band_margin);
     println!(
-        "safety volumes of {}: {} weather cases, {}, {} positions ({:.2?})",
+        "safety volumes of {}: {} weather cases, {wind}, {} positions ({:.2?})",
         line.name,
         v.cases.len(),
-        a.wind.describe(),
         v.positions,
         t.elapsed()
     );
@@ -153,7 +166,7 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
                 String::new()
             }
         ),
-        wind: a.wind.describe().into(),
+        wind,
         date,
     };
     let (files, notes) = ohl_io::safety_volume::write(&a.out, &a.name, &v, &d, &formats)?;
