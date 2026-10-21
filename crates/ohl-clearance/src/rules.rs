@@ -704,6 +704,8 @@ struct RawRules {
     check: Option<RawCheck>,
     #[serde(default)]
     vegetation: Option<RawVegetation>,
+    #[serde(default)]
+    checks: Vec<String>,
     #[serde(rename = "rule", default)]
     rules: Vec<RawRule>,
 }
@@ -848,6 +850,44 @@ pub struct RuleSet {
     /// what a design code presets for it (with `[wind]` for its wind
     /// steps).
     pub vegetation: Option<VegetationPreset>,
+    /// The checks a preset is for, as its file declares them (top-level
+    /// `checks = ["vertical", "radial", "vegetation"]`, optional); empty:
+    /// not declared, told from its content ([`RuleSet::is_for`]).
+    pub checks: Vec<PresetCheck>,
+}
+
+/// A check a rule file (a design code's preset) is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresetCheck {
+    /// The vertical clearance window (rules with a vertical distance).
+    Vertical,
+    /// The radial clearance window (rules with a radial distance).
+    Radial,
+    /// The vegetation and danger-tree check (`[vegetation]`).
+    Vegetation,
+}
+
+impl PresetCheck {
+    /// `"vertical"`, `"radial"` or `"vegetation"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PresetCheck::Vertical => "vertical",
+            PresetCheck::Radial => "radial",
+            PresetCheck::Vegetation => "vegetation",
+        }
+    }
+
+    /// From its name.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "vertical" => Ok(PresetCheck::Vertical),
+            "radial" => Ok(PresetCheck::Radial),
+            "vegetation" => Ok(PresetCheck::Vegetation),
+            other => Err(format!(
+                "checks: \"{other}\" is not vertical, radial or vegetation"
+            )),
+        }
+    }
 }
 
 /// The settings of the vegetation and danger-tree check a rule file
@@ -893,6 +933,10 @@ pub struct VegetationPreset {
     pub search_distance: Option<f64>,
     /// Each span along its swing arc too.
     pub swing_arc: Option<bool>,
+    /// The weather cases the check runs in (names of the preset's weather
+    /// cases, `*` `?` wildcards; empty: not named — the preset's cases no
+    /// rule names, or all of them without rules).
+    pub cases: Vec<String>,
 }
 
 impl VegetationPreset {
@@ -928,6 +972,10 @@ impl VegetationPreset {
             ("search_distance", self.search_distance.map(length)),
             ("fall_in", self.fall_in.map(|v| v.to_string())),
             ("swing_arc", self.swing_arc.map(|v| v.to_string())),
+            (
+                "cases",
+                (!self.cases.is_empty()).then(|| list(self.cases.iter().map(|c| quoted(c)))),
+            ),
         ] {
             if let Some(v) = v {
                 t.push_str(&format!("{k} = {v}\n"));
@@ -966,6 +1014,8 @@ struct RawVegetation {
     search_distance: Option<Length>,
     #[serde(default)]
     swing_arc: Option<bool>,
+    #[serde(default)]
+    cases: Vec<String>,
 }
 
 impl RawVegetation {
@@ -995,6 +1045,7 @@ impl RawVegetation {
             max_base_ground_distance: len(self.max_base_ground_distance),
             search_distance: len(self.search_distance),
             swing_arc: self.swing_arc,
+            cases: self.cases,
         };
         if ![
             p.growth_per_year,
@@ -1262,12 +1313,18 @@ impl RuleSet {
             })
             .transpose()?;
         let vegetation = raw.vegetation.map(RawVegetation::resolve).transpose()?;
+        let checks = raw
+            .checks
+            .iter()
+            .map(|c| PresetCheck::parse(c))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: raw.name,
             rules,
             wind,
             check,
             vegetation,
+            checks,
         })
     }
 
@@ -1301,6 +1358,22 @@ impl RuleSet {
             wind: None,
             check: None,
             vegetation: None,
+            checks: Vec::new(),
+        }
+    }
+
+    /// Whether it is (a preset) for `check`: as its `checks` declare, else
+    /// by its content — the vertical window: a rule with a vertical
+    /// distance; the radial window: one with a radial distance; the
+    /// vegetation check: a `[vegetation]` table.
+    pub fn is_for(&self, check: PresetCheck) -> bool {
+        if !self.checks.is_empty() {
+            return self.checks.contains(&check);
+        }
+        match check {
+            PresetCheck::Vertical => self.rules.iter().any(|r| r.vertical.is_some()),
+            PresetCheck::Radial => self.rules.iter().any(|r| r.radial.is_some()),
+            PresetCheck::Vegetation => self.vegetation.is_some(),
         }
     }
 
@@ -1312,6 +1385,13 @@ impl RuleSet {
             "format = \"{RULE_FILE_FORMAT}\"\nversion = {RULE_FILE_VERSION}\nname = {}\n",
             quoted(&self.name)
         );
+        if !self.checks.is_empty() {
+            let _ = writeln!(
+                t,
+                "checks = {}",
+                list(self.checks.iter().map(|c| quoted(c.as_str())))
+            );
+        }
         if let Some(w) = &self.wind {
             let _ = write!(
                 t,
@@ -1782,5 +1862,29 @@ mod tests {
         ] {
             assert!(RuleSet::parse(text).is_err(), "{text}");
         }
+    }
+
+    /// A preset's checks: told from its content, or as its `checks`
+    /// declare (written back, an unknown one refused); `[vegetation]
+    /// cases` read and written back.
+    #[test]
+    fn a_preset_is_for_its_checks() {
+        let mixed = "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 7.0\n\
+                     [vegetation]\nclasses = [5]\ncases = [\"hot\", \"warm*\"]\n";
+        let set = RuleSet::parse(mixed).unwrap();
+        assert!(set.is_for(PresetCheck::Vertical));
+        assert!(!set.is_for(PresetCheck::Radial));
+        assert!(set.is_for(PresetCheck::Vegetation));
+        assert_eq!(set.vegetation.as_ref().unwrap().cases, ["hot", "warm*"]);
+        let back = RuleSet::parse(&set.to_toml()).unwrap();
+        assert_eq!(back, set);
+        // Declared: only those.
+        let declared = RuleSet::parse(&format!("checks = [\"radial\"]\n{mixed}")).unwrap();
+        assert_eq!(declared.checks, [PresetCheck::Radial]);
+        assert!(declared.is_for(PresetCheck::Radial));
+        assert!(!declared.is_for(PresetCheck::Vertical));
+        assert!(!declared.is_for(PresetCheck::Vegetation));
+        assert_eq!(RuleSet::parse(&declared.to_toml()).unwrap(), declared);
+        assert!(RuleSet::parse(&format!("checks = [\"sky\"]\n{mixed}")).is_err());
     }
 }

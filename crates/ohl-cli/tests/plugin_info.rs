@@ -106,6 +106,9 @@ fn code_rule_presets_are_listed_and_written() {
     );
     assert!(stdout.contains("ground — Ground 6 m"), "{stdout}");
     assert!(stdout.contains("vegetation: classes 42, 43"), "{stdout}");
+    // The checks each is for (by its content).
+    assert!(stdout.contains("  for: vertical, radial\n"), "{stdout}");
+    assert!(stdout.contains("  for: vegetation\n"), "{stdout}");
     assert!(
         stdout.contains("Test ground: vertical 6.00 m + 0.01 m/kV above 0 kV"),
         "{stdout}"
