@@ -114,7 +114,9 @@ arc = true          # each span also on its swing arc (2026-10-20; default false
 ```
 
 `arc = true` adds each span's swing arc between still air and the full
-blowouts of the sides chosen (three solves per windy case; see [Arc or
+blowouts of the sides chosen (three solves per windy case; since
+2026-10-21 a band of every radius from the smallest to the largest of the
+three positions, widened by 0.15 m; see [Arc or
 steps](../theory/clearances.md#arc-or-steps-speed-and-quality)); alone or
 with the steps. A file without it reads as before, and is written
 without it.

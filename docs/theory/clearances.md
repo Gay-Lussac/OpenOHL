@@ -40,17 +40,24 @@ alone or together:
   the same code `positions::SwingArc`): each span swung as one about
   its attachment axis (the line through the string tops, at a dead end
   the clamps) between still air and the full blowouts of the sides
-  chosen, at the largest of their radii \\( R = \max(R_L, R_0, R_R) \\) at
-  each place along the span, from the smallest to the largest of their
-  angles. Three solves per windy case (one side: two). The arc's own
-  labels hold here too:
+  chosen — since 2026-10-21 a **band**: every radius from the smallest
+  to the largest of theirs, \\( r = \min(R_L, R_0, R_R) \\) to
+  \\( R = \max(R_L, R_0, R_R) \\), at each place along the span, from the
+  smallest to the largest of their angles. Three solves per windy case
+  (one side: two). The arc's own labels hold here too:
 
-  **Conservative:** one radius, the largest of the three, along the whole
-  arc (a wind between none and the full one never sags the wire further)
-  — for targets outside the arc (below and beside the wire). A target
-  between the axis and the arc (above the swinging wire) can be nearer a
-  wire at an intermediate pressure, which sags less, than to the arc: by
-  0.47 m on the example line (below).
+  **Conservative:** every radius between the smallest and the largest of
+  the three along the whole arc, for targets on every side — below and
+  beside the wire as well as between the axis and the arc (above the
+  swinging wire). Until 2026-10-21 the largest radius only: a target
+  between the axis and the arc could be nearer a wire at an intermediate
+  pressure, which sags less, than to the arc — by 0.47 m on the example
+  line (below).
+
+  **Conservative:** the band widened by its margin \\( m = 0.15 \\) m on
+  every side (the measured worst excess of the 10 Pa steps over the
+  band, 0.089 m, plus an allowance of 0.061 m:
+  [the swing arc](lidar-analysis.md#wire-positions-checked)).
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\).
@@ -66,21 +73,25 @@ alone or together:
 
 As for the danger trees: the point \\( q \\) projected on the axis at
 \\( s_q \\), at radius \\( \rho_q \\) and angle \\( \varphi_q \\) in the
-plane square to the axis there: \\( |\rho_q - R| \\) within the arc's
-angles (with the distance along the axis beyond the span's ends), else
-the distance to the nearer end. The clearance takes off the bundle
-radius and the largest allowance of the three wires (**Conservative:**
-the bundle's outer envelope).
+plane square to the axis there: within the band's angles the radial gap
+— 0 for \\( r \le \rho_q \le R \\), \\( r - \rho_q \\) inside it,
+\\( \rho_q - R \\) outside it — (with the distance along the axis beyond
+the span's ends), else the distance to the nearer end edge (the radial
+segment from \\( r \\) to \\( R \\) at \\( \varphi_L \\) or
+\\( \varphi_R \\)). The clearance takes off the bundle radius, the largest
+allowance of the three wires (**Conservative:** the bundle's outer
+envelope) and the band's margin.
 
 ### The vertical distance to the arc
 
-Definition: the vertical clearance of \\( q \\) to the arc is the
-smallest vertical clearance of \\( q \\) to any wire on it — **the
-height of the arc's lowest point over \\( q \\)'s plan position**, among
-the arc's points within the zone's half width \\( w \\) across the line
+Definition: the vertical clearance of \\( q \\) to the band is the
+smallest vertical clearance of \\( q \\) to any wire in it — **the
+height of the band's lowest point over \\( q \\)'s plan position**, among
+the band's points within the zone's half width \\( w \\) across the line
 (and, with a depth, within \\( d/2 \\) along it); for a point above the
-arc, its height above the arc's highest such point; 0 where \\( q \\)
-lies between the two (a wire passes through it at some angle).
+band, its height above the band's highest such point; 0 where \\( q \\)
+lies between the two (a wire passes through it at some angle and
+radius).
 
 At a place \\( s \\) along the axis (unit vector \\( \mathbf u \\), its
 horizontal part \\( u_h = |\mathbf u_{xy}| \\), its rise \\( u_z \\)), the
@@ -95,12 +106,21 @@ centre, \\( R\sin\varphi \\) to the right, and
 \\( (h, y) \\) of \\( q \\) (along the line from \\( A_1 \\), to the right
 of the axis):
 
-1. the angles within the band: \\( |R\sin\varphi - y| \le w \\), i.e.
-   \\( \sin\varphi \in [(y-w)/R,\ (y+w)/R] \\), intersected with the arc's
-   \\( [\varphi_L, \varphi_R] \\);
-2. among them, the lowest point is where \\( R\cos\varphi \\) is largest
-   — the angle nearest the vertical (the highest: the farthest);
-3. the place over \\( h \\): \\( s = (h - R(s)\cos\varphi\,u_z)/u_h \\),
+1. the band's points within the zone's width: the point at radius
+   \\( \rho \\) and angle \\( \varphi \\) is \\( \rho\sin\varphi \\) to the
+   right and \\( x = \rho\cos\varphi \\) "down" (in the plane square to
+   the axis), so the admissible set is the annular sector
+   \\( r \le \rho \le R \\), \\( \varphi_L \le \varphi \le \varphi_R \\) cut
+   to the strip \\( |\rho\sin\varphi - y| \le w \\);
+2. its lowest point is where \\( x \\) is largest (the highest: where it
+   is smallest). \\( x \\) is linear in that plane, so its extremes lie on
+   the set's boundary: on the circles of radius \\( R \\) and \\( r \\)
+   (the ends of their admissible angles,
+   \\( \sin\varphi \in [(y-w)/\rho,\ (y+w)/\rho] \\) within
+   \\( [\varphi_L, \varphi_R] \\), and \\( \varphi = 0 \\)) or on the two end
+   edges where the strip cuts them (\\( \rho = (y \pm w)/\sin\varphi_{L,R} \\)
+   within \\( [r, R] \\)) — a handful of candidates, the extreme taken;
+3. the place over \\( h \\): \\( s = (h - x(s)\,u_z)/u_h \\),
    solved by fixed-point steps from \\( s = h/u_h \\) (each a contraction
    by about \\( |dR/ds|\,u_z/u_h \\), far below 1 on a span), to
    \\( 10^{-6} \\) m. A point beyond the span's ends, or with no angle
@@ -116,8 +136,9 @@ two places 0.1 m apart could dip below it by millimetres. The bundle
 radius and the allowance are taken off as radially (**Conservative**).
 
 **Check by hand** (`benchmarks/clearance/danger-trees.toml`,
-`arcclear-001…005`): a level 100 m span 20 m up, sag 4 m in still air and
-5 m blown ±40°; at mid-span \\( R = 5 \\) m. A point 4 m to the right at
+`arcclear-001…006`): a level 100 m span 20 m up, sag 4 m in still air and
+5 m blown ±40°; at mid-span the band runs from \\( r = 4 \\) to
+\\( R = 5 \\) m. A point 4 m to the right at
 \\( z = 10 \\) m, \\( w = 1 \\) m: \\( \sin\varphi \in [0.6, 1] \\), so
 \\( \varphi \in [36.87°, 40°] \\); the lowest point at 36.87°
 (\\( \cos = 0.8 \\)) is at \\( 20 - 4 = 16 \\) m: vertical 6 m (radially
@@ -126,17 +147,26 @@ mid-axis the arc's lowest point is \\( 5 \times 0.2873 = 1.437 \\) m
 further along in plan than the centre and \\( 5 \times 0.9578 = 4.789 \\)
 m below it, at \\( z = 30.211 \\) m over \\( x = 51.437 \\) m: a point
 there at 25 m is 5.211 m below — not the 4.794 m the point's own place
-along the axis would give.
+along the axis would give. A point 2 m below the axis at mid-span
+(\\( z = 18 \\) m) lies above the band: its highest point within 1 m
+across is on the inner circle at \\( \sin\varphi = 1/4 \\) (the 40° end
+edges cross the strip only at \\( \rho = 1/\sin 40° = 1.556 \\) m, inside
+\\( r \\)), at \\( 20 - 4\cos 14.48° = 16.127 \\) m: vertically 1.873 m,
+radially \\( r - 2 = 2.0 \\) m (the arc alone at \\( R \\): 2.899 m and
+3.0 m). A point inside the band (\\( z = 15.5 \\) m): 0 both ways.
 
 ### The ground under the arc
 
-The ground is a TIN: the vertical and radial clearances of the arc to it
-are those of the wire swung to angles every
-\\( \Delta\varphi = 2e/R_{\max} \\) (\\( e = \\) 2 cm,
-`zone::ARC_TOLERANCE`), each a polyline through the arc's points at
-every station, checked as a solved wire (exact for its polyline).
-Every point of the arc lies within \\( e \\) of one of them at its
-station.
+The ground is a TIN: the vertical and radial clearances of the band to
+it are those of the lines over its boundary — the wire swung to angles
+every \\( \Delta\varphi = 2e/R_{\max} \\) (\\( e = \\) 2 cm,
+`zone::ARC_TOLERANCE`) at the band's outer radius and again at its
+inner radius, and the two end edges at fractions of the thickness every
+\\( \Delta\rho \le 2e \\) — each a polyline through the band's points at
+every station, checked as a solved wire (exact for its polyline). Every
+point of the band's boundary lies within \\( e \\) of one of them at its
+station, and a ground that reaches into the band crosses its boundary,
+so the boundary's clearances are the band's.
 
 **Conservative:** each such wire is taken \\( e \\) thicker (its
 clearances 2 cm smaller), the zone \\( e \\) wider on each side (and
@@ -144,11 +174,12 @@ clearances 2 cm smaller), the zone \\( e \\) wider on each side (and
 (\\( s \\) the steeper of its rise per plan length and its
 neighbours': a point of the arc \\( e \\) away from the wire's point
 lies over ground the piece passes over up to \\( e\,s \\) higher or
-lower), so that no point of the arc between two of them can be nearer
+lower), so that no point of the band between two of them can be nearer
 the ground than reported. Exact: the distance between the swept surface
 and the TIN (no closed form).
 
-The angles nearest the hanging position are checked first; a piece of
+The outer surface's angles nearest the hanging position are checked
+first, then the inner surface and the edges; a piece of
 the next angles that cannot come below the lowest clearance found so
 far, nor below the requirement, is passed over (its bound from the
 highest ground near it, as below): the counts and the lowest clearance
@@ -165,24 +196,31 @@ example):
 within 14 m of the wires; rules of 7 m to the ground and to the points;
 the solves of this small line take a millisecond each):
 
-| | wind steps, 50 Pa | swing arc |
-|---|---|---|
-| solves | 25 | 3 |
-| vertical: solved, checked | 18 ms, 15 ms | 5 ms, 103 ms |
-| radial: solved, checked | 17 ms, 25 ms | 5 ms, 193 ms |
+| | wind steps, 50 Pa | swing arc (band, 2026-10-21) | swing arc (before) |
+|---|---|---|---|
+| solves | 25 | 3 | 3 |
+| vertical: solved, checked | 17 ms, 13 ms | 5 ms, 159 ms | 5 ms, 103 ms |
+| radial: solved, checked | 17 ms, 24 ms | 5 ms, 270 ms | 5 ms, 193 ms |
 
 *The invented long line* (600 spans of 350 m, three phases, 180 sections,
 10⁶ points; rules of 7 m to the ground and 5 m to the points; a shared
 computer, ± 20 %):
 
-| | steps, 10 Pa | steps, 50 Pa | swing arc |
-|---|---|---|---|
-| solves | 131: 56 s | 27: 12 s | 3: 1.3 s |
-| vertical, ground | 7.1 s | 2.1 s | 5.9 s |
-| vertical, points | 10.0 s (10 µs a point) | 2.1 s | 0.9 s (0.9 µs) |
-| radial, ground | 38 s | 4.4 s | 27 s |
-| radial, points | 18 s | 2.0 s | 0.9 s |
-| lowest vertical clearance to the ground | 13.953 m | 13.960 m | 13.235 m |
+| | steps, 10 Pa | steps, 50 Pa | swing arc (band, 2026-10-21) | swing arc (before) |
+|---|---|---|---|---|
+| solves | 131: 56 s | 27: 12 s | 3: 1.5 s | 3: 1.3 s |
+| vertical, ground | 7.1 s | 2.1 s | 9.4 s | 5.9 s |
+| vertical, points | 10.0 s (10 µs a point) | 2.1 s | 1.3 s (1.3 µs) | 0.9 s (0.9 µs) |
+| radial, ground | 38 s | 4.4 s | 38 s | 27 s |
+| radial, points | 18 s | 2.0 s | 0.6 s | 0.9 s |
+| lowest vertical clearance to the ground | 13.953 m | 13.960 m | 13.085 m | 13.235 m |
+
+The band's ground check is the slower (about 1.4 to 1.6 times the arc's
+before, measured 2026-10-21 on the same shared computer, ± 20 %): it
+checks the band's inner surface and its end edges besides the outer
+surface. Its lowest clearance to the ground is the arc's less the
+band's margin (0.150 m): the ground lies outside, where the outer
+surface was already the nearest.
 
 The arc's solves and its point checks are a few per cent of the steps';
 its ground check is not: the wire swung every 2 cm of the arc is many
@@ -199,8 +237,9 @@ radially, with the ground, 29 s against 113 s and 19 s).
   number of positions; the arc keeps them at three.
 - **What the arc gains.** It covers every angle between the blowouts
   continuously; the steps see the wire only at the pressures they solve
-  and are blind between two of them. It takes the largest radius of the
-  three positions (**Conservative** for targets outside the arc, see
+  and are blind between two of them. Since 2026-10-21 it takes every
+  radius between the smallest and the largest of the three positions,
+  widened by its margin (**Conservative** for targets on every side, see
   above).
 - **What it simplifies.** The rigid swing about the attachment axis
   (**Simplification**, above): suspension clamps move along the line and
@@ -209,16 +248,20 @@ radially, with the ground, 29 s against 113 s and 19 s).
   a point lies close to the wire at an intermediate pressure, the steps
   give its distance to the solved wire, the arc its distance to the rigid
   swing. Measured on the example line (`zone_arc`, every span's lowest
-clearance to the ground and to 4000 invented points): vertically the
-arc is never above the steps (50 Pa); radially it is above them by at
-most 2.1 cm (S2's first span, a point 2.2 cm from the solved wire at
-some pressure, 4.2 cm from the arc), and below them by up to 1.07 m
-elsewhere. A point placed on the wire solved at 300 Pa (S1's first span,
-mid-span) is 0.47 m from the arc: at 300 Pa the wire sags less than at
-the full pressure, so it passes 0.47 m nearer the axis than the arc.
-**The largest radius is conservative for targets outside the arc — below
-and beside the wire, the ground, trees — not for a target between the
-axis and the arc** (above the swinging wire, rare for these checks). Never read "no loss" into the arc: it is a
+clearance to the ground and to 4000 invented points): with the band
+(2026-10-21) the arc is never above the steps (50 Pa), vertically nor
+radially (radially at least 0.189 m below them at every span), and below
+them by up to 1.22 m elsewhere. Before, at the largest radius only, it
+was radially above them by up to 2.1 cm (S2's first span, a point 2.2 cm
+from the solved wire at some pressure, 4.2 cm from the arc), and a point
+placed on the wire solved at 300 Pa (S1's first span, mid-span) was
+0.47 m from the arc: at 300 Pa the wire sags less than at the full
+pressure, so it passes 0.47 m nearer the axis than the arc. That point
+now lies inside the band (clearance 0 less the conductor and the margin).
+With steps of 10 Pa from both sides on the example lines no stepped
+position lies outside the band widened by its margin (at most 0.089 m
+outside the band itself; the arc alone missed them by up to 1.53 m:
+`tests/arc_band.rs`). Never read "no loss" into the arc: it is a
   conservative envelope with a simplification, not the steps' exact
   positions.
 - **Both together** (the steps and the arc) check the steps' positions

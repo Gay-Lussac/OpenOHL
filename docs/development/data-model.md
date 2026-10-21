@@ -791,8 +791,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   stored): `zone::wind_states` adds each windy case's still air when the
   arc is on; `zone::arc_cases` names the positions of each case's arc
   (`ArcCase`: still, full left, full right), `zone::zone_arcs` makes one
-  `ZoneArc` per span (its still wire, its `SwingArc`, its largest
-  radius); `check_zones` takes them (`&[]`: none) and
+  `ZoneArc` per span (its still wire, its `SwingArc` — a band since
+  2026-10-21 — its largest radius); `check_zones` takes them (`&[]`: none) and
   `run_zone_check(…, arc, …)` makes them. A finding on the arc has
   `ZoneFinding::arc` = the angle (degrees from the downward vertical
   about the span's axis, positive to the right looking along the span)
@@ -842,7 +842,18 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   (`PositionOptions::wind_steps`, a `rules::WindSteps`) with its
   `pressure` (Pa) — and its `Shape`: a solved
   `WireShape` or a `SwingArc` with its stations and the three wires'
-  points at each), `notes`. `VegetationParams::clearance_by_voltage` and
+  points at each), `notes`. Since 2026-10-21 a `SwingArc` is a band:
+  `SwingArc::place(s)` gives an `ArcPlace` with `centre`, `radius` (the
+  largest of the three, R), `inner` (the smallest, r), `from`, `to`;
+  `SwingArc::nearest` is 0 inside the band; `outer` and `allowance()`
+  include `positions::BAND_MARGIN` (0.15 m, every distance taken that
+  much smaller); `thickness()` and `line_at_radius(φ, t)` (t from the
+  inner, 0, to the outer radius, 1) are new. `PositionOptions::jumpers`
+  (2026-10-21, default false; the safety volumes set it): the jumpers too,
+  each a span of its own (section `jumper:<id>`, span 0, its axis from
+  its first to its last point) at its solved positions in every solve
+  (left, right, still — kind `still` also for a windy case's still air
+  solved for the arc — and every step), never on a swing arc. `VegetationParams::clearance_by_voltage` and
   `allowance_by_voltage` (a `rules::Requirement`, else `clearance` and
   `fall_allowance`) give each span its distance by its wire's voltage
   (`VegetationCheck::required`). Results per span:
@@ -1486,7 +1497,9 @@ its first two `ends` are ends of spans taken), `parse_span`
 `system_of` (section id or `jumper:<id>` → system id and name, filled by
 `run` from the line, `system_map`; a volume per system is named after
 the system and its `circuit` lists its circuits); `WindMode` (`None`, `Steps`, `Arc`, `Both`) with `WindSteps`
-gives the positions (`positions::solve_positions`). `SafetyVolumes`:
+gives the positions (`positions::solve_positions`, with
+`PositionOptions::jumpers` since 2026-10-21: a volume's `sections` then
+names its jumpers, `jumper:<id>`, too). `SafetyVolumes`:
 `volumes`, `cases`, `positions`, `notes`; each `SafetyVolume`: `name`,
 `circuit`, `phases`, `sections`, `kv`, `distance`, `margin`, `outer`,
 `positions`, `arc_error`, `arc_error_median`, `allowance`, `stats`
@@ -1496,9 +1509,12 @@ gives the positions (`positions::solve_positions`). `SafetyVolumes`:
 Files (`ohl_io::safety_volume::write`, `Format` `dxf`, `ifc`, `kml`,
 `kmz`; `Description`: line, crs, distance, wind, date): DXF R12 `3DFACE`s
 by layer `SAFETY_<name>` + `.prj` (WKT from `ohl_crs::Crs::wkt`, EPSG
-systems); IFC4 `IfcBuildingElementProxy` (`SafetyVolume`,
-`.USERDEFINED.`) with an `IfcTriangulatedFaceSet` relative to a
-whole-metre origin, `IfcMapConversion` (eastings, northings, orthogonal
+systems); IFC4 `IfcSpatialZone` (since 2026-10-21; before, an
+`IfcBuildingElementProxy`): Name, Description, ObjectType `SafetyVolume`,
+placement relative to the site, LongName, PredefinedType `.USERDEFINED.`,
+referenced in the `IfcSite` by one `IfcRelReferencedInSpatialStructure`
+(the site aggregated in the `IfcProject`), with an
+`IfcTriangulatedFaceSet` relative to a whole-metre origin, `IfcMapConversion` (eastings, northings, orthogonal
 height of that origin; x axis 1, 0; scale 1) to an `IfcProjectedCRS`
 (name `EPSG:<code>`), property set `OHL_SafetyVolume`; KML placemarks of a
 `MultiGeometry` of polygons (WGS84, absolute heights kept), `ExtendedData`
