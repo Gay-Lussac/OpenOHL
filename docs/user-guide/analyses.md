@@ -227,8 +227,11 @@ span (in parallel on every core):
   with the reason.
 - **Swing arc** (`--swing-arc`): each span of a windy case also anywhere
   along its swing between the left and the right blowout (the span
-  swinging as one about the line through its attachment points, at the
-  largest of the three radii).
+  swinging as one about the line through its attachment points; since
+  2026-10-21 at every radius from the smallest to the largest of the
+  three — a band — widened by 0.15 m on every side, so that it holds the
+  positions at every intermediate pressure, also for a tree between the
+  axis and the arc).
 - **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
   within reach solved with its section on its own, the span in a weather
   case of its own (its ice weight, the wind on its iced diameter) and the
@@ -310,7 +313,8 @@ the values typed.
 
 The **weather cases** ticked (the list stays open while you tick): a case
 without wind as it is, a windy case blown to the left and to the right.
-**Swing arc**: every position between the two blowouts. **Wind stepped**
+**Swing arc**: every position between the two blowouts (a band of radii,
+widened by 0.15 m: see above). **Wind stepped**
 (a step in Pa, the sides): still air and every pressure up to the case's.
 Arc and steps work alone or together — the same wind choice as the
 [vertical and radial clearance windows](desktop-app.md#clearances-wind),
@@ -409,8 +413,11 @@ distance of the wires in every position of the weather cases chosen —
 for planning work near the line (cranes, scaffolds, trees felled): one
 closed volume per wire (a circuit's phase through all its sections), per
 circuit or per electrical system, shown in the 3D view and the plan, saved with the line and
-exported as georeferenced files. Structures and jumpers are not part of
-it.
+exported as georeferenced files. Since 2026-10-21 the **jumpers** are
+part of it (at their solved positions in each case: blown left and
+right, still air, every step), so the volume is continuous at the
+structures; the structures themselves (steel, insulators, fittings) are
+not.
 
 **In the desktop app:** Checks › **Safety volumes…** The window reads
 as the [vegetation panel](#the-vegetation-panel) and the clearance
@@ -427,7 +434,8 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
   right at its full pressure.
 - **Wind**: the two ticks shared with the danger-tree check — **swing
   arc** (also every position between the two blowouts: the span swinging
-  about its attachment axis, closed form) and **wind stepped** by **step
+  about its attachment axis over the band from the smallest to the largest
+  radius of its positions, widened by 0.15 m, closed form) and **wind stepped** by **step
   Pa** (also still air and every pressure up to the case's, from the
   sides chosen); both, either or none (none: the blowouts at full wind).
   The window says how many solves a windy case needs, and suggests the
@@ -461,13 +469,14 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
   stay quick). All with nothing searched: every one, also those added
   later; none ticked: Run says to tick one. A span ticked brings every
   wire on it; a jumper comes along when the spans at both its ends are
-  ticked (continuity; once jumpers are part of the volumes, see below).
+  ticked (continuity).
 - **One volume per**: **wire** (a circuit's phase through all its
   sections), **circuit** (its phases together) or **system** (every
   circuit of one electrical system together; earthed wires, which have no
   system, per circuit). The distance by voltage still uses each wire's
   own system voltage.
-- Structures and jumpers are not part of the volumes.
+- The jumpers are part of the volumes (at their solved positions); the
+  structures are not.
 
 #### Safety volumes: mesh
 
@@ -498,7 +507,7 @@ it, and says when none is set):
 | file | contents |
 |------|----------|
 | `.dxf` + `.prj` | DXF R12: 3D faces (`3DFACE`), a layer `SAFETY_<volume>` per volume, in the line's coordinates; the `.prj` holds the coordinate system as WKT (EPSG systems) |
-| `.ifc` | IFC4: one element (`IfcBuildingElementProxy`, object type `SafetyVolume`) per volume, a closed triangulated face set, translucent; georeferenced by `IfcMapConversion` to an `IfcProjectedCRS` named by its EPSG code; property set `OHL_SafetyVolume` (line, circuit, phases, sections, voltage, distance, margin, rule, weather cases, wind, date, tolerance, volume) |
+| `.ifc` | IFC4: one spatial element per volume (since 2026-10-21 an `IfcSpatialZone`, predefined type user-defined, object type `SafetyVolume`, referenced in the site), a closed triangulated face set, translucent; georeferenced by `IfcMapConversion` to an `IfcProjectedCRS` named by its EPSG code; property set `OHL_SafetyVolume` (line, circuit, phases, sections, voltage, distance, margin, rule, weather cases, wind, date, tolerance, volume) |
 | `.kml`, `.kmz` | WGS84 for Google Earth: each volume a placemark of triangles at absolute heights, with the same properties; needs the line's real coordinate system (EPSG) |
 
 Heights in KML are the line's (above its height datum), not corrected to
@@ -522,7 +531,9 @@ together, a wire must match each filter),
 `--name` (file name stem, default `safety-volume`), `--time-limit`.
 
 On the example line (two cases, wind stepped and swing arc, 4 m): three
-volumes of 24 000–75 000 triangles, about half a minute.
+volumes of 23 000–48 000 triangles (the branch's with its jumper), about
+a minute and a half (2026-10-21, a shared computer; with the band and the
+jumpers).
 
 See the theory: [Safety volumes](../theory/safety-volumes.md).
 

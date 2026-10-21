@@ -189,6 +189,46 @@ approved as finished: everything is built and in active development
   built (proposal in the roadmap). ([user
   guide](../user-guide/design-codes.md#a-presets-weather-cases),
   [plugins](plugins.md#matching-a-presets-weather-cases))
+- **The swing arc becomes a band** (the owner): from the smallest to the
+  largest radius of the left, still and right positions at each place
+  along the span, so that it is on the safe side also for targets between
+  the axis and the arc. The radial distance is 0 inside the band, else to
+  the nearer bounding surface (outer or inner radius, or an end edge);
+  vertically the band's lowest or highest point over the plan position
+  (on its two circles or its two end edges). One code
+  (`positions::SwingArc`) for the danger-tree check, the vertical and
+  radial clearance checks and the safety volumes: all three change
+  together. The ground under it: the band's boundary (outer and inner
+  surfaces every 2 cm, the end edges every 2 cm). Measured with steps of
+  10 Pa (both sides) on the example line and the crossing line, both
+  windy example cases: the band alone holds the steps to within 0.089 m
+  (the arc alone at the largest radius: 1.533 m), so it is **widened by a
+  margin of 0.15 m on every side** (`positions::BAND_MARGIN`: the worst
+  excess plus an allowance of 0.061 m; every distance to the band that
+  much smaller): no step lies outside it. On the example line every
+  clearance to the ground on the arc and every danger-tree fall margin is
+  0.150 m smaller; points between the axis and the arc are now found
+  (the wire at half the wind: 0.47 m inside the arc before, inside the
+  band now). The validation cases' references are new hand derivations
+  (`swingarc-002…004`, `arcclear-004`, `arcclear-006`,
+  `safetyvolume-002…003`). The ground check on the arc takes about three
+  times as long (the inner surface and the edges).
+- **The safety volume in IFC is a spatial element** (the owner): an
+  `IfcSpatialZone`, predefined type `USERDEFINED`, object type
+  `SafetyVolume` (IFC4 has no spatial zone type for it), placed relative
+  to the site and referenced in it by an
+  `IfcRelReferencedInSpatialStructure` — IFC's relation for a spatial
+  zone (non-hierarchical, may overlap; not contained like an element),
+  the site aggregated in the project. Property set and georeferencing as
+  before. Before: an `IfcBuildingElementProxy` contained in the site.
+- **The safety volume includes the jumpers** (the owner): their solved
+  positions in each case (blown left and right, still air, every step;
+  never on a swing arc), inflated like the wires, so that the volume is
+  continuous at the structures (`PositionOptions::jumpers`; the
+  danger-tree check leaves them out as before). Structures stay excluded
+  (said in the window's note and the theory). Tested: two sections whose
+  dead-end clamps are 6 m apart give two pieces at 1 m, one with the
+  jumper (validation `safetyvolume-004`, `-005`).
 
 - **The cable's own weight is conserved in every calculation** (owner
   decision: "Wasn't it already the case? Please correct it."). The

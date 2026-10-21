@@ -132,16 +132,42 @@ wind is solved with the wind **from the left and from the right**.
   \\( C(s) = A_1 + s\,(A_2 - A_1) \\): at angle \\( \varphi_L(s) \\) and
   radius \\( R_L(s) \\) blown to the left, \\( \varphi_0(s), R_0(s) \\) in
   still air, \\( \varphi_R(s), R_R(s) \\) blown to the right (angles about
-  \\( \mathbf u \\) from the downward vertical, positive to the right). The
-  arc at \\( s \\) is the circular arc of centre \\( C(s) \\), radius
-  \\( R(s) = \max(R_L, R_0, R_R) \\), from \\( \varphi_L \\) to \\( \varphi_R \\).
+  \\( \mathbf u \\) from the downward vertical, positive to the right).
+  Since 2026-10-21 (the owner's decision) the "arc" at \\( s \\) is a
+  **band**: the annular sector of centre \\( C(s) \\) from the smallest
+  radius \\( r(s) = \min(R_L, R_0, R_R) \\) to the largest
+  \\( R(s) = \max(R_L, R_0, R_R) \\), from \\( \varphi_L \\) to
+  \\( \varphi_R \\) — the arc of before (at \\( R \\) only) filled in
+  towards the axis down to \\( r \\).
 
-  **Conservative:** one radius, the largest of the three, along the whole
-  arc (a wind between none and the full one sags the wire between the two
-  radii: never further than the largest) — for points outside the arc
-  (vegetation below and beside the wire); a point between the axis and
-  the arc can be nearer a wire at an intermediate pressure (measured
-  2026-10-20: [Arc or steps](clearances.md#arc-or-steps-speed-and-quality)).
+  **Conservative:** every radius between the smallest and the largest of
+  the three, along the whole arc: a wind between none and the full one
+  sags the wire to a radius between them, wherever the target is —
+  below and beside the wire (vegetation, the ground) as well as between
+  the axis and the arc (above the swinging wire). Until 2026-10-21 the
+  arc took the largest radius only, conservative for targets outside it
+  but not for one between the axis and the arc: a wire at an intermediate
+  pressure passed up to 1.53 m nearer the axis (measured on the example
+  line). Exact: a solve at every pressure.
+
+  **Conservative:** the band is widened by a margin
+  \\( m = 0.15 \\) m on every side (`positions::BAND_MARGIN`; every
+  distance to it taken \\( m \\) smaller, as if the conductor were that
+  much thicker), because the band alone does not quite hold every
+  intermediate position. Measured 2026-10-21 (`tests/arc_band.rs`) on the
+  example line and the crossing line, both windy example cases (600 Pa;
+  200 Pa with rime ice), steps of 10 Pa from both sides (1738 stepped
+  positions): a step's centre line lies at most **0.089 m** outside the
+  band (S3's first span at 280 Pa, inside the inner radius: at
+  mid-pressures the strings swing and the sag changes so the radius dips
+  a little below the still-air one; and up to 0.041 m beyond the end
+  angle at a dead end, whose clamp moves with the wind), against
+  **1.533 m** from the arc alone at the largest radius (S1's second span
+  at 420 Pa). The margin is that worst excess plus an allowance of
+  0.061 m for other lines (about 70 %): no step lies outside the widened
+  band (tolerance 0). It also takes 0.15 m off the clearances on the
+  outer side, where the arc alone was already conservative (the price of
+  one margin for every side). Exact: a solve at every pressure.
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\) (the still-air position need not
@@ -152,15 +178,19 @@ wind is solved with the wind **from the left and from the right**.
   clamps move on their own arcs, so the true locus is close to this one
   but not on it. Exact: a solve at each intermediate wind pressure.
 
-  The distance from a point \\( q \\) to the arc of a span: project
+  The distance from a point \\( q \\) to the band of a span: project
   \\( q \\) on the axis, \\( s_q = (q - A_1)\cdot\mathbf u / |A_2 - A_1| \\)
   (clamped to [0, 1]); in the plane at \\( s_q \\), \\( q \\) is at radius
-  \\( \rho_q \\) and angle \\( \varphi_q \\). With \\( R, \varphi_L, \varphi_R \\)
-  interpolated at \\( s_q \\) from the stations either side:
-  \\[ d_{\text{arc}} = \begin{cases} |\rho_q - R| & \varphi_L \le \varphi_q \le \varphi_R \\ \min\big(|q - P_L|,\ |q - P_R|\big) & \text{otherwise} \end{cases} \\]
-  (\\( P_L, P_R \\): the arc's ends), and the clearance is
-  \\( d_{\text{arc}} - r \\), \\( r \\) the conductor's radius and the
-  polyline's bound as everywhere.
+  \\( \rho_q \\) and angle \\( \varphi_q \\). With
+  \\( r, R, \varphi_L, \varphi_R \\) interpolated at \\( s_q \\) from the
+  stations either side:
+  \\[ d_{\text{arc}} = \begin{cases} \max(r - \rho_q,\ 0,\ \rho_q - R) & \varphi_L \le \varphi_q \le \varphi_R \\ \min\big(d(q, E_L),\ d(q, E_R)\big) & \text{otherwise} \end{cases} \\]
+  — 0 inside the band, else to the nearer bounding surface —
+  (\\( E_L, E_R \\): the band's end edges, the radial segments from
+  \\( r \\) to \\( R \\) at \\( \varphi_L \\) and \\( \varphi_R \\)), and the
+  clearance is \\( d_{\text{arc}} - r_c - m \\), \\( r_c \\) the conductor's
+  radius and the polyline's bound as everywhere, \\( m \\) the band's
+  margin.
 
   As built: the stations are every point of the three solved wires
   (their places along the axis); between two stations each wire is one
@@ -169,9 +199,9 @@ wind is solved with the wind **from the left and from the right**.
   worked out from them — the same as interpolating \\( R \\) and the
   angles, without the error of interpolating a radius. A point beyond the
   span's ends (\\( s_q \\) clamped) has its distance along the axis
-  counted too: \\( \sqrt{(\rho_q - R)^2 + a^2} \\), \\( a \\) its distance
-  from the end's plane. The arc's ends \\( P_L, P_R \\) are on the arc, at
-  radius \\( R \\). **Conservative:** for a bundle, \\( r \\) on the arc is
+  counted too: \\( \sqrt{g^2 + a^2} \\), \\( g \\) the radial gap above and
+  \\( a \\) its distance from the end's plane. **Conservative:** for a
+  bundle, \\( r_c \\) on the band is
   the bundle radius plus the subconductor's radius and the polyline's
   bound (the bundle's outer envelope), where the polylines take each
   subconductor.
@@ -185,7 +215,7 @@ wind is solved with the wind **from the left and from the right**.
   (`WindSteps::pressures`). Each is a position of its own (`still`,
   `left (step)`, `right (step)`, with its pressure), checked like the
   blowouts: alongside the swing arc or instead of it. Where the arc is
-  a rigid swing at the largest radius between the two blowouts (a
+  a rigid swing over the band of radii between the two blowouts (a
   closed form, conservative), the steps are the solver's own positions
   at each pressure (strings and clamps where they really swing, the sag
   of each pressure), exact at the pressures solved but blind between two
@@ -194,7 +224,10 @@ wind is solved with the wind **from the left and from the right**.
   The same arc (the same code) is, since 2026-10-20, an option of the
   vertical and radial clearance checks, beside their wind steps; there
   its vertical distance is defined as well
-  ([Vertical and radial clearances](clearances.md#the-vertical-distance-to-the-arc)).
+  ([Vertical and radial clearances](clearances.md#the-vertical-distance-to-the-arc)),
+  and the safety volumes take it too
+  ([Safety volumes](safety-volumes.md)): the band (2026-10-21) changes
+  all three together.
 
   Check by hand (`wind_steps_of_the_example_line`): a wire hangs in the
   plane of its load, at \\( \tan\varphi = q_w / q_g \\) from the
@@ -253,10 +286,12 @@ tenth of a microsecond to a microsecond a point against 2–18 µs.
   right) instead of one per pressure and side, and one closed-form
   distance per point and span instead of one per position.
 - **What the arc gains:** every angle between the blowouts, continuously
-  (the steps are blind between two pressures); the largest radius of the
-  three (**Conservative** for targets outside the arc — trees below and
-  beside the wire; not for one between the axis and the arc, measured
-  0.47 m on the example line).
+  (the steps are blind between two pressures), and every radius between
+  the smallest and the largest of the three (**Conservative**, with its
+  margin, for targets on every side since 2026-10-21; until then the
+  largest radius only, not conservative for a target between the axis
+  and the arc: 0.47 m at 300 Pa, up to 1.53 m over the steps, measured
+  on the example line).
 - **What it simplifies:** the rigid swing about the attachment axis
   (**Simplification**, above): suspension clamps move along the line and
   the sag changes with the pressure. The steps are exact at the pressures
@@ -372,7 +407,8 @@ piece (exact); a piece over the root ball (rare) by the bound of a
 distance to \\( 10^{-6} \\) m, the bound taken. To a swing arc it is the
 smallest of \\( d_{\text{arc}} \\) over the circle's points, by the bound of
 a distance along the circle (Piyavskii–Shubert: it changes by at most
-\\( b_r \\) per radian), to 1 mm. **Conservative:** on an arc the bound,
+\\( b_r \\) per radian; the band's distance, 0 inside it, is a distance to
+a set and changes no faster than its point), to 1 mm. **Conservative:** on an arc the bound,
 at most 1 mm below the smallest distance, is taken. With \\( k = 0 \\) the
 circle is the base: the nearest wire point to the base, as before. Then
 the resting angle along the direction of that wire point, and the
