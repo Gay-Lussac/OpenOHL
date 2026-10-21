@@ -725,7 +725,13 @@ pub(crate) fn rule_preview(ui: &mut egui::Ui, rule: &ohl_clearance::Rule, voltag
     for (m, q) in [("vertical", &rule.vertical), ("radial", &rule.radial)] {
         if let Some(q) = q {
             ui.label(format!("{m}: {q}"));
-            ui.label(egui::RichText::new(crate::requirement_ui::preview_text(q, voltages)).small());
+            // Shown read-only until merged or replaced into the file.
+            crate::requirement_ui::requirement_view(
+                ui,
+                ("rule-preset-preview", &rule.name, m),
+                q,
+                voltages,
+            );
         }
     }
     ui.label(
