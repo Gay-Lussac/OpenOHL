@@ -2066,7 +2066,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         .map(|(c, _, _)| c.name.clone())
                         .collect::<Vec<_>>()
                         .join(", "),
-                    height_datum: String::new(),
+                    height_datum: line.height_datum_label(),
                 },
                 role: role.clone(),
                 corridor: *corridor_width,

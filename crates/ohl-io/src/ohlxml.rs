@@ -859,6 +859,7 @@ pub fn to_xml(line: &Line) -> String {
         version,
         name,
         crs,
+        height_datum,
         alignment,
         routes,
         alignments,
@@ -883,6 +884,12 @@ pub fn to_xml(line: &Line) -> String {
     let _ = write!(out, " version=\"{version}\"");
     attr(&mut out, "name", name);
     nonempty(&mut out, "crs", crs);
+    if let Some(h) = height_datum {
+        nonempty(&mut out, "height_datum", &h.name);
+        if let Some(c) = h.epsg {
+            attr(&mut out, "height_datum_epsg", &c.to_string());
+        }
+    }
     if display.ahead_deg != 0.0 {
         attr(&mut out, "ahead_deg", &num(display.ahead_deg));
     }
@@ -1787,7 +1794,15 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     }
     check(
         root,
-        &["format", "version", "name", "crs", "ahead_deg"],
+        &[
+            "format",
+            "version",
+            "name",
+            "crs",
+            "height_datum",
+            "height_datum_epsg",
+            "ahead_deg",
+        ],
         &[
             "alignment",
             "alignment_point",
@@ -1928,6 +1943,11 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         solver,
         name: text(root, "name")?.to_owned(),
         crs: owned(root, "crs").unwrap_or_default(),
+        height_datum: {
+            let name = owned(root, "height_datum").unwrap_or_default();
+            let epsg: Option<u32> = optional(root, "height_datum_epsg")?;
+            (!name.is_empty() || epsg.is_some()).then_some(ohl_line::HeightDatum { name, epsg })
+        },
         alignment: own,
         routes,
         alignments,

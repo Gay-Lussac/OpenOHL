@@ -41,6 +41,7 @@ pub fn empty_line(name: &str) -> Line {
         version: ohl_line::LINE_FILE_VERSION,
         name: name.to_owned(),
         crs: String::new(),
+        height_datum: None,
         alignment: Vec::new(),
         routes: Vec::new(),
         alignments: Vec::new(),

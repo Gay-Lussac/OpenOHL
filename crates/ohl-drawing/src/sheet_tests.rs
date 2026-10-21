@@ -213,6 +213,19 @@ fn empty_fields_leave_no_gap() {
     );
     let s = svg(head, "EPSG:2056+5728");
     assert!(s.contains("H EPSG:5728|C EPSG:2056+5728|"));
+    // The project's height datum first (2026-10-21), over the coordinate
+    // system's vertical part.
+    let o = Options {
+        info: SheetInfo {
+            crs: "EPSG:2056+5728".into(),
+            height_datum: "LN02 (EPSG:5728)".into(),
+            ..SheetInfo::default()
+        },
+        ..Options::default()
+    }
+    .with_template(template(head));
+    let s = sheets(&main_route(&o), &o, &page_format("A3").unwrap())[0].svg();
+    assert!(s.contains("H LN02 (EPSG:5728)|C EPSG:2056+5728|"));
     let own = format!(
         "{head}[if_empty]\nheight_datum = \"sea level (not given)\"\n\"*\" = \"n/a\"\ntitle3 = \
          \"no title\"\n"

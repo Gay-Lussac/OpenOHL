@@ -61,7 +61,8 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 6 adds a string's optional limits, not
+/// Latest line file version: 7 adds the optional `height_datum`
+/// ([`HeightDatum`]); 6 adds a string's optional limits, not
 /// checked by OpenOHL (`max_load`, `max_swing_deg`,
 /// `max_swing_across_deg`, `max_swing_along_deg`: [`StringLimits`]); 5 writes a jumper's tap end as its `from` /
 /// `to` ([`JumperEnd`]), its supports as points holding a held clamp
@@ -69,7 +70,7 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 6;
+pub const LINE_FILE_VERSION: u32 = 7;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
@@ -98,6 +99,11 @@ pub struct Line {
     /// Coordinate reference system, e.g. `"EPSG:2056"` (informative).
     #[serde(default)]
     pub crs: String,
+    /// The heights' vertical datum, e.g. `LN02` with EPSG:5728 (version
+    /// 7; none: not given — the sheets then take the vertical part of
+    /// `crs`, else their template's text for an empty field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height_datum: Option<HeightDatum>,
     /// Files of version 2 and before: the line's own alignment, used when
     /// it had no routes ([`Line::upgrade_routes`] makes it the route and
     /// alignment `main`).
@@ -167,6 +173,65 @@ pub struct Line {
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
     pub condition_cases: condition::ConditionCases,
+}
+
+/// The vertical datum the heights of a project are in: a name (`LN02`,
+/// `LHN95`…) and the EPSG code of its vertical coordinate system when it
+/// has one (`5728`), either or both. Informative: nothing is converted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeightDatum {
+    /// Its name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The EPSG code of its vertical coordinate system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epsg: Option<u32>,
+}
+
+impl HeightDatum {
+    /// From a name and an EPSG code as typed (`5728`, `EPSG:5728`; empty:
+    /// none): none when both are empty.
+    pub fn parse(name: &str, epsg: &str) -> Result<Option<Self>, String> {
+        let name = name.trim().to_owned();
+        let code = epsg.trim();
+        let code = code
+            .strip_prefix("EPSG:")
+            .or_else(|| code.strip_prefix("epsg:"))
+            .unwrap_or(code)
+            .trim();
+        let epsg = if code.is_empty() {
+            None
+        } else {
+            match code.parse::<u32>() {
+                Ok(c) if c > 0 => Some(c),
+                _ => {
+                    return Err(format!(
+                        "height datum: \"{}\" is not an EPSG code (a number, e.g. 5728)",
+                        epsg.trim()
+                    ));
+                }
+            }
+        };
+        Ok((!name.is_empty() || epsg.is_some()).then_some(Self { name, epsg }))
+    }
+
+    /// Neither a name nor a code.
+    pub fn is_empty(&self) -> bool {
+        self.name.trim().is_empty() && self.epsg.is_none()
+    }
+
+    /// In words, as the sheets write it: `LN02 (EPSG:5728)`, `LHN95`,
+    /// `EPSG:5728`.
+    pub fn label(&self) -> String {
+        let name = self.name.trim();
+        match (name.is_empty(), self.epsg) {
+            (false, Some(c)) => format!("{name} (EPSG:{c})"),
+            (false, None) => name.to_owned(),
+            (true, Some(c)) => format!("EPSG:{c}"),
+            (true, None) => String::new(),
+        }
+    }
 }
 
 /// What the line sends to the placed structures, the cases of their
@@ -2981,6 +3046,15 @@ impl Line {
         Ok(())
     }
 
+    /// The heights' vertical datum in words ([`HeightDatum::label`]);
+    /// empty when none is given.
+    pub fn height_datum_label(&self) -> String {
+        self.height_datum
+            .as_ref()
+            .map(HeightDatum::label)
+            .unwrap_or_default()
+    }
+
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
         let invalid = |m: String| Err(LineError::Invalid(m));
@@ -2993,6 +3067,13 @@ impl Line {
             "line file",
         )
         .map_err(LineError::Invalid)?;
+        if self
+            .height_datum
+            .as_ref()
+            .is_some_and(HeightDatum::is_empty)
+        {
+            return invalid("height_datum: give its name, its EPSG code or both".into());
+        }
         if !(0.0..360.0).contains(&self.display.ahead_deg) {
             return invalid(format!(
                 "display: the angle ahead {} must be from 0 to 360°",

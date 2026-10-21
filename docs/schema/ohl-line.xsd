@@ -3,7 +3,7 @@
   OHL XML: the line model of OpenOHL (the content of a line file, .ohl.json)
   as XML. See ohl-line.md in this folder. The namespace keeps its 1 (the
   schema's own identity); a document's `version` attribute is the line file
-  version (now 6; older documents are read and converted). Documents of
+  version (now 7; older documents are read and converted). Documents of
   before 2026-10-18 (namespace urn:ols-cad:ols-line:1, format "ols-line",
   OLS XML) are read too.
 
@@ -774,10 +774,15 @@
         </xs:element>
       </xs:sequence>
       <xs:attribute name="format" type="xs:string" fixed="ohl-line"/>
-      <!-- The line file version (now 6), not the namespace's 1. -->
+      <!-- The line file version (now 7), not the namespace's 1. -->
       <xs:attribute name="version" type="xs:unsignedInt" default="1"/>
       <xs:attribute name="name" type="xs:string" use="required"/>
       <xs:attribute name="crs" type="xs:string"/>
+      <!-- Version 7: the heights' vertical datum (the line file's
+           height_datum), its name and the EPSG code of its vertical
+           system; either or both, absent when none. -->
+      <xs:attribute name="height_datum" type="xs:string"/>
+      <xs:attribute name="height_datum_epsg" type="xs:positiveInteger"/>
       <xs:attribute name="ahead_deg" type="xs:double" default="0">
         <xs:annotation>
           <xs:documentation>Angles in plan around a structure turn clockwise seen from above; this one means ahead along the line (0: ahead 0°, right 90°; 270: right 0°, ahead 270°).</xs:documentation>
