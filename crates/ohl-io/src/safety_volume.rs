@@ -8,9 +8,13 @@
 //! - **DXF** (R12, ASCII): every triangle a `3DFACE` (its fourth corner
 //!   the third), a layer per volume, in the line's coordinates; a `.prj`
 //!   beside it with the coordinate system as WKT (EPSG systems);
-//! - **IFC4** (STEP): each volume an `IfcBuildingElementProxy` (object
-//!   type `SafetyVolume`) shaped by an `IfcTriangulatedFaceSet`,
-//!   translucent, with property set `OHL_SafetyVolume`; coordinates
+//! - **IFC4** (STEP): each volume a spatial element, an `IfcSpatialZone`
+//!   (predefined type `USERDEFINED`, object type `SafetyVolume`; since
+//!   2026-10-21) referenced in the site by an
+//!   `IfcRelReferencedInSpatialStructure` (the spatial zone's own relation
+//!   to the spatial structure: non-hierarchical, overlapping), shaped by
+//!   an `IfcTriangulatedFaceSet`, translucent, with property set
+//!   `OHL_SafetyVolume`; coordinates
 //!   relative to a whole-metre origin given by `IfcMapConversion`
 //!   (eastings, northings, orthogonal height) to an `IfcProjectedCRS`
 //!   named by its EPSG code;
@@ -335,16 +339,20 @@ pub fn ifc(all: &SafetyVolumes, d: &Description) -> Result<String, String> {
         let axes = f.add("IFCAXIS2PLACEMENT3D", &format!("{zero},$,$"));
         let place = f.add("IFCLOCALPLACEMENT", &format!("{site_place},{axes}"));
         let g = f.guid();
+        // IfcSpatialZone (IFC4): GlobalId, OwnerHistory, Name,
+        // Description, ObjectType, ObjectPlacement, Representation,
+        // LongName, PredefinedType.
         let e = f.add(
-            "IFCBUILDINGELEMENTPROXY",
+            "IFCSPATIALZONE",
             &format!(
-                "{g},$,{},{},'SafetyVolume',{place},{shape},$,.USERDEFINED.",
+                "{g},$,{},{},'SafetyVolume',{place},{shape},{},.USERDEFINED.",
                 string(&v.name),
                 string(&format!(
                     "Safety volume: {} m from the conductors ({})",
                     v.distance + v.margin,
                     d.wind
-                ))
+                )),
+                string(&format!("Safety volume {}", v.name))
             ),
         );
         let text = |t: &str| format!("IFCLABEL({})", string(t));
@@ -358,8 +366,8 @@ pub fn ifc(all: &SafetyVolumes, d: &Description) -> Result<String, String> {
     if !elements.is_empty() {
         let g = f.guid();
         f.add(
-            "IFCRELCONTAINEDINSPATIALSTRUCTURE",
-            &format!("{g},$,$,$,({}),{site}", elements.join(",")),
+            "IFCRELREFERENCEDINSPATIALSTRUCTURE",
+            &format!("{g},$,'Safety volumes',$,({}),{site}", elements.join(",")),
         );
     }
     let (date, time) = crate::landxml::utc_now();
@@ -678,7 +686,8 @@ mod tests {
             ("IFCPROJECTEDCRS", 7),
             ("IFCTRIANGULATEDFACESET", 5),
             ("IFCCARTESIANPOINTLIST3D", 1),
-            ("IFCBUILDINGELEMENTPROXY", 9),
+            ("IFCSPATIALZONE", 9),
+            ("IFCRELREFERENCEDINSPATIALSTRUCTURE", 6),
             ("IFCSURFACESTYLESHADING", 2),
             ("IFCSTYLEDITEM", 3),
             ("IFCSURFACESTYLE", 3),
@@ -707,6 +716,31 @@ mod tests {
                 assert!((p[k] - q[k]).abs() <= 6e-5, "{p:?} {q:?}");
             }
         }
+        // A spatial element: a spatial zone, user-defined as a safety
+        // volume, referenced in the site; no building element proxy.
+        let zone = top(&find("IFCSPATIALZONE"));
+        assert_eq!(zone[4], "'SafetyVolume'");
+        assert_eq!(zone[8], ".USERDEFINED.");
+        assert!(!text.contains("IFCBUILDINGELEMENTPROXY"));
+        let zone_id = entities
+            .iter()
+            .find(|(_, (n, _))| n == "IFCSPATIALZONE")
+            .map(|(k, _)| *k)
+            .unwrap();
+        let site_id = entities
+            .iter()
+            .find(|(_, (n, _))| n == "IFCSITE")
+            .map(|(k, _)| *k)
+            .unwrap();
+        let rel = top(&find("IFCRELREFERENCEDINSPATIALSTRUCTURE"));
+        assert_eq!(rel[4], format!("(#{zone_id})"));
+        assert_eq!(rel[5], format!("#{site_id}"));
+        // The site is aggregated in the project; the zone placed relative
+        // to the site.
+        assert!(top(&find("IFCRELAGGREGATES"))[5] == format!("(#{site_id})"));
+        // Its property set is attached to it.
+        let defines = top(&find("IFCRELDEFINESBYPROPERTIES"));
+        assert_eq!(defines[4], format!("(#{zone_id})"));
         assert!(text.contains("'OHL_SafetyVolume'"));
         for prop in [
             "'Distance_m'",
