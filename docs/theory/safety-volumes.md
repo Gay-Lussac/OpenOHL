@@ -8,8 +8,9 @@ mesh and its simplification), `ohl_io::safety_volume` (the files).*
 
 ## The envelope
 
-For each wire (a circuit's phase through all its sections) or each
-circuit, the safety volume is the set of points within a distance of the
+For each wire (a circuit's phase through all its sections), each
+circuit or each electrical system (its circuits together, 2026-10-21),
+the safety volume is the set of points within a distance of the
 wire in any of its positions:
 
 \\[ E = \bigcup_{\text{positions } k} \{ x : \operatorname{dist}(x, W_k) \le D_k \}, \qquad D_k = d(U) + m + r_{\text{outer}} \\]
@@ -66,6 +67,20 @@ a point on the axis is undefined — a few cells are grown by up to about
 
 Structures and jumpers are not part of the volume (an option may add them
 later).
+
+The wires taken are those of the electrical systems, circuits or spans
+ticked (2026-10-21); a wire's system is that of its section. By span,
+only the positions of the spans ticked are taken (so the volume ends
+within the distance of their ends), and a jumper's only when the spans
+at both its ends are ticked. Grouping
+changes only which positions one mesh holds: each wire keeps the
+distance \( d(U) \) of its own system's voltage, so a volume per circuit
+or per system is the union of its wires' volumes (meshed as one).
+Earthed wires have no system: per system they make a volume per
+circuit, and a choice by system leaves them out (tick their circuits to
+include them); they keep the distance at 0 kV and are never given the
+distance of a system they do not belong to. A choice made while the
+owner has not ruled on it (an open question).
 
 ## The mesh
 

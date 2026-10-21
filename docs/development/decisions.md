@@ -43,6 +43,58 @@ approved as finished: everything is built and in active development
   farther from the conductors break there (an open question: whether
   the corridor should widen with the distance chosen). Display only;
   nothing stored changes.
+- **Safety volumes chosen by circuit or by system** (owner): the window
+  chooses its wires from the circuit list or from the system list (a
+  toggle "Circuits | Systems", a tick list with All / None) and makes one
+  volume per wire, per circuit or per **system** (`Grouping::System`,
+  `per = "system"`; every circuit of one electrical system together).
+  The distance by voltage still uses each wire's own system voltage. The
+  engine takes the systems chosen (`SafetyParams::systems`, by id; the
+  CLI's `--system` takes an id or a name and `--per system`); a wire's
+  system is that of its section, a jumper's that of its `from` section.
+  **A choice of the agent, open to the owner:** earthed wires have no system;
+  per system they make one volume per circuit, and a choice by system
+  leaves them out (tick their circuits instead). The saved run records
+  the choice (`scope`, `circuits`, `systems`, `per`; runs saved before
+  read as circuits). One engine change outside the app, named in the
+  owner's request: `Grouping::System` and the systems filter.
+- **Safety volumes: scope by Systems | Circuits | Spans** (owner,
+  addition of the same day): a choice of the scope, then a tick list of
+  the line's systems (name, voltage), circuits (name, system, voltage) or
+  spans (section, span number, the two structures, length in plan), with
+  a search field filtering as you type (name or id, substring, case
+  alike) and All / None / Invert acting on the rows shown only, a count
+  "n of m ticked", in a scroll box of fixed height. One shared widget
+  (`ohl-app` `tick_list`). A span picked brings every wire on it (within
+  a circuit or system filter); a jumper comes along when the spans at
+  both its ends (its `from` and `to` attachments) are picked — the
+  engine's positions hold no jumpers yet, so this takes effect once they
+  do. Engine: `SafetyParams::spans` (section, index from 0), CLI `--span
+  SECTION:N` (N from 1), saved `scope = "spans"`, `spans`.
+- **The distance rules are visibly editable** (owner): everywhere the
+  distance editor appears (the rule editor, the clearance windows' rule
+  tables and Add a rule, the vegetation panel, the safety-volume
+  distance) it shows a form selector "One distance | Table by voltage |
+  Base + per kV", every value as a framed field with its unit in place
+  (no value in a menu any more), table rows with × (remove), + Add row, Sort
+  by voltage and a hint on the order under a "voltage up to / distance"
+  header, and a live line ("At 220 kV: 7.00 m; at 380 kV: 9.00 m", or the
+  formula written out). Read-only places (a preset's rules before Apply)
+  show the same editor greyed, marked "(preview — Apply to edit)". One
+  shared component (`ohl-app` `requirement_ui`). **Switching forms**:
+  a form left and come back to unchanged is restored; otherwise one
+  distance and a base take the largest distance at the line's voltages
+  (conservative; before: the first row's), a table from a formula gets
+  one row per voltage of the line. The values written to files are
+  unchanged. With the editors in place the Vertical / Radial clearances
+  windows scroll (they could grow taller than the screen), and the
+  safety-volume window has Run and its results at the top, as they do.
+- **The safety-volume window explained like the clearance windows**
+  (owner): five groups with the shared headings and user-guide links
+  (wire positions, distance, what is included, mesh, export), a line and
+  a hover text per value, drawings of the distance around a conductor,
+  the wind positions and arc, the grouping and a mesh where two tubes
+  meet. The wind choice is the shared one (two ticks).
 - **Lines on the ground beside the line: a set of weather cases** (owner):
   the lines are the plan envelope over every weather case chosen in the
   menu, **both wind sides** where a case has wind (whatever side Display

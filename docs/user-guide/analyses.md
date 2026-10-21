@@ -407,31 +407,75 @@ See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees-2026-10-
 *Built, in active development (not approved yet).* The space within a
 distance of the wires in every position of the weather cases chosen —
 for planning work near the line (cranes, scaffolds, trees felled): one
-closed volume per wire (a circuit's phase through all its sections) or
-per circuit, shown in the 3D view and the plan, saved with the line and
+closed volume per wire (a circuit's phase through all its sections), per
+circuit or per electrical system, shown in the 3D view and the plan, saved with the line and
 exported as georeferenced files. Structures and jumpers are not part of
 it.
 
-**In the desktop app:** Checks › **Safety volumes…**
+**In the desktop app:** Checks › **Safety volumes…** The window reads
+as the [vegetation panel](#the-vegetation-panel) and the clearance
+windows do: the settings in five groups, each with a heading and a link
+**user guide ↗** to its section below, a line under each value saying
+what it does (a longer text on hover), and small drawings that follow
+the values typed (the distance around a conductor, the wind positions
+and the swing arc, the volumes grouped, a mesh where two tubes meet).
+
+#### Safety volumes: wire positions
 
 - **Weather cases**: tick any number. Each is solved by the line's
   solver: still air as it is, a windy case blown to the left and to the
   right at its full pressure.
-- **Wind**: *blowouts at full wind* (the cases as solved), *wind stepped*
-  (also still air and every pressure up to the case's by the step, from
-  the sides chosen), *swing arc* (also every position between the two
-  blowouts: the span swinging about its attachment axis, closed form) or
-  *wind stepped and swing arc* — the positions of the danger-tree check.
-- **Distance from the conductors' surface**: one distance, or by the
-  voltage of each wire's system (a table "up to kV: distance" or a base
-  plus an amount per kV, as in the clearance rules; earthed wires count as
-  0 kV). **No safety distance is built in**: enter the one of the rules you
-  work to, or choose a design-code plugin's preset and one of its rules,
-  then **Fill the distance** (its radial distance, else its vertical one).
-- **Margin**: added to the distance. **Tolerance** (default 0.05 m): how
-  far the volume may lie outside the exact one where it is smooth; it is
-  never inside it. Smaller: more triangles, longer.
-- **One per wire / one per circuit**, and the circuits (a tick menu).
+- **Wind**: the two ticks shared with the danger-tree check — **swing
+  arc** (also every position between the two blowouts: the span swinging
+  about its attachment axis, closed form) and **wind stepped** by **step
+  Pa** (also still air and every pressure up to the case's, from the
+  sides chosen); both, either or none (none: the blowouts at full wind).
+  The window says how many solves a windy case needs, and suggests the
+  arc when the steps need many. The drawing shows the positions seen
+  along a span.
+
+#### Safety volumes: distance
+
+- **Distance from the conductors' surface**: the shared distance editor
+  ([Distances by voltage](desktop-app.md#distances-by-voltage)) — **One
+  distance**, a **Table by voltage** or **Base + per kV**, each value an
+  input field with its unit, the distance at the line's voltages on the
+  line under it. Each wire takes the distance of its own system's nominal
+  voltage (earthed wires: 0 kV). **No safety distance is built in**:
+  enter the one of the rules you work to, or choose a design-code
+  plugin's preset and one of its rules — shown greyed, *(preview — Apply
+  to edit)* — then **Fill the distance** (its radial distance, else its
+  vertical one).
+- **Margin**: added to the distance (e.g. the survey's accuracy, tools).
+
+#### Safety volumes: what is included
+
+- **Scope by** (2026-10-21): **Systems | Circuits | Spans**, then a list
+  of the line's objects of that kind, each with a tick — systems: name
+  and voltage; circuits: name, system and voltage; spans: section, span
+  number (from 1), the two structures and the length in plan. Above the
+  list a **search** field filters the rows as you type (by name or id, a
+  part of it, upper and lower case alike); **All**, **None** and
+  **Invert** act on the rows shown only, and "n of m ticked" counts the
+  ticks. The list scrolls in a box of fixed height (hundreds of spans
+  stay quick). All with nothing searched: every one, also those added
+  later; none ticked: Run says to tick one. A span ticked brings every
+  wire on it; a jumper comes along when the spans at both its ends are
+  ticked (continuity; once jumpers are part of the volumes, see below).
+- **One volume per**: **wire** (a circuit's phase through all its
+  sections), **circuit** (its phases together) or **system** (every
+  circuit of one electrical system together; earthed wires, which have no
+  system, per circuit). The distance by voltage still uses each wire's
+  own system voltage.
+- Structures and jumpers are not part of the volumes.
+
+#### Safety volumes: mesh
+
+- **Tolerance** (default 0.05 m): how far the volume may lie outside the
+  exact one where it is smooth; it is never inside it. Smaller: more
+  triangles, longer. The results give each volume's **outside by at
+  most**: measured; where two tubes meet the triangles bridge the groove
+  between them, so it can be larger than the tolerance.
 
 **Run** computes it in the background. The table lists each volume: its
 colour (its circuit's wire colour), voltage, distance, triangles, volume
@@ -442,11 +486,14 @@ the tolerance). The volumes are drawn translucent in the 3D view (layer
 open. When the line or its weather cases change the window says *out of
 date* (the layers dimmed) with **Run again**.
 
-**Save in Performed checks** keeps the run (its settings and the volumes'
-meshes) with the project line; Checks › Performed checks opens it again.
+**Save in Performed checks** keeps the run (its settings — with the
+scope, the ticks and the grouping — and the volumes' meshes) with the project line; Checks › Performed checks opens it again.
 
-**Export to a folder…** writes the formats ticked, in the line's
-coordinate system (Properties of the line, *CRS*):
+#### Safety volumes: export
+
+**Export to a folder…** (after a run) writes the formats ticked, in the
+line's coordinate system (Properties of the line, *CRS*; the window shows
+it, and says when none is set):
 
 | file | contents |
 |------|----------|
@@ -467,7 +514,10 @@ ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case 
 
 `--wind none|steps|arc|both`, `--wind-step` (Pa), `--wind-sides
 both|left|right`, `--distance` (required; the rule file's forms),
-`--margin`, `--tolerance`, `--per wire|circuit`, `--circuit` (repeatable),
+`--margin`, `--tolerance`, `--per wire|circuit|system`, `--circuit`
+(repeatable), `--system` (repeatable: a system's id or name), `--span
+SECTION:N` (repeatable, N from 1: every wire on the spans; given
+together, a wire must match each filter),
 `--crs` (when the line file has none), `--format` (dxf, ifc, kml, kmz),
 `--name` (file name stem, default `safety-volume`), `--time-limit`.
 
