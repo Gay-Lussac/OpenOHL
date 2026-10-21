@@ -33,6 +33,7 @@ cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
 | `jumpers` | no | Jumpers between wire points (below). |
 | `spacers` | no | Interphase spacers between span points of two sections of one span: `{ "id", "description", "a", "b", "insulator", "length", "weight", "wind_area", "stiffness", "compression" }` — `a`, `b`: `{ "section", "point" }` (a span point holding a clamp); `length` empty: the still-air distance at stringing; both sections solved by finite elements. Made in the app with the Add string tool ([Editing](desktop-app.md#editing)). |
 | `systems` | no | Electrical systems: phases or poles with their voltage ([below](#electrical-systems)). |
+| `circuits` | no | Version 7: the circuits, `{ "id", "name", "system", "description" }` ([below](#circuits)). Files without them: one circuit per name on the sections. |
 | `circuit_starts` | no | The ends of conductor paths that are starts: `[{ "structure", "set" }, …]` ([below](#electrical-systems)). A conductor path none of whose ends is listed runs along the line. |
 | `display` | no | Display settings: `{ "phase_colors": { "L1": "#8b4513", … }, "ahead_deg": 270 }` — wire colours (`#rrggbb`) by section `phase_label`; `ahead_deg`, the angle that means ahead along the line for angles in plan around a structure, which turn clockwise seen from above (default 0: right 90°; 270: right 0°, ahead 270°). |
 | `creep_stretch` | no | The weather cases for the permanent stretch due to creep and due to load ([below](#calculations-condition-and-method)). |
@@ -137,7 +138,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 | `id` | yes | Unique id. |
 | `description` | no | What it is, in words (free text). |
 | `cable` | yes | Wire type id from the wire libraries. |
-| `circuit_name`, `phase_label` | no | Labels: the name of its circuit (the same on all its sections; files before version 5: `circuit`) and its phase. |
+| `circuit_name`, `phase_label` | no | The name of the [circuit](#circuits) its conductor path is in (the same on all its sections; empty: none; files before version 5: `circuit`) and its phase label. |
 | `system` | no | Electrical system (id in `systems`) whose phase `phase_label` the section carries. Give it once per conductor path: sections joined by jumpers (or sharing a wire point) follow. None on the whole path: earthed (earth wire, OPGW). Independent of the wire type. |
 | `bundle` | no (1) | Subconductors per phase. Tension, sag and loads are per subconductor; the solve follows the bundle's centre line with each subconductor's share of the string weights (string forces are reported for the whole bundle). |
 | `bundle_spacing` | no | Distance between neighbouring subconductors, m (e.g. `0.4` for 400 mm). They sit evenly on a circle around the centre line, across the wire — radius `s / (2·sin(π/n))` — so clearances are measured to the nearest subconductor. Without it a bundle is checked as one wire. |
@@ -283,6 +284,32 @@ The electrical model is kept apart from the physical wires: a **system** is a gr
 **Conductor paths.** Sections joined by jumpers, or sharing a wire point, form one conductor path. Setting `system` on one section of the path assigns the whole path to that system's phase `phase_label`; two sections of a path naming different phases is an error that names them. A path without a system is earthed.
 
 **Directions of the conductor paths.** The line has as many conductor paths as its connections make. Each end of a conductor path is a **start** (power flows in) or an **end** (power flows out), with at least one of each; a conductor path with taps, or fed from several sides, can have several of either. The starts are those listed in `circuit_starts`. A conductor path none of whose ends is listed runs along the line: its end that comes first along the line (its routes) is its start, the others are its ends. Reversing a conductor path swaps every role. A system's conductor paths should run the same way — from the same start structures, to the same end structures (a branch adding an end is the same way); the desktop app warns when they do not, after a change in the tables, without refusing it. The roles order its sections and jumpers from its starts outwards, and the desktop app turns its jumpers to point along it (`from` nearer a start). Nothing physical depends on them: the wind's side is the line's (see [Conventions](../theory/conventions.md)).
+
+### Circuits
+
+A **circuit** groups the conductor paths that form one circuit — e.g. the three phases of *North* — for what is done per circuit: safety volumes per circuit, circuit-to-circuit clearance rules, the phase distance check's circuits, `--circuits` / `--circuit`. Version 7 lists them:
+
+```json
+"circuits": [
+  { "id": "C1", "name": "North", "system": "sys-220", "description": "left side" },
+  { "id": "C2", "name": "Spare" }
+]
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `id` | yes | Unique; `--circuits` takes it or the name. |
+| `name` | yes | Unique, without spaces around it; what its sections give as `circuit_name`. |
+| `system` | no | The electrical system its conductor paths are of (not said: they may be of several, or earthed). |
+| `description` | no | Free text. |
+
+Its **members** are the conductor paths whose sections give its name: they follow when a section is split, joined or renamed. A circuit with none is allowed (noted). Circuits **follow the physical connections** (owner decision, 2026-10-21):
+
+- a conductor path is in one circuit (its sections are connected: one conductor);
+- a circuit holds one conductor path per phase of a system: two paths of one phase that are not connected are two conductors, so two circuits;
+- circuits are never merged: two become one only when they are connected (a jumper, a wire strung through), which makes their paths one; the desktop app's jumper window then asks which circuit's name stays (the other keeps its paths that are not connected, or is left with none).
+
+A change contradicting this is refused (a path in two circuits, two paths of one phase not connected, a path of another system than the circuit's, a repeated name). A file written with such a contradiction is read as it is, and it is noted in the Circuits table. Files without `circuits` (before version 7) are read into one circuit per distinct name on their sections, its id the name, no system: everything grouped by circuit gives the same results; the file written again lists them.
 
 **Voltages.** With `n` phases evenly spread, a phase is at `U / (2·sin(π/n))` to earth (`U/√3` for three phases, `U/2` for two). Between two conductors: the phasor difference for AC of the same frequency (`U` between two phases of a system, 0 between the same phase of two parallel systems), the difference of pole voltages for DC, and the sum of the voltages to earth otherwise (different frequencies, AC with DC). Clearance rules can use the nominal voltage or this voltage between conductors ([clearances by voltage](terrain.md#clearances-by-voltage)).
 

@@ -278,6 +278,58 @@ def systems():
     return f
 
 
+# 4b. System, circuit, conductor path, phase ----------------------------------------------
+def circuits():
+    f = Fig("circuits", 760, 420, "System, circuit, conductor path and phase",
+            "Plan, schematic. In system A, circuit North holds two conductor paths: its phase L1, "
+            "two sections joined by a jumper at a tension structure (one path), and its phase "
+            "L2, one section. A branch of phase L1 that is not connected to North's L1 is a "
+            "second circuit; a jumper joining them would make one path, and one circuit.")
+    f.text(20, 26, "System, circuit, conductor path, phase (plan, schematic)", "t")
+    f.add('<rect class="band" x="40" y="50" width="560" height="300" rx="8"/>')
+    f.text(52, 340, "system A, 220 kV — phases L1 L2 L3", "lab")
+    xs = [90, 330, 560]
+    for x in xs:
+        f.add(f'<rect class="box" x="{x-8}" y="92" width="16" height="96"/>')
+    # North L1: two sections joined by a jumper at the middle structure.
+    f.add(f'<path class="wire" d="M{xs[0]},110 L{xs[1]-14},110"/>')
+    f.add(f'<path class="wire" d="M{xs[1]+14},110 L{xs[2]},110"/>')
+    f.add(f'<path class="wire" stroke-dasharray="5 3" '
+          f'd="M{xs[1]-14},110 Q{xs[1]},132 {xs[1]+14},110"/>')
+    for x in (xs[0], xs[1] - 14, xs[1] + 14, xs[2]):
+        wp(f, x, 110, 4)
+    # North L2: one section.
+    f.add(f'<path class="wire2" d="M{xs[0]},170 L{xs[2]},170"/>')
+    for x in (xs[0], xs[2]):
+        f.add(f'<circle cx="{x}" cy="170" r="4" style="fill:var(--wire2)"/>')
+    f.text(xs[0] - 14, 114, "L1", "e")
+    f.text(xs[0] - 14, 174, "L2", "e")
+    f.text(210, 102, "section", "c lab")
+    f.text(450, 102, "section", "c lab")
+    f.label(xs[1], 124, 380, 145, "jumper", "")
+    # The branch: L1 too, not connected.
+    for x in (200, 470):
+        f.add(f'<rect class="box" x="{x-8}" y="262" width="16" height="40"/>')
+    f.add('<path class="wire3" d="M200,282 L470,282"/>')
+    for x in (200, 470):
+        f.add(f'<circle cx="{x}" cy="282" r="4" style="fill:var(--wire3)"/>')
+    f.text(186, 286, "L1", "e")
+    # Brackets naming the circuits.
+    f.add('<path class="thin" d="M615,100 L625,100 L625,180 L615,180"/>')
+    f.text(635, 136, "circuit North", "")
+    f.text(635, 152, "2 conductor paths", "lab")
+    f.add('<path class="thin" d="M615,272 L625,272 L625,292 L615,292"/>')
+    f.text(635, 280, "circuit Branch", "")
+    f.text(635, 296, "1 conductor path", "lab")
+    f.label(140, 110, 250, 74, "one conductor path (L1): section, jumper, section", "", end=False)
+    f.label(330, 282, 230, 316, "the same phase L1, not connected: another circuit", "", end=False)
+    f.text(20, 380, "A conductor path is in one circuit; a circuit has one path per phase. "
+           "Circuits are not merged:", "lab")
+    f.text(20, 396, "a jumper joining the two L1 paths would make them one path, "
+           "and one circuit (its name chosen then).", "lab")
+    return f
+
+
 # 5. Route, alignments, alignment points (plan) ------------------------------------------
 def route_plan():
     f = Fig("route-plan", 760, 360, "Route, alignment and alignment points, in plan",
@@ -542,7 +594,7 @@ def rigid_link():
     return f
 
 
-FIGURES = [structure_parts, string_combinations, section, systems, route_plan, clearances,
+FIGURES = [structure_parts, string_combinations, section, systems, circuits, route_plan, clearances,
            cases, extensions, span_objects, rigid_link]
 
 

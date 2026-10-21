@@ -86,7 +86,15 @@ From the review of 2026-10-18 (quick wins are being done now):
   OHL-Structure's Joints table, the offset moments in its results, a
   drag changing the offset or relinking on a joint, Replace structure's
   Attachment points list: built, in active development (not approved
-  yet).*
+  yet). **Circuits** as objects of the line (2026-10-21): id, name,
+  optional system, description, their conductor paths as members, in a
+  Circuits table (Sections menu) and from Properties (*Assign to
+  circuit…* on a wire); they follow the physical connections — a
+  conductor path in one circuit, one path per phase, no merge (two
+  circuits become one only when connected, the jumper's window asking
+  which name stays); files before read into one circuit per name, results
+  unchanged; `--circuits` / `--circuit` by id or name: built, in active
+  development (not approved yet).*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;
@@ -301,6 +309,7 @@ structure body) and O7 (the line and its structures solved together).
 - [ ] Weather cases › Merge duplicates… (proposed 2026-10-21): find the project's cases of the same physics (`WeatherCase::same_physics`) and merge them, every reference renamed in one undoable command — rule files (`cases`, `case_pairs`), load cases (`weather`), the line's creep-stretch condition cases, saved performed checks and the drawings' case choices *(not built: those references live in several stores — library files, the line, the performed checks — that no single command changes yet)*
 - [x] Library editors (wires, insulators, structure types, weather cases): fields with units, known fields to add, checked as typed, comments kept; files browsed or created anywhere (system file dialog) and used for the model; the model reads its libraries again on save
 - [x] Menu bar (File, Edit with Snap, View pages and layers, Lines, Tools, Checks on demand, Terrain, Structures and Sections with their libraries and tables, Criteria, Parameters, Plugins, Help) and a customizable quick bar; pages closable and reopened from View
+- [x] Circuits table (2026-10-21, built, in active development (not approved yet)): circuits as objects of the line (`circuits`, line file version 7, the same unreleased raise; OHL XML `<circuit>`; a project's settings row `circuits`) — id, name, optional system, description, members (conductor paths, by their first section), phases, sections, notes; added, renamed (the sections follow), given a system, deleted (paths in none after, confirmed), paths taken out and put in, one command per Apply; *Assign to circuit…* in Properties for a wire's whole conductor path. Following the connections: a conductor path in two circuits, two paths of one phase not connected, a path of another system, a repeated name — refused (files written so are read, noted); no merge. Files before: one circuit per name on the sections (id the name), the same results
 - [x] Table editing: structures, sections, strings, jumpers, electrical systems, alignment points, weather cases (written to the case file) — every value typed in, rows added and deleted (dependents confirmed), renames followed by what refers to them, section targets (tension or sag in its display case), per-section display weather case; one command per Apply, sorting, filter *(paste from spreadsheets still open)*
 - [x] Alignment points drawn in 3D and plan, selected, edited, deleted and added (tool and table); the profile follows
 - [x] LiDAR points (2026-10-20, built, in active development): every point drawn can be clicked and snapped to, and no other — the 3D view's nodes or chunks drawn in the last frame, the profile's dots, none in the plan (a click looked at the sample loaded at opening before); the Edit tool's **LiDAR point** window changes a point's coordinates and class (classes of the project's scheme by name), read-only for viewers; the `change_points` session command changes the stored cloud point by point (blocks, levels, bounds, counts), logged, undone bit for bit, through the server; clearances checked again, the ground from LiDAR built again; **box and lasso selection** (Alt + drag, Alt + Shift + drag in the 3D view and the profile) of the points drawn, their class changed together as one command (class filter, at most 10⁶ points a command, packed in the log; 10⁶ points selected, changed and undone in seconds)
