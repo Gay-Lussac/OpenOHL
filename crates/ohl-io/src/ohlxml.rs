@@ -1013,11 +1013,18 @@ pub fn to_xml(line: &Line) -> String {
         out.push_str("/>\n");
     }
     if !solver.is_default() {
-        let ohl_line::SolverOptions { jumper_loads, taps } = solver;
+        let ohl_line::SolverOptions {
+            jumper_loads,
+            taps,
+            loads_per,
+        } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
         if !taps.is_default() {
             attr(&mut out, "taps", taps.as_str());
+        }
+        if !loads_per.is_default() {
+            attr(&mut out, "loads_per", loads_per.as_str());
         }
         out.push_str("/>\n");
     }
@@ -1954,7 +1961,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let solver = match root.child("solver") {
         None => ohl_line::SolverOptions::default(),
         Some(s) => {
-            check(s, &["jumper_loads", "taps"], &[])?;
+            check(s, &["jumper_loads", "taps", "loads_per"], &[])?;
             let jumper_loads = match owned(s, "jumper_loads") {
                 None => ohl_line::JumperLoads::default(),
                 Some(t) => ohl_line::JumperLoads::parse(&t)
@@ -1965,7 +1972,16 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 Some(t) => ohl_line::TapLoads::parse(&t)
                     .ok_or_else(|| format!("solver taps \"{t}\": loop or once"))?,
             };
-            ohl_line::SolverOptions { jumper_loads, taps }
+            let loads_per = match owned(s, "loads_per") {
+                None => ohl_line::LoadsPer::default(),
+                Some(t) => ohl_line::LoadsPer::parse(&t)
+                    .ok_or_else(|| format!("solver loads_per \"{t}\": stretched or unstretched"))?,
+            };
+            ohl_line::SolverOptions {
+                jumper_loads,
+                taps,
+                loads_per,
+            }
         }
     };
     let bimetallic = match root.child("bimetallic") {

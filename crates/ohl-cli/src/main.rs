@@ -261,6 +261,13 @@ struct LineArgs {
     /// Or: ice load, N/m (instead of a thickness).
     #[arg(long)]
     ice_load: Option<f64>,
+    /// Per what metre of the wire the finite elements carry the ice and
+    /// wind: `stretched` (the real wire, exact; the default) or
+    /// `unstretched` (the former treatment, as other programs appear to do
+    /// it: about T/EA, 0.1 %, less ice and wind — a simplification on the
+    /// unsafe side). Default: the line file's (`solver.loads_per`).
+    #[arg(long, value_parser = parse_loads_per)]
+    loads_per: Option<ohl_line::LoadsPer>,
     /// Ice density, kg/m³ (default 913, glaze ice): with a thickness, the
     /// ice weight; with a load, the iced diameter for the wind.
     #[arg(long)]
@@ -1428,6 +1435,12 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
     }
 }
 
+/// `--loads-per`: `stretched` or `unstretched`.
+fn parse_loads_per(text: &str) -> Result<ohl_line::LoadsPer, String> {
+    ohl_line::LoadsPer::parse(text)
+        .ok_or_else(|| format!("\"{text}\": write stretched or unstretched"))
+}
+
 fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
     // A project's own libraries (unless given), and its own weather case,
     // load case and rule files by name; the working copies are removed
@@ -1471,6 +1484,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         wind_from,
         ice_thickness,
         ice_load,
+        loads_per,
         ice_density,
         weather,
         case,
@@ -1532,6 +1546,12 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
 
     let run = || -> Result<(), String> {
         let (mut line, types) = project::load_resolved(file, structure_dir, insulator_dir)?;
+        // The ice and wind per stretched or unstretched metre (2026-10-21):
+        // the command line's choice over the file's, said in the header.
+        if let Some(per) = loads_per {
+            line.solver.loads_per = *per;
+        }
+        println!("calculation: {}", line.solver.loads_per.describe());
         let library = ohl_cables::Library::load(library).map_err(|e| e.to_string())?;
         // Formats first: a wrong format or plugin fails before solving.
         let export_options = io_run::options(export_options)?;

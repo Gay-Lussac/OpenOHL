@@ -14282,6 +14282,54 @@ fn calculation_options_choose_the_jumpers_pull() {
     );
 }
 
+/// Criteria › Calculation options: the ice and wind per unstretched
+/// metre chosen (2026-10-21, as other programs) — warned about in the
+/// window, one command, undoable, kept in the line's settings, and every
+/// result made since is out of date naming the option.
+#[test]
+fn calculation_options_choose_the_ice_per_unstretched_metre() {
+    let model = synthetic_project("loads-per");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let before = harness.state_mut().ready().unwrap().model.revision();
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness.get_by_label("Calculation options…").click();
+    harness.run();
+    harness
+        .get_by_label("Per unstretched metre (as other programs)")
+        .click();
+    harness.run();
+    assert!(
+        harness
+            .query_all_by_label_contains("slightly less sag and swing (unsafe side)")
+            .next()
+            .is_some()
+    );
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(
+        r.model.line.solver.loads_per,
+        ohl_line::LoadsPer::Unstretched
+    );
+    let stored = r.model.stored_line().unwrap();
+    assert_eq!(stored.solver.loads_per, ohl_line::LoadsPer::Unstretched);
+    let said = before
+        .changed(&r.model.revision(), crate::revision::Uses::LINE)
+        .unwrap();
+    assert_eq!(
+        said,
+        "the calculation options (now ice and wind per unstretched metre (as other programs; a \
+         simplification, about T/EA ≈ 0.1 % less, unsafe side))"
+    );
+    r.perform(crate::edit::Action::Undo);
+    assert_eq!(r.model.line.solver.loads_per, ohl_line::LoadsPer::Stretched);
+    assert_eq!(r.model.revision(), before, "back as it was");
+}
+
 /// The span tool: a span right-clicked where its wire is clicked gives a
 /// window placing a span point there (by distance, as clicked); two span
 /// points, one on each conductor of a span, joined with Add string make a

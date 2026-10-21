@@ -200,6 +200,7 @@ fn each_result_uses_what_it_is_computed_from() {
         line: 1,
         points: 2,
         ground: 3,
+        loads_per: ohl_line::LoadsPer::Stretched,
     };
     let points = crate::revision::Revision { points: 9, ..from };
     let line = crate::revision::Revision { line: 9, ..from };

@@ -369,6 +369,10 @@ struct Reference {
     /// factor: a span weighs the same hot or cold (owner decision
     /// 2026-10-21).
     weight_scale: Vec<f64>,
+    /// Per what metre the elements carry the ice and wind (the line's
+    /// [`crate::SolverOptions::loads_per`]; set where a weather case is
+    /// solved, irrelevant in still air).
+    loads_per: crate::LoadsPer,
 }
 
 impl Reference {
@@ -405,18 +409,24 @@ fn span_load_scaled(
 /// an element's unstressed length the cable's own weight times `scale`;
 /// per metre of the stretched (real) wire the ice and wind (owner decision
 /// 2026-10-21: they act on the conductor as it is, longer by its elastic
-/// strain; [`ohl_wirefe::CableElement::stretched_load`]).
+/// strain; [`ohl_wirefe::CableElement::stretched_load`]). With `per`
+/// [`crate::LoadsPer::Unstretched`] (the solver option, owner decision
+/// 2026-10-21) the ice and wind too per unit of unstressed length, as
+/// before: none per stretched metre.
 fn span_loads_split(
     case: &WeatherCase,
     cable: &Cable,
     d: Vector3<f64>,
     scale: f64,
+    per: crate::LoadsPer,
 ) -> (Vector3<f64>, Vector3<f64>) {
     let w = cable.weight().si();
-    (
-        Vector3::new(0.0, 0.0, -w * scale),
-        span_load(case, cable, d) + Vector3::new(0.0, 0.0, w),
-    )
+    let own = Vector3::new(0.0, 0.0, -w * scale);
+    let ice_wind = span_load(case, cable, d) + Vector3::new(0.0, 0.0, w);
+    match per {
+        crate::LoadsPer::Stretched => (own, ice_wind),
+        crate::LoadsPer::Unstretched => (own + ice_wind, Vector3::zeros()),
+    }
 }
 
 /// A node of a holder: fixed (on the structure, or another section's
@@ -996,7 +1006,7 @@ fn build(
         // total weight unchanged.
         let scale = reference.weight_scale[s] / thermal;
         // Ice and wind per metre of the stretched wire.
-        let (load, stretched) = span_loads_split(case, cable, d, scale);
+        let (load, stretched) = span_loads_split(case, cable, d, scale, reference.loads_per);
         let shape_props = CableProperties {
             unstressed_length: reference.lengths[s],
             axial_stiffness: ea,
@@ -1322,6 +1332,7 @@ fn reference(
                 lengths: lengths.clone(),
                 temperature: *temperature,
                 weight_scale: vec![1.0; lengths.len()],
+                loads_per: crate::LoadsPer::default(),
             });
         }
         Stringing::Tension {
@@ -1362,6 +1373,7 @@ fn reference(
             weight_scale: vec![1.0; lengths.len()],
             lengths,
             temperature,
+            loads_per: crate::LoadsPer::default(),
         };
         let (built, solved) = solve_built(
             section,
@@ -1632,8 +1644,13 @@ fn shared_out(
             .enumerate()
             .map(|(s, d)| {
                 let at = |e: ohl_wirefe::ElementError| invalid(format!("span {s}: {e}"));
-                let (own, stretched) =
-                    span_loads_split(case, cable, *d, reference.weight_scale[s] / thermal);
+                let (own, stretched) = span_loads_split(
+                    case,
+                    cable,
+                    *d,
+                    reference.weight_scale[s] / thermal,
+                    reference.loads_per,
+                );
                 let k = stretches.borrow()[s];
                 let load = own + stretched * k;
                 let l = CableProperties::unstressed_length_for_tension(*d, h, ea, load, budget)
@@ -1724,6 +1741,7 @@ fn shared_out(
                     lengths: found,
                     temperature: reference.temperature,
                     weight_scale: reference.weight_scale.clone(),
+                    loads_per: reference.loads_per,
                 },
                 h,
             ));
@@ -2380,6 +2398,9 @@ fn solve_fe(
     let (layout, estimated_weights) =
         estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
     let mut reference = reference(section, &layout, cable, budget)?;
+    // The ice and wind per stretched or unstretched metre (the line's
+    // calculation options, 2026-10-21).
+    reference.loads_per = line.solver.loads_per;
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
@@ -5067,6 +5088,42 @@ mod tests {
             own + ice * lengths[0]
         );
         assert!(up > own + ice * lengths[0] * (1.0 + 0.5 * mean_strain));
+        // The solver option per unstretched metre (2026-10-21, as other
+        // programs): the supports carry the ice on the unstressed length
+        // exactly, own + ice L0 (hand check), and the span less tension
+        // and sag by about the mean strain's share of the ice.
+        let mut other = line.clone();
+        other.solver.loads_per = crate::LoadsPer::Unstretched;
+        let section = &other.sections[0];
+        let plain = solve_section(&other, section, cable, &iced, &default_fe_budget()).unwrap();
+        let up_plain: f64 = plain
+            .attachment_loads
+            .iter()
+            .flatten()
+            .map(|s| -s.force[2])
+            .sum();
+        let expected = own + ice * lengths[0];
+        assert!(
+            ((up_plain - expected) / expected).abs() < 1e-9,
+            "{up_plain} vs {expected}"
+        );
+        let less = plain.spans[0].horizontal_tension / shape.spans[0].horizontal_tension - 1.0;
+        assert!(less < -1e-4 && less > -1e-3, "{less}");
+        assert!(plain.spans[0].sag < shape.spans[0].sag);
+        // Still air: the same either way.
+        let still = WeatherCase::still("still", Temperature::from_celsius(t));
+        let a = solve_section(
+            &line,
+            &line.sections[0],
+            cable,
+            &still,
+            &default_fe_budget(),
+        );
+        let b = solve_section(&other, section, cable, &still, &default_fe_budget());
+        assert_eq!(
+            a.unwrap().spans[0].horizontal_tension,
+            b.unwrap().spans[0].horizontal_tension
+        );
     }
 
     /// The non-linear model: creep and a heavy load stretch the cable

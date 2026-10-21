@@ -11,7 +11,9 @@
 //! A [`Revision`] names the state of what results are computed from:
 //!
 //! - **the line**: a hash of the line as solved (structures with their
-//!   types, sections, wires, jumpers, settings), the wire library, the
+//!   types, sections, wires, jumpers, settings — the calculation option
+//!   of the ice and wind per stretched or unstretched metre apart, named
+//!   on its own when it changes), the wire library, the
 //!   weather cases (the wind side shown left out: a view setting) and the
 //!   project's library files (rules, galloping and phase distance files,
 //!   costs, structure and section libraries …);
@@ -50,6 +52,9 @@ pub struct Revision {
     pub points: u64,
     /// The ground surface.
     pub ground: u64,
+    /// Per what metre the ice and wind were carried (Criteria ›
+    /// Calculation options, 2026-10-21): part of the line, said on its own.
+    pub loads_per: ohl_line::LoadsPer,
 }
 
 /// What a result is computed from.
@@ -96,17 +101,23 @@ impl Revision {
     pub fn changed(&self, now: &Revision, uses: Uses) -> Option<String> {
         let mut what = Vec::new();
         if uses.line && self.line != now.line {
-            what.push("the line");
+            what.push("the line".to_owned());
+        }
+        if uses.line && self.loads_per != now.loads_per {
+            what.push(format!(
+                "the calculation options (now {})",
+                now.loads_per.describe()
+            ));
         }
         if uses.points && self.points != now.points {
-            what.push("the LiDAR points");
+            what.push("the LiDAR points".to_owned());
         }
         if uses.ground && self.ground != now.ground {
-            what.push("the ground");
+            what.push("the ground".to_owned());
         }
         match what.as_slice() {
             [] => None,
-            [one] => Some((*one).to_owned()),
+            [one] => Some(one.clone()),
             [first @ .., last] => Some(format!("{} and {last}", first.join(", "))),
         }
     }
@@ -114,6 +125,9 @@ impl Revision {
 
 /// The revision a result was computed from: taken when its run starts,
 /// kept with the result when it arrives.
+///
+/// Saved results record the calculation option of the ice and wind
+/// ([`Stamp::loads_per`]) with their parameters (`loads_per`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Stamp {
     pending: Option<Revision>,
@@ -152,11 +166,47 @@ impl Stamp {
         self.from
     }
 
+    /// Per what metre the ice and wind were carried in the run shown: its
+    /// revision's, else (a saved report read back) the line's now.
+    pub fn loads_per(&self, model: &Model) -> ohl_line::LoadsPer {
+        self.from
+            .map_or(model.line.solver.loads_per, |r| r.loads_per)
+    }
+
     /// What of `uses` changed since the result was computed (`None`:
     /// nothing, or no result).
     pub fn out_of_date(&self, model: &Model, uses: Uses) -> Option<String> {
         self.from?.changed(&model.revision(), uses)
     }
+}
+
+/// The revision a saved run shown is tracked from: the model's now, with
+/// the run's own calculation option of the ice and wind when it recorded
+/// one (`loads_per`, 2026-10-21) — so that it is saved again as it was
+/// computed.
+pub fn saved_revision(parameters: &serde_json::Value, model: &Model) -> Revision {
+    let mut now = model.revision();
+    if let Some(p) = parameters
+        .get("loads_per")
+        .and_then(serde_json::Value::as_str)
+        .and_then(ohl_line::LoadsPer::parse)
+    {
+        now.loads_per = p;
+    }
+    now
+}
+
+/// A saved run's calculation option of the ice and wind (its parameter
+/// `loads_per`, 2026-10-21) when it differs from the line's now, in words
+/// as [`Revision::changed`] says it; `None` when the same, or not
+/// recorded (runs saved before).
+pub fn saved_loads_per_changed(parameters: &serde_json::Value, model: &Model) -> Option<String> {
+    let saved = parameters
+        .get("loads_per")
+        .and_then(serde_json::Value::as_str)
+        .and_then(ohl_line::LoadsPer::parse)?;
+    let now = model.line.solver.loads_per;
+    (saved != now).then(|| format!("the calculation options (now {})", now.describe()))
 }
 
 /// The banner of a result out of date: what changed since it was computed,
@@ -349,6 +399,8 @@ impl Model {
                     .collect();
                 let mut l = self.line.clone();
                 l.set_weather_cases(&cases);
+                // Said on its own (Revision::loads_per).
+                l.solver.loads_per = ohl_line::LoadsPer::default();
                 let h = hash_debug(&(&l, &self.library, &cases));
                 r.line_cache.set(Some((self.line_version, h)));
                 h
@@ -374,6 +426,7 @@ impl Model {
             line: h.finish(),
             points: r.points,
             ground: r.ground,
+            loads_per: self.line.solver.loads_per,
         }
     }
 }
@@ -388,6 +441,7 @@ mod tests {
             line: 1,
             points: 2,
             ground: 3,
+            loads_per: ohl_line::LoadsPer::Stretched,
         };
         assert_eq!(a.changed(&a, Uses::ALL), None);
         let b = Revision { points: 5, ..a };
@@ -400,6 +454,7 @@ mod tests {
             line: 9,
             points: 5,
             ground: 7,
+            ..a
         };
         assert_eq!(
             a.changed(&c, Uses::ALL).as_deref(),
@@ -408,6 +463,27 @@ mod tests {
         assert_eq!(
             a.changed(&c, Uses::LINE_POINTS).as_deref(),
             Some("the line and the LiDAR points")
+        );
+        // The ice and wind per unstretched metre (2026-10-21): said on
+        // its own, with the option now.
+        let d = Revision {
+            loads_per: ohl_line::LoadsPer::Unstretched,
+            ..a
+        };
+        let said = a.changed(&d, Uses::LINE).unwrap();
+        assert!(
+            said.starts_with("the calculation options (now ice and wind per unstretched metre"),
+            "{said}"
+        );
+        assert_eq!(
+            a.changed(
+                &d,
+                Uses {
+                    line: false,
+                    ..Uses::ALL
+                }
+            ),
+            None
         );
         // A stamp: the revision at the start, kept with the result.
         let mut s = Stamp::default();

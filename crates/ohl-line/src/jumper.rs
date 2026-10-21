@@ -1359,9 +1359,14 @@ pub fn solve_jumper_in(
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     // As catenary elements (taut, or on a support string): the own weight
     // per unit unstressed length, the ice and wind per metre of the
-    // stretched jumper (the rod is inextensible: the same there).
+    // stretched jumper (the rod is inextensible: the same there) — or per
+    // unit unstressed length too, as the line's calculation options say
+    // (2026-10-21).
     let own = Vector3::new(0.0, 0.0, -cable.weight().si() / thermal);
-    let stretched = load - own;
+    let (own, stretched) = match line.solver.loads_per {
+        crate::LoadsPer::Stretched => (own, load - own),
+        crate::LoadsPer::Unstretched => (load, Vector3::zeros()),
+    };
     // A tap is a hinge: no direction held there.
     let hinged = |mut s: Stiff| {
         if jumper.from.as_tap().is_some() {
@@ -1499,6 +1504,11 @@ pub fn solve_jumper_in(
                 let state = props
                     .solve(d, None, &default_element_budget())
                     .map_err(|e| invalid(e.to_string()))?;
+                // Nothing per stretched metre: one solve.
+                if stretched == Vector3::zeros() {
+                    settled = Some(state);
+                    break;
+                }
                 let next = props.stretched_length(&state) / l0;
                 let change = (next - k).abs();
                 k = next;
@@ -2033,6 +2043,39 @@ mod tests {
         let pull = v(j.end_forces[0]).norm();
         assert!(pull > 1000.0, "{pull}");
         assert!(j.strength_use > 0.0 && j.strength_use.is_finite());
+    }
+
+    /// A taut jumper (solved as an elastic catenary) under ice carries
+    /// its ice per stretched metre by default, per unstretched metre with
+    /// the solver option (2026-10-21, as other programs): its clamps then
+    /// hold slightly less weight — by about its strain (0.1 % shorter
+    /// than its clamps' distance: a strain of 0.1 % or more) times the
+    /// ice's share of its load (hand check: under 0.5 %), never more.
+    #[test]
+    fn a_taut_jumper_carries_its_ice_per_the_option() {
+        let mut line = crate::tests::example();
+        let lib = library();
+        let (shapes, _) = solve_all(&line, &still(15.0));
+        let j = &line.jumpers[0];
+        let e =
+            |x: &crate::JumperEnd| super::end_position(&line, &shapes, x.point().unwrap()).unwrap();
+        let chord = (e(&j.to) - e(&j.from)).norm();
+        line.jumpers[0].sag = None;
+        line.jumpers[0].length = Some(chord * 0.999);
+        let mut iced = still(-5.0);
+        iced.ice_thickness = ohl_core::units::Length::from_millimeters(12.0);
+        let up = |line: &Line| {
+            let results = solve_line(line, &lib, &iced);
+            let shapes: Vec<SectionShape> = results.into_iter().map(Result::unwrap).collect();
+            let j = solve_jumpers(line, &lib, &iced, &shapes).remove(0).unwrap();
+            assert!(j.taut);
+            j.end_forces.iter().map(|f| -f[2]).sum::<f64>()
+        };
+        let exact = up(&line);
+        line.solver.loads_per = crate::LoadsPer::Unstretched;
+        let plain = up(&line);
+        let less = plain / exact - 1.0;
+        assert!(less < 0.0 && less > -5e-3, "{plain} vs {exact}: {less}");
     }
 
     /// The wind blows to the same side whichever way a section or a jumper
