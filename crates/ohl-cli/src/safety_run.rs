@@ -62,7 +62,8 @@ pub struct SafetyArgs {
     /// "(no system)").
     #[arg(long, default_value = "wire", value_parser = Grouping::parse)]
     pub per: Grouping,
-    /// Only these circuits (repeatable; default all).
+    /// Only these circuits, by id or name (repeatable; default all; an
+    /// unknown circuit is refused).
     #[arg(long)]
     pub circuit: Vec<String>,
     /// Only these electrical systems, by id or name (repeatable; default
@@ -106,7 +107,9 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
         margin: a.margin,
         tolerance: a.tolerance,
         grouping: a.per,
-        circuits: a.circuit.clone(),
+        circuits: line
+            .circuit_names_for(&a.circuit)
+            .map_err(|e| format!("--circuit: {e}"))?,
         systems: a.system.clone(),
         spans: a.span.clone(),
         ..SafetyParams::default()

@@ -47,6 +47,7 @@ The names are those of the line file:
   <system id="…" name="…" kind="ac" voltage_kv="220" frequency_hz="50" color="#e4572e">
     <phase label="L1" angle_deg="0" polarity="1" code=".-"/>  <!-- code: line code by system -->
   </system>
+  <circuit id="…" name="North" system="…" description="…"/>  <!-- version 7: a circuit; its sections give its name -->
   <section id="S1" cable="…" circuit_name="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
     <point structure="T1" set="1"/> …

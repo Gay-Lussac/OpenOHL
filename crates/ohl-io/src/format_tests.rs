@@ -286,6 +286,15 @@ fn rich_line() -> Line {
     });
     // A circuit's chosen start, a rigid jumper and a jumper's EI factor.
     line.circuit_starts = vec![line.sections[0].points[0].clone()];
+    // Circuits: one with a system and a description, one with none.
+    line.circuits.push(ohl_line::circuits::Circuit {
+        id: "c<1>".into(),
+        name: "North & co".into(),
+        system: line.systems.first().map(|s| s.id.clone()),
+        description: "invented \"one\"".into(),
+    });
+    line.circuits
+        .push(ohl_line::circuits::Circuit::new("c2", "empty"));
     // Weather cases sent to the placed structures.
     line.structure_loads = ohl_line::StructureLoads {
         load_cases: Some(vec!["wind 90°".into()]),

@@ -95,8 +95,9 @@ pub struct ZonesArgs {
     /// rule file's `search_distance`).
     #[arg(long)]
     pub search_distance: Option<f64>,
-    /// Check only these circuits, by name (repeatable; `""`: sections
-    /// without one; overrides the rule file's `circuits`).
+    /// Check only these circuits, by id or name (repeatable; `""`:
+    /// sections in none; overrides the rule file's `circuits`; an unknown
+    /// circuit is refused).
     #[arg(long)]
     pub circuits: Vec<String>,
     /// Solve every section by this method: fe (finite elements) or rs
@@ -411,7 +412,10 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         check.search_distance = Some(d);
     }
     if !args.circuits.is_empty() {
-        check.circuits = args.circuits.clone();
+        // By id or name: the circuits' names (an unknown one refused).
+        check.circuits = line
+            .circuit_names_for(&args.circuits)
+            .map_err(|e| format!("--circuits: {e}"))?;
     }
     if let Some(m) = &args.method {
         check.method =

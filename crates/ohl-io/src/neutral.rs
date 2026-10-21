@@ -54,6 +54,7 @@ pub fn empty_line(name: &str) -> Line {
         creep_stretch: Default::default(),
         bimetallic: Default::default(),
         circuit_starts: Vec::new(),
+        circuits: Vec::new(),
         structure_loads: Default::default(),
         condition_cases: Default::default(),
         solver: Default::default(),

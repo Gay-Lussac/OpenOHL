@@ -28,6 +28,7 @@
 
 pub mod assembly;
 pub mod bundles;
+pub mod circuits;
 pub mod condition;
 pub mod electrical;
 pub mod export;
@@ -65,9 +66,10 @@ use legacy::{SpanLoad, SpreadLoad};
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// Latest line file version: 7 adds the optional `height_datum`
-/// ([`HeightDatum`]) and an attachment point's link to its joint (`joint`,
+/// ([`HeightDatum`]), an attachment point's link to its joint (`joint`,
 /// `offset`, `unlinked`: [`StructurePoint`]; 2026-10-21, the same unreleased
-/// raise); 6 adds a string's optional limits, not
+/// raise) and the circuits as objects (`circuits`: [`circuits::Circuit`];
+/// 2026-10-21, the same raise); 6 adds a string's optional limits, not
 /// checked by OpenOHL (`max_load`, `max_swing_deg`,
 /// `max_swing_across_deg`, `max_swing_along_deg`: [`StringLimits`]); 5 writes a jumper's tap end as its `from` /
 /// `to` ([`JumperEnd`]), its supports as points holding a held clamp
@@ -140,6 +142,12 @@ pub struct Line {
     /// refer to them ([`electrical`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub systems: Vec<electrical::System>,
+    /// Circuits: named groups of conductor paths, defined by the user
+    /// (version 7, 2026-10-21); a section's `circuit_name` says which it is
+    /// in ([`circuits`]). Files before: one circuit per name found on the
+    /// sections ([`Line::adopt_circuits`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub circuits: Vec<circuits::Circuit>,
     /// Display settings (phase colours).
     #[serde(default, skip_serializing_if = "Display::is_default")]
     pub display: Display,
@@ -2183,9 +2191,9 @@ pub struct Section {
     pub id: String,
     /// Cable id in the wire libraries (`.ohlw`).
     pub cable: String,
-    /// The name of the circuit it is part of (all its sections give the
-    /// same; the circuits themselves are traced, [`electrical::circuits`]).
-    /// Files before version 5: `circuit`.
+    /// The name of the circuit ([`circuits::Circuit`], one of the line's
+    /// `circuits`) its conductor path is in (all its sections give the
+    /// same; empty: none). Files before version 5: `circuit`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub circuit_name: String,
     /// Phase label.
@@ -2829,10 +2837,12 @@ impl Line {
     /// What files written before need and the format does not say:
     /// stale circuit starts dropped ([`Line::drop_stale_circuit_starts`]),
     /// spacers' bare end points given a clamp
-    /// ([`Line::clamp_spacer_ends`]).
+    /// ([`Line::clamp_spacer_ends`]), the circuit names on sections given
+    /// circuits ([`Line::adopt_circuits`]).
     pub fn read_older(&mut self) {
         self.drop_stale_circuit_starts();
         self.clamp_spacer_ends();
+        self.adopt_circuits();
     }
 
     /// Gives a spacer's bare end point a clamp object, of no weight (files
@@ -3384,6 +3394,7 @@ impl Line {
             }
         }
         self.defaults.validate().map_err(LineError::Invalid)?;
+        self.validate_circuits().map_err(LineError::Invalid)?;
         // Circuit starts: section points, each once.
         let mut starts = std::collections::BTreeSet::new();
         for p in &self.circuit_starts {

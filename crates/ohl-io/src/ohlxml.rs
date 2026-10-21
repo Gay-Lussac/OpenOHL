@@ -880,6 +880,7 @@ pub fn to_xml(line: &Line) -> String {
         sections,
         jumpers,
         systems,
+        circuits,
         display,
         creep_stretch,
         bimetallic,
@@ -943,6 +944,20 @@ pub fn to_xml(line: &Line) -> String {
     }
     for s in systems {
         write_system(&mut out, s);
+    }
+    for c in circuits {
+        let ohl_line::circuits::Circuit {
+            id,
+            name,
+            system,
+            description,
+        } = c;
+        out.push_str("  <circuit");
+        attr(&mut out, "id", id);
+        attr(&mut out, "name", name);
+        opt_text(&mut out, "system", system.as_deref());
+        nonempty(&mut out, "description", description);
+        out.push_str("/>\n");
     }
     for s in sections {
         write_section(&mut out, s);
@@ -1773,6 +1788,16 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
     Ok(j)
 }
 
+fn read_circuit(e: &Element) -> Result<ohl_line::circuits::Circuit, String> {
+    check(e, &["id", "name", "system", "description"], &[])?;
+    Ok(ohl_line::circuits::Circuit {
+        id: text(e, "id")?.to_owned(),
+        name: text(e, "name")?.to_owned(),
+        system: owned(e, "system"),
+        description: owned(e, "description").unwrap_or_default(),
+    })
+}
+
 fn read_system(e: &Element) -> Result<System, String> {
     check(
         e,
@@ -1847,6 +1872,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "route",
             "structure",
             "system",
+            "circuit",
             "section",
             "jumper",
             "spacer",
@@ -2016,6 +2042,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         systems: root
             .children_named("system")
             .map(read_system)
+            .collect::<Result<_, _>>()?,
+        circuits: root
+            .children_named("circuit")
+            .map(read_circuit)
             .collect::<Result<_, _>>()?,
         display,
         creep_stretch,
