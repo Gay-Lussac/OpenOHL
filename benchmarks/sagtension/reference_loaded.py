@@ -10,6 +10,9 @@ closed-form segments used in Rust:
     s' = sqrt(1 + p^2),  I' = H (1 + p^2)   (I = integral of T ds)
 integrated with RK4 (fixed step), shooting on the start slope with the
 secant method; change of state with a secant on log(H). Fixed iteration caps.
+The cable's own weight w_base is conserved (owner decision 2026-10-21): per
+metre of the span's length it is w_base / k, k = exp(alpha dt)(1 + Tmean/EA)
+(a fixed point); markers and partial ice as given.
 
 Run: python3 benchmarks/sagtension/reference_loaded.py  (standard library only)
 """
@@ -65,14 +68,22 @@ def shape(S, h, H, w_base, points, dist):
             "tension_left": H * math.sqrt(1 + b * b), "tension_right": H * math.sqrt(1 + p_end * p_end)}
 
 
-def unstrained(S, h, H, w_base, points, dist):
-    r = shape(S, h, H, w_base, points, dist)
-    return r["length"] / (1 + r["integral"] / r["length"] / EA)
+def unstrained(S, h, H, w_base, points, dist, thermal=1.0):
+    """Unstressed length at the reference temperature, the own weight w_base
+    spread over the span's length."""
+    k = 1.0
+    for _ in range(100):
+        r = shape(S, h, H, w_base / k, points, dist)
+        k_new = thermal * (1 + r["integral"] / r["length"] / EA)
+        if abs(k_new - k) <= 1e-15 * k:
+            break
+        k = k_new
+    return r["length"] / k_new
 
 
 def change_of_state(S, h, L0, t0, w_base, points, dist, t):
-    target = L0 * math.exp(ALPHA * (t - t0))
-    f = lambda lh: unstrained(S, h, math.exp(lh), w_base, points, dist) - target
+    thermal = math.exp(ALPHA * (t - t0))
+    f = lambda lh: unstrained(S, h, math.exp(lh), w_base, points, dist, thermal) - L0
     a, b = math.log(15_000.0), math.log(40_000.0)
     fa, fb = f(a), f(b)
     for _ in range(40):

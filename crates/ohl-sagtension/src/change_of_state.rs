@@ -30,6 +30,17 @@
 //! the cable gets longer), so there is exactly one solution. It is found by
 //! bracketed bisection with exit clauses.
 //!
+//! **The cable's own weight is conserved.** Its weight per metre
+//! ([`LoadState::weight`]) is per metre of *unstressed* cable at the
+//! reference temperature, so a span weighs \\( w L_0 \\) in every state.
+//! The catenary carries its load per metre of stretched cable, so the own
+//! weight is spread over the span's length: \\( w L_0 / L = w / k \\) per
+//! metre, with the stretch \\( k = e^{\alpha (t - t_0)} (1 + \bar T/EA) \\);
+//! ice and wind stay per metre of the real (stretched) conductor. As
+//! \\( \bar T \\) depends on the load, \\( k \\) is a fixed point found for
+//! each trial tension (it changes the load by ~10⁻³ and the
+//! mean tension by ~10⁻⁵ of that, so two or three passes settle it).
+//!
 //! Non-linear stress-strain behaviour and creep are separate models (next
 //! steps); this module is the linear-elastic baseline.
 
@@ -48,12 +59,127 @@ pub struct ElasticCable {
 }
 
 /// Load and temperature of a cable state.
+///
+/// `load` is the resultant per metre of conductor; `weight` is the part of
+/// it that is the cable's own weight (vertical), `wind` its horizontal
+/// part; the rest of the vertical load is ice (or another load per metre of
+/// conductor). The own weight is per metre of unstressed cable at the
+/// reference temperature (that of the known state): the solvers keep the
+/// span's total weight, spreading it over the stretched length
+/// ([`LoadState::load_at`]). Ice and wind act per metre of the real
+/// conductor and are not scaled.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LoadState {
     /// Resultant load per unit length (weight, plus ice and wind when present).
     pub load: ForcePerLength,
+    /// The cable's own weight per unit length, part of `load` (vertical):
+    /// per metre of unstressed cable at the reference temperature. Zero:
+    /// none of the load is scaled.
+    pub weight: ForcePerLength,
+    /// The horizontal (wind) part of `load`.
+    pub wind: ForcePerLength,
     /// Cable temperature.
     pub temperature: Temperature,
+}
+
+impl LoadState {
+    /// The bare cable: its own weight per metre.
+    pub fn bare(weight: ForcePerLength, temperature: Temperature) -> Self {
+        Self {
+            load: weight,
+            weight,
+            wind: ForcePerLength::ZERO,
+            temperature,
+        }
+    }
+
+    /// The cable's own weight, an extra vertical load per metre of
+    /// conductor (ice) and a wind load per metre across it.
+    pub fn loaded(
+        weight: ForcePerLength,
+        ice: ForcePerLength,
+        wind: ForcePerLength,
+        temperature: Temperature,
+    ) -> Self {
+        let vertical = weight.si() + ice.si();
+        Self {
+            load: ForcePerLength::from_si(vertical.hypot(wind.si())),
+            weight,
+            wind,
+            temperature,
+        }
+    }
+
+    /// The resultant load per metre of a cable stretched by `stretch` (its
+    /// length over the unstressed length at the reference temperature that
+    /// carries [`weight`](Self::weight) per metre): the own weight spread
+    /// over the longer cable, \\( w / k \\); ice and wind as given.
+    pub fn load_at(&self, stretch: f64) -> ForcePerLength {
+        let (w, h) = (self.weight.si(), self.wind.si());
+        if w == 0.0 {
+            return self.load;
+        }
+        let vertical = if h == 0.0 {
+            self.load.si()
+        } else {
+            (self.load.si() - h).sqrt() * (self.load.si() + h).sqrt()
+        };
+        // The ice: the rest of the vertical load (none below rounding).
+        let ice = (vertical - w).max(0.0);
+        ForcePerLength::from_si((ice + w / stretch).hypot(h))
+    }
+
+    /// Checks that `weight` and `wind` are parts of `load` (to 10⁻⁶ of it).
+    pub(crate) fn check(&self) -> Result<(), SagTensionError> {
+        let (q, w, h) = (self.load.si(), self.weight.si(), self.wind.si());
+        let ok = [q, w, h].iter().all(|x| x.is_finite() && *x >= 0.0)
+            && h <= q
+            // Inputs rounded to some digits: within 10⁻⁶ of the load.
+            && w <= (q - h).sqrt() * (q + h).sqrt() + 1e-6 * q;
+        if ok {
+            Ok(())
+        } else {
+            Err(SagTensionError::InvalidInput(format!(
+                "load {q} N/m must include the own weight {w} N/m and the wind {h} N/m"
+            )))
+        }
+    }
+}
+
+/// Passes of the fixed point on a span's stretch ([`span_at`]); it settles
+/// in two or three.
+const STRETCH_PASSES: usize = 50;
+
+/// The catenary of span `geometry` at horizontal tension `h` in `state`,
+/// the cable's own weight spread over its stretched length: per metre
+/// \\( w / k \\), where `stretch` gives \\( k \\) (the span's length over
+/// the length carrying \\( w \\) per metre) from the solution. A fixed
+/// point on \\( k \\) (exit clause: [`STRETCH_PASSES`] passes). Returns the
+/// solution and its \\( k \\).
+pub(crate) fn span_at(
+    h: f64,
+    state: &LoadState,
+    geometry: SpanGeometry,
+    stretch: impl Fn(&SpanSolution) -> Result<f64, SagTensionError>,
+) -> Result<(SpanSolution, f64), SagTensionError> {
+    let mut k = 1.0;
+    for _ in 0..STRETCH_PASSES {
+        let solution = Catenary::new(Force::from_si(h), state.load_at(k))?.solve(geometry)?;
+        let next = stretch(&solution)?;
+        if !(next.is_finite() && next > 0.0) {
+            return Err(SagTensionError::InvalidInput(format!(
+                "stretch {next} of the cable is not positive"
+            )));
+        }
+        if state.weight.si() == 0.0 || (next - k).abs() <= 4.0 * f64::EPSILON * next {
+            return Ok((solution, next));
+        }
+        k = next;
+    }
+    Err(SagTensionError::InvalidInput(format!(
+        "the stretch of the cable (its own weight spread over it) did not settle in \
+         {STRETCH_PASSES} passes at H = {h:.3} N"
+    )))
 }
 
 /// A cable installed in a span, defined by its unstressed length.
@@ -71,7 +197,9 @@ pub struct InstalledSpan {
 
 impl InstalledSpan {
     /// Installs a cable from one known state, e.g. "28 kN horizontal tension
-    /// at 15 °C, bare conductor".
+    /// at 15 °C, bare conductor". The state's temperature becomes the
+    /// reference temperature, and its own weight per metre is per metre of
+    /// the unstressed cable there.
     pub fn from_known_state(
         geometry: SpanGeometry,
         cable: ElasticCable,
@@ -79,37 +207,43 @@ impl InstalledSpan {
         horizontal_tension: Force,
     ) -> Result<Self, SagTensionError> {
         check_cable(cable)?;
-        let solution = Catenary::new(horizontal_tension, state.load)?.solve(geometry)?;
-        let length = solution.length().si();
-        let mean_strain = solution.tension_integral() / length / cable.axial_stiffness.si();
+        state.check()?;
+        let (solution, stretch) = span_at(horizontal_tension.si(), &state, geometry, |s| {
+            Ok(1.0 + mean_strain(s, cable))
+        })?;
         Ok(Self {
             geometry,
             cable,
-            unstressed_length: Length::from_si(length / (1.0 + mean_strain)),
+            unstressed_length: Length::from_si(solution.length().si() / stretch),
             reference_temperature: state.temperature,
+        })
+    }
+
+    /// The span at trial tension `h` in `state`, and its stretch over the
+    /// unstressed length at the reference temperature.
+    fn at(&self, state: &LoadState, h: f64) -> Result<(SpanSolution, f64), SagTensionError> {
+        let thermal = (self.cable.thermal_expansion
+            * (state.temperature - self.reference_temperature).kelvin())
+        .exp();
+        span_at(h, state, self.geometry, |s| {
+            Ok(thermal * (1.0 + mean_strain(s, self.cable)))
         })
     }
 
     /// Length mismatch (catenary length − cable length) for a trial tension.
     /// Positive: tension too low. `None` if the trial catenary is invalid
     /// (e.g. too slack to compute), which means "tension too low".
-    fn mismatch(&self, state: LoadState, h: f64) -> Option<f64> {
-        let solution = Catenary::new(Force::from_si(h), state.load)
-            .and_then(|c| c.solve(self.geometry))
-            .ok()?;
-        let length = solution.length().si();
-        let thermal = (self.cable.thermal_expansion
-            * (state.temperature - self.reference_temperature).kelvin())
-        .exp();
-        let elastic = solution.tension_integral() / length / self.cable.axial_stiffness.si();
-        Some(length - self.unstressed_length.si() * thermal * (1.0 + elastic))
+    fn mismatch(&self, state: &LoadState, h: f64) -> Option<f64> {
+        let (solution, stretch) = self.at(state, h).ok()?;
+        Some(solution.length().si() - self.unstressed_length.si() * stretch)
     }
 
     /// Solves the span at another load and temperature.
     ///
-    /// Expected cost: ~60 bisection steps of a closed-form catenary (a few
-    /// microseconds). Stops with [`SagTensionError::NotConverged`] when the
-    /// budget runs out, reporting the tension bracket reached.
+    /// Expected cost: ~60 bisection steps of a closed-form catenary, each
+    /// two or three times for the stretch (a few tens of microseconds).
+    /// Stops with [`SagTensionError::NotConverged`] when the budget runs
+    /// out, reporting the tension bracket reached.
     pub fn solve(
         &self,
         state: LoadState,
@@ -121,7 +255,8 @@ impl InstalledSpan {
                 state.load
             )));
         }
-        let too_low = |h: f64| self.mismatch(state, h).is_none_or(|m| m > 0.0);
+        state.check()?;
+        let too_low = |h: f64| self.mismatch(&state, h).is_none_or(|m| m > 0.0);
         let mut run = budget.start();
         let not_converged = |stop: Stop, lo: f64, hi: f64| SagTensionError::NotConverged {
             problem: "change of state",
@@ -153,8 +288,13 @@ impl InstalledSpan {
                 hi = mid;
             }
         }
-        Catenary::new(Force::from_si(0.5 * (lo + hi)), state.load)?.solve(self.geometry)
+        Ok(self.at(&state, 0.5 * (lo + hi))?.0)
     }
+}
+
+/// Mean elastic strain \\( \bar T / EA \\) of a solved span.
+pub(crate) fn mean_strain(solution: &SpanSolution, cable: ElasticCable) -> f64 {
+    solution.tension_integral() / solution.length().si() / cable.axial_stiffness.si()
 }
 
 fn check_cable(cable: ElasticCable) -> Result<(), SagTensionError> {
@@ -191,11 +331,22 @@ mod tests {
         }
     }
 
+    /// Drake's own weight, N/m.
+    const W: f64 = 15.97;
+
+    /// Drake bare (`load` = its weight) or with ice (the rest).
     fn state(load: f64, celsius: f64) -> LoadState {
-        LoadState {
-            load: ForcePerLength::from_newtons_per_meter(load),
-            temperature: Temperature::from_celsius(celsius),
-        }
+        state_with(W, load, celsius)
+    }
+
+    /// A cable of own weight `weight` under `load` (the rest ice).
+    fn state_with(weight: f64, load: f64, celsius: f64) -> LoadState {
+        LoadState::loaded(
+            ForcePerLength::from_newtons_per_meter(weight),
+            ForcePerLength::from_newtons_per_meter(load - weight),
+            ForcePerLength::ZERO,
+            Temperature::from_celsius(celsius),
+        )
     }
 
     fn installed(rise: f64) -> InstalledSpan {
@@ -267,19 +418,74 @@ mod tests {
 
     #[test]
     fn states_are_path_independent() {
-        // Installing from any solved state gives the same unstressed length.
+        // Installing from any solved state gives the same unstressed length
+        // (and the same cable: its weight per metre of unstressed cable at
+        // the new reference temperature, 75 °C, is less by exp(alpha dt)).
         let span = installed(25.0);
         let budget = default_solver_budget();
         let hot = span.solve(state(15.97, 75.0), &budget).unwrap();
+        let w75 = W * (-drake().thermal_expansion * 60.0).exp();
         let again = InstalledSpan::from_known_state(
             span.geometry,
             drake(),
-            state(15.97, 75.0),
+            state_with(w75, w75, 75.0),
             hot.catenary.horizontal_tension,
         )
         .unwrap();
-        let back = again.solve(state(15.97, 15.0), &budget).unwrap();
+        close(
+            again.unstressed_length.meters(),
+            span.unstressed_length.meters() * (drake().thermal_expansion * 60.0).exp(),
+            1e-12,
+        );
+        let back = again.solve(state_with(w75, w75, 15.0), &budget).unwrap();
         close(back.catenary.horizontal_tension.kilonewtons(), 28.0, 1e-8);
+    }
+
+    /// The span weighs the same in every state: its own weight per metre of
+    /// stretched cable times its length is \\( w L_0 \\) (hot, cold, iced:
+    /// the ice per metre of the real cable on top).
+    #[test]
+    fn total_weight_is_conserved() {
+        let budget = default_solver_budget();
+        for rise in [0.0, 40.0] {
+            let span = installed(rise);
+            let total = W * span.unstressed_length.meters();
+            for (load, t) in [(15.97, 15.0), (15.97, 150.0), (15.97, -20.0), (30.0, -5.0)] {
+                let s = span.solve(state(load, t), &budget).unwrap();
+                let own = s.catenary.weight.newtons_per_meter() - (load - W);
+                close(own * s.length().meters(), total, 1e-13);
+            }
+        }
+        // Before: the weight per metre of stretched cable stayed W, so at
+        // 150 °C the span weighed 0.25 % more than when strung.
+        let span = installed(0.0);
+        let hot = span.solve(state(15.97, 150.0), &budget).unwrap();
+        assert!(hot.catenary.weight.newtons_per_meter() < W * (1.0 - 2.5e-3));
+    }
+
+    /// Wind stays as given; the own weight is scaled in the vertical part.
+    #[test]
+    fn load_at_scales_only_the_own_weight() {
+        let s = LoadState::loaded(
+            ForcePerLength::from_si(15.0),
+            ForcePerLength::from_si(5.0),
+            ForcePerLength::from_si(12.0),
+            Temperature::from_celsius(0.0),
+        );
+        close(s.load.si(), 20.0f64.hypot(12.0), 1e-15);
+        close(s.load_at(1.0).si(), s.load.si(), 1e-15);
+        close(s.load_at(1.5).si(), 15.0f64.hypot(12.0), 1e-14);
+        let none = LoadState {
+            weight: ForcePerLength::ZERO,
+            ..s
+        };
+        assert_eq!(none.load_at(2.0), s.load);
+        // A weight larger than the vertical load is refused.
+        let bad = LoadState {
+            weight: ForcePerLength::from_si(30.0),
+            ..s
+        };
+        assert!(bad.check().is_err());
     }
 
     #[test]

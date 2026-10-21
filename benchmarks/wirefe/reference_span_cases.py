@@ -14,7 +14,10 @@ plumb and stretched by the clamp's load (fixed point, converged); this
 fixes each span's unstressed length at 15 deg C.
 
 A state: each span its own temperature and load per metre (its unstressed
-length times exp(alpha (t - 15))). The clamp's position is found by Newton
+length times exp(alpha (t - 15))). The cable's own weight is conserved
+(owner decision 2026-10-21): per metre of that longer unstressed length it
+is w exp(-alpha (t - 15)), so a span weighs w L0 hot or cold; ice is per
+metre of the real cable and is not scaled. The clamp's position is found by Newton
 on its two coordinates (finite differences, fixed cap) until the forces on
 it balance: the two spans' end tensions, the string's pull and half its
 weight. Each span is the closed-form elastic catenary (Irvine) between its
@@ -108,10 +111,11 @@ def strung(w):
 
 
 def state(lengths, spans):
-    """spans = [(temperature, w)] per span: H of each, clamp, swing, string force."""
+    """spans = [(temperature, own weight, ice)] per span, N/m: H of each,
+    clamp, swing, string force."""
     length, weight, k = STRING
-    L = [l * math.exp(ALPHA * (t - T_STRING)) for l, (t, _) in zip(lengths, spans)]
-    w = [s[1] for s in spans]
+    L = [l * math.exp(ALPHA * (t - T_STRING)) for l, (t, _, _) in zip(lengths, spans)]
+    w = [own * math.exp(-ALPHA * (t - T_STRING)) + ice for t, own, ice in spans]
 
     def parts(c):
         h0, _, tz0 = span_forces(L[0], w[0], (c[0] - ENDS[0][0], c[1] - ENDS[0][1]))
@@ -138,9 +142,9 @@ if __name__ == "__main__":
         lengths = strung(w)
         print(f"{label}: unstressed lengths at 15 C: {lengths[0]:.10f} {lengths[1]:.10f}")
         cases = {
-            "spancases-001 both bare at -5 C": [(-5.0, w), (-5.0, w)],
-            "spancases-002 span 0 iced (+10 N/m) at -5 C, span 1 bare at -5 C": [(-5.0, w + 10.0), (-5.0, w)],
-            "spancases-003 span 0 at 60 C, span 1 at 15 C (bare)": [(60.0, w), (15.0, w)],
+            "spancases-001 both bare at -5 C": [(-5.0, w, 0.0), (-5.0, w, 0.0)],
+            "spancases-002 span 0 iced (+10 N/m) at -5 C, span 1 bare at -5 C": [(-5.0, w, 10.0), (-5.0, w, 0.0)],
+            "spancases-003 span 0 at 60 C, span 1 at 15 C (bare)": [(60.0, w, 0.0), (15.0, w, 0.0)],
         }
         for name, spans in cases.items():
             r = state(lengths, spans)

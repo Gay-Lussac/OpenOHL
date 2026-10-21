@@ -1333,7 +1333,16 @@ pub fn solve_jumper_in(
     // The line's wind, whichever way the jumper was entered: across the
     // line from the case's side (a jumper across the line takes little).
     let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
-    let load = wire_load_in_line_wind(case, cable, d, along);
+    // Lengthened or shortened like the line's cables (below): its own
+    // weight spread over that length, so it weighs the same hot or cold
+    // (ice and wind per metre of the real jumper).
+    let thermal = line
+        .bimetallic
+        .apply(cable)
+        .free_thermal_strain(case.temperature.celsius() - jumper.temperature)
+        .exp();
+    let load = wire_load_in_line_wind(case, cable, d, along)
+        + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     // A tap is a hinge: no direction held there.
     let hinged = |mut s: Stiff| {
         if jumper.from.as_tap().is_some() {
@@ -1358,8 +1367,7 @@ pub fn solve_jumper_in(
     // by the line's model (its outer strands in compression up to their
     // limit when warmer, then the core alone); unstressed at its
     // temperature.
-    let dt = case.temperature.celsius() - jumper.temperature;
-    let l0 = reference * line.bimetallic.apply(cable).free_thermal_strain(dt).exp();
+    let l0 = reference * thermal;
     let props = CableProperties {
         unstressed_length: l0,
         axial_stiffness: ea,

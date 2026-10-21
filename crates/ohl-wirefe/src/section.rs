@@ -105,7 +105,12 @@ pub struct State {
     /// Cable temperature, °C.
     pub temperature: f64,
     /// Load on the cable per unit length (weight + ice downward as −z, wind
-    /// as +y), N/m.
+    /// as +y), N/m. It includes the cable's own weight
+    /// [`CableSpec::weight`], which is per metre of the cable as strung:
+    /// the solve spreads it over the span's unstressed length at the
+    /// state's temperature (\\( w e^{-\alpha\Delta t} \\) per metre of
+    /// it), so a span weighs the same hot or cold; ice and wind stay per
+    /// metre of the (longer or shorter) cable.
     pub cable_load: Vector3<f64>,
     /// Transverse wind force on each insulator string (per leg for V), N.
     pub insulator_wind: f64,
@@ -538,7 +543,10 @@ impl FeSection {
                 properties: CableProperties {
                     unstressed_length: piece.unstressed_length * thermal,
                     axial_stiffness: self.spec.cable.axial_stiffness,
-                    load,
+                    // The own weight conserved: w / e^{αΔt} per metre of
+                    // the thermally longer unstressed length.
+                    load: load
+                        + Vector3::new(0.0, 0.0, self.spec.cable.weight * (1.0 - 1.0 / thermal)),
                 },
             });
         }
@@ -724,6 +732,30 @@ mod tests {
         }
     }
 
+    /// A span weighs the same hot or cold: the supports carry its own
+    /// weight per metre as strung times its unstressed length as cut
+    /// (before 2026-10-21: 0.28 % more at 150 °C, by exp(alpha dt)).
+    #[test]
+    fn total_weight_is_conserved_hot_and_cold() {
+        let mut s = spec(&[(300.0, 0.0)], suspension());
+        for support in &mut s.supports {
+            support.assembly = Assembly::DeadEnd;
+        }
+        let section = FeSection::build(s, &budget()).unwrap();
+        let cut: f64 = section.pieces.iter().map(|p| p.unstressed_length).sum();
+        for t in [-20.0, 15.0, 70.0, 150.0] {
+            let r = section
+                .solve(&State::bare(section.spec(), t), &default_fe_budget())
+                .unwrap();
+            let carried: f64 = r.supports.iter().map(|s| s.load.z).sum();
+            assert!(
+                (carried.abs() / (W * cut) - 1.0).abs() < 1e-9,
+                "{t} °C: {carried} N vs {} N",
+                W * cut
+            );
+        }
+    }
+
     #[test]
     fn hot_conductor_unequal_spans_swing_strings() {
         let section = FeSection::build(
@@ -858,7 +890,7 @@ mod tests {
                 cable_load: Vector3::new(0.0, 0.0, -(W + 10.0)),
             },
         )];
-        check(&cold, [38948.68766, 38610.47421], 299.8485549, -2.893230611);
+        check(&cold, [38955.83357, 38617.55835], 299.8485682, -2.892976345);
         let mut hot = State::bare(section.spec(), 15.0);
         hot.span_states = vec![(
             0,
@@ -867,6 +899,6 @@ mod tests {
                 cable_load: hot.cable_load,
             },
         )];
-        check(&hot, [24704.58882, 24916.54638], 300.1223034, 2.336227718);
+        check(&hot, [24695.66197, 24908.196], 300.1226835, 2.343492256);
     }
 }

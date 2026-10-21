@@ -7,6 +7,11 @@
 Model (see crates/ohl-sagtension/src/change_of_state.rs):
     L = L0 * exp(alpha (t - t0)) * (1 + Tavg / EA),  Tavg = (1/L) * integral of T ds
 
+The cable's own weight is conserved (owner decision 2026-10-21): w0 per
+metre of unstressed cable at t0, so the span carries w0 L0 / L per metre of
+its length L (plus any ice per metre as given). L depends on the load: a
+fixed point, iterated until it no longer moves.
+
 Deliberately different from the Rust implementation:
 - the tension integral is computed numerically (Simpson on T(x) ds/dx), not
   with the closed form;
@@ -39,16 +44,35 @@ def length_and_tension_integral(S, h, H, w, n=20_000):
     return simpson(ds), simpson(t_ds)
 
 
-def unstressed_length(S, h, H, w):
-    L, integral = length_and_tension_integral(S, h, H, w)
-    return L / (1 + integral / L / EA)
-
-
-def solve(S, h, L0, t0, w, t):
-    def mismatch(log_h):
-        H = math.exp(log_h)
+def conserved(S, h, H, own, extra, thermal):
+    """The span at H carrying its own weight `own` (per unstressed metre at
+    t0) spread over its length, plus `extra` per metre: its length, tension
+    integral, load per metre and stretch k = L / L0."""
+    k = 1.0
+    for _ in range(100):
+        w = own / k + extra
         L, integral = length_and_tension_integral(S, h, H, w)
-        return L - L0 * math.exp(ALPHA * (t - t0)) * (1 + integral / L / EA)
+        k_new = thermal * (1 + integral / L / EA)
+        if abs(k_new - k) <= 1e-15 * k:
+            break
+        k = k_new
+    return L, integral, w, k_new
+
+
+def unstressed_length(S, h, H, w):
+    L, _, _, k = conserved(S, h, H, w, 0.0, 1.0)
+    return L / k
+
+
+def solve(S, h, L0, t0, w, t, own=None):
+    """The span at t under w per metre, `own` of it the cable's own weight
+    (default all of it; the rest ice)."""
+    own = w if own is None else own
+    thermal = math.exp(ALPHA * (t - t0))
+
+    def mismatch(log_h):
+        L, _, _, k = conserved(S, h, math.exp(log_h), own, w - own, thermal)
+        return L - L0 * k
 
     a, b = math.log(10_000.0), math.log(40_000.0)
     fa, fb = mismatch(a), mismatch(b)
@@ -60,6 +84,7 @@ def solve(S, h, L0, t0, w, t):
         if abs(b - a) < 1e-14:
             break
     H = math.exp(b)
+    _, _, w, _ = conserved(S, h, H, own, w - own, thermal)
     C, xm = catenary(S, h, H, w)
     y = lambda x: C * (math.cosh((x - xm) / C) - math.cosh(xm / C))
     x_sag = xm + C * math.asinh(h / S)
@@ -84,5 +109,5 @@ if __name__ == "__main__":
     for name, S, h, (H0, w0, t0), (w, t) in CASES:
         L0 = unstressed_length(S, h, H0, w0)
         print(name)
-        for key, value in solve(S, h, L0, t0, w, t).items():
+        for key, value in solve(S, h, L0, t0, w, t, own=w0).items():
             print(f"  {key:20s} {value:.10g}")

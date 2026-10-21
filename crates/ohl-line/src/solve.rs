@@ -361,6 +361,44 @@ struct Reference {
     clamps: Vec<Vector3<f64>>,
     lengths: Vec<f64>,
     temperature: f64,
+    /// Each span's own weight per unit of its reference length, relative
+    /// to the cable's weight per metre: 1 as cut at stringing; less where
+    /// the length grew without adding weight (a permanent stretch, the
+    /// stress-strain curves' strain, the core alone past the transition).
+    /// The elements carry the cable's weight times this over their thermal
+    /// factor: a span weighs the same hot or cold (owner decision
+    /// 2026-10-21).
+    weight_scale: Vec<f64>,
+}
+
+impl Reference {
+    /// Every span's reference length times `factor(s)`, adding no weight.
+    fn lengthen(&mut self, factor: impl Fn(usize) -> f64) {
+        for (s, (l, w)) in self
+            .lengths
+            .iter_mut()
+            .zip(&mut self.weight_scale)
+            .enumerate()
+        {
+            let k = factor(s);
+            *l *= k;
+            *w /= k;
+        }
+    }
+}
+
+/// [`span_load`] with the cable's own weight per metre scaled by `scale`
+/// (ice and wind as they are): the load per unit of an element's
+/// unstressed length when that length is longer than the cable as cut by
+/// \\( 1/\text{scale} \\) without adding weight (thermal strain, creep,
+/// set), so the span keeps its weight.
+fn span_load_scaled(
+    case: &WeatherCase,
+    cable: &Cable,
+    d: Vector3<f64>,
+    scale: f64,
+) -> Vector3<f64> {
+    span_load(case, cable, d) + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - scale))
 }
 
 /// A node of a holder: fixed (on the structure, or another section's
@@ -930,7 +968,11 @@ fn build(
             .exp();
         let length = reference.lengths[s] * thermal;
         let d = reference.clamps[s + 1] - reference.clamps[s];
-        let load = span_load(case, cable, d);
+        // Per unit of the element's (thermally longer or shorter)
+        // unstressed length: the own weight spread over it, the span's
+        // total weight unchanged.
+        let scale = reference.weight_scale[s] / thermal;
+        let load = span_load_scaled(case, cable, d, scale);
         let shape_props = CableProperties {
             unstressed_length: reference.lengths[s],
             axial_stiffness: ea,
@@ -984,8 +1026,9 @@ fn build(
             for l in section.spread_loads().iter().filter(|l| l.span == s) {
                 let (a0, b0) = (along(&l.start), along(&l.end));
                 let (from, to) = (a0.min(b0), a0.max(b0));
-                // Per metre of unstressed wire, its share.
-                spread.push((from, to, Vector3::new(0.0, 0.0, -l.load / bundle)));
+                // Per metre of the wire as cut, its share: a weight on the
+                // wire, kept as the wire grows or shrinks (as its own).
+                spread.push((from, to, Vector3::new(0.0, 0.0, -l.load / bundle * scale)));
             }
             sites.sort_by(|a, b| a.0.total_cmp(&b.0));
             shape = Some(solved);
@@ -1252,6 +1295,7 @@ fn reference(
                 clamps,
                 lengths: lengths.clone(),
                 temperature: *temperature,
+                weight_scale: vec![1.0; lengths.len()],
             });
         }
         Stringing::Tension {
@@ -1289,6 +1333,7 @@ fn reference(
             .collect::<Result<Vec<_>, _>>()?;
         let reference = Reference {
             clamps: clamps.clone(),
+            weight_scale: vec![1.0; lengths.len()],
             lengths,
             temperature,
         };
@@ -1557,7 +1602,7 @@ fn shared_out(
                     *d,
                     h,
                     ea,
-                    span_load(case, cable, *d),
+                    span_load_scaled(case, cable, *d, reference.weight_scale[s] / thermal),
                     budget,
                 )
                 .map(|l| l / thermal)
@@ -1621,6 +1666,7 @@ fn shared_out(
             clamps: clamps.to_vec(),
             lengths: lengths(h)?,
             temperature: reference.temperature,
+            weight_scale: reference.weight_scale.clone(),
         },
         h,
     ))
@@ -1818,6 +1864,20 @@ fn load_magnitude(case: &WeatherCase, cable: &Cable) -> f64 {
     span_load(case, cable, Vector3::new(1.0, 0.0, 0.0)).norm()
 }
 
+/// `case` as a sag-tension load state: the resultant per metre, of which
+/// the cable's own weight (conserved by the sag-tension solvers, per metre
+/// of the cable as strung) and the wind.
+fn load_state(case: &WeatherCase, cable: &Cable) -> ohl_sagtension::LoadState {
+    use ohl_core::units::ForcePerLength;
+    let load = case.wire_load(cable.diameter, cable.weight());
+    ohl_sagtension::LoadState {
+        load: ForcePerLength::from_si(load_magnitude(case, cable)),
+        weight: cable.weight(),
+        wind: load.horizontal,
+        temperature: case.temperature,
+    }
+}
+
 /// A section as strung: span geometries, clamps, stringing state,
 /// horizontal tension, N.
 type Strung = (
@@ -1837,7 +1897,7 @@ fn strung(
     cable: &Cable,
     budget: &Budget,
 ) -> Result<Strung, LineError> {
-    use ohl_core::units::{ForcePerLength, Length, Temperature};
+    use ohl_core::units::{Length, Temperature};
     let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
     let reference = reference(section, &layout, cable, budget)?;
     let still = WeatherCase::still(
@@ -1874,10 +1934,10 @@ fn strung(
             )
         })
         .collect();
-    let state = ohl_sagtension::LoadState {
-        load: ForcePerLength::from_si(cable.weight().si()),
-        temperature: Temperature::from_celsius(reference.temperature),
-    };
+    let state = ohl_sagtension::LoadState::bare(
+        cable.weight(),
+        Temperature::from_celsius(reference.temperature),
+    );
     Ok((spans, clamps, state, h))
 }
 
@@ -1906,15 +1966,12 @@ pub fn final_state(
     use ohl_cables::CableModel;
     let cable = &*line.bimetallic.apply(cable);
     use ohl_cables::mechanics::{MaterialState, Mechanics};
-    use ohl_core::units::{Force, ForcePerLength};
+    use ohl_core::units::Force;
     use ohl_sagtension::nonlinear::NonlinearSection;
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let st = |e: ohl_sagtension::SagTensionError| invalid(e.to_string());
     let cases = &line.condition_cases;
-    let state_of = |c: &WeatherCase| ohl_sagtension::LoadState {
-        load: ForcePerLength::from_si(load_magnitude(c, cable)),
-        temperature: c.temperature,
-    };
+    let state_of = |c: &WeatherCase| load_state(c, cable);
     let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
     let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
     let ns = NonlinearSection::from_known_state(
@@ -2040,7 +2097,7 @@ fn solve_rs(
     budget: &Budget,
 ) -> Result<SectionShape, LineError> {
     use ohl_cables::mechanics::{MaterialState, Mechanics};
-    use ohl_core::units::{Force, ForcePerLength, Length};
+    use ohl_core::units::{Force, Length};
     use ohl_sagtension::nonlinear::NonlinearSection;
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let st = |e: ohl_sagtension::SagTensionError| invalid(e.to_string());
@@ -2057,24 +2114,16 @@ fn solve_rs(
     let material = match final_state {
         Some(f) => {
             if matches!(f.material, MaterialState::Initial) {
-                // Linear models: the stretch lengthens the cable.
-                ns.unstressed_length =
-                    Length::from_si(ns.unstressed_length.si() * (1.0 + f.stretch));
+                // Linear models: the stretch lengthens the cable (adding
+                // no weight).
+                ns.lengthen(f.stretch);
             }
             f.material.clone()
         }
         None => MaterialState::Initial,
     };
-    let q = load_magnitude(case, cable);
     let solved = ns
-        .solve(
-            ohl_sagtension::LoadState {
-                load: ForcePerLength::from_si(q),
-                temperature: case.temperature,
-            },
-            &material,
-            budget,
-        )
+        .solve(load_state(case, cable), &material, budget)
         .map_err(st)?;
     let h = solved.horizontal_tension.si();
     let mut out = Vec::with_capacity(spans.len());
@@ -2082,10 +2131,13 @@ fn solve_rs(
         let (a, b) = (clamps[k], clamps[k + 1]);
         let d = b - a;
         let horizontal = d.xy().norm();
+        // The span's load per metre (its own weight spread over its
+        // stretched length).
+        let q = sol.catenary.weight.si();
         // The plane of the load: the sag hangs along it (down, and to the
         // side the wind blows).
         let along_load = {
-            let l = span_load(case, cable, d);
+            let l = span_load_scaled(case, cable, d, q_scale(case, cable, q));
             if l.norm() > 0.0 {
                 l / l.norm()
             } else {
@@ -2132,6 +2184,24 @@ fn solve_rs(
         span_points: Vec::new(),
         spacers: Vec::new(),
     })
+}
+
+/// The factor on the cable's own weight that makes its load per metre in
+/// `case` equal to `q` (the ruling-span solution's per-metre load: the
+/// weight spread over the stretched span).
+fn q_scale(case: &WeatherCase, cable: &Cable, q: f64) -> f64 {
+    let load = case.wire_load(cable.diameter, cable.weight());
+    let (h, v, w) = (
+        load.horizontal.si(),
+        load.vertical.si(),
+        cable.weight().si(),
+    );
+    let vertical = (q - h).max(0.0).sqrt() * (q + h).sqrt();
+    if w > 0.0 {
+        (vertical - (v - w)) / w
+    } else {
+        1.0
+    }
 }
 
 /// The cable's stress-strain curves, when its model uses them (the
@@ -2240,9 +2310,7 @@ fn solve_fe(
         _ => 0.0,
     };
     if stretch != 0.0 {
-        for l in &mut reference.lengths {
-            *l *= 1.0 + stretch;
-        }
+        reference.lengthen(|_| 1.0 + stretch);
     }
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &loaded, &reference, cable, case, budget)?;
@@ -2272,10 +2340,9 @@ fn solve_fe(
         let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
         let ea = cable.axial_stiffness().si();
         // Each span at its own case's temperature.
+        let t_strung = reference.temperature;
         let thermal = |s: usize| {
-            (cable.thermal_expansion()
-                * (cases.of(s).temperature.celsius() - reference.temperature))
-                .exp()
+            (cable.thermal_expansion() * (cases.of(s).temperature.celsius() - t_strung)).exp()
         };
         let t_ref = Temperature::from_celsius(reference.temperature);
         let strain = |t: f64, at: Temperature, state: &MaterialState| {
@@ -2288,8 +2355,8 @@ fn solve_fe(
             .iter()
             .map(|&t| Ok((1.0 + t / ea, strain(t, t_ref, &MaterialState::Initial)?)))
             .collect::<Result<_, LineError>>()?;
-        let base = reference.lengths.clone();
-        let mut factors = vec![1.0; base.len()];
+        let base = reference.clone();
+        let mut factors = vec![1.0; base.lengths.len()];
         let mut settled = false;
         for _ in 0..CURVE_PASSES {
             let tensions = span_tensions(&built, &solution);
@@ -2305,9 +2372,8 @@ fn solve_fe(
                 settled = true;
                 break;
             }
-            for (l, (b, k)) in reference.lengths.iter_mut().zip(base.iter().zip(&factors)) {
-                *l = b * k;
-            }
+            reference = base.clone();
+            reference.lengthen(|s| factors[s]);
             (built, solution) = solve_built(
                 section,
                 &loaded,
@@ -2328,9 +2394,7 @@ fn solve_fe(
         // Bimetallic cables without curves: past the transition, outer
         // strands limited in compression leave the core alone
         // ([`core_branch`]).
-        for l in &mut reference.lengths {
-            *l *= 1.0 + offset;
-        }
+        reference.lengthen(|_| 1.0 + offset);
         (built, solution) = solve_built(
             section,
             &loaded,

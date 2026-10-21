@@ -170,6 +170,38 @@ impl Calculation for CatenaryTensionForSag {
     }
 }
 
+/// A cable state from `inputs`: the resultant per metre `load_key`, the
+/// temperature `temperature_key`, the cable's own weight `weight` (part of
+/// the load, conserved by the change of state) and the wind: optional input
+/// `load_key` with "load" replaced by "wind" (the horizontal part, default
+/// 0). The rest of the vertical load is ice.
+fn load_state(
+    inputs: &Inputs,
+    load_key: &str,
+    temperature_key: &str,
+    weight: ForcePerLength,
+) -> Result<LoadState, String> {
+    let wind_key = load_key.replace("load", "wind");
+    let wind = if inputs.contains_key(&wind_key) {
+        quantity_input::<ForcePerLength>(inputs, &wind_key)?
+    } else {
+        ForcePerLength::ZERO
+    };
+    Ok(LoadState {
+        load: quantity_input::<ForcePerLength>(inputs, load_key)?,
+        weight,
+        wind,
+        temperature: quantity_input::<Temperature>(inputs, temperature_key)?,
+    })
+}
+
+/// The cable's own weight per metre: input `weight`, or else the load of
+/// `default_key` (the known state, bare).
+fn own_weight(inputs: &Inputs, default_key: &str) -> Result<ForcePerLength, String> {
+    quantity_input::<ForcePerLength>(inputs, "weight")
+        .or_else(|_| quantity_input::<ForcePerLength>(inputs, default_key))
+}
+
 /// `sagtension.change_of_state`: single span, linear elastic + thermal.
 struct ChangeOfState;
 
@@ -192,14 +224,9 @@ impl Calculation for ChangeOfState {
             axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
             thermal_expansion: float_input(inputs, "thermal_expansion")?,
         };
-        let known = LoadState {
-            load: quantity_input::<ForcePerLength>(inputs, "known_load")?,
-            temperature: quantity_input::<Temperature>(inputs, "known_temperature")?,
-        };
-        let state = LoadState {
-            load: quantity_input::<ForcePerLength>(inputs, "load")?,
-            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
-        };
+        let weight = own_weight(inputs, "known_load")?;
+        let known = load_state(inputs, "known_load", "known_temperature", weight)?;
+        let state = load_state(inputs, "load", "temperature", weight)?;
         let solution = InstalledSpan::from_known_state(
             geometry,
             cable,
@@ -224,12 +251,9 @@ impl Calculation for ChangeOfState {
 /// `sagtension.governing_tension`: stringing tension from tension criteria.
 struct GoverningTension;
 
-fn criterion_input(table: &Inputs) -> Result<TensionCriterion, String> {
+fn criterion_input(table: &Inputs, weight: ForcePerLength) -> Result<TensionCriterion, String> {
     let label = string_input(table, "label")?.to_owned();
-    let state = LoadState {
-        load: quantity_input::<ForcePerLength>(table, "load")?,
-        temperature: quantity_input::<Temperature>(table, "temperature")?,
-    };
+    let state = load_state(table, "load", "temperature", weight)?;
     let limit = match string_input(table, "limit")? {
         "support_ratio" => TensionLimit::SupportTensionRatio(float_input(table, "value")?),
         "horizontal_ratio" => TensionLimit::HorizontalTensionRatio(float_input(table, "value")?),
@@ -265,10 +289,8 @@ impl Calculation for GoverningTension {
             axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
             thermal_expansion: float_input(inputs, "thermal_expansion")?,
         };
-        let reference = LoadState {
-            load: quantity_input::<ForcePerLength>(inputs, "reference_load")?,
-            temperature: quantity_input::<Temperature>(inputs, "reference_temperature")?,
-        };
+        let weight = own_weight(inputs, "reference_load")?;
+        let reference = load_state(inputs, "reference_load", "reference_temperature", weight)?;
         let criteria = inputs
             .get("criteria")
             .and_then(|v| v.as_array())
@@ -277,7 +299,7 @@ impl Calculation for GoverningTension {
             .map(|v| {
                 v.as_table()
                     .ok_or("each criterion must be a table".to_owned())
-                    .and_then(criterion_input)
+                    .and_then(|t| criterion_input(t, weight))
             })
             .collect::<Result<Vec<_>, String>>()?;
         let result = governing_tension(
@@ -404,14 +426,9 @@ impl Calculation for Section {
             axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
             thermal_expansion: float_input(inputs, "thermal_expansion")?,
         };
-        let known = LoadState {
-            load: quantity_input::<ForcePerLength>(inputs, "known_load")?,
-            temperature: quantity_input::<Temperature>(inputs, "known_temperature")?,
-        };
-        let state = LoadState {
-            load: quantity_input::<ForcePerLength>(inputs, "load")?,
-            temperature: quantity_input::<Temperature>(inputs, "temperature")?,
-        };
+        let weight = own_weight(inputs, "known_load")?;
+        let known = load_state(inputs, "known_load", "known_temperature", weight)?;
+        let state = load_state(inputs, "load", "temperature", weight)?;
         let rs = ruling_span(&spans).map_err(|e| e.to_string())?;
         let solution = TensionSection::from_known_state(
             spans,
@@ -470,6 +487,7 @@ fn loaded_span_input(inputs: &Inputs) -> Result<LoadedSpan, String> {
             quantity_input::<Length>(inputs, "rise")?,
         ),
         base_load: quantity_input::<ForcePerLength>(inputs, "base_load")?,
+        weight: own_weight(inputs, "base_load")?,
         loads: VerticalLoads { point, distributed },
     })
 }
@@ -523,7 +541,7 @@ impl Calculation for LoadedChangeOfState {
             thermal_expansion: float_input(inputs, "thermal_expansion")?,
         };
         let inner = default_solver_budget();
-        let bare = LoadedSpan::unloaded(loaded.geometry, loaded.base_load);
+        let bare = LoadedSpan::unloaded(loaded.geometry, loaded.weight);
         let reference_temperature = quantity_input::<Temperature>(inputs, "known_temperature")?;
         let temperature = quantity_input::<Temperature>(inputs, "temperature")?;
         let solution = bare
@@ -675,12 +693,8 @@ impl Calculation for Nonlinear {
             .map_err(|e| format!("input \"cable\": {e}"))?;
         cable.validate().map_err(|e| e.to_string())?;
         let mechanics = Mechanics::from_cable(&cable).map_err(|e| e.to_string())?;
-        let state = |load: &str, temperature: &str| -> Result<LoadState, String> {
-            Ok(LoadState {
-                load: quantity_input::<ForcePerLength>(inputs, load)?,
-                temperature: quantity_input::<Temperature>(inputs, temperature)?,
-            })
-        };
+        let weight = own_weight(inputs, "known_load")?;
+        let state = |load: &str, temperature: &str| load_state(inputs, load, temperature, weight);
         let budget = default_solver_budget();
         let section = NonlinearSection::from_known_state(
             vec![SpanGeometry::level(quantity_input::<Length>(

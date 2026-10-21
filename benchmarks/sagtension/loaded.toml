@@ -2,6 +2,9 @@
 # from reference_loaded.py, which solves the cable ODE with RK4 and shooting
 # (independent of the closed-form segments in Rust). Tolerances reflect the
 # RK4 step (30 000 steps per span).
+# The cable's own weight (the known state's load) is conserved in every
+# state (owner decision 2026-10-21): per metre of unstressed cable at the
+# known temperature, spread over the span's length; ice as given.
 
 [[case]]
 id = "loaded-001"
@@ -48,4 +51,4 @@ points = [
 distributed = [{ from = "0 m", to = "150 m", load = "10 N/m" }]
 
 [case.expected]
-horizontal_tension_n = { value = 37614.42711, rel_tol = 1e-6 }
+horizontal_tension_n = { value = 37623.35878, rel_tol = 1e-6 }

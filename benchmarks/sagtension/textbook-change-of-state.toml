@@ -9,15 +9,25 @@
 # Expected values: benchmarks/reference/textbook_reference.py — the span
 # by quadrature (see textbook-catenary.toml), the mean tension from the
 # same integrals, and a secant root on log H of the model the calculation
-# documents (docs/theory/sagtension.md): L = L0 exp(alpha dt) (1 + Tmean/EA).
+# documents (docs/theory/sagtension.md): L = L0 exp(alpha dt) (1 + Tmean/EA),
+# the cable's own weight conserved (owner decision 2026-10-21): 15.69064 N/m
+# per metre of unstressed cable at 10 °C, so per metre of the span's length
+# L it is 15.69064 L0 / L (a fixed point: L depends on the load); ice and
+# wind per metre of the real cable as given. Before 2026-10-21 the weight
+# per metre of stretched cable stayed 15.69064 N/m, and a span grew heavier
+# with its length (+0.25 % at 150 °C; each case's old value in its notes).
 #
 # Hand check, every case: the classical parabolic change-of-state cubic
 # (strain from H, additive thermal form)
 #     H2^2 [H2 - K] = M,  K = H1 - EA w1^2 S^2 / (24 H1^2) - EA alpha (t2 - t1),
 #     M = EA w2^2 S^2 / 24
-# Here EA w1^2 S^2 / (24 H1^2) = 2.7697e13 / 6.25e8 = 44315.3 N. Its known
-# error against the exact catenary with the mean tension is a few 0.01 %
-# (stated per case); it confirms the expected values to 3 digits.
+# with the loads per metre of stretched cable: strung, w1 = 15.69064 /
+# (1 + 25 kN / 30 MN) = 15.67758 N/m, so EA w1^2 S^2 / (24 H1^2) = 44241.5 N;
+# w2 the own weight over the stretch at t2 (printed by the reference as
+# load_per_stretched_m), plus ice. Its known error against the exact
+# catenary with the mean tension is a few 0.01 % (stated per case); it
+# confirms the expected values to 3 digits. Total weight, every case: the
+# reference's load per metre times the length is 15.69064 L0 (plus the ice).
 #
 # Tolerance: 1e-7 relative (the code's change of state iterates to far
 # below it; the reference is good to 1e-12). Sags, lengths 1e-7 / 1e-9.
@@ -27,15 +37,17 @@ id = "tbcos-001"
 title = "Level 300 m: 25 kN at 10 °C -> 70 °C (temperature rise)"
 calculation = "sagtension.change_of_state"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
-notes = """Cubic: K = 25000 - 44315.3 - 30e6 x 20e-6 x 60 = -55315.3 N, M = 2.76971e13 N^3:
-H2 = 19270.3 N (the exact 19265.84 N is 0.023 % lower). Sag w S^2 / 8H = 9.162 m parabolic,
-catenary 9.1737 m."""
+notes = """Load at 70 °C 15.66175 N/m (the own weight over exp(60 alpha)(1 + Tmean/EA)).
+Cubic: K = 25000 - 44241.5 - 30e6 x 20e-6 x 60 = -55241.5 N, M = 30e6 x 15.66175^2 x 300^2 / 24
+= 2.75952e13 N^3: H2 = 19247.3 N (the exact 19242.87 N is 0.023 % lower). Sag w S^2 / 8H =
+9.157 m parabolic, catenary 9.1677 m. Before 2026-10-21 (15.69064 N/m per stretched metre):
+19265.84 N, 9.1737 m (H 0.12 % higher)."""
 max_seconds = 1.0
 inputs = { span = "300 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "15.69064 N/m", temperature = "70 °C" }
-expected.horizontal_tension_n = { value = 19265.84218, rel_tol = 1e-7 }
-expected.sag_m = { value = 9.173714837, rel_tol = 1e-7 }
-expected.length_m = { value = 300.7467615, rel_tol = 1e-9 }
-expected.tension_left_n = { value = 19409.78363, rel_tol = 1e-7 }
+expected.horizontal_tension_n = { value = 19242.8746, rel_tol = 1e-7 }
+expected.sag_m = { value = 9.167739335, rel_tol = 1e-7 }
+expected.length_m = { value = 300.7457906, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 19386.45745, rel_tol = 1e-7 }
 
 [[case]]
 id = "tbcos-002"
@@ -43,65 +55,74 @@ title = "Level 300 m: 25 kN at 10 °C -> 12 mm radial glaze ice at -5 °C"
 calculation = "sagtension.change_of_state"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
 notes = """Ice (textbook-ice-wind.toml, tbwx-001): 913 x 9.80665 x pi/4 x (0.052^2 - 0.028^2)
-= 13.50152 N/m, total 29.19216 N/m. Cubic: K = 25000 - 44315.3 + 9000 = -10315.3 N,
-M = 30e6 x 29.19216^2 x 300^2 / 24 = 9.58705e13: H2 = 42575.0 N (exact 42568.11 N, -0.016 %).
-The sag grows from 7.0660 m (strung) to 7.7218 m: the cable stretches elastically by about
-(42.7 - 25.1) kN / 30 MN = 590 µstrain and shrinks by 300 µstrain with the cold."""
+= 13.50152 N/m, total 29.19216 N/m as given; per metre of the stretched cable 29.17458 N/m
+(the own weight over exp(-15 alpha)(1 + Tmean/EA), the ice as it is). Cubic: K = 25000 - 44241.5
++ 9000 = -10241.5 N, M = 30e6 x 29.17458^2 x 300^2 / 24 = 9.57551e13: H2 = 42577.9 N (exact
+42571.05 N, -0.016 %). The sag grows from 7.0602 m (strung) to 7.7166 m: the cable stretches
+elastically by about (42.7 - 25.1) kN / 30 MN = 590 µstrain and shrinks by 300 µstrain with the
+cold. Before 2026-10-21: 42568.11 N."""
 max_seconds = 1.0
 inputs = { span = "300 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "29.19215686 N/m", temperature = "-5 °C" }
-expected.horizontal_tension_n = { value = 42568.107, rel_tol = 1e-7 }
-expected.sag_m = { value = 7.721777643, rel_tol = 1e-7 }
-expected.length_m = { value = 300.5293537, rel_tol = 1e-9 }
-expected.tension_left_n = { value = 42793.52234, rel_tol = 1e-7 }
+expected.horizontal_tension_n = { value = 42571.04882, rel_tol = 1e-7 }
+expected.sag_m = { value = 7.716587173, rel_tol = 1e-7 }
+expected.length_m = { value = 300.5286432, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 42796.17705, rel_tol = 1e-7 }
 
 [[case]]
 id = "tbcos-003"
 title = "Level 300 m: 25 kN at 10 °C -> 600 Pa wind at 10 °C (resultant load in the blown plane)"
 calculation = "sagtension.change_of_state"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
-notes = """Wind (tbwx-003): 600 x 0.028 = 16.8 N/m across, resultant sqrt(15.69064^2 + 16.8^2)
-= 22.98774 N/m in a plane swung 46.956° (exact for a level span). Cubic: K = 25000 - 44315.3
-= -19315.3 N, M = 5.94491e13: H2 = 33538.0 N (exact 33533.28 N, -0.014 %). The sag in the
-blown plane 7.7189 m; its vertical part 7.7189 cos 46.956° = 5.27 m."""
+notes = """Wind (tbwx-003): 600 x 0.028 = 16.8 N/m across (input `wind`: the horizontal part of
+the load), resultant sqrt(15.69064^2 + 16.8^2) = 22.98774 N/m in a plane swung 46.956° (exact for
+a level span); per metre of the stretched cable 22.97576 N/m (the own weight over 1 + Tmean/EA,
+the wind as it is). Cubic: K = 25000 - 44241.5 = -19241.5 N, M = 30e6 x 22.97576^2 x 300^2 / 24
+= 5.93871e13: H2 = 33542.5 N (exact 33537.82 N, -0.014 %). The sag in the blown plane 7.7138 m;
+its vertical part 7.7138 cos 46.99° = 5.26 m. Before 2026-10-21 (the 22.98774 N/m taken whole
+per stretched metre): 33533.28 N."""
 max_seconds = 1.0
-inputs = { span = "300 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "22.98773985 N/m", temperature = "10 °C" }
-expected.horizontal_tension_n = { value = 33533.28419, rel_tol = 1e-7 }
-expected.sag_m = { value = 7.718898749, rel_tol = 1e-7 }
-expected.length_m = { value = 300.5289596, rel_tol = 1e-9 }
-expected.tension_left_n = { value = 33710.72423, rel_tol = 1e-7 }
+inputs = { span = "300 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "22.98773985 N/m", wind = "16.8 N/m", temperature = "10 °C" }
+expected.horizontal_tension_n = { value = 33537.81947, rel_tol = 1e-7 }
+expected.sag_m = { value = 7.713824887, rel_tol = 1e-7 }
+expected.length_m = { value = 300.5282653, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 33715.05048, rel_tol = 1e-7 }
 
 [[case]]
 id = "tbcos-004"
 title = "Level 300 m: thermal sag at 150 °C"
 calculation = "sagtension.change_of_state"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
-notes = """Cubic: K = 25000 - 44315.3 - 84000 = -103315.3 N, M = 2.76971e13: H2 = 15282.0 N
-(exact 15275.27 N, -0.044 %). Sag 11.5788 m: 4.51 m more than when strung (7.0660 m).
-By the slack L - S: 0.4433 m when strung, 1.1884 m at 150 °C = 0.4433 + 0.8412 (alpha dt L)
-- 0.097 (elastic shortening, about (25.1 - 15.4) kN / 30 MN x 300 m), within 1 mm."""
+notes = """Load at 150 °C 15.63880 N/m (the own weight over exp(140 alpha)(1 + Tmean/EA): the
+span weighs 15.69064 L0 = 15.69064 x 300.1921 = 4710.2 N, not 0.25 % more). Cubic: K = 25000 - 44241.5 - 84000 =
+-103241.5 N, M = 30e6 x 15.63880^2 x 300^2 / 24 = 2.75144e13: H2 = 15239.0 N (exact 15232.31 N,
+-0.044 %). Sag 11.5731 m: 4.51 m more than when strung (7.0602 m). By the slack L - S: 0.4426 m
+when strung, 1.1873 m at 150 °C = 0.4426 + 0.8412 (alpha dt L) - 0.097 (elastic shortening,
+about (25.1 - 15.4) kN / 30 MN x 300 m), within 1 mm. Before 2026-10-21: 15275.27 N (0.28 %
+higher), sag 11.5788 m (5.7 mm more)."""
 max_seconds = 1.0
 inputs = { span = "300 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "15.69064 N/m", temperature = "150 °C" }
-expected.horizontal_tension_n = { value = 15275.26574, rel_tol = 1e-7 }
-expected.sag_m = { value = 11.57879665, rel_tol = 1e-7 }
-expected.length_m = { value = 301.188425, rel_tol = 1e-9 }
-expected.tension_left_n = { value = 15456.94447, rel_tol = 1e-7 }
+expected.horizontal_tension_n = { value = 15232.31031, rel_tol = 1e-7 }
+expected.sag_m = { value = 11.57306044, rel_tol = 1e-7 }
+expected.length_m = { value = 301.1872511, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 15413.29904, rel_tol = 1e-7 }
 
 [[case]]
 id = "tbcos-005"
 title = "Inclined 300 m, rise 50 m: 25 kN at 10 °C -> 80 °C"
 calculation = "sagtension.change_of_state"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
-notes = """The level-span cubic (span 300 m) gives 18614.9 N, 0.53 % above the exact 18517.59 N:
+notes = """The level-span cubic (span 300 m) gives 18588.9 N, 0.52 % above the exact 18491.77 N:
 the inclined span is longer (304.1 m along the chord) and its weight acts per metre of cable,
 which the level formula leaves out: it is only a rough check here. Exact relation:
-T_B - T_A = w h = 15.69064 x 50 = 784.532 N (19315.74987 - 18531.21787)."""
+T_B - T_A = w h with the load per stretched metre at 80 °C, 15.65888 N/m: 15.65888 x 50 =
+782.944 N (19288.38274 - 18505.43893). Before 2026-10-21: 18517.59 N."""
 max_seconds = 1.0
 inputs = { span = "300 m", rise = "50 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "15.69064 N/m", temperature = "80 °C" }
-expected.horizontal_tension_n = { value = 18517.59043, rel_tol = 1e-7 }
-expected.sag_m = { value = 9.676462762, rel_tol = 1e-7 }
-expected.length_m = { value = 304.9355368, rel_tol = 1e-9 }
-expected.tension_left_n = { value = 18531.21787, rel_tol = 1e-7 }
-expected.tension_right_n = { value = 19315.74987, rel_tol = 1e-7 }
+expected.horizontal_tension_n = { value = 18491.77312, rel_tol = 1e-7 }
+expected.sag_m = { value = 9.670340726, rel_tol = 1e-7 }
+expected.length_m = { value = 304.9345299, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 18505.43893, rel_tol = 1e-7 }
+expected.tension_right_n = { value = 19288.38274, rel_tol = 1e-7 }
 
 # Creep as an equivalent temperature: the wire library's linear model
 # `linear_creep_temperature` (creep_temperature_shift = 25 °C) after creep,
@@ -110,11 +131,15 @@ expected.tension_right_n = { value = 19315.74987, rel_tol = 1e-7 }
 # Expected: the permanent stretch alpha x 25 = 500 µstrain lengthens the
 # unstressed length (FE: L0 (1 + 5e-4) exp(alpha dt), the element's own
 # elastic catenary; RS: the ruling-span model's additive strain).
+# Neither adds weight (owner decision 2026-10-21): the own weight per unit
+# of the longer unstressed length is w / ((1 + 5e-4) exp(alpha dt)) (FE),
+# w (1 + eps(0, 10 °C)) / ((1 + 5e-4)(1 + eps)) per stretched metre (RS).
 # Hand: after creep at 10 °C the span hangs as when strung and warmed to
-# 35 °C — the reference's FE at 35 °C gives 22143.91 N, sag 7.97308 m,
-# 0.003 % / 0.2 mm from the creep state (the two forms differ by
-# (alpha dt)^2 / 2 and by the weight per metre of the thermally longer
-# unstressed length, see docs/validation/textbook.md).
+# 35 °C — the reference's FE at 35 °C gives 22134.67 N, sag 7.97243 m,
+# 0.003 % / 0.2 mm from the creep state (1 + 25 alpha against
+# exp(25 alpha): (alpha dt)^2 / 2). FE and RS now agree to 0.0004 %
+# (22135.29 N and 22135.38 N); before 2026-10-21, when the stretch added
+# weight, they were 22144.53 N and 22146.19 N (0.008 % apart).
 
 [[case]]
 id = "tbcreep-001"
@@ -122,8 +147,8 @@ title = "Creep as +25 °C (linear model), finite elements: dead-end span 300 m a
 calculation = "line.section"
 reference = "Independent elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
 max_seconds = 5.0
-expected.h_0_n = { value = 22144.52732, rel_tol = 1e-7 }
-expected.sag_0_m = { value = 7.972860915, abs_tol = 1e-6 }
+expected.h_0_n = { value = 22135.28585, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 7.972204703, abs_tol = 1e-6 }
 
 [case.inputs]
 weather = { name = "everyday", temperature = "10 °C" }
@@ -149,12 +174,13 @@ title = "Creep as +25 °C (linear model), ruling span: dead-end span 300 m at 10
 calculation = "line.section"
 reference = "Independent quadrature + secant, additive strain (benchmarks/reference/textbook_reference.py)"
 notes = """RS: L0 = L(25 kN) / (1 + Tmean/EA + alpha (10 - 20)) at stringing (20 °C: the linear
-model's reference temperature), times 1 + 5e-4; then sum L / (1 + Tmean/EA + alpha (t - 20)) = L0.
-Hand: as the change of state to 35 °C, 22146.2 N vs FE 22144.5 N: the RS method's additive
-thermal form and weight per metre of stretched cable against the FE's (0.008 %)."""
+model's reference temperature), times 1 + 5e-4; then sum L / (1 + Tmean/EA + alpha (t - 20)) = L0;
+the own weight per stretched metre w (1 + alpha (10 - 20)) / ((1 + 5e-4)(1 + eps)).
+Hand: as the change of state to 35 °C; 22135.38 N vs FE 22135.29 N (0.0004 %: the additive
+thermal form against the FE's multiplicative one). Before 2026-10-21: 22146.19 N."""
 max_seconds = 5.0
-expected.h_0_n = { value = 22146.18506, rel_tol = 1e-7 }
-expected.sag_0_m = { value = 7.978164344, abs_tol = 1e-6 }
+expected.h_0_n = { value = 22135.37616, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 7.972165365, abs_tol = 1e-6 }
 
 [case.inputs]
 weather = { name = "everyday", temperature = "10 °C" }
@@ -169,6 +195,105 @@ line = '''
    "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
  ],
  "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-rs",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+# A heated span weighs what it weighs when strung (owner decision
+# 2026-10-21): a level 400 m span between fixed wire points at 30 m, strung
+# at 25 kN at 10 °C, at 150 °C — the closed-form change of state, the
+# finite elements and the line's ruling-span method, each against the
+# reference (benchmarks/reference/textbook_reference.py, heated_span_cases).
+#
+# Hand check of the weight, all three: a level span hangs symmetrically,
+# so each support carries half the span's weight, and
+#     2 sqrt(Tmax^2 - H^2) = w L0 = 15.69064 N/m x 400.7147 m = 6287.47 N
+# (L0 the unstressed length as strung at 10 °C; the closed form's
+# 400.7147 m the same to 0.2 mm). From the expected values: FE
+# 2 sqrt(18008.91428^2 - 17732.39756^2) = 6287.47 N; closed form
+# 2 sqrt(18008.90116^2 - 17732.38424^2) = 6287.47 N; RS
+# 2 sqrt(18017.0662^2 - 17740.67664^2) = 6287.47 N. Before 2026-10-21 the
+# FE span weighed 6305.10 N at 150 °C (+0.28 %, by exp(140 alpha)) and
+# carried 17779.38 N (+0.27 %), sag 17.6857 m (+2.7 mm); the closed form
+# 17782.28 N.
+#
+# The three differ only by their models: the closed form spreads the
+# weight evenly over the stretched span and stretches it by its mean
+# tension (FE - closed form: 0.013 N, 7.5e-7); the RS method adds its
+# strains (1 + eps = 1 + T/EA + alpha dt instead of exp(alpha dt)(1 + T/EA):
+# (alpha dt)^2 / 2 + alpha dt T/EA, about 6e-6 of length here), 8.28 N
+# (0.047 %) above the FE.
+
+[[case]]
+id = "tbheat-001"
+title = "Level 400 m at 150 °C, total weight constant: closed-form change of state"
+calculation = "sagtension.change_of_state"
+reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
+notes = """Load per stretched metre 15.69064 / (exp(140 alpha)(1 + Tmean/EA)); 2 sqrt(Tmax^2 - H^2)
+= 6287.470 N = 15.69064 x 400.7147 m. Before 2026-10-21: 17782.28 N (+0.28 %)."""
+max_seconds = 1.0
+inputs = { span = "400 m", rise = "0 m", axial_stiffness = "30e6 N", thermal_expansion = 20e-6, known_tension = "25 kN", known_load = "15.69064 N/m", known_temperature = "10 °C", load = "15.69064 N/m", temperature = "150 °C" }
+expected.horizontal_tension_n = { value = 17732.38424, rel_tol = 1e-7 }
+expected.sag_m = { value = 17.68296317, rel_tol = 1e-7 }
+expected.length_m = { value = 402.0770323, rel_tol = 1e-9 }
+expected.tension_left_n = { value = 18008.90116, rel_tol = 1e-7 }
+
+[[case]]
+id = "tbheat-002"
+title = "Level 400 m at 150 °C, total weight constant: finite elements"
+calculation = "line.section"
+reference = "Independent elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
+notes = """The element's unstressed length L0 exp(140 alpha), the own weight per unit of it
+15.69064 exp(-140 alpha) N/m: 2 sqrt(Tmax^2 - H^2) = 6287.470 N = 15.69064 x 400.714704 m.
+Before 2026-10-21: 17779.38 N, 6305.10 N of weight."""
+max_seconds = 5.0
+expected.h_0_n = { value = 17732.39756, rel_tol = 1e-7 }
+expected.max_tension_0_n = { value = 18008.91428, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 17.68297723, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "hot", temperature = "150 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "heat", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [400, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [400, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "initial-fe",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbheat-003"
+title = "Level 400 m at 150 °C, total weight constant: the line's ruling-span method"
+calculation = "line.section"
+reference = "Independent quadrature + secant, additive strain (benchmarks/reference/textbook_reference.py)"
+notes = """Additive strain eps = T/EA + alpha (t - 20 °C); the own weight per stretched metre
+15.69064 (1 + eps(0, 10 °C)) / (1 + eps): 2 sqrt(Tmax^2 - H^2) = 6287.469 N. 8.28 N (0.047 %)
+above the FE (tbheat-002): the additive thermal form alone."""
+max_seconds = 5.0
+expected.h_0_n = { value = 17740.67664, rel_tol = 1e-7 }
+expected.max_tension_0_n = { value = 18017.0662, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 17.67473702, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "hot", temperature = "150 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "heat", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [400, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [400, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "initial-rs",
   "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
   "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
 }

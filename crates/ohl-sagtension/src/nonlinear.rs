@@ -13,7 +13,16 @@
 //!
 //! \\[ \sum_i \frac{L_i(H)}{1 + \varepsilon(\bar T_i(H), t, s)} = L_0 \\]
 //!
-//! (using the mean tension per span is the usual sag-tension practice). The
+//! (using the mean tension per span is the usual sag-tension practice).
+//!
+//! The cable's own weight is conserved: it is per metre of unstressed cable
+//! at the known state's temperature, the length \\( L_0 (1 + \varepsilon_w) \\)
+//! with \\( \varepsilon_w = \varepsilon(0, t_{known}, s_{known}) \\)
+//! ([`NonlinearSection::weight_strain`]), so span \\( i \\) carries
+//! \\( w (1 + \varepsilon_w)/(1 + \varepsilon_i) \\) per metre of its
+//! stretched length — the additive form's equivalent of
+//! \\( w e^{-\alpha\Delta t} \\). Thermal strain, creep and permanent set
+//! lengthen the cable without adding weight. The
 //! left side decreases strictly with \\( H \\), so bisection with exit clauses
 //! finds the unique solution. Because \\( L_0 \\) is defined at a fixed
 //! reference, results do not depend on which state defined the cable.
@@ -29,8 +38,8 @@ use ohl_cables::mechanics::{MaterialState, Mechanics};
 use ohl_core::budget::{Budget, Stop};
 use ohl_core::units::{Force, Length};
 
-use crate::catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};
-use crate::change_of_state::LoadState;
+use crate::catenary::{SagTensionError, SpanGeometry, SpanSolution};
+use crate::change_of_state::{LoadState, span_at};
 use crate::section::SectionSolution;
 
 fn mean_tension(solution: &SpanSolution) -> f64 {
@@ -50,6 +59,12 @@ pub struct NonlinearSection {
     pub mechanics: Mechanics,
     /// Unstressed length at zero strain (curves' reference temperature).
     pub unstressed_length: Length,
+    /// The strain, from the zero-strain length, of the length that carries
+    /// the cable's own weight per metre (unstressed, at the known state's
+    /// temperature): span \\( i \\) carries \\( w (1 + \varepsilon_w) /
+    /// (1 + \varepsilon_i) \\) per metre. Lengthening the cable without
+    /// adding weight (a permanent stretch) lowers it: [`Self::lengthen`].
+    pub weight_strain: f64,
 }
 
 /// Which permanent set governs the final condition.
@@ -76,24 +91,62 @@ impl NonlinearSection {
                 "a section needs at least one span".into(),
             ));
         }
-        let catenary = Catenary::new(horizontal_tension, state.load)?;
-        let mut total = 0.0;
-        for &g in &spans {
-            let solution = catenary.solve(g)?;
-            let strain = mechanics
-                .strain(
-                    Force::from_si(mean_tension(&solution)),
-                    state.temperature,
-                    material,
-                )
-                .map_err(cable_error)?;
-            total += solution.length().si() / (1.0 + strain);
-        }
-        Ok(Self {
+        state.check()?;
+        let weight_strain = mechanics
+            .strain(Force::ZERO, state.temperature, material)
+            .map_err(cable_error)?;
+        let mut section = Self {
             spans,
             mechanics,
-            unstressed_length: Length::from_si(total),
-        })
+            unstressed_length: Length::ZERO,
+            weight_strain,
+        };
+        section.unstressed_length = Length::from_si(
+            section
+                .at(horizontal_tension.si(), &state, material)?
+                .ok_or(SagTensionError::TooSlack {
+                    ratio: f64::INFINITY,
+                })?
+                .1,
+        );
+        Ok(section)
+    }
+
+    /// Lengthens the cable by a permanent `stretch` (unit strain) that adds
+    /// no weight: its unstressed length grows, its weight per metre of it
+    /// falls.
+    pub fn lengthen(&mut self, stretch: f64) {
+        self.unstressed_length = Length::from_si(self.unstressed_length.si() * (1.0 + stretch));
+        self.weight_strain = (1.0 + self.weight_strain) / (1.0 + stretch) - 1.0;
+    }
+
+    /// The spans at tension `h` in `state` (each with its own weight per
+    /// metre) and the unstressed length they need; `None` if too slack to
+    /// compute.
+    fn at(
+        &self,
+        h: f64,
+        state: &LoadState,
+        material: &MaterialState,
+    ) -> Result<Option<(Vec<SpanSolution>, f64)>, SagTensionError> {
+        let mut total = 0.0;
+        let mut solved = Vec::with_capacity(self.spans.len());
+        for &g in &self.spans {
+            let (solution, stretch) = match span_at(h, state, g, |s| {
+                let strain = self
+                    .mechanics
+                    .strain(Force::from_si(mean_tension(s)), state.temperature, material)
+                    .map_err(cable_error)?;
+                Ok((1.0 + strain) / (1.0 + self.weight_strain))
+            }) {
+                Ok(x) => x,
+                Err(SagTensionError::TooSlack { .. }) => return Ok(None),
+                Err(e) => return Err(e),
+            };
+            total += solution.length().si() / stretch / (1.0 + self.weight_strain);
+            solved.push(solution);
+        }
+        Ok(Some((solved, total)))
     }
 
     /// Unstressed length the section would need at tension `h` (∞ if too
@@ -104,25 +157,9 @@ impl NonlinearSection {
         state: LoadState,
         material: &MaterialState,
     ) -> Result<f64, SagTensionError> {
-        let catenary = Catenary::new(Force::from_si(h), state.load)?;
-        let mut total = 0.0;
-        for &g in &self.spans {
-            let solution = match catenary.solve(g) {
-                Ok(s) => s,
-                Err(SagTensionError::TooSlack { .. }) => return Ok(f64::INFINITY),
-                Err(e) => return Err(e),
-            };
-            let strain = self
-                .mechanics
-                .strain(
-                    Force::from_si(mean_tension(&solution)),
-                    state.temperature,
-                    material,
-                )
-                .map_err(cable_error)?;
-            total += solution.length().si() / (1.0 + strain);
-        }
-        Ok(total)
+        Ok(self
+            .at(h, &state, material)?
+            .map_or(f64::INFINITY, |(_, total)| total))
     }
 
     /// Solves the section under `state` with the material in `material`.
@@ -135,6 +172,7 @@ impl NonlinearSection {
         material: &MaterialState,
         budget: &Budget,
     ) -> Result<SectionSolution, SagTensionError> {
+        state.check()?;
         let target = self.unstressed_length.si();
         let too_low = |h: f64| -> Result<bool, SagTensionError> {
             Ok(self.required_length(h, state, material)? > target)
@@ -167,14 +205,15 @@ impl NonlinearSection {
                 hi = mid;
             }
         }
-        let catenary = Catenary::new(Force::from_si(0.5 * (lo + hi)), state.load)?;
+        let h = 0.5 * (lo + hi);
+        let (spans, _) = self
+            .at(h, &state, material)?
+            .ok_or(SagTensionError::TooSlack {
+                ratio: f64::INFINITY,
+            })?;
         Ok(SectionSolution {
-            horizontal_tension: catenary.horizontal_tension,
-            spans: self
-                .spans
-                .iter()
-                .map(|&g| catenary.solve(g))
-                .collect::<Result<_, _>>()?,
+            horizontal_tension: Force::from_si(h),
+            spans,
         })
     }
 
@@ -242,11 +281,19 @@ mod tests {
         library.get("synthetic").unwrap().clone()
     }
 
+    /// The synthetic cable's own weight 15.7 N/m under `load` (the rest
+    /// ice).
     fn state(load: f64, celsius: f64) -> LoadState {
-        LoadState {
-            load: ForcePerLength::from_newtons_per_meter(load),
-            temperature: Temperature::from_celsius(celsius),
-        }
+        state_w(15.7, load, celsius)
+    }
+
+    fn state_w(weight: f64, load: f64, celsius: f64) -> LoadState {
+        LoadState::loaded(
+            ForcePerLength::from_newtons_per_meter(weight),
+            ForcePerLength::from_newtons_per_meter(load - weight),
+            ForcePerLength::ZERO,
+            Temperature::from_celsius(celsius),
+        )
     }
 
     fn level(s: f64) -> Vec<SpanGeometry> {
@@ -307,16 +354,33 @@ mod tests {
         let hot = s
             .solve(state(15.7, 80.0), &MaterialState::Initial, &budget)
             .unwrap();
+        // Defined again at 80 °C: the same cable, its weight per metre of
+        // unstressed cable at 80 °C.
+        let zero = |t: f64| {
+            m.strain(
+                Force::ZERO,
+                Temperature::from_celsius(t),
+                &MaterialState::Initial,
+            )
+            .unwrap()
+        };
+        let w80 = 15.7 * (1.0 + zero(15.0)) / (1.0 + zero(80.0));
         let again = NonlinearSection::from_known_state(
             level(350.0),
             m,
-            state(15.7, 80.0),
+            state_w(w80, w80, 80.0),
             hot.horizontal_tension,
             &MaterialState::Initial,
         )
         .unwrap();
+        assert!(
+            (again.unstressed_length.si() / s.unstressed_length.si() - 1.0).abs() < 1e-12,
+            "{} vs {}",
+            again.unstressed_length,
+            s.unstressed_length
+        );
         let back = again
-            .solve(state(15.7, 15.0), &MaterialState::Initial, &budget)
+            .solve(state_w(w80, w80, 15.0), &MaterialState::Initial, &budget)
             .unwrap();
         assert!(
             (back.horizontal_tension.kilonewtons() - 25.0).abs() < 1e-7,

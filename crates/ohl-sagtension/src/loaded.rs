@@ -21,7 +21,10 @@
 //! with it) — solved by bisection with exit clauses. The change of state then
 //! iterates on \\( H \\) with the same strain model as
 //! [`change_of_state`](crate::change_of_state): two nested solvers, both
-//! with exit clauses.
+//! with exit clauses. As there, the cable's own weight
+//! ([`LoadedSpan::weight`]) is conserved: per metre of stretched cable it is
+//! \\( w / k \\), \\( k = e^{\alpha\Delta t}(1 + \bar T/EA) \\) (a fixed
+//! point for each trial tension); the other loads are as given.
 
 use std::time::Duration;
 
@@ -42,6 +45,10 @@ pub struct LoadedSpan {
     pub geometry: SpanGeometry,
     /// Load per unit cable length on the whole span (weight, ice, …).
     pub base_load: ForcePerLength,
+    /// The cable's own weight, part of `base_load`: per metre of unstressed
+    /// cable at the reference temperature (the change of state keeps the
+    /// span's total weight). Zero: nothing scaled.
+    pub weight: ForcePerLength,
     /// Additional vertical loads (positions from the left support).
     pub loads: VerticalLoads,
 }
@@ -99,8 +106,45 @@ impl LoadedSpan {
         Self {
             geometry,
             base_load,
+            weight: base_load,
             loads: VerticalLoads::default(),
         }
+    }
+
+    /// The span with its own weight spread over a cable stretched by `k`.
+    fn stretched(&self, k: f64) -> Self {
+        let w = self.weight.si();
+        Self {
+            base_load: ForcePerLength::from_si(self.base_load.si() - w + w / k),
+            ..self.clone()
+        }
+    }
+
+    /// The shape at `horizontal_tension` with the own weight conserved, and
+    /// its stretch \\( k = \) `thermal` \\( (1 + \bar T/EA) \\) over the
+    /// unstressed length at the reference temperature (fixed point, exit
+    /// clause 50 passes; it settles in two or three).
+    fn conserved_shape(
+        &self,
+        horizontal_tension: Force,
+        thermal: f64,
+        cable: ElasticCable,
+        budget: &Budget,
+    ) -> Result<(LoadedSolution, f64), SagTensionError> {
+        let mut k = 1.0;
+        for _ in 0..50 {
+            let solution = self.stretched(k).shape(horizontal_tension, budget)?;
+            let length = solution.length().si();
+            let next =
+                thermal * (1.0 + solution.tension_integral() / length / cable.axial_stiffness.si());
+            if self.weight.si() == 0.0 || (next - k).abs() <= 4.0 * f64::EPSILON * next {
+                return Ok((solution, next));
+            }
+            k = next;
+        }
+        Err(SagTensionError::InvalidInput(format!(
+            "the stretch of the loaded span did not settle at H = {horizontal_tension}"
+        )))
     }
 
     fn segments(&self) -> Result<Vec<Segment>, SagTensionError> {
@@ -261,17 +305,16 @@ impl LoadedSpan {
     }
 
     /// Unstressed length of the cable at its own temperature when strung at
-    /// horizontal tension `horizontal_tension` under these loads.
+    /// horizontal tension `horizontal_tension` under these loads (its own
+    /// weight per metre of that unstressed length).
     pub fn unstrained_length(
         &self,
         horizontal_tension: Force,
         cable: ElasticCable,
         budget: &Budget,
     ) -> Result<Length, SagTensionError> {
-        let solution = self.shape(horizontal_tension, budget)?;
-        let length = solution.length().si();
-        let mean_strain = solution.tension_integral() / length / cable.axial_stiffness.si();
-        Ok(Length::from_si(length / (1.0 + mean_strain)))
+        let (solution, k) = self.conserved_shape(horizontal_tension, 1.0, cable, budget)?;
+        Ok(Length::from_si(solution.length().si() / k))
     }
 
     /// Change of state: solves this loaded span for a cable of known
@@ -288,11 +331,12 @@ impl LoadedSpan {
         outer: &Budget,
         inner: &Budget,
     ) -> Result<LoadedSolution, SagTensionError> {
-        let target = unstressed_length.si()
-            * (cable.thermal_expansion * (temperature - reference_temperature).kelvin()).exp();
+        let target = unstressed_length.si();
+        let thermal =
+            (cable.thermal_expansion * (temperature - reference_temperature).kelvin()).exp();
         let too_low = |h: f64| -> Result<bool, SagTensionError> {
-            match self.unstrained_length(Force::from_si(h), cable, inner) {
-                Ok(length) => Ok(length.si() > target),
+            match self.conserved_shape(Force::from_si(h), thermal, cable, inner) {
+                Ok((solution, k)) => Ok(solution.length().si() / k > target),
                 Err(SagTensionError::TooSlack { .. }) => Ok(true),
                 Err(other) => Err(other),
             }
@@ -325,7 +369,9 @@ impl LoadedSpan {
                 hi = mid;
             }
         }
-        self.shape(Force::from_si(0.5 * (lo + hi)), inner)
+        Ok(self
+            .conserved_shape(Force::from_si(0.5 * (lo + hi)), thermal, cable, inner)?
+            .0)
     }
 }
 
@@ -459,6 +505,7 @@ mod tests {
         LoadedSpan {
             geometry,
             base_load: w(15.97),
+            weight: w(15.97),
             loads: VerticalLoads {
                 point: vec![(m(x), Force::from_newtons(p))],
                 distributed: vec![],
@@ -532,6 +579,7 @@ mod tests {
         let span = LoadedSpan {
             geometry,
             base_load: w(15.97),
+            weight: w(15.97),
             loads: VerticalLoads {
                 point: vec![],
                 distributed: vec![(m(0.0), m(300.0), w(10.0))],
@@ -550,10 +598,7 @@ mod tests {
             axial_stiffness: Force::from_si(34.64e6),
             thermal_expansion: 18.9e-6,
         };
-        let known = LoadState {
-            load: w(15.97),
-            temperature: Temperature::from_celsius(15.0),
-        };
+        let known = LoadState::bare(w(15.97), Temperature::from_celsius(15.0));
         let h0 = Force::from_kilonewtons(28.0);
         let span = LoadedSpan::unloaded(geometry, w(15.97));
         let inner = default_solver_budget();
@@ -571,10 +616,7 @@ mod tests {
         let reference = InstalledSpan::from_known_state(geometry, cable, known, h0)
             .unwrap()
             .solve(
-                LoadState {
-                    load: w(15.97),
-                    temperature: Temperature::from_celsius(75.0),
-                },
+                LoadState::bare(w(15.97), Temperature::from_celsius(75.0)),
                 &inner,
             )
             .unwrap();

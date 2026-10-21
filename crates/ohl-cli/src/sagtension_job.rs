@@ -138,8 +138,11 @@ pub struct JobOutput {
 }
 
 fn state(case: &WeatherCase, cable: &Cable) -> LoadState {
+    let load = case.wire_load(cable.diameter, cable.weight());
     LoadState {
-        load: case.wire_load(cable.diameter, cable.weight()).resultant(),
+        load: load.resultant(),
+        weight: cable.weight(),
+        wind: load.horizontal,
         temperature: case.temperature,
     }
 }

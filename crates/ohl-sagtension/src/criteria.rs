@@ -207,11 +207,14 @@ mod tests {
     use super::*;
     use ohl_core::units::{ForcePerLength, Temperature};
 
+    /// Drake (own weight 15.97 N/m) under `load` (the rest ice).
     fn state(load: f64, celsius: f64) -> LoadState {
-        LoadState {
-            load: ForcePerLength::from_newtons_per_meter(load),
-            temperature: Temperature::from_celsius(celsius),
-        }
+        LoadState::loaded(
+            ForcePerLength::from_newtons_per_meter(15.97),
+            ForcePerLength::from_newtons_per_meter(load - 15.97),
+            ForcePerLength::ZERO,
+            Temperature::from_celsius(celsius),
+        )
     }
 
     fn drake() -> ElasticCable {

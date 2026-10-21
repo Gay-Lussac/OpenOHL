@@ -45,7 +45,12 @@ catenaries and Irvine's closed-form elastic element):
   stringing tension in still air, strings plumb and stretched by their
   load), which fixes each span's unstressed length; a weather case then
   scales it by exp(alpha (t - t_stringing)) and loads it per unit of that
-  length.
+  length: the own weight w exp(-alpha (t - t_stringing)) (the span keeps
+  its weight, owner decision 2026-10-21), ice and wind as they are.
+* The cable's own weight is conserved in every calculation: per metre of
+  unstressed cable at the known (stringing) temperature; the closed-form
+  and ruling-span models spread it over the stretched span (w / k per
+  metre, k the stretch, a fixed point), see conserved_span().
 
 Hand derivations confirming these values to the digits shown are written
 out in each case file's comments.
@@ -276,9 +281,84 @@ def tension_for_sag(S, h, w, D):
 
 
 # ------------------------------------------------------- change of state, RS
-def cos_multiplicative(spans, EA, alpha, H0, w0, t0, w1, t1):
+#
+# The cable's own weight is conserved (owner decision 2026-10-21): it is per
+# metre of unstressed cable at the known (stringing) state's temperature,
+# so a span weighs w0 L0 in every state. The catenary takes its load per
+# metre of stretched cable: the own weight w0 / k with k the span's length
+# over that unstressed length; ice (w1 - w0 in the vertical) and wind stay
+# per metre of the real cable. k depends on the mean tension of the very
+# catenary it loads: a fixed point, iterated here until it no longer moves.
+def conserved_span(S, h, H, own, ice, wind, k_of):
+    """Inextensible span at H whose own weight `own` per unstressed metre is
+    spread over its length (k_of(c): the stretch of catenary c). Returns the
+    catenary dict and its load per metre."""
+    k = 1.0
+    for _ in range(100):
+        w = math.hypot(own / k + ice, wind)
+        c = catenary_span(S, h, H, w)
+        k_new = k_of(c)
+        if abs(k_new - k) <= 1e-15 * k:
+            break
+        k = k_new
+    else:
+        raise RuntimeError("stretch did not settle")
+    return c, w, k_new
+
+
+def split(w0, w1, wind1):
+    """Own weight w0, the target's ice (vertical w1 beyond w0) and wind."""
+    return w0, math.sqrt(w1 * w1 - wind1 * wind1) - w0, wind1
+
+
+def cos_multiplicative(spans, EA, alpha, H0, w0, t0, w1, t1, wind1=0.0):
     """Equal-H section (one span: the single-span change of state): the
-    code's linear model L = L0 exp(alpha dt) (1 + Tmean/EA) per span."""
+    code's linear model L = L0 exp(alpha dt) (1 + Tmean/EA) per span, the
+    own weight w0 conserved. Returns H and each span's load per metre."""
+    own, ice, wind = split(w0, w1, wind1)
+
+    def unstressed(H, ice, wind, thermal):
+        total, loads = 0.0, []
+        for S, h in spans:
+            c, w, k = conserved_span(S, h, H, own, ice, wind,
+                                     lambda c: thermal * (1 + c["mean_tension"] / EA))
+            total += c["length"] / k
+            loads.append(w)
+        return total, loads
+
+    L0 = unstressed(H0, 0.0, 0.0, 1.0)[0]
+    thermal = math.exp(alpha * (t1 - t0))
+    lh = secant(lambda x: unstressed(math.exp(x), ice, wind, thermal)[0] - L0,
+                math.log(H0), math.log(H0 * 0.9))
+    return math.exp(lh), unstressed(math.exp(lh), ice, wind, thermal)[1]
+
+
+def cos_additive(spans, strain, H0, w0, t0, w1, t1, wind1=0.0):
+    """Equal-H section with the stress-strain model's additive strain:
+    sum L_i / (1 + eps(Tmean_i, t)) conserved; strain(T, t) given. The own
+    weight w0 is per metre of the unstressed cable at t0, the length
+    L0 (1 + eps(0, t0)): span i carries w0 (1 + eps(0, t0)) / (1 + eps_i).
+    Returns H and each span's load per metre."""
+    own, ice, wind = split(w0, w1, wind1)
+    m = strain(0.0, t0)
+
+    def unstressed(H, ice, wind, t):
+        total, loads = 0.0, []
+        for S, h in spans:
+            c, w, k = conserved_span(S, h, H, own, ice, wind,
+                                     lambda c: (1 + strain(c["mean_tension"], t)) / (1 + m))
+            total += c["length"] / (1 + strain(c["mean_tension"], t))
+            loads.append(w)
+        return total, loads
+
+    L0 = unstressed(H0, 0.0, 0.0, t0)[0]
+    lh = secant(lambda x: unstressed(math.exp(x), ice, wind, t1)[0] - L0, math.log(H0), math.log(H0 * 0.9))
+    return math.exp(lh), unstressed(math.exp(lh), ice, wind, t1)[1]
+
+
+def cos_unconserved(spans, EA, alpha, H0, w0, t0, w1, t1):
+    """The model before 2026-10-21, for comparison only: the same load per
+    metre of stretched cable in every state (the span heavier when hot)."""
 
     def unstressed(H, w):
         total = 0.0
@@ -288,24 +368,7 @@ def cos_multiplicative(spans, EA, alpha, H0, w0, t0, w1, t1):
         return total
 
     L0 = unstressed(H0, w0) * math.exp(alpha * (t1 - t0))
-    lh = secant(lambda x: unstressed(math.exp(x), w1) - L0, math.log(H0), math.log(H0 * 0.9))
-    return math.exp(lh)
-
-
-def cos_additive(spans, strain, H0, w0, t0, w1, t1):
-    """Equal-H section with the stress-strain model's additive strain:
-    sum L_i / (1 + eps(Tmean_i, t)) conserved; strain(T, t) given."""
-
-    def unstressed(H, w, t):
-        total = 0.0
-        for S, h in spans:
-            c = catenary_span(S, h, H, w)
-            total += c["length"] / (1 + strain(c["mean_tension"], t))
-        return total
-
-    L0 = unstressed(H0, w0, t0)
-    lh = secant(lambda x: unstressed(math.exp(x), w1, t1) - L0, math.log(H0), math.log(H0 * 0.9))
-    return math.exp(lh)
+    return math.exp(secant(lambda x: unstressed(math.exp(x), w1) - L0, math.log(H0), math.log(H0 * 0.9)))
 
 
 def cos_tb324(S, EA, alpha, H0, w0, t0, w1, t1):
@@ -579,10 +642,12 @@ def span_stringing_length(a, b, H, w, EA):
     return L, -V0, V0 + w * L  # length, upward reaction at a, at b
 
 
-def span_load_vector(mass, d, case, a, b):
+def span_load_vector(mass, d, case, a, b, weight_scale=1.0):
     """Load per unit unstressed length on a span from a to b: weight (and
-    ice) down, wind across the span to its left (wind from the right)."""
-    wl = wire_load(mass, d, case.get("ice", 0.0), case.get("rho", 913.0), case.get("q", 0.0))
+    ice) down, wind across the span to its left (wind from the right). The
+    own weight times `weight_scale` (the cable as cut over the element's
+    unstressed length: the span keeps its weight)."""
+    wl = wire_load(mass * weight_scale, d, case.get("ice", 0.0), case.get("rho", 913.0), case.get("q", 0.0))
     dx, dy = b[0] - a[0], b[1] - a[1]
     hn = math.hypot(dx, dy)
     left = [-dy / hn, dx / hn, 0.0]
@@ -668,20 +733,25 @@ def textbook_cos():
     EA, al = CABLE["EA"], CABLE["alpha"]
     ice = wire_load(CABLE["mass"], CABLE["d"], 0.012)
     wind = wire_load(CABLE["mass"], CABLE["d"], q=600.0)
-    for name, spans, w1, t1 in [
-        ("tbcos-001 level 300 m, 10 -> 70 degC", [(300.0, 0.0)], w0, 70.0),
-        ("tbcos-002 level 300 m, 12 mm glaze ice at -5 degC", [(300.0, 0.0)], ice["vertical"], -5.0),
-        ("tbcos-003 level 300 m, 600 Pa wind at 10 degC", [(300.0, 0.0)], wind["resultant"], 10.0),
-        ("tbcos-004 level 300 m, 150 degC", [(300.0, 0.0)], w0, 150.0),
-        ("tbcos-005 inclined 300 m +50 m, 10 -> 80 degC", [(300.0, 50.0)], w0, 80.0),
+    for name, spans, w1, wind1, t1 in [
+        ("tbcos-001 level 300 m, 10 -> 70 degC", [(300.0, 0.0)], w0, 0.0, 70.0),
+        ("tbcos-002 level 300 m, 12 mm glaze ice at -5 degC", [(300.0, 0.0)], ice["vertical"], 0.0, -5.0),
+        ("tbcos-003 level 300 m, 600 Pa wind at 10 degC", [(300.0, 0.0)], wind["resultant"],
+         wind["horizontal"], 10.0),
+        ("tbcos-004 level 300 m, 150 degC", [(300.0, 0.0)], w0, 0.0, 150.0),
+        ("tbcos-005 inclined 300 m +50 m, 10 -> 80 degC", [(300.0, 50.0)], w0, 0.0, 80.0),
     ]:
-        H = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w1, t1)
+        H, loads = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w1, t1, wind1)
         S, h = spans[0]
-        c = catenary_span(S, h, H, w1)
-        Hp = parabolic_cos(S, EA, al, 25_000.0, w0, 10.0, w1, t1)
-        show(name, {"load": w1, "horizontal_tension": H, "sag": c["sag"], "length": c["length"],
-                    "tension_left": c["tension_left"], "tension_right": c["tension_right"],
-                    "parabolic_cubic_H": Hp})
+        c = catenary_span(S, h, H, loads[0])
+        # The hand check's cubic with the loads per stretched metre (the own
+        # weight over 1 + H/EA when strung, the solution's load after).
+        Hp = parabolic_cos(S, EA, al, 25_000.0, w0 / (1 + 25_000.0 / EA), 10.0, loads[0], t1)
+        old = cos_unconserved(spans, EA, al, 25_000.0, w0, 10.0, w1, t1)
+        show(name, {"load": w1, "load_per_stretched_m": loads[0], "horizontal_tension": H, "sag": c["sag"],
+                    "length": c["length"], "tension_left": c["tension_left"],
+                    "tension_right": c["tension_right"], "parabolic_cubic_H": Hp,
+                    "before_2026_10_21_H": old, "change_pct": (H / old - 1) * 100})
 
 
 def parabolic_cos(S, EA, alpha, H1, w1, t1, w2, t2):
@@ -698,15 +768,15 @@ def ruling_span_cases():
     EA, al = CABLE["EA"], CABLE["alpha"]
     spans = [(200.0, 0.0), (350.0, 0.0), (250.0, 0.0)]
     RS = math.sqrt(sum(S**3 for S, _ in spans) / sum(S for S, _ in spans))
-    H_exact = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w0, 80.0)
-    H_rs = cos_multiplicative([(RS, 0.0)], EA, al, 25_000.0, w0, 10.0, w0, 80.0)
-    H_par = parabolic_cos(RS, EA, al, 25_000.0, w0, 10.0, w0, 80.0)
+    H_exact = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w0, 80.0)[0]
+    H_rs, loads = cos_multiplicative([(RS, 0.0)], EA, al, 25_000.0, w0, 10.0, w0, 80.0)
+    H_par = parabolic_cos(RS, EA, al, 25_000.0, w0 / (1 + 25_000.0 / EA), 10.0, loads[0], 80.0)
     show("tbrs-001 section 200/350/250 m, 10 -> 80 degC (sagtension.section)",
          {"horizontal_tension": H_exact, "ruling_span": RS, "ruling_span_H": H_rs,
           "ruling_span_error_pct": (H_rs / H_exact - 1) * 100, "parabolic_ruling_span_H": H_par})
     for t in (80.0, -20.0):
         fe = fe_section_rs_case(spans, t)
-        exact = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w0, t)
+        exact = cos_multiplicative(spans, EA, al, 25_000.0, w0, 10.0, w0, t)[0]
         for i in range(3):
             fe[f"span_{i}_vs_exact_pct"] = (fe[f"h_{i}_n"] / exact - 1) * 100
         fe["exact_equal_h_n"] = exact
@@ -739,7 +809,9 @@ def suspension_section(spans_x, top_z, wire_z, l0, k, W, mass, d, EA, alpha, H, 
     thermal = math.exp(alpha * (case["t"] - t_s))
     spans = []
     for i in range(n - 1):
-        q = span_load_vector(mass, d, case, nodes[i], nodes[i + 1])
+        # Per unit of the thermally longer unstressed length: the own
+        # weight w / thermal (conserved), ice and wind as they are.
+        q = span_load_vector(mass, d, case, nodes[i], nodes[i + 1], weight_scale=1 / thermal)
         spans.append(Span(i, i + 1, lengths[i] * thermal, EA, q))
     bars = []
     p = case.get("q", 0.0)
@@ -787,7 +859,7 @@ def rs_line(strung, mass, EA, alpha, H, t_s, t):
     w = mass * G
     spans = [(math.hypot(b[0] - a[0], b[1] - a[1]), b[2] - a[2]) for a, b in zip(strung, strung[1:])]
     strain = lambda T, tt: T / EA + alpha * (tt - 20.0)
-    return cos_additive(spans, strain, H, w, t_s, w, t)
+    return cos_additive(spans, strain, H, w, t_s, w, t)[0]
 
 
 class SpanH:
@@ -810,18 +882,22 @@ class SpanH:
         return F0, F1
 
 
-def dead_end_span(S, z, mass, d, EA, alpha, H, t_s, case, stretch=0.0):
+def dead_end_span(S, z, mass, d, EA, alpha, H, t_s, case, stretch=0.0, conserved=True):
     """One span between fixed wire points (0, 0, z) and (S, 0, z), strung
     at H in still air at t_s; solved in `case`. `stretch`: a permanent
-    stretch of the unstressed length (linear creep model)."""
+    stretch of the unstressed length (linear creep model). `conserved`:
+    the own weight kept (False: the model before 2026-10-21, the weight per
+    unit of the longer length, for comparison only)."""
     a, b = [0.0, 0.0, z], [S, 0.0, z]
     L0 = span_stringing_length(a, b, H, mass * G, EA)[0]
-    q = span_load_vector(mass, d, case, a, b)
-    sp = Span(0, 1, L0 * (1 + stretch) * math.exp(alpha * (case["t"] - t_s)), EA, q)
+    k = (1 + stretch) * math.exp(alpha * (case["t"] - t_s))
+    q = span_load_vector(mass, d, case, a, b, weight_scale=1 / k if conserved else 1.0)
+    sp = Span(0, 1, L0 * k, EA, q)
     pos = [a, b]
     sp.forces(pos)
     mid, _ = mid_point(sp, pos)
     return {
+        "L0": L0,
         "h_0_n": horizontal_tension(sp, pos),
         "max_tension_0_n": max_tension(sp, pos),
         "mid_y_0_m": mid[1],
@@ -937,19 +1013,62 @@ def creep_cases():
          {"h_0_n": fe["h_0_n"], "sag_0_m": fe["sag_0_m"], "initial_at_35_h": warm["h_0_n"],
           "initial_at_35_sag": warm["sag_0_m"]})
     # RS: the strung span (clamps at 30 m), the linear model's additive
-    # strain, the unstressed length times (1 + stretch).
+    # strain, the unstressed length times (1 + stretch). The own weight is
+    # per metre of the cable unstressed at stringing (10 degC), the length
+    # L0 (1 + eps(0, 10)); the stretch adds length, not weight: per metre of
+    # stretched cable w (1 + eps(0, 10)) / ((1 + stretch)(1 + eps)) on the
+    # stretched zero-strain length.
     w = mass * G
+    stretch = alpha * shift
 
     def strain(T, tt):
         return T / EA + alpha * (tt - 20.0)
 
-    def unstressed(H):
-        c = catenary_span(300.0, 0.0, H, w)
-        return c["length"] / (1 + strain(c["mean_tension"], 10.0))
+    m = strain(0.0, 10.0)
 
-    L0 = unstressed(25_000.0) * (1 + alpha * shift)
-    H = math.exp(secant(lambda x: unstressed(math.exp(x)) - L0, math.log(25_000.0), math.log(22_000.0)))
-    show("tbcreep-002 creep-rs at 10 degC", {"h_0_n": H, "sag_0_m": catenary_span(300.0, 0.0, H, w)["sag"]})
+    def span(H, s):
+        k_of = lambda c: (1 + s) * (1 + strain(c["mean_tension"], 10.0)) / (1 + m)
+        c, _, k = conserved_span(300.0, 0.0, H, w, 0.0, 0.0, k_of)
+        return c, c["length"] / (1 + strain(c["mean_tension"], 10.0))
+
+    L0 = span(25_000.0, 0.0)[1] * (1 + stretch)
+    H = math.exp(secant(lambda x: span(math.exp(x), stretch)[1] - L0, math.log(25_000.0), math.log(22_000.0)))
+    show("tbcreep-002 creep-rs at 10 degC", {"h_0_n": H, "sag_0_m": span(H, stretch)[0]["sag"],
+                                             "fe_minus_rs_n": fe["h_0_n"] - H})
+
+
+def heated_span_cases():
+    """tbheat-001...003: a level 400 m span between fixed wire points at
+    30 m, strung at 25 kN at 10 degC, at 150 degC: the closed-form change of
+    state, the finite elements and the line's ruling-span method. The span
+    weighs w L0 in each (L0 as strung at 10 degC): for a level span each
+    support carries half of it, 2 sqrt(Tmax^2 - H^2) = w L0."""
+    print("== heated span, total weight constant ==")
+    mass, d, EA, alpha = CABLE["mass"], CABLE["d"], CABLE["EA"], CABLE["alpha"]
+    w = mass * G
+    H_cf, loads = cos_multiplicative([(400.0, 0.0)], EA, alpha, 25_000.0, w, 10.0, w, 150.0)
+    c = catenary_span(400.0, 0.0, H_cf, loads[0])
+    L0_cf = conserved_span(400.0, 0.0, 25_000.0, w, 0.0, 0.0, lambda c: 1 + c["mean_tension"] / EA)
+    show("tbheat-001 closed-form change of state (sagtension.change_of_state)",
+         {"horizontal_tension": H_cf, "sag": c["sag"], "length": c["length"], "tension_left": c["tension_left"],
+          "total_weight": 2 * math.sqrt(c["tension_left"] ** 2 - H_cf**2),
+          "w_L0": w * L0_cf[0]["length"] / L0_cf[2],
+          "before_2026_10_21_H": cos_unconserved([(400.0, 0.0)], EA, alpha, 25_000.0, w, 10.0, w, 150.0)})
+    fe = dead_end_span(400.0, 30.0, mass, d, EA, alpha, 25_000.0, 10.0, {"t": 150.0})
+    old = dead_end_span(400.0, 30.0, mass, d, EA, alpha, 25_000.0, 10.0, {"t": 150.0}, conserved=False)
+    fe["total_weight"] = 2 * math.sqrt(fe["max_tension_0_n"] ** 2 - fe["h_0_n"] ** 2)
+    fe["w_L0"] = w * fe["L0"]
+    fe["before_2026_10_21_h"] = old["h_0_n"]
+    fe["before_2026_10_21_sag"] = old["sag_0_m"]
+    fe["before_2026_10_21_total_weight"] = 2 * math.sqrt(old["max_tension_0_n"] ** 2 - old["h_0_n"] ** 2)
+    show("tbheat-002 finite elements (line.section, initial-fe)", fe)
+    strain = lambda T, tt: T / EA + alpha * (tt - 20.0)
+    H_rs, loads = cos_additive([(400.0, 0.0)], strain, 25_000.0, w, 10.0, w, 150.0)
+    c = catenary_span(400.0, 0.0, H_rs, loads[0])
+    show("tbheat-003 the line's ruling-span method (line.section, initial-rs)",
+         {"h_0_n": H_rs, "sag_0_m": c["sag"], "max_tension_0_n": c["tension_left"],
+          "total_weight": 2 * math.sqrt(c["tension_left"] ** 2 - H_rs**2),
+          "rs_minus_fe_n": H_rs - fe["h_0_n"]})
 
 
 def irvine(H, V0, L0, EA, w):
@@ -996,8 +1115,8 @@ def bimetallic_cases():
     strain = bimetallic_strain(EAo, ao, EAc, ac, 0.0)
 
     def state(t):
-        H = cos_additive([(300.0, 0.0)], strain, 28_000.0, w, 20.0, w, t)
-        c = catenary_span(300.0, 0.0, H, w)
+        H, loads = cos_additive([(300.0, 0.0)], strain, 28_000.0, w, 20.0, w, t)
+        c = catenary_span(300.0, 0.0, H, loads[0])
         dt = t - 20.0
         eps = (c["mean_tension"] + EAo * ao * dt + EAc * ac * dt) / (EAo + EAc)
         return H, c, EAo * (eps - ao * dt)
@@ -1043,10 +1162,16 @@ def tb324_cases():
     show("tb324 sec. 6.1 430 Pa on 26.1 mm", {k: wl[k] for k in ("vertical", "horizontal", "resultant")})
     show("tb324 sec. 6.1 initial sag", {"sag": catenary_span(300.0, 0.0, 15_330.0, 10.89)["sag"]})
     EA = 58.9e9 * 403e-6
-    Hm = cos_multiplicative([(300.0, 0.0)], EA, 23e-6, 15_330.0, 10.89, 15.0, 15.6, 15.0)
+    # The 15.6 N/m resultant: the own weight 10.89 N/m and the wind (its
+    # horizontal part, the rest).
+    wind = math.sqrt(15.6**2 - 10.89**2)
+    Hm, loads = cos_multiplicative([(300.0, 0.0)], EA, 23e-6, 15_330.0, 10.89, 15.0, 15.6, 15.0, wind)
     Ht = cos_tb324(300.0, EA, 23e-6, 15_330.0, 10.89, 15.0, 15.6, 15.0)
+    Hu = cos_unconserved([(300.0, 0.0)], EA, 23e-6, 15_330.0, 10.89, 15.0, 15.6, 15.0)
     show("tb324 sec. 6.1 Arbutus LE, 15.6 N/m",
-         {"H_code_model": Hm, "H_tb324_model": Ht, "sag_code": catenary_span(300.0, 0.0, Hm, 15.6)["sag"],
+         {"wind_n_per_m": wind, "H_code_model": Hm, "H_tb324_model": Ht,
+          "code_minus_tb324_n": Hm - Ht, "H_code_before_2026_10_21": Hu,
+          "sag_code": catenary_span(300.0, 0.0, Hm, loads[0])["sag"],
           "strain_increase": (Ht - 15_330.0) / EA})
 
 
@@ -1059,23 +1184,26 @@ def tb324_not_used():
     # Table 3 (sec. 3.1): 250 m and 350 m dead-end spans strung at 35 kN,
     # 15 degC, at 100 degC — linear elastic with the brochure's Drake data.
     show("Table 3, linear Drake (printed 21177 N and 24670 N)",
-         {f"{S} m": cos_multiplicative([(float(S), 0.0)], EA, alpha, 35_000.0, 15.97, 15.0, 15.97, 100.0)
+         {f"{S} m": cos_multiplicative([(float(S), 0.0)], EA, alpha, 35_000.0, 15.97, 15.0, 15.97, 100.0)[0]
           for S in (250, 350)})
     # Sec. 6.2: SPE, strung at 48 MPa (22.49 kN) at 15 degC, 600 µstrain
     # of plastic elongation, then 15 degC and 100 degC.
     H0, w = 48e6 * 468.6e-6, 15.97
     out = {}
+    # The own weight conserved: per metre of the cable unstressed at
+    # 15 degC; the plastic elongation adds length, not weight.
+    strung = conserved_span(300.0, 0.0, H0, w, 0.0, 0.0, lambda c: 1 + c["mean_tension"] / EA)
+    u = strung[0]["length"] / strung[2] * (1 + 600e-6)
     for t in (15.0, 100.0):
-        c0 = catenary_span(300.0, 0.0, H0, w)
-        u = c0["length"] / (1 + c0["mean_tension"] / EA) * (1 + 600e-6)
+        k_t = (1 + 600e-6) * math.exp(alpha * (t - 15.0))
 
-        def unstressed(H, t=t):
-            c = catenary_span(300.0, 0.0, H, w)
-            return c["length"] / (1 + c["mean_tension"] / EA) / math.exp(alpha * (t - 15.0))
+        def at(H, k_t=k_t):
+            c, _, k = conserved_span(300.0, 0.0, H, w, 0.0, 0.0, lambda c: k_t * (1 + c["mean_tension"] / EA))
+            return c, c["length"] / k * (1 + 600e-6)
 
-        H = math.exp(secant(lambda x: unstressed(math.exp(x)) - u, math.log(H0 * 0.9), math.log(H0 * 0.8)))
+        H = math.exp(secant(lambda x: at(math.exp(x))[1] - u, math.log(H0 * 0.9), math.log(H0 * 0.8)))
         out[f"H at {t} degC (printed {'20.1' if t == 15 else '15.9'} kN)"] = H
-        out[f"sag at {t} degC (printed {'8.95' if t == 15 else '11.3'} m)"] = catenary_span(300.0, 0.0, H, w)["sag"]
+        out[f"sag at {t} degC (printed {'8.95' if t == 15 else '11.3'} m)"] = at(H)[0]["sag"]
     show("Sec. 6.2 SPE, Drake 300 m", out)
 
 
@@ -1101,6 +1229,7 @@ def main():
     textbook_catenary()
     textbook_cos()
     creep_cases()
+    heated_span_cases()
     ruling_span_cases()
     point_load_cases()
     bimetallic_cases()
