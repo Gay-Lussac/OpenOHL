@@ -77,6 +77,11 @@ const CABLE: &[Field] = &[
     ("diameter", "\"28.1 mm\"", "overall diameter"),
     ("mass_per_length", "\"1.63 kg/m\"", "mass per length"),
     (
+        "reference_temperature",
+        "\"20 °C\"",
+        "the data sheet's temperature of the mass per length (default 20 °C)",
+    ),
+    (
         "rated_tensile_strength",
         "\"120 kN\"",
         "rated tensile strength (RTS)",
@@ -792,6 +797,7 @@ impl LibraryPage {
     /// Saves the file when it reads.
     pub fn save(&mut self) -> Result<PathBuf, String> {
         self.raise_load_case_version();
+        self.raise_wire_version();
         let (Some(path), Some(text)) = (self.file.clone(), self.text()) else {
             return Err("no file open".into());
         };
@@ -825,6 +831,34 @@ impl LibraryPage {
                 .is_some_and(|v| v < want)
         {
             doc["version"] = toml_edit::value(want);
+        }
+    }
+
+    /// A wire library one of whose cables gives its `reference_temperature`
+    /// is written at version 2 ([`ohl_cables::WIRE_FILE_VERSION`]): its
+    /// `version` raised when lower; without one it keeps its version.
+    fn raise_wire_version(&mut self) {
+        if self.kind != LibraryKind::Cables {
+            return;
+        }
+        let Some(doc) = &mut self.doc else {
+            return;
+        };
+        let gives = doc
+            .get("cable")
+            .and_then(toml_edit::Item::as_array_of_tables)
+            .is_some_and(|cables| {
+                cables
+                    .iter()
+                    .any(|c| c.contains_key("reference_temperature"))
+            });
+        if gives
+            && doc
+                .get("version")
+                .and_then(toml_edit::Item::as_integer)
+                .is_some_and(|v| v < 2)
+        {
+            doc["version"] = toml_edit::value(2);
         }
     }
 
@@ -2027,6 +2061,44 @@ mod tests {
             k.check(&path, &k.template("new-one"))
                 .unwrap_or_else(|e| panic!("{k:?}: {e}"));
         }
+    }
+
+    /// A wire library one of whose cables gives the data sheet's
+    /// `reference_temperature` (owner decision 2026-10-21) is saved at
+    /// version 2; without it the file keeps its version 1.
+    #[test]
+    fn a_cable_with_its_reference_temperature_is_saved_at_version_2() {
+        let dir = temp("wires");
+        let path = dir.join("wires.ohlw");
+        std::fs::copy(root().join("libraries/cables/acsr-examples.ohlw"), &path).unwrap();
+        let sources = Sources {
+            file: dir.join("line.ohl.json"),
+            library: Some(path.clone()),
+            ..Sources::default()
+        };
+        let mut page = LibraryPage::new(LibraryKind::Cables, &sources);
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("version = 1\n"), "{text}");
+        let doc = page.doc.as_mut().unwrap();
+        doc["cable"]
+            .as_array_of_tables_mut()
+            .unwrap()
+            .get_mut(0)
+            .unwrap()["reference_temperature"] = toml_edit::value("15 °C");
+        page.check();
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("version = 2\n"), "{text}");
+        let mut lib = ohl_cables::Library::default();
+        lib.add_toml(&path, &text).unwrap();
+        let first = lib
+            .iter()
+            .find(|c| c.reference_temperature.is_some())
+            .unwrap();
+        assert!((first.mass_reference_temperature().celsius() - 15.0).abs() < 1e-12);
     }
 
     /// A load case given the structures' own wind (`[case.structure]`) is
