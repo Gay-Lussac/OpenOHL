@@ -24,9 +24,21 @@ A cable has a fixed unstressed length \\( L_0 \\) at a reference temperature \\(
 
 The exponential thermal factor is the exact integral of \\( dL/(L\\,dT) = \alpha \\). The common additive form \\( 1 + \alpha\Delta t + \bar T/EA \\) agrees to first order but is **not path independent**: defining a span at 15 °C, solving at 75 °C, re-defining from that result and solving back gave 28.009 kN instead of 28 kN (span slack magnifies tiny length errors). The multiplicative form makes every state give the same unstressed length.
 
-The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few µs; the time limit, 10 s, only guards against a loop).
+The length mismatch decreases strictly with \\( H \\): unique solution, found by bracketed bisection (limit: 200 iterations; typical: ~60 iterations, a few tens of µs; the time limit, 10 s, only guards against a loop).
 
-*Validation:* `cos-001…003`; `tbcos-001…005` (temperature, ice, wind, 150 °C, an inclined span; the parabolic change-of-state cubic agrees within 0.05 % on level spans), `tb324-016` (CIGRE TB 324 sec. 6.1, within the stated difference of its strain model) ([Textbook and published cases](../validation/textbook.md)).
+### The cable's own weight is conserved
+
+*2026-10-21, owner decision.* A cable keeps its mass when it lengthens: when heated, stretched by its tension, after creep or a permanent set. Its weight per metre \\( w \\) (the data's mass per length times g) is per metre of **unstressed** cable at the reference temperature — the known (stringing) state's — so a span weighs \\( wL_0 \\) in every state. The catenary above carries its load per metre of stretched cable; the own weight is therefore spread over the span's length:
+
+\\[ w_L = \frac{w L_0}{L} = \frac{w}{k}, \qquad k = e^{\alpha (t - t_0)} \left(1 + \frac{\bar T}{EA}\right) \\]
+
+(the additive form below: \\( k = (1 + \varepsilon)/(1 + \varepsilon_w) \\), with \\( \varepsilon_w \\) the strain at zero tension at the known state's temperature, the length that carries \\( w \\) per metre). As \\( \bar T \\) depends on the load, \\( k \\) is a fixed point solved for each trial tension: it changes the load by about \\( 10^{-3} \\) and the mean tension by about \\( 10^{-5} \\) of that, so it settles in two or three passes (exit clause: 50). Ice and wind are loads per metre of the **real** conductor and stay as given; point loads are forces. A load state therefore says which part of its load is the cable's own weight and which part is wind (`LoadState::weight`, `wind`; the rest of the vertical load is ice).
+
+Before this, the same load per metre of stretched cable was taken in every state, so a span's weight grew with its length: from the stringing state by \\( L/L_{strung} - 1 \\) (+0.25 % at 150 °C for 300 m strung at 25 kN at 10 °C), and the stringing state itself carried \\( w \\) per stretched metre, \\( \bar T/EA \\) (about 0.08 %) more than the cable weighs. The effect on that span: H −0.12 % at 70 °C, −0.28 % at 150 °C, +0.007 % with 12 mm of ice at −5 °C; the sag 5–6 mm less in every case (most of it the stringing state's weight). The finite elements carried their weight per unstressed metre already, but not its thermal lengthening ([Finite-element wire systems](wirefe.md#elastic-catenary-element)); with both corrected, the closed form and the finite elements agree to \\( 10^{-6} \\) on a single span (`tbheat-001…002`), and creep as a temperature shift gives the same tension by both methods to 0.0004 % (`tbcreep-001…002`, 0.008 % before).
+
+**Simplification:** the own weight spread evenly over the stretched span. The cable stretches more where its tension is higher (towards the supports), so its mass per stretched metre varies along the span by \\( \Delta T/EA \\) (about \\( 10^{-5} \\)); the catenary takes the mean. Either way, below \\( 10^{-6} \\) of the tension. Exact: the elastic catenary (the finite elements).
+
+*Validation:* `cos-001…003`; `tbcos-001…005` (temperature, ice, wind, 150 °C, an inclined span; the parabolic change-of-state cubic agrees within 0.05 % on level spans), `tbheat-001` (the weight kept at 150 °C), `tb324-016` (CIGRE TB 324 sec. 6.1, within the printed rounding) ([Textbook and published cases](../validation/textbook.md)).
 
 ### Thermal strain: two forms in use
 
@@ -51,7 +63,7 @@ Suspension insulators equalise the horizontal tension along a section. OpenOHL s
 
 \\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\\, e^{\alpha (t - t_0)} \\]
 
-The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also reported. For the inclined 4-span validation section it is 0.116 % off in tension; the exact solution costs about 60 µs for 20 spans.
+each span carrying its own weight spread over its length ([above](#the-cables-own-weight-is-conserved): one \\( H \\), a load per metre of its own per span). The classic ruling span \\( S_r = \sqrt{\sum S_i^3 / \sum S_i} \\) is also reported. For the inclined 4-span validation section it is 0.116 % off in tension; the exact solution costs about 60 µs for 20 spans.
 
 *Validation:* `section-001`; `tbrs-001` (the ruling span 0.0045 % off on three level spans), `tbrs-004` (the line's ruling-span method) ([Textbook and published cases](../validation/textbook.md)). *Not yet modelled:* insulator string length changing the effective span lengths.
 
@@ -99,6 +111,8 @@ Components share the total strain; component *k* has mechanical strain \\( \vare
 A section keeps one unstressed length (zero strain, curves' reference temperature) and each span stretches with the strain at its mean tension:
 
 \\[ \sum_i \frac{L_i(H)}{1 + \varepsilon(\bar T_i(H), t, s)} = L_0 \\]
+
+and span \\( i \\) carries \\( w (1 + \varepsilon_w)/(1 + \varepsilon_i) \\) per metre of its length ([the cable's own weight is conserved](#the-cables-own-weight-is-conserved)): thermal strain, creep and the permanent set add length, not weight. A linear model's creep stretch lengthens \\( L_0 \\) and lowers \\( 1 + \varepsilon_w \\) by the same factor.
 
 **Final condition.** The cable is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; the final state is the one leaving the cable longer, elastic along the final modulus (and back onto the initial curve if loaded beyond). "Longer" is compared at a working tension (the creep case's), and the permanent stretch passed to the FE model is measured at the stringing tension — not at zero tension, where outer strands that take no compression are slack and only the core's set would count (about half the stretch of the synthetic test cable). At the governing heaviest case, final and initial tensions are therefore equal — a consistency check used in the validation.
 

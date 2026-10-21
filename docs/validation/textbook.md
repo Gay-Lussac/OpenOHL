@@ -18,7 +18,7 @@ Every textbook case has two independent checks:
 - an **independent numerical reference**,
   `benchmarks/reference/textbook_reference.py` (Python standard library
   only; run `python3 -I benchmarks/reference/textbook_reference.py`, about
-  25 s). It uses none of the code's formulas: a span is the *integral* of
+  a minute). It uses none of the code's formulas: a span is the *integral* of
   its tangent \\( \mathbf F/|\mathbf F|\\,(1 + |\mathbf F|/EA) \\) along
   its length, with the tension vector \\( \mathbf F(s) = \mathbf F_0 -
   \mathbf q s \\) from equilibrium, evaluated by Gauss–Legendre quadrature
@@ -44,9 +44,11 @@ the engines are unchanged.
 |---|---|---|
 | Closed forms (catenary, loads, Irvine) | \\( 10^{-8} \\) relative (\\( 10^{-9} \\) for loads) | exact; reference to \\( 10^{-12} \\) |
 | Change of state, sections, line models | \\( 10^{-7} \\) relative on forces and sags, \\( 10^{-6} \\) m on positions, \\( 10^{-6} \\)° on angles | iterative solvers converging far below it (FE: \\( 10^{-9} \\) of the loads) |
-| TB 324 | half a unit of the printed last digit | the brochure's rounding; two cases add a stated model difference (below) |
+| TB 324 | half a unit of the printed last digit | the brochure's rounding (tb324-016: within it since 2026-10-21, below) |
 
-No tolerance was widened to make a case pass.
+No tolerance was widened to make a case pass. One was tightened: tb324-016
+from 2.5 N to the printed rounding, 0.5 N, once the cable's own weight was
+conserved (2026-10-21, below).
 
 ## Cases
 
@@ -70,17 +72,20 @@ No tolerance was widened to make a case pass.
 | tbcos-004 | thermal sag at 150 °C | parabolic cubic (−0.044 %), slack balance + reference | \\( 10^{-7} \\) |
 | tbcos-005 | inclined 300 m, +50 m, 80 °C | \\( T_B - T_A = wh \\) + reference | \\( 10^{-7} \\) |
 | tbcreep-001 | creep as +25 °C (linear model), FE | equals the initial state at 35 °C to 0.003 % + reference | \\( 10^{-7} \\) |
-| tbcreep-002 | the same, ruling-span method | additive strain + reference | \\( 10^{-7} \\) |
+| tbcreep-002 | the same, ruling-span method | additive strain + reference; 0.0004 % from tbcreep-001 | \\( 10^{-7} \\) |
+| tbheat-001 | level 400 m, 25 kN at 10 °C → 150 °C, closed form | the span's weight \\( 2\sqrt{T_{max}^2 - H^2} = wL_0 \\) = 6287.47 N + reference | \\( 10^{-7} \\) |
+| tbheat-002 | the same, finite elements | the same weight; 0.013 N from tbheat-001 + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbheat-003 | the same, the line's ruling-span method | the same weight; +8.28 N (the additive thermal form) + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
 ### Ruling span (`benchmarks/sagtension/textbook-ruling-span.toml`)
 
 Three level spans 200/350/250 m, 3 m suspension strings, strung at 25 kN
 at 10 °C. The approximation, stated: at 80 °C the exact equal-tension
-section carries 18312.83 N; the classical ruling span (288.314 m) gives
-18312.01 N (−0.0045 %), its parabolic cubic 18316.8 N (+0.022 %); with
-the real strings (FE, clipped in) the spans carry −0.74 %, +0.25 % and
-−0.38 % of it — the short spans sag more than the ruling span says. At
-−20 °C: +0.17 %, −0.05 %, +0.09 %.
+section carries 18287.29 N; the classical ruling span (288.314 m) gives
+18286.48 N (−0.0044 %), its parabolic cubic 18291.3 N (+0.022 %); with
+the real strings (FE, clipped in) the spans carry −0.73 %, +0.26 % and
+−0.37 % of it — the short spans sag more than the ruling span says. At
+−20 °C: +0.16 %, −0.07 %, +0.08 %.
 
 | Case | What | Source | Tolerance |
 |---|---|---|---|
@@ -99,7 +104,7 @@ the real strings (FE, clipped in) the spans carry −0.74 %, +0.25 % and
 ### Bimetallic conductor (`benchmarks/sagtension/textbook-bimetallic.toml`)
 
 Linear aluminium on a linear steel core (TB 324's typical component
-values), the outer strands taking no compression; knee point at 140.85 °C
+values), the outer strands taking no compression; knee point at 140.64 °C
 by hand and by the reference.
 
 | Case | What | Source | Tolerance |
@@ -145,7 +150,7 @@ by hand and by the reference.
 | tb324-013 | sec. 5.2.1 p. 35 | A1-37 at 12 kN: 506 µstrain | 0.5 µstrain |
 | tb324-014 | sec. 6.1 p. 57 | 430 Pa on 26.1 mm: 11.2 N/m, resultant 15.6 N/m | 0.05 N/m |
 | tb324-015 | sec. 6.1 p. 57 | initial sag 8.0 m | 0.05 m |
-| tb324-016 | sec. 6.1 p. 57–58 | linear elastic under wind: H = 20745 N, sag 8.5 m | 2.5 N (see below), 0.05 m |
+| tb324-016 | sec. 6.1 p. 57–58 | linear elastic under wind: H = 20745 N, sag 8.5 m | 0.5 N (see below), 0.05 m |
 
 Two cases need a word:
 
@@ -155,18 +160,23 @@ Two cases need a word:
   and 18.851·10⁻⁶/K; the case checks these.
 - **tb324-016**: the brochure's linear model stretches the cable by its
   horizontal tension, additively; OpenOHL by its mean tension,
-  multiplicatively ([Sag-tension](../theory/sagtension.md#thermal-strain-two-forms-in-use)).
+  multiplicatively ([Sag-tension](../theory/sagtension.md#thermal-strain-two-forms-in-use)),
+  and keeps the cable's own weight (10.89 N/m per metre of unstressed
+  cable; of the printed 15.6 N/m resultant the rest is wind,
+  \\( \sqrt{15.6^2 - 10.89^2} \\) = 11.170 N/m, given as the input `wind`).
   The reference reproduces the brochure's 20745 N with its model
-  (20744.73 N) and gives 20742.77 N with OpenOHL's: 1.97 N (0.0095 %).
-  The tolerance is the printed rounding (0.5 N) plus that stated model
-  difference (2.0 N).
+  (20744.73 N) and gives 20745.36 N with OpenOHL's: 0.62 N from the
+  brochure's model, 0.36 N from the printed value. The tolerance is the
+  printed rounding, 0.5 N. Before 2026-10-21 OpenOHL gave 20742.77 N
+  (its weight then grew with the stretch) and the tolerance was 2.5 N
+  (the rounding plus that 2.0 N difference).
 
 **Not used** (the brochure's text is not copied; the reasons):
 
 - *Table 3 and Fig. 13* (sec. 3.1, p. 23–25: 250 m and 350 m dead-end
   spans of Drake strung at 35 kN at 15 °C, at 100 °C 21177 N and
   24670 N): the brochure's own linear Drake data (sec. 5.2.3–5.2.4) give
-  19735 N and 23598 N (7 % and 4 % lower); the elongation model behind the
+  19703 N and 23560 N (7 % and 4.5 % lower); the elongation model behind the
   table is not stated, so its inputs are incomplete. The tilt of the
   string that follows depends on these tensions.
 - *Table 4* (sec. 3.2, p. 27): the stringing tension of the two spans is
@@ -181,9 +191,9 @@ Two cases need a word:
 - *sec. 6.2* (SPE model, Fig. 28): a graphical solution, and its
   installation stress (48 MPa, which gives the printed 8.0 m sag) and its
   "28.0 kN" disagree. Read as 48 MPa, the reference and OpenOHL agree
-  with each other (19.90 kN, 9.04 m at 15 °C; 15.66 kN, 11.49 m at 100 °C)
+  with each other (19.88 kN, 9.04 m at 15 °C; 15.63 kN, 11.49 m at 100 °C)
   but not with the figure's readings (20.1 kN, 8.95 m; 15.9 kN, 11.3 m:
-  1.5 % and 0.19 m), whose reading accuracy is unknown.
+  1–2 % and 0.19 m), whose reading accuracy is unknown.
 - *sec. 6.3, Tables 5, 6, 12, 14, 15* (EPE model, knee points, sensitivity
   studies): they need the conductors' stress-strain and creep curves,
   which the brochure does not give (graphs and a program's output).
@@ -199,14 +209,24 @@ Two cases need a word:
   error in the reference script's search for the largest sag of a loaded
   span, found by the derivation now in the case's notes; the code was
   right.
-- **Weight of a heated span in the finite elements** (documented in
-  [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)):
-  a span's unstressed length grows by \\( e^{\alpha\Delta t} \\) and its
-  load stays per unit of that length, so a hot span weighs more (and a
-  cold one less) by \\( e^{\alpha\Delta t} - 1 \\). For the textbook
-  cable strung at 10 °C: +0.04 % on H at 70 °C, +0.17 % at 150 °C
-  (sag +7 mm and +13 mm), −0.04 % at −20 °C. The cases follow the code's
-  model; the size is from the reference.
+- **The weight of a heated span** (found by these cases, corrected
+  2026-10-21 by owner decision; see
+  [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)
+  and [Sag-tension](../theory/sagtension.md#the-cables-own-weight-is-conserved)):
+  in the finite elements a span's unstressed length grew by
+  \\( e^{\alpha\Delta t} \\) and its load stayed per unit of that
+  length, so a hot span weighed more (and a cold one less) by
+  \\( e^{\alpha\Delta t} - 1 \\): for the textbook cable strung at
+  10 °C, +0.04 % on H at 70 °C, +0.17 % at 150 °C (sag +7 mm and +13 mm),
+  −0.04 % at −20 °C. The closed form and the ruling-span method took the
+  weight per metre of stretched cable, so their spans grew heavier with
+  every lengthening, thermal or elastic (+0.25 % of weight at 150 °C).
+  Every calculation now keeps the cable's weight (per metre of unstressed
+  cable at the stringing temperature); the cases check that value, to the
+  same tolerances as before, and tbheat-001…003 check it by hand (the
+  supports carry \\( wL_0 \\)). With it, the closed form and the finite
+  elements agree to \\( 10^{-6} \\) on a single span, and the FE and RS
+  creep cases to 0.0004 % (0.008 % before).
 - The textbook model differences are as documented: the ruling-span
   method's additive thermal strain (+0.028 % on H at 80 °C in tbrs-004),
   the elastic wire's weight per unstressed metre (tb324-011: 5 mm less
