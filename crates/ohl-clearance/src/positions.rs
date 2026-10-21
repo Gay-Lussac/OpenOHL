@@ -748,9 +748,12 @@ impl WireShape {
     }
 }
 
-/// The band's margin, m: every distance to a swing arc's band is taken
-/// this much smaller (as if the conductor were this much thicker), on
-/// every side. **Conservative:** the band from the smallest to the largest
+/// The band's margin by default, m: every distance to a swing arc's band
+/// is taken this much smaller (as if the conductor were this much
+/// thicker), on every side. A parameter since 2026-10-21 (the owner's
+/// decision; [`crate::rules::WindSteps::band_margin`],
+/// [`PositionOptions::band_margin`], [`SwingArc::with_margin`]): a smaller
+/// value is on the user's responsibility. **Conservative:** the band from the smallest to the largest
 /// radius of the left, still and right positions does not quite hold the
 /// solver's positions at intermediate pressures: measured 2026-10-21 on
 /// the example lines with steps of 10 Pa from both sides, a step's
@@ -781,12 +784,14 @@ pub struct SwingArc {
     /// (each in the plane square to the axis there).
     pub points: Vec<[P3; 3]>,
     /// Bundle radius, the largest allowance of the three wires and the
-    /// band's margin [`BAND_MARGIN`], m.
+    /// band's margin ([`SwingArc::margin`]), m.
     pub outer: f64,
     /// Bundle radius, m.
     radius: f64,
-    /// The largest allowance of the three wires and [`BAND_MARGIN`], m.
+    /// The largest allowance of the three wires and the band's margin, m.
     allowance: f64,
+    /// The band's margin, m.
+    margin: f64,
 }
 
 /// Where a point lies relative to an arc, at its place along the axis.
@@ -820,8 +825,26 @@ pub struct ArcVertical {
 
 impl SwingArc {
     /// The arc of `left`, `still` and `right` along `axis` (none when one
-    /// of them does not run steadily along the axis).
+    /// of them does not run steadily along the axis), widened by the
+    /// default margin [`BAND_MARGIN`].
     pub fn new(axis: Axis, left: &WireShape, still: &WireShape, right: &WireShape) -> Option<Self> {
+        Self::with_margin(axis, left, still, right, BAND_MARGIN)
+    }
+
+    /// As [`SwingArc::new`], widened by the band's margin `margin` (m,
+    /// ≥ 0; a negative or non-finite one is taken as 0).
+    pub fn with_margin(
+        axis: Axis,
+        left: &WireShape,
+        still: &WireShape,
+        right: &WireShape,
+        margin: f64,
+    ) -> Option<Self> {
+        let margin = if margin.is_finite() {
+            margin.max(0.0)
+        } else {
+            0.0
+        };
         if !(left.monotone && still.monotone && right.monotone) {
             return None;
         }
@@ -858,11 +881,10 @@ impl SwingArc {
             right: right_dir,
             stations,
             points,
-            outer: left.radius
-                + left.allowance.max(still.allowance).max(right.allowance)
-                + BAND_MARGIN,
+            outer: left.radius + left.allowance.max(still.allowance).max(right.allowance) + margin,
             radius: left.radius,
-            allowance: left.allowance.max(still.allowance).max(right.allowance) + BAND_MARGIN,
+            allowance: left.allowance.max(still.allowance).max(right.allowance) + margin,
+            margin,
         })
     }
 
@@ -965,9 +987,15 @@ impl SwingArc {
     }
 
     /// The largest allowance of its three wires ([`Wire::allowance`]) and
-    /// the band's margin [`BAND_MARGIN`], m.
+    /// the band's margin ([`SwingArc::margin`]), m.
     pub fn allowance(&self) -> f64 {
         self.allowance
+    }
+
+    /// The band's margin it was made with, m ([`BAND_MARGIN`] by
+    /// default).
+    pub fn margin(&self) -> f64 {
+        self.margin
     }
 
     /// The angle about the axis of `p` (rad from the downward vertical,
@@ -1436,7 +1464,7 @@ impl Positions {
 }
 
 /// What positions to solve beyond each case as it is.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionOptions {
     /// The swing arc of each span of a windy case.
     pub swing_arc: bool,
@@ -1447,11 +1475,50 @@ pub struct PositionOptions {
     /// case). Alongside the swing arc or instead of it.
     pub wind_steps: Option<crate::rules::WindSteps>,
     /// The jumpers too, at their solved positions in every solve (blown
-    /// left and right, still air, every step; never on a swing arc): the
-    /// safety volumes' (2026-10-21). Each jumper is a span of its own
-    /// (section `jumper:<id>`, span 0), its axis from its first to its
-    /// last point.
+    /// left and right, every step; still air when the arc is off or the
+    /// jumper has no band) and, with `swing_arc`, on a swing band of
+    /// their own (2026-10-21): the safety volumes'. Each jumper is a span
+    /// of its own (section `jumper:<id>`, span 0), its axis from its first
+    /// to its last point (its two end clamps as first solved).
     pub jumpers: bool,
+    /// The swing band's margin, m ([`BAND_MARGIN`] by default; the
+    /// user's, 2026-10-21): every distance to a band taken this much
+    /// smaller.
+    pub band_margin: f64,
+}
+
+impl Default for PositionOptions {
+    fn default() -> Self {
+        Self {
+            swing_arc: false,
+            wind_steps: None,
+            jumpers: false,
+            band_margin: BAND_MARGIN,
+        }
+    }
+}
+
+/// A jumper's swing band (2026-10-21, the owner's decision): its
+/// positions blown to the left, in still air and blown to the right as a
+/// span's ([`SwingArc`]), about the axis through its two end clamps — its
+/// first and last points blown to the left (else in still air) —, from
+/// the smallest to the largest radius at each place, widened by the
+/// band's margin `margin` (m). A side not given takes the still air.
+/// None when the ends coincide or a position does not run steadily along
+/// the axis (the jumper is then taken at its solved positions).
+pub fn jumper_band(
+    left: Option<&Wire>,
+    still: &Wire,
+    right: Option<&Wire>,
+    margin: f64,
+) -> Option<SwingArc> {
+    let ends = left.unwrap_or(still);
+    let axis = Axis::new(*ends.points.first()?, *ends.points.last()?)?;
+    let shape = |w: &Wire| WireShape::new(w.clone(), &axis);
+    let mid = shape(still);
+    let l = left.map_or_else(|| mid.clone(), shape);
+    let r = right.map_or_else(|| mid.clone(), shape);
+    SwingArc::with_margin(axis, &l, &mid, &r, margin)
 }
 
 /// The attachment of section point `i` of `shape` a span swings about:
@@ -1682,16 +1749,12 @@ pub fn solve_positions(
                 };
                 ids.push(id);
                 let Some(id) = id else { continue };
-                // Still air of a windy case solved for the arc: kept for a
-                // jumper (it has no arc), as still air.
-                let kind = if windy && *kind == PositionKind::Case {
-                    if !jumper {
-                        continue;
-                    }
-                    &PositionKind::Still
-                } else {
-                    kind
-                };
+                // Still air of a windy case solved for the arc: for the
+                // band only (a jumper's too; kept below for a jumper
+                // without one).
+                if windy && *kind == PositionKind::Case {
+                    continue;
+                }
                 let axis = out.spans[id].axis;
                 out.add_at(
                     id,
@@ -1714,29 +1777,53 @@ pub fn solve_positions(
         ) else {
             continue;
         };
-        let mut left_out = 0;
+        let (mut left_out, mut jumpers_out) = (0, 0);
+        // Still air solved for the band only (not a step).
+        let still_only = kept[s].0 == PositionKind::Case;
         for (w, id) in kept[s].1.iter().zip(&span_ids[s]) {
             let Some(id) = *id else { continue };
-            // Jumpers: at their solved positions only.
-            if w.section.starts_with("jumper:") {
-                continue;
-            }
+            // A jumper: its own band about the line through its end
+            // clamps (2026-10-21); without one, its still air as solved.
+            let jumper = w.section.starts_with("jumper:");
             let pick = |k: usize| {
                 kept[k]
                     .1
                     .iter()
                     .find(|x| x.section == w.section && x.span == w.span)
             };
-            let (Some(wl), Some(wr)) = (pick(l), pick(r)) else {
-                left_out += 1;
-                continue;
-            };
             let axis = out.spans[id].axis;
             let shape = |x: &Wire| WireShape::new(x.clone(), &axis);
-            match SwingArc::new(axis, &shape(wl), &shape(w), &shape(wr)) {
+            let arc = match (pick(l), pick(r)) {
+                // About its end clamps blown to the left: the span's axis
+                // (it was made from that solve, the first).
+                (Some(wl), Some(wr)) if jumper => {
+                    jumper_band(Some(wl), w, Some(wr), options.band_margin)
+                }
+                (Some(wl), Some(wr)) => SwingArc::with_margin(
+                    axis,
+                    &shape(wl),
+                    &shape(w),
+                    &shape(wr),
+                    options.band_margin,
+                ),
+                _ => None,
+            };
+            match arc {
                 Some(arc) => out.add(id, c, PositionKind::Arc, Shape::Arc(arc)),
+                None if jumper => {
+                    jumpers_out += 1;
+                    if still_only {
+                        out.add_at(id, c, PositionKind::Still, Shape::Wire(shape(w)), None);
+                    }
+                }
                 None => left_out += 1,
             }
+        }
+        if jumpers_out > 0 {
+            out.notes.push(format!(
+                "case \"{}\": {jumpers_out} jumpers without a swing band (not solved blown to both sides, or not running steadily along the line through their ends): taken at their solved positions",
+                cases[c].name
+            ));
         }
         if left_out > 0 {
             out.notes.push(format!(
@@ -2299,6 +2386,7 @@ mod tests {
             step: full / 3.0 + 1e-9,
             sides: crate::rules::WindSides::Both,
             arc: false,
+            ..Default::default()
         };
         let p = solve_positions(
             &line,
@@ -2308,6 +2396,7 @@ mod tests {
                 swing_arc: false,
                 wind_steps: Some(steps),
                 jumpers: false,
+                ..Default::default()
             },
             &Budget::new(),
         )

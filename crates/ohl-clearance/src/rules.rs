@@ -67,7 +67,10 @@
 //!   depth, the wire taken at its lowest over each slice.
 //! - `[wind]` (`steps`, `step`, `sides`, `arc`): how the desktop clearance
 //!   windows apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line`
-//!   ignores it. `arc = true` (2026-10-20) adds each span's swing arc.
+//!   ignores it. `arc = true` (2026-10-20) adds each span's swing arc;
+//!   `band_margin = "0.15 m"` (2026-10-21, optional, written only when not
+//!   the default [`crate::positions::BAND_MARGIN`]) is the swing band's
+//!   margin.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
@@ -732,6 +735,8 @@ struct RawWind {
     sides: Option<String>,
     #[serde(default)]
     arc: bool,
+    #[serde(default)]
+    band_margin: Option<Length>,
 }
 
 /// The sides the wind blows from, looking ahead along the line.
@@ -797,6 +802,12 @@ pub struct WindSteps {
     /// (still air, left, right) and one closed-form distance per point.
     /// Alongside the steps or alone (`[wind] arc = true`).
     pub arc: bool,
+    /// The swing band's margin, m (`[wind] band_margin`, 2026-10-21):
+    /// every distance to a swing arc's band is taken this much smaller.
+    /// Default [`crate::positions::BAND_MARGIN`] (the measured worst
+    /// excess of the intermediate pressures plus an allowance;
+    /// conservative); a smaller value is on the user's responsibility.
+    pub band_margin: f64,
 }
 
 /// Default step of the wind pressure, Pa.
@@ -809,8 +820,15 @@ impl Default for WindSteps {
             step: DEFAULT_WIND_STEP,
             sides: WindSides::Both,
             arc: false,
+            band_margin: crate::positions::BAND_MARGIN,
         }
     }
+}
+
+/// What is wrong with a swing band's margin (m), if anything: it must be
+/// a number ≥ 0.
+pub fn band_margin_problem(m: f64) -> Option<String> {
+    (!(m.is_finite() && m >= 0.0)).then(|| format!("band margin {m} m: must be ≥ 0 m"))
 }
 
 impl WindSteps {
@@ -1282,7 +1300,14 @@ impl RuleSet {
                 if !(step.is_finite() && step > 0.0) {
                     return Err("[wind] step must be > 0 Pa".into());
                 }
+                let band_margin = w
+                    .band_margin
+                    .map_or(crate::positions::BAND_MARGIN, |l| l.si());
+                if let Some(e) = band_margin_problem(band_margin) {
+                    return Err(format!("[wind] {e}"));
+                }
                 Ok(WindSteps {
+                    band_margin,
                     stepped: w.steps,
                     step,
                     sides: w
@@ -1403,6 +1428,11 @@ impl RuleSet {
             // Written only when on: a file without it reads as before.
             if w.arc {
                 t.push_str("arc = true\n");
+            }
+            // Written only when not the default (2026-10-21): a file
+            // without it is written as before.
+            if w.band_margin != crate::positions::BAND_MARGIN {
+                let _ = writeln!(t, "band_margin = {}", length(w.band_margin));
             }
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
@@ -1581,6 +1611,26 @@ mod tests {
         let again = RuleSet::parse(&set.to_toml()).unwrap();
         assert_eq!(again.wind, set.wind);
         assert!(set.to_toml().contains("arc = true"));
+    }
+
+    /// `[wind] band_margin` (2026-10-21): additive — a file without it
+    /// reads the default 0.15 m and is written without it; another value
+    /// is read and written back; a negative one is refused.
+    #[test]
+    fn the_band_margin_in_the_wind_table() {
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let old = RuleSet::parse(&format!("{head}[wind]\narc = true\n")).unwrap();
+        assert_eq!(old.wind.unwrap().band_margin, crate::positions::BAND_MARGIN);
+        assert!(!old.to_toml().contains("band_margin"));
+        let set = RuleSet::parse(&format!(
+            "{head}[wind]\narc = true\nband_margin = \"0.4 m\"\n"
+        ))
+        .unwrap();
+        assert_eq!(set.wind.unwrap().band_margin, 0.4);
+        assert!(set.to_toml().contains("band_margin = \"0.4 m\""));
+        assert_eq!(RuleSet::parse(&set.to_toml()).unwrap().wind, set.wind);
+        let e = RuleSet::parse(&format!("{head}[wind]\nband_margin = \"-0.1 m\"\n")).unwrap_err();
+        assert!(e.contains("band margin"), "{e}");
     }
 
     /// A rule file read with a project's default values: its search
