@@ -6,9 +6,18 @@
 # wires to +y. Structure axes: x to the right of the line (-y here), so a
 # string blown to +y swings to negative `across_deg`.
 #
+# The cable's 1.6 kg/m is its data sheet's at 20 °C (the wire library's
+# default reference temperature, owner decision 2026-10-21): per metre of
+# unstressed cable at the stringing temperature, 10 °C, 15.69064 exp(10
+# alpha) = 15.69378 N/m. The wind acts per metre of the stretched wire
+# (owner decision 2026-10-21): per unit unstressed length 14 N/m (500 Pa)
+# times the span's stretch k = L / L0, about 1 + 31.4 kN / 30 MN = 1.00105.
+#
 # Expected values: benchmarks/reference/textbook_reference.py — each span
 # integrated by quadrature in 3D (F(s) = F0 - q s, the shape the integral
-# of F/|F| (1 + |F|/EA), load per unit unstressed length), strings as bars
+# of F/|F| (1 + |F|/EA), load per unit unstressed length: the own weight,
+# and the wind times the span's stretch from the same integrals, a fixed
+# point in each span's force evaluation), strings as bars
 # (EA/l0 (l - l0), tension only, half their weight and wind at each end),
 # the free clamps by Newton on the force balance; stringing as
 # docs/theory/wirefe.md says (spans at 25 kN in still air, strings plumb
@@ -23,17 +32,19 @@ id = "tbins-001"
 title = "Dead-end span 300 m in 500 Pa wind: blown out by atan(q d / w)"
 calculation = "line.section"
 reference = "Independent 3D quadrature (benchmarks/reference/textbook_reference.py)"
-notes = """Hand: wind 500 x 0.028 = 14 N/m, weight 15.69064 N/m: the span lies in the plane of
-its chord and its load, swung atan(14 / 15.69064) = 41.74099° — exactly, for fixed ends at one
-height: mid_y / (30 - mid_z) = 5.026501 / 5.633502 = 0.892297 = tan 41.74099°. Sag in that
-plane sqrt(5.0265^2 + 5.6335^2) = 7.5501 m under the resultant 21.0285 N/m (still air: about
-7.06 m); the parabola w S^2 / 8H with H = 31327.6 N gives 7.551 m."""
+notes = """Hand: wind 500 x 0.028 = 14 N/m per stretched metre, 14 k = 14.0147 N/m per unstressed
+metre (k = 1.00105), weight 15.69378 N/m: the span lies in the plane of its chord and its load,
+swung atan(14.0147 / 15.69378) = 41.7651° — exactly, for fixed ends at one height: mid_y /
+(30 - mid_z) = 5.030227 / 5.632910 = 0.893007 = tan 41.76507°. Sag in that plane
+sqrt(5.0302^2 + 5.6329^2) = 7.5520 m under 21.0186 N/m per stretched metre (still air: about
+7.06 m); the parabola w S^2 / 8H with H = 31337.2 N gives 7.546 m. Before 2026-10-21 (the weight
+at 10 °C, the wind per unstressed metre): 31327.61 N, swung 41.74099°."""
 max_seconds = 5.0
-expected.h_0_n = { value = 31327.60511, rel_tol = 1e-7 }
-expected.max_tension_0_n = { value = 31486.20334, rel_tol = 1e-7 }
-expected.mid_y_0_m = { value = 5.026501369, abs_tol = 1e-6 }
-expected.mid_z_0_m = { value = 24.36649833, abs_tol = 1e-6 }
-expected.sag_0_m = { value = 5.633501675, abs_tol = 1e-6 }
+expected.h_0_n = { value = 31337.1644, rel_tol = 1e-7 }
+expected.max_tension_0_n = { value = 31495.89668, rel_tol = 1e-7 }
+expected.mid_y_0_m = { value = 5.030226548, abs_tol = 1e-6 }
+expected.mid_z_0_m = { value = 24.36708957, abs_tol = 1e-6 }
+expected.sag_0_m = { value = 5.632910428, abs_tol = 1e-6 }
 
 [case.inputs]
 weather = { name = "wind", temperature = "10 °C", wind_pressure = "500 Pa" }
@@ -58,20 +69,20 @@ title = "Suspension string 3 m, 800 N, 0.4 m² between two 300 m spans in 500 Pa
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the clamp (benchmarks/reference/textbook_reference.py)"
 notes = """Classical pendulum formula: tan(phi) = (q d L + q A / 2) / (w L + W / 2) with the weight
-span = wind span = L = 300.192 m of wire: (4202.69 + 100) / (4710.21 + 400) = 0.8420,
-phi = 40.10°. The exact swing is 3.24° less: the clamp moves 1.80 m to +y and 0.60 m up, so
-each span's chord is skewed and pulls the clamp back across by H_x x 1.7997 / 300 (about
-189 N each) and down by H_x x 0.5993 / 300 (about 63 N each). With those:
-F_y = 4202.69 - 377.6 + 100 = 3925.1 N, F_z = 4710.21 + 400 + 125.7 = 5235.9 N,
-atan(3925.1 / 5235.9) = 36.86°, string force sqrt(F_y^2 + F_z^2) = 6543.7 N (exact 6543.29 N).
-Both spans carry the same H by symmetry."""
+span = wind span = L = 300.192 m of wire, the wind on the stretched wire (x 1.00105):
+(4207.1 + 100) / (4711.15 + 400) = 0.8427, phi = 40.12°. The exact swing is 3.24° less: the
+clamp moves 1.80 m to +y and 0.60 m up, so each span's chord is skewed and pulls the clamp back
+across by H_x x 1.8006 / 300 (about 189 N each) and down by H_x x 0.6000 / 300 (about 63 N
+each). With those: F_y = 4207.1 - 377.9 + 100 = 3929.2 N, F_z = 4711.15 + 400 + 125.9 =
+5237.1 N, atan(3929.2 / 5237.1) = 36.88°, string force sqrt(F_y^2 + F_z^2) = 6547.2 N (exact
+6546.66 N). Both spans carry the same H by symmetry. Before 2026-10-21: 36.8567°, 6543.29 N."""
 max_seconds = 5.0
-expected.h_0_n = { value = 31470.48563, rel_tol = 1e-7 }
-expected.h_1_n = { value = 31470.48563, rel_tol = 1e-7 }
-expected.string_1_0_n = { value = 6543.292458, rel_tol = 1e-7 }
-expected.string_1_0_across_deg = { value = -36.8566671, abs_tol = 1e-6 }
-expected.clamp_y_1_m = { value = 1.799681238, abs_tol = 1e-6 }
-expected.clamp_z_1_m = { value = 30.59927028, abs_tol = 1e-6 }
+expected.h_0_n = { value = 31480.24095, rel_tol = 1e-7 }
+expected.h_1_n = { value = 31480.24095, rel_tol = 1e-7 }
+expected.string_1_0_n = { value = 6546.660161, rel_tol = 1e-7 }
+expected.string_1_0_across_deg = { value = -36.87944109, abs_tol = 1e-6 }
+expected.clamp_y_1_m = { value = 1.800635462, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.59998565, abs_tol = 1e-6 }
 
 [case.inputs]
 clip_in = true
@@ -100,15 +111,16 @@ id = "tbins-003"
 title = "V-string (legs from ±2.5 m, 3 m above the tip, 400 N each) in still air: equal legs"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
-notes = """Hand: the tip carries half of each span, 4710.15 N (w L0 = 4710.21 N, less 0.06 N as the
-tip hangs 0.34 mm below the dead-ends), and half of each leg's weight, 400 N: V = 5110.15 N. Legs at beta from the vertical, cos(beta) = 3 / 3.90512 =
-0.768221 as drawn (0.768256 with the tip 0.34 mm lower, the legs stretched):
-F = V / (2 cos beta) = 3325.96 N drawn, 3325.81 N stretched."""
+notes = """Hand: the tip carries half of each span, 4711.09 N (w L0 = 15.69378 x 300.192 = 4711.15 N,
+less 0.06 N as the tip hangs 0.34 mm below the dead-ends), and half of each leg's weight, 400 N:
+V = 5111.09 N. Legs at beta from the vertical, cos(beta) = 3 / 3.90512 = 0.768221 as drawn
+(0.768256 with the tip 0.34 mm lower, the legs stretched): F = V / (2 cos beta) = 3326.58 N drawn,
+3326.42 N stretched. With the weight at 10 °C (before 2026-10-21): 3325.81 N."""
 max_seconds = 5.0
 expected.h_0_n = { value = 25000.0, rel_tol = 1e-7 }
-expected.clamp_z_1_m = { value = 29.99966188, abs_tol = 1e-6 }
-expected.string_1_0_n = { value = 3325.808256, rel_tol = 1e-7 }
-expected.string_1_1_n = { value = 3325.808256, rel_tol = 1e-7 }
+expected.clamp_z_1_m = { value = 29.99966182, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 3326.423192, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 3326.423192, rel_tol = 1e-7 }
 expected.string_1_0_slack = { value = 0.0, abs_tol = 0.0 }
 expected.string_1_1_slack = { value = 0.0, abs_tol = 0.0 }
 
@@ -141,16 +153,17 @@ title = "Same V in 300 Pa: both legs taut, forces from the geometry"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: the V holds the tip (it moves 0.24 mm), so the spans' pull on it is that of two
-fixed-end blown spans: across T = q d L0 = 300 x 0.028 x 300.192 = 2521.6 N, down
-V = 4710.1 + 400 = 5110.1 N. Two legs from (±2.5, +3) m, length l = 3.90512 m:
-across (F_R - F_L) 2.5 / l = T, up (F_L + F_R) 3 / l = V:
-F_L = (V l / 3 - T l / 2.5) / 2 = 1356.55 N (leg L, top on the +y side the wind blows to),
-F_R = (V l / 3 + T l / 2.5) / 2 = 5295.37 N. Slack when T / V > 2.5 / 3 = 0.833; here 0.493."""
+fixed-end blown spans: across T = q d L0 k = 300 x 0.028 x 300.192 x 1.00092 = 2523.9 N (the wind
+on the stretched wire), down V = 4711.1 + 400 = 5111.1 N. Two legs from (±2.5, +3) m, length
+l = 3.90512 m: across (F_R - F_L) 2.5 / l = T, up (F_L + F_R) 3 / l = V:
+F_L = (V l / 3 - T l / 2.5) / 2 = 1355.35 N (leg L, top on the +y side the wind blows to),
+F_R = (V l / 3 + T l / 2.5) / 2 = 5297.80 N. Slack when T / V > 2.5 / 3 = 0.833; here 0.494.
+Before 2026-10-21: 1356.53 N and 5295.23 N."""
 max_seconds = 5.0
-expected.h_0_n = { value = 27565.15865, rel_tol = 1e-7 }
-expected.clamp_y_1_m = { value = 0.0002402767857, abs_tol = 1e-6 }
-expected.string_1_0_n = { value = 1356.531171, rel_tol = 1e-7 }
-expected.string_1_1_n = { value = 5295.232878, rel_tol = 1e-7 }
+expected.h_0_n = { value = 27568.80538, rel_tol = 1e-7 }
+expected.clamp_y_1_m = { value = 0.0002404980786, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 1355.332513, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 5297.661682, rel_tol = 1e-7 }
 expected.string_1_0_slack = { value = 0.0, abs_tol = 0.0 }
 
 [case.inputs]
@@ -181,20 +194,21 @@ id = "tbins-005"
 title = "Same V in 1000 Pa: the leg on the lee side goes slack, the tip swings on the other"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
-notes = """Hand: T / V = 8405 / 5110 = 1.64 > 0.833: leg L would have to push — it goes slack
+notes = """Hand: T / V = 8417 / 5111 = 1.65 > 0.833: leg L would have to push — it goes slack
 (tension only) and the tip hangs from leg R alone, a pendulum about (300, -2.5, 33) lined up
-with the load on the tip. Swung to y = +0.768 m, z = 30.861 m, the spans' chords pull it back
-across by 2 H_x 0.768 / 300 = 220.7 N and down by 2 H_x 0.861 / 300 = 247.3 N (H_x about
-43.1 kN): T = 8405.4 - 220.7 = 8184.7 N, V = 4710.1 + 247.3 + 400 = 5357.4 N (the slack leg's
-half weight still hangs on the tip). Leg R: tan = (0.768 + 2.5) / (33 - 30.861) = 1.5277
-= T / V, force sqrt(T^2 + V^2) = 9782 N."""
+with the load on the tip. Swung to y = +0.769 m, z = 30.862 m, the spans' chords pull it back
+across by 2 H_x 0.769 / 300 = 221.2 N and down by 2 H_x 0.862 / 300 = 248.1 N (H_x about
+43.1 kN): T = 8405.4 k - 221.2 = 8196.0 N (k = 1.0014, the wind on the stretched wire),
+V = 4711.1 + 248.1 + 400 = 5359.1 N (the slack leg's half weight still hangs on the tip).
+Leg R: tan = (0.769 + 2.5) / (33 - 30.862) = 1.5294 = T / V, force sqrt(T^2 + V^2) = 9792.6 N.
+Before 2026-10-21: 9781.96 N, H 43112.27 N."""
 max_seconds = 5.0
-expected.h_0_n = { value = 43112.27378, rel_tol = 1e-7 }
-expected.clamp_y_1_m = { value = 0.7679884191, abs_tol = 1e-6 }
-expected.clamp_z_1_m = { value = 30.86079004, abs_tol = 1e-6 }
+expected.h_0_n = { value = 43144.4902, rel_tol = 1e-7 }
+expected.clamp_y_1_m = { value = 0.7690863478, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.86246672, abs_tol = 1e-6 }
 expected.string_1_0_n = { value = 0.0, abs_tol = 1e-6 }
 expected.string_1_0_slack = { value = 1.0, abs_tol = 0.0 }
-expected.string_1_1_n = { value = 9781.955498, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 9792.575303, rel_tol = 1e-7 }
 expected.string_1_1_slack = { value = 0.0, abs_tol = 0.0 }
 
 [case.inputs]
