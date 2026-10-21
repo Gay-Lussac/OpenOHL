@@ -5,6 +5,7 @@
 # User guide
 
 - [Getting started](user-guide/getting-started.md)
+- [Glossary](user-guide/glossary.md)
 - [OHL-Design, the line application (ohl-design)](user-guide/desktop-app.md)
 - [Wire library files (.ohlw)](user-guide/wire-library.md)
 - [Line files (.ohl.json)](user-guide/line-file.md)

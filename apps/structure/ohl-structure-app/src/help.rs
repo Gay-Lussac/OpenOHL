@@ -43,17 +43,20 @@ pub enum Page {
     UserGuide,
     /// The tutorial, "Start from scratch — your first line".
     Tutorial,
+    /// The glossary: one name per object, with drawings.
+    Glossary,
 }
 
 impl Page {
     /// Every page, in the Help menu's order.
-    pub const ALL: [Page; 2] = [Page::UserGuide, Page::Tutorial];
+    pub const ALL: [Page; 3] = [Page::UserGuide, Page::Tutorial, Page::Glossary];
 
     /// Name in the Help menu.
     pub fn name(self) -> &'static str {
         match self {
             Page::UserGuide => "User guide",
             Page::Tutorial => "Start from scratch (tutorial)",
+            Page::Glossary => "Glossary",
         }
     }
 
@@ -69,6 +72,10 @@ impl Page {
                  template (File › New project…, Starter): route, alignment, structures, \
                  strings, wires, jumpers"
             }
+            Page::Glossary => {
+                "One name per object: what each term means (structure, string, wire point, \
+                 set, section, conductor path…), with drawings"
+            }
         }
     }
 
@@ -80,6 +87,10 @@ impl Page {
                  OpenOHL folder (target/book), or read docs/ there"
             }
             Page::Tutorial => "The tutorial is planned, not written yet",
+            Page::Glossary => {
+                "The glossary is not on this computer: build the manual with `mdbook build` \
+                 in the OpenOHL folder (target/book), or read docs/user-guide/glossary.md"
+            }
         }
     }
 
@@ -89,6 +100,7 @@ impl Page {
         match self {
             Page::UserGuide => &["user-guide/structure-app", "introduction"],
             Page::Tutorial => &["tutorial/index", "tutorial/00-before-you-start"],
+            Page::Glossary => &["user-guide/glossary"],
         }
     }
 
@@ -175,6 +187,8 @@ mod tests {
     fn help_pages_resolve_to_files() {
         let guide = Page::UserGuide.file().expect("the user guide");
         assert!(guide.is_file(), "{}", guide.display());
+        let glossary = Page::Glossary.file().expect("the glossary");
+        assert!(glossary.is_file(), "{}", glossary.display());
         let tutorial = shipped("docs/tutorial");
         match Page::Tutorial.file() {
             Some(f) => assert!(f.is_file(), "{}", f.display()),

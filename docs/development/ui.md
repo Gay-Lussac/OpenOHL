@@ -3,6 +3,15 @@
 Rules every page, menu and window of the desktop app (`crates/ohl-app`)
 follows. A change that breaks one needs a reason written next to it.
 
+## Names
+
+Every label, tooltip, message and help text uses the terms of the
+[Glossary](../user-guide/glossary.md), the same in both applications, the
+command line and the manual (owner decision 2026-10-21). A new object gets
+its glossary entry (term, meaning, the names it replaces, German) in the
+same change. After renaming a heading, run `python3 -I
+tools/check_doc_links.py`: mdbook does not check anchors.
+
 ## Menus
 
 - **Menus of options stay open while boxes are ticked.** Display options,

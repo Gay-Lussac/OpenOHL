@@ -82,6 +82,11 @@ From the review of 2026-10-18 (quick wins are being done now):
 - **3D and Plan side by side** by default (today Plan is a tab behind 3D).
 - **One name per object** across both apps and the docs (string /
   insulator / attachment point / structure point …), with a glossary.
+  *Built (in active development, not approved yet): the terms agreed on
+  2026-10-21 in the [Glossary](docs/user-guide/glossary.md) (Help ›
+  Glossary in both apps, with drawings); the texts renamed step by step
+  (decision log 2026-10-21). Attachment points as their own objects,
+  linked to typed joints: planned.*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;
