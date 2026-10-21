@@ -395,8 +395,8 @@ fn fractions(n: usize) -> Vec<f64> {
 /// surfaces between at most 2 `radius` apart, so that every point of
 /// the band lies within `radius` of one of them. Each cell's two
 /// triangles grown by twice the largest distance found from the closed
-/// form to them ([`surface_prims`]). Returns the prims, the largest and
-/// the median of those doubled distances.
+/// form to them (at the middle of the cell and of its sides). Returns
+/// the prims, the largest and the median of those doubled distances.
 pub fn arc_prims(arc: &SwingArc, radius: f64, tolerance: f64) -> (Vec<Prim>, f64, f64) {
     // Stations: the arc's own, refined.
     let mut stations: Vec<f64> = Vec::new();
