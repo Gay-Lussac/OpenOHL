@@ -49,8 +49,19 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(FallIn));
     registry.register(Box::new(SwingArcCase));
     registry.register(Box::new(SwingArcClearance));
+    registry.register(Box::new(JumperBand));
     registry.register(Box::new(SafetyVolumeCase));
     registry.register(Box::new(SpanCasesSection));
+}
+
+/// The swing band's margin of a case: its `band_margin` (a length, since
+/// 2026-10-21), else the default [`ohl_clearance::positions::BAND_MARGIN`].
+fn band_margin_input(inputs: &Inputs) -> Result<f64, String> {
+    if inputs.contains_key("band_margin") {
+        quantity_input::<Length>(inputs, "band_margin").map(|l| l.si())
+    } else {
+        Ok(ohl_clearance::positions::BAND_MARGIN)
+    }
 }
 
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
@@ -1370,7 +1381,8 @@ impl Calculation for FallIn {
 /// about its axis (21 points each); the swing arc (a band from the
 /// smallest to the largest radius) at the place of point (`point_s`,
 /// `point_y`, `point_z`), the point's distance to it (to the centre line)
-/// and its clearance (less the band's margin; a conductor of radius 0).
+/// and its clearance (less the band's margin `band_margin`, optional,
+/// default 0.15 m; a conductor of radius 0).
 struct SwingArcCase;
 
 impl Calculation for SwingArcCase {
@@ -1380,9 +1392,9 @@ impl Calculation for SwingArcCase {
 
     fn description(&self) -> &'static str {
         "The swing arc of a level span and a point's distance to it (inputs: span, \
-         attachment_height, still_sag, blown_sag, blowout_angle, point_s, point_y, point_z); \
-         outputs arc_radius_m, arc_inner_radius_m, arc_from_deg, arc_to_deg, distance_m, \
-         clearance_m"
+         attachment_height, still_sag, blown_sag, blowout_angle, point_s, point_y, point_z, \
+         band_margin optional); outputs arc_radius_m, arc_inner_radius_m, arc_from_deg, \
+         arc_to_deg, distance_m, clearance_m"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -1416,11 +1428,12 @@ impl Calculation for SwingArcCase {
             )
         };
         let (still, blown) = (len("still_sag")?, len("blown_sag")?);
-        let arc = SwingArc::new(
+        let arc = SwingArc::with_margin(
             axis,
             &wire(-phi, blown),
             &wire(0.0, still),
             &wire(phi, blown),
+            band_margin_input(inputs)?,
         )
         .ok_or("no arc")?;
         let q = [len("point_s")?, len("point_y")?, len("point_z")?];
@@ -1511,6 +1524,96 @@ impl Calculation for SwingArcClearance {
             ("radial_m", d),
             ("vertical_m", v.gap),
             ("vertical_angle_deg", v.angle.to_degrees()),
+        ]))
+    }
+}
+
+/// `clearance.jumper_band`: a jumper between two end clamps (0, 0, z) and
+/// (`gap`, 0, z + `rise`), z = `clamp_height`, hanging as a parabola of
+/// sag `still_sag` (measured square to the line through its clamps) in
+/// still air and `blown_sag` blown by ±`blowout_angle` about that line
+/// (13 points each; the blown positions' clamps shifted by `clamp_shift`
+/// across the line, to the left, as a dead end's clamp moves with the
+/// wind: the band's axis is through the clamps blown to the left); its
+/// swing band ([`ohl_clearance::positions::jumper_band`], widened by
+/// `band_margin`, optional, default 0.15 m) at the place of the point
+/// (`point_x`, `point_y`, `point_z`), the point's distance to it (to the
+/// centre line) and its clearance (less the margin; a conductor of
+/// radius 0).
+struct JumperBand;
+
+impl Calculation for JumperBand {
+    fn id(&self) -> &'static str {
+        "clearance.jumper_band"
+    }
+
+    fn description(&self) -> &'static str {
+        "A jumper's swing band about the line through its end clamps and a point's distance \
+         to it (inputs: gap, rise, clamp_height, still_sag, blown_sag, blowout_angle, \
+         clamp_shift, point_x, point_y, point_z, band_margin optional); outputs axis_length_m, \
+         band_radius_m, band_inner_radius_m, band_from_deg, band_to_deg, distance_m, \
+         clearance_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::positions::{Axis, Shape, jumper_band};
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (gap, rise, z) = (len("gap")?, len("rise")?, len("clamp_height")?);
+        let shift = len("clamp_shift")?;
+        let phi = float_input(inputs, "blowout_angle")?.to_radians();
+        // The line through the clamps in still air; blown, both clamps
+        // `shift` to the left (+y looking along +x), the shape about the
+        // line through them.
+        let wire = |angle: f64, sag: f64, dy: f64| -> Result<ohl_clearance::Wire, String> {
+            let axis = Axis::new([0.0, dy, z], [gap, dy, z + rise]).ok_or("clamps together")?;
+            let points = (0..=12)
+                .map(|k| {
+                    let t = k as f64 / 12.0;
+                    let r = 4.0 * sag * t * (1.0 - t);
+                    let (c, s) = (angle.cos(), angle.sin());
+                    std::array::from_fn(|i| {
+                        axis.a1[i]
+                            + t * (axis.a2[i] - axis.a1[i])
+                            + r * (c * axis.down[i] + s * axis.right[i])
+                    })
+                })
+                .collect();
+            Ok(ohl_clearance::Wire {
+                section: "jumper:J".into(),
+                span: 0,
+                circuit: String::new(),
+                phase: String::new(),
+                potential: None,
+                bundle: Vec::new(),
+                points,
+                ends: Vec::new(),
+                surface_radius: 0.0,
+                polyline_error: 0.0,
+            })
+        };
+        let (still, blown) = (len("still_sag")?, len("blown_sag")?);
+        let left = wire(-phi, blown, shift)?;
+        let right = wire(phi, blown, shift)?;
+        let band = jumper_band(
+            Some(&left),
+            &wire(0.0, still, 0.0)?,
+            Some(&right),
+            band_margin_input(inputs)?,
+        )
+        .ok_or("no band")?;
+        let q = [len("point_x")?, len("point_y")?, len("point_z")?];
+        let place = band.place(band.axis.along(q));
+        let (d, _) = band.nearest(q);
+        let length = band.axis.length;
+        let shape = Shape::Arc(band);
+        Ok(outputs([
+            ("axis_length_m", length),
+            ("band_radius_m", place.radius),
+            ("band_inner_radius_m", place.inner),
+            ("band_from_deg", place.from.to_degrees()),
+            ("band_to_deg", place.to.to_degrees()),
+            ("distance_m", d),
+            ("clearance_m", shape.off_surface(d)),
         ]))
     }
 }
@@ -1645,7 +1748,8 @@ fn mesh_pieces(mesh: &ohl_clearance::safety_volume::Mesh) -> usize {
 /// `distance`, tolerance `tolerance`; `shape` `still`: the wire alone, a
 /// capsule; `arc`: the swing arc of the wire turned rigidly by
 /// ±`blowout_angle` about an axis `arc_radius` above it, hanging in still
-/// air `still_radius` below it (optional, else `arc_radius`): a band;
+/// air `still_radius` below it (optional, else `arc_radius`): a band,
+/// widened by `band_margin` (optional, default 0.15 m);
 /// `dead_end`: two such wires end to end with a gap of `gap` between their
 /// ends, joined or not (`jumper` 1 or 0) by a jumper sagging `jumper_sag`).
 /// Outputs: the mesh's open edges, whether every sampled point of the
@@ -1663,7 +1767,7 @@ impl Calculation for SafetyVolumeCase {
     fn description(&self) -> &'static str {
         "The safety volume of a straight wire, still, on a swing arc or at a dead end with a \
          jumper (inputs: shape, length, radius, distance, tolerance, arc_radius, still_radius, \
-         blowout_angle, gap, jumper, jumper_sag); outputs open_edges, exact_inside, \
+         blowout_angle, band_margin, gap, jumper, jumper_sag); outputs open_edges, exact_inside, \
          volume_ratio, lateral_m, below_m, top_below_m, pieces"
     }
 
@@ -1733,9 +1837,14 @@ impl Calculation for SafetyVolumeCase {
                 };
                 let turned =
                     |p: f64, r: f64| WireShape::new(wire(-r * p.sin(), z0 - r * p.cos()), &axis);
-                let arc =
-                    SwingArc::new(axis, &turned(-phi, ra), &turned(0.0, rs), &turned(phi, ra))
-                        .ok_or("no arc")?;
+                let arc = SwingArc::with_margin(
+                    axis,
+                    &turned(-phi, ra),
+                    &turned(0.0, rs),
+                    &turned(phi, ra),
+                    band_margin_input(inputs)?,
+                )
+                .ok_or("no arc")?;
                 let mut pos = Positions::default();
                 pos.cases.push("wind".into());
                 let k = pos.add_span(wire(0.0, z0 - rs), axis);

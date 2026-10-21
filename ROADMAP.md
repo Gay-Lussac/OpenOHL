@@ -40,8 +40,8 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 150 validation cases pass (47 textbook and CIGRE TB 324 cases added
-  2026-10-20; 3 on the weight of a heated span and 5 on the swing band and safety volumes 2026-10-21); the private Swiss plugin and the importers of
+- 153 validation cases pass (47 textbook and CIGRE TB 324 cases added
+  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, and 3 on the band margin and the jumpers' bands 2026-10-21); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)

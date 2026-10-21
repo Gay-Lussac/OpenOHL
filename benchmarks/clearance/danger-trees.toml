@@ -99,6 +99,9 @@ expected.fall_margin_m = { value = 6.260990337, abs_tol = 1.1e-3 }
 #   swingarc-004: a point inside the band at mid-span, rho = 4.5 m at
 #       10 deg to the right (y = -4.5 sin 10 = -0.781417 m,
 #       z = 20 - 4.5 cos 10 = 15.568365 m): 0 m; clearance -0.15 m.
+#   swingarc-005: the band's margin as an input (the user's since
+#       2026-10-21): as 001 with m = 0.4 m: the distance 3 m unchanged,
+#       the clearance 3 - 0.4 = 2.6 m.
 
 [[case]]
 id = "swingarc-001"
@@ -139,6 +142,15 @@ reference = "Hand calculation (this file)"
 inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "-0.7814167995 m", point_z = "15.5683651114 m" }
 expected.distance_m = { value = 0.0, abs_tol = 1e-9 }
 expected.clearance_m = { value = -0.15, abs_tol = 1e-9 }
+
+[[case]]
+id = "swingarc-005"
+title = "Swing arc with another band margin, a point below the axis"
+calculation = "vegetation.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "0 m", point_z = "12 m", band_margin = "0.4 m" }
+expected.distance_m = { value = 3.0, abs_tol = 1e-12 }
+expected.clearance_m = { value = 2.6, abs_tol = 1e-12 }
 
 # Vertical and radial clearance to the swing arc (the vertical and radial
 # clearance checks, 2026-10-20; ohl_clearance::positions::SwingArc::
@@ -237,3 +249,46 @@ reference = "Hand calculation (this file)"
 inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "15.5 m", band = "1 m", depth = "0 m" }
 expected.vertical_m = { value = 0.0, abs_tol = 1e-12 }
 expected.radial_m = { value = 0.0, abs_tol = 1e-12 }
+
+# A jumper's swing band (2026-10-21; ohl_clearance::positions::
+# jumper_band): a jumper between two end clamps 6 m apart along x at
+# z = 20 m, a parabola of sag 1.5 m in still air and 1.6 m blown by
+# +-30 deg about the line through its clamps (13 points each); blown, both
+# clamps 0.3 m to the left (+y), as a dead end's clamp moves with the
+# wind. The band's axis is the line through the clamps blown to the left:
+# (0, 0.3, 20)-(6, 0.3, 20), "right" is -y looking along +x. At mid-span
+# (x = 3 m, a station of all three) the centre is C = (3, 0.3, 20):
+#   blown left: (3, 0.3 + 1.6 sin 30, 20 - 1.6 cos 30): rho 1.6 at -30 deg;
+#   blown right: rho 1.6 at +30 deg;
+#   still air: (3, 0, 18.5): rho = sqrt(0.3^2 + 1.5^2) = sqrt(2.34)
+#       = 1.529706 m at atan(0.3 / 1.5) = 11.3099 deg (to the right);
+# the band from r = 1.529706 to R = 1.6 m, from -30 to +30 deg. The
+# clearance is the distance less the margin m (0.15 m by default).
+#   jumperband-001: a point 3 m straight below C (z = 17 m): rho 3 at
+#       0 deg: 3 - 1.6 = 1.4 m; clearance 1.4 - 0.15 = 1.25 m.
+#   jumperband-002: a point 1 m below C (z = 19 m), between the axis and
+#       the band: r - 1 = 0.529706 m; clearance 0.379706 m (about the
+#       still clamps' line the inner radius would be 1.5 m: 0.5 m).
+
+[[case]]
+id = "jumperband-001"
+title = "A jumper's swing band, a point below it"
+calculation = "clearance.jumper_band"
+reference = "Hand calculation (this file)"
+inputs = { gap = "6 m", rise = "0 m", clamp_height = "20 m", still_sag = "1.5 m", blown_sag = "1.6 m", blowout_angle = 30.0, clamp_shift = "0.3 m", point_x = "3 m", point_y = "0.3 m", point_z = "17 m" }
+expected.axis_length_m = { value = 6.0, abs_tol = 1e-12 }
+expected.band_radius_m = { value = 1.6, abs_tol = 1e-12 }
+expected.band_inner_radius_m = { value = 1.5297058541, abs_tol = 1e-9 }
+expected.band_from_deg = { value = -30.0, abs_tol = 1e-9 }
+expected.band_to_deg = { value = 30.0, abs_tol = 1e-9 }
+expected.distance_m = { value = 1.4, abs_tol = 1e-12 }
+expected.clearance_m = { value = 1.25, abs_tol = 1e-12 }
+
+[[case]]
+id = "jumperband-002"
+title = "A jumper's swing band, a point between its clamps' line and the band"
+calculation = "clearance.jumper_band"
+reference = "Hand calculation (this file)"
+inputs = { gap = "6 m", rise = "0 m", clamp_height = "20 m", still_sag = "1.5 m", blown_sag = "1.6 m", blowout_angle = 30.0, clamp_shift = "0.3 m", point_x = "3 m", point_y = "0.3 m", point_z = "19 m" }
+expected.distance_m = { value = 0.5297058541, abs_tol = 1e-9 }
+expected.clearance_m = { value = 0.3797058541, abs_tol = 1e-9 }
