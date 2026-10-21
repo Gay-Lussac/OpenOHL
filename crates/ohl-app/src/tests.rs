@@ -8986,27 +8986,33 @@ fn circuits_are_listed_and_turned() {
     harness.run();
     let row = |h: &mut Harness<'_, App>| {
         let r = h.state_mut().ready().unwrap();
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         rows.into_iter()
             .find(|x| x.cells[6].contains("S3"))
             .unwrap()
     };
     let (key, start, ends) = {
         let r = harness.state_mut().ready().unwrap();
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         assert_eq!(
             rows.len(),
             ohl_line::electrical::conductor_paths(&r.model.line).len()
         );
-        assert!(TableKind::Circuits.fixed_rows());
+        assert!(TableKind::ConductorPaths.fixed_rows());
         let x = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
         assert!(x.cells[4].starts_with("T1 "), "{}", x.cells[4]);
         assert_eq!(x.cells[5].split(';').count(), 2, "two ends: {}", x.cells[5]);
         (x.key.clone(), x.cells[4].clone(), x.cells[5].clone())
     };
     // Reversed (⇄ puts its ends in "starts"): two starts, one end.
-    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &ends);
-    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::ConductorPaths,
+        &key,
+        "starts",
+        &ends,
+    );
+    apply_table(&mut harness, TableKind::ConductorPaths, false).unwrap();
     {
         let x = row(&mut harness);
         assert_eq!(x.cells[5], start);
@@ -9025,20 +9031,188 @@ fn circuits_are_listed_and_turned() {
     }
     // Every end a start: refused.
     let all = format!("{start}; {ends}");
-    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &all);
-    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    set_cell(
+        &mut harness,
+        TableKind::ConductorPaths,
+        &key,
+        "starts",
+        &all,
+    );
+    let err = apply_table(&mut harness, TableKind::ConductorPaths, false).unwrap_err();
     assert!(err.contains("at least one end"), "{err}");
     harness
         .state_mut()
         .ready()
         .unwrap()
         .tables
-        .remove(&TableKind::Circuits);
+        .remove(&TableKind::ConductorPaths);
     // Back along the line: nothing kept.
-    set_cell(&mut harness, TableKind::Circuits, &key, "starts", &start);
-    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::ConductorPaths,
+        &key,
+        "starts",
+        &start,
+    );
+    apply_table(&mut harness, TableKind::ConductorPaths, false).unwrap();
     let r = harness.state_mut().ready().unwrap();
     assert!(r.model.line.circuit_starts.is_empty());
+}
+
+/// The Circuits table (2026-10-21): the example's names read into
+/// circuits; renaming (the sections follow), adding an empty one (noted),
+/// moving a conductor path between circuits, deleting (confirmed) — each
+/// Apply one command, undone at once. Refused: a path still in another
+/// circuit, another circuit's name (no merge), two paths of one phase not
+/// connected (from the table and from Properties' Assign to circuit).
+#[test]
+fn circuits_are_defined_in_their_table() {
+    use crate::tables::TableKind;
+    // The branch untapped and of the system: S1 L1, S2 L2, S3 L1.
+    let model = synthetic_project_with("circuit-list", |l| {
+        l.jumpers.clear();
+        l.sections[2].system = Some("ex220".into());
+    });
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let rows = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        TableKind::Circuits.rows(&r.model, 0)
+    };
+    let names = |h: &mut Harness<'_, App>| -> Vec<String> {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .line
+            .sections
+            .iter()
+            .map(|s| s.circuit_name.clone())
+            .collect()
+    };
+    let col = |n: &str| TableKind::Circuits.column(n);
+    {
+        let rows = rows(&mut harness);
+        let cells: Vec<(&str, &str, &str)> = rows
+            .iter()
+            .map(|r| {
+                (
+                    r.cells[0].as_str(),
+                    r.cells[col("members")].as_str(),
+                    r.cells[col("notes")].as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            cells,
+            [("Example 1", "S1 S2", ""), ("Branch", "S3", "")],
+            "migrated: one circuit per name, the same members"
+        );
+    }
+    // Renamed: its sections follow; one undo takes it back.
+    set_cell(
+        &mut harness,
+        TableKind::Circuits,
+        "Example 1",
+        "name",
+        "North",
+    );
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    assert_eq!(names(&mut harness), ["North", "North", "Branch"]);
+    harness.state_mut().ready().unwrap().model.undo().unwrap();
+    assert_eq!(names(&mut harness), ["Example 1", "Example 1", "Branch"]);
+    // Another circuit's name: refused (circuits are not merged).
+    set_cell(
+        &mut harness,
+        TableKind::Circuits,
+        "Branch",
+        "name",
+        "Example 1",
+    );
+    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    assert!(err.contains("not merged"), "{err}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Circuits);
+    // Added, empty: allowed, noted.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = TableKind::Circuits.new_row(&r.model, 0, &[]);
+        assert_eq!(row[0], "C1");
+        row[1] = "South".into();
+        row[col("description")] = "invented".into();
+        r.tables
+            .entry(TableKind::Circuits)
+            .or_default()
+            .added
+            .push(row);
+    }
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    {
+        let rows = rows(&mut harness);
+        let south = rows.iter().find(|r| r.key == "C1").unwrap();
+        assert!(south.cells[col("notes")].contains("no conductor path"));
+        assert_eq!(south.cells[col("description")], "invented");
+    }
+    // S3 into South while still in Branch: refused.
+    set_cell(&mut harness, TableKind::Circuits, "C1", "members", "S3");
+    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    assert!(err.contains("is in circuit \"Branch\""), "{err}");
+    // Taken out of Branch in the same Apply: moved, one command.
+    set_cell(&mut harness, TableKind::Circuits, "Branch", "members", "");
+    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    assert_eq!(names(&mut harness), ["Example 1", "Example 1", "South"]);
+    harness.state_mut().ready().unwrap().model.undo().unwrap();
+    assert_eq!(names(&mut harness), ["Example 1", "Example 1", "Branch"]);
+    // S3 (L1) into Example 1, whose L1 is S1, not connected: refused.
+    set_cell(&mut harness, TableKind::Circuits, "Branch", "members", "");
+    set_cell(
+        &mut harness,
+        TableKind::Circuits,
+        "Example 1",
+        "members",
+        "S1 S2 S3",
+    );
+    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    assert!(err.contains("not connected"), "{err}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Circuits);
+    // The same from Properties: refused; into South (empty): moved.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let err = crate::properties::assign_circuit_action(&r.model, "S3", Some("Example 1"))
+            .err()
+            .unwrap();
+        assert!(err.contains("not connected"), "{err}");
+        let a = crate::properties::assign_circuit_action(&r.model, "S3", Some("C1")).unwrap();
+        r.perform(a);
+    }
+    assert_eq!(names(&mut harness), ["Example 1", "Example 1", "South"]);
+    // Deleted: its paths in no circuit; listed to confirm first.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .entry(TableKind::Circuits)
+        .or_default()
+        .deleted
+        .insert("C1".into());
+    assert!(apply_table(&mut harness, TableKind::Circuits, false).is_err());
+    apply_table(&mut harness, TableKind::Circuits, true).unwrap();
+    assert_eq!(names(&mut harness), ["Example 1", "Example 1", ""]);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.model.line.circuit("C1").is_none());
+    r.model.undo().unwrap();
+    assert!(r.model.line.circuit("C1").is_some());
+    assert_eq!(r.model.line.sections[2].circuit_name, "South");
 }
 
 /// The Edit tool on a jumper opens its window, as on a span (the mouse is
@@ -9168,15 +9342,21 @@ fn a_circuit_keeps_one_name_and_phase() {
     // The circuits table: its names differ ("mixed"); one name for all.
     let key = {
         let r = harness.state_mut().ready().unwrap();
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         let row = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
         assert!(row.cells[1].starts_with("mixed:"), "{}", row.cells[1]);
         assert_eq!(row.cells[2], "L2");
         row.key.clone()
     };
-    set_cell(&mut harness, TableKind::Circuits, &key, "name", "Main");
-    assert!(apply_table(&mut harness, TableKind::Circuits, false).is_err());
-    apply_table(&mut harness, TableKind::Circuits, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::ConductorPaths,
+        &key,
+        "circuit",
+        "Main",
+    );
+    assert!(apply_table(&mut harness, TableKind::ConductorPaths, false).is_err());
+    apply_table(&mut harness, TableKind::ConductorPaths, true).unwrap();
     assert_eq!(phase(&mut harness, "S1").1, "Main");
     assert_eq!(phase(&mut harness, "S3").1, "Main");
 }
@@ -9976,15 +10156,21 @@ fn circuit_colours_and_system_line_codes_in_the_tables() {
     // The circuit of S1 (with the branch S3 by its jumper).
     let key = {
         let r = harness.state_mut().ready().unwrap();
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         rows.iter()
             .find(|x| x.cells[6].contains("S3"))
             .unwrap()
             .key
             .clone()
     };
-    set_cell(&mut harness, TableKind::Circuits, &key, "colour", "#AA5500");
-    apply_table(&mut harness, TableKind::Circuits, true).unwrap();
+    set_cell(
+        &mut harness,
+        TableKind::ConductorPaths,
+        &key,
+        "colour",
+        "#AA5500",
+    );
+    apply_table(&mut harness, TableKind::ConductorPaths, true).unwrap();
     {
         let r = harness.state_mut().ready().unwrap();
         let colour = |id: &str| {
@@ -13315,11 +13501,11 @@ fn plugin_columns_in_tables() {
         plugin: "example 0.1.0".into(),
         in_use: true,
     };
-    let own = TableKind::Circuits.columns().len();
+    let own = TableKind::ConductorPaths.columns().len();
     let key = {
         let r = harness.state_mut().ready().unwrap();
         r.model.plugin_columns = vec![column.clone()];
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         let x = rows.iter().find(|x| x.cells[6].contains("S3")).unwrap();
         assert_eq!(x.cells[own], "high");
         assert!(x.defaulted[own], "the default, not set");
@@ -13328,7 +13514,7 @@ fn plugin_columns_in_tables() {
         assert_eq!(sections[0].cells.len(), TableKind::Sections.columns().len());
         let original = x.cells[own].clone();
         r.tables
-            .entry(TableKind::Circuits)
+            .entry(TableKind::ConductorPaths)
             .or_default()
             .set(&x.key, own, "Low", &original);
         x.key.clone()
@@ -13341,7 +13527,7 @@ fn plugin_columns_in_tables() {
         .line
         .sections
         .len();
-    apply_table(&mut harness, TableKind::Circuits, false).unwrap();
+    apply_table(&mut harness, TableKind::ConductorPaths, false).unwrap();
     let ids = {
         let r = harness.state_mut().ready().unwrap();
         let line = &r.model.line;
@@ -13366,25 +13552,25 @@ fn plugin_columns_in_tables() {
                 .filter(|s| !c.sections.contains(&s.id))
                 .all(|s| s.fields.is_empty())
         );
-        let rows = TableKind::Circuits.rows(&r.model, 0);
+        let rows = TableKind::ConductorPaths.rows(&r.model, 0);
         let x = rows.iter().find(|x| x.key == key).unwrap();
         assert_eq!(x.cells[own], "low");
         assert!(!x.defaulted[own]);
         // A value not among its values: refused.
         r.tables
-            .entry(TableKind::Circuits)
+            .entry(TableKind::ConductorPaths)
             .or_default()
             .set(&key, own, "medium", "low");
         c.sections
     };
-    let err = apply_table(&mut harness, TableKind::Circuits, false).unwrap_err();
+    let err = apply_table(&mut harness, TableKind::ConductorPaths, false).unwrap_err();
     assert!(err.contains("not one of"), "{err}");
     harness
         .state_mut()
         .ready()
         .unwrap()
         .tables
-        .remove(&TableKind::Circuits);
+        .remove(&TableKind::ConductorPaths);
     // Without the plugin: an unused column in the sections' tables, the
     // values kept.
     let n = TableKind::Sections.columns().len();
@@ -13397,7 +13583,7 @@ fn plugin_columns_in_tables() {
         let rows = TableKind::Sections.rows(&r.model, 0);
         let s3 = rows.iter().find(|x| x.key == "S3").unwrap();
         assert_eq!(s3.cells[n], "low");
-        assert_eq!(TableKind::Circuits.plugin_columns(&r.model).len(), 1);
+        assert_eq!(TableKind::ConductorPaths.plugin_columns(&r.model).len(), 1);
     }
     set_cell(
         &mut harness,

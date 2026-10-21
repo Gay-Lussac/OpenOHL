@@ -1258,6 +1258,11 @@ pub fn ui(
                     ),
                 ],
             );
+            if point.editable
+                && let Some(a) = assign_circuit_ui(ui, model, &section)
+            {
+                action = Some(a);
+            }
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
             cases_box(ui, "span-cases-scroll", |ui| {
@@ -1338,6 +1343,101 @@ pub fn ui(
 /// Height of the weather case lists in the properties, points: a fixed
 /// box, scrolled, so that long lists of cases take little room.
 const CASES_HEIGHT: f32 = 180.0;
+
+/// The command putting the conductor path of section `section` into
+/// circuit `circuit` (id; none: into no circuit), out of the one it was
+/// in: one command (one undo). Refused when the circuit then has two
+/// conductor paths of one phase that are not connected
+/// ([`ohl_line::Line::assign_to_circuit`]).
+pub fn assign_circuit_action(
+    model: &Model,
+    section: &str,
+    circuit: Option<&str>,
+) -> Result<crate::edit::Action, String> {
+    let stored = model
+        .stored_line()
+        .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
+    let mut line = stored.clone();
+    line.adopt_circuits();
+    line.assign_to_circuit(&[section.to_owned()], circuit)?;
+    let command = ohl_session::line_circuits_change(stored, &line)?;
+    Ok(crate::edit::Action::Command {
+        what: match circuit {
+            Some(c) => format!("conductor path of {section} assigned to circuit {c}"),
+            None => format!("conductor path of {section} taken out of its circuit"),
+        },
+        command,
+    })
+}
+
+/// "Assign to circuit": a circuit chosen for the selected wire's
+/// conductor path (its whole path: connected sections stay together).
+fn assign_circuit_ui(
+    ui: &mut egui::Ui,
+    model: &Model,
+    section: &str,
+) -> Option<crate::edit::Action> {
+    let line = &model.line;
+    let now = line
+        .sections
+        .iter()
+        .find(|s| s.id == section)
+        .map(|s| s.circuit_name.clone())
+        .unwrap_or_default();
+    let id = egui::Id::new(("assign-circuit", section));
+    let mut chosen: Option<String> = ui.data(|d| d.get_temp(id)).unwrap_or_else(|| {
+        line.circuits
+            .iter()
+            .find(|c| c.name == now)
+            .map(|c| c.id.clone())
+    });
+    let mut out = None;
+    ui.horizontal(|ui| {
+        let text = |c: &Option<String>| {
+            c.as_ref()
+                .and_then(|id| line.circuits.iter().find(|x| &x.id == id))
+                .map_or("(no circuit)".to_owned(), |x| {
+                    if x.id == x.name {
+                        x.name.clone()
+                    } else {
+                        format!("{} ({})", x.name, x.id)
+                    }
+                })
+        };
+        egui::ComboBox::from_id_salt(("assign-circuit-box", section))
+            .selected_text(text(&chosen))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut chosen, None, "(no circuit)");
+                for c in &line.circuits {
+                    ui.selectable_value(&mut chosen, Some(c.id.clone()), text(&Some(c.id.clone())));
+                }
+            });
+        if ui
+            .button("Assign to circuit…")
+            .on_hover_text(
+                "Puts this wire's whole conductor path (its connected sections) into the \
+                 circuit chosen, out of the one it is in (one undo). A circuit holds one \
+                 conductor path per phase: another path of the same phase that is not \
+                 connected is refused — connect them (a jumper) to make them one. New \
+                 circuits: Sections › Circuits table",
+            )
+            .clicked()
+        {
+            ui.data_mut(|d| d.remove::<String>(id.with("error")));
+            match assign_circuit_action(model, section, chosen.as_deref()) {
+                Ok(a) => out = Some(a),
+                Err(e) => {
+                    ui.data_mut(|d| d.insert_temp(id.with("error"), e));
+                }
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(id, chosen));
+    if let Some(e) = ui.data(|d| d.get_temp::<String>(id.with("error"))) {
+        ui.colored_label(ui.visuals().warn_fg_color, e);
+    }
+    out
+}
 
 /// A weather case list in a box of fixed height, scrolled.
 pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
