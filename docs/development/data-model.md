@@ -1476,8 +1476,16 @@ the `PATH`. Request on the tool's input, reply on its output; exit status
 ### Safety volumes (`ohl_clearance::safety_volume`, `ohl_io::safety_volume`)
 
 Computed, not stored in the line. `SafetyParams`: `distance`
-(`Requirement`), `margin`, `tolerance`, `grouping` (`Wire`, `Circuit`),
-`circuits`; `WindMode` (`None`, `Steps`, `Arc`, `Both`) with `WindSteps`
+(`Requirement`), `margin`, `tolerance`, `grouping` (`Wire`, `Circuit`,
+`System` — 2026-10-21: the circuits of one electrical system together;
+earthed wires per circuit), `circuits` (names; empty: all), `systems`
+(system ids; empty: all; earthed wires left out when given),
+`spans` (section id, span index from 0; empty: all; a jumper kept when
+its first two `ends` are ends of spans taken), `parse_span`
+(`SECTION:N`, N from 1),
+`system_of` (section id or `jumper:<id>` → system id and name, filled by
+`run` from the line, `system_map`; a volume per system is named after
+the system and its `circuit` lists its circuits); `WindMode` (`None`, `Steps`, `Arc`, `Both`) with `WindSteps`
 gives the positions (`positions::solve_positions`). `SafetyVolumes`:
 `volumes`, `cases`, `positions`, `notes`; each `SafetyVolume`: `name`,
 `circuit`, `phases`, `sections`, `kv`, `distance`, `margin`, `outer`,
@@ -1600,7 +1608,10 @@ volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
 `parameters`: `version` (1), `cases` (weather case names), `distance` (as
 a rule file writes a distance), `margin`, `tolerance` (m), `wind`
 (`none`, `steps`, `arc`, `both`), `wind_step` (Pa), `wind_sides`, `per`
-(`wire`, `circuit`), `circuits`. Their `results`: `positions`, `notes`,
+(`wire`, `circuit`, `system`), `scope` (`systems`, `circuits` or `spans`,
+2026-10-21; absent: circuits), `circuits`, `systems` (ids) and `spans`
+(`SECTION:N`, N from 1) — the ticks of each list
+(only the scope's list is used), empty: all. Their `results`: `positions`, `notes`,
 `volumes` [{`name`, `circuit`, `phases`, `sections`, `kv` (null:
 earthed), `distance`, `margin`, `outer` (the largest conductor outer
 radius), `positions`, `arc_error`, `arc_error_median`, `allowance` (how
