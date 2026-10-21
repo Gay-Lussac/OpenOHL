@@ -77,7 +77,7 @@ CSV columns: case, method, both spans, distance, required, overlap, where
 
 In the desktop app: **Checks › Galloping ellipses…** — choose the parameter
 file (the project's `.ohlg`, or one next to a line file, is chosen first) and the weather case,
-then **Check**.
+then **Run** (the window's footer, bottom left).
 
 ## Blowout and the right of way
 
@@ -133,8 +133,8 @@ onto a panel (next to Properties, for example) to dock it. When the
 plugin needs a value per circuit (a plugin column, e.g. an insulation
 level), **Circuits checked** lists the ticked circuits with their
 voltage and that value, chosen there for all the circuit's sections —
-the same value as the Conductor paths table's column. **Check** runs
-in the background; the pairs come worst first: the two spans and
+the same value as the Conductor paths table's column. **Run** (the
+page's footer, bottom left) runs in the background; the pairs come worst first: the two spans and
 circuits, kV, d, the required distance, the margin, the length of
 conductor below it, and at the worst station the measured values, the
 plugin's own and the rule it applied, with a note when it is at a clamp
@@ -156,7 +156,7 @@ removes the copy. **Choose a values file…** uses another one instead.
 checks](#the-library-of-performed-checks) under a name: its parameters
 (the values file's text included), the pairs below the required
 distance and within 1 m of it, the counts. Opened again it shows its
-results and whether the line changed since (*stale*); **Check** runs it
+results and whether the line changed since (*stale*); **Run** runs it
 again with its parameters, shows each pair against the saved run (new,
 fixed, worse, better) and asks whether to replace the saved report.
 
@@ -308,9 +308,11 @@ of by role.
 
 **Checks › Vegetation…** opens the danger-tree panel (a window that
 **docks as a panel** like the clearance windows: 📌 Dock as a panel, ⬈
-Float). At its top: **Check** (runs in the background), the name to
-**save** the run as, and — when what the run was computed from changed —
-the banner *Out of date: … changed since this run* with **Run again**.
+Float). At its bottom left, in a footer that stays in place while the
+panel scrolls: **Run** (runs in the background) and its status. At its
+top — when what the run was computed from changed — the banner *Out of
+date: … changed since this run* with **Run again**; under the results,
+the name to **save** the run as.
 Below, the **Preset** dropdown, then the settings in four groups. Each
 value has a short explanation beside it (more on hover), each group a
 link to its section here (**… user guide ↗**), and small drawings follow
@@ -515,7 +517,8 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
   most**: measured; where two tubes meet the triangles bridge the groove
   between them, so it can be larger than the tolerance.
 
-**Run** computes it in the background. The table lists each volume: its
+**Run** (the window's footer, bottom left) computes it in the
+background. The table lists each volume: its
 colour (its circuit's wire colour), voltage, distance, triangles, volume
 and how far it lies outside the exact volume at most (measured; where
 tubes meet the triangles bridge the groove, so this can be larger than

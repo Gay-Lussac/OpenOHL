@@ -93,7 +93,7 @@ radial = "4.5 m"
 | `pair_voltage` | Wire rules: the voltage of a pair of wires is the `higher` of the two systems' nominal voltages (default), their `sum`, or the `difference` — the actual voltage between the two conductors from phase angles and DC polarities. |
 | `vertical_band` | Points count for vertical clearance within this horizontal distance of the wire (default 0.5 m). For the ground: the highest ground within this distance (default 0: straight below the wire). |
 | `vertical_depth` | Vertical clearances to points and the ground: the depth along the line of the area under the wire (`vertical_band` its half width across), e.g. `"0.2 m"`. The clearance is the shortest vertical distance between the wire and a point of the area: a point is compared with the wire's lowest point within that depth around it (its highest for a point above the wire). Default 0: the wire straight above the point. |
-| `voltages` | Only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. |
+| `voltages` | Optional: only the wires of these nominal voltages are checked, e.g. `[220]` (kV; `0` for earthed wires); default: all. Wire rules: the first wire of a pair. A distance by voltage (a table or base + per kV) needs none: one rule covers every voltage (2026-10-21; [A rule's voltages](desktop-app.md#a-rules-voltages)). |
 | `wires` | Which wires are checked: `"sections"` (the spans), `"jumpers"`, or `"both"` (default). |
 | `search_margin` | Targets are reported within the required distance plus this (default 5 m); crossings of other wires are always reported. |
 | `include_same_phase` | `same_line`: also check wires of the same circuit and phase (default: no). |
@@ -225,7 +225,7 @@ rules with a clearance of one measure — **vertical** or **radial**, the
 only one the file has (a file with both needs `--measure vertical` or
 `--measure radial`); a required clearance by voltage stays one row, each wire
 checked with the distance of its voltage (a rule that lists `voltages`
-gives one row per voltage); roles become the classes of the class scheme; the first rule's
+gives one row with those voltages, 2026-10-21); roles become the classes of the class scheme; the first rule's
 `vertical_band` and `vertical_depth` are the zone's width and depth. The
 `[wind]` table sets the wind (default: the cases' own pressure from both
 sides), the `[check]` table the circuits, the calculation method and the
@@ -252,11 +252,12 @@ The report says where each library came from (`cables: the project's
 (2 files)`, `--library`, shipped, next to the file), lists the sections
 solved, the wind positions, the LiDAR points read and the time taken, then
 the findings as the window shows them: the violations, worst first, then
-each rule's lowest clearance. A rule of several voltages makes one row per
-voltage; the summary keeps them together: one line `NAME: nothing within
-reach (220, 380 kV)` per rule name, and one note `no wire of 150, 125,
-110 kV: 12 rule rows not used` for the rows of voltages the line does not
-have (a note repeated is printed once with its count). The CSV keeps one
+each rule's lowest clearance. A rule of several voltages makes one row
+with them (2026-10-21; a note `no wire of 110 or 150 kV` when the line has
+none of them); rules of the same name stay together in the summary: one
+line `NAME: nothing within reach (220, 380 kV)` per rule name, and one note
+`no wire of 150, 125, 110 kV: 12 rule rows not used` for the rows of
+voltages the line does not have (a note repeated is printed once with its count). The CSV keeps one
 row per finding. The exit
 status is **0** with no violation, **1** with violations, **2** on an
 error (a rule file with both measures, no weather case, the time limit) —

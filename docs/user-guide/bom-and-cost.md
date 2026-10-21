@@ -69,7 +69,7 @@ Prices are numbers ≥ 0; the same type, insulator or wire type may be priced on
 
 ## In the application
 
-File › **Bill of materials › Wires…** opens a window with the wires' part of the bill — the categories `wire` and `stringing` — its total and its items without a price. Structures, insulators and hardware are counted by `ohl bom` only: the application does not offer them yet. The project's first `.ohlcost` file (copied in from next to the project when it opens), or the first next to a line file, is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Compute again** after edits. **Export CSV…** writes the table.
+File › **Bill of materials › Wires…** opens a window with the wires' part of the bill — the categories `wire` and `stringing` — its total and its items without a price. Structures, insulators and hardware are counted by `ohl bom` only: the application does not offer them yet. The project's first `.ohlcost` file (copied in from next to the project when it opens), or the first next to a line file, is used; **Choose…** picks another, **No prices** shows quantities only. It is computed in the background from the line as it is (the model is not changed); **Run** (the window's footer, bottom left) after edits. **Export CSV…** writes the table.
 
 ## From the command line
 

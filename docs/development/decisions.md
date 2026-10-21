@@ -47,6 +47,64 @@ of Parts A, B and C).
     around the conductors (optional in the request, left off); the
     export of a cut (SVG / PNG / DXF through the drawing model); points
     streamed only for the 3D view are not in the cut.
+- **Check windows: Run at the bottom left; a rule's voltage filter
+  optional; marks off when a window closes** (owner requests of
+  2026-10-21). Built, in active development (not approved yet).
+  - **Run footer.** Every check window and page — Vertical and Radial
+    clearances, the vegetation panel, Safety volumes, Galloping
+    ellipses, As-built wires, Distance between conductors, Thermal
+    rating, Structure loads, Bill of materials, Spot structures and the
+    Clearances tab — has **Run** at its bottom left in a footer that
+    stays visible: the body scrolls above it (`check_help::body`,
+    `check_help::footer`, `check_help::run_button`, one helper for all).
+    Stop (where a run can be stopped) and the progress are in the
+    footer; the out-of-date banner stays at the top with **Run again**,
+    greyed when Run is. The buttons named Check, Fit, Spot, Compute,
+    Compute again, Check now and Clearance-limited temperature are all
+    **Run** now (their hover says what they run); Cancel is **Stop**.
+    The vegetation panel's and the clearance windows' Run had moved to
+    the top because a click on a widget scrolled out of sight did not
+    register in the tests; the footer is always visible, so it is
+    clickable, and the tests check it in every window with a short
+    screen and the body scrolled.
+  - **Marks off when the window closes.** The violations of a Vertical
+    or Radial clearances window, and of the Clearances tab, are drawn
+    while the window or tab is open (docked or moved: they stay),
+    taken off the views when it is closed, back when it is opened again
+    — as the vegetation panel's layers and the safety volumes already
+    were. A window that never ran leaves the marks drawn by another
+    alone. Galloping, as-built wires, thermal, bill of materials and
+    spotting draw nothing in the views; the distance between conductors'
+    line already went with its page.
+  - **A rule's voltage filter is optional.** With one distance it is a
+    tick menu ("only for", none ticked: every voltage); with a table by
+    voltage or base + per kV, which already depend on the voltage, it
+    hides behind **Only for some voltages…**, off by default. Rules in
+    existing files with a table *and* a filter read and are checked as
+    before (the filter applies); the toggle is shown on so the user can
+    clear it. The rule editor now shows the filter (it kept it unseen
+    before).
+  - **No rule per voltage.** `ohl_clearance::zone::ZoneRule::voltage`
+    (one voltage per row) became `voltages` (a list): a window imports a
+    rule listing several voltages as one row instead of one row per
+    voltage; the check and the rule file written are the same (the
+    format is unchanged). `ohl zones`' summary reads the note of a row of
+    several voltages ("no wire of 110 or 220 kV"). No other code path of
+    the application made one rule per voltage; a design-code plugin's
+    presets are the plugin's own.
+  - **Merge rules by voltage…** (rule editor, offered only when there is
+    something to merge): rules alike in every field but the name, each
+    for one voltage with plain distances, become one rule with a table
+    by voltage and no filter in the first one's place, after a preview
+    of what changes at each of the line's voltages; one undoable
+    command. Without the filter the merged rule checks every wire: a
+    voltage between two rows takes the next row up (the larger distance
+    when distances grow with the voltage), earthed wires the first row,
+    and above the last row there is no distance (the check stops and
+    says so) — the preview says so before anything is written.
+  - **Remove all rules** (commit of the same day) checked: beside Add
+    rule and Load preset…, asks first, Undo brings the rules back; a
+    test clicks it, confirms and undoes.
 
 - **Attachment points: the link follows edits, only attach joints take
   a link, `derive` writes joints, no point on a member** (owner

@@ -153,8 +153,9 @@ up to about a second per section and limit.
   ampacity of every section in every ambient case (hover a value for the
   heat terms).
 - **Weather case heated** and the temperature range — then
-  **Clearance-limited temperature** runs the search in the background with a
-  progress bar (*Cancel* stops it), using the rule file chosen under
+  **Run** (the window's footer, bottom left; greyed without a rule file)
+  runs the clearance-limited temperature search in the background with a
+  progress bar (**Stop** stops it), using the rule file chosen under
   Checks › Wire clearances and the ground and LiDAR points of the checks. The
   table gains the limit per section, the governing span and the ampacity at
   the limit per ambient case.
