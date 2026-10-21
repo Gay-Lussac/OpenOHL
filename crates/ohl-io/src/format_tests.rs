@@ -82,7 +82,14 @@ fn rich_line() -> Line {
         description: Default::default(),
         label: "VL".into(),
         position: [w.position[0] - 2.0, w.position[1], w.position[2] + 3.0],
+        // Linked to a joint at an offset (2026-10-21).
+        joint: Some("J \"7\" & <a>".into()),
+        offset: [0.125, -0.4, 0.1 + 0.2],
+        unlinked: false,
     });
+    // An unlinked point (its joint gone).
+    s.points[0].joint = Some("old".into());
+    s.points[0].unlinked = true;
     s.strings.push(ohl_line::InsulatorString {
         label: "leg".into(),
         top: "VL".into(),

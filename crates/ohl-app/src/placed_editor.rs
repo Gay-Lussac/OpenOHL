@@ -249,6 +249,7 @@ impl PlacedEditor {
                 label: p.label,
                 position: p.position,
                 description: p.description,
+                ..Default::default()
             })
             .collect();
         s.wires = placed

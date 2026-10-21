@@ -3874,6 +3874,7 @@ mod tests {
                 description: Default::default(),
                 label: label.into(),
                 position: [c[0], c[1] + dy, c[2]],
+                ..Default::default()
             });
             t2.strings.push(crate::InsulatorString {
                 label: format!("leg {label}"),
@@ -3987,6 +3988,7 @@ mod tests {
                 description: Default::default(),
                 label: label.into(),
                 position: [c[0], c[1] + dy, c[2]],
+                ..Default::default()
             });
             t2.strings.push(crate::InsulatorString {
                 label: format!("leg {label}"),

@@ -1076,6 +1076,7 @@ pub(crate) mod tests {
             description: String::new(),
             label: label.into(),
             position: [0.0, 0.0, z],
+            ..Default::default()
         };
         let w = |label: &str, z: f64| WirePoint {
             label: label.into(),

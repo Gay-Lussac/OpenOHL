@@ -2904,6 +2904,7 @@ mod tests {
                     description: Default::default(),
                     label: top_label.clone(),
                     position: p(top),
+                    ..Default::default()
                 });
                 st.strings.push(InsulatorString {
                     label: format!("{label}-string{n}"),
@@ -3037,6 +3038,7 @@ mod tests {
                     description: Default::default(),
                     label: "P-JW".into(),
                     position: conductor.position,
+                    ..Default::default()
                 });
                 t3.strings.push(InsulatorString {
                     label: "S-JW".into(),

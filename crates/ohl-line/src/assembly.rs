@@ -50,8 +50,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Point, Structure};
 
-/// A labelled point on a structure where strings hang.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// An **attachment point**: a labelled point on a structure where strings
+/// hang, linked to a joint of the structure's type (2026-10-21; the file
+/// key stays `points`).
+///
+/// - **Typed structure**: a point of the type is linked as the type says
+///   ([`ohl_structures::StructureType::point_link`]); the structure's own
+///   point with a type point's label overrides it, its own `joint` and
+///   `offset` relink it. Its position is the joint's, as placed, plus the
+///   offset turned with the structure ([`crate::Line::resolve`]);
+///   `position` is kept as written while it agrees within
+///   [`KEEP_POSITION`], so a round trip moves nothing.
+/// - **Written before the links** (no `joint`): an override of a type's
+///   point takes that point's joint, its offset the difference of the
+///   positions (the point stays where it was); a point of its own is
+///   linked to a joint at its position, else it is **unlinked**.
+/// - **Unlinked** (`unlinked`, or its joint is not in the type): it stays
+///   at `position`, its structure's loads are refused until it is linked
+///   again ([`StructurePoint::is_linked`]).
+/// - **Structure without a type**: each point is its own joint; `joint`
+///   and `offset` are not used.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructurePoint {
     /// What it is, in words (free text).
@@ -62,6 +81,52 @@ pub struct StructurePoint {
     pub label: String,
     /// Position, m.
     pub position: Point,
+    /// The joint of the structure's type it is linked to
+    /// ([`ohl_structures::StructureType::joints`]); none: as described
+    /// above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint: Option<String>,
+    /// From the joint to the point, in the structure's axes (x to the
+    /// right of the line, y ahead, z up), m: a rigid link, whose moment
+    /// the structure analysis applies at the joint.
+    #[serde(default, skip_serializing_if = "is_zero_vector")]
+    pub offset: Point,
+    /// Unlinked: kept at `position`, the structure's loads refused until
+    /// it is linked again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unlinked: bool,
+}
+
+/// A stored point position agreeing with its joint and offset within
+/// this distance is kept as written (rounding only), m.
+pub const KEEP_POSITION: f64 = 1e-6;
+
+/// The offset given is none.
+fn is_zero_vector(v: &Point) -> bool {
+    *v == [0.0; 3]
+}
+
+impl StructurePoint {
+    /// A point at `position`, linked to nothing yet.
+    pub fn at(label: impl Into<String>, position: Point) -> Self {
+        Self {
+            label: label.into(),
+            position,
+            ..Self::default()
+        }
+    }
+
+    /// On a typed structure as resolved: linked to a joint of its type
+    /// (not unlinked, a joint named).
+    pub fn is_linked(&self) -> bool {
+        !self.unlinked && self.joint.is_some()
+    }
+
+    /// The length of its offset, m.
+    pub fn offset_length(&self) -> f64 {
+        let o = self.offset;
+        (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()
+    }
 }
 
 /// A wire point: the bottom of one or more strings (or a point fixed to the
@@ -874,6 +939,7 @@ pub fn from_v1(
                             description: Default::default(),
                             label: label.clone(),
                             position: *leg,
+                            ..Default::default()
                         });
                     }
                     strings.push(string(format!("{string_label}{suffix}"), label, 0.5));
@@ -887,6 +953,7 @@ pub fn from_v1(
                         description: Default::default(),
                         label: label.clone(),
                         position: a.insulator_point,
+                        ..Default::default()
                     });
                 }
                 strings.push(string(string_label, label, 1.0));
@@ -990,6 +1057,7 @@ mod tests {
             description: Default::default(),
             label: label.into(),
             position,
+            ..Default::default()
         };
         let w = |label: &str, position: Point, set: Option<u32>| WirePoint {
             description: Default::default(),
@@ -1057,6 +1125,7 @@ mod tests {
             description: Default::default(),
             label: label.into(),
             position,
+            ..Default::default()
         };
         let w = |label: &str, set: Option<u32>| WirePoint {
             label: label.into(),

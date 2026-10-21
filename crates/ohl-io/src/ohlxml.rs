@@ -374,11 +374,23 @@ fn write_structure(out: &mut String, s: &Structure) {
             description,
             label,
             position,
+            joint,
+            offset,
+            unlinked,
         } = p;
         out.push_str("    <point");
         attr(out, "label", label);
         nonempty(out, "description", description);
         point_attrs(out, *position);
+        opt_text(out, "joint", joint.as_deref());
+        if *offset != [0.0; 3] {
+            for (name, v) in ["offset_x", "offset_y", "offset_z"].into_iter().zip(offset) {
+                attr(out, name, &num(*v));
+            }
+        }
+        if *unlinked {
+            attr(out, "unlinked", "true");
+        }
         out.push_str("/>\n");
     }
     for w in wires {
@@ -1263,11 +1275,33 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
     let mut points: Vec<StructurePoint> = e
         .children_named("point")
         .map(|p| {
-            check(p, &["label", "x", "y", "z", "description"], &[])?;
+            check(
+                p,
+                &[
+                    "label",
+                    "x",
+                    "y",
+                    "z",
+                    "description",
+                    "joint",
+                    "offset_x",
+                    "offset_y",
+                    "offset_z",
+                    "unlinked",
+                ],
+                &[],
+            )?;
             Ok(StructurePoint {
                 description: owned(p, "description").unwrap_or_default(),
                 label: text(p, "label")?.to_owned(),
                 position: point(p)?,
+                joint: owned(p, "joint"),
+                offset: [
+                    optional(p, "offset_x")?.unwrap_or(0.0),
+                    optional(p, "offset_y")?.unwrap_or(0.0),
+                    optional(p, "offset_z")?.unwrap_or(0.0),
+                ],
+                unlinked: flag(p, "unlinked")?,
             })
         })
         .collect::<Result<_, String>>()?;

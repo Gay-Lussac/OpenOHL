@@ -341,10 +341,18 @@ impl Line {
             let placed = t
                 .place_strings(at, s.orientation_deg, s.extension.as_deref(), insulators)
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
-            points.extend(placed.points.into_iter().map(|p| StructurePoint {
-                description: p.description,
-                label: p.label,
-                position: p.position,
+            points.extend(placed.points.into_iter().map(|p| {
+                let (joint, offset) = t
+                    .point_link(&p.label)
+                    .map_or((None, [0.0; 3]), |(j, o)| (Some(j.to_owned()), o));
+                StructurePoint {
+                    description: p.description,
+                    label: p.label,
+                    position: p.position,
+                    joint,
+                    offset,
+                    unlinked: false,
+                }
             }));
             wires.extend(placed.wires.into_iter().map(|w| WirePoint {
                 description: w.description,
@@ -389,8 +397,10 @@ impl Line {
             points.retain(|p| !s.omit.contains(&p.label));
             strings.retain(|x| !s.omit.contains(&x.label));
             wires.retain(|w| !s.omit.contains(&w.label));
-            // The structure's own items over the type's.
-            for p in s.points.drain(..) {
+            // The structure's own items over the type's, each point linked
+            // to its joint.
+            for mut p in s.points.drain(..) {
+                link_point(&mut p, t, at, s.orientation_deg, s.extension.as_deref());
                 points.retain(|q| q.label != p.label);
                 points.push(p);
             }
@@ -571,6 +581,78 @@ impl Line {
         }
         (derived, typed)
     }
+}
+
+/// Links a typed structure's own point to its joint (`at`: the type's
+/// feet as placed; `rotation_deg`, `extension`: the structure's), as
+/// [`StructurePoint`] says: a point naming a joint of the type sits at the
+/// joint as placed plus its offset (its written position kept while it
+/// agrees within [`crate::assembly::KEEP_POSITION`]); one written before
+/// the links takes the type point's joint of its label, the offset the
+/// difference of the positions, or a joint at its position; else, and
+/// when its joint is not in the type, it is unlinked and stays where it
+/// is.
+pub(crate) fn link_point(
+    p: &mut StructurePoint,
+    t: &ohl_structures::StructureType,
+    at: crate::Point,
+    rotation_deg: f64,
+    extension: Option<&str>,
+) {
+    use ohl_structures::structures::{to_global, to_local};
+    if p.unlinked {
+        return;
+    }
+    let placed = |id: &str| {
+        t.joint_local(id, extension)
+            .map(|j| to_global(at, rotation_deg, j))
+    };
+    let distance = |a: crate::Point, b: crate::Point| {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    };
+    if let Some(id) = &p.joint {
+        match placed(id) {
+            Some(j) => {
+                let o = to_global([0.0; 3], rotation_deg, p.offset);
+                let here = [j[0] + o[0], j[1] + o[1], j[2] + o[2]];
+                if distance(here, p.position) > crate::assembly::KEEP_POSITION {
+                    p.position = here;
+                }
+            }
+            None => p.unlinked = true,
+        }
+        return;
+    }
+    // Written before the links.
+    let joint = match t.point_link(&p.label) {
+        Some((id, _)) => Some(id.to_owned()),
+        None => t
+            .linkable_joints()
+            .into_iter()
+            .find(|j| {
+                placed(&j.id).is_some_and(|q| distance(q, p.position) <= ohl_structures::SAME_JOINT)
+            })
+            .map(|j| j.id),
+    };
+    let Some(id) = joint else {
+        p.unlinked = true;
+        return;
+    };
+    let Some(j) = placed(&id) else {
+        p.unlinked = true;
+        return;
+    };
+    let d = [
+        p.position[0] - j[0],
+        p.position[1] - j[1],
+        p.position[2] - j[2],
+    ];
+    p.offset = if distance(p.position, j) <= crate::assembly::KEEP_POSITION {
+        [0.0; 3]
+    } else {
+        to_local([0.0; 3], rotation_deg, d)
+    };
+    p.joint = Some(id);
 }
 
 #[cfg(test)]

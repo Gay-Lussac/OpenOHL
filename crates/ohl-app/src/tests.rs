@@ -12791,6 +12791,7 @@ fn a_jumper_is_laid_through_suspension_strings() {
             description: String::new(),
             label: "A-JH".into(),
             position: [mid[0], mid[1], mid[2] + 2.0],
+            ..Default::default()
         });
         st.wires.push(ohl_line::WirePoint {
             label: "JH".into(),
@@ -14030,6 +14031,7 @@ fn a_string_hangs_from_another_groups_wire_point() {
             description: String::new(),
             label: "B".into(),
             position: [a[0] + 2.0, a[1], a[2]],
+            ..Default::default()
         });
         s.wires.push(ohl_line::WirePoint {
             label: "WS".into(),
