@@ -210,3 +210,67 @@ fn replace_carries_or_removes_points() {
     s.undo("ben").unwrap();
     assert_eq!(s.export().to_json(), before);
 }
+
+/// The link follows edits (owner decision 2026-10-21), as `ohl project
+/// apply` puts a structure: an own linked point whose stored position is
+/// moved (joint and offset as they were) stays on its joint, its offset
+/// changed by the move in the structure's axes, in the same command; one
+/// undo puts it back. A put that gives a new offset itself is kept.
+#[test]
+fn a_put_moving_a_linked_point_changes_its_offset() {
+    let mut s = project("follow", &line("synthetic-line-typed.ohl.json"));
+    s.apply(
+        "ben",
+        Command::LinkPoint {
+            structure: "T2".into(),
+            label: "A1".into(),
+            joint: "A1".into(),
+            offset: [0.0, 0.5, 0.0],
+            position: [10.0, 20.0, 530.0],
+        },
+    )
+    .unwrap();
+    let linked = s.export().to_json();
+    let put = |t2: &ohl_line::Structure| Command::Put {
+        kind: Kind::Structure,
+        id: "T2".into(),
+        value: serde_json::to_value(t2).unwrap(),
+        ord: None,
+    };
+    let mut t2 = s.line().structure("T2").unwrap().clone();
+    // 1 m along the structure's x, 0.25 m up.
+    let d = ohl_structures::structures::to_global([0.0; 3], t2.orientation_deg, [1.0, 0.0, 0.25]);
+    let p = t2.points.iter_mut().find(|p| p.label == "A1").unwrap();
+    p.position = [
+        p.position[0] + d[0],
+        p.position[1] + d[1],
+        p.position[2] + d[2],
+    ];
+    s.apply("ben", put(&t2)).unwrap();
+    let p = s
+        .line()
+        .structure("T2")
+        .unwrap()
+        .point("A1")
+        .unwrap()
+        .clone();
+    assert_eq!(p.joint.as_deref(), Some("A1"));
+    let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
+    assert!(close(p.offset, [1.0, 0.5, 0.25]), "{:?}", p.offset);
+    s.undo("ben").unwrap();
+    assert_eq!(s.export().to_json(), linked);
+    // A new offset given with the move: as given.
+    let mut t2 = s.line().structure("T2").unwrap().clone();
+    let p = t2.points.iter_mut().find(|p| p.label == "A1").unwrap();
+    p.position[2] += 1.0;
+    p.offset = [0.0, 0.5, 1.0];
+    s.apply("ben", put(&t2)).unwrap();
+    let p = s
+        .line()
+        .structure("T2")
+        .unwrap()
+        .point("A1")
+        .unwrap()
+        .clone();
+    assert_eq!(p.offset, [0.0, 0.5, 1.0]);
+}

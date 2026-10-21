@@ -1957,6 +1957,30 @@ impl Session {
                     "a point cloud is not an object: its points change by change_points",
                 ));
             }
+            // A structure put by a user: its linked attachment points moved
+            // stay on their joints, their offsets following the move (owner
+            // decision 2026-10-21; [`ohl_line::links::follow_moves`]).
+            Command::Put {
+                kind: Kind::Structure,
+                ref id,
+                ref value,
+                ord,
+            } if user => {
+                let moved = self.line.structure(id).and_then(|old| {
+                    let mut new: ohl_line::Structure =
+                        serde_json::from_value(value.clone()).ok()?;
+                    ohl_line::links::follow_moves(old, &mut new).then_some(new)
+                });
+                match moved {
+                    Some(new) => out.push(Command::Put {
+                        kind: Kind::Structure,
+                        id: id.clone(),
+                        value: json(&new),
+                        ord,
+                    }),
+                    None => out.push(command),
+                }
+            }
             Command::Put { .. } => out.push(command),
             Command::ChangePoints {
                 ref cloud,
