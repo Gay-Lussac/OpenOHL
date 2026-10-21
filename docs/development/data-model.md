@@ -841,8 +841,12 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.ohlr` and
   `<model>.radial-clearances.ohlr` (one `[[rule]]` per row and target
-  kind). A window row (`ohl_clearance::zone::ZoneRule`) has an optional
-  `width` of its own (the vertical zone's half width, written as the
+  kind). A window row (`ohl_clearance::zone::ZoneRule`) has its
+  `voltages` (kV, 0 for earthed wires; empty: every wire — optional with
+  any distance; since 2026-10-21 a list, written as the rule's
+  `voltages`, so a rule of several voltages is one row: it was one
+  `voltage` per row, a rule listing several read as one row each; the
+  file format is unchanged) and an optional `width` of its own (the vertical zone's half width, written as the
   rule's `vertical_band`; none: the window's `Zone.width`); the window's
   `Zone.search` is `[check] search_distance`. Rules refer to LiDAR
   classes by number (`.ohlc` schemes) and to weather cases by name.
