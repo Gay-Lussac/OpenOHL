@@ -207,6 +207,12 @@ pub struct VegetationArgs {
     /// and right blowout (windy cases).
     #[arg(long)]
     pub swing_arc: bool,
+    /// The swing band's margin, m (--swing-arc): every distance to a band
+    /// is taken this much smaller. Default 0.15 m, the measured worst
+    /// excess of the intermediate pressures plus an allowance
+    /// (conservative); a smaller value is on the user's responsibility.
+    #[arg(long, default_value_t = ohl_clearance::positions::BAND_MARGIN)]
+    pub band_margin: f64,
     /// Step the wind of each windy case by this pressure, Pa: still air
     /// and every pressure up to the case's are checked too (alongside or
     /// instead of --swing-arc), as the desktop clearance windows step it.
@@ -828,8 +834,10 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
                 step,
                 sides: a.wind_sides,
                 arc: false,
+                band_margin: a.band_margin,
             }),
             jumpers: false,
+            band_margin: a.band_margin,
         },
         &budget,
     )?;
@@ -865,13 +873,18 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
     }
     let count = |k: PositionKind| positions.positions.iter().filter(|p| p.kind == k).count();
     println!(
-        "positions: {} spans, {} cases — {} as the case, {} left, {} right, {} swing arcs, {} wind steps, {} with unbalanced ice ({:.1?})",
+        "positions: {} spans, {} cases — {} as the case, {} left, {} right, {} swing arcs{}, {} wind steps, {} with unbalanced ice ({:.1?})",
         positions.spans.len(),
         positions.cases.len(),
         count(PositionKind::Case),
         count(PositionKind::Left),
         count(PositionKind::Right),
         count(PositionKind::Arc),
+        if a.swing_arc {
+            format!(" (band margin {} m)", a.band_margin)
+        } else {
+            String::new()
+        },
         count(PositionKind::Still) + count(PositionKind::StepLeft) + count(PositionKind::StepRight),
         count(PositionKind::Ice) + count(PositionKind::IceLeft) + count(PositionKind::IceRight),
         t.elapsed()

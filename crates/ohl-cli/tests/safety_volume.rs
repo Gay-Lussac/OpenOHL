@@ -44,8 +44,9 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
         "{text}\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    // Two circuits, 220 kV: 4 m.
+    // Two circuits, 220 kV: 4 m; the band's margin by default.
     assert!(text.contains("Example 1: 220 kV — d 4.00 m"), "{text}");
+    assert!(text.contains("swing arc (band margin 0.15 m)"), "{text}");
     assert!(text.contains("Branch: 220 kV — d 4.00 m"), "{text}");
     for ext in ["dxf", "prj", "ifc", "kmz"] {
         let f = dir.join(format!("safety-volume.{ext}"));
@@ -72,6 +73,20 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--distance"));
+    // A negative band margin: refused.
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("safety-volume")
+        .arg(ex.join("synthetic-line.ohl.json"))
+        .arg("--weather")
+        .arg(ex.join("weather-cases.ohlwc"))
+        .args(["--cases", "high wind", "--wind", "arc", "--distance", "3"])
+        .args(["--band-margin=-0.1"])
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--band-margin"));
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -112,6 +127,12 @@ fn safety_volumes_by_system() {
     let out = run("nope");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("no system \"nope\""));
+    // `none`: the wires without a system — the example line has none
+    // (no earth wire), said so (2026-10-21).
+    let out = run("none");
+    assert!(!out.status.success());
+    let e = String::from_utf8_lossy(&out.stderr);
+    assert!(e.contains("no wire of the systems (no system)"), "{e}");
     // Two spans of S1 and the branch's first span, per wire: the wires
     // S1 and S3 only (S2 untouched).
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
