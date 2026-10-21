@@ -10,6 +10,77 @@ of Parts A, B and C).
 
 ## 2026-10-21
 
+- **Attachment points: the link follows edits, only attach joints take
+  a link, `derive` writes joints, no point on a member** (owner
+  decisions of 2026-10-21, after the Link tool). Built, in active
+  development (not approved yet).
+  - **The link follows edits.** Linking keeps the point where it is
+    (the offset stored), as before. When a linked point is later moved —
+    a drag (OHL-Design's 3D view handles and structure screen,
+    OHL-Structure's view), the Attachment points tables (both
+    applications, now typed for a point on a joint too), the Edit tool's
+    structure and string windows, `ohl project apply` putting a
+    structure — it stays on its joint and its offset is recomputed
+    (offset = new position − joint, in the structure's axes), in the
+    same command (one undo). In a structure file a point on a joint
+    moved no longer moves the joint (`ohl_structure_edit::links::move_point`;
+    before, a point on a joint dragged moved the joint); a joint moved
+    keeps the offsets, so its points follow. In the line: the session
+    applies `ohl_line::links::follow_moves` to a structure put by a
+    user (an own linked point whose stored position moved in the
+    structure's axes while its joint and offset are unchanged); the
+    structure window carries its points' links (they were dropped
+    before) and the string window keeps a moved point on its joint
+    (`ohl_line::links::moved`). Not followed when the type, extension or
+    height adjustment change in the same put (the joints move then).
+    Properties has no position field for a point. Tests per path.
+  - **Only attach joints take a link**, in both applications and on
+    the structure screen: only they are ringed and clickable in the Link
+    tool; another joint under the pointer says "not an attach joint:
+    set its kind to attach in OHL-Structure" (`ohl_structures::NOT_ATTACH`).
+    The same rule in the file edit (`link_point`), the line
+    (`ohl_line::links::linked`, so `LinkPoint` from the applications and
+    `ohl structures link`), a drag released on a joint, the Attachment
+    points tables' joint list, and the exact match of a structure change
+    (`match_points`: an attach joint at the point's position; before,
+    any joint but a support joint). A joint carrying a point is an
+    attach joint (worked out), so every existing link stays valid.
+  - **`ohl structures derive`** writes version 6 structure types: per
+    attachment a `[[node]]` `A<set>-<phase>` of kind `attach`, the
+    attachment point on it, its wire point (set) and its string (the
+    assembly, or inline length and weight; a strain string level, ahead
+    or back); a wire point without a string fixed where it is. The old
+    `[[attachment]]` form is still read. Tests: the derived types place
+    back the source's points and string lengths; every point on its own
+    attach joint.
+  - **No point on a member.** A point needs a joint: `member` + `at` is
+    no longer a way to define a point. A file written before that has it
+    is read with a joint of kind `attach` inserted on the member there
+    (id: the point's label, as before), the member split into two pieces
+    that stay **continuous** (the same fields both sides: a rigid
+    connection, moment continuity for frames; the first keeps the id,
+    the second `<id>-2`), each with the whole member's buckling length
+    as `lk` (`ohl_structures::on_members`). OHL-Structure and the
+    structure screen write the file so when it is next saved.
+    OHL-Structure gains **Insert a joint** on a member (the Members
+    table's menu: the same split at a fraction, an attach joint; there
+    was no such feature before). The FE "share to the member ends" path
+    for a point along a truss member, the analysis-only split
+    (`Model::split`, `Solution::pieces`, `MemberPoint`) are removed. A
+    joint carrying a point where only bars meet in a line or a plane,
+    loaded across them, is refused with the fix ("make the members
+    frames, or add a member to the joint", `Model::bar_joint_error`)
+    rather than held by the stabilisation (which would share the load
+    to the bars' ends again). **Conservative:** each piece keeps the
+    whole member's buckling length (a joint carrying strings braces
+    nothing; set `lk` where it does). Migration: frame members give the
+    numbers of before bit for bit (the analysis split them the same
+    way; unit test, validation `structfe-014` unchanged, every-profile
+    compared with the program before); the pieces are now reported as
+    members of their own. A truss member with a point along it, loaded
+    across, is now an error where its load was shared to the ends (no
+    shipped file has one).
+
 - **Roadmap split by application** (owner request of 2026-10-21, "split
   the roadmap between OHL-Design and OHL-Structure"). ROADMAP.md stays
   one file (the book and many pages link to it) with three parts:

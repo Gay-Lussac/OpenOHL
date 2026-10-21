@@ -76,7 +76,7 @@ From the review of 2026-10-18 (quick wins are being done now):
   Glossary in both apps, with drawings); the texts renamed step by step
   (decision log 2026-10-21). Attachment points linked to typed joints
   (attach, support), offsets as rigid links whose moments the analysis
-  applies, members split at points along them, exact matching with the
+  applies, exact matching with the
   nearest attach joint offered on a structure change, link / relink /
   unlink commands (`ohl structures points`, `ohl structures link`,
   session `link_point`, `unlink_point`, `relink_points`): built in the
@@ -94,7 +94,19 @@ From the review of 2026-10-18 (quick wins are being done now):
   circuits become one only when connected, the jumper's window asking
   which name stays); files before read into one circuit per name, results
   unchanged; `--circuits` / `--circuit` by id or name: built, in active
-  development (not approved yet).*
+  development (not approved yet).
+  Owner decisions of 2026-10-21, built, in active development (not
+  approved yet): the link follows edits (a linked point moved keeps its
+  joint, its offset recomputed: drags, the Attachment points tables, the
+  Edit tool's windows, `ohl project apply`; a joint moved takes its
+  points along); only attach joints take a link (the Link tool rings and
+  clicks only them in both applications and on the structure screen);
+  `ohl structures derive` writes version 6 types, a joint of kind attach
+  per point; a point cannot be put on a member — files that place one
+  along a member are read with a joint inserted and the member split
+  (continuous), OHL-Structure inserts a joint on a member, the FE share
+  to the member ends is gone and a joint only bars meet, loaded across
+  them, is refused with the fix.*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;
@@ -628,7 +640,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 
 - [x] Placement: the type's z = 0 may be any reference level (usually under the lowest crossarm); `foot` gives the level of its feet, so the placed structure stands with its feet on the ground, raised by the structure's `height_adjust` (foundations); extensions lengthen the body below the reference level
 - [x] One file per structure (`.ohls`): joints and members in the type itself (sticks), level 3 adds sections, materials, supports and member kinds (truss / frame / cable / tension) to the same members; `.ohlfe` models still read. The level is **derived from the content** (1 stick figure → 2 lattice outline as soon as there are members → 3 as soon as every member has a section and a joint has a `support`; a structure standing only on springs stays at level 2 today); the marker follows
-- [x] String points as joints or as a fraction along a member, so strings follow the members
+- [x] String points as joints, so strings follow the members *(since 2026-10-21 a point needs a joint: built, in active development (not approved yet) — a point is no longer put along a member; a joint is inserted on the member, the member split and continuous; files that placed one along a member are read so)*
 - [x] Symmetry (optional, decided 2026-10-17): members and joints copied about x, y or both, to ease building — `[[symmetry]]`, edits mirrored, **Make symmetric** in OHL-Structure
 - [x] **Body generators** (format version 3; the options version 6): legs and panels (single, X, K, diamond, Warren; horizontals), crossarms (triangular, rectangular), peak, copy a face — each writing ordinary joints and members; rebuild replacing only what a generator made; member groups with a section and kind per group; options off by default: redundants per panel (one or two levels), plan bracing (X, diamond) per level and where the slope changes or at the crossarms' levels, widths per panel, several points on one crossarm (2026-10-19)
 - [x] **Poles with levels and extensions**: a `[pole]` table in the structure file (outline by height, round or polygonal; a solid pole counts), its levels, the pole check reading it as a `.ohlp`; extension pieces and leg extensions in the FE model of each placed structure *(U4, built, not approved yet: the pole check and extensions in OHL-Structure's FE results, wind bands raised by an extension, the structure report — HTML and members CSV from Results › Structure report… and `ohl-structure-report`, its format still to define with the owner; the structures' own wind per load case, `[case.structure]` of the `.ohllc`, one rule for the line and OHL-Structure; `ohl structure analyse|report` asking `ohl-structure-report` in JSON)*
