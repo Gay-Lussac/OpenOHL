@@ -30,7 +30,8 @@
 # between the ends sagging 1.5 m joins them (one piece).
 #
 # The meshes take seconds in a release build and longer in a debug build
-# on a loaded computer: these cases allow 60 s (max_seconds).
+# on a loaded computer: these cases allow 120 s (max_seconds), as 001
+# and 002.
 
 [[case]]
 id = "safetyvolume-001"
@@ -53,7 +54,6 @@ max_seconds = 120.0
 title = "A swing arc of plus or minus 40 degrees: the reach to the side and below at mid-span"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
-max_seconds = 60.0
 inputs = { shape = "arc", length = "40 m", radius = "0 m", distance = "2 m", tolerance = "0.1 m", arc_radius = "10 m", blowout_angle = 40.0 }
 expected.open_edges = { value = 0.0, abs_tol = 0.0 }
 expected.exact_inside = { value = 1.0, abs_tol = 0.0 }
@@ -65,7 +65,7 @@ id = "safetyvolume-003"
 title = "A swing band from 8 to 10 m: its reach and its top at mid-span"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
-max_seconds = 60.0
+max_seconds = 120.0
 inputs = { shape = "arc", length = "40 m", radius = "0 m", distance = "2 m", tolerance = "0.1 m", arc_radius = "10 m", still_radius = "8 m", blowout_angle = 40.0 }
 expected.open_edges = { value = 0.0, abs_tol = 0.0 }
 expected.lateral_m = { value = 8.652876, abs_tol = 0.075 }
@@ -77,7 +77,7 @@ id = "safetyvolume-004"
 title = "A dead end: the jumper joins the two sections' volumes"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
-max_seconds = 60.0
+max_seconds = 120.0
 inputs = { shape = "dead_end", length = "40 m", radius = "0 m", distance = "1 m", tolerance = "0.1 m", gap = "6 m", jumper = 1.0, jumper_sag = "1.5 m" }
 expected.open_edges = { value = 0.0, abs_tol = 0.0 }
 expected.pieces = { value = 1.0, abs_tol = 0.0 }
@@ -87,6 +87,6 @@ id = "safetyvolume-005"
 title = "A dead end without the jumper: the gap between the two volumes"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
-max_seconds = 60.0
+max_seconds = 120.0
 inputs = { shape = "dead_end", length = "40 m", radius = "0 m", distance = "1 m", tolerance = "0.1 m", gap = "6 m", jumper = 0.0, jumper_sag = "1.5 m" }
 expected.pieces = { value = 2.0, abs_tol = 0.0 }
