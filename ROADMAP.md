@@ -40,8 +40,8 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), section library,
   exports) is in place with the limits listed below.
-- 153 validation cases pass (47 textbook and CIGRE TB 324 cases added
-  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, and 3 on the band margin and the jumpers' bands 2026-10-21); the private Swiss plugin and the importers of
+- 156 validation cases pass (47 textbook and CIGRE TB 324 cases added
+  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -222,6 +222,11 @@ heated span weighed more than its cable (the finite elements by
 \( e^{\alpha\Delta t} - 1 \), the closed forms with every lengthening);
 corrected 2026-10-21 by owner decision: every calculation keeps the
 cable's weight (`tbheat-001…003`; [Decision log](docs/development/decisions.md)).
+Also 2026-10-21 (owner decisions; built, in active development (not
+approved yet)): the weight is the data sheet's at its reference
+temperature (20 °C unless the cable gives one), taken at the stringing
+temperature (`tbwref-001…002`), and the finite elements carry the ice and
+wind per metre of the stretched conductor (`tbice-001`).
 A full validation report is
 a goal for 1.0; the non-linear (stress-strain and creep) examples need
 published curves (no tables typed from memory).
@@ -482,7 +487,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 - [x] Stringing charts output (CSV; PDF later with drafting)
 - [x] CLI: `ohl sagtension job.toml` (report in metric or US units, CSV chart)
 - [x] Performance: single section re-solve < 10 ms *(~60 µs for 20 spans; loaded span change of state ~1 ms)*
-- [x] Validation: CIGRE TB 324 examples, textbook cases, hand calcs (2026-10-20, built, in active development (not approved yet)): 47 cases — catenary and the parabola's error, inclined spans and uplift, Irvine's elastic catenary, change of state (temperature, ice, wind, 150 °C, creep as a temperature), ruling span against the exact section and the FE strings, ice and wind loads, a point load's slope jump, a bimetallic knee point, blowout, I- and V-string swing and leg forces — each with a hand derivation and `benchmarks/reference/textbook_reference.py`; TB 324 sec. 2 (Table 2, dead-end strings), 5.2 and 6.1 *(TB 324's non-linear examples wait for published curves; see [Textbook and published cases](docs/validation/textbook.md))*; 2026-10-21: the cable's own weight conserved in every calculation (a heated, crept or stretched span weighs what it weighs when strung; ice and wind per metre of the real conductor), 3 cases (`tbheat-001…003`: closed form, FE and ruling span at 150 °C), tb324-016 within the printed rounding; strain strings with a resolved weight of 0 N keep the estimated weight, and the string catalogue no longer makes 0 N entries
+- [x] Validation: CIGRE TB 324 examples, textbook cases, hand calcs (2026-10-20, built, in active development (not approved yet)): 47 cases — catenary and the parabola's error, inclined spans and uplift, Irvine's elastic catenary, change of state (temperature, ice, wind, 150 °C, creep as a temperature), ruling span against the exact section and the FE strings, ice and wind loads, a point load's slope jump, a bimetallic knee point, blowout, I- and V-string swing and leg forces — each with a hand derivation and `benchmarks/reference/textbook_reference.py`; TB 324 sec. 2 (Table 2, dead-end strings), 5.2 and 6.1 *(TB 324's non-linear examples wait for published curves; see [Textbook and published cases](docs/validation/textbook.md))*; 2026-10-21: the cable's own weight conserved in every calculation (a heated, crept or stretched span weighs what it weighs when strung; ice and wind per metre of the real conductor), 3 cases (`tbheat-001…003`: closed form, FE and ruling span at 150 °C), tb324-016 within the printed rounding; the weight from the data sheet's reference temperature (a cable's optional `reference_temperature`, else 20 °C) taken at the stringing temperature, and a stringing temperature of 20 °C for new sections and jumpers (`tbwref-001…002`); the FE's ice and wind per metre of the stretched conductor, iterated with the solution (`tbice-001`; built, in active development (not approved yet)); strain strings with a resolved weight of 0 N keep the estimated weight, and the string catalogue no longer makes 0 N entries
 
 **Deliverable:** `ohl` CLI + Rust library + Python bindings, reproducible sag-tension tables validated against published references.
 

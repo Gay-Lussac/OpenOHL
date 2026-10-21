@@ -21,7 +21,7 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | Field | Value | Meaning |
 |---|---|---|
 | `format` | `"ohl-wire"` | Identifies the file. Any other value is rejected. |
-| `version` | `1` | Format version. Newer versions than the program supports are rejected. |
+| `version` | `2` | Format version (2: a cable's `reference_temperature`; files of version 1 read unchanged). Newer versions than the program supports are rejected. |
 
 ## `[[cable]]`
 
@@ -33,6 +33,7 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | `source` | recommended (required in the shipped libraries) | text | Data sheet, standard, revision. |
 | `diameter` | yes | length: `m`, `mm`, `km`, `ft`, `in`, `mi` | Overall diameter. |
 | `mass_per_length` | yes | mass per length: `kg/m`, `lbm/ft` | **Mass**, not weight. `lb/ft` is a force unit and is rejected here. Data sheets often give lb per 1000 ft: 1094 lb/kft = `"1.094 lbm/ft"`. |
+| `reference_temperature` | no (`"20 °C"`) | temperature | The data sheet's temperature of `mass_per_length` (file version 2). Strung at another temperature, a metre of the cable holds \\( e^{-\alpha (t_s - t_{ref})} \\) of that mass: the calculations take the weight there and keep it (see [Sag-tension](../theory/sagtension.md#the-weight-from-the-data-sheet)). |
 | `rated_tensile_strength` | yes | force: `N`, `kN`, `lbf`, `lb`, `kip`, `kips` | RTS / RBS / UTS. |
 | `outer` | yes | component table | The whole cable for homogeneous conductors (AAC, AAAC, steel…). |
 | `core` | no | component table | Core of bimetallic / composite conductors (ACSR steel core…). |
