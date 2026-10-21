@@ -93,7 +93,7 @@ fn a_structure_is_edited_undone_and_saved() {
     let saved = std::fs::read_to_string(&path).unwrap();
     assert!(saved.contains("31.000 m"), "{saved}");
     // Comments stay.
-    assert!(saved.contains("# The pylon (invented, NOT a real design)"));
+    assert!(saved.contains("# The structure (invented, NOT a real design)"));
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 

@@ -1,7 +1,7 @@
-# Pylon template: the face of the pylon (across and up, m), from which
-# OpenOHL builds a structure type of level 1 for suspension or strain.
-# Slots: a phase's set on a suspension type; strain types add 20 (back)
-# and 40 (ahead). Synthetic dimensions: change them in the builder.
+# Structure template: the face of the structure (across and up, m), from
+# which OpenOHL builds a structure type of level 1 for suspension or
+# strain. Sets (the key `slot`): a phase's set on a suspension type; strain
+# types add 20 (back) and 40 (ahead). Synthetic dimensions: change them in the builder.
 format = "ohl-structure-template"
 version = 1
 id = "delta-1c"
@@ -24,7 +24,7 @@ description = "height of the lower crossarm"
 [[parameter]]
 name = "lower_half"
 default = "5 m"
-description = "lower crossarm: mast to each phase"
+description = "lower crossarm: shaft to each phase"
 
 [[parameter]]
 name = "upper_level"
@@ -34,7 +34,7 @@ description = "height of the upper crossarm"
 [[parameter]]
 name = "upper_across"
 default = "4 m"
-description = "upper crossarm: mast to the phase, to the right (negative: left)"
+description = "upper crossarm: shaft to the phase, to the right (negative: left)"
 
 [[parameter]]
 name = "peak"

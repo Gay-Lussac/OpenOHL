@@ -1,11 +1,13 @@
 # OpenOHL insulator assembly (.ohli): an EXAMPLE to start from.
-# Typical values for a 220 kV composite V-string, not manufacturer data:
+# Typical values for two 220 kV composite strings to one clamp, not
+# manufacturer data:
 # check every value against the data sheet of the assembly you use.
 format = "ohl-insulator"
-version = 1
+version = 3
 id = "example-220-v"
-name = "Example 220 kV V-string (typical values)"
-kind = "v_string"
+name = "Example 220 kV two suspension strings (typical values)"
+kind = "suspension"
+legs = 2
 source = "OpenOHL example, typical values"
 length = "3.0 m"
 half_width = "1.6 m"

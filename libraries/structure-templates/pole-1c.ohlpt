@@ -1,4 +1,4 @@
-# Pylon template (see delta-1c.ohlpt for the conventions).
+# Structure template (see delta-1c.ohlpt for the conventions).
 format = "ohl-structure-template"
 version = 1
 id = "pole-1c"

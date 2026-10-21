@@ -1,5 +1,5 @@
-# Pylon template (see delta-1c.ohlpt for the conventions).
-# Circuit 1 on the left (slots 1-3, top to bottom), circuit 2 on the right (4-6).
+# Structure template (see delta-1c.ohlpt for the conventions).
+# Circuit 1 on the left (sets 1-3, top to bottom), circuit 2 on the right (4-6).
 format = "ohl-structure-template"
 version = 1
 id = "barrel-2c"
@@ -32,17 +32,17 @@ description = "height of the bottom crossarm"
 [[parameter]]
 name = "half_1"
 default = "6 m"
-description = "top crossarm: mast to each phase"
+description = "top crossarm: shaft to each phase"
 
 [[parameter]]
 name = "half_2"
 default = "9 m"
-description = "middle crossarm: mast to each phase"
+description = "middle crossarm: shaft to each phase"
 
 [[parameter]]
 name = "half_3"
 default = "7 m"
-description = "bottom crossarm: mast to each phase"
+description = "bottom crossarm: shaft to each phase"
 
 [[parameter]]
 name = "peak"

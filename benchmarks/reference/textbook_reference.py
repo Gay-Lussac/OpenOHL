@@ -978,7 +978,7 @@ def insulator_cases():
     wl = wire_load(mass, d, q=500.0)
     print(f"    wire load: vertical {fmt(wl['vertical'])} horizontal {fmt(wl['horizontal'])}"
           f" angle {fmt(wl['swing_deg'])}")
-    # I-string: two spans of 300 m, string 3 m / 800 N / 0.4 m2.
+    # One string: two spans of 300 m, string 3 m / 800 N / 0.4 m2.
     pos, sps, bars, lengths, strung = suspension_section(
         [300.0, 300.0], 33.0, 30.0, 3.0, 5e7, 800.0, mass, d, EA, alpha, 25_000.0, 10.0,
         {"t": 10.0, "q": 500.0}, wind_area=0.4)
@@ -986,20 +986,20 @@ def insulator_cases():
     out = {"h_0_n": horizontal_tension(sps[0], pos), "h_1_n": horizontal_tension(sps[1], pos),
            "string_1_0_n": N, "string_1_0_across_deg": math.degrees(math.atan2(-u[1], -u[2])),
            "clamp_y_1_m": pos[1][1], "clamp_z_1_m": pos[1][2], "L0": lengths[0]}
-    show("tbins-002 I-string 3 m, 800 N, 0.4 m2 in 500 Pa", out)
+    show("tbins-002 one string 3 m, 800 N, 0.4 m2 in 500 Pa", out)
     # The classical pendulum estimate (no chord skew), for the hand check.
     sp_load = wl["horizontal"] * lengths[0]
     sp_w = wl["vertical"] * lengths[0]
     phi0 = math.degrees(math.atan2(sp_load + 500.0 * 0.4 / 2, sp_w + 800.0 / 2))
     print(f"    pendulum estimate (no chord skew): {fmt(phi0)} deg")
-    for q, name in ((0.0, "tbins-003 V-string still air"), (300.0, "tbins-004 V-string 300 Pa"),
-                    (1000.0, "tbins-005 V-string 1000 Pa")):
+    for q, name in ((0.0, "tbins-003 two strings still air"), (300.0, "tbins-004 two strings 300 Pa"),
+                    (1000.0, "tbins-005 two strings 1000 Pa")):
         show(name, v_section(q, mass))
 
 
 def v_section(q, mass):
     """Two spans of 300 m from fixed dead-ends at (0, 0, 30), (600, 0, 30);
-    a V at x = 300: legs from (300, +-2.5, 33) to the tip, unstressed
+    two strings at x = 300: from (300, +-2.5, 33) to their wire point, unstressed
     length the drawn distance to (300, 0, 30), 400 N each, EA 5e7 N,
     tension only. Strung at 25 kN, 10 degC; solved at 10 degC with wind q.
     `mass`: per metre of unstressed cable at 10 degC."""
