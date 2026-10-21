@@ -57,7 +57,7 @@ impl fmt::Display for SagTensionError {
             Self::InvalidInput(message) => write!(f, "invalid input: {message}"),
             Self::TooSlack { ratio } => write!(
                 f,
-                "cable too slack to compute (S/2C = {ratio:.1}); check the tension and weight"
+                "wire too slack to compute (S/2C = {ratio:.1}); check the tension and weight"
             ),
             Self::NotConverged {
                 problem,

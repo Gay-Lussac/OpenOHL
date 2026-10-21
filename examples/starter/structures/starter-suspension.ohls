@@ -4,7 +4,7 @@ id = "starter-suspension"
 name = "Starter suspension (delta, one circuit; invented)"
 kind = "lattice"
 height = "34 m"
-source = "pylon template delta-1c, suspension"
+source = "structure template delta-1c, suspension"
 
 [template]
 id = "delta-1c"

@@ -283,7 +283,7 @@ pub struct FacePoint {
 
 impl LibraryItem for PylonTemplate {
     const EXTENSION: &'static str = TEMPLATE_FILE_EXTENSION;
-    const KIND: &'static str = "pylon template";
+    const KIND: &'static str = "structure template";
 
     fn id(&self) -> &str {
         &self.id
@@ -295,7 +295,7 @@ impl LibraryItem for PylonTemplate {
             self.version,
             TEMPLATE_FILE_FORMAT,
             TEMPLATE_FILE_VERSION,
-            "pylon template",
+            "structure template",
         )?;
         let mut names = BTreeMap::new();
         for p in &self.parameters {
@@ -382,10 +382,10 @@ impl PylonTemplate {
                     .abs_diff(self.second_offset)
                     .min(self.first_offset.min(self.second_offset));
                 if a.slot == 0 || a.slot > max {
-                    return Err(format!("slot {}: from 1 to {max}", a.slot));
+                    return Err(format!("set {}: from 1 to {max}", a.slot));
                 }
                 if slots.insert(a.slot, ()).is_some() {
-                    return Err(format!("slot {} given twice", a.slot));
+                    return Err(format!("set {} given twice", a.slot));
                 }
                 let label = if a.label.is_empty() {
                     format!("{}{}", if earth { "E" } else { "P" }, a.slot)
@@ -442,7 +442,7 @@ impl PylonTemplate {
             && m + 1e-9 < top
         {
             return Err(format!(
-                "the mast top ({m:.2} m) is below the highest attachment ({top:.2} m)"
+                "the shaft top ({m:.2} m) is below the highest attachment ({top:.2} m)"
             ));
         }
         if values.string_length.is_nan() || values.string_length <= 0.0 {
@@ -477,7 +477,11 @@ impl PylonTemplate {
         let _ = writeln!(
             t,
             "source = {}",
-            quote(&format!("pylon template {}, {}", self.id, role.as_str()))
+            quote(&format!(
+                "structure template {}, {}",
+                self.id,
+                role.as_str()
+            ))
         );
         let _ = writeln!(t);
         let _ = writeln!(t, "[template]");

@@ -265,7 +265,7 @@ fn clamp_position(support: &Support) -> Result<Vector3<f64>, SectionError> {
         } => {
             if leg_length <= half_width {
                 return Err(SectionError::Invalid(
-                    "V-string legs shorter than the half width".into(),
+                    "two strings to one wire point shorter than the half width".into(),
                 ));
             }
             support.attachment

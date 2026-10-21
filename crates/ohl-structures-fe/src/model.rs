@@ -434,7 +434,10 @@ impl Section {
         library: &SectionLibrary,
     ) -> Result<Self, String> {
         let m = library.material_of(p).ok_or_else(|| match &p.material {
-            Some(m) => format!("section {}: no material {m} in the section library", p.id),
+            Some(m) => format!(
+                "cross-section {}: no material {m} in the cross-section library",
+                p.id
+            ),
             None => format!("section {}: no material", p.id),
         })?;
         let q = p.properties();

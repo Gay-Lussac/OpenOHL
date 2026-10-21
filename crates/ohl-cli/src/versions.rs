@@ -128,14 +128,14 @@ pub enum VersionCommand {
         /// Case of the weather file (default: its first).
         #[arg(long)]
         case: Option<String>,
-        /// Cable temperature without a weather file, °C.
+        /// Wire temperature without a weather file, °C.
         #[arg(long, default_value_t = 15.0)]
         temperature: f64,
         /// Wires for states without a wire library (default: the shipped
         /// libraries/cables).
         #[arg(long)]
         library: Option<PathBuf>,
-        /// Ground surface of the project for clearances (default: the
+        /// Terrain surface of the project for clearances (default: the
         /// surface of the checks).
         #[arg(long)]
         surface: Option<String>,
@@ -899,7 +899,7 @@ fn print_impact(
         surface
             .as_deref()
             .map(|n| format!(", ground: surface {n}"))
-            .unwrap_or_else(|| ", no ground surface".into())
+            .unwrap_or_else(|| ", no terrain surface".into())
     );
     println!(
         "  {:<12} {:>22} {:>26} {:>22}",

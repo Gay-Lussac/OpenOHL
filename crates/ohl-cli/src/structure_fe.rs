@@ -44,12 +44,12 @@ pub struct FeArgs {
     /// Write every member of every case as CSV.
     #[arg(long)]
     csv: Option<PathBuf>,
-    /// Section library (.ohlsec file or folder): a member's section is
+    /// Cross-cross-section library (.ohlsec file or folder): a member's cross-section is
     /// looked up there first, then in the model's [[section]] tables.
     #[arg(long)]
     sections: Option<PathBuf>,
     /// Member wind: factored wind pressure, Pa, on the members whose
-    /// section comes from the section library (their profiles' widths,
+    /// cross-section comes from the cross-section library (their profiles' widths,
     /// the model's drag factor), added to every case.
     #[arg(long, default_value_t = 0.0)]
     wind: f64,
@@ -73,7 +73,7 @@ pub struct PoleArgs {
     /// Structure type (.ohls): where the attachments are.
     #[arg(long = "type")]
     structure_type: PathBuf,
-    /// Section library (.ohlsec file or folder): a `[pole]`'s section.
+    /// Cross-cross-section library (.ohlsec file or folder): a `[pole]`'s cross-section.
     #[arg(long)]
     sections: Option<PathBuf>,
     /// Structure loads (CSV of `ohl line --loads-csv`).
@@ -233,14 +233,14 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         }
     );
     let a = args.wind_dir.to_radians();
-    // Drag and shielding factors from the section library's [wind] when
+    // Drag and shielding factors from the cross-section library's [wind] when
     // given; else the model's generic drag and no shielding (said).
     let member_wind =
         model.member_wind_with(args.wind, [a.cos(), a.sin(), 0.0], sections.wind.as_ref());
     if args.wind != 0.0 {
         if !model.has_profiles() {
             return Err(
-                "--wind: no member's section comes from a section library (give --sections)".into(),
+                "--wind: no member's cross-section comes from a cross-section library (give --sections)".into(),
             );
         }
         let total = member_wind.total();

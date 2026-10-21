@@ -666,7 +666,7 @@ pub enum CableError {
 impl fmt::Display for CableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Invalid { id, message } => write!(f, "cable {id}: {message}"),
+            Self::Invalid { id, message } => write!(f, "wire type {id}: {message}"),
             Self::Library { path, message } => write!(f, "{}: {message}", path.display()),
         }
     }
@@ -729,7 +729,10 @@ impl Library {
         for cable in file.cable {
             cable.validate()?;
             if self.cables.contains_key(&cable.id) {
-                return Err(library_error(format!("duplicate cable id {}", cable.id)));
+                return Err(library_error(format!(
+                    "duplicate wire type id {}",
+                    cable.id
+                )));
             }
             self.cables.insert(cable.id.clone(), cable);
         }

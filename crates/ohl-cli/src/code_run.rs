@@ -35,7 +35,7 @@ pub enum CodeCommand {
     },
     /// Generate weather cases (.ohlwc) and load cases (.ohllc) from a
     /// parameter file, and the plugin's wind factors for structures when
-    /// it gives them (`<plugin>-wind.ohlsec` in the section library);
+    /// it gives them (`<plugin>-wind.ohlsec` in the cross-section library);
     /// prints the plugin's notes.
     Generate {
         /// Design-code plugin directory.
@@ -50,7 +50,7 @@ pub enum CodeCommand {
         /// Load case file to write.
         #[arg(long = "load-cases")]
         load_cases: PathBuf,
-        /// Section library folder the wind factors for structures go
+        /// Cross-cross-section library folder the wind factors for structures go
         /// into, if the plugin gives them (default: `Sections` beside the
         /// weather case file).
         #[arg(long)]
@@ -174,7 +174,7 @@ fn generate(
             ))
         );
     }
-    // Wind factors for structures into the section library.
+    // Wind factors for structures into the cross-section library.
     let sections = sections.map_or_else(|| dir.join("Sections"), Path::to_path_buf);
     match g.write_structure_wind(&sections)? {
         Some(p) => println!("  wind factors for structures → {}", p.display()),

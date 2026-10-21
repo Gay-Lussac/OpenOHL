@@ -23,7 +23,7 @@ ohl spot examples/synthetic-line/synthetic-line-typed.ohl.json --route main \
     --terrain examples/synthetic-line/synthetic-survey.csv \
     --types examples/synthetic-line/Structures \
     --cost examples/synthetic-line/unit-costs.ohlcost \
-    --cable acsr-drake-26-7 --tension 20 --clearance 7 --step 10 --max-span 450 \
+    --wire-type acsr-drake-26-7 --tension 20 --clearance 7 --step 10 --max-span 450 \
     --out spotted.ohl.json
 ```
 
@@ -34,7 +34,7 @@ ohl spot examples/synthetic-line/synthetic-line-typed.ohl.json --route main \
 | `--types` | `Structures/` next to the line | Candidates: the types the cost file prices. |
 | `--insulators`, `--library` | shipped libraries | Insulator assemblies, wire library. |
 | `--cost` | | Unit costs. |
-| `--cable`, `--tension` | | Wire type id; horizontal tension in kN in the design condition. |
+| `--wire-type`, `--tension` | | Wire type id (`--cable` still read); horizontal tension in kN in the design condition. |
 | `--temperature` | 80 °C | Temperature of the design condition: the sections of the new line are strung to `--tension` at it, in still air. |
 | `--clearance` | | Vertical ground clearance, m. |
 | `--step` | 10 m | Distance between candidate stations. |

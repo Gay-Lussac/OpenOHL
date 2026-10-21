@@ -119,7 +119,7 @@ fn solve_one(
         .ok_or_else(|| LineError::Invalid(format!("no section {id}")))?;
     let cable = library.get(&section.cable).ok_or_else(|| {
         LineError::Invalid(format!(
-            "section {}: cable \"{}\" not in the libraries",
+            "section {}: wire type \"{}\" not in the libraries",
             section.id, section.cable
         ))
     })?;

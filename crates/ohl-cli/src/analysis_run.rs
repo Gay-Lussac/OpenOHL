@@ -432,7 +432,7 @@ pub fn clearance(command: ClearanceCommand) -> Result<(), String> {
                 let bad = pairs.iter().filter(|p| p.violates()).count();
                 let overlaps = pairs.iter().filter(|p| p.overlap).count();
                 println!(
-                    "case \"{}\": {} wire pairs × methods checked, {overlaps} overlapping, {bad} below the requirement ({:.1?})",
+                    "case \"{}\": {} wire pairs × methods checked, {overlaps} overlapping, {bad} below the required clearance ({:.1?})",
                     case.name,
                     pairs.len(),
                     started.elapsed()
@@ -1099,7 +1099,7 @@ pub fn fit_wires(a: FitArgs) -> Result<(), String> {
                 .ok_or("section not found")?;
             let cable = library
                 .get(&section.cable)
-                .ok_or_else(|| format!("cable {} not in the library", section.cable))?;
+                .ok_or_else(|| format!("wire type {} not in the library", section.cable))?;
             // Exit clause: about 6 section solves are usual.
             let budget = Budget::new().max_iterations(60);
             ohl_clearance::wirefit::estimate_temperature(

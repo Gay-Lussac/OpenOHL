@@ -236,7 +236,7 @@ impl Line {
                     None => {
                         let stem = format!(
                             "{}-{:.3}m-{:.0}N",
-                            if rx.strain { "Strain" } else { "I" },
+                            if rx.strain { "Strain" } else { "Suspension" },
                             key.1 as f64 / 1e3,
                             rx.weight
                         );
@@ -253,7 +253,7 @@ impl Line {
                                 if rx.strain {
                                     "strain string"
                                 } else {
-                                    "I-string"
+                                    "suspension string"
                                 },
                                 key.1 as f64 / 1e3,
                                 rx.weight

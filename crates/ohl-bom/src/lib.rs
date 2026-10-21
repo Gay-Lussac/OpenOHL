@@ -267,7 +267,7 @@ pub fn bill_of_materials(
             other => {
                 let solved = library
                     .get(&s.cable)
-                    .ok_or_else(|| format!("cable {} not in the wire library", s.cable))
+                    .ok_or_else(|| format!("wire type {} not in the wire library", s.cable))
                     .and_then(|c| {
                         ohl_line::solve::clip_lengths(line, s, c).map_err(|e| e.to_string())
                     });

@@ -171,7 +171,7 @@ impl Requirement {
                 .map(|(_, d)| *d)
                 .ok_or_else(|| {
                     format!(
-                        "no requirement for {kv} kV (the table ends at {} kV)",
+                        "no required clearance for {kv} kV (the table ends at {} kV)",
                         rows.last().map_or(0.0, |r| r.0)
                     )
                 }),

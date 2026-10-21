@@ -232,11 +232,11 @@ impl CostData {
         let mut seen = std::collections::BTreeSet::new();
         for c in &self.cables {
             if !seen.insert(c.id.as_str()) {
-                return Err(format!("cable {} priced twice", c.id));
+                return Err(format!("wire type {} priced twice", c.id));
             }
-            price(format!("cable {}", c.id), c.price_per_m)?;
+            price(format!("wire type {}", c.id), c.price_per_m)?;
             if let Some(p) = c.stringing_per_m {
-                price(format!("cable {} stringing", c.id), p)?;
+                price(format!("wire type {} stringing", c.id), p)?;
             }
         }
         for p in [self.labour.per_structure, self.labour.per_span]

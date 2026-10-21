@@ -214,12 +214,12 @@ impl Conductor {
             .filter(|e| !e.ac_resistance.is_empty())
             .ok_or_else(|| {
                 ThermalError::Invalid(format!(
-                    "cable {}: no AC resistance in its [cable.electrical] data",
+                    "wire type {}: no AC resistance in its [cable.electrical] data",
                     cable.id
                 ))
             })?;
         Self::check_resistance_of(&electrical, cable.kind)
-            .map_err(|m| ThermalError::Invalid(format!("cable {}: {m}", cable.id)))?;
+            .map_err(|m| ThermalError::Invalid(format!("wire type {}: {m}", cable.id)))?;
         let outer = match cable.kind {
             CableKind::Steel => STEEL,
             _ => ALUMINIUM,
@@ -280,7 +280,7 @@ impl Conductor {
             0 => Err("no AC resistance".into()),
             1 if kind.resistance_temperature_coefficient().is_none() => Err(format!(
                 "one AC resistance value cannot be scaled to other temperatures for a \
-                 cable of kind \"{}\" (unknown material): give it at two temperatures",
+                 wire type of kind \"{}\" (unknown material): give it at two temperatures",
                 format!("{kind:?}").to_lowercase()
             )),
             _ => Ok(()),

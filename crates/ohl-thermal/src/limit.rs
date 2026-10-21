@@ -348,7 +348,7 @@ pub fn clearance_limits(
         let limit = search.section(section, options, &mut run);
         if !search.checked_any && limit.result.is_ok() {
             return Err(
-                "no clearance could be checked: the rules need a ground surface or points".into(),
+                "no clearance could be checked: the rules need a terrain surface or points".into(),
             );
         }
         out.push(limit);
@@ -471,7 +471,7 @@ mod tests {
             &budget,
             &mut |_, _| {},
         );
-        assert!(r.unwrap_err().contains("ground surface"));
+        assert!(r.unwrap_err().contains("terrain surface"));
         // A budget of three solutions: the first section stops.
         let (_, _, terrain) = example();
         targets.ground = Some(&terrain);
