@@ -224,6 +224,17 @@ fn help_opens_the_manual_and_about() {
     assert!(opened.iter().any(|p| p.is_file()), "{opened:?}");
     h.get_by_label("Help").click();
     h.run();
+    h.get_by_label("Glossary…").click();
+    h.run();
+    let opened = crate::help::OPENED.lock().unwrap().clone();
+    assert!(
+        opened
+            .iter()
+            .any(|p| p.is_file() && p.to_string_lossy().contains("glossary")),
+        "{opened:?}"
+    );
+    h.get_by_label("Help").click();
+    h.run();
     h.get_by_label("About OHL-Design").click();
     h.run();
     h.get_by_label_contains("GNU Affero General Public License");
