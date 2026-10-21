@@ -672,13 +672,13 @@ fn print_report(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) {
             }
         );
     }
-    let empty: Vec<(&str, Option<f64>)> = r
+    let empty: Vec<(&str, &[f64])> = r
         .zone
         .lowest
         .iter()
         .enumerate()
         .filter(|(_, low)| low.is_none())
-        .map(|(k, _)| (r.rules[k].name.as_str(), r.rules[k].voltage))
+        .map(|(k, _)| (r.rules[k].name.as_str(), r.rules[k].voltages.as_slice()))
         .collect();
     for line in nothing_within_reach(&empty, &r.zone.notes) {
         println!("  {line}");
@@ -692,7 +692,8 @@ fn unused_row(note: &str) -> Option<(&str, &str, &str)> {
     let (name, rest) = rest.split_once("\": no ")?;
     let (kind, rest) = rest.split_once(" of ")?;
     let kv = rest.strip_suffix(" kV")?;
-    (matches!(kind, "wire" | "section" | "jumper") && kv.parse::<f64>().is_ok())
+    let mut voltages = kv.split(" or ").flat_map(|p| p.split(", "));
+    (matches!(kind, "wire" | "section" | "jumper") && voltages.all(|v| v.parse::<f64>().is_ok()))
         .then_some((name, kind, kv))
 }
 
@@ -755,7 +756,7 @@ pub fn condense_notes(notes: &[String]) -> Vec<String> {
 /// order), with the voltages of its rows when it has several — the rows
 /// that check no wire of their voltage left out (a note says so); `rows`:
 /// the name and voltage of each rule row without a clearance found.
-pub fn nothing_within_reach(rows: &[(&str, Option<f64>)], notes: &[String]) -> Vec<String> {
+pub fn nothing_within_reach(rows: &[(&str, &[f64])], notes: &[String]) -> Vec<String> {
     let unused: Vec<(&str, &str)> = notes
         .iter()
         .filter_map(|n| unused_row(n))
@@ -763,7 +764,11 @@ pub fn nothing_within_reach(rows: &[(&str, Option<f64>)], notes: &[String]) -> V
         .collect();
     let mut by_name: Vec<(&str, Vec<String>, usize)> = Vec::new();
     for (name, kv) in rows {
-        let kv = kv.map(|v| v.to_string());
+        // A row's voltages as its note writes them ("220", "110 or 220").
+        let kv = (!kv.is_empty()).then(|| {
+            let t = ohl_clearance::zone::voltages_text(kv);
+            t.strip_suffix(" kV").unwrap_or(&t).to_owned()
+        });
         if let Some(v) = &kv
             && unused.contains(&(*name, v.as_str()))
         {
@@ -863,13 +868,13 @@ mod tests {
         );
         // Of the rows without a clearance: those of a voltage not on the
         // line are in the note; the others grouped by name.
-        let rows = [
-            ("Trees", Some(150.0)),
-            ("Trees", Some(220.0)),
-            ("Trees", Some(380.0)),
-            ("Trees", Some(220.0)),
-            ("Roads", Some(110.0)),
-            ("Ground", None),
+        let rows: [(&str, &[f64]); 6] = [
+            ("Trees", &[150.0]),
+            ("Trees", &[220.0]),
+            ("Trees", &[380.0]),
+            ("Trees", &[220.0]),
+            ("Roads", &[110.0]),
+            ("Ground", &[]),
         ];
         assert_eq!(
             nothing_within_reach(&rows, &notes),
@@ -877,6 +882,13 @@ mod tests {
                 "Trees: nothing within reach (220, 380 kV)",
                 "Ground: nothing within reach",
             ]
+        );
+        // A row of several voltages (one rule, 2026-10-21): its note
+        // "110 or 220 kV" is understood.
+        let several = vec!["\"Fences\": no wire of 110 or 220 kV".to_owned()];
+        assert_eq!(
+            nothing_within_reach(&[("Fences", &[110.0, 220.0])], &several),
+            Vec::<String>::new()
         );
         // "any voltage" is not a voltage: kept as it is.
         let any = vec!["\"X\": no wire of any voltage".to_owned()];

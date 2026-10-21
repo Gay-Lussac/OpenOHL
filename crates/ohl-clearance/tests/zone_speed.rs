@@ -165,7 +165,7 @@ fn rules() -> Vec<ZoneRule> {
     vec![
         ZoneRule {
             name: "Ground".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: Vec::new(),
             distance: Requirement::Fixed(7.0),
             classes: Vec::new(),
@@ -175,7 +175,7 @@ fn rules() -> Vec<ZoneRule> {
         },
         ZoneRule {
             name: "Vegetation".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: Vec::new(),
             distance: Requirement::Fixed(5.0),
             classes: vec![3, 4, 5],
