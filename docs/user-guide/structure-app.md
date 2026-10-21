@@ -263,9 +263,9 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points (where it is — typed for a point that is its own joint —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint or along a member, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Link** (the Link tool), **Delete…** (lists what goes with it first) |
+| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Link** (the Link tool), **Delete…** (lists what goes with it first) |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint (not on a support joint: strings hang from attach joints), **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
-| **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
+| **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
 | **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
@@ -273,9 +273,9 @@ their menu or from View.
 ## Attachment points, joints and the Link tool
 
 Every attachment point is linked to a **joint** of the structure
-([Glossary](glossary.md#structures)): the joint it sits on, the joint
-the analysis puts where it sits along a member, or — a stick figure's
-point — its own joint. It may sit at an **offset** from its joint: a
+([Glossary](glossary.md#structures)): the joint it sits on, or — a
+stick figure's point — its own joint. A point cannot be put on a member
+(a bar): it needs a joint. It may sit at an **offset** from its joint: a
 **rigid link**, drawn as a magenta rod, whose moment the analysis
 applies at the joint (where a frame member meets it; [Results](#results)).
 A joint has a **kind**: *attach* (strings hang here), *support* (the
@@ -283,22 +283,40 @@ structure stands here), or none — set in the Joints table, or worked
 out (*auto*).
 
 - **Link tool** (Geometry › Link tool, or **Link** on the Geometry and
-  Body panels): click an attachment point, then a joint — the point is
-  linked to that joint **where it is**, its distance from the joint kept
-  as its offset; one edit, one undo step. While a point is chosen, the
-  joints it may be linked to (every joint but a support joint) are
-  ringed in green (attach joints brighter), and the one under the
-  pointer is joined to the point with the offset and its **moment arm**
-  (its length across the vertical, the arm of a vertical load) written
-  beside it. Relinking a linked point is the same two clicks. A
+  Body panels): click an attachment point, then an attach joint — the
+  point is linked to that joint **where it is**, its distance from the
+  joint kept as its offset; one edit, one undo step. While a point is
+  chosen, only the **attach joints** are ringed in green and take the
+  link (2026-10-21); the one under the pointer is joined to the point
+  with the offset and its **moment arm** (its length across the
+  vertical, the arm of a vertical load) written beside it. Another joint
+  under the pointer says *not an attach joint: set its kind to attach in
+  OHL-Structure* — set it in the Joints table (**Kind**), then link. Relinking a linked point is the same two clicks. A
   **right-click** or **Escape** cancels the point chosen; a second one
   lets go of the tool.
 - **Unlink** (a point's menu, in the view or the Attachment points
   table): the point keeps its place as a joint of its own, on no member
   (its load then reaches no member: the header lists it until it is
   linked again).
-- **Offsets** are typed in the Attachment points table; the attachment
-  point moves with its joint and offset.
+- **The link follows edits** (2026-10-21): an attachment point on a
+  joint that is moved — typed in the Attachment points table, or dragged
+  in the view — stays on its joint, its offset recomputed (the new
+  position less the joint's, in the structure's axes), one undo step;
+  the joint does not move. A joint moved takes its points along at
+  their offsets. **Offsets** can also be typed directly.
+- **Insert a joint on a member** (a right-click on a member's name in
+  the Members table of the Design panel): an attach joint at the
+  fraction **at** of its length from its first joint, the member split
+  there into two pieces that stay **continuous** — the same cross-section,
+  kind and other fields on both sides (a rigid connection, not a hinge),
+  the first keeping its id, the second `<id>-2`, each with the whole
+  member's buckling length written as `lk` (**conservative**: the joint
+  braces nothing; set `lk` when it is braced) — one undo step. Then link
+  a point to it with the Link tool. A point on a joint that only bars
+  (trusses) meet in a line cannot take a load across them: the results
+  refuse it with the fix (make the members frames, or add a member to
+  the joint). Files written before with points along a member open with
+  such joints inserted (shown as changes not saved).
 
 ## The Body panels
 

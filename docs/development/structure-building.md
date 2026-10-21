@@ -184,7 +184,10 @@ extension without a piece or legs behaves as before.
    recipes (`[[load_case]]`); the old `[[load]]` nodal forces are read as
    one case named `model`.
 3. ~~**Points along a member carry no load in the FE model.**~~ *Built*:
-   the load is shared to the member's two joints.
+   a point cannot be put on a member any more (2026-10-21): it needs a
+   joint, inserted on the member (the member split, continuous); files
+   that placed one along a member are read so. The share of its load to
+   the member's two joints is gone.
 4. ~~**Rebuilding from a template replaces the file.**~~ *Built*: a
    rebuild keeps what was added by hand (`pylon_builder.rs`, `rebuilt`).
 5. ~~**Flat `[[body]]` polylines count as level 2.**~~ *Built*: only a 3D

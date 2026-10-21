@@ -58,7 +58,7 @@ line's default) the same structure gives the same bytes in every format.
 | cross-section of the library (`.ohlsec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
 | `[[section]]` table | A, Iy, Iz, It only (no shape) |
 | material (library or `[[material]]`) | E, G, density, yield |
-| load table rows (`ohl_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it, or **at its place along the member** (a `[[point]]` with `member`, `at`); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
+| load table rows (`ohl_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it (a point is always on a joint since 2026-10-21; a file that placed one along a member is read with a joint inserted there); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
 | recipe `self_weight` | the case's self-weight factor (case `model`: `[analysis] self_weight`) |
 
 In the structure application the load table is the Load table panel's:
