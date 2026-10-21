@@ -1451,8 +1451,11 @@ source `line`; on a pole, its wind); stored from the line
 wind and ice not yet), solves
 table cases on the structure's model (`analyse_cases` → `CaseResult`:
 joints with displacements, members with axial force and usage,
-reactions, Σ loads and Σ reactions; members' sections from the section
-library first) and gives the members' areas from the cross-section library
+reactions, Σ loads and Σ reactions, and `points` — `PointMoment` per
+attachment point at an offset: label, the moment r × F of its rows
+summed (N·m, structure axes), `applied` (a frame member meets the
+joint) or left out with its `note` (2026-10-21); members' sections from
+the section library first) and gives the members' areas from the cross-section library
 (`SectionAreas`: `Model::projected_area` — the profile's width for the
 pressure's direction in the member's y–z plane × length × sin θ; a
 member whose section is not in the library has no area).

@@ -479,8 +479,71 @@ def span_objects():
     return f
 
 
+# 10. Joints and the rigid link ------------------------------------------------------
+def rigid_link():
+    f = Fig("rigid-link", 860, 400, "Joints, attachment points and the rigid link",
+            "Left: a structure's joints, an attach joint at the crossarm's tip and support "
+            "joints at its feet. Right, enlarged: an attachment point at an offset e from its "
+            "attach joint, joined to it by a rigid link; the string's force F at the point "
+            "reaches the joint as the same force and the moment M = F times e.")
+    f.text(20, 26, "Joints, attachment points and the rigid link", "t")
+    # Left: the structure and its joints.
+    f.add('<path class="st" d="M120,360 L160,90 L200,360 M140,360 L180,360"/>')
+    f.add('<path class="st" d="M160,90 L290,110 M160,140 L290,110"/>')
+    for x, y in ((160, 90), (160, 140), (148, 220), (172, 220)):
+        f.add(f'<circle class="dot" cx="{x}" cy="{y}" r="3"/>')
+    # Attach joint: ringed; support joints: triangles.
+    f.add('<circle class="dot" cx="290" cy="110" r="3.5"/>')
+    f.add('<circle cx="290" cy="110" r="9" style="fill:none;stroke:var(--wire);stroke-width:2"/>')
+    for x in (120, 200):
+        f.add(f'<path class="st" style="stroke-width:1.8" d="M{x},360 L{x-9},376 L{x+9},376 Z"/>')
+    string(f, 290, 110, 290, 175)
+    wp(f, 290, 175)
+    f.label(286, 102, 250, 55, "attach joint (strings hang here)", end=False)
+    f.label(200, 368, 260, 385, "support joint (the structure stands here)")
+    f.label(160, 140, 60, 140, "joint", end=True)
+    f.label(290, 150, 330, 160, "string")
+    # The enlarged box: the crossarm's tip, its point at an offset.
+    f.add('<rect class="box" x="470" y="50" width="370" height="300" rx="6"/>')
+    f.text(480, 70, "enlarged: a point at an offset from its joint", "lab")
+    jx, jy = 560, 150
+    px, py = 700, 175
+    f.add(f'<path class="st" d="M480,{jy-30} L{jx},{jy} M480,{jy+40} L{jx},{jy}"/>')
+    f.add(f'<circle class="dot" cx="{jx}" cy="{jy}" r="4"/>')
+    f.add(f'<circle cx="{jx}" cy="{jy}" r="11" style="fill:none;stroke:var(--wire);stroke-width:2"/>')
+    # The rigid link: a solid rod from the joint to the point.
+    f.add(f'<path style="stroke:var(--wire3);stroke-width:6;stroke-linecap:round" '
+          f'd="M{jx},{jy} L{px},{py}"/>')
+    ap(f, px, py, 5.5)
+    string(f, px, py, px, py + 90)
+    wp(f, px, py + 90)
+    # The force at the point.
+    f.add(f'<path class="wire" style="stroke-width:2.6" d="M{px+28},{py+20} L{px+28},{py+70} '
+          f'M{px+22},{py+60} L{px+28},{py+72} L{px+34},{py+60}"/>')
+    f.text(px + 36, py + 52, "F (the string's force)")
+    # The offset e and the moment at the joint.
+    f.dim(jx, px, 300, "e (offset)")
+    f.add(f'<path class="dash" d="M{jx},{jy+15} L{jx},293 M{px},{py+95} L{px},293"/>')
+    # M: a quarter-and-more arc around the joint, clockwise, its arrowhead.
+    r = 26
+    a0, a1 = math.radians(200), math.radians(-30)
+    x0, y0 = jx + r * math.cos(a0), jy - r * math.sin(a0)
+    x1, y1 = jx + r * math.cos(a1), jy - r * math.sin(a1)
+    f.add(f'<path class="wire" style="stroke-width:2" d="M{x0:.1f},{y0:.1f} '
+          f'A{r},{r} 0 1 1 {x1:.1f},{y1:.1f}"/>')
+    f.add(f'<path class="wire" style="stroke-width:2" d="M{x1-9:.1f},{y1-1:.1f} '
+          f'L{x1:.1f},{y1:.1f} L{x1-2:.1f},{y1-9:.1f}"/>')
+    f.text(jx - 40, jy - 40, "M = F · e at the joint", "")
+    f.label(jx - 4, jy + 10, 515, 250, "attach joint", end=True)
+    f.label((jx + px) / 2, (jy + py) / 2, 650, 110, "rigid link")
+    f.label(px, py, 712, 138, "attachment point", end=False)
+    f.text(480, 325, "The point keeps its place. The joint carries F and M = F · e", "lab")
+    f.text(480, 341, "where a frame member meets it (a truss-only joint cannot).", "lab")
+    return f
+
+
 FIGURES = [structure_parts, string_combinations, section, systems, route_plan, clearances,
-           cases, extensions, span_objects]
+           cases, extensions, span_objects, rigid_link]
 
 
 def main(argv):

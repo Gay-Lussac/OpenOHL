@@ -180,7 +180,8 @@ OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
 elsewhere. Each work menu lists
 its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
 brought to the front) and its **actions** (Geometry: *Add a point*, *One
-string below the point*, *Two strings to one wire point*, *Delete
+string below the point*, *Two strings to one wire point*, *Link tool*
+([below](#attachment-points-joints-and-the-link-tool)), *Delete
 what is selected…*; Body: *Add a joint*, *Member between the two joints*,
 *Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
 selected…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
@@ -197,7 +198,8 @@ Under the menus, the **panels**, docked as in the line application:
 drag a panel's tab to move it (beside another, above, below, into
 another group, or out as a window of its own), drag the borders to size
 them, close one with its ×. **View** ticks each panel to show or hide it
-(the menu stays open while ticking), **Reset layout** puts every panel
+(the menu stays open while ticking), **Rigid links** shows or hides the
+rigid links in the 3D view, **Reset layout** puts every panel
 back, and **Fit the view** shows the whole structure. The arrangement is
 kept for the next start. By default the tables are on the **left** and
 the **3D view on the right** (about 45 / 55): the Level panel at the top
@@ -241,8 +243,16 @@ their menu or from View.
   crossing is a common case).
 - **3D view**, in the structure's own axes: x to the right of the
   line (red), y ahead (green), z up (blue), 0;0 at the centre, the ground
-  grid at the level of the feet and a compass. A click picks a joint,
-  point, wire point or member, Shift + click picks another; a drag from a
+  grid at the level of the feet and a compass. **Attach joints** are
+  ringed in orange, **support joints** marked with a green triangle, and
+  each attachment point at an offset from its joint is joined to it by
+  its **rigid link**, a magenta rod (none at zero offset; View › Rigid
+  links). A click picks a joint,
+  point, wire point, rigid link (it picks its attachment point, and the
+  view writes its joint, offset and length — and, after a run, its
+  moment in the case shown) or member, Shift + click picks another; a
+  right-click on an attachment point opens its menu (**Link to a
+  joint…**, **Unlink**); a drag from a
   joint or point moves it (snapped to the grid set, or onto a joint) — one
   undo step per drag; elsewhere a drag turns the view, a right-drag pans,
   the wheel zooms. **Fit** (and View › Fit the view) shows the whole
@@ -253,12 +263,42 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points, Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Delete…** (lists what goes with it first) |
-| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
+| **Geometry** (level 1) | Attachment points (where it is — typed for a point that is its own joint —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint or along a member, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Link** (the Link tool), **Delete…** (lists what goes with it first) |
+| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint (not on a support joint: strings hang from attach joints), **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
 | **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
+
+## Attachment points, joints and the Link tool
+
+Every attachment point is linked to a **joint** of the structure
+([Glossary](glossary.md#structures)): the joint it sits on, the joint
+the analysis puts where it sits along a member, or — a stick figure's
+point — its own joint. It may sit at an **offset** from its joint: a
+**rigid link**, drawn as a magenta rod, whose moment the analysis
+applies at the joint (where a frame member meets it; [Results](#results)).
+A joint has a **kind**: *attach* (strings hang here), *support* (the
+structure stands here), or none — set in the Joints table, or worked
+out (*auto*).
+
+- **Link tool** (Geometry › Link tool, or **Link** on the Geometry and
+  Body panels): click an attachment point, then a joint — the point is
+  linked to that joint **where it is**, its distance from the joint kept
+  as its offset; one edit, one undo step. While a point is chosen, the
+  joints it may be linked to (every joint but a support joint) are
+  ringed in green (attach joints brighter), and the one under the
+  pointer is joined to the point with the offset and its **moment arm**
+  (its length across the vertical, the arm of a vertical load) written
+  beside it. Relinking a linked point is the same two clicks. A
+  **right-click** or **Escape** cancels the point chosen; a second one
+  lets go of the tool.
+- **Unlink** (a point's menu, in the view or the Attachment points
+  table): the point keeps its place as a joint of its own, on no member
+  (its load then reaches no member: the header lists it until it is
+  linked again).
+- **Offsets** are typed in the Attachment points table; the attachment
+  point moves with its joint and offset.
 
 ## The Body panels
 
@@ -460,6 +500,17 @@ without a capacity —, the deformed shape is drawn **Deformed ×** larger
 (set from the largest displacement when a run ends) and the reactions
 as the loads on the foundations. Results of an earlier file or table are
 marked; run again.
+
+**Offset moments.** For each attachment point at an offset from its
+joint (a rigid link), the case lists the moment r × F of its force in
+**Offset moments**: the point, its joint, Mx, My, Mz and |M| in kN·m
+(structure axes), and whether it is **applied** at the joint (a frame
+member meets it) or **left out** — only trusses meet the joint, which
+cannot carry a moment (the note says so). **Make it a frame joint**
+beside a left-out moment makes the members meeting that joint frames
+(one undo step; their cross-sections then need iy, iz and torsion): run
+again to carry the moment. The same moment is written beside the rigid
+link picked in the view.
 
 **On an extension.** A structure with extensions has an
 **Extension** choice in the panel's header (the same as the 3D view's,

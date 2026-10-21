@@ -9,6 +9,81 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-21
 
+- **Attachment points in the applications: the Link tool and the
+  rigid links drawn** (plan steps 5–8 of O3 item 6, the owner's
+  addition of 2026-10-21 "a link tool and visible rigid links"). Built,
+  in active development (not approved yet).
+  - **OHL-Structure**: the Joints table's **kind** column (auto /
+    attach / support, one undo step; a joint carrying a point is not
+    made a support joint); attach joints ringed orange and support
+    joints marked green in the 3D view; attachment points and strings
+    stay editable there (owner's answer 1), the Attachment points table
+    giving each point's joint, offset (typed) and its length; **Point
+    here** only on a joint that is not a support joint. The FE results
+    list each offset's moment (`CaseResult::points`, from
+    `ohl_structures_fe::PointLoad`), applied or left out, and offer
+    **Make it a frame joint**.
+  - **OHL-Design**: the structure screen's Attachment points table
+    (joint, offset x/y/z, length, linked or own joint); a dragged point
+    keeps its joint and changes its offset, released on another joint
+    it is relinked there (structure screen and the 3D view's handles —
+    a point on a joint was not dragged before); unlinked points drawn
+    red, listed in the structure's Properties; a new string's point on
+    a typed structure offered only the type's attach joints; Replace
+    structure's **Attachment points** list (exact taken, else the
+    nearest attach joint offered with its distance and moment arm, the
+    user choosing per point; Replace waits until every point has a
+    choice).
+  - **Link tool** in both applications (OHL-Design: Tools › Structures
+    and the inventory; OHL-Structure: Geometry › Link tool and a Link
+    button): a point, then a joint — one undoable command
+    (`LinkPoint` / one file edit). **The point is linked where it is**:
+    its distance from the joint is kept as its offset, so a link never
+    moves a point (conservative: nothing moves without being dragged).
+    The joints offered are every joint but support joints (as the
+    engine's `linkable_joints`; a joint without a kind becomes an attach
+    joint), attach joints drawn brighter; the joint under the pointer
+    shows the offset, its length and the **moment arm** (its length
+    across the vertical: the arm of a vertical load).
+  - **Rigid links drawn** (`ohl_line::links::rigid_links`): magenta
+    rods, their own layer (OHL-Design: View › Layers; OHL-Structure:
+    View › Rigid links), none at zero offset, clickable (they select
+    their attachment point; Properties or the view show its joint,
+    offset, length and moment per load case). Structures are drawn once,
+    not per weather case: every drawn rigid link is picked.
+  - **Choices made where the task left them open (the most
+    conservative, for the owner to confirm)**:
+    - In OHL-Design a tool acts on the tool click (a right-click by
+      default), so the Link tool's two clicks are tool clicks and the
+      right-click cannot also cancel: **Escape, or the tool click on
+      anything but a ringed joint, cancels** (in OHL-Structure and on
+      OHL-Design's structure screen, where a left-click picks, the
+      right-click or Escape cancels, as asked).
+    - Replace structure: a point not exactly on a joint of the new type
+      gets **no default**, even when the new type has a point of its
+      label (that choice is offered, "as the new type has it"); removal
+      is not offered for a label the new type has (its point stays).
+    - **Make it a frame joint** makes every member meeting the joint a
+      frame (their cross-sections need iy, iz and torsion; one undo
+      step); no other member is changed.
+    - The moment per load case in OHL-Design's Properties is r × F of
+      the point's factored force (Checks › Structure loads), in the
+      structure's axes, z up: the moment the analysis would apply at a
+      frame joint, before any analysis.
+    - Structure templates and `ohl structures derive` are unchanged.
+      A template's level-1 points are their own attach joints when read
+      (tested). `derive` writes version-1 `[[attachment]]`s: their
+      points name no joint (they are not unlinked — the analysis finds
+      them by their attachment, as before — and are not drawn red;
+      Properties says so); writing version-2 points linked to attach
+      joints instead is left to the owner. A line written without links
+      (an importer's, a plugin's) still reads and resolves as before
+      (tested). Red and "unlinked" mean the `unlinked` flag (as the
+      loads), not merely no joint named.
+    - Unlink in OHL-Design is in the point's Properties (Unlink, and the
+      menu of its heading); the 3D view's right-click stays the tool
+      click.
+
 - **Attachment points linked to typed joints — engine** (owner's
   answers of 2026-10-21 to the plan, O3 item 6). Built in the engine and
   on the command line; the Link tool and the drawn links in the
