@@ -35,7 +35,27 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
   proj4 string. Other WKT is not read: choose its EPSG system instead.
   Lines are designed in projected systems, so geographic ones (longitude,
   latitude) are refused. It is an edit of the line's settings: undone like
-  any other.
+  any other. A project whose system no cartographic calculation reads
+  (a local one, e.g. `local (invented)`) keeps it while nothing else is
+  chosen.
+
+  The same window takes the project's **height datum** — built, in active
+  development (not approved yet): the vertical datum its heights are in,
+  optional, its **name** (`LN02`, `LHN95`…) and, when it has one, the
+  **EPSG code** of its vertical system (`5728`, `EPSG:5728`), either or
+  both. Nothing is converted: it says what the heights are. The sheets'
+  `{height_datum}` takes it first, then the vertical part of the
+  coordinate system (`EPSG:2056+5728` → `EPSG:5728`), then the template's
+  text for an empty field ([sheet templates](sheet-templates.md)); the
+  window shows what the sheets will read. It is shown in the menu, the
+  window and the project's properties (nothing selected), kept in the
+  project with the coordinate system (the line settings) and written to
+  the line file (`height_datum`, [line files](line-file.md)). On the
+  command line it is set as the coordinate system is, with the line
+  settings row: `ohl project apply project.ohl --user ann '{"op": "put",
+  "kind": "meta", "id": "line", "value": {"name": "…", "crs":
+  "EPSG:2056", "height_datum": {"name": "LN02", "epsg": 5728}}}'`
+  ([project files](project.md)).
 - **Coordinate system calculator…** converts points: a system on each side
   (the project's and WGS84 at first), one point per line, `X Y` or
   `X Y Z` (separated by spaces, commas, semicolons or tabs; empty lines and
