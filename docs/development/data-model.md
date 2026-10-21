@@ -134,7 +134,16 @@ limits (`max_load`, the swing limits — optional, **not checked** by
 OpenOHL, for plugins and reports) did so: line file **6** (OHL XML follows
 it), `.ohls` **4**, `.ohli` **2**. The `.ohls` and `.ohli` writers write
 the newer version only when a limit is given (an older program still
-reads the rest); the line file is always written at the current version.
+reads the rest); the line file is always written at the current version. The glossary
+(2026-10-21) made `.ohli` **3**: two strings to one clamp are written
+`kind = "suspension"` with `legs = 2` (only such an assembly is written
+at 3; `kind = "v_string"` of the versions before is read the same); the
+structure templates' format id became `ohl-structure-template`
+(`ohl-pylon-template` read), their folders `structure-templates`,
+`Structure templates`, `StructureTemplates/` (the names before read);
+the sag-tension job's `[fe.two_strings]` reads `[fe.v_string]` too; the
+command-line `--wire-type` reads `--cable`. File keys are otherwise
+unchanged: the [glossary](../user-guide/glossary.md) gives each term's key.
 A new value counts as a new field: the member kind `tension` (a truss in
 tension only) made `.ohls` **5** and `.ohlfe` **2**; the structure
 application raises a file to 5 when it makes a member `tension`
@@ -669,7 +678,7 @@ One directory per kind; TOML with units in the values. Each item has an
 | `Cables` | `.ohlw` | `ohl-wire` (version 2: a wire type's optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
 | `Insulators` | `.ohli` | `ohl-insulator` | one | `ohl_structures::InsulatorAssembly` | [Structure library](../user-guide/structure-library.md#insulator-assemblies-ohli) |
 | `StructureTypes` | `.ohls` | `ohl-structure` | one | `ohl_structures::StructureType` | [Structure library](../user-guide/structure-library.md) |
-| (structure templates: shipped `libraries/pylon-templates`, the project's `Pylon templates` folder; not kept in the project file) | `.ohlpt` | `ohl-pylon-template` | one | `ohl_structures::templates::PylonTemplate` | [Structure templates](../user-guide/structure-library.md#structure-templates-ohlpt) |
+| (structure templates: shipped `libraries/structure-templates`, the project's `Structure templates` folder — the folders' names before 2026-10-21, `pylon-templates`, `Pylon templates`, `PylonTemplates/`, still read; not kept in the project file) | `.ohlpt` | `ohl-structure-template` (`ohl-pylon-template` before 2026-10-21, read) | one | `ohl_structures::templates::PylonTemplate` | [Structure templates](../user-guide/structure-library.md#structure-templates-ohlpt) |
 | `WeatherCases` | `.ohlwc` | `ohl-weather-cases` | several (`[[case]]`) | `ohl_weather::WeatherCase` | [Weather cases](../user-guide/weather.md) |
 | `LoadCases` | `.ohllc` | `ohl-load-cases` | several (`[[case]]`) | `ohl_loads::LoadCase` | [Load cases](../user-guide/loads.md) |
 | (cross-section library: project kind `sections`; shipped example `libraries/sections`, never copied into a project) | `.ohlsec` | `ohl-sections` | several (`[[section]]`, `[[material]]`) | `ohl_sections::Section`, `ohl_sections::Material` (crate `ohl-sections`) | [Cross-section library](../user-guide/section-library.md) |
@@ -1300,14 +1309,15 @@ Source: `crates/ohl-structures/src/insulators.rs`.
 | Field | Type | Unit | Meaning |
 |---|---|---|---|
 | `id`, `name`, `source` | string | — | referred to by `insulator` of strings |
-| `kind` | `suspension` / `v_string` / `strain` | — | basic kind |
-| `length` | length | m | attachment point to clamp (V: leg length) |
+| `kind` | `suspension` / `strain` (`v_string` of files before version 3 read as `suspension` with `legs = 2`) | — | basic kind |
+| `legs` | u32? | — | version 3 (`INSULATOR_FILE_VERSION`): 2 = two strings to one clamp (suspension only; with `half_width`), read into `AssemblyKind::VString` through `AssemblyFile`; 1 or absent: one string |
+| `length` | length | m | attachment point to clamp (two strings: each one's) |
 | `weight` | force | N | whole assembly |
-| `axial_stiffness` | force | N | EA of a string or leg (default 5·10⁷ N) |
+| `axial_stiffness` | force | N | EA of a string (default 5·10⁷ N) |
 | `wind_area` | area | m² | projected area |
-| `half_width` | length? | m | `v_string` only: centre to each leg top |
-| `max_load` | force? | N | version 2 (`INSULATOR_FILE_VERSION`): the tension it is rated for (`v_string`: each leg's) — **not checked** by OpenOHL; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
-| `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 1 unless a limit is given |
+| `half_width` | length? | m | `legs = 2` only: centre to each string's top |
+| `max_load` | force? | N | version 2: the tension it is rated for (two strings: each one's) — **not checked** by OpenOHL; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
+| `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 3 for `legs = 2`, else 2 when a limit is given, else 1 |
 
 ### Weather and load cases
 
@@ -1790,7 +1800,7 @@ alignment's heights; `ground_lines::Ground`), never stored.
 
 The structure application reads a structure's libraries beside its file
 (`Sections/`, `Insulators/`, poles `.ohlp`, models `.ohlfe`, recipes
-`.ohlslc`, `PylonTemplates/`) or from the folders the line application
+`.ohlslc`, `StructureTemplates/`) or from the folders the line application
 passes (the working copy); files it imports there (File › Libraries) are
 stored into the project by the line application (`Change::Libraries`).
 See [OHL-Structure](../user-guide/structure-app.md#libraries).

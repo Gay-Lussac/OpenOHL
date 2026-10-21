@@ -65,8 +65,10 @@ struct FinalInput {
 struct FeInput {
     #[serde(default)]
     suspension: Option<SuspensionInput>,
-    #[serde(default)]
-    v_string: Option<VStringInput>,
+    /// Two strings to one clamp (`[fe.two_strings]`; `[fe.v_string]`,
+    /// its name before the glossary of 2026-10-21, still read).
+    #[serde(default, alias = "v_string")]
+    two_strings: Option<VStringInput>,
     #[serde(default)]
     broken: Vec<BrokenInput>,
 }
@@ -321,7 +323,7 @@ fn fe_report(
     reference_case: &WeatherCase,
     units: UnitSystem,
 ) -> Result<(), String> {
-    let middle = match (&fe.suspension, &fe.v_string) {
+    let middle = match (&fe.suspension, &fe.two_strings) {
         (Some(s), None) => Assembly::Suspension {
             length: s.length.si(),
             weight: s.weight.si(),
@@ -333,7 +335,7 @@ fn fe_report(
             leg_weight: v.leg_weight.si(),
             axial_stiffness: v.axial_stiffness.si(),
         },
-        _ => return Err("[fe] needs exactly one of suspension or v_string".into()),
+        _ => return Err("[fe] needs exactly one of suspension or two_strings".into()),
     };
     let string_depth = match middle {
         Assembly::Suspension { length, .. } => length,
@@ -715,6 +717,19 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two strings to one clamp: `[fe.two_strings]`, and the older
+    /// `[fe.v_string]` still read the same.
+    #[test]
+    fn two_strings_and_the_older_v_string_table() {
+        let body = "half_width = \"2 m\"\nleg_length = \"4 m\"\nleg_weight = \"500 N\"\naxial_stiffness = \"50000 kN\"\n";
+        for table in ["two_strings", "v_string"] {
+            let fe: FeInput = toml::from_str(&format!("[{table}]\n{body}")).unwrap();
+            let v = fe.two_strings.expect(table);
+            assert_eq!(v.half_width.si(), 2.0, "{table}");
+            assert_eq!(v.leg_length.si(), 4.0, "{table}");
+        }
+    }
 
     fn example() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sagtension/drake-section.toml")

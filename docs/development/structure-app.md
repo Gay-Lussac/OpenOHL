@@ -49,14 +49,14 @@ Rules:
   --insulators)` gives where each `LibKind` is read and imported into
   (cross-sections: the folder given or `Sections/`; insulators: the folder
   given, else the file's folder and `Insulators/`; poles, models, recipes:
-  the file's folder; templates: `PylonTemplates/`). `scan` reads and
+  the file's folder; templates: `StructureTemplates/`, `PylonTemplates/` still read). `scan` reads and
   checks each file (`check_file`: `SectionLibrary::parse`,
   `InsulatorAssembly`/`PylonTemplate` `LibraryItem::parse`,
   `StructureLoadCases::parse`, the link's `pole_file_id` and
   `model_file_name`) and lists what `references` names that none has.
   `import` checks every file and the ids against the other files of the
   folder before copying anything; `export` writes the line application's
-  layout (`structures/`, `sections/`, `insulators/`, `pylon-templates/`),
+  layout (`structures/`, `sections/`, `insulators/`, `structure-templates/`),
   cross-sections filtered by `sections_subset` (`toml_edit`: the cross-sections used
   and their materials, comments kept). After an import
   `StructureApp::reload_libraries` reads the insulators and cross-sections

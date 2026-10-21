@@ -22,7 +22,7 @@ pub fn dir() -> Option<PathBuf> {
 
 /// The pylon templates' folder in the starter (copied beside the project,
 /// into its own templates folder).
-pub const PYLON_TEMPLATES: &str = "pylon-templates";
+pub const PYLON_TEMPLATES: &str = "structure-templates";
 
 /// The survey points of the invented ground (copied beside the project,
 /// to import with Terrain › Terrain surfaces).
@@ -70,7 +70,7 @@ pub fn fill(
         .map_err(|e| e.to_string())?;
     let mut notes = vec![format!("{} library files kept in the project", files.len())];
     let beside = ohl_core::files::dir_of(project);
-    let templates = beside.join("Pylon templates");
+    let templates = beside.join(ohl_structures::templates::PROJECT_FOLDERS[0]);
     let from = dir.join(PYLON_TEMPLATES);
     let list = ohl_core::files::files_with_extension(
         &from,

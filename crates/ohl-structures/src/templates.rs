@@ -2,21 +2,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Pylon templates (`*.ohlpt`, one per file): the face of a pylon (2D,
-//! across and up in its local axes) as a few named dimensions, from which
-//! a structure type of level 1 (points, strings, wire points with their
-//! sets) is built — for suspension or for strain. The library of templates
-//! grows with files: those shipped in `libraries/pylon-templates`, and
-//! those a project keeps in its `Pylon templates` folder.
+//! Structure templates (`*.ohlpt`, one per file; "pylon templates" before
+//! 2026-10-21): the face of a structure (2D, across and up in its local
+//! axes) as a few named dimensions, from which a structure type of level 1
+//! (points, strings, wire points with their sets) is built — for
+//! suspension or for strain. The library of templates grows with files:
+//! those shipped in `libraries/structure-templates`, and those a project
+//! keeps in its `Structure templates` folder (the folders' names before,
+//! [`SHIPPED_FOLDERS`], [`PROJECT_FOLDERS`], [`BESIDE_FOLDERS`], and the
+//! format id before, [`TEMPLATE_FILE_FORMAT_BEFORE`], still read).
 //!
-//! Where a phase hangs is an **attachment** with a **slot** number: its
-//! wire's set on a suspension type. On a strain type each phase has two
-//! level strain strings along the line, their directions given by their
-//! angles only: the first at 180° with set `slot + first_offset`, the
-//! second at 0° with set `slot + second_offset` (default 20 and 40:
-//! slots 1–20, then 21–40 and 41–60). Earth wires have the same:
-//! a point on the pylon and a short string of their own (hanging on a
-//! suspension type, two strain strings on a strain type).
+//! Where a phase hangs is an **attachment** with its **set** (the key
+//! `slot`): its wire's set on a suspension type. On a strain type each
+//! phase has two level tension strings along the line, their directions
+//! given by their angles only: the first at 180° with set
+//! `slot + first_offset`, the second at 0° with set
+//! `slot + second_offset` (default 20 and 40: sets 1–20, then 21–40 and
+//! 41–60). Earth wires have the same: a point on the structure and a short
+//! string of their own (hanging on a suspension type, two tension strings
+//! on a strain type).
 //!
 //! Positions are expressions of the parameters (metres): numbers, the
 //! parameters' names, `+ - * /` and parentheses.
@@ -65,10 +69,34 @@ use serde::Deserialize;
 use crate::LibraryItem;
 use crate::structures::StructureKind;
 
-/// File extension of pylon templates.
+/// File extension of structure templates.
 pub const TEMPLATE_FILE_EXTENSION: &str = "ohlpt";
-/// `format` of a pylon template.
-pub const TEMPLATE_FILE_FORMAT: &str = "ohl-pylon-template";
+/// `format` of a structure template.
+pub const TEMPLATE_FILE_FORMAT: &str = "ohl-structure-template";
+/// `format` of a structure template before 2026-10-21 (and its `ols` name
+/// before 2026-10-18): still read.
+pub const TEMPLATE_FILE_FORMAT_BEFORE: &str = "ohl-pylon-template";
+
+/// The shipped library's folder of structure templates (`libraries/…`),
+/// then its name before 2026-10-21, still read.
+pub const SHIPPED_FOLDERS: [&str; 2] = ["structure-templates", "pylon-templates"];
+/// A project's own folder beside its line (OHL-Design), then its name
+/// before 2026-10-21, still read.
+pub const PROJECT_FOLDERS: [&str; 2] = ["Structure templates", "Pylon templates"];
+/// The folder beside a structure file (OHL-Structure), then its name
+/// before 2026-10-21, still read.
+pub const BESIDE_FOLDERS: [&str; 2] = ["StructureTemplates", "PylonTemplates"];
+
+/// The format id a template file is checked against: the one before
+/// 2026-10-21 when the file gives it, else the current one.
+fn expected_format(found: Option<&str>) -> &'static str {
+    match found {
+        Some(f) if ohl_core::files::is_format(f, TEMPLATE_FILE_FORMAT_BEFORE) => {
+            TEMPLATE_FILE_FORMAT_BEFORE
+        }
+        _ => TEMPLATE_FILE_FORMAT,
+    }
+}
 /// Newest format version read.
 pub const TEMPLATE_FILE_VERSION: u32 = 1;
 
@@ -293,7 +321,7 @@ impl LibraryItem for PylonTemplate {
         ohl_core::files::check_header(
             self.format.as_deref(),
             self.version,
-            TEMPLATE_FILE_FORMAT,
+            expected_format(self.format.as_deref()),
             TEMPLATE_FILE_VERSION,
             "structure template",
         )?;
@@ -757,8 +785,33 @@ mod tests {
 
     fn shipped() -> Library<PylonTemplate> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../libraries/pylon-templates");
+            .join("../../libraries/structure-templates");
         Library::load_dir(&dir).unwrap()
+    }
+
+    /// The format id `ohl-structure-template` (2026-10-21) and the one
+    /// before, `ohl-pylon-template` (and its `ols` name), are read alike;
+    /// another is refused.
+    #[test]
+    fn both_format_ids_are_read() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../libraries/structure-templates/delta-1c.ohlpt");
+        let text = std::fs::read_to_string(&dir).unwrap();
+        let body: String = text
+            .lines()
+            .filter(|l| !l.starts_with("format"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        for id in [
+            "ohl-structure-template",
+            "ohl-pylon-template",
+            "ols-pylon-template",
+        ] {
+            let t = format!("format = \"{id}\"\n{body}");
+            PylonTemplate::parse(std::path::Path::new("x.ohlpt"), &t).unwrap();
+        }
+        let t = format!("format = \"ohl-structure\"\n{body}");
+        assert!(PylonTemplate::parse(std::path::Path::new("x.ohlpt"), &t).is_err());
     }
 
     #[test]

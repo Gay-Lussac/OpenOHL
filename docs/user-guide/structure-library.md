@@ -389,15 +389,15 @@ listed in the window to look at; if the file would not read any more
 window says why.
 
 The library grows with files: the templates shipped with OpenOHL in
-`libraries/pylon-templates`, and a project's own in its
-`Pylon templates` folder next to the line (one of the same id is used
+`libraries/structure-templates`, and a project's own in its
+`Structure templates` folder next to the line (one of the same id is used
 instead of the shipped one). The structure application keeps its own
-apart: it reads and imports templates in a `PylonTemplates` folder beside
+apart: it reads and imports templates in a `StructureTemplates` folder beside
 the structure file, and its **New structure…** offers the shipped ones
 ([OHL-Structure](structure-app.md#libraries)).
 
 ```toml
-format = "ohl-pylon-template"
+format = "ohl-structure-template"
 version = 1
 id = "delta-1c"
 name = "Delta, one circuit, one earth wire"
@@ -474,14 +474,15 @@ format = "ohl-insulator"
 version = 1
 id = "I-380-double"
 name = "380 kV double suspension string"
-kind = "suspension"          # suspension | v_string | strain
-length = "5.2 m"             # attachment point to clamp (leg length for v_string)
+kind = "suspension"          # suspension | strain
+# legs = 2                   # version 3: two strings to one clamp (suspension only)
+length = "5.2 m"             # attachment point to clamp (each string's, with legs = 2)
 weight = "1.4 kN"            # total weight (default 0)
-axial_stiffness = "50e6 N"   # per string / leg (default 5e7 N)
+axial_stiffness = "50e6 N"   # per string (default 5e7 N)
 wind_area = "0.6 m²"         # projected area for wind (default 0)
-# half_width = "3 m"         # v_string only: centre to each leg attachment
+# half_width = "3 m"         # legs = 2 only: centre to each string's top
 # version 2: limits, not checked by OpenOHL (see String limits)
-# max_load = "120 kN"        # the tension it is rated for (v_string: each leg's)
+# max_load = "120 kN"        # the tension it is rated for (legs = 2: each string's)
 # max_swing = "60 deg"       # from straight down, any direction
 # max_swing_across = "55 deg"
 # max_swing_along = "30 deg"
@@ -490,7 +491,7 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | Kind | Geometry | In the solver |
 |---|---|---|
 | `suspension` | clamp `length` below the attachment point | free clamp on a tension-only member (swings) |
-| `v_string` | two legs from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only legs to a free clamp; the leeward leg goes slack in strong wind (a version 1 attachment; in version 2 each leg is a string naming the assembly, which gives each half its wind area) |
+| `suspension` with `legs = 2` | two strings from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only strings to a free clamp; the leeward one goes slack in strong wind (a version 1 attachment; in structure files of version 2 and later each of the two is a string naming the assembly, which gives each half its wind area) |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
 
 ### String limits (not checked)
@@ -499,18 +500,20 @@ A string may carry **limits that OpenOHL does not check**: kept with the string,
 
 | Key | Unit | Meaning |
 |---|---|---|
-| `max_load` | force (`"120 kN"`) | the tension it is rated for (e.g. its specified mechanical load; a `v_string` assembly: each leg's) |
+| `max_load` | force (`"120 kN"`) | the tension it is rated for (e.g. its specified mechanical load; with `legs = 2`: each string's) |
 | `max_swing` | angle (`"60 deg"`) | the swing from straight down it may take, in any direction |
 | `max_swing_across` | angle | the swing across the line it may take (in the structure's x–z plane), either side |
 | `max_swing_along` | angle | the swing along the line it may take (in the structure's y–z plane), either way |
 
 Angles from 0 to 180°, a load above 0; other values and unknown keys are refused. They go on an **insulator assembly** (`.ohli`, version 2) as defaults and on a **string** (`[[string]]` of a structure type, version 4; a line's own string, line file version 6): a string naming an assembly takes each limit the assembly gives where the string gives none of its own — the string's own value wins. The compression a string may take is not one of them: that is `compression`, which the solve uses (a string with it acts both ways and is flagged beyond it).
 
-The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ohl_line::swing`). OpenOHL writes a file's newer version only when it holds limits (an `.ohli` without any stays version 1), so an older program still reads the rest.
+The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ohl_line::swing`). OpenOHL writes a file's newer version only when it holds what needs it (an `.ohli` stays version 1 without limits and `legs`; 2 with limits; 3 with `legs = 2`), so an older program still reads the rest.
+
+**Files before version 3** gave two strings to one clamp as `kind = "v_string"`: still read, the same as `kind = "suspension"` with `legs = 2`, and written in the new form when saved (owner decision 2026-10-21: combinations of strings are not types).
 
 ### Library labels: every string in the library
 
-Each string carries a **library label**: the `id` of its assembly (`insulator` in the files). A labelled string takes its weight, wind area and stiffness from the assembly; its length is its own (or, in a structure type, the assembly's). In a project, the strings of the structures' own (not those inside a structure type's file) are **all taken into the library**: on opening, and whenever an edit puts a string without a label — strings of the same values (suspension or strain, length to the mm, weight, wind area, stiffness) share an entry, an existing one with those values or a new one (`I-3.500m-900N`, `Strain-…`, source "taken from the model's strings"); the labels go in with the edit (one undo). Strings **without a weight** (0 N: geometry only, e.g. imported) are not taken in and keep no label: a library entry's weight is a real weight, and a strain string without one gets the weight that holds it where the data puts it ([Finite-element wire systems](../theory/wirefe.md#line-sections-strain-assemblies-bundles-jumpers)) — also when it names an assembly that gives 0 N. Structures › **String library** is the library as a table: label, name, kind, length, weight, wind area, stiffness, half width (two strings), the four limits (max load, max swing, max across, max along; empty: not given), source, and how many strings **use** it. Edited there, every string with the label follows (a new length moves their wire points; a V's tip goes where both legs meet; a length its strings cannot take is refused with the reason); rows can be added; a used row deleted (asked first, listing its strings) leaves its strings its values (and its limits, where they give none) under a matching or new label (one used by a structure type's strings cannot be deleted: change the type first).
+Each string carries a **library label**: the `id` of its assembly (`insulator` in the files). A labelled string takes its weight, wind area and stiffness from the assembly; its length is its own (or, in a structure type, the assembly's). In a project, the strings of the structures' own (not those inside a structure type's file) are **all taken into the library**: on opening, and whenever an edit puts a string without a label — strings of the same values (suspension or strain, length to the mm, weight, wind area, stiffness) share an entry, an existing one with those values or a new one (`Suspension-3.500m-900N`, `Strain-…`; entries named `I-…` before 2026-10-21 keep their ids, source "taken from the model's strings"); the labels go in with the edit (one undo). Strings **without a weight** (0 N: geometry only, e.g. imported) are not taken in and keep no label: a library entry's weight is a real weight, and a strain string without one gets the weight that holds it where the data puts it ([Finite-element wire systems](../theory/wirefe.md#line-sections-strain-assemblies-bundles-jumpers)) — also when it names an assembly that gives 0 N. Structures › **String library** is the library as a table: label, name, kind, length, weight, wind area, stiffness, half width (two strings), the four limits (max load, max swing, max across, max along; empty: not given), source, and how many strings **use** it. Edited there, every string with the label follows (a new length moves their wire points; two strings to one wire point: it goes where both meet; a length its strings cannot take is refused with the reason); rows can be added; a used row deleted (asked first, listing its strings) leaves its strings its values (and its limits, where they give none) under a matching or new label (one used by a structure type's strings cannot be deleted: change the type first).
 
 Strings hanging from strings are built from single strings in the structure type (above). Yokes, jumper support strings and counterweights as strings are planned (DESIGN_GOALS §6, §11).
 

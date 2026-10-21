@@ -32,7 +32,7 @@ fn formats() -> Vec<(&'static str, Parse)> {
         ("libraries/lidar-classes/asprs-las-1.4.ohlc", |t| {
             ohl_lidar::ClassScheme::parse(t).map(drop)
         }),
-        ("libraries/pylon-templates/danube-2c.ohlpt", |t| {
+        ("libraries/structure-templates/danube-2c.ohlpt", |t| {
             ohl_structures::templates::PylonTemplate::parse(Path::new("x.ohlpt"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())

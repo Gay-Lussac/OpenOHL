@@ -36,8 +36,11 @@ its own. *Replaces:* pylon type. *German:* Masttyp.
 **Structure template** — a parametric face in a `.ohlpt` file from which a
 structure type of detail level 1 is built (suspension or tension), its
 dimensions given as parameters. *Replaces:* pylon template. *German:*
-Mastvorlage (to confirm). *In files:* the format id `ohl-pylon-template`
-and the folder `pylon-templates/` are read as before.
+Mastvorlage (to confirm). *In files:* the format id `ohl-structure-template` and the folders
+`libraries/structure-templates/`, `Structure templates` (beside a line) and
+`StructureTemplates/` (beside a structure file); the names before 2026-10-21
+(`ohl-pylon-template`, `pylon-templates/`, `Pylon templates`,
+`PylonTemplates/`) still read.
 
 **Structure point** — a point fixed on the structure where strings hang
 (the structure screen's table *Attachment points*). *In files:* `points`
@@ -116,7 +119,8 @@ a string names it by its id. An assembly of two strings to one wire point
 gives the distance of their tops from the middle (`half_width`).
 *Replaces:* insulator (for a library entry), assembly. *German:*
 Isolatorkettentyp (to confirm). *In files:* the string's `insulator`;
-`kind = "v_string"` in `.ohli`.
+in `.ohli`, `legs = 2` with `half_width` (version 3; `kind = "v_string"`
+of older files still read).
 
 ## Wires and their points
 

@@ -10,7 +10,7 @@
 //! into the folder the window reads, after each file is read and checked)
 //! and **Export** (the libraries the structure uses, or every one, written
 //! to a folder in the line application's layout: `structures/`,
-//! `sections/`, `insulators/`, `pylon-templates/`).
+//! `sections/`, `insulators/`, `structure-templates/`).
 //!
 //! The folders follow the structure's: `Sections/` and `Insulators/`
 //! beside the structure file, or those given (`--sections`,
@@ -18,8 +18,9 @@
 //! project's working copy, which the line application stores back into
 //! the project when files appear there); poles, structure models and
 //! recipes beside the structure file (as the line application keeps
-//! them, next to the structure types that name them); pylon templates in
-//! `PylonTemplates/` beside it.
+//! them, next to the structure types that name them); structure templates
+//! in `StructureTemplates/` beside it (`PylonTemplates/`, its name before
+//! 2026-10-21, still read).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -46,7 +47,7 @@ pub enum LibKind {
     Models,
     /// Load-case recipes on their own.
     Recipes,
-    /// Pylon templates (a new structure built from one).
+    /// Structure templates (a new structure built from one).
     Templates,
 }
 
@@ -92,7 +93,7 @@ impl LibKind {
             LibKind::Sections => "sections",
             LibKind::Insulators => "insulators",
             LibKind::Poles | LibKind::Models | LibKind::Recipes => "structures",
-            LibKind::Templates => "pylon-templates",
+            LibKind::Templates => ohl_structures::templates::SHIPPED_FOLDERS[0],
         }
     }
 }
@@ -136,7 +137,10 @@ impl Folders {
             LibKind::Sections => vec![self.sections.clone()],
             LibKind::Insulators => self.insulators.clone(),
             LibKind::Poles | LibKind::Models | LibKind::Recipes => vec![self.structure.clone()],
-            LibKind::Templates => vec![self.structure.join("PylonTemplates")],
+            LibKind::Templates => ohl_structures::templates::BESIDE_FOLDERS
+                .iter()
+                .map(|f| self.structure.join(f))
+                .collect(),
         }
     }
 
@@ -935,6 +939,26 @@ impl StructureApp {
 
 #[cfg(test)]
 mod tests {
+
+    /// Structure templates are read beside the structure file in
+    /// `StructureTemplates/` and in its name before 2026-10-21,
+    /// `PylonTemplates/`; imported into the first.
+    #[test]
+    fn templates_in_both_folder_names() {
+        let f = Folders::new(std::path::Path::new("/p/t.ohls"), None, None);
+        assert_eq!(
+            f.read(LibKind::Templates),
+            [
+                std::path::PathBuf::from("/p/StructureTemplates"),
+                std::path::PathBuf::from("/p/PylonTemplates")
+            ]
+        );
+        assert_eq!(
+            f.import_into(LibKind::Templates).unwrap(),
+            std::path::PathBuf::from("/p/StructureTemplates")
+        );
+        assert_eq!(LibKind::Templates.export_folder(), "structure-templates");
+    }
     use super::*;
 
     fn root() -> PathBuf {
