@@ -20,8 +20,9 @@
 //! explained beside it, with small drawings ([`crate::check_help`]).
 //! A design-code plugin's vegetation preset
 //! ([`ohl_clearance::rules::VegetationPreset`]) is chosen from a dropdown,
-//! previewed, then applied (its weather cases missing from the project
-//! created). A run is saved in Checks › Performed checks ([`CHECK_ID`])
+//! previewed, then applied (its weather cases matched to the project's by
+//! physics first, then by name, those with none created:
+//! [`crate::preset_cases`]). A run is saved in Checks › Performed checks ([`CHECK_ID`])
 //! and reopened from there.
 //!
 //! What it found is drawn on three layers ([`Overlay`]) while the panel
@@ -37,7 +38,7 @@ use eframe::egui;
 use ohl_clearance::WindSides;
 use ohl_clearance::isoclearance::{Contour, IsoParams};
 use ohl_clearance::positions::{PositionOptions, Positions, UnbalancedIce};
-use ohl_clearance::rules::{Requirement, VegetationPreset, WindSteps};
+use ohl_clearance::rules::{PresetCheck, Requirement, VegetationPreset, WindSteps};
 use ohl_clearance::vegetation::{
     DEFAULT_MAX_BASE_GROUND_DISTANCE, DEFAULT_SEARCH_DISTANCE, VegetationCheck, VegetationParams,
     WireVegetation,
@@ -1113,7 +1114,7 @@ impl VegetationWindow {
                 ui,
                 "vegetation-preset",
                 presets,
-                |p| p.rules.vegetation.is_some(),
+                |p| crate::preset_cases::Part::Check(PresetCheck::Vegetation).lists(&p.rules),
                 &mut self.preset,
             );
         });
@@ -1201,36 +1202,44 @@ impl VegetationWindow {
                         ui.end_row();
                     }
                 });
-            if let Some(wc) = &p.weather {
-                for c in &wc.cases {
-                    let have = model.cases.iter().find(|m| m.case.name == c.name);
-                    let text = match have {
-                        None => format!("weather case \"{}\": will be created", c.name),
-                        Some(m) if m.case == *c => {
-                            format!("weather case \"{}\": exists", c.name)
-                        }
-                        Some(_) => format!(
-                            "weather case \"{}\": exists with other values (the project's is \
-                             kept)",
-                            c.name
-                        ),
-                    };
-                    ui.label(egui::RichText::new(text).small());
+            // Only its vegetation part and its own weather cases (owner,
+            // 2026-10-21: presets are per check; its rules are not taken),
+            // matched to the project's: the same weather used, the others
+            // created.
+            let matched = crate::preset_cases::for_project(
+                model,
+                &p,
+                crate::preset_cases::Part::Check(PresetCheck::Vegetation),
+            );
+            match &matched {
+                Ok((_, plan)) => {
+                    for line in plan.lines() {
+                        ui.label(egui::RichText::new(line).small());
+                    }
+                }
+                Err(e) => {
+                    ui.label(
+                        egui::RichText::new(format!("its weather cases: {e}"))
+                            .small()
+                            .color(ui.visuals().error_fg_color),
+                    );
                 }
             }
             if ui
                 .button("Apply preset")
                 .on_hover_text(
-                    "Its values replace the panel's (edit them freely after); its weather cases \
-                     the project lacks are created (one change, undone by Undo) and ticked",
+                    "Its values replace the panel's (edit them freely after); your weather \
+                     cases of the same weather are used, the others created (one change, \
+                     undone by Undo); all of them ticked",
                 )
                 .clicked()
+                && let Ok((adapted, plan)) = matched
             {
                 self.settings.apply(v, p.rules.wind);
-                if let Some(wc) = &p.weather {
-                    self.pending_cases = Some(wc.cases.iter().map(|c| c.name.clone()).collect());
+                if adapted.weather.is_some() {
+                    self.pending_cases = Some(plan.names());
                 }
-                out.preset = Some((plugin, p.clone()));
+                out.preset = Some((plugin, adapted));
             }
         });
     }

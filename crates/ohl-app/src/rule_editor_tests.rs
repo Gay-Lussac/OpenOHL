@@ -362,3 +362,87 @@ fn the_lev_rule_presets_load_into_the_rule_file() {
         r.rule_editor.status
     );
 }
+
+/// A rule preset whose weather case the project has under another name
+/// (owner, 2026-10-21): the preset's "Utility 80 °C" is the project's
+/// "max temperature" (80 °C, still air). Merged: no case created, its rule
+/// names "max temperature", the window's preview and the status say so;
+/// one Undo takes the rules back.
+#[test]
+fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
+    let mut model = synthetic_project("rule-preset-same");
+    // The project's own weather case file (kept in the project: undone).
+    let work = model.library_dir.clone().unwrap();
+    assert!(model.sources.weather.as_ref().unwrap().starts_with(&work));
+    std::fs::create_dir_all(work.join("rules")).unwrap();
+    let file = work.join("rules/test.ohlr");
+    std::fs::write(&file, RULES).unwrap();
+    model.store_libraries().unwrap();
+    let mut app = App::with_model(model, None);
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    {
+        let r = app.ready().unwrap();
+        r.clearances.refresh(&r.model, None);
+        r.open_page = Some((Tab::Clearances, None));
+    }
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| app);
+    harness.run();
+    harness.get_by_label("Edit rules").click();
+    harness.run();
+    let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n\
+                 [[rule]]\nname = \"Preset ground\"\ntarget = \"ground\"\nvertical = \"8 m\"\n\
+                 cases = [\"Utility 80 °C\"]\n";
+    let cases = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                 [[case]]\nname = \"Utility 80 °C\"\ntemperature = \"80 °C\"\n";
+    let (names, entries) = {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.rule_editor.presets;
+        w.list = vec![crate::rule_editor::PluginPresets {
+            plugin: "code-a".into(),
+            presets: ohl_io::codes::check_rule_presets(
+                "code-a",
+                vec![ohl_plugins::RulePreset {
+                    name: "ground".into(),
+                    description: "invented test values".into(),
+                    rules: rules.into(),
+                    weather_cases: cases.into(),
+                }],
+            ),
+        }];
+        w.asked = true;
+        w.open = true;
+        w.chosen = Some((0, 0));
+        let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+        (names, r.model.session().unwrap().log().unwrap().len())
+    };
+    harness.run();
+    harness.get_by_label_contains(
+        "weather case \"Utility 80 °C\": uses your case \"max temperature\"",
+    );
+    harness.get_by_label("Merge into test.ohlr").click();
+    harness.run();
+    harness.run();
+    let set = rules_of(&file);
+    let ground = set
+        .rules
+        .iter()
+        .find(|r| r.name == "Preset ground")
+        .unwrap();
+    assert_eq!(ground.cases, ["max temperature"]);
+    let r = harness.state_mut().ready().unwrap();
+    let now: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    assert_eq!(now, names, "{:?}", r.rule_editor.status);
+    let status = r.rule_editor.status.clone().unwrap().0;
+    assert!(
+        status.contains("uses your case \"max temperature\""),
+        "{status}"
+    );
+    // One change (the rule file): Undo takes the rules back.
+    assert_eq!(r.model.session().unwrap().log().unwrap().len(), entries + 1);
+    r.perform(crate::edit::Action::Undo);
+    harness.run();
+    assert_eq!(rules_of(&file).rules.len(), 2);
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}

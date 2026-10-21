@@ -9,7 +9,8 @@
 //! and **Load preset…**: the presets of clearance rules of the enabled
 //! design-code plugins (their optional `rule-presets` export), previewed,
 //! then merged into the file (a rule of the same name replaced, the
-//! others added) or replacing its rules.
+//! others added) or replacing its rules. Its weather cases are matched to
+//! the project's by physics first, then by name ([`crate::preset_cases`]).
 //!
 //! The file is edited in place (`toml_edit`): its comments, the fields
 //! the editor does not show and the order stay as they are. Each change
@@ -717,6 +718,23 @@ pub fn preset_dropdown(
     *chosen != before
 }
 
+/// One rule of a preset previewed: its name, its distances (and their
+/// values at the project's voltages) and the weather cases it uses.
+pub(crate) fn rule_preview(ui: &mut egui::Ui, rule: &ohl_clearance::Rule, voltages: &[f64]) {
+    ui.label(egui::RichText::new(&rule.name).strong());
+    for (m, q) in [("vertical", &rule.vertical), ("radial", &rule.radial)] {
+        if let Some(q) = q {
+            ui.label(format!("{m}: {q}"));
+            ui.label(egui::RichText::new(crate::requirement_ui::preview_text(q, voltages)).small());
+        }
+    }
+    ui.label(
+        egui::RichText::new(crate::preset_cases::cases_label(rule))
+            .small()
+            .weak(),
+    );
+}
+
 /// The "Load preset…" window: the rule presets of the enabled design-code
 /// plugins (read with the Design code window's parameter file, if one is
 /// chosen), one previewed, then merged or replacing the rules.
@@ -732,6 +750,17 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
         .as_ref()
         .and_then(|f| f.file_name())
         .map(|n| n.to_string_lossy().into_owned());
+    // The preset as it would go in: every rule, the cases they name
+    // matched to the project's (shown in the project's names).
+    let (shown, plan_lines): (Option<RuleSet>, Vec<String>) = match r.rule_editor.presets.preset() {
+        Some((_, p)) => {
+            match crate::preset_cases::for_project(&r.model, p, crate::preset_cases::Part::Rules) {
+                Ok((adapted, plan)) => (Some(adapted.rules), plan.lines()),
+                Err(e) => (None, vec![format!("its weather cases: {e}")]),
+            }
+        }
+        None => (None, Vec::new()),
+    };
     let mut open = true;
     let mut load = None;
     egui::Window::new("Rule presets")
@@ -760,7 +789,7 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                     ui,
                     "rule-preset-choice",
                     &w.list,
-                    |p| !p.rules.rules.is_empty(),
+                    |p| crate::preset_cases::Part::Rules.lists(&p.rules),
                     &mut w.chosen,
                 );
             });
@@ -776,40 +805,20 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
                     .id_salt("rule-preset-preview")
                     .max_height(300.0)
                     .show(ui, |ui| {
-                        for rule in &p.rules.rules {
-                            ui.label(egui::RichText::new(&rule.name).strong());
-                            for (m, q) in [("vertical", &rule.vertical), ("radial", &rule.radial)] {
-                                if let Some(q) = q {
-                                    ui.label(format!("{m}: {q}"));
-                                    ui.label(
-                                        egui::RichText::new(crate::requirement_ui::preview_text(
-                                            q, &voltages,
-                                        ))
-                                        .small(),
-                                    );
-                                }
-                            }
-                            if !rule.cases.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "cases: {}",
-                                        rule.cases.join(", ")
-                                    ))
-                                    .small()
-                                    .weak(),
-                                );
+                        // Grouped by target; each rule with the cases it
+                        // uses (the project's names).
+                        let rules = shown.as_ref().unwrap_or(&p.rules);
+                        for (group, list) in crate::preset_cases::grouped(&rules.rules) {
+                            ui.label(egui::RichText::new(format!("— {group} —")).strong());
+                            for rule in list {
+                                rule_preview(ui, rule, &voltages);
                             }
                         }
                     });
-                if let Some(wc) = &p.weather {
-                    let names: Vec<&str> = wc.cases.iter().map(|c| c.name.as_str()).collect();
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "its weather cases (added to the model where missing): {}",
-                            names.join(", ")
-                        ))
-                        .small(),
-                    );
+                // Its weather cases: the project's of the same weather
+                // used, the others created.
+                for line in &plan_lines {
+                    ui.label(egui::RichText::new(line).small());
                 }
                 ui.separator();
                 match &target {
@@ -853,6 +862,16 @@ pub fn apply_preset(r: &mut Ready, how: Load) {
     else {
         return;
     };
+    // Its weather cases matched to the project's (the same weather used,
+    // the rules naming the project's).
+    let (p, plan) =
+        match crate::preset_cases::for_project(&r.model, &p, crate::preset_cases::Part::Rules) {
+            Ok(x) => x,
+            Err(e) => {
+                r.rule_editor.status = Some((format!("preset {plugin} {}: {e}", p.name), true));
+                return;
+            }
+        };
     let defaults: ohl_clearance::rules::RuleDefaults = (&r.model.line.defaults).into();
     let done = r.rule_editor.load_preset(&p, how, &defaults);
     let mut text = match done {
@@ -876,13 +895,18 @@ pub fn apply_preset(r: &mut Ready, how: Load) {
             Err(e) => text = format!("{text}; weather cases: {e}"),
         }
     }
+    let lines = plan.lines();
+    if !lines.is_empty() {
+        text = format!("{text}\n{}", lines.join("\n"));
+    }
     r.rule_editor.status = Some((text, false));
 }
 
-/// The preset's weather cases missing from the model (by name): added to
-/// the model's weather case file (or the preset's file used when the
-/// model has none) — one change of the project's weather case file, one
-/// undo step. What was done.
+/// The preset's weather cases missing from the model (by name: `wc` is the
+/// preset as matched to the project, [`crate::preset_cases`], holding only
+/// the cases to create): added to the model's weather case file (or the
+/// preset's file used when the model has none) — one change of the
+/// project's weather case file, one undo step. What was done.
 pub(crate) fn preset_cases(
     r: &mut Ready,
     plugin: &str,

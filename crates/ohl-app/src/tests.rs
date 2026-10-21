@@ -6417,6 +6417,104 @@ fn design_code_clearance_presets_load_into_the_window() {
     assert!(text.contains("vertical_band = \"3 m\""), "{text}");
 }
 
+/// A project preset of the Vertical clearances window whose cases the
+/// project has under other names (owner, 2026-10-21): "Utility 80 °C" is
+/// the project's "max temperature" (80 °C, still air): no case created,
+/// the rule names "max temperature"; its "everyday" (20 °C) is not the
+/// project's "everyday" (10 °C): created as "everyday (preset)", the rule
+/// naming it so.
+#[test]
+fn a_clearance_preset_uses_the_projects_cases_of_the_same_weather() {
+    let mut r = crate::app::Ready::new(synthetic_project("clearance-preset-same"));
+    let work = r.model.library_dir.clone().unwrap();
+    std::fs::create_dir_all(work.join("rules")).unwrap();
+    std::fs::create_dir_all(work.join("weather")).unwrap();
+    let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"Code vertical\"\n\
+                 [[rule]]\nname = \"roads\"\ntarget = \"points\"\nclasses = [11]\n\
+                 vertical = \"7.5 m\"\ncases = [\"Utility 80 °C\", \"everyday\"]\n";
+    let cases = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                 [[case]]\nname = \"Utility 80 °C\"\ntemperature = \"80 °C\"\n\
+                 [[case]]\nname = \"everyday\"\ntemperature = \"20 °C\"\n";
+    std::fs::write(work.join("rules/code-same.ohlr"), rules).unwrap();
+    std::fs::write(work.join("weather/code-same.ohlwc"), cases).unwrap();
+    let before: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
+    win.show(&r.model);
+    let presets = win.presets(&r.model);
+    let p = presets.iter().find(|p| p.0 == "Code vertical").unwrap();
+    let mut out = crate::clearance_zones::Out::default();
+    win.load_preset(&r.model, &p.1, &p.2, &mut out);
+    assert_eq!(win.rules[0].cases, ["max temperature", "everyday (preset)"]);
+    crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
+    let after: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    assert!(!after.iter().any(|n| n == "Utility 80 °C"), "{after:?}");
+    let everyday = |n: &str| {
+        r.model
+            .cases
+            .iter()
+            .find(|c| c.case.name == n)
+            .unwrap()
+            .case
+            .temperature
+            .celsius()
+    };
+    assert_eq!(everyday("everyday"), 10.0);
+    assert_eq!(everyday("everyday (preset)"), 20.0);
+}
+
+/// One big combined preset (40 rules of both measures, a `[vegetation]`
+/// table; owner, 2026-10-21: presets are per check) in the Vertical
+/// clearances window, as a project preset and as a plugin preset: only
+/// its 24 vertical rules are taken, and only their cases reach the
+/// project — "V hot" (80 °C) uses the project's "max temperature", "V
+/// ice" and "B cold" are created; no radial or vegetation case.
+#[test]
+fn a_big_preset_brings_only_the_vertical_part_to_the_vertical_window() {
+    let p = crate::preset_cases::tests::big_preset("");
+    let mut r = crate::app::Ready::new(synthetic_project("big-preset-vertical"));
+    let work = r.model.library_dir.clone().unwrap();
+    std::fs::create_dir_all(work.join("rules")).unwrap();
+    std::fs::create_dir_all(work.join("weather")).unwrap();
+    std::fs::write(work.join("rules/code-big.ohlr"), &p.rules_text).unwrap();
+    std::fs::write(work.join("weather/code-big.ohlwc"), &p.weather_text).unwrap();
+    let before: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
+    win.show(&r.model);
+    let presets = win.presets(&r.model);
+    let file = presets.iter().find(|x| x.0 == "big").unwrap();
+    let mut out = crate::clearance_zones::Out::default();
+    win.load_preset(&r.model, &file.1, &file.2, &mut out);
+    assert_eq!(win.rules.len(), 24);
+    assert!(
+        win.rules
+            .iter()
+            .all(|x| x.cases.iter().all(|c| c != "V hot" && !c.starts_with('R'))),
+        "{:?}",
+        win.rules.iter().map(|x| &x.cases).collect::<Vec<_>>()
+    );
+    assert!(
+        win.rules
+            .iter()
+            .any(|x| x.cases.contains(&"max temperature".to_string()))
+    );
+    crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
+    let after: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let added: Vec<&String> = after.iter().filter(|n| !before.contains(n)).collect();
+    assert_eq!(added, ["V ice", "B cold"], "{:?}", r.status);
+    // The plugin preset path takes the same part.
+    let (adapted, plan) = crate::preset_cases::for_project(
+        &r.model,
+        &p,
+        crate::preset_cases::Part::of(ohl_clearance::Measure::Vertical),
+    )
+    .unwrap();
+    assert_eq!(adapted.rules.rules.len(), 24);
+    assert_eq!(plan.names(), ["max temperature", "V ice", "B cold"]);
+    // All three are the project's now: nothing more to create.
+    assert!(adapted.weather.as_ref().unwrap().cases.is_empty());
+}
+
 /// Criteria › Design code… opens the window; without plugins it says how
 /// to get one.
 #[test]
