@@ -290,7 +290,10 @@ impl Op {
                     out.push((Kind::Structure, id.clone()));
                 }
                 Command::DeleteAttachment { structure, .. }
-                | Command::RenameAttachment { structure, .. } => {
+                | Command::RenameAttachment { structure, .. }
+                | Command::LinkPoint { structure, .. }
+                | Command::UnlinkPoint { structure, .. }
+                | Command::RelinkPoints { structure, .. } => {
                     out.push((Kind::Structure, structure.clone()));
                 }
                 Command::SetStringing { section, .. } => {

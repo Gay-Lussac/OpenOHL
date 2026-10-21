@@ -16,6 +16,7 @@ mod clearance_run;
 mod code_run;
 mod cost_run;
 mod io_run;
+mod links_run;
 mod project;
 mod safety_run;
 mod sagtension_job;
@@ -668,6 +669,15 @@ enum StructuresCommand {
     /// forces and usage under the loads of one structure (a CSV of `ohl
     /// line --loads-csv`) or the model's own loads.
     Fe(structure_fe::FeArgs),
+    /// A structure's attachment points: the joints they are linked to, the
+    /// offsets, which are unlinked; with --to, how they match another
+    /// type's joints (exact, or the nearest attach joint offered).
+    Points(links_run::PointsArgs),
+    /// Link an attachment point of a typed structure to a joint of its
+    /// type (at an offset), relink it, or unlink it, in a line file (a
+    /// project: the command link_point / unlink_point, `ohl project
+    /// apply`).
+    Link(links_run::LinkArgs),
     /// Pole check (.ohlp, or the type's own [pole]): bending moment along
     /// the pole from the loads at a structure type's attachments, wind,
     /// P-Delta.
@@ -856,6 +866,12 @@ fn main() -> ExitCode {
         Some(Command::Structures {
             command: StructuresCommand::Pole(args),
         }) => report(structure_fe::pole(&args)),
+        Some(Command::Structures {
+            command: StructuresCommand::Points(args),
+        }) => report(links_run::points(&args)),
+        Some(Command::Structures {
+            command: StructuresCommand::Link(args),
+        }) => report(links_run::link(&args)),
         Some(Command::Structures {
             command: StructuresCommand::Analyse(args),
         }) => structure_app_run::analyse(&args),

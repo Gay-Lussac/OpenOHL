@@ -1,0 +1,323 @@
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
+
+//! Attachment points and the joints they are linked to (2026-10-21): the
+//! joints of a placed structure, the rigid links to draw, a point linked
+//! or unlinked, and the **matching** of a structure's points to the
+//! joints of another type (a type swap, a revision that lost a joint).
+//!
+//! Matching is **exact** by default: a point matches a joint at the same
+//! position (within [`ohl_structures::SAME_JOINT`]). Otherwise the
+//! nearest attach joint is **offered**, the remaining distance kept as
+//! the point's offset (whose moment the structure analysis applies); the
+//! user chooses per point ([`PointChoice`]). No tolerance links a point
+//! silently.
+
+use ohl_structures::structures::{to_global, to_local};
+use ohl_structures::{Joint, JointKind, StructureType};
+
+use crate::{Point, Structure, StructurePoint};
+
+fn distance(a: Point, b: Point) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// Where a structure's type stands: its position raised by its height
+/// adjustment (the type's feet).
+pub fn feet(s: &Structure) -> Point {
+    [
+        s.position[0],
+        s.position[1],
+        s.position[2] + s.height_adjust,
+    ]
+}
+
+/// A joint of a placed structure's type, where it is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacedJoint {
+    /// The joint ([`StructureType::joints`]).
+    pub joint: Joint,
+    /// Where it is, global, m (the structure's position, orientation,
+    /// height adjustment and extension).
+    pub position: Point,
+}
+
+/// The joints of type `t` as structure `s` places it (its position,
+/// orientation, height adjustment and extension): what the Link tool
+/// offers and draws.
+pub fn placed_joints(t: &StructureType, s: &Structure) -> Vec<PlacedJoint> {
+    let ext = s.extension.as_deref();
+    t.joints()
+        .into_iter()
+        .filter_map(|j| {
+            let local = t.joint_local(&j.id, ext)?;
+            Some(PlacedJoint {
+                position: to_global(feet(s), s.orientation_deg, local),
+                joint: j,
+            })
+        })
+        .collect()
+}
+
+/// A rigid link to draw: from a joint to an attachment point at an offset
+/// ([`rigid_links`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RigidLink {
+    /// The attachment point's label.
+    pub label: String,
+    /// The joint's id.
+    pub joint: String,
+    /// The joint, global, m.
+    pub from: Point,
+    /// The point, global, m.
+    pub to: Point,
+    /// The offset, structure axes, m.
+    pub offset: Point,
+    /// Its length, m.
+    pub length: f64,
+}
+
+/// The rigid links of a resolved typed structure `s` (its type `t`):
+/// every linked attachment point with an offset (none drawn for a point
+/// on its joint).
+pub fn rigid_links(t: &StructureType, s: &Structure) -> Vec<RigidLink> {
+    let joints = placed_joints(t, s);
+    s.points
+        .iter()
+        .filter(|p| p.is_linked() && p.offset != [0.0; 3])
+        .filter_map(|p| {
+            let id = p.joint.as_deref()?;
+            let j = joints.iter().find(|j| j.joint.id == id)?;
+            Some(RigidLink {
+                label: p.label.clone(),
+                joint: id.to_owned(),
+                from: j.position,
+                to: p.position,
+                offset: p.offset,
+                length: p.offset_length(),
+            })
+        })
+        .collect()
+}
+
+/// Attachment point `label` of structure `s` (type `t`) linked to joint
+/// `joint` at `offset` (structure axes, m): the point to store as the
+/// structure's own, its position the joint's as placed plus the offset.
+/// The label and description are kept from `old` (the point as it was,
+/// when there was one). Refused: no such joint, or a support joint.
+pub fn linked(
+    t: &StructureType,
+    s: &Structure,
+    old: Option<&StructurePoint>,
+    label: &str,
+    joint: &str,
+    offset: Point,
+) -> Result<StructurePoint, String> {
+    let j = t
+        .joint(joint)
+        .ok_or_else(|| format!("{}: type {} has no joint {joint}", s.id, t.id))?;
+    if j.kind == Some(JointKind::Support) {
+        return Err(format!(
+            "{}: joint {joint} is a support joint (strings hang from attach joints)",
+            s.id
+        ));
+    }
+    let local = t
+        .joint_local(joint, s.extension.as_deref())
+        .ok_or_else(|| format!("{}: no extension {:?}", s.id, s.extension))?;
+    let at = to_global(feet(s), s.orientation_deg, local);
+    let o = to_global([0.0; 3], s.orientation_deg, offset);
+    Ok(StructurePoint {
+        description: old.map(|p| p.description.clone()).unwrap_or_default(),
+        label: label.to_owned(),
+        position: [at[0] + o[0], at[1] + o[1], at[2] + o[2]],
+        joint: Some(joint.to_owned()),
+        offset,
+        unlinked: false,
+    })
+}
+
+/// Attachment point `p` unlinked: kept where it is, its structure's loads
+/// refused until it is linked again.
+pub fn unlinked(p: &StructurePoint) -> StructurePoint {
+    StructurePoint {
+        joint: None,
+        offset: [0.0; 3],
+        unlinked: true,
+        ..p.clone()
+    }
+}
+
+/// A joint offered for an attachment point: the nearest attach joint,
+/// the point keeping its place at an offset from it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JointOffer {
+    /// The joint's id.
+    pub joint: String,
+    /// From the joint to where the point is, structure axes, m.
+    pub offset: Point,
+    /// The offset's length, m.
+    pub distance: f64,
+}
+
+/// How an attachment point matches the joints of a type ([`match_points`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointMatch {
+    /// The point's label.
+    pub label: String,
+    /// Where it is, global, m.
+    pub position: Point,
+    /// The joint at its position (none: no joint there).
+    pub exact: Option<String>,
+    /// Otherwise: the nearest attach joint, offered (none: no attach
+    /// joint, or two equally near — [`PointMatch::tie`]).
+    pub nearest: Option<JointOffer>,
+    /// Two or more attach joints equally near (within
+    /// [`ohl_structures::SAME_JOINT`]): none offered, the user chooses.
+    pub tie: bool,
+}
+
+impl PointMatch {
+    /// What is done without asking: the exact match, linked at no offset.
+    /// None: the user chooses (the offer, another joint, or removal).
+    pub fn proposal(&self) -> Option<PointChoice> {
+        self.exact.as_ref().map(|j| PointChoice::Link {
+            joint: j.clone(),
+            offset: [0.0; 3],
+        })
+    }
+
+    /// The offer taken: linked to the nearest attach joint at its offset.
+    pub fn offer(&self) -> Option<PointChoice> {
+        self.nearest.as_ref().map(|o| PointChoice::Link {
+            joint: o.joint.clone(),
+            offset: o.offset,
+        })
+    }
+}
+
+/// What becomes of an attachment point when its structure changes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PointChoice {
+    /// Linked to this joint at this offset (structure axes, m).
+    Link {
+        /// The joint's id.
+        joint: String,
+        /// The offset.
+        offset: Point,
+    },
+    /// Removed, with what hangs only from it.
+    Remove,
+}
+
+/// The attachment points `points` (global positions, as a resolved
+/// structure has them) matched to the joints of type `t` placed as
+/// structure `s` says (its position, orientation, height adjustment and
+/// extension — of the new type, for a swap): per point, the joint at its
+/// position (exact) — any joint a point may be linked to, not a support
+/// joint — else the nearest attach joint offered with the remaining
+/// distance as its offset (structure axes).
+pub fn match_points(
+    t: &StructureType,
+    s: &Structure,
+    points: &[StructurePoint],
+) -> Vec<PointMatch> {
+    let joints = placed_joints(t, s);
+    points
+        .iter()
+        .map(|p| {
+            let exact = joints
+                .iter()
+                .filter(|j| j.joint.kind != Some(JointKind::Support))
+                .find(|j| distance(j.position, p.position) <= ohl_structures::SAME_JOINT)
+                .map(|j| j.joint.id.clone());
+            let mut near: Vec<(f64, &PlacedJoint)> = joints
+                .iter()
+                .filter(|j| j.joint.kind == Some(JointKind::Attach))
+                .map(|j| (distance(j.position, p.position), j))
+                .collect();
+            near.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let tie = exact.is_none()
+                && near.len() > 1
+                && near[1].0 - near[0].0 <= ohl_structures::SAME_JOINT;
+            let nearest = if exact.is_some() || tie {
+                None
+            } else {
+                near.first().map(|(d, j)| {
+                    let g = [
+                        p.position[0] - j.position[0],
+                        p.position[1] - j.position[1],
+                        p.position[2] - j.position[2],
+                    ];
+                    JointOffer {
+                        joint: j.joint.id.clone(),
+                        offset: to_local([0.0; 3], s.orientation_deg, g),
+                        distance: *d,
+                    }
+                })
+            };
+            PointMatch {
+                label: p.label.clone(),
+                position: p.position,
+                exact,
+                nearest,
+                tie,
+            }
+        })
+        .collect()
+}
+
+/// Structure `new` (as stored: a typed structure's own items) with the
+/// attachment points of `old` (as resolved) given their `choices`: a
+/// point linked as its new type `t` already links its label is left to
+/// the type; any other linked point becomes the structure's own
+/// ([`linked`]), and the old structure's own strings hanging from it
+/// follow when their wire points are on the new structure. A point not
+/// chosen, or removed, is dropped. Returns the structure and, in words,
+/// what was dropped.
+pub fn with_points(
+    t: &StructureType,
+    new: &Structure,
+    old: &Structure,
+    old_stored: &Structure,
+    choices: &[(String, PointChoice)],
+) -> Result<(Structure, Vec<String>), String> {
+    let mut out = new.clone();
+    let mut dropped = Vec::new();
+    for p in &old.points {
+        let choice = choices.iter().find(|(l, _)| *l == p.label).map(|(_, c)| c);
+        match choice {
+            Some(PointChoice::Link { joint, offset }) => {
+                let by_type = t
+                    .point_link(&p.label)
+                    .is_some_and(|(j, o)| j == joint && o == *offset);
+                if by_type {
+                    continue;
+                }
+                out.points.retain(|q| q.label != p.label);
+                out.points
+                    .push(linked(t, &out, Some(p), &p.label, joint, *offset)?);
+            }
+            Some(PointChoice::Remove) | None => {
+                dropped.push(format!("attachment point {}", p.label));
+            }
+        }
+    }
+    // The old structure's own strings from points kept, when their wire
+    // points are there.
+    let kept =
+        |label: &str| out.points.iter().any(|q| q.label == label) || t.point_link(label).is_some();
+    let wires = |label: &str| {
+        out.wires.iter().any(|w| w.label == label) || t.wires.iter().any(|w| w.label == label)
+    };
+    for x in &old_stored.strings {
+        if out.strings.iter().any(|y| y.label == x.label) {
+            continue;
+        }
+        if kept(&x.top) && wires(&x.wire) {
+            out.strings.push(x.clone());
+        }
+    }
+    Ok((out, dropped))
+}

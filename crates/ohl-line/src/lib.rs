@@ -37,6 +37,7 @@ pub mod legacy;
 pub mod library;
 #[cfg(test)]
 mod link_tests;
+pub mod links;
 pub mod objects;
 mod rod;
 pub mod route;
