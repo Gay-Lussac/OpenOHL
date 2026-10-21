@@ -169,6 +169,7 @@ impl Mapping {
             structure: Box::new(self.structure.clone()),
             wires: self.wires.clone(),
             sets: self.moves(),
+            points: Vec::new(),
             confirm: true,
         }
     }
@@ -188,7 +189,7 @@ impl Mapping {
         self.impact_of = self.choice.clone();
         self.impact = match model.session() {
             Some(s) => s
-                .replacement(&self.id, &self.structure, &self.wires, &self.moves())
+                .replacement(&self.id, &self.structure, &self.wires, &self.moves(), &[])
                 .map(|p| p.impact)
                 .map_err(|e| e.to_string()),
             None => Err("not editable".into()),
@@ -325,7 +326,7 @@ impl Replace {
             .ok_or_else(|| "the model cannot be edited".to_owned())?;
         // What the new structure gives without a choice: the sets used.
         let plain = session
-            .replacement(id, &new, &wires, &[])
+            .replacement(id, &new, &wires, &[], &[])
             .map_err(|e| e.to_string())?;
         let used: Vec<u32> = plain.moves.iter().map(|(s, _)| *s).collect();
         let line = &model.line;

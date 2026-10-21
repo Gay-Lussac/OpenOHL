@@ -541,9 +541,55 @@ pub enum Command {
         /// they are.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         sets: Vec<replace::SetMove>,
+        /// The old structure's attachment points matched to the new one's
+        /// joints ([`ohl_line::links::match_points`]): each linked (the
+        /// new structure carries it as its own point, linked so) or
+        /// removed (listed).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        points: Vec<replace::PointMove>,
         /// Confirms the listed removals.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         confirm: bool,
+    },
+    /// Link attachment point `label` of typed structure `structure` to
+    /// joint `joint` of its type at `offset` (structure axes, m): the
+    /// Link tool; relinking a linked point is the same command. The point
+    /// becomes the structure's own, at `position` — the joint as placed
+    /// plus the offset, given by the caller
+    /// ([`ohl_line::links::linked`]: the session does not read the
+    /// structure library).
+    LinkPoint {
+        /// Structure id.
+        structure: String,
+        /// The attachment point's label.
+        label: String,
+        /// The joint's id.
+        joint: String,
+        /// From the joint to the point, structure axes, m.
+        #[serde(default, skip_serializing_if = "is_zero_point")]
+        offset: Point,
+        /// Where the point is then, m.
+        position: Point,
+    },
+    /// Unlink attachment point `label` of typed structure `structure`: it
+    /// stays at `position`, the structure's loads refused until it is
+    /// linked again.
+    UnlinkPoint {
+        /// Structure id.
+        structure: String,
+        /// The attachment point's label.
+        label: String,
+        /// Where it stays, m.
+        position: Point,
+    },
+    /// Give several attachment points of typed structure `structure` their
+    /// links at once (after its type changed: [`ohl_line::links`]), each
+    /// replacing the structure's own point of its label.
+    RelinkPoints {
+        /// Structure id.
+        structure: String,
+        /// The points, linked (or unlinked) as they are to be.
+        points: Vec<ohl_line::StructurePoint>,
     },
     /// Rename a structure, section or jumper (it keeps its place); what
     /// refers to a structure follows: section points, jumper ends, routes
@@ -917,6 +963,11 @@ fn remove_set(s: &mut ohl_line::Structure, set: u32) {
         s.wires.retain(|w| w.label != label);
         s.strings.retain(|x| x.wire != label);
     }
+}
+
+/// A point at the origin (an offset of none).
+pub(crate) fn is_zero_point(p: &Point) -> bool {
+    *p == [0.0; 3]
 }
 
 fn json<T: Serialize>(v: &T) -> Value {
@@ -2002,14 +2053,59 @@ impl Session {
                 });
                 notes.push(impact.summary());
             }
+            Command::LinkPoint {
+                structure,
+                label,
+                joint,
+                offset,
+                position,
+            } => {
+                let old = self.own_point(&structure, &label)?;
+                let point = ohl_line::StructurePoint {
+                    description: old.map(|p| p.description).unwrap_or_default(),
+                    label: label.clone(),
+                    position,
+                    joint: Some(joint),
+                    offset,
+                    unlinked: false,
+                };
+                out.push(self.with_points(&structure, vec![point])?);
+                notes.push(format!("link attachment point {label} of {structure}"));
+            }
+            Command::UnlinkPoint {
+                structure,
+                label,
+                position,
+            } => {
+                let old = self.own_point(&structure, &label)?;
+                let point = ohl_line::StructurePoint {
+                    description: old.map(|p| p.description).unwrap_or_default(),
+                    label: label.clone(),
+                    position,
+                    joint: None,
+                    offset: [0.0; 3],
+                    unlinked: true,
+                };
+                out.push(self.with_points(&structure, vec![point])?);
+                notes.push(format!("unlink attachment point {label} of {structure}"));
+            }
+            Command::RelinkPoints { structure, points } => {
+                let labels: Vec<String> = points.iter().map(|p| p.label.clone()).collect();
+                out.push(self.with_points(&structure, points)?);
+                notes.push(format!(
+                    "relink attachment points of {structure}: {}",
+                    labels.join(", ")
+                ));
+            }
             Command::ReplaceStructure {
                 id,
                 structure,
                 wires,
                 sets,
+                points,
                 confirm,
             } => {
-                let plan = self.replacement(&id, &structure, &wires, &sets)?;
+                let plan = self.replacement(&id, &structure, &wires, &sets, &points)?;
                 if user && plan.impact.has_dependents() && !confirm {
                     return Err(SessionError::NeedsConfirmation(Box::new(plan.impact)));
                 }
@@ -3405,6 +3501,8 @@ pub use live::Live;
 
 #[cfg(test)]
 mod lines_tests;
+#[cfg(test)]
+mod link_tests;
 #[cfg(test)]
 mod points_tests;
 #[cfg(test)]

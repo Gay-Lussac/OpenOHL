@@ -205,3 +205,79 @@ fn points_written_before_the_links() {
     let again = back.resolve(&lib, &insulators).unwrap();
     assert_eq!(geometry(&again), geometry(&r));
 }
+
+/// Matching on every type swap among the shipped types, on every
+/// structure of the typed example: a point at a joint matches it
+/// exactly; otherwise the nearest attach joint is offered (no other
+/// nearer), and linking to it at the offset offered puts the point back
+/// where it was; a type swapped for itself matches every point exactly,
+/// on its own joint. Taking the offers, the line resolves with every
+/// point where it was.
+#[test]
+fn matching_on_every_type_swap() {
+    use crate::links::{linked, match_points, placed_joints, with_points};
+    let (line, structures) = typed();
+    let insulators = InsulatorLibrary::default();
+    let resolved = line.resolve(&structures, &insulators).unwrap();
+    let ids: Vec<String> = structures.iter().map(|t| t.id.clone()).collect();
+    assert_eq!(ids.len(), 6);
+    let mut offered = 0;
+    for (stored, s) in line.structures.iter().zip(&resolved.structures) {
+        for id in &ids {
+            let t = structures.get(id).unwrap();
+            let mut new = stored.clone();
+            new.structure_type = Some(id.clone());
+            let matches = match_points(t, &new, &s.points);
+            assert_eq!(matches.len(), s.points.len());
+            let joints = placed_joints(t, &new);
+            for m in &matches {
+                let p = s.point(&m.label).unwrap();
+                if Some(id) == s.structure_type.as_ref() {
+                    assert_eq!(m.exact, p.joint, "{} {}", s.id, m.label);
+                }
+                if let Some(j) = &m.exact {
+                    let at = joints.iter().find(|x| &x.joint.id == j).unwrap();
+                    assert!(close(at.position, m.position));
+                    assert!(m.nearest.is_none());
+                    continue;
+                }
+                if m.tie {
+                    assert!(m.nearest.is_none());
+                    continue;
+                }
+                let o = m.nearest.as_ref().unwrap();
+                offered += 1;
+                let nearest = joints
+                    .iter()
+                    .filter(|j| j.joint.kind == Some(ohl_structures::JointKind::Attach))
+                    .map(|j| {
+                        let d = [0, 1, 2].map(|k| j.position[k] - m.position[k]);
+                        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                assert!((o.distance - nearest).abs() < 1e-9);
+                let back = linked(t, &new, Some(p), &m.label, &o.joint, o.offset).unwrap();
+                assert!(close(back.position, m.position), "{back:?} {m:?}");
+            }
+            // The offers taken: every point where it was, linked.
+            let choices: Vec<_> = matches
+                .iter()
+                .filter_map(|m| Some((m.label.clone(), m.proposal().or_else(|| m.offer())?)))
+                .collect();
+            let mut bare = new.clone();
+            bare.points.clear();
+            bare.strings.clear();
+            let (swapped, _) = with_points(t, &bare, s, stored, &choices).unwrap();
+            let mut l = line.clone();
+            *l.structures.iter_mut().find(|x| x.id == s.id).unwrap() = swapped;
+            let r = l.resolve(&structures, &insulators).unwrap();
+            let after = r.structure(&s.id).unwrap();
+            for (label, _) in &choices {
+                let p = after.point(label).unwrap();
+                assert!(p.is_linked());
+                assert!(close(p.position, s.point(label).unwrap().position));
+            }
+        }
+    }
+    assert!(offered > 0);
+}

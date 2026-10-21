@@ -26,6 +26,7 @@ pub mod file;
 pub mod generators;
 pub mod geometry;
 pub mod groups;
+pub mod links;
 pub mod load_cases;
 pub mod missing;
 pub mod pole;

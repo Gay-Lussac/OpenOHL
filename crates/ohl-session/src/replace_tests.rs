@@ -53,6 +53,7 @@ fn replace(id: &str, t: &str, sets: &[u32], moves: &[SetMove], confirm: bool) ->
         structure: of_type(t),
         wires: wires(sets),
         sets: moves.to_vec(),
+        points: Vec::new(),
         confirm,
     }
 }
@@ -173,7 +174,7 @@ fn an_unmapped_set_removes_its_sections_after_a_confirmation() {
     );
     // Plan only: what the window lists.
     let plan = s
-        .replacement("T3", &of_type("type-02"), &wires(&[1, 11]), &[])
+        .replacement("T3", &of_type("type-02"), &wires(&[1, 11]), &[], &[])
         .unwrap();
     assert_eq!(plan.moves, vec![(1, Some(1)), (2, None), (11, Some(11))]);
     assert_eq!(plan.rewired(), 2);

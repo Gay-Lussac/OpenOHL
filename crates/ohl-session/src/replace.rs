@@ -51,6 +51,76 @@ pub struct SetMove {
     pub to: Option<u32>,
 }
 
+/// What becomes of an old attachment point
+/// ([`Command::ReplaceStructure`]'s `points`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointMove {
+    /// The old point's label.
+    pub label: String,
+    /// The new structure's joint it is linked to (the new structure
+    /// carries the point, linked so); none: removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint: Option<String>,
+    /// Its offset from that joint, structure axes, m.
+    #[serde(default, skip_serializing_if = "crate::is_zero_point")]
+    pub offset: ohl_line::Point,
+}
+
+impl Session {
+    /// Structure `id`'s own attachment point `label`, if it has one;
+    /// refused when there is no such structure or it has no type (its
+    /// points are their own joints).
+    pub(crate) fn own_point(
+        &self,
+        id: &str,
+        label: &str,
+    ) -> Result<Option<ohl_line::StructurePoint>, SessionError> {
+        let s = self
+            .line
+            .structure(id)
+            .ok_or_else(|| refused(format!("no structure {id}")))?;
+        if s.structure_type.is_none() {
+            return Err(refused(format!(
+                "{id} has no type: its attachment points are their own joints"
+            )));
+        }
+        Ok(s.points.iter().find(|p| p.label == label).cloned())
+    }
+
+    /// The put of typed structure `id` with `points` as its own (each
+    /// replacing its own point of the label).
+    pub(crate) fn with_points(
+        &self,
+        id: &str,
+        points: Vec<ohl_line::StructurePoint>,
+    ) -> Result<Command, SessionError> {
+        let mut s = self
+            .line
+            .structure(id)
+            .ok_or_else(|| refused(format!("no structure {id}")))?
+            .clone();
+        if s.structure_type.is_none() {
+            return Err(refused(format!(
+                "{id} has no type: its attachment points are their own joints"
+            )));
+        }
+        for p in points {
+            if p.label.is_empty() || s.wires.iter().any(|w| w.label == p.label) {
+                return Err(refused(format!(
+                    "{id}: attachment point \"{}\": empty, or the label of a wire point",
+                    p.label
+                )));
+            }
+            match s.points.iter_mut().find(|q| q.label == p.label) {
+                Some(q) => *q = p,
+                None => s.points.push(p),
+            }
+        }
+        Ok(put(Kind::Structure, id, &s))
+    }
+}
+
 /// What replacing a structure does (nothing is changed).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Replacement {
@@ -93,6 +163,7 @@ impl Session {
         structure: &Structure,
         wires: &[NewWire],
         sets: &[SetMove],
+        points: &[PointMove],
     ) -> Result<Replacement, SessionError> {
         let old = self
             .line
@@ -219,10 +290,34 @@ impl Session {
                 }
             }
         }
-        // The old structure's own items over its type, not on the new one.
+        // The old attachment points matched to the new structure: linked
+        // (it carries them so), or removed.
+        for m in points {
+            match &m.joint {
+                Some(j) => {
+                    if !new
+                        .points
+                        .iter()
+                        .any(|p| p.label == m.label && p.joint.as_deref() == Some(j.as_str()))
+                    {
+                        return Err(refused(format!(
+                            "{id}: attachment point {} to joint {j}: the new structure does not \
+                             carry it so",
+                            m.label
+                        )));
+                    }
+                }
+                None => impact
+                    .overrides
+                    .push(format!("attachment point {} (removed)", m.label)),
+            }
+        }
+        // The old structure's own items over its type, not on the new one
+        // (a point carried over by its label is not dropped).
         if old.structure_type.is_some() {
             for p in &old.points {
-                if !new.points.contains(p) {
+                let moved = points.iter().any(|m| m.label == p.label);
+                if !moved && !new.points.iter().any(|q| q.label == p.label) {
                     impact.overrides.push(format!("point {}", p.label));
                 }
             }
