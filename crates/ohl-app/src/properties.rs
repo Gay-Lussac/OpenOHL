@@ -36,12 +36,25 @@ fn grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
 /// it.
 /// `position`: the position being typed for a structure, when the model
 /// can be edited (`None`: read-only). Returns an edit to perform.
+/// What Properties needs for an attachment point beyond the model: the
+/// structure loads computed (its moment per load case), editing allowed,
+/// and where its Link… asks for the Link tool.
+pub struct PointExtras<'a> {
+    /// Checks › Structure loads, when computed.
+    pub loads: Option<&'a [ohl_loads::CaseLoads]>,
+    /// The model can be edited.
+    pub editable: bool,
+    /// Link… clicked: (structure, label).
+    pub start_link: &'a mut Option<(String, String)>,
+}
+
 pub fn ui(
     ui: &mut egui::Ui,
     model: &Model,
     case: usize,
     selection: &mut Selection,
     position: Option<&mut Option<(String, [f64; 3])>>,
+    point: PointExtras<'_>,
 ) -> Option<crate::edit::Action> {
     let line = &model.line;
     let mut next: Option<Selection> = None;
@@ -72,6 +85,31 @@ pub fn ui(
             };
             ui.heading(format!("Structure {id}"));
             description(ui, &s.description);
+            // Attachment points whose joint is gone (or unlinked): drawn red,
+            // the structure's loads refused until they are linked again.
+            let lost: Vec<String> = crate::link_tool::unlinked_points(line)
+                .into_iter()
+                .filter(|(st, _, _)| *st == id)
+                .map(|(_, l, _)| l)
+                .collect();
+            if !lost.is_empty() {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    format!(
+                        "Unlinked attachment point(s) {}: drawn red; its loads are refused \
+                         until they are linked again (Link tool, or Replace's Attachment points)",
+                        lost.join(", ")
+                    ),
+                );
+                for l in &lost {
+                    if ui.link(format!("attachment point {l}")).clicked() {
+                        next = Some(Selection::Point {
+                            structure: id.clone(),
+                            label: l.clone(),
+                        });
+                    }
+                }
+            }
             grid(
                 ui,
                 "structure",
@@ -378,7 +416,80 @@ pub fn ui(
                 ui.label(format!("{structure}: not in the line"));
                 return;
             };
-            ui.heading(format!("{structure} point {label}"));
+            let heading = ui.heading(format!("{structure} point {label}"));
+            // An attachment point: its link to a joint, the offset (a
+            // rigid link) and its moment per load case; its menu links or
+            // unlinks it.
+            if let Some(p) = st.point(&label) {
+                let typed = st.structure_type.is_some();
+                heading.context_menu(|ui| {
+                    if ui
+                        .add_enabled(typed, egui::Button::new("Link to a joint… (Link tool)"))
+                        .clicked()
+                    {
+                        *point.start_link = Some((structure.clone(), label.clone()));
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(typed && p.is_linked(), egui::Button::new("Unlink"))
+                        .on_hover_text(
+                            "It stays where it is; the structure's loads are refused until it \
+                             is linked again",
+                        )
+                        .clicked()
+                    {
+                        match crate::link_tool::unlink_command(model, &structure, &label) {
+                            Ok((what, command)) => {
+                                action = Some(crate::edit::Action::Command { what, command });
+                            }
+                            Err(e) => {
+                                ui.colored_label(ui.visuals().error_fg_color, e);
+                            }
+                        }
+                        ui.close();
+                    }
+                });
+                let rows = crate::link_tool::point_rows(st, p, point.loads);
+                let rows: Vec<(&str, String)> =
+                    rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+                grid(ui, "point-link", &rows);
+                if typed && point.editable {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("Link…")
+                            .on_hover_text(
+                                "The Link tool on this point: right-click a ringed joint of its \
+                                 type (it is linked there where it is)",
+                            )
+                            .clicked()
+                        {
+                            *point.start_link = Some((structure.clone(), label.clone()));
+                        }
+                        if p.is_linked()
+                            && ui
+                                .button("Unlink")
+                                .on_hover_text(
+                                    "It stays where it is; the structure's loads are refused \
+                                     until it is linked again",
+                                )
+                                .clicked()
+                            && let Ok((what, command)) =
+                                crate::link_tool::unlink_command(model, &structure, &label)
+                        {
+                            action = Some(crate::edit::Action::Command { what, command });
+                        }
+                    });
+                }
+                if p.offset != [0.0; 3] && point.loads.is_none() {
+                    ui.label(
+                        egui::RichText::new(
+                            "Its moment per load case: Checks › Structure loads (compute)",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                }
+            }
             if ui.link(format!("structure {structure}")).clicked() {
                 next = Some(Selection::Structure(structure.clone()));
             }

@@ -33,6 +33,7 @@ tools = {
  "_old_add_jumper": ('<path d="M4 4v6M20 4v6"/><path d="M4 9c0 9 16 9 16 0"/><circle cx="4" cy="9" r="1.1" fill="currentColor"/><circle cx="20" cy="9" r="1.1" fill="currentColor"/>', "Add jumper"),
  "on-span": ('<path d="M3 5v13M21 5v13"/><path d="M3 7c4 8 14 8 18 0"/><circle cx="12" cy="12.9" r="1.9" fill="currentColor"/><path d="M12 15.5v5M10 18.5l2 2 2-2"/>', "Add on span"),
  "_old_on_span": ('<path d="M3 6v12M21 6v12"/><path d="M3 8c4 8 14 8 18 0"/><circle cx="12" cy="13.9" r="2.4" fill="currentColor"/><path d="M12 16.3V20" />', "Add on span"),
+ "link": ('<circle cx="5.5" cy="17.5" r="2.4" fill="currentColor"/><path d="M7.5 15.9 15.1 9.7" stroke-width="2.8"/><circle cx="17" cy="8.2" r="2.3"/><path d="M17 10.5v6" opacity="0.6"/><path d="M15 13.5h4M15 16h4" stroke-width="1.6" opacity="0.6"/>', "Link"),
  "replace": (pylon(8, 20, 15, 11) + '<path d="M15 9h7M19.5 6.5 22 9l-2.5 2.5M22 15h-7M17.5 12.5 15 15l2.5 2.5"/>', "Replace structure"),
  "_old_replace": (pylon(9, 20, 15, 11) + '<path d="M17 6.5a4.5 4.5 0 0 1 4 4.5M21 11l-1.6-1.4M21 11l1.3-1.7"/><path d="M20 17.5a4.5 4.5 0 0 1-4-4.5M16 13l1.6 1.4M16 13l-1.3 1.7"/>', "Replace structure"),
 }

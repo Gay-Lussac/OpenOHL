@@ -47,6 +47,7 @@ mod icons;
 mod job;
 mod library;
 mod lidar_edit;
+mod link_tool;
 mod loads;
 mod lod;
 mod menu;
@@ -116,6 +117,8 @@ mod ground_lines_tests;
 mod handle_tests;
 #[cfg(test)]
 mod lidar_tests;
+#[cfg(test)]
+mod link_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]

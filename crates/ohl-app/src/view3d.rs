@@ -79,6 +79,10 @@ pub struct View3d {
     fitted_on_line: bool,
     /// Drag handles of the structure being edited ([`crate::handles`]).
     pub handles: crate::handles::Handles,
+    /// The Link tool with an attachment point chosen: the joints it may be
+    /// linked to, ringed; set by the application each frame
+    /// ([`crate::link_tool`]).
+    pub link: Option<crate::link_tool::LinkOverlay>,
     /// A box or lasso being drawn to select LiDAR points
     /// ([`crate::area`]).
     pub area: Option<crate::area::AreaDrag>,
@@ -470,6 +474,68 @@ impl View3d {
         }
     }
 
+    /// Draws the Link tool's joints and the joint under the pointer.
+    fn paint_link(
+        link: &crate::link_tool::LinkOverlay,
+        painter: &egui::Painter,
+        screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+    ) {
+        let green = egui::Color32::from_rgb(120, 240, 140);
+        for j in &link.joints {
+            if let Some(q) = screen(j.at) {
+                let c = if j.attach {
+                    green
+                } else {
+                    green.gamma_multiply(0.55)
+                };
+                painter.circle_stroke(q, 9.0, egui::Stroke::new(2.0, c));
+            }
+        }
+        let Some(p) = screen(link.point) else { return };
+        painter.circle_stroke(
+            p,
+            7.0,
+            egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 150, 60)),
+        );
+        let Some(id) = &link.hovered else { return };
+        let (Some(j), Some(o)) = (link.joints.iter().find(|j| &j.id == id), link.offset_to(id))
+        else {
+            return;
+        };
+        if let Some(q) = screen(j.at) {
+            painter.circle_stroke(q, 12.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
+            painter.line_segment([q, p], egui::Stroke::new(2.0, egui::Color32::WHITE));
+            Self::label_inside(
+                painter,
+                q + egui::vec2(14.0, -26.0),
+                format!(
+                    "link {} of {} to joint {id}: {}",
+                    link.label,
+                    link.structure,
+                    crate::link_tool::offset_words(o)
+                ),
+            );
+        }
+    }
+
+    /// A line of text on a dark box, kept inside the painter's area.
+    fn label_inside(painter: &egui::Painter, at: egui::Pos2, text: String) {
+        let galley =
+            painter.layout_no_wrap(text, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+        let clip = painter.clip_rect().shrink(4.0);
+        let size = galley.size();
+        let at = egui::pos2(
+            at.x.min(clip.right() - size.x).max(clip.left()),
+            at.y.min(clip.bottom() - size.y).max(clip.top()),
+        );
+        painter.rect_filled(
+            egui::Rect::from_min_size(at, size).expand(3.0),
+            3.0,
+            egui::Color32::from_black_alpha(190),
+        );
+        painter.galley(at, galley, egui::Color32::WHITE);
+    }
+
     /// A line of text on a dark box.
     fn label(painter: &egui::Painter, at: egui::Pos2, text: String) {
         let galley =
@@ -622,6 +688,7 @@ impl View3d {
                         at: spot.local,
                         constraint: crate::handles::Constraint::Free,
                         snapped: None,
+                        onto: None,
                     });
                     response.request_focus();
                 }
@@ -660,6 +727,7 @@ impl View3d {
                     } else {
                         crate::handles::snap(at, d.constraint, grid, onto.as_ref())
                     };
+                    d.onto = onto.filter(|_| !unsnapped).map(|s| s.handle);
                 }
             }
             if !primary_down {
@@ -672,6 +740,7 @@ impl View3d {
                         structure: d.structure,
                         handle: d.handle,
                         at: d.at,
+                        onto: d.onto,
                     });
                 }
             }
@@ -865,6 +934,33 @@ impl View3d {
             }
         }
         let radius = if self.captured { 10.0 } else { 14.0 };
+        // The Link tool: the joint under the pointer (the crosshair in
+        // first person); the tool click on one links the point there.
+        if let Some(link) = self.link.as_mut() {
+            let project = camera.projector(size);
+            let at = if self.captured {
+                Some(centre)
+            } else {
+                pointer.map(local)
+            };
+            link.hovered = at.and_then(|at| {
+                link.joints
+                    .iter()
+                    .filter_map(|j| {
+                        let (q, _) = project(j.at)?;
+                        let d = (q[0] - at[0]).hypot(q[1] - at[1]);
+                        (d <= radius).then_some((d, j.id.clone()))
+                    })
+                    .min_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(_, id)| id)
+            });
+            if use_at.is_some()
+                && let Some(id) = link.hovered.clone()
+            {
+                link.clicked = Some(id);
+                use_at = None;
+            }
+        }
         let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
         if let Some(area) = area_done {
             let started = std::time::Instant::now();
@@ -1264,6 +1360,12 @@ impl View3d {
                 egui::FontId::proportional(14.0),
                 egui::Color32::WHITE,
             );
+        }
+        // The Link tool: the joints the point may be linked to ringed
+        // (attach joints brighter), the one under the pointer joined to
+        // the point, with the offset and its moment arm.
+        if let Some(link) = &self.link {
+            Self::paint_link(link, &painter, screen);
         }
         // The handles: over everything, the one under the pointer (or
         // dragged) larger and outlined; a drag's way from where it was,

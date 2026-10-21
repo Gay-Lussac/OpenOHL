@@ -47,6 +47,7 @@ impl Tool {
             Tool::AddJumper => tool!("add-jumper"),
             Tool::OnSpan => tool!("on-span"),
             Tool::Replace => tool!("replace"),
+            Tool::Link => tool!("link"),
         }
     }
 

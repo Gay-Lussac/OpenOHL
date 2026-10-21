@@ -359,6 +359,9 @@ pub struct Ready {
     pub jumper_tap: Option<ohl_line::Tap>,
     /// Add string: the first span point right-clicked (a spacer).
     pub spacer_from: Option<ohl_line::SpanPointRef>,
+    /// Link tool: the attachment point chosen (structure, label), waiting
+    /// for its joint ([`crate::link_tool`]).
+    pub link_from: Option<(String, String)>,
     /// Add jumper: the helping strings right-clicked after it, in order
     /// (structure, wire point).
     pub jumper_via: Vec<(String, String)>,
@@ -486,6 +489,7 @@ impl Ready {
             rule_editor: Default::default(),
             jumper_from: None,
             spacer_from: None,
+            link_from: None,
             jumper_tap: None,
             jumper_via: Vec::new(),
             open_page: None,
@@ -1287,6 +1291,7 @@ impl TabViewer for Viewer<'_> {
         });
         let used = match tab {
             Tab::View3d => {
+                r.view3d.link = r.link_overlay();
                 let used = r.view3d.ui(
                     ui,
                     self.rs,
@@ -1300,6 +1305,9 @@ impl TabViewer for Viewer<'_> {
                 );
                 if let Some(done) = r.view3d.handles.done.take() {
                     r.handle_done(done);
+                }
+                if let Some(joint) = r.view3d.link.as_mut().and_then(|l| l.clicked.take()) {
+                    r.link_to_joint(&joint);
                 }
                 used
             }
@@ -1336,15 +1344,30 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
+                let mut start_link = None;
+                let loads = r.loads.results.as_ref().and_then(|x| x.as_ref().ok());
                 let action = crate::properties::ui(
                     ui,
                     &r.model,
                     r.case,
                     &mut r.selection,
                     editable.then_some(&mut r.edit_position),
+                    crate::properties::PointExtras {
+                        loads: loads.map(Vec::as_slice),
+                        editable,
+                        start_link: &mut start_link,
+                    },
                 );
                 if let Some(a) = action {
                     r.perform(a);
+                }
+                if let Some((structure, label)) = start_link {
+                    r.hotbar.hold(crate::tools::Tool::Link);
+                    r.use_tool(crate::selection::Use {
+                        target: Selection::Point { structure, label },
+                        at: None,
+                        on: None,
+                    });
                 }
                 None
             }
@@ -1462,6 +1485,8 @@ impl TabViewer for Viewer<'_> {
                     insulators: r.model.types.as_ref().map(|t| &t.1),
                     ahead: r.model.line.display.ahead_deg,
                 };
+                // The hotbar's Link tool held: the structure screen's too.
+                page.workspace.link_held = r.hotbar.tool() == crate::tools::Tool::Link;
                 let action = page.ui(ui, &sources, cx);
                 let request = page.workspace.request.take();
                 if let Some(action) = action {
@@ -1532,6 +1557,10 @@ impl Ready {
         }
         if self.hotbar.tool().picks_points() {
             s.0.insert(crate::selection::Snap::Point);
+        }
+        // The rigid links shown are clicked like their attachment points.
+        if self.visible.contains(&Layer::RigidLinks) {
+            s.0.insert(crate::selection::Snap::RigidLink);
         }
         if self.hotbar.tool().picks_spans() {
             s.0.insert(crate::selection::Snap::Span);
@@ -2114,6 +2143,36 @@ impl Ready {
                 self.editor = StringForm::hanging_from(model, structure, label).map(Form::String);
                 self.select(target);
             }
+            (Tool::Link, Selection::Point { structure, label }) => {
+                match crate::link_tool::overlay(&self.model, structure, label) {
+                    Ok(o) => {
+                        self.status = Some((
+                            format!(
+                                "Link {label} of {structure}: right-click a ringed joint of its \
+                                 type ({} joint(s) it may be linked to; Escape: cancel)",
+                                o.joints.len()
+                            ),
+                            false,
+                        ));
+                        self.link_from = Some((structure.clone(), label.clone()));
+                    }
+                    Err(e) => {
+                        self.link_from = None;
+                        self.status = Some((format!("Link: {e}"), true));
+                    }
+                }
+                self.select(target);
+            }
+            (Tool::Link, _) => {
+                if self.link_from.take().is_some() {
+                    self.status = Some((
+                        "Link: cancelled (right-click a ringed joint to link the point)".into(),
+                        false,
+                    ));
+                } else {
+                    self.hint(tool);
+                }
+            }
             (Tool::StringWire, Selection::Attachment { structure, set }) => {
                 let p = ohl_line::SectionPoint::new(structure.clone(), *set);
                 if self.chain.last() == Some(&p) {
@@ -2143,6 +2202,50 @@ impl Ready {
                 ));
             }
             _ => self.hint(tool),
+        }
+    }
+
+    /// The Link tool's overlay of the 3D view: the point chosen and the
+    /// joints it may be linked to (none: the tool not held, or no point
+    /// chosen; a point whose structure went is dropped).
+    pub fn link_overlay(&mut self) -> Option<crate::link_tool::LinkOverlay> {
+        if self.hotbar.tool() != crate::tools::Tool::Link {
+            self.link_from = None;
+            return None;
+        }
+        let (id, label) = self.link_from.clone()?;
+        match crate::link_tool::overlay(&self.model, &id, &label) {
+            Ok(mut o) => {
+                if let Some(old) = &self.view3d.link
+                    && old.structure == o.structure
+                    && old.label == o.label
+                {
+                    o.hovered.clone_from(&old.hovered);
+                }
+                Some(o)
+            }
+            Err(_) => {
+                self.link_from = None;
+                None
+            }
+        }
+    }
+
+    /// The Link tool's second click: the point chosen linked to `joint`
+    /// where it is (one command).
+    pub fn link_to_joint(&mut self, joint: &str) {
+        let Some((id, label)) = self.link_from.take() else {
+            return;
+        };
+        match crate::link_tool::link_command(&self.model, &id, &label, joint) {
+            Ok((what, command)) => {
+                self.perform(crate::edit::Action::Command { what, command });
+                self.selection = Selection::Point {
+                    structure: id,
+                    label,
+                };
+            }
+            Err(e) => self.status = Some((format!("Link: {e}"), true)),
         }
     }
 
@@ -3320,7 +3423,14 @@ impl Ready {
                 structure,
                 handle,
                 at,
-            } => match crate::handles::command(&self.model, &structure, &handle, at) {
+                onto,
+            } => match crate::handles::command_onto(
+                &self.model,
+                &structure,
+                &handle,
+                at,
+                onto.as_ref(),
+            ) {
                 Ok((what, command)) => {
                     log::info!("{what}");
                     if self.perform(crate::edit::Action::Command {
@@ -4443,6 +4553,14 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         r.jumper_tap = None;
         r.jumper_via.clear();
         r.status = Some(("Add jumper: cancelled".into(), false));
+    }
+    // An attachment point chosen with the Link tool: Escape gives it up.
+    if r.link_from.is_some()
+        && !windows
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        r.link_from = None;
+        r.status = Some(("Link: cancelled".into(), false));
     }
     // A spacer being laid out (Add string): Escape gives it up.
     if r.spacer_from.is_some()

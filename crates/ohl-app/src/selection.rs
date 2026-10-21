@@ -161,6 +161,9 @@ pub enum Snap {
     /// Structure points and wire points, by label (only while a tool
     /// that hangs strings from them is held; not in the Snap menu).
     Point,
+    /// The rigid links drawn (their layer shown; not in the Snap menu):
+    /// a click on one picks its attachment point.
+    RigidLink,
 }
 
 impl Snap {
@@ -186,6 +189,7 @@ impl Snap {
             Snap::LidarPoint => "LiDAR points",
             Snap::SurveyPoint => "Survey points (terrain surface)",
             Snap::Point => "Structure and wire points",
+            Snap::RigidLink => "Rigid links",
         }
     }
 
@@ -200,6 +204,7 @@ impl Snap {
             Snap::LidarPoint => "lidar_point",
             Snap::SurveyPoint => "survey_point",
             Snap::Point => "point",
+            Snap::RigidLink => "rigid_link",
         }
     }
 
@@ -207,7 +212,7 @@ impl Snap {
     /// points over the lines they sit on, structures over wires.
     fn priority(self) -> f64 {
         match self {
-            Snap::Point => 7.0,
+            Snap::Point | Snap::RigidLink => 7.0,
             Snap::Attachment | Snap::AlignmentPoint => 6.0,
             Snap::LidarPoint | Snap::SurveyPoint => 4.0,
             Snap::Structure => 3.0,
@@ -657,6 +662,13 @@ pub fn candidates(model: &Model, case: usize, snaps: &Snaps) -> Vec<Candidate> {
         }
     }
     out.extend(wire_point_candidates(model, &pieces, snaps, true));
+    // A rigid link: its attachment point (drawn once per structure, not
+    // per weather case).
+    if snaps.on(Snap::RigidLink) {
+        for (structure, label, a, b) in crate::link_tool::drawn_links(model) {
+            out.push((Selection::Point { structure, label }, a, b));
+        }
+    }
     if let Some(c) = model.cases.get(case) {
         if snaps.on(Snap::Span) {
             for shape in model

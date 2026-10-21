@@ -34,9 +34,14 @@
 //!   becomes the structure's own, over its type's (as a string window
 //!   does), and the status bar says so. The line is solved again as after
 //!   any edit.
-//! - Joints, and points sitting on a joint or a member, belong to the
-//!   body: they are shown but not dragged (the body is edited in
-//!   OHL-Structure).
+//! - An attachment point of a typed structure is linked to a joint of its
+//!   type (2026-10-21): dragged, its **offset** from that joint changes
+//!   (the link stays: a rigid link, drawn on its layer); **released on
+//!   another joint** (snapped onto it) it is **relinked** there, at no
+//!   offset. A support joint takes no strings: a point released on one
+//!   keeps its link (the offset changes).
+//! - Joints belong to the body: they are shown but not dragged (the body
+//!   is edited in OHL-Structure).
 
 use ohl_line::{Structure, StructurePoint};
 use ohl_session::{Command, Kind};
@@ -141,6 +146,9 @@ pub struct Drag {
     pub constraint: Constraint,
     /// What it snapped onto (or the grid), in words.
     pub snapped: Option<String>,
+    /// The handle it snapped onto (a joint: the point is relinked there
+    /// when released).
+    pub onto: Option<Handle>,
 }
 
 /// What a drag ended with (taken by the application).
@@ -154,6 +162,8 @@ pub enum Done {
         handle: Handle,
         /// Where to, structure's axes.
         at: [f64; 3],
+        /// The handle it was released on (snapped onto), if any.
+        onto: Option<Handle>,
     },
     /// A handle that is not dragged, or a drag that cannot be made now.
     Refused(String),
@@ -227,29 +237,8 @@ pub fn spots(model: &Model, id: &str) -> Vec<Spot> {
         .structure_type
         .as_deref()
         .and_then(|t| Some((model.types.as_ref()?.0.get(t)?, model.types.as_ref()?)));
-    // Points from the type sitting on the body: not dragged here.
-    let on_body = |label: &str| -> Option<String> {
-        let (t, _) = typed?;
-        // The structure's own point: its own position, free.
-        if model
-            .stored_line()
-            .and_then(|l| l.structure(id))
-            .is_some_and(|x| x.point(label).is_some())
-        {
-            return None;
-        }
-        let p = t.points.iter().find(|p| p.label == label)?;
-        let on = p
-            .node
-            .as_ref()
-            .map(|n| format!("joint {n}"))
-            .or_else(|| p.member.as_ref().map(|m| format!("member {m}")))?;
-        Some(format!(
-            "point {label} sits on {on} of the body of type {}: it moves with the body \
-             (Open this type in OHL-Structure…)",
-            t.id
-        ))
-    };
+    // Every attachment point is dragged: its offset from its joint
+    // changes (or it is relinked to the joint it is released on).
     let mut out: Vec<Spot> = s
         .points
         .iter()
@@ -257,7 +246,7 @@ pub fn spots(model: &Model, id: &str) -> Vec<Spot> {
             handle: Handle::Point(p.label.clone()),
             global: p.position,
             local: local(p.position),
-            fixed: on_body(&p.label),
+            fixed: None,
         })
         .chain(s.wires.iter().map(|w| Spot {
             handle: Handle::Wire(w.label.clone()),
@@ -266,27 +255,23 @@ pub fn spots(model: &Model, id: &str) -> Vec<Spot> {
             fixed: None,
         }))
         .collect();
-    // The joints of the type's body, where its stick drawing is.
-    if let Some((t, (_, insulators))) = typed
-        && let Ok(lift) = t.lift(s.extension.as_deref())
-    {
-        let base = [
-            s.position[0],
-            s.position[1],
-            s.position[2] + s.height_adjust,
-        ];
-        let g = ohl_structure_edit::geometry(t, insulators);
-        for (j, p, _) in g.joints {
-            let global = to_global(base, s.orientation_deg, [p[0], p[1], p[2] + lift]);
+    // The joints of the type (its body's, and those along members where
+    // points sit), where the type is placed; a point released on one is
+    // linked there.
+    if let Some((t, _)) = typed {
+        for j in ohl_line::links::placed_joints(t, s) {
+            if j.joint.source == ohl_structures::JointSource::Point {
+                continue;
+            }
             out.push(Spot {
                 fixed: Some(format!(
-                    "joint {j} is not dragged here: joints are edited in OHL-Structure only \
+                    "joint {} is not dragged here: joints are edited in OHL-Structure only \
                      (part of the body of type {}; Open this type in OHL-Structure…)",
-                    t.id
+                    j.joint.id, t.id
                 )),
-                handle: Handle::Joint(j),
-                local: local(global),
-                global,
+                handle: Handle::Joint(j.joint.id),
+                local: local(j.position),
+                global: j.position,
             });
         }
     }
@@ -377,11 +362,26 @@ pub fn snap(
 /// The command a drag makes: `handle` of structure `id` to `at` (its
 /// axes), with what it does in words. A point or wire point from the
 /// structure's type becomes the structure's own (the words say so).
+#[cfg(test)]
 pub fn command(
     model: &Model,
     id: &str,
     handle: &Handle,
     at: [f64; 3],
+) -> Result<(String, Command), String> {
+    command_onto(model, id, handle, at, None)
+}
+
+/// The command of a drag released on `onto` (snapped onto it): an
+/// attachment point of a typed structure released on a joint its type
+/// lets it be linked to is relinked there (no offset); otherwise a linked
+/// point keeps its joint, its offset the distance from it.
+pub fn command_onto(
+    model: &Model,
+    id: &str,
+    handle: &Handle,
+    at: [f64; 3],
+    onto: Option<&Handle>,
 ) -> Result<(String, Command), String> {
     model.can_edit()?;
     let stored = model
@@ -401,23 +401,62 @@ pub fn command(
     {
         return Err(why);
     }
-    let global = to_global(resolved.position, resolved.orientation_deg, at);
+    let mut global = to_global(resolved.position, resolved.orientation_deg, at);
     let mut own: Vec<String> = Vec::new();
     // What the strings hanging from a dragged point did, in words.
     let mut notes = String::new();
+    // Its link: (joint, offset), the joint released on, in words.
+    let mut link_words = String::new();
     match handle {
         Handle::Point(label) => {
             let r = resolved
                 .point(label)
                 .ok_or_else(|| format!("{id} has no point {label}"))?;
+            // A typed structure's point: linked to the joint it is
+            // released on, else to its own at the new offset.
+            let joints = crate::link_tool::joints(model, id);
+            let link: Option<(String, [f64; 3])> = match onto {
+                Some(Handle::Joint(j)) if joints.iter().any(|x| &x.id == j) => {
+                    let x = joints.iter().find(|x| &x.id == j).expect("found");
+                    global = x.at;
+                    link_words = format!("; relinked to joint {j} (no offset)");
+                    Some((j.clone(), [0.0; 3]))
+                }
+                _ if s.structure_type.is_some() && r.is_linked() => {
+                    let j = r.joint.clone().expect("linked");
+                    match joints.iter().find(|x| x.id == j) {
+                        Some(x) => {
+                            let o =
+                                crate::link_tool::offset(resolved.orientation_deg, x.at, global);
+                            link_words =
+                                format!("; on joint {j}, {}", crate::link_tool::offset_words(o));
+                            Some((j, o))
+                        }
+                        None => None,
+                    }
+                }
+                _ => None,
+            };
+            let (joint, offset) = match link {
+                Some((j, o)) => (Some(j), o),
+                None => (None, [0.0; 3]),
+            };
+            let unlinked = s.structure_type.is_some() && joint.is_none() && !r.is_linked();
             match s.points.iter_mut().find(|p| &p.label == label) {
-                Some(p) => p.position = global,
+                Some(p) => {
+                    p.position = global;
+                    p.joint = joint;
+                    p.offset = offset;
+                    p.unlinked = unlinked;
+                }
                 None if s.structure_type.is_some() => {
                     s.points.push(StructurePoint {
                         label: label.clone(),
                         position: global,
                         description: r.description.clone(),
-                        ..Default::default()
+                        joint,
+                        offset,
+                        unlinked,
                     });
                     own.push(format!("point {label}"));
                 }
@@ -426,7 +465,8 @@ pub fn command(
             let from = r.position;
             let shift = [0, 1, 2].map(|k| global[k] - from[k]);
             let local_from = to_local(resolved.position, resolved.orientation_deg, from);
-            let shift_local = [0, 1, 2].map(|k| at[k] - local_from[k]);
+            let local_to = to_local(resolved.position, resolved.orientation_deg, global);
+            let shift_local = [0, 1, 2].map(|k| local_to[k] - local_from[k]);
             notes = follow(
                 model,
                 id,
@@ -500,8 +540,9 @@ pub fn command(
         }
         Handle::Member(m) => return Err(format!("member {m}: move its joints")),
     }
+    let at = to_local(resolved.position, resolved.orientation_deg, global);
     let mut what = format!(
-        "moved {} of {id} to x {:.3}, y {:.3}, z {:.3} m (in its axes)",
+        "moved {} of {id} to x {:.3}, y {:.3}, z {:.3} m (in its axes){link_words}",
         handle.describe(),
         at[0],
         at[1],
