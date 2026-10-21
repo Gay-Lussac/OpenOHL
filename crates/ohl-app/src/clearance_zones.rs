@@ -687,58 +687,64 @@ impl ZoneWindow {
             Measure::Vertical => crate::dockable::Panel::VerticalClearances,
             Measure::Radial => crate::dockable::Panel::RadialClearances,
         };
-        let window = egui::Window::new(self.title()).default_width(820.0);
+        let window = egui::Window::new(self.title())
+            .default_width(820.0)
+            .default_height(760.0);
         let mut guide = None;
         crate::dockable::show(ctx, panel, self.title(), window, Some(&mut open), |ui| {
-            {
-                {
-                    self.help(ui);
-                    // Run at the top, as in the vegetation panel; out of
-                    // date: said there, Run again beside.
-                    run = self.run_ui(ui);
-                    if let Some(what) = self.out_of_date(model)
-                        && crate::revision::banner(ui, &what, self.running.is_none())
+            // Scrolled: with the distance editors in place a window may be
+            // taller than the screen; it stays closable.
+            egui::ScrollArea::vertical()
+                .id_salt((self.title(), "window"))
+                .show(ui, |ui| {
                     {
-                        run = self.why_not_run().is_none();
+                        self.help(ui);
+                        // Run at the top, as in the vegetation panel; out of
+                        // date: said there, Run again beside.
+                        run = self.run_ui(ui);
+                        if let Some(what) = self.out_of_date(model)
+                            && crate::revision::banner(ui, &what, self.running.is_none())
+                        {
+                            run = self.why_not_run().is_none();
+                        }
+                        // The results right under Run.
+                        guide = guide.or(help::heading(ui, "Results", "clearances-results"));
+                        self.results_help(ui);
+                        if let Some(go) = self.results_ui(ui, model) {
+                            out.go = Some(go);
+                        }
+                        ui.separator();
+                        guide = guide.or(help::heading(
+                            ui,
+                            "Rules and presets",
+                            "clearances-rules-and-presets",
+                        ));
+                        self.plugin_presets_ui(ui, model, presets);
+                        if let Some(chosen) = self.rules_ui(ui, model) {
+                            preset = Some(chosen);
+                        }
+                        ui.separator();
+                        guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
+                        self.wind_ui(ui, model);
+                        ui.separator();
+                        guide = guide.or(help::heading(
+                            ui,
+                            match self.zone.measure {
+                                Measure::Vertical => "Zone",
+                                Measure::Radial => "Distance",
+                            },
+                            "clearances-zone",
+                        ));
+                        self.zone_ui(ui);
+                        ui.separator();
+                        guide = guide.or(help::heading(
+                            ui,
+                            "What is solved",
+                            "clearances-what-is-solved",
+                        ));
+                        self.check_ui(ui, model);
                     }
-                    // The results right under Run.
-                    guide = guide.or(help::heading(ui, "Results", "clearances-results"));
-                    self.results_help(ui);
-                    if let Some(go) = self.results_ui(ui, model) {
-                        out.go = Some(go);
-                    }
-                    ui.separator();
-                    guide = guide.or(help::heading(
-                        ui,
-                        "Rules and presets",
-                        "clearances-rules-and-presets",
-                    ));
-                    self.plugin_presets_ui(ui, model, presets);
-                    if let Some(chosen) = self.rules_ui(ui, model) {
-                        preset = Some(chosen);
-                    }
-                    ui.separator();
-                    guide = guide.or(help::heading(ui, "Wind", "clearances-wind"));
-                    self.wind_ui(ui, model);
-                    ui.separator();
-                    guide = guide.or(help::heading(
-                        ui,
-                        match self.zone.measure {
-                            Measure::Vertical => "Zone",
-                            Measure::Radial => "Distance",
-                        },
-                        "clearances-zone",
-                    ));
-                    self.zone_ui(ui);
-                    ui.separator();
-                    guide = guide.or(help::heading(
-                        ui,
-                        "What is solved",
-                        "clearances-what-is-solved",
-                    ));
-                    self.check_ui(ui, model);
-                }
-            }
+                });
         });
         out.guide = guide;
         self.open = open;

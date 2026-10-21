@@ -159,7 +159,8 @@ fn the_highlights_are_drawn_while_the_panel_is_open() {
     h.run_steps(3);
     assert_eq!(drawn(&mut h).0, n);
     // A colour chosen: the layers' (and the view settings').
-    h.get_by_label("colour of the grow-in points").click();
+    h.get_by_label("colour of the grow-in points")
+        .click_accesskit();
     h.run_steps(2);
     h.get_by_label_contains("Colour of the grow-in points");
     let r = h.state_mut().ready().unwrap();

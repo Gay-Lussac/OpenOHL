@@ -1365,7 +1365,7 @@ impl VegetationWindow {
                      each wire's system.",
                     "A table \"up to kV: distance\" or a base plus an amount per kV checks each \
                      wire with the distance for its own system's nominal voltage (an earthed \
-                     wire: 0 kV). The preview shows it at 0 kV and the project's voltages.",
+                     wire: 0 kV). The line under it gives it at the line's voltages.",
                 );
                 ui.horizontal(|ui| {
                     num(ui, "growth per year g", &mut s.growth_per_year, 0.05, 5.0);

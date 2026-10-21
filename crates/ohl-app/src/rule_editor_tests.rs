@@ -76,39 +76,36 @@ fn the_rule_editor_sets_distances_by_voltage() {
         harness.state_mut().ready().unwrap().rule_editor.rules.len(),
         2
     );
-    // Ground: one distance → a table.
+    // Ground: one distance → a table (the form selector's button; the
+    // Wires rule's is the second).
     harness
-        .query_all_by_value("one distance")
+        .query_all_by_label("Table by voltage")
         .next()
         .unwrap()
         .click();
-    harness.run();
-    harness.get_by_label("table by voltage").click();
     harness.run();
     harness.run();
     assert_eq!(
         rules_of(&file).rules[0].vertical,
         Some(Requirement::ByVoltage(vec![(220.0, 7.0)]))
     );
-    // Its menu: a row added above the line's voltages, the preview.
-    harness.get_by_label("1 row up to 220 kV…").click();
+    // Its rows in place: a row added above the line's voltages, the live
+    // line.
+    harness.get_by_label("voltage up to");
+    harness.get_by_label("+ Add row").click();
     harness.run();
-    harness.run();
-    harness.get_by_label("Add row").click();
-    harness.run();
-    harness.get_by_label("0 kV (earthed): 7.00 m");
-    harness.get_by_label("220 kV: 7.00 m");
+    harness.get_by_label("At 220 kV: 7.00 m");
     harness.run();
     assert_eq!(
         rules_of(&file).rules[0].vertical,
         Some(Requirement::ByVoltage(vec![(220.0, 7.0), (320.0, 7.0)]))
     );
-    harness.key_press(egui::Key::Escape);
-    harness.run();
     // Wires: one distance → base + per kV.
-    harness.get_by_value("one distance").click();
-    harness.run();
-    harness.get_by_label("base + per kV").click();
+    harness
+        .query_all_by_label("Base + per kV")
+        .nth(1)
+        .unwrap()
+        .click_accesskit();
     harness.run();
     harness.run();
     assert_eq!(
@@ -130,11 +127,8 @@ fn the_rule_editor_sets_distances_by_voltage() {
         e.dirty = true;
     }
     harness.run();
-    harness.get_by_label("3 m + 0.01 m/kV above 50 kV…").click();
     harness.run();
-    harness.run();
-    harness.get_by_label("0 kV (earthed): 3.00 m");
-    harness.get_by_label("220 kV: 4.70 m");
+    harness.get_by_label("3 m + 0.01 m/kV above 50 kV — At 220 kV: 4.70 m");
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(text.contains("# The ground: kept as written."), "{text}");
     assert!(text.contains("# phase to phase"), "{text}");
@@ -184,14 +178,12 @@ fn add_a_rule_takes_a_distance_by_voltage() {
     harness.run();
     harness.get_by_label("Vertical clearances…").click();
     harness.run();
-    // The helper's form chooser is the first; the grid's row the second.
+    // The helper's form selector is the first; the grid's row the second.
     harness
-        .query_all_by_value("one distance")
+        .query_all_by_label("Base + per kV")
         .next()
         .unwrap()
         .click();
-    harness.run();
-    harness.get_by_label("base + per kV").click();
     harness.run();
     assert!(
         harness
