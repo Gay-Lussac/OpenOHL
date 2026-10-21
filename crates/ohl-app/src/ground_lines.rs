@@ -24,7 +24,12 @@
 //! classes of the whole corridor (not the points drawn: the ground the
 //! checks use, [`crate::model::Model::ground`]), at every edge of its
 //! triangles crossed, broken where no ground lies under it (the gaps
-//! counted); without either, the heights of the alignment's points,
+//! counted, and a note when the lines go beyond the LiDAR corridor:
+//! [`beyond_note`]); a LiDAR corridor wider than the model's chosen
+//! ([`Settings::lidar_corridor`], at most [`MAX_CORRIDOR`]): a LiDAR
+//! ground of the lines' own, built in the background and kept by width
+//! ([`GroundLines::frame`]) — the model's ground, the checks', is never
+//! changed; without either, the heights of the alignment's points,
 //! every 2 m — and the menu offers to build a terrain surface from the
 //! LiDAR when there is a point cloud ([`Drawn::offer_build`]).
 //!
@@ -87,6 +92,13 @@ pub struct Settings {
     /// Weather cases chosen by name, besides (a name no longer among the
     /// cases is skipped).
     pub cases: BTreeSet<String>,
+    /// The half width of the LiDAR ground the lines are draped on, m from
+    /// the spans' chords (as the model's corridor, `--corridor`); none:
+    /// the model's corridor, its ground. Wider: a ground of its own for
+    /// the lines, built in the background ([`GroundLines::frame`]); the
+    /// model's ground, the checks', is not changed. At most
+    /// [`MAX_CORRIDOR`].
+    pub lidar_corridor: Option<f64>,
 }
 
 impl Default for Settings {
@@ -102,6 +114,7 @@ impl Default for Settings {
             profile: false,
             shown_case: true,
             cases: BTreeSet::new(),
+            lidar_corridor: None,
         }
     }
 }
@@ -118,6 +131,7 @@ impl Settings {
         self.distance.to_bits().hash(h);
         self.from.hash(h);
         self.hidden_routes.hash(h);
+        self.lidar_corridor.map(f64::to_bits).hash(h);
     }
 
     /// The weather cases chosen, by index into `names` (the model's cases
@@ -134,6 +148,26 @@ impl Settings {
     /// The weather cases chosen in `model`, `shown` the case shown.
     pub fn chosen_in(&self, model: &Model, shown: usize) -> Vec<usize> {
         self.chosen(model.cases.iter().map(|c| c.case.name.as_str()), shown)
+    }
+
+    /// The LiDAR corridor of the lines, m: the one chosen (at most
+    /// [`MAX_CORRIDOR`]), else `model`'s.
+    pub fn corridor(&self, model: &Model) -> f64 {
+        self.lidar_corridor
+            .filter(|w| w.is_finite())
+            .map_or(model.sources.corridor, |w| w.clamp(0.0, MAX_CORRIDOR))
+    }
+
+    /// The half width of a LiDAR ground of the lines' own, m: when the
+    /// lines lie on the LiDAR ground of `model` (no terrain surface) and
+    /// the corridor chosen is wider than the model's; none: the model's
+    /// ground.
+    pub fn wider(&self, model: &Model) -> Option<f64> {
+        let w = self.corridor(model);
+        (matches!(Ground::of(model), Ground::Lidar(_))
+            && model.cloud.is_some()
+            && w > model.sources.corridor)
+            .then_some(w)
     }
 }
 
@@ -179,6 +213,17 @@ pub const DEFAULT_DISTANCE: f64 = 10.0;
 
 /// The largest distance accepted, m.
 pub const MAX_DISTANCE: f64 = 2000.0;
+
+/// The widest LiDAR corridor of the lines, m from the spans' chords.
+/// Measured on synthetic clouds of 5.2 and 11.8 million points along
+/// 1.9 km of spans (`wide_corridor_timings`, release build): 60 m, 0.24
+/// million 1 m cells, 0.6–0.7 s; 120 m, 0.49 million, 1.6–1.7 s, about
+/// 105–140 MB; 200 m, 0.77 million, 1.8–2.1 s, about 175–190 MB (some
+/// 230 bytes per cell). The ground's memory grows with the width and the
+/// line's length (at 200 m about 90 MB per km, 3.3 times the model's
+/// ground at 60 m), while a line's corridor survey rarely holds ground
+/// points farther out.
+pub const MAX_CORRIDOR: f64 = 200.0;
 
 /// The colours offered.
 pub const COLORS: [[u8; 3]; 6] = [
@@ -319,6 +364,9 @@ pub struct Drawn {
     /// points are farther apart than the ground's longest triangle side):
     /// the lines are broken there.
     pub gaps: usize,
+    /// The half width of the LiDAR ground the lines lie on, m from the
+    /// spans' chords (none: not on the LiDAR ground).
+    pub corridor: Option<f64>,
     /// Neither a terrain surface nor the LiDAR ground lies under the
     /// lines, and the model has a point cloud: why, in words — the menu
     /// offers to build a terrain surface from the LiDAR.
@@ -347,6 +395,62 @@ enum OtherState {
     Done(Arc<Solved>),
 }
 
+/// A LiDAR ground of the lines' own, wider than the model's.
+#[derive(Debug)]
+struct Wide {
+    /// Its half width, m.
+    width: f64,
+    /// What it is built from ([`wide_source`]).
+    source: u64,
+    /// Building, or built.
+    state: WideState,
+}
+
+type WideAnswer = Result<Option<Terrain>, String>;
+
+#[derive(Debug)]
+enum WideState {
+    Building(std::sync::mpsc::Receiver<WideAnswer>),
+    /// Built (none: no ground point in it), or why not.
+    Done(Result<Option<Arc<Terrain>>, String>),
+}
+
+/// The wider LiDAR ground of the lines, this frame.
+enum WideNow {
+    /// None wanted: the model's ground.
+    Off,
+    /// Being built.
+    Building(f64),
+    /// Built.
+    Ready(Arc<Terrain>, f64),
+    /// Not built: why.
+    Failed(f64, String),
+}
+
+/// What a wider LiDAR ground of the lines is built from: the point cloud,
+/// its ground classes and their points' revision, the model's ground (built
+/// again after a change of its points), the chords of the spans.
+fn wide_source(model: &Model) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    model.cloud.hash(&mut h);
+    model.scheme.codes_with_role("ground").hash(&mut h);
+    model.revisions.ground_points.hash(&mut h);
+    model
+        .ground
+        .as_ref()
+        .map(|g| Arc::as_ptr(g) as usize)
+        .hash(&mut h);
+    for c in chords(&model.line) {
+        for p in c {
+            p.map(f64::to_bits).hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+/// Wider LiDAR grounds kept (by width; each a TIN of the corridor).
+const WIDE_KEPT: usize = 2;
+
 /// The lines drawn: kept per set of weather cases (a few), made again
 /// when what they come from changes.
 #[derive(Debug, Default)]
@@ -362,6 +466,11 @@ pub struct GroundLines {
     /// The other wind sides of the windy cases chosen (those the model
     /// does not hold).
     others: Vec<Other>,
+    /// The wider LiDAR grounds of the lines, newest last (never the
+    /// model's ground: the checks keep theirs).
+    wide: Vec<Wide>,
+    /// How many wider LiDAR grounds were built (tests).
+    pub wide_built: u64,
 }
 
 /// Sets of weather cases kept.
@@ -399,7 +508,19 @@ impl GroundLines {
                 OtherState::Solving(_) => None,
             })
             .collect();
-        let key = key(model, &chosen, &others, settings);
+        let wide = self.wide_ground(model, settings, ctx);
+        let mut key = key(model, &chosen, &others, settings);
+        {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            key.hash(&mut h);
+            match &wide {
+                WideNow::Off => 0u8.hash(&mut h),
+                WideNow::Building(w) => (1u8, w.to_bits()).hash(&mut h),
+                WideNow::Ready(g, w) => (2u8, Arc::as_ptr(g) as usize, w.to_bits()).hash(&mut h),
+                WideNow::Failed(w, e) => (3u8, w.to_bits(), e).hash(&mut h),
+            }
+            key = h.finish();
+        }
         let drawn = match self.cache.iter().position(|(k, _)| *k == key) {
             Some(i) => {
                 let entry = self.cache.remove(i);
@@ -408,7 +529,23 @@ impl GroundLines {
                 d
             }
             None => {
-                let mut d = compute(model, &chosen, &others, settings);
+                let on = match &wide {
+                    WideNow::Ready(g, w) => Some((&**g, *w)),
+                    _ => None,
+                };
+                let mut d = compute_on(model, &chosen, &others, settings, on);
+                let mc = model.sources.corridor;
+                match &wide {
+                    WideNow::Building(w) => d.notes.push(format!(
+                        "the LiDAR ground within {w:.0} m of the spans is being built (until \
+                         then the lines lie on the model's, ±{mc:.0} m)"
+                    )),
+                    WideNow::Failed(w, e) => d.notes.push(format!(
+                        "the LiDAR ground within {w:.0} m of the spans not built: {e} (the \
+                         lines lie on the model's, ±{mc:.0} m)"
+                    )),
+                    _ => {}
+                }
                 for o in &self.others {
                     if matches!(o.state, OtherState::Solving(_)) {
                         d.notes.push(format!(
@@ -494,6 +631,113 @@ impl GroundLines {
                 }
             }
         }
+    }
+
+    /// The wider LiDAR ground `settings` ask for in `model`
+    /// ([`Settings::wider`]): kept when built from the same, else built —
+    /// in the background with `ctx` (one at a time; `ctx` repainted when
+    /// done), else now. Those built from another cloud, ground or line
+    /// dropped; [`WIDE_KEPT`] kept.
+    fn wide_ground(
+        &mut self,
+        model: &Model,
+        settings: &Settings,
+        ctx: Option<&egui::Context>,
+    ) -> WideNow {
+        for w in &mut self.wide {
+            if let WideState::Building(rx) = &w.state {
+                match rx.try_recv() {
+                    Ok(r) => w.state = WideState::Done(r.map(|g| g.map(Arc::new))),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        w.state = WideState::Done(Err("the build stopped".into()));
+                    }
+                }
+            }
+        }
+        let Some(width) = settings.wider(model) else {
+            return WideNow::Off;
+        };
+        let source = wide_source(model);
+        // Built from another cloud, ground or line: of no use (one being
+        // built is left to finish, then dropped).
+        self.wide
+            .retain(|w| w.source == source || matches!(w.state, WideState::Building(_)));
+        let building = self
+            .wide
+            .iter()
+            .any(|w| matches!(w.state, WideState::Building(_)));
+        if let Some(i) = self
+            .wide
+            .iter()
+            .position(|w| w.source == source && w.width == width)
+        {
+            // Newest last.
+            let w = self.wide.remove(i);
+            let now = match &w.state {
+                WideState::Building(_) => WideNow::Building(width),
+                WideState::Done(Ok(Some(g))) => WideNow::Ready(g.clone(), width),
+                WideState::Done(Ok(None)) => {
+                    WideNow::Failed(width, "no point of the ground classes in it".into())
+                }
+                WideState::Done(Err(e)) => WideNow::Failed(width, e.clone()),
+            };
+            self.wide.push(w);
+            return now;
+        }
+        if building {
+            // The next once the one under way is done.
+            return WideNow::Building(width);
+        }
+        let (Some(spec), classes) = (model.cloud.clone(), model.scheme.codes_with_role("ground"))
+        else {
+            return WideNow::Off;
+        };
+        let line = model.line.clone();
+        self.wide_built += 1;
+        let state = match ctx {
+            Some(ctx) => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(crate::lidar_edit::lidar_ground(
+                        &spec, &classes, &line, width,
+                    ));
+                    ctx.request_repaint();
+                });
+                WideState::Building(rx)
+            }
+            None => WideState::Done(
+                crate::lidar_edit::lidar_ground(&spec, &classes, &line, width)
+                    .map(|g| g.map(Arc::new)),
+            ),
+        };
+        self.wide.push(Wide {
+            width,
+            source,
+            state,
+        });
+        // The oldest built dropped beyond those kept.
+        while self.wide.len() > WIDE_KEPT {
+            let Some(i) = self
+                .wide
+                .iter()
+                .position(|w| !matches!(w.state, WideState::Building(_)))
+            else {
+                break;
+            };
+            self.wide.remove(i);
+        }
+        // Built now: taken at once.
+        self.wide_ground(model, settings, None)
+    }
+
+    /// Whether a wider LiDAR ground is being built (tests).
+    #[cfg(test)]
+    pub fn building(&self) -> bool {
+        self.wide
+            .iter()
+            .any(|w| matches!(w.state, WideState::Building(_)))
     }
 
     /// Whether an other wind side is still being solved (tests).
@@ -588,25 +832,55 @@ pub fn solutions<'a>(
     (out, notes)
 }
 
-/// The lines of the weather cases `chosen` (indices into the model's
-/// cases; `others`: the other wind side of windy ones the model does not
-/// hold, solved by [`GroundLines::frame`]): for each alignment of the routes drawn,
-/// its two sides, draped on the ground — from the outermost conductor,
-/// the plan envelope over every solution.
+/// [`compute_on`] on the model's ground (tests).
+#[cfg(test)]
 pub fn compute(
     model: &Model,
     chosen: &[usize],
     others: &[(usize, Arc<Solved>)],
     settings: &Settings,
 ) -> Drawn {
+    compute_on(model, chosen, others, settings, None)
+}
+
+/// The lines of the weather cases `chosen` (indices into the model's
+/// cases; `others`: the other wind side of windy ones the model does not
+/// hold, solved by [`GroundLines::frame`]): for each alignment of the
+/// routes drawn, its two sides, draped on the ground — from the
+/// outermost conductor, the plan envelope over every solution. The
+/// ground: `wide` when given (a LiDAR ground of the lines' own and its
+/// half width, m), else the model's.
+pub fn compute_on(
+    model: &Model,
+    chosen: &[usize],
+    others: &[(usize, Arc<Solved>)],
+    settings: &Settings,
+    wide: Option<(&Terrain, f64)>,
+) -> Drawn {
     let line = &model.line;
+    let (ground, corridor) = match wide {
+        Some((g, w)) => (Some(g), Some(w)),
+        None => {
+            let ground = Ground::of(model);
+            let w = matches!(ground, Ground::Lidar(_)).then_some(model.sources.corridor);
+            (model.ground.as_deref(), w)
+        }
+    };
     let mut out = Drawn {
         lines: Vec::new(),
-        ground: Ground::of(model),
+        ground: match wide {
+            Some((g, _)) => Ground::Lidar(g.points().len()),
+            None => Ground::of(model),
+        },
         gaps: 0,
+        corridor,
         offer_build: None,
         notes: Vec::new(),
     };
+    // The LiDAR ground's corridor, and how far beyond it the lines go
+    // (m from the spans' chords).
+    let reach = corridor.map(|w| (ohl_lidar::Corridor::along_spans(line, w), chords(line)));
+    let mut farthest: f64 = 0.0;
     // Some line made in plan (to drape).
     let mut planned = false;
     let d = settings.distance.clamp(0.0, MAX_DISTANCE);
@@ -649,7 +923,12 @@ pub fn compute(
             let mut runs = Vec::new();
             for piece in offset_side(&chain, d, side) {
                 let piece = without_loops(&piece);
-                let (draped, gaps) = drape_counted(&piece, model.ground.as_deref(), &axis);
+                if let Some((c, chords)) = &reach {
+                    for p in piece.iter().filter(|p| !c.contains(p[0], p[1])) {
+                        farthest = farthest.max(beyond(chords, *p));
+                    }
+                }
+                let (draped, gaps) = drape_counted(&piece, ground, &axis);
                 runs.extend(draped);
                 out.gaps += gaps;
                 planned = true;
@@ -692,7 +971,65 @@ pub fn compute(
         )),
         _ => {}
     }
+    if let Some(w) = corridor
+        && farthest > 0.0
+    {
+        out.notes.push(beyond_note(w, farthest));
+    }
     out
+}
+
+/// The chords of the line's spans in plan, as the LiDAR corridor is
+/// built round them ([`ohl_lidar::Corridor::along_spans`]).
+fn chords(line: &ohl_line::Line) -> Vec<Seg> {
+    line.sections
+        .iter()
+        .flat_map(|s| {
+            let points: Vec<[f64; 2]> = s
+                .points
+                .iter()
+                .filter_map(|p| line.wire_point(p))
+                .map(|w| [w.position[0], w.position[1]])
+                .collect();
+            points.windows(2).map(|w| [w[0], w[1]]).collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// How far `p` lies from the nearest chord, m.
+fn beyond(chords: &[Seg], p: [f64; 2]) -> f64 {
+    chords
+        .iter()
+        .map(|s| ohl_core::geometry::distance_to_segment(p, s[0], s[1]))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The corridor that covers lines reaching `farthest` m from the spans:
+/// 2 m more (the ground's last 1 m cells), up to the next 5 m.
+pub fn corridor_for(farthest: f64) -> f64 {
+    ((farthest + 2.0) / 5.0).ceil() * 5.0
+}
+
+/// What the menu says when the lines reach `farthest` m from the spans,
+/// beyond the LiDAR corridor of half width `w`.
+pub fn beyond_note(w: f64, farthest: f64) -> String {
+    let needed = corridor_for(farthest);
+    if w >= MAX_CORRIDOR {
+        format!(
+            "lines beyond the LiDAR corridor (±{w:.0} m, the widest) are broken: they reach \
+             {farthest:.0} m from the spans"
+        )
+    } else if needed <= MAX_CORRIDOR {
+        format!(
+            "lines beyond the LiDAR corridor (±{w:.0} m) are broken; widen the corridor to \
+             {needed:.0} m (up to {MAX_CORRIDOR:.0} m)"
+        )
+    } else {
+        format!(
+            "lines beyond the LiDAR corridor (±{w:.0} m) are broken; widen the corridor (up to \
+             {MAX_CORRIDOR:.0} m): they reach {farthest:.0} m from the spans, beyond the widest"
+        )
+    }
 }
 
 /// A segment in plan.
@@ -1347,16 +1684,18 @@ pub fn along(drawn: &Drawn, alignment: &str, at: f64) -> Vec<(Side, Vec<Vec<[f64
 }
 
 /// The menu (View › Lines on the ground beside the line), `cases` the
-/// weather cases' names, `shown` the case shown: whether the settings
-/// changed. `build` set when **Build a terrain surface from the LiDAR…**
+/// weather cases' names, `shown` the case shown, `model_corridor` the
+/// model's LiDAR corridor (m): whether the settings changed. `build` set when **Build a terrain surface from the LiDAR…**
 /// is clicked (offered when neither a surface nor the LiDAR ground lies
 /// under the lines and there is a point cloud, [`Drawn::offer_build`]).
+#[allow(clippy::too_many_arguments)]
 pub fn menu(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     routes: &[String],
     cases: &[String],
     shown: usize,
+    model_corridor: f64,
     drawn: Option<&Drawn>,
     build: &mut bool,
 ) -> bool {
@@ -1380,6 +1719,7 @@ pub fn menu(
                 .suffix(" m"),
         );
     });
+    corridor_field(ui, settings, model_corridor, drawn);
     ui.label(egui::RichText::new("Measured from").small().weak());
     ui.radio_value(
         &mut settings.from,
@@ -1450,15 +1790,19 @@ pub fn menu(
     if settings.on
         && let Some(d) = drawn
     {
+        let within = d
+            .corridor
+            .map_or(String::new(), |w| format!(" within ±{w:.0} m"));
         ui.label(
-            egui::RichText::new(format!("Ground: {}", d.ground.label()))
+            egui::RichText::new(format!("Ground: {}{within}", d.ground.label()))
                 .small()
                 .weak(),
         )
         .on_hover_text(
             "The active terrain surface, else the ground built from the LiDAR ground classes \
-             of the whole corridor (the lowest point of each 1 m cell, as the checks use it), \
-             else the heights of the alignment's points",
+             of the whole LiDAR corridor (the lowest point of each 1 m cell, as the checks use \
+             it; a wider corridor chosen here: a ground of the lines' own, the checks keep the \
+             model's), else the heights of the alignment's points",
         );
         for n in &d.notes {
             ui.label(egui::RichText::new(n).small().weak());
@@ -1485,6 +1829,63 @@ pub fn menu(
     }
     *settings != before
 }
+
+/// The LiDAR corridor of the lines: from the model's (`model_corridor`,
+/// none chosen) to [`MAX_CORRIDOR`]; only of use on the LiDAR ground.
+fn corridor_field(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    model_corridor: f64,
+    drawn: Option<&Drawn>,
+) {
+    let lo = model_corridor.clamp(0.0, MAX_CORRIDOR);
+    let mut w = settings
+        .lidar_corridor
+        .filter(|w| w.is_finite())
+        .map_or(model_corridor, |w| w.clamp(0.0, MAX_CORRIDOR))
+        .max(lo);
+    let on_tin = drawn.is_some_and(|d| matches!(d.ground, Ground::Surface(_)));
+    ui.horizontal(|ui| {
+        ui.label("LiDAR corridor ±");
+        let r = ui
+            .add_enabled(
+                !on_tin,
+                egui::DragValue::new(&mut w)
+                    .range(lo..=MAX_CORRIDOR)
+                    .speed(1.0)
+                    .max_decimals(0)
+                    .suffix(" m"),
+            )
+            .on_hover_text(CORRIDOR_HOVER)
+            .on_disabled_hover_text(
+                "The lines lie on the terrain surface: the LiDAR corridor is of no use to them",
+            );
+        if r.changed() {
+            settings.lidar_corridor = (w > model_corridor).then_some(w);
+        }
+        if settings.lidar_corridor.is_some()
+            && ui
+                .small_button("Model's")
+                .on_hover_text(format!(
+                    "The model's LiDAR corridor (±{model_corridor:.0} m) and its ground"
+                ))
+                .clicked()
+        {
+            settings.lidar_corridor = None;
+        }
+    });
+}
+
+/// The hover text of the LiDAR corridor field.
+pub const CORRIDOR_HOVER: &str = "Half width of the LiDAR ground the lines are draped on, m from \
+    the spans' chords (as the model's corridor). By default the model's (60 m unless set \
+    otherwise): its ground, nothing more read. Wider: a ground of the lines' own is built in \
+    the background from the ground classes of the whole cloud (kept per width); the checks keep \
+    the model's ground, their results do not change. At most 200 m: the ground's memory grows \
+    with the width — at 200 m about 0.4 million 1 m cells and 90 MB per km of line, 3.3 times \
+    the model's ground at 60 m, about a second per km to build (measured on synthetic clouds \
+    of 5 and 12 million points) — while a line's corridor survey rarely holds ground points \
+    farther out.";
 
 /// The weather cases measured from (ticks): All, None, the case shown,
 /// then each case by name.

@@ -7428,6 +7428,7 @@ fn menus(
                 &routes,
                 &cases,
                 r.case,
+                r.model.sources.corridor,
                 r.ground_lines.drawn.as_deref(),
                 &mut build,
             );
