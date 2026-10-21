@@ -18,6 +18,9 @@
 
 [[case]]
 id = "safetyvolume-001"
+# The mesh takes seconds in a debug build (10⁵ triangles before simplifying):
+# more time than the default 10 s on a loaded machine; the values are unchanged.
+max_seconds = 120.0
 title = "A straight wire in still air: a closed mesh holding the capsule"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
@@ -28,6 +31,9 @@ expected.volume_ratio = { value = 1.0174, abs_tol = 0.0174 }
 
 [[case]]
 id = "safetyvolume-002"
+# The mesh takes seconds in a debug build (10⁵ triangles before simplifying):
+# more time than the default 10 s on a loaded machine; the values are unchanged.
+max_seconds = 120.0
 title = "A swing arc of plus or minus 40 degrees: the reach to the side and below at mid-span"
 calculation = "safety_volume.mesh"
 reference = "Hand calculation (this file)"
