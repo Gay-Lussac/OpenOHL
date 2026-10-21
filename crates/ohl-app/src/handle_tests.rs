@@ -356,10 +356,10 @@ fn a_point_of_the_type_dragged_becomes_the_structures_own() {
 }
 
 /// The commands themselves: a wire point of a type moves with its string
-/// window's strings and wire points, made the structure's own; the body
-/// (a point on a joint, a joint) is refused with the reason; without a
-/// structure screen open there is no target; the snapping and the
-/// constraints.
+/// window's strings and wire points, made the structure's own; a joint
+/// (the body) is refused with the reason, a point on a joint is dragged
+/// (its offset changes: `link_tests`); without a structure screen open
+/// there is no target; the snapping and the constraints.
 #[test]
 fn wire_points_override_their_strings_and_the_body_is_not_dragged() {
     let m = typed_project("handles-commands");
@@ -400,9 +400,11 @@ fn wire_points_override_their_strings_and_the_body_is_not_dragged() {
         .iter()
         .find(|x| x.handle == Handle::Point("A1".into()))
         .unwrap();
-    assert!(a1.fixed.as_ref().unwrap().contains("sits on joint A1"));
-    let e = crate::handles::command(&m, "T2", &a1.handle, [0.0, 0.0, 40.0]).unwrap_err();
-    assert!(e.contains("moves with the body"), "{e}");
+    assert_eq!(a1.fixed, None, "a point on a joint: its offset changes");
+    let (what, _) = crate::handles::command(&m, "T2", &a1.handle, [0.0, 0.0, 40.0]).unwrap();
+    assert!(what.contains("on joint A1"), "{what}");
+    let e = crate::handles::command(&m, "T2", &joint.handle, [0.0, 0.0, 40.0]).unwrap_err();
+    assert!(e.contains("OHL-Structure"), "{e}");
     // Each spot where the line has it.
     let t2 = m.line.structure("T2").unwrap();
     assert_eq!(a1.global, t2.point("A1").unwrap().position);

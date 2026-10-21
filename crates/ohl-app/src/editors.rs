@@ -279,6 +279,10 @@ pub struct StringForm {
     pub overrides_type: bool,
     /// Why the last change asked for was not made (shown in the window).
     pub note: Option<String>,
+    /// A typed structure's new points: the attach joint each is linked to
+    /// (its id, and where it is in the structure's axes) — only attach
+    /// joints are offered ([`crate::link_tool::attach_joints`]).
+    pub joints: std::collections::BTreeMap<String, (String, [f64; 3])>,
 }
 
 /// A section being added or changed./// A section being added or changed.
@@ -1615,6 +1619,7 @@ impl StringForm {
             opened: (Vec::new(), Vec::new()),
             overrides_type: false,
             note: None,
+            joints: Default::default(),
         };
         form.preset(Preset::I, top, model);
         Some(form)
@@ -1754,6 +1759,7 @@ impl StringForm {
             strings,
             overrides_type,
             note: None,
+            joints: Default::default(),
         })
     }
 
@@ -2369,12 +2375,30 @@ impl StringForm {
             if same && s.point(&p.label).is_none() {
                 continue;
             }
+            // A new point of a typed structure: linked to the attach joint
+            // chosen, its distance from it the offset.
+            let (joint, offset) = match self.joints.get(&p.label) {
+                Some((j, at)) if s.structure_type.is_some() => (
+                    Some(j.clone()),
+                    [0, 1, 2].map(|k| {
+                        let v = p.at[k] - at[k];
+                        if v.abs() < ohl_structures::SAME_JOINT {
+                            0.0
+                        } else {
+                            v
+                        }
+                    }),
+                ),
+                _ => (None, [0.0; 3]),
+            };
             s.points.retain(|q| q.label != p.label);
             s.points.push(StructurePoint {
                 description: p.description.clone(),
                 label: p.label.clone(),
                 position,
-                ..Default::default()
+                joint,
+                offset,
+                unlinked: false,
             });
         }
         let (strings, wires) = &self.opened;
@@ -4217,13 +4241,59 @@ fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) -> bool {
                  ahead, along: ahead, up: from the base).",
             );
             let mut drop = None;
+            // A typed structure: each new point on one of its type's attach
+            // joints (only those are offered), at an offset from it.
+            let attach = crate::link_tool::attach_joints(model, &f.structure);
             for &k in &new_points {
                 let p = &mut f.points[k];
+                if !attach.is_empty() && !f.joints.contains_key(&p.label) {
+                    // The nearest attach joint, the distance kept as the
+                    // offset (shown: change it here).
+                    if let Some(j) = attach.iter().min_by(|a, b| {
+                        let d = |q: &[f64; 3]| (0..3).map(|i| (q[i] - p.at[i]).powi(2)).sum::<f64>();
+                        d(&a.1).total_cmp(&d(&b.1))
+                    }) {
+                        f.joints.insert(p.label.clone(), j.clone());
+                    }
+                }
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut p.label).desired_width(90.0));
+                    if !attach.is_empty() {
+                        let mut chosen = f.joints.get(&p.label).map(|j| j.0.clone()).unwrap_or_default();
+                        egui::ComboBox::from_id_salt(("new-point-joint", k))
+                            .selected_text(format!("on {chosen}"))
+                            .width(90.0)
+                            .show_ui(ui, |ui| {
+                                for (j, _) in &attach {
+                                    ui.selectable_value(&mut chosen, j.clone(), j);
+                                }
+                            })
+                            .response
+                            .on_hover_text(
+                                "The attach joint of the structure's type it is linked to (only \
+                                 attach joints take strings); chosen, the point is put on it",
+                            );
+                        if f.joints.get(&p.label).map(|j| &j.0) != Some(&chosen)
+                            && let Some(j) = attach.iter().find(|j| j.0 == chosen)
+                        {
+                            p.at = j.1;
+                            f.joints.insert(p.label.clone(), j.clone());
+                        }
+                    }
                     for (i, name) in ["across", "along", "up"].iter().enumerate() {
                         ui.label(*name);
                         value(ui, &mut p.at[i], 0.05, " m");
+                    }
+                    if let Some((_, at)) = f.joints.get(&p.label) {
+                        let o = [0, 1, 2].map(|i| p.at[i] - at[i]);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "offset {:.3} m",
+                                (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()
+                            ))
+                            .small(),
+                        )
+                        .on_hover_text(crate::link_tool::offset_words(o));
                     }
                     ui.add(
                         egui::TextEdit::singleline(&mut p.description)

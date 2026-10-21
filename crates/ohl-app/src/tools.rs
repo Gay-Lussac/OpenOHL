@@ -51,12 +51,16 @@ pub enum Tool {
     /// Right-click a structure: another structure type in its place, its
     /// wires rewired ([`crate::replace`]).
     Replace,
+    /// Right-click an attachment point, then a joint of its structure's
+    /// type: the point linked to it where it is, the distance kept as its
+    /// offset (a rigid link) — [`crate::link_tool`].
+    Link,
 }
 
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Tools menu list them in this order.
-    pub const ALL: [Tool; 14] = [
+    pub const ALL: [Tool; 15] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -67,6 +71,7 @@ impl Tool {
         Tool::AddStructure,
         Tool::Move,
         Tool::Replace,
+        Tool::Link,
         Tool::AddString,
         Tool::StringWire,
         Tool::AddJumper,
@@ -78,7 +83,9 @@ impl Tool {
         match self {
             Tool::Select | Tool::Edit | Tool::Delete | Tool::GoTo => "General",
             Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment => "Alignments",
-            Tool::AddStructure | Tool::Move | Tool::Replace | Tool::AddString => "Structures",
+            Tool::AddStructure | Tool::Move | Tool::Replace | Tool::Link | Tool::AddString => {
+                "Structures"
+            }
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
         }
     }
@@ -100,6 +107,7 @@ impl Tool {
             Tool::AddJumper => "Add jumper",
             Tool::OnSpan => "Add on span",
             Tool::Replace => "Replace structure",
+            Tool::Link => "Link attachment point",
         }
     }
 
@@ -123,6 +131,7 @@ impl Tool {
             Tool::AddJumper => "Ψ",
             Tool::OnSpan => "◎",
             Tool::Replace => "⬌",
+            Tool::Link => "🔗",
         }
     }
 
@@ -172,6 +181,9 @@ impl Tool {
             Tool::Replace => {
                 "right-click a structure: choose another structure type for its place; matching wire points are rewired, the others you map (or they are removed, after a list)"
             }
+            Tool::Link => {
+                "right-click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
+            }
         }
     }
 
@@ -192,7 +204,7 @@ impl Tool {
     /// Structure points and wire points can be right-clicked while it is
     /// held.
     pub fn picks_points(self) -> bool {
-        self == Tool::AddString
+        matches!(self, Tool::AddString | Tool::Link)
     }
 
     /// Jumpers (their points) can be right-clicked while it is held.
@@ -242,6 +254,7 @@ impl Tool {
             Tool::AddJumper => "add_jumper",
             Tool::OnSpan => "on_span",
             Tool::Replace => "replace",
+            Tool::Link => "link",
         }
     }
 }

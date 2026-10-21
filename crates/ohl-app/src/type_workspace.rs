@@ -16,6 +16,17 @@
 //! to a joint); strings come from presets. Every change is made in the
 //! file as edited (the library page saves it, and every structure of the
 //! type follows).
+//!
+//! **Attachment points and their joints** (2026-10-21): each attachment
+//! point is linked to a joint of the type, at an optional offset (a rigid
+//! link, drawn as a magenta rod; Show › rigid links). The Attachment
+//! points table gives its joint (chosen among the joints it may be linked
+//! to), its offset and its length; dragging a linked point changes its
+//! offset, releasing it on another joint relinks it there. The **Link**
+//! tool (its button, or the hotbar's Link tool held): click a point, then
+//! a ringed joint — the point is linked there where it is; a right-click
+//! or Escape cancels. A row's menu unlinks a point (it keeps its place as
+//! a joint of its own).
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -110,6 +121,20 @@ pub struct Workspace {
     /// Its own **Edit in the structure application…** button (a structure
     /// without a file has its own: make it a file first).
     pub app_button: bool,
+    /// The Link tool: held (`Some`), with the point chosen (`Some(Some)`).
+    pub link: Option<Option<String>>,
+    /// The hotbar holds the Link tool (set by the application each frame):
+    /// the screen's Link tool is held too.
+    pub link_held: bool,
+    /// The rigid links drawn.
+    pub rigid_links: bool,
+    /// The joint under the pointer with the Link tool and a point chosen.
+    pub link_hover: Option<String>,
+    /// Where the view was drawn last and its camera (tests).
+    #[cfg_attr(not(test), allow(dead_code))]
+    last: Option<(egui::Rect, Camera)>,
+    /// [`Workspace::link_held`] in the last frame.
+    held_before: bool,
 }
 
 impl Default for Workspace {
@@ -133,6 +158,12 @@ impl Default for Workspace {
             ahead: 0.0,
             request: None,
             app_button: true,
+            link: None,
+            link_held: false,
+            rigid_links: true,
+            link_hover: None,
+            last: None,
+            held_before: false,
         }
     }
 }
@@ -144,6 +175,8 @@ const STRING: [u8; 4] = [120, 180, 255, 255];
 const POINT: [u8; 4] = [255, 150, 60, 255];
 const WIRE: [u8; 4] = [90, 200, 255, 255];
 const PICKED: [u8; 4] = [255, 235, 60, 255];
+/// An attach joint (strings hang here).
+const ATTACH: [u8; 4] = [255, 170, 40, 255];
 
 impl Workspace {
     /// Reads the file as edited again when it changed (what is drawn
@@ -168,6 +201,14 @@ impl Workspace {
     /// The type as last read.
     pub fn shown(&self) -> Option<&StructureType> {
         self.shown.as_ref()
+    }
+
+    /// Where `p` (the type's axes) was drawn in its view last (tests).
+    #[cfg(test)]
+    pub fn screen_of(&self, p: [f64; 3]) -> Option<egui::Pos2> {
+        let (rect, camera) = self.last?;
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        camera.projector(size)(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
     }
 
     fn scene(&self, g: &Geometry, foot: f64) -> Scene {
@@ -217,9 +258,21 @@ impl Workspace {
         for (_, a, b) in &g.strings {
             s.polyline(&[*a, *b], STRING, 2.5);
         }
+        // The rigid links: solid rods from the joints to the points.
+        if self.rigid_links {
+            for l in &g.links {
+                let c = if picked(Handle::Point(l.label.clone())) {
+                    PICKED
+                } else {
+                    crate::link_tool::RIGID
+                };
+                s.polyline(&[l.from, l.to], c, 4.0);
+            }
+        }
         for (id, p, support) in &g.joints {
             let (c, size) = match (picked(Handle::Joint(id.clone())), support) {
                 (true, _) => (PICKED, 11.0),
+                _ if g.attach.contains(id) => (ATTACH, 8.0),
                 (false, true) => ([110, 220, 120, 255], 9.0),
                 (false, false) => (STEEL, 6.0),
             };
@@ -431,6 +484,37 @@ impl Workspace {
                 }
             }
             ui.separator();
+            let mut held = self.link.is_some() || self.link_held;
+            if ui
+                .toggle_value(&mut held, "Link")
+                .on_hover_text(
+                    "The Link tool: click an attachment point, then a ringed joint to link it \
+                     there where it is (its distance kept as the offset); right-click or \
+                     Escape: cancel",
+                )
+                .changed()
+            {
+                self.link = held.then_some(None);
+                self.message = Some((
+                    if held {
+                        "Link: click an attachment point, then the joint to link it to".into()
+                    } else {
+                        "Link tool let go".into()
+                    },
+                    false,
+                ));
+            }
+            if ui
+                .checkbox(&mut self.rigid_links, "rigid links")
+                .on_hover_text(
+                    "The rigid links drawn: from a joint to an attachment point at an offset \
+                     (magenta; none at zero offset)",
+                )
+                .changed()
+            {
+                self.dirty = true;
+            }
+            ui.separator();
             if ui
                 .add_enabled(self.selected.len() == 1, egui::Button::new("Delete…"))
                 .on_hover_text("Delete what is picked, with what goes with it (asks first)")
@@ -551,8 +635,119 @@ impl Workspace {
             members: Vec::new(),
             ..g.clone()
         };
+        // The Link tool (its button, or the hotbar's held): a click on a
+        // point chooses it, then a click on a ringed joint links it there;
+        // a right-click or Escape cancels.
+        if self.link_held != self.held_before {
+            // The hotbar took the Link tool, or let go of it.
+            self.link = self.link_held.then_some(None);
+            self.held_before = self.link_held;
+        }
+        let linkable: Vec<(String, [f64; 3], bool)> = t
+            .linkable_joints()
+            .into_iter()
+            .map(|j| {
+                let attach = j.kind == Some(ohl_structures::JointKind::Attach);
+                (j.id, j.position, attach)
+            })
+            .collect();
+        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3])> {
+            linkable
+                .iter()
+                .filter_map(|(id, p, _)| {
+                    let q = project(*p)?;
+                    let d = (q[0] - at[0]).hypot(q[1] - at[1]);
+                    (d <= 12.0).then_some((d, id.clone(), *p))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, id, p)| (id, p))
+        };
+        let chosen = self.link.clone().flatten();
+        let hover = response
+            .hover_pos()
+            .filter(|_| chosen.is_some())
+            .and_then(|p| joint_at(local(p)));
+        self.link_hover = hover.as_ref().map(|h| h.0.clone());
+        if self.link.is_some() {
+            let escape = response.hovered()
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            if response.secondary_clicked() || escape {
+                if chosen.is_some() {
+                    self.link = Some(None);
+                    self.message = Some(("Link: cancelled".into(), false));
+                } else if !self.link_held {
+                    self.link = None;
+                    self.message = Some(("Link tool let go".into(), false));
+                }
+            } else if response.clicked()
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                let at = local(pos);
+                match (pick(&basics, &project, at, 12.0), &chosen) {
+                    (Some(Handle::Point(l)), _) => {
+                        self.selected = vec![Handle::Point(l.clone())];
+                        self.message = Some((
+                            format!(
+                                "Link {l}: click the ringed joint to link it to (right-click \
+                                 or Escape: cancel)"
+                            ),
+                            false,
+                        ));
+                        self.link = Some(Some(l));
+                    }
+                    (_, Some(l)) => match joint_at(at) {
+                        Some((j, jp)) => {
+                            let p = t
+                                .points
+                                .iter()
+                                .find(|p| &p.label == l)
+                                .map(|p| p.position().map(|v| v.si()));
+                            if let Some(p) = p {
+                                let o = [0, 1, 2].map(|k| {
+                                    let v = p[k] - jp[k];
+                                    if v.abs() < ohl_structures::SAME_JOINT {
+                                        0.0
+                                    } else {
+                                        v
+                                    }
+                                });
+                                match edit::links::link_point(doc, t, l, &j, o) {
+                                    Ok(()) => {
+                                        changed = true;
+                                        self.message = Some((
+                                            format!(
+                                                "linked attachment point {l} to joint {j}: {}",
+                                                crate::link_tool::offset_words(o)
+                                            ),
+                                            false,
+                                        ));
+                                    }
+                                    Err(e) => self.message = Some((e, true)),
+                                }
+                            }
+                            self.link = Some(None);
+                        }
+                        None => {
+                            self.message = Some((
+                                "Link: click a ringed joint (a support joint takes no strings)"
+                                    .into(),
+                                true,
+                            ));
+                        }
+                    },
+                    (_, None) => {
+                        self.message = Some((
+                            "Link: click an attachment point first (where a string hangs)".into(),
+                            true,
+                        ));
+                    }
+                }
+                self.dirty = true;
+            }
+        }
         // Picking: a click picks, Shift + click adds.
-        if response.clicked()
+        if self.link.is_none()
+            && response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
             let shift = ui.input(|i| i.modifiers.shift);
@@ -570,37 +765,18 @@ impl Workspace {
             }
             self.dirty = true;
         }
-        // A drag from a point or wire point moves it (one on a joint moves
-        // with the body: not here); elsewhere it turns the view.
-        let on_body = |h: &Handle| match h {
-            Handle::Point(l) => t
-                .points
-                .iter()
-                .find(|p| &p.label == l)
-                .and_then(|p| p.node.as_ref().or(p.member.as_ref()))
-                .cloned(),
-            _ => None,
-        };
-        let grabbed = if response.drag_started_by(egui::PointerButton::Primary) {
-            response
-                .interact_pointer_pos()
-                .and_then(|pos| pick(&basics, &project, local(pos), 12.0))
-        } else {
-            None
-        };
-        if let Some(h) = &grabbed
-            && let Some(on) = on_body(h)
-        {
-            self.selected = vec![h.clone()];
-            self.message = Some((
-                format!(
-                    "{} sits on {on} of the body: it moves with the body (Open this type in \
-                     OHL-Structure…)",
-                    h.describe()
-                ),
-                true,
-            ));
-        } else if let Some(h) = grabbed
+        // A drag from a point or wire point moves it: a point on a joint
+        // or member changes its offset from it (released on another joint:
+        // relinked there); elsewhere it turns the view.
+        let grabbed =
+            if self.link.is_none() && response.drag_started_by(egui::PointerButton::Primary) {
+                response
+                    .interact_pointer_pos()
+                    .and_then(|pos| pick(&basics, &project, local(pos), 12.0))
+            } else {
+                None
+            };
+        if let Some(h) = grabbed
             && let Some(at) = position(g, &h)
         {
             let eye = cam.eye();
@@ -625,9 +801,17 @@ impl Workspace {
                     if self.grid > 0.0 {
                         at = at.map(|v| (v / self.grid).round() * self.grid);
                     }
-                    // Onto a joint near the pointer.
+                    // Onto a joint near the pointer (a point: linked there).
                     let here = local(pos);
-                    if let Some((_, p, _)) = g.joints.iter().find(|j| {
+                    let mut onto: Option<String> = None;
+                    if let Some((id, p, _)) = linkable.iter().find(|j| {
+                        Handle::Joint(j.0.clone()) != m.handle
+                            && project(j.1)
+                                .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
+                    }) {
+                        at = *p;
+                        onto = Some(id.clone());
+                    } else if let Some((_, p, _)) = g.joints.iter().find(|j| {
                         Handle::Joint(j.0.clone()) != m.handle
                             && project(j.1)
                                 .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
@@ -635,7 +819,7 @@ impl Workspace {
                         at = *p;
                     }
                     if position(g, &m.handle) != Some(at) {
-                        match edit::move_to(doc, t, &m.handle, at) {
+                        match drag_point(doc, t, &m.handle, at, onto.as_deref()) {
                             Ok(()) => {
                                 changed = true;
                                 self.message = Some((
@@ -683,6 +867,7 @@ impl Workspace {
             self.dirty = false;
         }
         let camera = *self.camera.as_ref().expect("set above");
+        self.last = Some((rect, camera));
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
         let px = [
@@ -770,6 +955,70 @@ impl Workspace {
                 painter.text(q, align, id, font.clone(), rgb(PICKED));
             }
         }
+        let at = |p: [f64; 3]| {
+            projector(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
+        };
+        // Attach joints ringed.
+        for (id, p, _) in &g.joints {
+            if g.attach.contains(id)
+                && let Some(q) = at(*p)
+            {
+                painter.circle_stroke(q, 7.0, egui::Stroke::new(2.0, rgb(ATTACH)));
+            }
+        }
+        // The rigid link picked: its joint, offset and length.
+        for h in &self.selected {
+            let Handle::Point(l) = h else { continue };
+            if let Some(link) = g.links.iter().find(|x| &x.label == l)
+                && let Some(q) = at(link.to)
+            {
+                let o = link.offset();
+                note(
+                    &painter,
+                    q + egui::vec2(12.0, 12.0),
+                    format!(
+                        "rigid link {l} — joint {}, offset ({:.3}, {:.3}, {:.3}) m, {:.3} m",
+                        link.joint,
+                        o[0],
+                        o[1],
+                        o[2],
+                        link.length()
+                    ),
+                );
+            }
+        }
+        // The Link tool with a point chosen: the joints it may be linked
+        // to ringed, the one under the pointer joined to it with the
+        // offset and its moment arm.
+        if let Some(l) = &chosen {
+            let green = egui::Color32::from_rgb(120, 240, 140);
+            for (_, p, attach) in &linkable {
+                if let Some(q) = at(*p) {
+                    let c = if *attach {
+                        green
+                    } else {
+                        green.gamma_multiply(0.55)
+                    };
+                    painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, c));
+                }
+            }
+            if let Some((id, j)) = &hover
+                && let Some(from) = g.points.iter().find(|p| &p.0 == l).map(|p| p.1)
+                && let (Some(a), Some(b)) = (at(*j), at(from))
+            {
+                painter.circle_stroke(a, 13.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
+                painter.line_segment([a, b], egui::Stroke::new(2.0, egui::Color32::WHITE));
+                let o = [0, 1, 2].map(|k| from[k] - j[k]);
+                note(
+                    &painter,
+                    a + egui::vec2(14.0, -24.0),
+                    format!(
+                        "link {l} to joint {id}: {}",
+                        crate::link_tool::offset_words(o)
+                    ),
+                );
+            }
+        }
         painter.text(
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
@@ -830,40 +1079,7 @@ impl Workspace {
             .auto_shrink(false)
             .show(ui, |ui| match self.sheet {
                 Sheet::Points => {
-                    egui::Grid::new("type-points").striped(true).show(ui, |ui| {
-                        for h in ["attachment point", "x", "y", "z", "on", "strings"] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for p in &t.points {
-                            let hanging = t.strings.iter().filter(|x| x.top == p.label).count();
-                            let h = Handle::Point(p.label.clone());
-                            if ui.selectable_label(self.selected.contains(&h), &p.label).clicked() {
-                                self.selected = vec![h.clone()];
-                                self.dirty = true;
-                            }
-                            let mut at = p.position().map(|v| v.si());
-                            let free = p.node.is_none() && p.member.is_none();
-                            let mut moved = false;
-                            for v in &mut at {
-                                if free {
-                                    moved |= coord(ui, v);
-                                } else {
-                                    ui.label(format!("{v:.3} m"));
-                                }
-                            }
-                            if moved && edit::move_to(doc, t, &h, at).is_ok() {
-                                changed = true;
-                            }
-                            ui.label(match (&p.node, &p.member, p.at) {
-                                (Some(n), _, _) => format!("joint {n}"),
-                                (_, Some(m), Some(f)) => format!("member {m} at {f}"),
-                                _ => "—".into(),
-                            });
-                            ui.label(hanging.to_string());
-                            ui.end_row();
-                        }
-                    });
+                    changed |= self.points_sheet(ui, doc, t);
                 }
                 Sheet::Wires => {
                     egui::Grid::new("type-wires").striped(true).show(ui, |ui| {
@@ -947,7 +1163,215 @@ impl Workspace {
     }
 }
 
+/// Text on a dark box, kept inside the painter's area.
+fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
+    let galley =
+        painter.layout_no_wrap(text, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+    let clip = painter.clip_rect().shrink(4.0);
+    let size = galley.size();
+    let at = egui::pos2(
+        at.x.min(clip.right() - size.x).max(clip.left()),
+        at.y.min(clip.bottom() - size.y).max(clip.top()),
+    );
+    painter.rect_filled(
+        egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+        3.0,
+        egui::Color32::from_black_alpha(190),
+    );
+    painter.galley(at, galley, egui::Color32::WHITE);
+}
+
+/// A point or wire point dragged to `at` (local axes) in type `t`: an
+/// attachment point on a joint or along a member keeps its link, its
+/// offset the distance from the joint; released `onto` a joint it may be
+/// linked to it is linked there (no offset); a point that is its own
+/// joint, or a wire point, moves.
+fn drag_point(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    h: &Handle,
+    at: [f64; 3],
+    onto: Option<&str>,
+) -> Result<(), String> {
+    let Handle::Point(l) = h else {
+        return edit::move_to(doc, t, h, at);
+    };
+    let p = t
+        .points
+        .iter()
+        .find(|p| &p.label == l)
+        .ok_or_else(|| format!("no attachment point {l}"))?;
+    if let Some(j) = onto {
+        return edit::links::link_point(doc, t, l, j, [0.0; 3]);
+    }
+    if p.node.is_none() && p.member.is_none() {
+        return edit::move_to(doc, t, h, at);
+    }
+    let j = t
+        .joint(&p.joint)
+        .ok_or_else(|| format!("no joint {}", p.joint))?;
+    let o = [0, 1, 2].map(|k| {
+        let v = at[k] - j.position[k];
+        if v.abs() < ohl_structures::SAME_JOINT {
+            0.0
+        } else {
+            v
+        }
+    });
+    edit::links::link_point(doc, t, l, &p.joint, o)
+}
+
 impl Workspace {
+    /// The Attachment points sheet: each point's label, where it is
+    /// (typed for one that is its own joint), its joint (chosen among the
+    /// joints it may be linked to), its offset from it (typed for one on a
+    /// joint or member), the offset's length, whether it is linked to a
+    /// joint of the body, the strings hanging from it; a row's menu links
+    /// (the Link tool) or unlinks it. Each change one edit.
+    fn points_sheet(
+        &mut self,
+        ui: &mut egui::Ui,
+        doc: &mut DocumentMut,
+        t: &StructureType,
+    ) -> bool {
+        let mut changed = false;
+        let joints = t.joints();
+        let linkable: Vec<String> = t.linkable_joints().into_iter().map(|j| j.id).collect();
+        let coord = |ui: &mut egui::Ui, v: &mut f64| {
+            ui.add(
+                egui::DragValue::new(v)
+                    .speed(0.01)
+                    .max_decimals(3)
+                    .suffix(" m"),
+            )
+            .changed()
+        };
+        let mut unlink: Option<String> = None;
+        egui::Grid::new("type-points").striped(true).show(ui, |ui| {
+            for (h, tip) in [
+                ("attachment point", "Where strings hang; right-click: link, unlink"),
+                ("x", "Where it is (typed for a point that is its own joint)"),
+                ("y", ""),
+                ("z", ""),
+                ("joint", "The joint it is linked to (the Link tool, or chosen here)"),
+                ("offset x", "From its joint to it: a rigid link, whose moment the structure analysis applies at the joint"),
+                ("offset y", ""),
+                ("offset z", ""),
+                ("length", "The offset's length"),
+                ("linked", "linked: on a joint of the body; own joint: a joint of its own, on no member (its load reaches no member)"),
+                ("strings", "Strings hanging from it"),
+            ] {
+                ui.strong(h).on_hover_text(tip);
+            }
+            ui.end_row();
+            for p in &t.points {
+                let hanging = t.strings.iter().filter(|x| x.top == p.label).count();
+                let h = Handle::Point(p.label.clone());
+                let r = ui.selectable_label(self.selected.contains(&h), &p.label);
+                if r.clicked() {
+                    self.selected = vec![h.clone()];
+                    self.dirty = true;
+                }
+                r.context_menu(|ui| {
+                    if ui.button("Link to a joint… (Link tool)").clicked() {
+                        self.link = Some(Some(p.label.clone()));
+                        self.selected = vec![h.clone()];
+                        ui.close();
+                    }
+                    if ui.button("Unlink").clicked() {
+                        unlink = Some(p.label.clone());
+                        ui.close();
+                    }
+                });
+                let mut at = p.position().map(|v| v.si());
+                let free = p.node.is_none() && p.member.is_none();
+                let mut moved = false;
+                for v in &mut at {
+                    if free {
+                        moved |= coord(ui, v);
+                    } else {
+                        ui.label(format!("{v:.3} m"));
+                    }
+                }
+                if moved && edit::move_to(doc, t, &h, at).is_ok() {
+                    changed = true;
+                }
+                // Its joint, chosen among those it may be linked to: linked
+                // there where it is.
+                let mut joint = p.joint.clone();
+                egui::ComboBox::from_id_salt(("point-joint", &p.label))
+                    .selected_text(&joint)
+                    .width(90.0)
+                    .show_ui(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .max_height(240.0)
+                            .show(ui, |ui| {
+                                for j in &linkable {
+                                    ui.selectable_value(&mut joint, j.clone(), j);
+                                }
+                            });
+                    });
+                if joint != p.joint
+                    && let Some(j) = t.joint(&joint)
+                {
+                    let o = [0, 1, 2].map(|k| {
+                        let v = at[k] - j.position[k];
+                        if v.abs() < ohl_structures::SAME_JOINT { 0.0 } else { v }
+                    });
+                    match edit::links::link_point(doc, t, &p.label, &joint, o) {
+                        Ok(()) => changed = true,
+                        Err(e) => self.message = Some((e, true)),
+                    }
+                }
+                let mut o = t.point_offset(p);
+                let mut shifted = false;
+                for v in &mut o {
+                    if free {
+                        ui.label("—").on_hover_text("Its own joint: no offset");
+                    } else {
+                        shifted |= coord(ui, v);
+                    }
+                }
+                if shifted {
+                    match edit::links::link_point(doc, t, &p.label, &p.joint, o) {
+                        Ok(()) => changed = true,
+                        Err(e) => self.message = Some((e, true)),
+                    }
+                }
+                ui.label(format!("{:.3} m", (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()));
+                let own = joints
+                    .iter()
+                    .any(|j| j.id == p.joint && j.source == ohl_structures::JointSource::Point);
+                if own && !t.members.is_empty() {
+                    ui.colored_label(ui.visuals().warn_fg_color, "own joint")
+                        .on_hover_text("On no member: its load reaches no member (link it to a joint of the body)");
+                } else if own {
+                    ui.label("own joint")
+                        .on_hover_text("A stick figure's point: its own joint");
+                } else {
+                    ui.label("linked");
+                }
+                ui.label(hanging.to_string());
+                ui.end_row();
+            }
+        });
+        if let Some(l) = unlink {
+            match edit::links::unlink_point(doc, t, &l) {
+                Ok(()) => {
+                    changed = true;
+                    self.message = Some((
+                        format!(
+                            "unlinked attachment point {l}: it keeps its place, a joint of its own"
+                        ),
+                        false,
+                    ));
+                }
+                Err(e) => self.message = Some((e, true)),
+            }
+        }
+        changed
+    }
+
     /// The Insulators sheet: each insulator's top (an attachment point or
     /// another insulator's wire point), wire point, kind (suspension or
     /// strain), assembly from the library (or a length), its direction (an
@@ -1452,6 +1876,35 @@ node = "N3"
     /// wire point, the point moved (its wire point follows), read back (the
     /// edits themselves are tested in `ohl-structure-edit`); the body is
     /// left as it was.
+    /// A point on a joint dragged: its offset changes, the link stays;
+    /// released on another joint: relinked there at no offset; a point of
+    /// its own moves (2026-10-21).
+    #[test]
+    fn a_dragged_point_changes_its_offset_or_is_relinked() {
+        let mut doc: DocumentMut = PYLON.parse().unwrap();
+        let t = read(&doc);
+        let a1 = Handle::Point("A1".into());
+        super::drag_point(&mut doc, &t, &a1, [-6.0, 0.4, 30.0], None).unwrap();
+        let t = read(&doc);
+        assert_eq!(t.point_link("A1"), Some(("N3", [0.0, 0.4, 0.0])));
+        super::drag_point(&mut doc, &t, &a1, [6.0, 0.0, 30.0], Some("N2")).unwrap();
+        let t = read(&doc);
+        assert_eq!(t.point_link("A1"), Some(("N2", [0.0; 3])));
+        let a2 = edit::add_point(&mut doc, &t, [1.0, 0.0, 20.0]);
+        let t = read(&doc);
+        super::drag_point(
+            &mut doc,
+            &t,
+            &Handle::Point(a2.clone()),
+            [2.0, 0.0, 20.0],
+            None,
+        )
+        .unwrap();
+        let t = read(&doc);
+        let p = t.points.iter().find(|p| p.label == a2).unwrap();
+        assert_eq!(p.position()[0].si(), 2.0);
+    }
+
     #[test]
     fn the_screen_uses_the_shared_edits_on_the_basics() {
         let mut doc: DocumentMut = PYLON.parse().unwrap();

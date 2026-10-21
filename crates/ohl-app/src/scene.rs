@@ -54,16 +54,20 @@ pub enum Layer {
     /// Safety volumes around the wires (Checks › Safety volumes),
     /// translucent: drawn last.
     SafetyVolume,
+    /// The rigid links of the attachment points at an offset from their
+    /// joints (2026-10-21, [`crate::link_tool`]): magenta rods.
+    RigidLinks,
 }
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 18] = [
+    pub const ALL: [Layer; 19] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
         Layer::Alignment,
         Layer::Structures,
+        Layer::RigidLinks,
         Layer::Wires,
         Layer::OtherCases,
         Layer::OtherLines,
@@ -100,6 +104,7 @@ impl Layer {
             Layer::Isoclearance => "Isoclearance lines",
             Layer::GroundLines => "Ground lines (beside the line)",
             Layer::SafetyVolume => "Safety volumes",
+            Layer::RigidLinks => "Rigid links (attachment points)",
         }
     }
 }
@@ -467,6 +472,16 @@ pub fn structures(
                 .chain(st.members.iter().flatten().map(|p| p[2]))
                 .fold(at[2], f64::max);
             out.push(Prim::new(at, vec![at, [at[0], at[1], top]], steel, 2.5).at(1, 2));
+        }
+        // Unlinked attachment points (their joint gone from the type, or
+        // unlinked): red, their structure's loads refused.
+        if st.structure_type.is_some() && tint.is_none() {
+            for p in st.points.iter().filter(|p| p.unlinked) {
+                let mut dot =
+                    Prim::new(at, vec![p.position], crate::link_tool::UNLINKED, 13.0).at(0, 1);
+                dot.dot = true;
+                out.push(dot);
+            }
         }
         // The strings, as solved in the cases shown (else as given);
         // flagged ones (beyond the compression they may take) in red.
@@ -1486,6 +1501,12 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                 );
             }
         }
+        // The rigid links: solid rods from the joints to the points.
+        Layer::RigidLinks => {
+            for (_, _, a, b) in crate::link_tool::drawn_links(model) {
+                s.polyline(&[a, b], crate::link_tool::RIGID, 4.0);
+            }
+        }
         // Full detail (the chunks draw these by level: crate::chunks).
         Layer::Structures | Layer::Wires | Layer::OtherCases | Layer::OtherLines => {
             draw_prims(&mut s, &prims(model, layer, case), 0, usize::MAX);
@@ -1671,6 +1692,14 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
                     }
                 }
                 Selection::Point { structure, label } => {
+                    // Its rigid link (an attachment point at an offset).
+                    for (_, _, a, b) in crate::link_tool::drawn_links(model)
+                        .into_iter()
+                        .filter(|l| &l.0 == structure && &l.1 == label)
+                    {
+                        s.polyline(&[a, b], hi, 5.0);
+                        s.point(a, hi, 9.0);
+                    }
                     // A wire point: where it hangs in every case drawn.
                     let strong = model.selection_case.unwrap_or(case);
                     if let Some(st) = line.structure(structure)

@@ -26,12 +26,24 @@
 //! The extension is kept when the new type has one of the same name, else
 //! the structure is placed without one (and the window or the status line
 //! says so).
+//!
+//! **Attachment points** (2026-10-21): the old structure's attachment
+//! points are matched to the new type's joints
+//! ([`ohl_line::links::match_points`]): a joint at a point's very position
+//! is taken at once (exact); otherwise the nearest attach joint is offered,
+//! the remaining distance kept as the point's offset (its moment arm
+//! shown), and the user chooses per point in the window's **Attachment
+//! points** list — that offer, another attach joint (the offset kept), the
+//! new type's own point of the same label, or removal with what hangs from
+//! it. Nothing is dropped silently: Replace waits until every point has a
+//! choice, and the removals are listed.
 
 use std::collections::BTreeMap;
 
 use eframe::egui;
+use ohl_line::links::{PointChoice, PointMatch, match_points, with_points};
 use ohl_line::{Line, Structure};
-use ohl_session::replace::{NewWire, SetMove};
+use ohl_session::replace::{NewWire, PointMove, SetMove};
 use ohl_session::{Command, Impact};
 
 use crate::model::Model;
@@ -138,6 +150,86 @@ pub fn propose(old: &[WireRow], new: &[WireRow], used: &[u32]) -> BTreeMap<u32, 
     out
 }
 
+/// An old attachment point in the window: where it is, what hangs from
+/// it, how it matches the new type's joints and what becomes of it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointRow {
+    /// Its label.
+    pub label: String,
+    /// Left, right or middle.
+    pub side: Side,
+    /// Height above the structure's position, m.
+    pub height: f64,
+    /// The strings hanging from it, in words.
+    pub strings: String,
+    /// How it matches the new type's joints.
+    pub matched: PointMatch,
+    /// The new type's own point of this label: its joint and offset.
+    pub by_type: Option<(String, [f64; 3])>,
+    /// Every attach joint of the new type: id and the offset the point
+    /// would keep there (structure axes, m).
+    pub joints: Vec<(String, [f64; 3])>,
+}
+
+impl PointRow {
+    /// A choice in words, for the list.
+    pub fn choice_text(&self, c: Option<&PointChoice>) -> String {
+        match c {
+            None => "choose…".to_owned(),
+            Some(PointChoice::Remove) => "remove (with what hangs only from it)".to_owned(),
+            Some(PointChoice::Link { joint, offset }) => {
+                let exact =
+                    self.matched.exact.as_deref() == Some(joint.as_str()) && *offset == [0.0; 3];
+                let typed = self
+                    .by_type
+                    .as_ref()
+                    .is_some_and(|(j, o)| j == joint && o == offset);
+                if exact {
+                    format!("joint {joint} (exact)")
+                } else if typed {
+                    format!("as the new type has it (joint {joint})")
+                } else {
+                    format!("joint {joint}: {}", crate::link_tool::offset_words(*offset))
+                }
+            }
+        }
+    }
+
+    /// The choices offered: exact, the nearest attach joint, the new
+    /// type's own point, every attach joint (the offset kept), removal
+    /// (not for a label the new type has: its point stays).
+    pub fn choices(&self) -> Vec<PointChoice> {
+        let mut out: Vec<PointChoice> = Vec::new();
+        let mut add = |c: PointChoice| {
+            if !out.contains(&c) {
+                out.push(c);
+            }
+        };
+        if let Some(c) = self.matched.proposal() {
+            add(c);
+        }
+        if let Some(c) = self.matched.offer() {
+            add(c);
+        }
+        if let Some((j, o)) = &self.by_type {
+            add(PointChoice::Link {
+                joint: j.clone(),
+                offset: *o,
+            });
+        }
+        for (j, o) in &self.joints {
+            add(PointChoice::Link {
+                joint: j.clone(),
+                offset: *o,
+            });
+        }
+        if self.by_type.is_none() {
+            add(PointChoice::Remove);
+        }
+        out
+    }
+}
+
 /// The mapping window's state.
 pub struct Mapping {
     /// The structure replaced.
@@ -158,18 +250,77 @@ pub struct Mapping {
     /// again when the choice changes.
     pub impact: Result<Impact, String>,
     /// The choice `impact` is for.
-    impact_of: BTreeMap<u32, Option<u32>>,
+    impact_of: (BTreeMap<u32, Option<u32>>, Vec<Option<PointChoice>>),
+    /// The old structure's attachment points matched to the new type's
+    /// joints.
+    pub points: Vec<PointRow>,
+    /// What becomes of each (in the order of [`Mapping::points`]; none:
+    /// not chosen yet — Replace waits).
+    pub point_choice: Vec<Option<PointChoice>>,
+    /// The old structure as resolved and as stored (its own items).
+    old_resolved: Structure,
+    old_stored: Structure,
+    /// The new type (its joints).
+    new_type: ohl_structures::StructureType,
 }
 
 impl Mapping {
+    /// Every attachment point has a choice.
+    pub fn points_chosen(&self) -> bool {
+        self.point_choice.iter().all(Option::is_some)
+    }
+
+    /// The new structure with the points chosen, and the points' moves
+    /// (those the new type does not carry by itself; removals).
+    pub fn built(&self) -> Result<(Structure, Vec<PointMove>), String> {
+        let choices: Vec<(String, PointChoice)> = self
+            .points
+            .iter()
+            .zip(&self.point_choice)
+            .filter_map(|(r, c)| Some((r.label.clone(), c.clone()?)))
+            .collect();
+        let (structure, _) = with_points(
+            &self.new_type,
+            &self.structure,
+            &self.old_resolved,
+            &self.old_stored,
+            &choices,
+        )?;
+        let moves = choices
+            .iter()
+            .filter_map(|(label, c)| match c {
+                PointChoice::Remove => Some(PointMove {
+                    label: label.clone(),
+                    joint: None,
+                    offset: [0.0; 3],
+                }),
+                PointChoice::Link { joint, offset } => {
+                    let by_type = self
+                        .new_type
+                        .point_link(label)
+                        .is_some_and(|(j, o)| j == joint && o == *offset);
+                    (!by_type).then(|| PointMove {
+                        label: label.clone(),
+                        joint: Some(joint.clone()),
+                        offset: *offset,
+                    })
+                }
+            })
+            .collect();
+        Ok((structure, moves))
+    }
+
     /// The command for the choice (confirmed: the window lists what goes).
     pub fn command(&self) -> Command {
+        let (structure, points) = self
+            .built()
+            .unwrap_or_else(|_| (self.structure.clone(), Vec::new()));
         Command::ReplaceStructure {
             id: self.id.clone(),
-            structure: Box::new(self.structure.clone()),
+            structure: Box::new(structure),
             wires: self.wires.clone(),
             sets: self.moves(),
-            points: Vec::new(),
+            points,
             confirm: true,
         }
     }
@@ -183,16 +334,18 @@ impl Mapping {
 
     /// Works out what is removed again (when the choice changed).
     fn refresh(&mut self, model: &Model) {
-        if self.impact_of == self.choice {
+        let key = (self.choice.clone(), self.point_choice.clone());
+        if self.impact_of == key {
             return;
         }
-        self.impact_of = self.choice.clone();
-        self.impact = match model.session() {
-            Some(s) => s
-                .replacement(&self.id, &self.structure, &self.wires, &self.moves(), &[])
+        self.impact_of = key;
+        self.impact = match (model.session(), self.built()) {
+            (Some(s), Ok((structure, points))) => s
+                .replacement(&self.id, &structure, &self.wires, &self.moves(), &points)
                 .map(|p| p.impact)
                 .map_err(|e| e.to_string()),
-            None => Err("not editable".into()),
+            (None, _) => Err("not editable".into()),
+            (_, Err(e)) => Err(e),
         };
     }
 }
@@ -268,8 +421,14 @@ impl Replace {
             Ok(m) => {
                 let m = *m;
                 let every_set = m.choice.iter().all(|(from, to)| *to == Some(*from));
+                // Every attachment point exactly on a joint of the new type.
+                let every_point = m.points_chosen()
+                    && m.points
+                        .iter()
+                        .zip(&m.point_choice)
+                        .all(|(r, c)| c.is_some() && r.matched.proposal().as_ref() == c.as_ref());
                 match &m.impact {
-                    Ok(i) if every_set && !i.has_dependents() => {
+                    Ok(i) if every_set && every_point && !i.has_dependents() => {
                         let what = rewired_words(&m, model);
                         Step::Apply(what, m.command())
                     }
@@ -358,6 +517,15 @@ impl Replace {
             .collect();
         let new_rows = wire_rows(&placed, &|_| String::new());
         let choice = propose(&old, &new_rows, &used);
+        // The old attachment points matched to the new type's joints.
+        let new_type = model
+            .types
+            .as_ref()
+            .and_then(|(t, _)| t.get(&structure_type))
+            .ok_or_else(|| format!("type {structure_type} not in the library"))?
+            .clone();
+        let points = point_rows(&new_type, &new, old_resolved);
+        let point_choice = points.iter().map(|r| r.matched.proposal()).collect();
         let mut m = Mapping {
             id: id.clone(),
             structure: new,
@@ -367,13 +535,75 @@ impl Replace {
             choice,
             note,
             impact: Err(String::new()),
-            impact_of: BTreeMap::new(),
+            impact_of: (BTreeMap::new(), Vec::new()),
+            points,
+            point_choice,
+            old_resolved: old_resolved.clone(),
+            old_stored: old_stored.clone(),
+            new_type,
         };
         // Worked out for the choice (refresh skips an equal choice).
-        m.impact_of.insert(u32::MAX, None);
+        m.impact_of.0.insert(u32::MAX, None);
         m.refresh(model);
         Ok(Box::new(m))
     }
+}
+
+/// The attachment points of `old` (as resolved) matched to the joints of
+/// type `t` placed as `new` says: side, height, strings hanging, the
+/// match, the type's own point of the label, every attach joint with the
+/// offset the point would keep there.
+pub fn point_rows(
+    t: &ohl_structures::StructureType,
+    new: &Structure,
+    old: &Structure,
+) -> Vec<PointRow> {
+    let (c, n) = {
+        let a = old.orientation_deg.to_radians();
+        (a.cos(), a.sin())
+    };
+    let attach: Vec<(String, [f64; 3])> = ohl_line::links::placed_joints(t, new)
+        .into_iter()
+        .filter(|j| j.joint.kind == Some(ohl_structures::JointKind::Attach))
+        .map(|j| (j.joint.id, j.position))
+        .collect();
+    match_points(t, new, &old.points)
+        .into_iter()
+        .zip(&old.points)
+        .map(|(m, p)| {
+            let x = (p.position[0] - old.position[0]) * c + (p.position[1] - old.position[1]) * n;
+            let side = if x > 0.05 {
+                Side::Right
+            } else if x < -0.05 {
+                Side::Left
+            } else {
+                Side::Middle
+            };
+            let strings: Vec<&str> = old
+                .strings
+                .iter()
+                .filter(|s| s.top == p.label)
+                .map(|s| s.label.as_str())
+                .collect();
+            PointRow {
+                label: p.label.clone(),
+                side,
+                height: p.position[2] - old.position[2],
+                strings: strings.join(", "),
+                by_type: t.point_link(&p.label).map(|(j, o)| (j.to_owned(), o)),
+                joints: attach
+                    .iter()
+                    .map(|(j, at)| {
+                        (
+                            j.clone(),
+                            crate::link_tool::offset(new.orientation_deg, *at, p.position),
+                        )
+                    })
+                    .collect(),
+                matched: m,
+            }
+        })
+        .collect()
 }
 
 /// "replaced T3 by type-02: rewired N wires".
@@ -479,7 +709,10 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
         .id(egui::Id::new(("replace-structure", m.id.clone())))
         .collapsible(false)
         .resizable(false)
-        .default_width(620.0);
+        .default_width(620.0)
+        // Near the top: all of it on the screen, its buttons and its × in
+        // reach (its lists scroll in boxes of fixed height).
+        .default_pos(ctx.content_rect().left_top() + egui::vec2(40.0, 60.0));
     let panel = crate::dockable::Panel::Replace;
     crate::dockable::show(ctx, panel, title, window, Some(&mut open), |ui| {
         ui.label(
@@ -533,6 +766,8 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
             ui.label(egui::RichText::new("Nothing ends at this structure.").weak());
         }
         ui.separator();
+        attachment_points_ui(ui, m);
+        ui.separator();
         let mut ok = false;
         match &m.impact {
             Ok(i) if i.has_dependents() => {
@@ -574,8 +809,17 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
                 .small()
                 .weak(),
         );
+        let chosen = m.points_chosen();
         ui.horizontal(|ui| {
-            if ui.add_enabled(ok, egui::Button::new("Replace")).clicked() {
+            if ui
+                .add_enabled(ok && chosen, egui::Button::new("Replace"))
+                .on_disabled_hover_text(if chosen {
+                    "Not possible as chosen: see above"
+                } else {
+                    "Choose what becomes of every attachment point first"
+                })
+                .clicked()
+            {
                 step = Step::Apply(rewired_words(m, model), m.command());
             }
             if ui.button("Cancel").clicked() {
@@ -587,6 +831,77 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
         step = Step::Cancel;
     }
     step
+}
+
+/// The Attachment points list of the mapping window: each old point
+/// (label, side, height, strings hanging) and what becomes of it — an
+/// exact joint taken, the nearest attach joint offered with its offset and
+/// moment arm, or the user's choice; in a scroll box of fixed height.
+fn attachment_points_ui(ui: &mut egui::Ui, m: &mut Mapping) {
+    ui.label(egui::RichText::new(format!("Attachment points ({})", m.points.len())).strong())
+        .on_hover_text(
+            "Each old attachment point linked to a joint of the new type: a joint at its very \
+             position is taken; else the nearest attach joint is offered, the distance kept as \
+             the point's offset (its moment is applied at the joint by the structure analysis); \
+             or choose another, or remove it",
+        );
+    if m.points.is_empty() {
+        ui.label(egui::RichText::new("The old structure has no attachment point.").weak());
+        return;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt("replace-points")
+        .max_height(120.0)
+        .show(ui, |ui| {
+            egui::Grid::new("replace-points-grid")
+                .striped(true)
+                .num_columns(6)
+                .show(ui, |ui| {
+                    for h in ["point", "side", "height", "strings", "match", "becomes"] {
+                        ui.label(egui::RichText::new(h).small().strong());
+                    }
+                    ui.end_row();
+                    for (k, r) in m.points.iter().enumerate() {
+                        ui.label(&r.label);
+                        ui.label(r.side.name());
+                        ui.label(format!("{:.2} m", r.height));
+                        ui.label(&r.strings);
+                        let what = match (&r.matched.exact, &r.matched.nearest) {
+                            (Some(j), _) => format!("exact: joint {j}"),
+                            (None, Some(o)) => format!(
+                                "nearest: joint {}, {:.3} m away; moment arm {:.3} m",
+                                o.joint,
+                                o.distance,
+                                o.offset[0].hypot(o.offset[1])
+                            ),
+                            (None, None) if r.matched.tie => {
+                                "attach joints equally near: choose".to_owned()
+                            }
+                            (None, None) => "no attach joint".to_owned(),
+                        };
+                        if r.matched.exact.is_some() {
+                            ui.colored_label(crate::menu::ok_color(ui), what);
+                        } else {
+                            ui.colored_label(ui.visuals().warn_fg_color, what);
+                        }
+                        let chosen = &mut m.point_choice[k];
+                        egui::ComboBox::from_id_salt(("replace-point", k))
+                            .selected_text(r.choice_text(chosen.as_ref()))
+                            .width(300.0)
+                            .show_ui(ui, |ui| {
+                                egui::ScrollArea::vertical()
+                                    .max_height(240.0)
+                                    .show(ui, |ui| {
+                                        for c in r.choices() {
+                                            let text = r.choice_text(Some(&c));
+                                            ui.selectable_value(chosen, Some(c), text);
+                                        }
+                                    });
+                            });
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 /// The picker or the mapping window of `r`'s replacement, and what they

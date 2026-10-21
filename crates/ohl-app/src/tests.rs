@@ -15002,9 +15002,9 @@ fn the_structures_table_chooses_a_type_in_the_structure_picker() {
 }
 
 /// Replace structure: the tool on T2 (type-02, sets 1 and 11) opens the
-/// structure picker; type-03 has both sets, so Choose replaces it at once
-/// and the status line says how many wires were rewired; one undo takes
-/// it back.
+/// structure picker; type-04 has both sets and a joint at each of its
+/// attachment points, so Choose replaces it at once and the status line
+/// says how many wires were rewired; one undo takes it back.
 #[test]
 fn replace_structure_with_every_set_matching_rewires_at_once() {
     use crate::tools::Tool;
@@ -15013,7 +15013,7 @@ fn replace_structure_with_every_set_matching_rewires_at_once() {
         .with_size(egui::vec2(1500.0, 1000.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    crate::structure_picker::Picker::set_filter(&harness.ctx, "type-03");
+    crate::structure_picker::Picker::set_filter(&harness.ctx, "type-04");
     use_tool(
         &mut harness,
         Tool::Replace,
@@ -15028,7 +15028,7 @@ fn replace_structure_with_every_set_matching_rewires_at_once() {
         };
         assert_eq!(p.selected.as_deref(), Some("type-02"), "its type");
     }
-    harness.get_by_label("type-03").click();
+    harness.get_by_label("type-04").click();
     harness.run();
     harness.get_by_label("Choose").click();
     harness.run();
@@ -15037,9 +15037,9 @@ fn replace_structure_with_every_set_matching_rewires_at_once() {
     let (status, error) = r.status.clone().unwrap();
     assert!(!error && status.contains("rewired 2 wires"), "{status}");
     let s = r.model.line.structure("T2").unwrap();
-    assert_eq!(s.structure_type.as_deref(), Some("type-03"));
-    // Resolved from its new type: its set 2 is there.
-    assert!(s.wire_at_set(2).is_some());
+    assert_eq!(s.structure_type.as_deref(), Some("type-04"));
+    // Resolved from its new type: its points linked there.
+    assert!(s.points.iter().all(ohl_line::StructurePoint::is_linked));
     press(&mut harness, egui::Key::Z, egui::Modifiers::COMMAND);
     let r = harness.state_mut().ready().unwrap();
     let s = r.model.line.structure("T2").unwrap();
@@ -15102,6 +15102,34 @@ fn replace_structure_maps_wire_points_and_lists_what_goes() {
         assert!(r.model.line.sections.iter().any(|s| s.id == "S3"));
     }
     open(&mut harness);
+    // Its attachment points 2.5 cm off type-02's joints (A2 far from
+    // any): Replace waits until each is chosen — those type-02 has by
+    // label as it has them, A2 removed.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Stage::Map(m)) = r.replace.as_mut().map(|x| &mut x.stage) else {
+            panic!("the mapping window");
+        };
+        assert!(!m.points_chosen());
+        for (k, row) in m.points.clone().iter().enumerate() {
+            m.point_choice[k] = Some(match &row.by_type {
+                Some((joint, offset)) => ohl_line::links::PointChoice::Link {
+                    joint: joint.clone(),
+                    offset: *offset,
+                },
+                None => ohl_line::links::PointChoice::Remove,
+            });
+        }
+    }
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Stage::Map(m)) = r.replace.as_ref().map(|x| &x.stage) else {
+            panic!("the mapping window");
+        };
+        assert!(m.impact.is_ok(), "{:?}", m.impact);
+        assert!(m.points_chosen(), "{:?}", m.point_choice);
+    }
     harness.get_by_label("Replace").click();
     harness.run();
     {
