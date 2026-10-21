@@ -142,7 +142,12 @@ fn the_lines_follow_the_outermost_conductor_and_lie_on_the_ground() {
     for name in ["everyday", "high wind"] {
         let k = case(&m, name);
         let d = ground_lines::compute(&m, &[k], &[], &settings);
-        assert_eq!(d.ground, ground_lines::Ground::Surface);
+        assert_eq!(
+            d.ground,
+            ground_lines::Ground::Surface("synthetic-survey.csv".into())
+        );
+        assert_eq!(d.ground.label(), "TIN (synthetic-survey.csv)");
+        assert!(d.offer_build.is_none());
         // Two lines per alignment.
         assert_eq!(d.lines.len(), 2 * m.line.alignment_views().len());
         let (most, least) = outermost_at_middle(&m, k, chord);
@@ -680,4 +685,388 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
         h.state_mut().ready().unwrap().profile.ground_profiles(),
         [0, 0]
     );
+}
+
+// ---------------------------------------------------------------------
+// The ground from the LiDAR, without a terrain surface (owner request of
+// 2026-10-21).
+
+/// The synthetic ground under the example line: a slope across it and
+/// two long waves, m (smooth: a TIN of points 2–4 m apart follows it
+/// within a few millimetres — the most a chord of length h leaves a wave
+/// a·sin(x/L) is a·h²/(8L²): 6·4²/(8·120²) = 0.8 mm along x,
+/// 2·4²/(8·90²) = 0.5 mm along y).
+fn ground_z(x: f64, y: f64) -> f64 {
+    500.0 + 6.0 * (x / 120.0).sin() + 0.01 * y + 2.0 * (y / 90.0).cos()
+}
+
+/// The noise of the ground points, at most, m.
+const NOISE: f64 = 0.05;
+
+/// The noise of grid node (i, j): within ±[`NOISE`], scattered.
+fn noise(i: i64, j: i64) -> f64 {
+    ((i * 7919 + j * 104_729).rem_euclid(101) as f64 / 100.0 - 0.5) * 2.0 * NOISE
+}
+
+/// The points of a synthetic LAS tile within `reach` m of the spans of
+/// `line`, a node every `step` m: on the ground (class `ground`, with
+/// [`noise`]), and at every third node a vegetation point (class 5)
+/// 4–14 m above it. With (ground points, vegetation points, the ground
+/// points within `corridor` m of the spans).
+fn tile(
+    line: &ohl_line::Line,
+    step: f64,
+    reach: f64,
+    corridor: f64,
+    ground: u8,
+) -> (Vec<ohl_lidar::LidarPoint>, [usize; 3]) {
+    let near = ohl_lidar::Corridor::along_spans(line, reach);
+    let inside = ohl_lidar::Corridor::along_spans(line, corridor);
+    let point = |x: f64, y: f64, z: f64, class: u8| ohl_lidar::LidarPoint {
+        x,
+        y,
+        z,
+        class,
+        intensity: 0,
+        return_number: 1,
+        number_of_returns: 1,
+    };
+    let mut points = Vec::new();
+    let mut counts = [0; 3];
+    let n = |a: f64, b: f64| ((b - a) / step) as i64;
+    for i in 0..=n(-150.0, 1400.0) {
+        for j in 0..=n(-150.0, 710.0) {
+            let (x, y) = (-150.0 + i as f64 * step, -150.0 + j as f64 * step);
+            if !near.contains(x, y) {
+                continue;
+            }
+            points.push(point(x, y, ground_z(x, y) + noise(i, j), ground));
+            counts[0] += 1;
+            if inside.contains(x, y) {
+                counts[2] += 1;
+            }
+            if (i + j) % 3 == 0 {
+                let (vx, vy) = (x + 0.3 * step, y + 0.4 * step);
+                let h = 4.0 + ((i * 31 + j * 17) % 11) as f64;
+                points.push(point(vx, vy, ground_z(vx, vy) + h, 5));
+                counts[1] += 1;
+            }
+        }
+    }
+    (points, counts)
+}
+
+/// The example line in a project with no terrain surface and a point
+/// cloud imported from a synthetic LAS tile ([`tile`], within 80 m of
+/// the spans, the ground points of class `ground`), read with at most
+/// 2000 points shown (the display holds a small part of the cloud). With
+/// the tile's counts.
+fn lidar_project(name: &str, ground: u8, step: f64) -> (model::Model, [usize; 3]) {
+    let first = crate::tests::synthetic_project(name);
+    let file = first.sources.file.clone();
+    let line = first.line.clone();
+    drop(first);
+    let (points, counts) = tile(&line, step, 80.0, 60.0, ground);
+    let las = file.with_file_name("tile.las");
+    let budget = ohl_core::budget::Budget::new();
+    ohl_lidar::classify::write_las(&las, &points, &budget).unwrap();
+    ohl_pointcloud::Store::open(&file)
+        .unwrap()
+        .import_tiles("c", &[las], "", None, 64.0, 0.001, &budget, |_, _, _| {})
+        .unwrap();
+    let ex = root().join("examples/synthetic-line");
+    let mut m = model::load(
+        Sources {
+            file,
+            library: Some(root().join("libraries/cables")),
+            weather: Some(ex.join("weather-cases.ohlwc")),
+            point_budget: 2000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    (m, counts)
+}
+
+/// Every point of the lines: the largest difference of its height from
+/// the synthetic ground's there; the points.
+fn worst_off_ground(d: &ground_lines::Drawn) -> (f64, usize) {
+    let mut worst: f64 = 0.0;
+    let mut n = 0;
+    for l in &d.lines {
+        for run in &l.runs {
+            for p in run {
+                worst = worst.max((p[2] - ground_z(p[0], p[1])).abs());
+                n += 1;
+            }
+        }
+    }
+    (worst, n)
+}
+
+/// No terrain surface, a point cloud: the lines lie on the ground built
+/// from the LiDAR ground classes — within the points' noise of the
+/// synthetic ground (the TIN of the lowest point of each 1 m cell; its
+/// triangles follow the smooth ground within a millimetre, [`ground_z`])
+/// — not on the vegetation (4–14 m above it), nor at the alignment's
+/// heights (metres away from it here). The menu says "LiDAR ground
+/// classes (n points)", n the ground's points; no gap, no button.
+///
+/// Only a small part of the cloud is held for the display (2000 points
+/// at most), yet the ground has every ground point within the corridor
+/// (60 m of the spans): it is read from the whole cloud, not from the
+/// points shown — and the corridor reader the ground is built again with
+/// (and a large cloud read with) gives the same ground. 50 m from the
+/// conductors the lines leave the corridor in places: broken there, the
+/// gaps counted and said.
+#[test]
+fn without_a_tin_the_lines_lie_on_the_lidar_ground() {
+    let (m, [ground, vegetation, in_corridor]) = lidar_project("gl-lidar", 2, 2.0);
+    assert!(m.ground_from_lidar && m.ground_source.is_empty());
+    let g = m.ground.clone().expect("the ground from LiDAR");
+    // Partly loaded for the display; the ground whole.
+    assert!(
+        m.points.len() * 20 < ground + vegetation,
+        "{} of {}",
+        m.points.len(),
+        ground + vegetation
+    );
+    assert!(m.class_counts.contains(&(5, vegetation as u64)));
+    assert_eq!(g.points().len(), in_corridor);
+    let spec = m.cloud.clone().unwrap();
+    let again = crate::lidar_edit::lidar_ground(&spec, &[2], &m.line, 60.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.points().len(), in_corridor);
+    let settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let windy = case(&m, "high wind");
+    for k in [0, windy] {
+        let d = ground_lines::compute(&m, &[k], &[], &settings);
+        assert_eq!(d.ground, ground_lines::Ground::Lidar(in_corridor));
+        assert_eq!(
+            d.ground.label(),
+            format!("LiDAR ground classes ({in_corridor} points)")
+        );
+        assert_eq!(d.gaps, 0, "{:?}", d.notes);
+        assert!(
+            d.offer_build.is_none() && d.notes.is_empty(),
+            "{:?}",
+            d.notes
+        );
+        let (worst, n) = worst_off_ground(&d);
+        assert!(n > 2000, "{n} points");
+        assert!(worst <= NOISE + 0.005, "{worst} m off the ground");
+        // The alignment's heights are not the ground's here.
+        let l = &d.lines[0];
+        let plan: Vec<[f64; 2]> = l.runs[0].iter().map(|p| [p[0], p[1]]).collect();
+        let bare = ground_lines::drape(&plan, None, &l.axis);
+        let apart = bare
+            .iter()
+            .flatten()
+            .map(|p| (p[2] - ground_z(p[0], p[1])).abs())
+            .fold(0.0, f64::max);
+        assert!(apart > 1.0, "{apart}");
+    }
+    // No ground point within 50 m (the ground's longest triangle side) in
+    // a square of 100 m round the middle of the first span: both lines
+    // broken there, two gaps, said.
+    let (a, b) = first_chord(&m);
+    let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+    let hole = |p: &[f64; 3]| (p[0] - mid[0]).abs() < 50.0 && (p[1] - mid[1]).abs() < 50.0;
+    let mut cells = ohl_lidar::LowestPerCell::new(Some(1.0));
+    for p in g.points().iter().filter(|p| !hole(p)) {
+        cells.add(p[0], p[1], p[2]);
+    }
+    let mut m = m;
+    m.ground = Some(std::sync::Arc::new(cells.terrain(Some(50.0)).unwrap()));
+    let d = ground_lines::compute(&m, &[0], &[], &settings);
+    assert_eq!(d.gaps, 2, "{:?}", d.notes);
+    assert!(
+        d.notes.iter().any(|n| n.starts_with("2 gaps")),
+        "{:?}",
+        d.notes
+    );
+    assert!(d.offer_build.is_none());
+    // None in the middle of the hole (triangles of sides up to 50 m may
+    // cut its corners: within 30 m of its middle, none).
+    let deep = |p: &[f64; 3]| (p[0] - mid[0]).abs() < 30.0 && (p[1] - mid[1]).abs() < 30.0;
+    for l in &d.lines {
+        assert!(!l.runs.iter().flatten().any(deep));
+    }
+    let (worst, n) = worst_off_ground(&d);
+    assert!(n > 2000 && worst <= NOISE + 0.005, "{n} {worst}");
+}
+
+/// Timings on a synthetic cloud of about 10⁶ points (a node every 0.6 m
+/// within 80 m of the spans; `cargo test -- --ignored
+/// lidar_ground_timings --nocapture`): the project read (the ground built
+/// from the LiDAR ground classes), the lines made on it.
+#[test]
+#[ignore = "timings"]
+fn lidar_ground_timings() {
+    let t = std::time::Instant::now();
+    let (m, [ground, vegetation, in_corridor]) = lidar_project("gl-timings", 2, 0.6);
+    let read = t.elapsed();
+    let settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let t = std::time::Instant::now();
+    let d = ground_lines::compute(&m, &[0], &[], &settings);
+    let lines = t.elapsed();
+    let (worst, n) = worst_off_ground(&d);
+    println!(
+        "{} points ({ground} ground, {vegetation} vegetation): tile written, imported and the \
+         project read in {read:.1?} (ground: {in_corridor} points); lines ({n} points, {} gaps, \
+         {worst:.3} m off the ground at most) in {lines:.1?}",
+        ground + vegetation,
+        d.gaps
+    );
+    assert!(ground + vegetation > 1_000_000 && worst <= NOISE + 0.005);
+}
+
+/// Runs frames until `done` (at most `secs` s).
+fn until(
+    h: &mut Harness<'_, App>,
+    secs: u64,
+    what: &str,
+    done: impl Fn(&crate::app::Ready) -> bool,
+) {
+    let started = std::time::Instant::now();
+    loop {
+        // Steps: the window's spinner repaints while it builds.
+        h.step();
+        let r = h.state_mut().ready().unwrap();
+        if done(r) {
+            return;
+        }
+        if let Some((text, true)) = &r.surfaces.status {
+            panic!("{what}: {text}");
+        }
+        assert!(
+            started.elapsed().as_secs() < secs,
+            "{what}: not in {secs} s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Does `a` in the surfaces window as the user would.
+fn surfaces_act(h: &mut Harness<'_, App>, a: crate::surfaces::Action) {
+    let app = h.state_mut();
+    let mut plugins = std::mem::take(&mut app.plugins);
+    let r = app.ready().unwrap();
+    let project = r.model.sources.file.clone();
+    r.surfaces.act(
+        a,
+        &mut r.model,
+        &mut plugins,
+        "tester",
+        &project,
+        &egui::Context::default(),
+    );
+    app.plugins = plugins;
+}
+
+/// A point cloud whose ground points are not of a ground class (here
+/// all unclassified, class 1): no ground, the lines at the alignment's
+/// heights; the menu says so — "Ground: alignment heights only" and why —
+/// and offers **Build a terrain surface from the LiDAR…**, which opens
+/// Terrain › Terrain surfaces. Built there from class 1 (the vegetation
+/// left out), the surface becomes the ground and the lines are draped on
+/// it: "TIN (LiDAR ground)", within the noise of the ground, the button
+/// gone.
+#[test]
+fn without_ground_classes_the_menu_offers_to_build_a_tin() {
+    let (mut m, [_, _, in_corridor]) = lidar_project("gl-no-ground", 1, 4.0);
+    assert!(m.ground.is_none() && m.cloud.is_some());
+    m.ground_lines.on = true;
+    let d = ground_lines::compute(&m, &[0], &[], &m.ground_lines);
+    assert_eq!(d.ground, ground_lines::Ground::Alignment);
+    let why = d.offer_build.clone().expect("the build offered");
+    assert!(why.contains("no point of a ground class (2"), "{why}");
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(m, None));
+    h.run();
+    h.get_by_label("View").click();
+    h.run();
+    h.get_by_label_contains("Lines on the ground beside the line")
+        .hover();
+    h.run();
+    assert!(h.query_by_label("Ground: alignment heights only").is_some());
+    assert!(h.query_by_label_contains(&why).is_some());
+    assert!(!h.state_mut().ready().unwrap().surfaces.open);
+    h.get_by_label("Build a terrain surface from the LiDAR…")
+        .click();
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.surfaces.open, "Terrain surfaces opened");
+    // Built from class 1, as ticked in the window.
+    r.surfaces.lidar.classes = Some([1].into());
+    surfaces_act(&mut h, crate::surfaces::Action::Lidar);
+    until(&mut h, 120, "the TIN built and read", |r| {
+        r.model.ground_source == "surface LiDAR ground"
+            && r.ground_lines
+                .drawn
+                .as_ref()
+                .is_some_and(|d| matches!(d.ground, ground_lines::Ground::Surface(_)))
+    });
+    let r = h.state_mut().ready().unwrap();
+    let d = r.ground_lines.drawn.clone().unwrap();
+    assert_eq!(d.ground.label(), "TIN (LiDAR ground)");
+    assert_eq!(r.model.ground.as_ref().unwrap().points().len(), in_corridor);
+    assert!(d.offer_build.is_none() && d.gaps == 0, "{:?}", d.notes);
+    let (worst, n) = worst_off_ground(&d);
+    assert!(n > 1000 && worst <= NOISE + 0.005, "{n} {worst}");
+}
+
+/// The terrain surface deleted (no TIN loaded any more): the ground is
+/// built from the LiDAR ground classes again, in the background, and the
+/// lines are draped on it — not left at the alignment's heights.
+#[test]
+fn the_tin_deleted_the_lines_go_back_to_the_lidar_ground() {
+    let (mut m, [_, _, in_corridor]) = lidar_project("gl-tin-deleted", 2, 4.0);
+    m.ground_lines.on = true;
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1200.0, 800.0))
+        .build_eframe(|_| App::with_model(m, None));
+    h.run();
+    let lidar = ground_lines::Ground::Lidar(in_corridor);
+    let first = h.state_mut().ready().unwrap().ground_lines.drawn.clone();
+    assert_eq!(first.unwrap().ground, lidar);
+    // A TIN from the ground classes: the ground.
+    surfaces_act(&mut h, crate::surfaces::Action::Lidar);
+    until(&mut h, 120, "the TIN built and read", |r| {
+        r.ground_lines
+            .drawn
+            .as_ref()
+            .is_some_and(|d| d.ground == ground_lines::Ground::Surface("LiDAR ground".into()))
+    });
+    // Deleted: no surface; the LiDAR ground built again.
+    surfaces_act(
+        &mut h,
+        crate::surfaces::Action::Delete("LiDAR ground".into()),
+    );
+    until(&mut h, 120, "the LiDAR ground again", |r| {
+        r.ground_lines
+            .drawn
+            .as_ref()
+            .is_some_and(|d| d.ground == lidar)
+    });
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.model.ground_source.is_empty() && r.model.ground_from_lidar);
+    let d = r.ground_lines.drawn.clone().unwrap();
+    assert!(d.offer_build.is_none() && d.gaps == 0, "{:?}", d.notes);
+    let (worst, n) = worst_off_ground(&d);
+    assert!(n > 1000 && worst <= NOISE + 0.005, "{n} {worst}");
 }
