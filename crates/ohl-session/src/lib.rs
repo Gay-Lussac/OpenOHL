@@ -34,13 +34,15 @@
 //! attachments), sections (with stringing and loads) and jumpers, each a
 //! JSON row with a version number, in their order in the line.
 //!
-//! Schema (version 4, tables next to the point clouds of ADR-0007; older
+//! Schema (version 5, tables next to the point clouds of ADR-0007; older
 //! files are migrated when opened — version 2 added the tables of
 //! [`versions`] and [`collab`], version 3 the project lines of [`lines`],
-//! version 4 the library files as objects of each project line):
+//! version 4 the library files as objects of each project line, version
+//! 5 the heights' vertical datum in the line settings, nothing to
+//! convert):
 //!
 //! ```sql
-//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '4'
+//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '5'
 //! session_user(name PRIMARY KEY, role)
 //! model_object(line, kind, id, ord, version, json, PRIMARY KEY(line, kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
@@ -63,10 +65,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Schema version of the session tables: 4 keeps library files as
-/// objects of each project line (before, a `library_file` table shared by
-/// all lines).
-pub const SCHEMA_VERSION: u32 = 4;
+/// Schema version of the session tables: 5 lets the line settings row
+/// (`meta` `line`) hold the heights' vertical datum (`height_datum`, line
+/// file version 7) — an older program refuses such a project instead of
+/// dropping the datum when it writes the row; nothing in an older project
+/// changes when it opens (it has none). 4 keeps library files as objects
+/// of each project line (before, a `library_file` table shared by all
+/// lines).
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// The object id of library file `name` of `kind`.
 pub(crate) fn library_id(kind: &str, name: &str) -> String {
@@ -663,6 +669,9 @@ struct Meta {
     name: String,
     #[serde(default)]
     crs: String,
+    /// Schema 5: the heights' vertical datum (left out when none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    height_datum: Option<ohl_line::HeightDatum>,
     /// Projects before routes and alignments: the line's own alignment
     /// (made the alignment `main` when the project opens).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -697,6 +706,7 @@ impl Meta {
         Self {
             name: line.name.clone(),
             crs: line.crs.clone(),
+            height_datum: line.height_datum.clone(),
             alignment: line.alignment.clone(),
             display: line.display.clone(),
             systems: line.systems.clone(),
@@ -1023,6 +1033,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         version: ohl_line::LINE_FILE_VERSION,
         name: meta.name,
         crs: meta.crs,
+        height_datum: meta.height_datum,
         alignment: meta.alignment,
         routes: vec![],
         structures: vec![],

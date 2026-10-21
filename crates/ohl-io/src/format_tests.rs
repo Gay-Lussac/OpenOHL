@@ -44,6 +44,11 @@ fn unzip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
 fn rich_line() -> Line {
     let mut line =
         Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+    // Line file version 7: the heights' datum.
+    line.height_datum = Some(ohl_line::HeightDatum {
+        name: "LN02 & <x>".into(),
+        epsg: Some(5728),
+    });
     let s = &mut line.structures[1];
     s.structure_type = Some("tangent & <co>".into());
     s.extension = Some("+3".into());
@@ -356,6 +361,11 @@ fn ohl_xml_round_trips_every_line() {
         assert_eq!(xml.contains("per_subconductor=\"true\""), each);
         let back = ohlxml::from_xml(&xml).unwrap();
         assert_eq!(back, line);
+        // The height datum: written when given.
+        assert_eq!(
+            xml.contains("height_datum_epsg=\"5728\""),
+            line.height_datum.is_some()
+        );
         // A string's limits: written where given, absent stays absent.
         let given = line
             .structures

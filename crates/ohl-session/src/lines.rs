@@ -89,6 +89,7 @@ pub fn empty_line() -> Line {
         version: ohl_line::LINE_FILE_VERSION,
         name: String::new(),
         crs: String::new(),
+        height_datum: None,
         alignment: vec![],
         routes: vec![],
         structures: vec![],

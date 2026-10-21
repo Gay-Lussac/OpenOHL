@@ -1024,6 +1024,55 @@ fn library_files_of_schema_3_become_each_lines() {
     assert!(!has_table(&path, "library_file"));
 }
 
+/// The heights' vertical datum (schema 5): a project of schema 4 opens
+/// unchanged with none (and is marked 5); set next to the coordinate
+/// system (the line settings row), it is kept when the project opens
+/// again, undone as any change, and an empty one is refused.
+#[test]
+fn the_height_datum_is_kept_and_older_projects_read() {
+    let (path, s) = project("height-datum");
+    let before = s.line().clone();
+    drop(s);
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("UPDATE ols_meta SET value = '4' WHERE key = 'session_schema';")
+        .unwrap();
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line(), &before, "read unchanged");
+    assert_eq!(s.line().height_datum, None);
+    let schema: String = Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT value FROM ols_meta WHERE key = 'session_schema'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(schema, "5");
+    let mut line = s.line().clone();
+    line.crs = "EPSG:2056".into();
+    line.height_datum = Some(ohl_line::HeightDatum {
+        name: "LN02".into(),
+        epsg: Some(5728),
+    });
+    s.apply("ana", line_settings_change(&before, &line))
+        .unwrap();
+    assert_eq!(s.line().height_datum, line.height_datum);
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().crs, "EPSG:2056");
+    assert_eq!(s.line().height_datum, line.height_datum, "kept");
+    assert_eq!(s.line().height_datum_label(), "LN02 (EPSG:5728)");
+    s.undo("ana").unwrap();
+    assert_eq!(s.line().height_datum, None);
+    let mut empty = before.clone();
+    empty.height_datum = Some(ohl_line::HeightDatum::default());
+    assert!(
+        s.apply("ana", line_settings_change(&before, &empty))
+            .is_err()
+    );
+}
+
 fn has_table(path: &std::path::Path, name: &str) -> bool {
     Connection::open(path)
         .unwrap()

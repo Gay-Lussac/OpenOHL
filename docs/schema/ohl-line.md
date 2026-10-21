@@ -21,7 +21,8 @@ The names are those of the line file:
 ## Elements
 
 ```xml
-<line xmlns="urn:openohl:ohl-line:1" format="ohl-line" version="6" name="…" crs="EPSG:2056">
+<line xmlns="urn:openohl:ohl-line:1" format="ohl-line" version="7" name="…" crs="EPSG:2056"
+      height_datum="LN02" height_datum_epsg="5728">  <!-- version 7: the heights' datum, optional -->
   <route id="main" name="Main route" description="…"/>
   <alignment id="alignment 1" name="…" route="main">  <!-- one route -->
     <point ref="P1"/> <point ref="P2"/> …       <!-- its points, in order -->
