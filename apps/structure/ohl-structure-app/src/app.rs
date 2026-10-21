@@ -152,6 +152,9 @@ pub struct StructureApp {
     pub section_editor: crate::section_editor::SectionEditor,
     /// The Link tool, held (Geometry › Link tool): [`crate::link_tool`].
     pub link: Option<crate::link_tool::LinkTool>,
+    /// Where "Insert a joint" puts it on a member: the fraction of its
+    /// length from its first joint (the member's menu).
+    pub insert_at: f64,
     /// The rigid links drawn in the 3D view (View › Rigid links).
     pub rigid_links: bool,
 }
@@ -200,6 +203,7 @@ impl StructureApp {
             plugins: Default::default(),
             section_editor: Default::default(),
             link: None,
+            insert_at: 0.5,
             rigid_links: true,
         }
     }

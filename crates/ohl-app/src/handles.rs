@@ -255,9 +255,8 @@ pub fn spots(model: &Model, id: &str) -> Vec<Spot> {
             fixed: None,
         }))
         .collect();
-    // The joints of the type (its body's, and those along members where
-    // points sit), where the type is placed; a point released on one is
-    // linked there.
+    // The joints of the type (its body's), where the type is placed; a
+    // point released on an attach joint is linked there.
     if let Some((t, _)) = typed {
         for j in ohl_line::links::placed_joints(t, s) {
             if j.joint.source == ohl_structures::JointSource::Point {
@@ -415,8 +414,9 @@ pub fn command_onto(
             // A typed structure's point: linked to the joint it is
             // released on, else to its own at the new offset.
             let joints = crate::link_tool::joints(model, id);
+            // Released on an attach joint (only those take a link).
             let link: Option<(String, [f64; 3])> = match onto {
-                Some(Handle::Joint(j)) if joints.iter().any(|x| &x.id == j) => {
+                Some(Handle::Joint(j)) if joints.iter().any(|x| &x.id == j && x.attach) => {
                     let x = joints.iter().find(|x| &x.id == j).expect("found");
                     global = x.at;
                     link_words = format!("; relinked to joint {j} (no offset)");

@@ -1516,8 +1516,16 @@ impl StructureForm {
             s.description = self.description.trim().to_owned();
             s.routes = self.routes.clone();
             // Its own points as in the window (in its axes, turned and
-            // moved with it).
+            // moved with it); a linked one keeps its joint, its offset
+            // following a move (owner decision 2026-10-21).
             let mut points = self.global_points();
+            for p in &mut points {
+                if let Some(q) = s.points.iter().find(|q| q.label == p.label) {
+                    p.joint.clone_from(&q.joint);
+                    p.offset = q.offset;
+                    p.unlinked = q.unlinked;
+                }
+            }
             for p in &s.points {
                 if !points.iter().any(|q| q.label == p.label)
                     && s.strings.iter().any(|x| x.top == p.label)
@@ -1526,6 +1534,7 @@ impl StructureForm {
                 }
             }
             s.points = points;
+            ohl_line::links::follow_moves(old, &mut s);
             s
         };
         let labels: std::collections::BTreeSet<&str> =
@@ -2376,9 +2385,12 @@ impl StringForm {
                 continue;
             }
             // A new point of a typed structure: linked to the attach joint
-            // chosen, its distance from it the offset.
-            let (joint, offset) = match self.joints.get(&p.label) {
-                Some((j, at)) if s.structure_type.is_some() => (
+            // chosen, its distance from it the offset; a linked point moved
+            // stays on its joint, its offset following (owner decision
+            // 2026-10-21).
+            let was = resolved.and_then(|r| r.point(&p.label));
+            let (joint, offset) = match (self.joints.get(&p.label), was) {
+                (Some((j, at)), _) if s.structure_type.is_some() => (
                     Some(j.clone()),
                     [0, 1, 2].map(|k| {
                         let v = p.at[k] - at[k];
@@ -2389,6 +2401,10 @@ impl StringForm {
                         }
                     }),
                 ),
+                (_, Some(q)) if s.structure_type.is_some() && q.is_linked() => {
+                    let m = ohl_line::links::moved(q, s.orientation_deg, position);
+                    (m.joint, m.offset)
+                }
                 _ => (None, [0.0; 3]),
             };
             s.points.retain(|q| q.label != p.label);

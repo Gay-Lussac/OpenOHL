@@ -480,15 +480,11 @@ impl View3d {
         painter: &egui::Painter,
         screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
     ) {
+        // Only attach joints are ringed (only they take a link).
         let green = egui::Color32::from_rgb(120, 240, 140);
-        for j in &link.joints {
+        for j in link.joints.iter().filter(|j| j.attach) {
             if let Some(q) = screen(j.at) {
-                let c = if j.attach {
-                    green
-                } else {
-                    green.gamma_multiply(0.55)
-                };
-                painter.circle_stroke(q, 9.0, egui::Stroke::new(2.0, c));
+                painter.circle_stroke(q, 9.0, egui::Stroke::new(2.0, green));
             }
         }
         let Some(p) = screen(link.point) else { return };
@@ -498,23 +494,16 @@ impl View3d {
             egui::Stroke::new(2.5, egui::Color32::from_rgb(255, 150, 60)),
         );
         let Some(id) = &link.hovered else { return };
-        let (Some(j), Some(o)) = (link.joints.iter().find(|j| &j.id == id), link.offset_to(id))
+        let (Some(j), Some(text)) = (link.joints.iter().find(|j| &j.id == id), link.hover_text())
         else {
             return;
         };
         if let Some(q) = screen(j.at) {
-            painter.circle_stroke(q, 12.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
-            painter.line_segment([q, p], egui::Stroke::new(2.0, egui::Color32::WHITE));
-            Self::label_inside(
-                painter,
-                q + egui::vec2(14.0, -26.0),
-                format!(
-                    "link {} of {} to joint {id}: {}",
-                    link.label,
-                    link.structure,
-                    crate::link_tool::offset_words(o)
-                ),
-            );
+            if j.attach {
+                painter.circle_stroke(q, 12.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
+                painter.line_segment([q, p], egui::Stroke::new(2.0, egui::Color32::WHITE));
+            }
+            Self::label_inside(painter, q + egui::vec2(14.0, -26.0), text);
         }
     }
 
@@ -954,10 +943,7 @@ impl View3d {
                     .min_by(|a, b| a.0.total_cmp(&b.0))
                     .map(|(_, id)| id)
             });
-            if use_at.is_some()
-                && let Some(id) = link.hovered.clone()
-            {
-                link.clicked = Some(id);
+            if use_at.is_some() && link.click().is_some() {
                 use_at = None;
             }
         }
