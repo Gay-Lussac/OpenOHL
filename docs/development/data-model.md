@@ -1733,7 +1733,10 @@ points and danger trees, `[[r, g, b], [r, g, b]]`) and `ground_lines`
 `hidden_routes`, `color` `[r, g, b]`, `width` px, `dashed`, `profile`;
 since 2026-10-21 `shown_case` (bool, default true: the case shown counts)
 and `cases` (weather case names ticked besides; a name no longer among
-the cases skipped) — every field optional, settings remembered before
+the cases skipped), and `lidar_corridor` (m from the spans' chords, or
+null: the model's corridor; taken at most 200 m; wider than the model's:
+a LiDAR ground of the lines' own, built in the app and kept per width,
+never the model's ground the checks use) — every field optional, settings remembered before
 read with the case shown; left out while all are the defaults). The
 lines themselves are display only: made in the app per set of weather
 cases (the plan envelope over each case chosen, both wind sides, the

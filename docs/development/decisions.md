@@ -9,6 +9,35 @@ approved as finished: everything is built and in active development
 
 ## 2026-10-21
 
+- **The LiDAR corridor of the lines on the ground beside the line**
+  (owner decision: "The LiDAR corridor for the ground lines should be
+  modifiable, but after some point it doesn't make much sense
+  anymore"). View › Lines on the ground beside the line has a field
+  **LiDAR corridor ±** (m from the spans' chords, as the model's
+  `--corridor`). *Default: the model's corridor (60 m)*, not "the
+  distance + a margin": it reads nothing more, the lines are as before,
+  and a margin rule would read the whole cloud again each time the
+  distance is changed; when the lines go beyond the corridor the menu
+  says so and gives the width that covers them (the farthest point of
+  the lines from the chords + 2 m, to the next 5 m). *Wider*: a LiDAR
+  ground of the lines' own, built in the background from the ground
+  classes of the whole cloud exactly as the model's (lowest point per
+  1 m cell, triangle sides ≤ 50 m), kept per width (two) and built
+  again when the cloud's ground points, the ground classes or the spans
+  change. *Separate from the model's ground*: the codebase shares one
+  ground (`Model::ground`) between the views and the checks, so the
+  lines get their own instead of widening it — the checks' ground, and
+  their results, stay identical (tested: the same object, the same
+  points). *Maximum 200 m*, from measurements on synthetic clouds of 5.2
+  and 11.8 million points along 1.9 km of spans (release): ±60 m 0.24
+  million cells 0.6–0.7 s; ±120 m 0.49 million 1.6–1.7 s ~105–140 MB;
+  ±200 m 0.77 million 1.8–2.1 s ~175–190 MB — about 90 MB and a second
+  per km of line at 200 m, 3.3 times the model's ground, while a line's
+  corridor survey rarely holds ground points farther out. A wider value
+  in a settings file is taken as 200 m. A view setting
+  (`ViewPrefs.ground_lines.lidar_corridor`), remembered per project on
+  this computer. Built, in active development (not approved yet).
+
 - **Lines on the ground beside the line without a terrain surface**
   (owner request: "make sure the line on the side of the conductors also
   works if the TIN is not loaded, purely based on the LiDAR, or at least
