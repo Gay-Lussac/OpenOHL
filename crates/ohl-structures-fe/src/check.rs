@@ -74,14 +74,59 @@ pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
 }
 
 /// Usage of every member; `strength`: the load case's strength factor.
+/// A member the analysis split at attachment points along it
+/// ([`Solution::pieces`]) uses its worst piece's (each piece checked with
+/// the member's buckling length).
 pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<MemberUsage> {
-    model
-        .members
-        .iter()
-        .enumerate()
-        .map(|(idx, m)| {
+    (0..model.members.len())
+        .map(|idx| {
+            let pieces: Vec<&crate::solve::Piece> =
+                solution.pieces.iter().filter(|p| p.member == idx).collect();
+            if pieces.is_empty() {
+                return usage_of(model, solution, idx, &solution.members[idx], strength);
+            }
+            pieces
+                .iter()
+                .map(|p| {
+                    let mut u = usage_of(model, solution, idx, &p.forces, strength);
+                    if !u.governs.is_empty() {
+                        u.governs = format!(
+                            "{} (piece {:.0}–{:.0} % of its length)",
+                            u.governs,
+                            p.from * 100.0,
+                            p.to * 100.0
+                        );
+                    }
+                    u
+                })
+                .max_by(|a, b| a.usage.unwrap_or(-1.0).total_cmp(&b.usage.unwrap_or(-1.0)))
+                .expect("a piece")
+        })
+        .map(|mut u| {
+            if solution.kept_active.contains(&u.member) {
+                u.governs = if u.governs.is_empty() {
+                    KEPT_ACTIVE.to_owned()
+                } else {
+                    format!("{} — {KEPT_ACTIVE}", u.governs)
+                };
+            }
+            u
+        })
+        .collect()
+}
+
+/// Usage of member `idx` under forces `f` (its own, or a piece's).
+fn usage_of(
+    model: &Model,
+    solution: &Solution,
+    idx: usize,
+    f: &crate::solve::MemberForces,
+    strength: f64,
+) -> MemberUsage {
+    {
+        {
+            let m = &model.members[idx];
             let s = &model.sections[m.section];
-            let f = &solution.members[idx];
             if !m.check {
                 // A modelling member: solved, not checked.
                 return MemberUsage {
@@ -222,18 +267,8 @@ pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<Me
                 usage: Some(usage),
                 governs,
             }
-        })
-        .map(|mut u| {
-            if solution.kept_active.contains(&u.member) {
-                u.governs = if u.governs.is_empty() {
-                    KEPT_ACTIVE.to_owned()
-                } else {
-                    format!("{} — {KEPT_ACTIVE}", u.governs)
-                };
-            }
-            u
-        })
-        .collect()
+        }
+    }
 }
 
 /// The member using most of its capacity.

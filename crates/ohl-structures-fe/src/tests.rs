@@ -492,47 +492,79 @@ fn example_model_parses() {
     }
 }
 
-/// A point along a member (`member`, `at`) shares its load to the
-/// member's ends: an L frame (column fixed at the base, beam out along x)
-/// loaded at a quarter of the beam gives the reactions by hand (P up, −P·1 m
-/// about y) and those of the same frame with a joint at that point.
+/// A point along a frame member (`member`, `at`): the analysis splits
+/// the member there (2026-10-21) and the load acts at the joint it makes.
+/// An L frame (column fixed at the base, beam out along x) loaded at a
+/// quarter of the beam gives the reactions by hand (P up, −P·1 m about y)
+/// and the solution of the same frame with a joint drawn there, bit for
+/// bit; the beam is reported as one member, its usage its worse piece's.
+/// Along a truss member the force goes to its ends, (1 − at) and at.
 #[test]
 fn point_along_a_member_carries_its_load() {
     let head = "[analysis]\nnonlinear = false\nself_weight = false\n\
-                [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\
+                [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n\
                 [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"2000 mm2\"\n\
-                iy = \"500 cm4\"\niz = \"500 cm4\"\n\
+                iy = \"500 cm4\"\niz = \"500 cm4\"\nwy = \"50 cm3\"\nwz = \"50 cm3\"\n\
                 [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
                 [[node]]\nid = \"B\"\npoint = [0, 0, 4]\n\
                 [[node]]\nid = \"C\"\npoint = [4, 0, 4]\n\
                 [[member]]\nid = \"col\"\nnodes = [\"A\", \"B\"]\nsection = \"s\"\nkind = \"frame\"\n";
     let along = format!(
         "{head}[[member]]\nid = \"beam\"\nnodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\n\
-         [[point]]\nlabel = \"P1\"\nmember = \"beam\"\nat = 0.25\n"
+         lk = \"4 m\"\n[[point]]\nlabel = \"P1\"\nmember = \"beam\"\nat = 0.25\n"
     );
     let joint = format!(
-        "{head}[[node]]\nid = \"D\"\npoint = [1, 0, 4]\n\
-         [[member]]\nid = \"b1\"\nnodes = [\"B\", \"D\"]\nsection = \"s\"\nkind = \"frame\"\n\
-         [[member]]\nid = \"b2\"\nnodes = [\"D\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\n\
-         [[point]]\nlabel = \"P1\"\nnode = \"D\"\n"
+        "{head}[[node]]\nid = \"P1\"\npoint = [1, 0, 4]\n\
+         [[member]]\nid = \"beam\"\nnodes = [\"B\", \"P1\"]\nsection = \"s\"\nkind = \"frame\"\nlk = \"4 m\"\n\
+         [[member]]\nid = \"b2\"\nnodes = [\"P1\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\nlk = \"4 m\"\n\
+         [[point]]\nlabel = \"P1\"\nnode = \"P1\"\n"
     );
     let p = 10e3;
-    let reaction = |text: &str| {
+    let solved = |text: &str| {
         let m = Model::from_structure_type(text).unwrap();
         let at = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
         let sol = solve(&m, &nodal(at), &first_order(), &default_budget()).unwrap();
-        sol.reactions[0]
+        (m, sol)
     };
-    let shared = reaction(&along);
-    assert!(close(shared.force[2], p, 1e-9), "{shared:?}");
-    assert!(close(shared.moment[1], -p * 1.0, 1e-9), "{shared:?}");
-    let exact = reaction(&joint);
-    for k in 0..3 {
-        assert!((shared.force[k] - exact.force[k]).abs() < 1e-6 * p);
-        assert!((shared.moment[k] - exact.moment[k]).abs() < 1e-6 * p);
-    }
-    // The shares: (1 − at) to the first joint, at to the second.
-    let m = Model::from_structure_type(&along).unwrap();
+    let (m, split) = solved(&along);
+    let r = split.reactions[0];
+    assert!(close(r.force[2], p, 1e-9), "{r:?}");
+    assert!(close(r.moment[1], -p * 1.0, 1e-9), "{r:?}");
+    let (mj, drawn) = solved(&joint);
+    // The same model solved: every number the same.
+    assert_eq!(split.reactions, drawn.reactions);
+    assert_eq!(split.displacements, drawn.displacements);
+    assert_eq!(split.pieces.len(), 2);
+    assert_eq!(split.pieces[0].forces, drawn.members[1]);
+    assert_eq!(split.pieces[1].forces, drawn.members[2]);
+    assert_eq!((split.pieces[0].from, split.pieces[0].to), (0.0, 0.25));
+    // One member reported: forces at its own joints B and C.
+    assert_eq!(split.members.len(), 2);
+    assert_eq!(
+        split.members[1].end_forces[..6],
+        drawn.members[1].end_forces[..6]
+    );
+    assert_eq!(
+        split.members[1].end_forces[6..],
+        drawn.members[2].end_forces[6..]
+    );
+    let usage = member_usage(&m, &split, 1.0);
+    let drawn_usage = member_usage(&mj, &drawn, 1.0);
+    assert_eq!(usage.len(), 2);
+    let worse = drawn_usage[1]
+        .usage
+        .unwrap()
+        .max(drawn_usage[2].usage.unwrap());
+    assert_eq!(usage[1].usage, Some(worse));
+    assert!(usage[1].governs.contains("piece"), "{:?}", usage[1]);
+    assert_eq!(m.node_name(3), "P1");
+    // Along a truss member: shared to its ends, (1 − at) and at.
+    let truss = along.replace(
+        "nodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"frame\"",
+        "nodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"truss\"",
+    );
+    let m = Model::from_structure_type(&truss).unwrap();
+    assert!(m.split().is_none());
     let shares = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
     assert_eq!(shares.len(), 2);
     assert!(close(shares[0].force[2], -0.75 * p, 1e-12));
@@ -541,6 +573,48 @@ fn point_along_a_member_carries_its_load() {
     // A point on a member that is not there is refused.
     let bad = along.replace("member = \"beam\"", "member = \"nope\"");
     assert!(Model::from_structure_type(&bad).is_err());
+}
+
+/// Two attachment points on one joint (2026-10-21): their loads add up;
+/// a point at an offset adds the moment r × F where a frame meets the
+/// joint, and only a note where trusses alone do.
+#[test]
+fn points_share_joints_and_offsets_make_moments() {
+    let base = "[analysis]\nnonlinear = false\nself_weight = false\n\
+                [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\
+                [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"2000 mm2\"\n\
+                iy = \"500 cm4\"\niz = \"500 cm4\"\n\
+                [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
+                [[node]]\nid = \"T\"\npoint = [3, 0, 0]\n\
+                [[member]]\nid = \"arm\"\nnodes = [\"A\", \"T\"]\nsection = \"s\"\nkind = \"frame\"\n\
+                [[point]]\nlabel = \"P\"\nnode = \"T\"\n\
+                [[point]]\nlabel = \"Q\"\nnode = \"T\"\noffset = [\"0 m\", \"0.5 m\", \"0 m\"]\n";
+    let m = Model::from_structure_type(base).unwrap();
+    assert_eq!(m.attachment_node("P"), Some(1));
+    assert_eq!(m.attachment_node("Q"), Some(1));
+    let f = [0.0, 0.0, -2000.0];
+    let p = m.point_load("P", f).unwrap();
+    let q = m.point_load("Q", f).unwrap();
+    assert_eq!(p.moment, [0.0; 3]);
+    // r × F = (0, 0.5, 0) × (0, 0, −2000) = (−1000, 0, 0) N·m.
+    assert_eq!(q.moment, [-1000.0, 0.0, 0.0]);
+    assert!(q.moment_applied && q.note.is_none());
+    let mut loads = p.loads.clone();
+    loads.extend(q.loads.clone());
+    let sol = solve(&m, &nodal(loads), &first_order(), &default_budget()).unwrap();
+    let r = sol.reactions[0];
+    assert!(close(r.force[2], 4000.0, 1e-12), "{r:?}");
+    assert!(close(r.moment[0], 1000.0, 1e-9), "{r:?}");
+    // The same moment by the linked lookup a placed structure uses.
+    let l = m.linked_load("Q", "T", [0.0, 0.5, 0.0], f).unwrap();
+    assert_eq!(l, q);
+    // Trusses only at the joint: the moment left out, said so.
+    let truss = base.replace("kind = \"frame\"", "kind = \"truss\"");
+    let m = Model::from_structure_type(&truss).unwrap();
+    let q = m.point_load("Q", f).unwrap();
+    assert!(!q.moment_applied);
+    assert_eq!(q.loads[0].moment, [0.0; 3]);
+    assert!(q.note.unwrap().contains("make it a frame joint"));
 }
 
 /// Wood pole: a horizontal load F at height h gives F·h at the ground

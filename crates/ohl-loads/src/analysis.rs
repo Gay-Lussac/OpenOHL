@@ -108,7 +108,8 @@ impl Analyses {
 
     /// The finite-element check of a structure of type `t` standing on
     /// `extension` (none: the type has no model, or no member a
-    /// capacity). Members with a
+    /// capacity); `placed`: the structure as resolved, whose attachment
+    /// points give the links (an unlinked one refuses the check). Members with a
     /// profile from the section library take the structures' wind of the
     /// case ([`LoadCase::structure_wind`]: across the line, its pressure
     /// times its factor — by default the weather case's pressure and the
@@ -117,6 +118,7 @@ impl Analyses {
     pub fn fe(
         &self,
         t: &StructureType,
+        placed: Option<&ohl_line::Structure>,
         extension: Option<&str>,
         loads: &[Factored],
         case: &LoadCase,
@@ -141,9 +143,42 @@ impl Analyses {
             }
         };
         let mut nodal = Vec::new();
+        let refused = |why: String| {
+            Some(Check {
+                method: Method::Fe,
+                usage: f64::INFINITY,
+                governs: format!("model: {why}"),
+                incomplete: false,
+                approximate: false,
+            })
+        };
         for (label, [tr, lo, ve]) in loads {
-            match model.point_loads(label, [*tr, *lo, -ve]) {
-                Some(at) => nodal.extend(at),
+            let force = [*tr, *lo, -ve];
+            // The placed structure's attachment point: its own link (a
+            // relink, an offset) over the type's (2026-10-21).
+            let point = placed.and_then(|s| s.point(label));
+            if point.is_some_and(|p| p.unlinked) {
+                return refused(format!(
+                    "attachment point {label} is not linked to a joint of the type: its \
+                     loads are refused until it is linked"
+                ));
+            }
+            let at = match point.and_then(|p| Some((p.joint.as_deref()?, p.offset))) {
+                Some((joint, offset)) => model.linked_load(label, joint, offset, force),
+                None => model.point_load(label, force),
+            };
+            match at {
+                Some(at) => {
+                    nodal.extend(at.loads);
+                    notes.extend(at.note.map(|n| format!("model: {n}")));
+                }
+                // An attachment point no joint of the model carries:
+                // refused, not left out.
+                None if point.is_some() => {
+                    return refused(format!(
+                        "attachment point {label}: no joint of the model carries it"
+                    ));
+                }
                 None => notes.push(format!(
                     "model: no node for point {label} (its load left out)"
                 )),

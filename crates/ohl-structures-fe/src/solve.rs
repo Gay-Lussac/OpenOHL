@@ -303,6 +303,28 @@ pub struct Solution {
     /// is refused: indices into [`Solution::stabilised`]. Not refused
     /// (their force is carried by the lines' ends), flagged in the notes.
     pub relative_over: Vec<usize>,
+    /// The pieces of the members the analysis split at attachment points
+    /// along them ([`Model::split`]), each with its own forces, in member
+    /// order (empty: none split). Such a member's entry in
+    /// [`Solution::members`] gives the forces at its own two joints (its
+    /// first piece's end i, its last piece's end j) and the largest axial
+    /// force of its pieces; its usage is its worst piece's
+    /// ([`crate::check::member_usage`]).
+    pub pieces: Vec<Piece>,
+}
+
+/// A piece of a member split by the analysis ([`Solution::pieces`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Piece {
+    /// The member (index in the model).
+    pub member: usize,
+    /// Where it starts and ends, fractions of the member's length from
+    /// its first node.
+    pub from: f64,
+    /// See `from`.
+    pub to: f64,
+    /// Its forces (end i at `from`, end j at `to`).
+    pub forces: MemberForces,
 }
 
 /// Per member: what does not change between iterations.
@@ -367,10 +389,59 @@ pub fn solve(
     options: &Options,
     budget: &Budget,
 ) -> Result<Solution, FeError> {
+    if let Some(split) = model.split() {
+        // Attachment points along frame members: solved on the split
+        // model, reported per member.
+        let solution = solve_whole(&split.model, loads, options, budget)?;
+        return Ok(fold(model, &split, solution));
+    }
+    solve_whole(model, loads, options, budget)
+}
+
+/// [`solve`] of a model as it is (not split).
+fn solve_whole(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+) -> Result<Solution, FeError> {
     if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
         return solve_tension_only(model, loads, options, budget);
     }
     solve_stabilised(model, loads, options, budget, &[], &[])
+}
+
+/// The solution of a split model ([`Model::split`]) per member of
+/// `model`: a split member's forces at its own joints, its pieces in
+/// [`Solution::pieces`].
+fn fold(model: &Model, split: &crate::links::Split, mut s: Solution) -> Solution {
+    let n = model.members.len();
+    let all = s.members.clone();
+    s.members.truncate(n);
+    for m in 0..n {
+        let parts: Vec<&(usize, usize, f64, f64)> =
+            split.pieces.iter().filter(|p| p.0 == m).collect();
+        let (Some(first), Some(last)) = (parts.first(), parts.last()) else {
+            continue;
+        };
+        let mut f = all[first.1];
+        f.end_forces[6..].copy_from_slice(&all[last.1].end_forces[6..]);
+        f.axial = parts
+            .iter()
+            .map(|p| all[p.1].axial)
+            .max_by(|a, b| a.abs().total_cmp(&b.abs()))
+            .unwrap_or(f.axial);
+        f.slack = false;
+        f.bowed = false;
+        s.members[m] = f;
+        s.pieces.extend(parts.iter().map(|p| Piece {
+            member: m,
+            from: p.2,
+            to: p.3,
+            forces: all[p.1],
+        }));
+    }
+    s
 }
 
 /// Solves `model` with the members `inactive` left out (empty: none),
@@ -1371,6 +1442,7 @@ fn solve_with(
         passes: 0,
         kept_active: Vec::new(),
         relative_over,
+        pieces: Vec::new(),
     })
 }
 

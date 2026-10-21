@@ -675,7 +675,9 @@ pub fn usage_with_sections(
                         .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
                     let fe = type_def.and_then(|t| {
-                        analyses.fe(t, extension, &factored, &r.case, case, &mut notes)
+                        analyses.fe(
+                            t, structure, extension, &factored, &r.case, case, &mut notes,
+                        )
                     });
                     let pole = type_def
                         .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));

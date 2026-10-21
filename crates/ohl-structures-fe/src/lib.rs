@@ -31,6 +31,7 @@
 pub mod check;
 pub mod drawn;
 mod element;
+pub mod links;
 pub mod model;
 pub mod pole;
 mod skyline;
@@ -40,9 +41,14 @@ mod units;
 pub mod wind;
 
 pub use check::{MemberUsage, member_usage};
-pub use model::{Analysis, Member, MemberKind, MemberPoint, Model, NodalLoad, Node, Section};
+pub use links::{PointLoad, Split, SplitNode};
+pub use model::{
+    Analysis, JointPoint, Member, MemberKind, MemberPoint, Model, NodalLoad, Node, Section,
+};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole};
-pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
+pub use solve::{
+    FeError, Loads, MemberForces, Options, Piece, Reaction, Solution, default_budget, solve,
+};
 pub use stabilise::{Stabilisation, Stabilised};
 
 /// Solves a model under `loads` with its own analysis settings and gives
@@ -80,7 +86,7 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
     let names: Vec<String> = held
         .iter()
         .take(NOTE_NAMES)
-        .map(|h| format!("{} {}", model.nodes[h.at.node].id, h.at.dof_name()))
+        .map(|h| format!("{} {}", model.node_name(h.at.node), h.at.dof_name()))
         .collect();
     let mut text = format!(
         "stabilised {} joint direction(s) without stiffness at {} joint(s): {}{}",
@@ -100,7 +106,7 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
         text.push_str(&format!(
             "; largest force held {:.3} kN at {}",
             h.force.abs() / 1000.0,
-            model.nodes[h.at.node].id
+            model.node_name(h.at.node)
         ));
         if total > 0.0 {
             text.push_str(&format!(
@@ -124,7 +130,7 @@ pub fn stabilisation_note(model: &Model, solution: &Solution) -> Option<String> 
             .map(|h| {
                 format!(
                     "{} {} {:.2} kN",
-                    model.nodes[h.at.node].id,
+                    model.node_name(h.at.node),
                     h.at.dof_name(),
                     h.force.abs() / 1000.0
                 )
