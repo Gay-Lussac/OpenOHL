@@ -438,20 +438,7 @@ pub fn export_structure(
                     continue;
                 }
                 let place = match r.at {
-                    At::Point => {
-                        if let Some(n) = model.attachment_node(&r.label) {
-                            Some(LoadPlace::Node(n))
-                        } else {
-                            model
-                                .member_points
-                                .iter()
-                                .find(|p| p.label == r.label)
-                                .map(|p| LoadPlace::OnMember {
-                                    member: p.member,
-                                    at: p.at,
-                                })
-                        }
-                    }
+                    At::Point => model.attachment_node(&r.label).map(LoadPlace::Node),
                     At::Joint => model
                         .nodes
                         .iter()

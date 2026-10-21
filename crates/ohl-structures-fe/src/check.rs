@@ -74,34 +74,9 @@ pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
 }
 
 /// Usage of every member; `strength`: the load case's strength factor.
-/// A member the analysis split at attachment points along it
-/// ([`Solution::pieces`]) uses its worst piece's (each piece checked with
-/// the member's buckling length).
 pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<MemberUsage> {
     (0..model.members.len())
-        .map(|idx| {
-            let pieces: Vec<&crate::solve::Piece> =
-                solution.pieces.iter().filter(|p| p.member == idx).collect();
-            if pieces.is_empty() {
-                return usage_of(model, solution, idx, &solution.members[idx], strength);
-            }
-            pieces
-                .iter()
-                .map(|p| {
-                    let mut u = usage_of(model, solution, idx, &p.forces, strength);
-                    if !u.governs.is_empty() {
-                        u.governs = format!(
-                            "{} (piece {:.0}–{:.0} % of its length)",
-                            u.governs,
-                            p.from * 100.0,
-                            p.to * 100.0
-                        );
-                    }
-                    u
-                })
-                .max_by(|a, b| a.usage.unwrap_or(-1.0).total_cmp(&b.usage.unwrap_or(-1.0)))
-                .expect("a piece")
-        })
+        .map(|idx| usage_of(model, solution, idx, &solution.members[idx], strength))
         .map(|mut u| {
             if solution.kept_active.contains(&u.member) {
                 u.governs = if u.governs.is_empty() {

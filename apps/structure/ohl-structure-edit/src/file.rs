@@ -49,11 +49,18 @@ impl StructureFile {
         Ok(f)
     }
 
-    /// From `text` (a file `path` or none: not saved yet).
+    /// From `text` (a file `path` or none: not saved yet). Points the file
+    /// places along a member (written before 2026-10-21) are put on a
+    /// joint inserted there, as the structure reads them
+    /// ([`crate::links::insert_joints_on_members`]): the file shows
+    /// changes not saved yet.
     pub fn parse(text: &str, path: Option<&Path>) -> Result<Self, String> {
-        let doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
-        let read = StructureType::parse(path.unwrap_or(Path::new("structure.ohls")), text)
-            .map_err(|e| e.to_string())?;
+        let mut doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+        let name = path.unwrap_or(Path::new("structure.ohls"));
+        let mut read = StructureType::parse(name, text).map_err(|e| e.to_string())?;
+        if crate::links::insert_joints_on_members(&mut doc)? {
+            read = StructureType::parse(name, &doc.to_string()).map_err(|e| e.to_string())?;
+        }
         crate::body::check(&read)?;
         Ok(Self {
             path: path.map(Path::to_path_buf),

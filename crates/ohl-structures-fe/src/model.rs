@@ -628,26 +628,6 @@ pub struct NodalLoad {
     pub moment: [f64; 3],
 }
 
-/// A structure type's attachment point along a member (not on a joint):
-/// on a frame member (`kind = "frame"`) strictly between its ends, the
-/// analysis splits the member there ([`Model::split`]) and the load acts
-/// at the joint it makes; else its force goes to the member's two end
-/// nodes, (1 − `at`) and `at`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct MemberPoint {
-    /// The point's label.
-    pub label: String,
-    /// Member (index).
-    pub member: usize,
-    /// Fraction of the member's length from its first node, 0–1.
-    pub at: f64,
-    /// The joint the point is linked to there
-    /// ([`ohl_structures::point_joints`]: points at one place share it).
-    pub joint: String,
-    /// From the joint to the point, structure axes, m (a rigid link).
-    pub offset: [f64; 3],
-}
-
 /// A structure type's attachment point on a node (`[[point]] node`, or a
 /// point at a node's position): several may share a node.
 #[derive(Debug, Clone, PartialEq)]
@@ -707,8 +687,6 @@ pub struct Model {
     pub members: Vec<Member>,
     /// The model's own loads.
     pub loads: Vec<NodalLoad>,
-    /// The structure type's points along members.
-    pub member_points: Vec<MemberPoint>,
     /// The structure type's points on nodes (2026-10-21; a separate
     /// model's nodes name theirs by [`Node::attachment`]).
     pub joint_points: Vec<JointPoint>,
@@ -908,7 +886,6 @@ impl Model {
             sections,
             members,
             loads,
-            member_points: Vec::new(),
             joint_points: Vec::new(),
         };
         model.check()?;
@@ -919,7 +896,9 @@ impl Model {
     /// members: its `[[node]]`, `[[member]]`, `[[section]]`,
     /// `[[material]]`, `[[load]]` and `[analysis]` tables. A `[[point]]` on
     /// a joint (`node = "…"`) makes that joint carry the point's loads; one
-    /// along a member (`member`, `at`) shares them to the member's ends.
+    /// a file written before places along a member (`member`, `at`) is on
+    /// a joint inserted there, the member split into continuous pieces
+    /// ([`ohl_structures::on_members`]).
     pub fn from_structure_type(text: &str) -> Result<Self, String> {
         Self::from_structure_type_with(text, &SectionLibrary::default())
     }
@@ -958,7 +937,11 @@ impl Model {
     }
 
     /// The model of a structure file's tables.
-    fn from_structure_table(file: toml::Table, library: &SectionLibrary) -> Result<Self, String> {
+    fn from_structure_table(
+        mut file: toml::Table,
+        library: &SectionLibrary,
+    ) -> Result<Self, String> {
+        ohl_structures::on_members::apply_to_table(&mut file)?;
         let mut model = toml::Table::new();
         for key in [
             "name", "source", "analysis", "material", "section", "member", "load",
@@ -1073,17 +1056,6 @@ impl Model {
                 && !attachments.insert(a)
             {
                 return Err(format!("point {a} on two nodes (node {})", n.id));
-            }
-        }
-        for p in &self.member_points {
-            if p.member >= self.members.len() || !(0.0..=1.0).contains(&p.at) {
-                return Err(format!(
-                    "point {}: member index out of range or at not between 0 and 1",
-                    p.label
-                ));
-            }
-            if !attachments.insert(&p.label) {
-                return Err(format!("point {} given twice", p.label));
             }
         }
         for m in &self.members {

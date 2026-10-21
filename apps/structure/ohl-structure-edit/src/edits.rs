@@ -123,8 +123,7 @@ impl Removal {
 }
 
 /// What goes when `h` is deleted: a joint takes its members and the
-/// points on them; a member the points along it; a point or wire point
-/// the strings from or to it.
+/// points on it; a point or wire point the strings from or to it.
 pub fn removal(t: &StructureType, h: &Handle) -> Removal {
     let mut r = Removal::default();
     match h {
@@ -142,8 +141,7 @@ pub fn removal(t: &StructureType, h: &Handle) -> Removal {
         Handle::Wire(l) => r.wires.push(l.clone()),
     }
     for p in &t.points {
-        let on = p.node.as_ref().is_some_and(|n| r.joints.contains(n))
-            || p.member.as_ref().is_some_and(|m| r.members.contains(m));
+        let on = p.node.as_ref().is_some_and(|n| r.joints.contains(n));
         if on && !r.points.contains(&p.label) {
             r.points.push(p.label.clone());
         }
@@ -310,7 +308,10 @@ fn length_or_leg(t: &StructureType, tops: &[String], l: f64) -> Item {
 }
 
 /// Moves a joint, a point or a wire point to `at`: a point on a joint
-/// moves the joint; a point along a member and a member do not move.
+/// stays linked to it, its offset the new distance from it (the joint
+/// does not move: owner decision 2026-10-21,
+/// [`crate::links::move_point`]); a joint moved takes the points on it
+/// along (their offsets kept); a member does not move.
 pub fn move_to(
     doc: &mut DocumentMut,
     t: &StructureType,
@@ -322,21 +323,7 @@ pub fn move_to(
             let n = entry(doc, "node", "id", id).ok_or("no such joint")?;
             n.insert("point", point_value(at));
         }
-        Handle::Point(l) => {
-            let p = t
-                .points
-                .iter()
-                .find(|p| &p.label == l)
-                .ok_or("no such point")?;
-            if let Some(n) = &p.node {
-                return move_to(doc, t, &Handle::Joint(n.clone()), at);
-            }
-            if p.member.is_some() {
-                return Err(format!("point {l} sits along a member: move its joints"));
-            }
-            let p = entry(doc, "point", "label", l).ok_or("no such point")?;
-            p.insert("point", point_value(at));
-        }
+        Handle::Point(l) => crate::links::move_point(doc, t, l, at)?,
         Handle::Wire(l) => {
             let w = entry(doc, "wire", "label", l).ok_or("no such wire point")?;
             w.insert("point", point_value(at));

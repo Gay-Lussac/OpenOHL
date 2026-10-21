@@ -119,14 +119,22 @@ fn deleting_a_joint_takes_its_members_points_and_strings() {
     assert!(t.strings.is_empty());
 }
 
+/// A point on a joint moved stays on it, its offset the distance; the
+/// joint does not move (owner decision 2026-10-21: the link follows
+/// edits).
 #[test]
-fn moving_a_point_on_a_joint_moves_the_joint() {
+fn moving_a_point_on_a_joint_keeps_the_joint() {
     let mut doc: DocumentMut = PYLON.parse().unwrap();
     let t = read(&doc);
+    let joint = t.nodes[2].point;
     move_to(&mut doc, &t, &Handle::Point("A1".into()), [-7.0, 0.0, 31.0]).unwrap();
     let t = read(&doc);
     assert_eq!(t.point_local("A1", None), Some([-7.0, 0.0, 31.0]));
-    assert_eq!(t.nodes[2].point[0].si(), -7.0);
+    assert_eq!(t.nodes[2].point, joint);
+    assert_eq!(
+        t.point_link("A1"),
+        Some((t.nodes[2].id.as_str(), [-1.0, 0.0, 1.0]))
+    );
 }
 
 /// Insulators: a new one from a point (its wire point placed by its

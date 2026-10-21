@@ -329,13 +329,15 @@ pub struct InlineString {
 }
 
 /// An **attachment point** of a structure type: where strings hang
-/// (version 2), linked to a joint (2026-10-21; the file keys stay `point`,
-/// `node`, `member`, `at`). It is on a joint (`node`), along a member
-/// (`member`, `at`: the joint the analysis puts there), or at a position
-/// of its own (`point`: a stick figure's — the point is then its own
-/// joint, [`JointSource::Point`]). On a joint or a member it may sit at an
-/// `offset` from it (version 6): a rigid link from the joint to the
-/// point, whose moment the structure analysis applies.
+/// (version 2), linked to a joint (2026-10-21; the file keys stay `point`
+/// and `node`). It is on a joint (`node`) or at a position of its own
+/// (`point`: a stick figure's — the point is then its own joint,
+/// [`JointSource::Point`]). On a joint it may sit at an `offset` from it
+/// (version 6): a rigid link from the joint to the point, whose moment
+/// the structure analysis applies. A point cannot be put on a member: a
+/// file written before that places one along a member (`member`, `at`)
+/// is read with a joint inserted there and the member split
+/// ([`crate::on_members`]).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TypePoint {
@@ -344,27 +346,28 @@ pub struct TypePoint {
     /// What it is, in words (free text).
     #[serde(default)]
     pub description: String,
-    /// Position in local axes (filled from `node` or `member`, plus the
-    /// `offset`, when they are given instead).
+    /// Position in local axes (filled from `node`, plus the `offset`,
+    /// when it is given instead).
     #[serde(default)]
     pub point: Option<[Length; 3]>,
     /// Or: at a joint of the pylon.
     #[serde(default)]
     pub node: Option<String>,
-    /// Or: along a member of the pylon…
+    /// Files written before: along this member of the pylon… (read as a
+    /// joint inserted there, [`crate::on_members`]; none once read).
     #[serde(default)]
     pub member: Option<String>,
     /// …at this fraction from its first joint (0–1).
     #[serde(default)]
     pub at: Option<f64>,
-    /// From its joint (`node`, or the place along `member`) to the point,
-    /// local axes (version 6; none: on the joint).
+    /// From its joint (`node`) to the point, local axes (version 6; none:
+    /// on the joint).
     #[serde(default)]
     pub offset: Option<[Length; 3]>,
     /// The joint it is linked to, filled when the type is read
-    /// ([`StructureType::joints`]): its `node`, else the joint the
-    /// analysis puts along its member, else (a point at a position of its
-    /// own) the joint at the same position, else its own joint.
+    /// ([`StructureType::joints`]): its `node`, else (a point at a
+    /// position of its own) the joint at the same position, else its own
+    /// joint.
     #[serde(skip)]
     pub joint: String,
 }
@@ -384,10 +387,9 @@ impl TypePoint {
 
     /// Where it sits, as the file gives it.
     pub fn place(&self) -> PointPlace<'_> {
-        match (&self.node, &self.member, self.at) {
-            (Some(n), _, _) => PointPlace::Joint(n),
-            (None, Some(m), Some(at)) => PointPlace::Member(m, at),
-            _ => PointPlace::Free(self.position().map(|v| v.si())),
+        match &self.node {
+            Some(n) => PointPlace::Joint(n),
+            None => PointPlace::Free(self.position().map(|v| v.si())),
         }
     }
 }
@@ -428,17 +430,9 @@ impl JointKind {
 /// ([`StructureType::joints`]).
 #[derive(Debug, Clone, PartialEq)]
 pub enum JointSource {
-    /// A `[[node]]` of the file.
+    /// A `[[node]]` of the file (a joint inserted on a member for a point
+    /// a file placed along it included, [`crate::on_members`]).
     Node,
-    /// The place along a member where attachment points sit (`member`,
-    /// `at`): the analysis splits the member there
-    /// (`ohl_structures_fe`), the file keeps one member.
-    Member {
-        /// The member's id.
-        member: String,
-        /// Fraction of its length from its first joint (0–1).
-        at: f64,
-    },
     /// An attachment point at a position of its own (a stick figure's):
     /// it is its own joint, on no member.
     Point,
@@ -468,8 +462,6 @@ pub struct Joint {
 pub enum PointPlace<'a> {
     /// On this joint (`node`).
     Joint(&'a str),
-    /// Along this member at this fraction (`member`, `at`).
-    Member(&'a str, f64),
     /// At this position of its own (`point`), local axes, m.
     Free([f64; 3]),
 }
@@ -477,14 +469,18 @@ pub enum PointPlace<'a> {
 /// Two positions closer than this are one joint's (rounding only), m.
 pub const SAME_JOINT: f64 = 1e-6;
 
+/// What a joint that is not an attach joint says when a point is to be
+/// linked to it (owner decision 2026-10-21: only attach joints take
+/// links; a joint's kind is set in OHL-Structure).
+pub const NOT_ATTACH: &str = "not an attach joint: set its kind to attach in OHL-Structure";
+
 /// The joint each point is linked to, in order: the joint it is on; for
-/// points along a member, one joint per place (`member`, `at`) shared by
-/// the points there; for a point at a position of its own, the joint
-/// that names it as its `attachment`, else the first joint at that
-/// position (within [`SAME_JOINT`]), else its own joint. A joint made by
-/// points takes the first point's label as its id, or (when a joint has
-/// that id already) the label with `-a`, `-a2`, `-a3`… — the rule the
-/// structure analysis follows too.
+/// a point at a position of its own, the joint that names it as its
+/// `attachment`, else the first joint at that position (within
+/// [`SAME_JOINT`]), else its own joint. A joint made by a point takes its
+/// label as its id, or (when a joint has that id already) the label with
+/// `-a`, `-a2`, `-a3`… — the rule the structure analysis follows too
+/// (and [`crate::on_members`] for joints inserted on members).
 ///
 /// `joints`: the joints' ids and positions (local axes, m) and the point
 /// label each names as its `attachment` (if any).
@@ -494,7 +490,6 @@ pub fn point_joints(
 ) -> Vec<String> {
     let mut taken: std::collections::BTreeSet<String> =
         joints.iter().map(|(id, _, _)| (*id).to_owned()).collect();
-    let mut along: Vec<(&str, u64, String)> = Vec::new();
     let own = |label: &str, taken: &mut std::collections::BTreeSet<String>| {
         let id = std::iter::once(label.to_owned())
             .chain(std::iter::once(format!("{label}-a")))
@@ -508,17 +503,6 @@ pub fn point_joints(
         .iter()
         .map(|(label, place)| match *place {
             PointPlace::Joint(id) => id.to_owned(),
-            PointPlace::Member(m, at) => {
-                if let Some((_, _, id)) = along
-                    .iter()
-                    .find(|(x, bits, _)| *x == m && *bits == at.to_bits())
-                {
-                    return id.clone();
-                }
-                let id = own(label, &mut taken);
-                along.push((m, at.to_bits(), id.clone()));
-                id
-            }
             PointPlace::Free(p) => {
                 let carried = joints.iter().find(|(_, _, a)| *a == Some(*label));
                 let here = || {
@@ -1154,9 +1138,11 @@ impl LibraryItem for StructureType {
         &self.id
     }
 
-    /// Points at a joint or along a member get their position (plus their
-    /// offset), and every point its joint ([`TypePoint::joint`]).
+    /// Points written along a member get a joint inserted there
+    /// ([`crate::on_members`]); points at a joint get its position (plus
+    /// their offset), and every point its joint ([`TypePoint::joint`]).
     fn prepare(&mut self) -> Result<(), String> {
+        self.insert_joints_on_members()?;
         let joint = |id: &str| -> Result<[f64; 3], String> {
             self.nodes
                 .iter()
@@ -1172,36 +1158,16 @@ impl LibraryItem for StructureType {
                 None => a,
                 Some(o) => [a[0] + o[0].si(), a[1] + o[1].si(), a[2] + o[2].si()],
             };
-            let at = match (&p.point, &p.node, &p.member, p.at) {
-                (Some(_), None, None, None) => {
+            let at = match (&p.point, &p.node) {
+                (Some(_), None) => {
                     if p.offset.is_some() {
-                        return Err(bad(
-                            "an offset is from a joint: give it with a node, or a member and at"
-                                .into(),
-                        ));
+                        return Err(bad("an offset is from a joint: give it with a node".into()));
                     }
                     None
                 }
-                (None, Some(n), None, None) => Some(shifted(joint(n).map_err(bad)?)),
-                (None, None, Some(m), Some(f)) => {
-                    let member = self
-                        .members
-                        .iter()
-                        .find(|x| &x.id == m)
-                        .ok_or_else(|| bad(format!("no member \"{m}\"")))?;
-                    if !(0.0..=1.0).contains(&f) {
-                        return Err(bad("at must be between 0 and 1".into()));
-                    }
-                    let (a, b) = (
-                        joint(&member.nodes[0]).map_err(bad)?,
-                        joint(&member.nodes[1]).map_err(bad)?,
-                    );
-                    Some(shifted([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k]))))
-                }
+                (None, Some(n)) => Some(shifted(joint(n).map_err(bad)?)),
                 _ => {
-                    return Err(bad(
-                        "give its point, a node, or a member and at (one of them)".into(),
-                    ));
+                    return Err(bad("give its point or a node (one of them)".into()));
                 }
             };
             placed.push(at);
@@ -1581,8 +1547,8 @@ impl StructureType {
     }
 
     /// The joints the attachment points see: every `[[node]]`, then the
-    /// joints the points make themselves (along a member, or a point at a
-    /// position of its own: [`JointSource`]), in the order of the points.
+    /// joints the points make themselves (a point at a position of its
+    /// own: [`JointSource::Point`]), in the order of the points.
     pub fn joints(&self) -> Vec<Joint> {
         let linked = |id: &str| self.points.iter().any(|p| p.joint == id);
         let mut out: Vec<Joint> = self
@@ -1605,25 +1571,11 @@ impl StructureType {
             if out.iter().any(|j| j.id == p.joint) {
                 continue;
             }
-            let (source, position) = match p.place() {
-                PointPlace::Member(m, at) => {
-                    let o = p.offset_m();
-                    let q = p.position().map(|v| v.si());
-                    (
-                        JointSource::Member {
-                            member: m.to_owned(),
-                            at,
-                        },
-                        [q[0] - o[0], q[1] - o[1], q[2] - o[2]],
-                    )
-                }
-                _ => (JointSource::Point, p.position().map(|v| v.si())),
-            };
             out.push(Joint {
                 id: p.joint.clone(),
-                position,
+                position: p.position().map(|v| v.si()),
                 kind: Some(JointKind::Attach),
-                source,
+                source: JointSource::Point,
             });
         }
         out
@@ -2093,6 +2045,98 @@ impl StructureType {
     /// Joints, members and the points on them: ids unique, members between
     /// two different joints. A section id may be in the section library
     /// (not read here): the structure model resolves it.
+    /// Points written along a member (`member`, `at`: files written
+    /// before 2026-10-21) put on a joint inserted on the member, the
+    /// member split there into continuous pieces ([`crate::on_members`]).
+    /// A point giving `member` or `at` with a `point` or a `node`, or one
+    /// without the other, is refused.
+    fn insert_joints_on_members(&mut self) -> Result<(), String> {
+        let mut along = Vec::new();
+        for p in &self.points {
+            match (&p.member, p.at) {
+                (None, None) => {}
+                (Some(m), Some(at)) if p.point.is_none() && p.node.is_none() => {
+                    along.push((p.label.clone(), m.clone(), at));
+                }
+                _ => {
+                    return Err(format!(
+                        "point {}: give its point or a node (one of them; a point along a \
+                         member gives member and at)",
+                        p.label
+                    ));
+                }
+            }
+        }
+        if along.is_empty() {
+            return Ok(());
+        }
+        let joints: Vec<(String, [f64; 3])> = self
+            .nodes
+            .iter()
+            .map(|n| (n.id.clone(), n.point.map(|v| v.si())))
+            .collect();
+        let plan = crate::on_members::plan(
+            &joints
+                .iter()
+                .map(|(id, p)| (id.as_str(), *p))
+                .collect::<Vec<_>>(),
+            &self
+                .members
+                .iter()
+                .map(|m| crate::on_members::MemberRow {
+                    id: &m.id,
+                    nodes: [&m.nodes[0], &m.nodes[1]],
+                    k: m.k,
+                    has_lk: m.lk.is_some(),
+                })
+                .collect::<Vec<_>>(),
+            &along
+                .iter()
+                .map(|(l, m, at)| (l.as_str(), m.as_str(), *at))
+                .collect::<Vec<_>>(),
+        )?;
+        for j in &plan.joints {
+            self.nodes.push(TypeNode {
+                id: j.id.clone(),
+                point: j.position.map(Length::from_meters),
+                support: None,
+                spring: None,
+                attachment: None,
+                kind: Some(JointKind::Attach),
+                made_by: None,
+            });
+        }
+        let mut more = Vec::new();
+        for s in &plan.splits {
+            let Some(m) = self.members.iter_mut().find(|m| m.id == s.member) else {
+                continue;
+            };
+            if let Some(lk) = s.lk {
+                m.lk = Some(crate::on_members::lk_value(lk));
+            }
+            for (k, piece) in s.pieces.iter().enumerate() {
+                if k == 0 {
+                    m.nodes = piece.nodes.clone();
+                } else {
+                    more.push(TypeMember {
+                        id: piece.id.clone(),
+                        nodes: piece.nodes.clone(),
+                        ..m.clone()
+                    });
+                }
+            }
+        }
+        self.members.extend(more);
+        for p in &mut self.points {
+            if let Some((_, j)) = plan.points.iter().find(|(l, _)| *l == p.label) {
+                p.node = Some(j.clone());
+                p.member = None;
+                p.at = None;
+            }
+        }
+        Ok(())
+    }
+
     fn check_members(&self) -> Result<(), String> {
         let mut joints = std::collections::BTreeSet::new();
         for n in &self.nodes {
@@ -2477,7 +2521,8 @@ mod tests {
         assert!(StructureType::parse(Path::new("t.ohls"), &typo).is_err());
     }
 
-    /// Points at a joint or along a member follow it.
+    /// Points at a joint follow it; one written along a member is on a
+    /// joint inserted there (the member split).
     #[test]
     fn points_on_joints_and_members() {
         let text = "id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n\
@@ -2489,6 +2534,11 @@ mod tests {
         let t = StructureType::parse(Path::new("t.ohls"), text).unwrap();
         assert_eq!(t.point_local("tip", None), Some([-10.0, 0.0, 30.0]));
         assert_eq!(t.point_local("mid", None), Some([-2.5, 0.0, 30.0]));
+        assert_eq!(t.point_link("mid"), Some(("mid", [0.0; 3])));
+        assert_eq!(t.members.len(), 2);
+        assert_eq!(t.members[0].nodes, ["N1".to_owned(), "mid".to_owned()]);
+        assert_eq!(t.members[1].nodes, ["mid".to_owned(), "N2".to_owned()]);
+        assert_eq!(t.joint("mid").unwrap().kind, Some(JointKind::Attach));
         for bad in [
             "[[point]]\nlabel = \"x\"\nnode = \"N9\"\n",
             "[[point]]\nlabel = \"x\"\nmember = \"arm\"\nat = 1.5\n",

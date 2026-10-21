@@ -41,14 +41,10 @@ mod units;
 pub mod wind;
 
 pub use check::{MemberUsage, member_usage};
-pub use links::{PointLoad, Split, SplitNode};
-pub use model::{
-    Analysis, JointPoint, Member, MemberKind, MemberPoint, Model, NodalLoad, Node, Section,
-};
+pub use links::PointLoad;
+pub use model::{Analysis, JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole};
-pub use solve::{
-    FeError, Loads, MemberForces, Options, Piece, Reaction, Solution, default_budget, solve,
-};
+pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
 pub use stabilise::{Stabilisation, Stabilised};
 
 /// Solves a model under `loads` with its own analysis settings and gives

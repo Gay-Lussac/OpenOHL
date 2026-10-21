@@ -492,15 +492,18 @@ fn example_model_parses() {
     }
 }
 
-/// A point along a frame member (`member`, `at`): the analysis splits
-/// the member there (2026-10-21) and the load acts at the joint it makes.
-/// An L frame (column fixed at the base, beam out along x) loaded at a
-/// quarter of the beam gives the reactions by hand (P up, −P·1 m about y)
-/// and the solution of the same frame with a joint drawn there, bit for
-/// bit; the beam is reported as one member, its usage its worse piece's.
-/// Along a truss member the force goes to its ends, (1 − at) and at.
+/// A point a file places along a member (`member`, `at`, written before
+/// 2026-10-21) is on a joint inserted there, the member split into two
+/// continuous pieces of its properties and buckling length (owner
+/// decision 2026-10-21). An L frame (column fixed at the base, beam out
+/// along x) loaded at a quarter of the beam gives the reactions by hand
+/// (P up, −P·1 m about y) and the solution of the same frame with the
+/// joint drawn there, bit for bit. Along a truss member the two bars
+/// meet at the joint with no stiffness across them: the solve is refused
+/// with the fix; a frame, or a member to the joint in the plane of the
+/// load, carries it.
 #[test]
-fn point_along_a_member_carries_its_load() {
+fn point_along_a_member_is_on_a_joint_inserted_there() {
     let head = "[analysis]\nnonlinear = false\nself_weight = false\n\
                 [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n\
                 [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"2000 mm2\"\n\
@@ -511,65 +514,64 @@ fn point_along_a_member_carries_its_load() {
                 [[member]]\nid = \"col\"\nnodes = [\"A\", \"B\"]\nsection = \"s\"\nkind = \"frame\"\n";
     let along = format!(
         "{head}[[member]]\nid = \"beam\"\nnodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\n\
-         lk = \"4 m\"\n[[point]]\nlabel = \"P1\"\nmember = \"beam\"\nat = 0.25\n"
+         [[point]]\nlabel = \"P1\"\nmember = \"beam\"\nat = 0.25\n"
     );
+    // The joint drawn, each piece buckling over the whole beam (k × 4 m).
     let joint = format!(
         "{head}[[node]]\nid = \"P1\"\npoint = [1, 0, 4]\n\
          [[member]]\nid = \"beam\"\nnodes = [\"B\", \"P1\"]\nsection = \"s\"\nkind = \"frame\"\nlk = \"4 m\"\n\
-         [[member]]\nid = \"b2\"\nnodes = [\"P1\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\nlk = \"4 m\"\n\
+         [[member]]\nid = \"beam-2\"\nnodes = [\"P1\", \"C\"]\nsection = \"s\"\nkind = \"frame\"\nlk = \"4 m\"\n\
          [[point]]\nlabel = \"P1\"\nnode = \"P1\"\n"
     );
     let p = 10e3;
     let solved = |text: &str| {
         let m = Model::from_structure_type(text).unwrap();
         let at = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
-        let sol = solve(&m, &nodal(at), &first_order(), &default_budget()).unwrap();
+        let sol = solve(&m, &nodal(at), &first_order(), &default_budget());
         (m, sol)
     };
-    let (m, split) = solved(&along);
-    let r = split.reactions[0];
+    let (m, read) = solved(&along);
+    let read = read.unwrap();
+    let r = read.reactions[0];
     assert!(close(r.force[2], p, 1e-9), "{r:?}");
     assert!(close(r.moment[1], -p * 1.0, 1e-9), "{r:?}");
     let (mj, drawn) = solved(&joint);
+    let drawn = drawn.unwrap();
     // The same model solved: every number the same.
-    assert_eq!(split.reactions, drawn.reactions);
-    assert_eq!(split.displacements, drawn.displacements);
-    assert_eq!(split.pieces.len(), 2);
-    assert_eq!(split.pieces[0].forces, drawn.members[1]);
-    assert_eq!(split.pieces[1].forces, drawn.members[2]);
-    assert_eq!((split.pieces[0].from, split.pieces[0].to), (0.0, 0.25));
-    // One member reported: forces at its own joints B and C.
-    assert_eq!(split.members.len(), 2);
-    assert_eq!(
-        split.members[1].end_forces[..6],
-        drawn.members[1].end_forces[..6]
-    );
-    assert_eq!(
-        split.members[1].end_forces[6..],
-        drawn.members[2].end_forces[6..]
-    );
-    let usage = member_usage(&m, &split, 1.0);
-    let drawn_usage = member_usage(&mj, &drawn, 1.0);
-    assert_eq!(usage.len(), 2);
-    let worse = drawn_usage[1]
-        .usage
-        .unwrap()
-        .max(drawn_usage[2].usage.unwrap());
-    assert_eq!(usage[1].usage, Some(worse));
-    assert!(usage[1].governs.contains("piece"), "{:?}", usage[1]);
+    assert_eq!(m.nodes.len(), 4);
     assert_eq!(m.node_name(3), "P1");
-    // Along a truss member: shared to its ends, (1 − at) and at.
+    assert_eq!(m.members.len(), 3);
+    assert_eq!(m.members[2].id, "beam-2");
+    assert_eq!(m.members[1].lk, Some(4.0));
+    assert_eq!(read.reactions, drawn.reactions);
+    assert_eq!(read.displacements, drawn.displacements);
+    assert_eq!(read.members, drawn.members);
+    assert_eq!(member_usage(&m, &read, 1.0), member_usage(&mj, &drawn, 1.0));
+    assert!(m.point_loads("P2", [0.0; 3]).is_none());
+    // Along a truss member: two bars in a line at the joint, the load
+    // across them refused with the fix.
     let truss = along.replace(
         "nodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"frame\"",
         "nodes = [\"B\", \"C\"]\nsection = \"s\"\nkind = \"truss\"",
     );
-    let m = Model::from_structure_type(&truss).unwrap();
-    assert!(m.split().is_none());
-    let shares = m.point_loads("P1", [0.0, 0.0, -p]).unwrap();
-    assert_eq!(shares.len(), 2);
-    assert!(close(shares[0].force[2], -0.75 * p, 1e-12));
-    assert!(close(shares[1].force[2], -0.25 * p, 1e-12));
-    assert!(m.point_loads("P2", [0.0; 3]).is_none());
+    let (m, refused) = solved(&truss);
+    assert_eq!(m.bar_joint_free(3).len(), 2);
+    let e = refused.unwrap_err().to_string();
+    assert!(
+        e.contains("joint P1 (attachment point P1): only bars meet it")
+            && e.contains("make the members frames, or add a member to the joint"),
+        "{e}"
+    );
+    // Along the bars it is carried.
+    let at = m.point_loads("P1", [p, 0.0, 0.0]).unwrap();
+    assert!(solve(&m, &nodal(at), &first_order(), &default_budget()).is_ok());
+    // A member to the joint in the plane of the load (x–z): carried.
+    let braced = format!(
+        "{truss}[[member]]\nid = \"brace\"\nnodes = [\"A\", \"P1\"]\nsection = \"s\"\nkind = \"truss\"\n"
+    );
+    let (m, ok) = solved(&braced);
+    assert_eq!(m.bar_joint_free(3).len(), 1);
+    assert!(ok.is_ok(), "{ok:?}");
     // A point on a member that is not there is refused.
     let bad = along.replace("member = \"beam\"", "member = \"nope\"");
     assert!(Model::from_structure_type(&bad).is_err());
