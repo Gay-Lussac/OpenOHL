@@ -841,6 +841,20 @@ mod tests {
                 assert_eq!(ty.strings.len(), phases * per, "{}", t.id);
                 // The face is flat: every point at y = 0.
                 assert!(ty.points.iter().all(|p| p.position()[1].si() == 0.0));
+                // Every attachment point on an attach joint of its own
+                // (level 1: no members), no offset (2026-10-21).
+                for p in &ty.points {
+                    let (j, o) = ty.point_link(&p.label).unwrap();
+                    assert_eq!(o, [0.0; 3], "{} {}", t.id, p.label);
+                    assert_eq!(
+                        ty.joint(j).unwrap().kind,
+                        Some(crate::JointKind::Attach),
+                        "{} {}",
+                        t.id,
+                        p.label
+                    );
+                }
+                assert_eq!(ty.attach_joints().len(), ty.points.len(), "{}", t.id);
             }
         }
     }
