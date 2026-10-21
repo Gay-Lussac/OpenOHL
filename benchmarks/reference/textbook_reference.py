@@ -73,6 +73,7 @@ with 10 significant digits, case by case.
 """
 
 import math
+import sys
 
 G = 9.80665  # standard gravity, m/s^2
 
@@ -1239,6 +1240,14 @@ def iced_span_cases():
     fe["before_2026_10_21_sag"] = old["sag_0_m"]
     fe["before_minus_exact_rel"] = old["h_0_n"] / H_ex - 1
     show("tbice-001 finite elements (line.section), 12 mm ice at -5 degC", fe)
+    # tbice-002: the solver option "per unstretched metre" (2026-10-21, as
+    # other programs): the model before 2026-10-21, its ice per unstressed
+    # metre. Hand check: the supports carry the own weight and the ice on
+    # the unstressed length, (w0 / thermal + ice) * L0 * thermal.
+    thermal = math.exp(alpha * (-5.0 - 10.0))
+    old["supports_vertical_n"] = (w0 / thermal + ice["ice"]) * old["L0"] * thermal
+    old["minus_stretched_rel"] = old["h_0_n"] / fe["h_0_n"] - 1
+    show("tbice-002 finite elements (line.section), ice per unstretched metre (option)", old)
 
 
 def irvine(H, V0, L0, EA, w):
@@ -1395,6 +1404,9 @@ def self_check():
 
 
 def main():
+    if sys.argv[1:] == ["iced"]:
+        iced_span_cases()
+        return
     self_check()
     textbook_catenary()
     textbook_cos()
