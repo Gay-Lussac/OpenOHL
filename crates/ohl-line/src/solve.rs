@@ -612,12 +612,17 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
             // would line up with its conductor and lose the droop the data
             // shows (freed without weights, a 930-span comparison got worse:
             // median 1.1 → 4.2 cm): its weight is estimated from where the
-            // data puts it.
+            // data puts it. Without a weight is a resolved weight of 0, from
+            // its own data or from an insulator giving 0 N, whether or not
+            // it names one (2026-10-21: linked to 0 N catalogue entries, a
+            // real line's strain strings lost the estimate, median sag
+            // differences 0.7–2.4 cm → 2–9 cm); an insulator with a real
+            // weight gives it.
             let estimate = shape == Shape::Strain && {
                 let st = structure
                     .string(&members[0].label)
                     .expect("the holder's string");
-                st.insulator.is_none() && !st.strain && st.weight == 0.0
+                !st.strain && st.weight == 0.0
             };
             // A shared assembly's loads go with the first section through it
             // (solved together, with the one solving it: `Coupling::solvers`).
@@ -4379,16 +4384,10 @@ mod tests {
         assert!(hi - lo > 500.0, "clipped after the move {lo}–{hi}");
     }
 
-    /// A dead-end string given as geometry only (no weight): its weight is
-    /// estimated so that it stays where the data puts it in the stringing
-    /// state (S2: clipped in at 15 °C), and it moves with the weather.
-    #[test]
-    fn weightless_strain_strings_stay_put_at_stringing_and_move_with_the_weather() {
-        let lib = library();
+    /// The example line with S2's dead-end strings drooping 12° (as a
+    /// weight can hold them), given as geometry only (no weight).
+    fn with_drooping_dead_ends() -> Line {
         let mut line = crate::tests::example();
-        // The example's dead-end strings droop less (5.7°) than the wire
-        // pulls them down (8.4°): no weight holds them there (estimated 0;
-        // freed, they drop 0.23 m). Drooping 12°, as a weight can hold them:
         let ends: Vec<crate::SectionPoint> = {
             let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap();
             vec![s2.points[0].clone(), s2.points.last().unwrap().clone()]
@@ -4407,7 +4406,116 @@ mod tests {
                 .find(|w| w.label == wire)
                 .unwrap()
                 .position[2] = z;
+            // The string's geometry taken again from where it now ends.
+            for x in st.strings.iter_mut().filter(|x| x.wire == wire) {
+                x.length = 0.0;
+            }
         }
+        line.place_strings().unwrap();
+        line
+    }
+
+    /// A strain assembly for the insulator library, of `weight` N.
+    fn strain_assembly(id: &str, weight: f64) -> ohl_structures::InsulatorAssembly {
+        use ohl_core::units::{Area, Force, Length};
+        ohl_structures::InsulatorAssembly {
+            format: None,
+            version: None,
+            id: id.into(),
+            name: id.into(),
+            kind: ohl_structures::AssemblyKind::Strain,
+            source: None,
+            length: Length::from_meters(3.0),
+            weight: Force::from_newtons(weight),
+            axial_stiffness: Force::from_newtons(DEFAULT_INSULATOR_STIFFNESS),
+            wind_area: Area::from_square_meters(0.0),
+            half_width: None,
+            max_load: None,
+            max_swing: None,
+            max_swing_across: None,
+            max_swing_along: None,
+        }
+    }
+
+    /// A strain string whose resolved weight is 0 counts as without a
+    /// weight whether or not it names an insulator: linked to a 0 N entry,
+    /// S2 solves exactly as unlinked (its weights estimated); an entry with
+    /// a real weight gives that weight (no estimate). Before 2026-10-21 the
+    /// 0 N link dropped the estimate (on a real line: median sag
+    /// differences 0.7–2.4 cm → 2–9 cm).
+    #[test]
+    fn a_zero_newton_insulator_keeps_the_estimated_weight() {
+        let lib = library();
+        let line = with_drooping_dead_ends();
+        let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap().clone();
+        let cable = lib.get(&s2.cable).unwrap();
+        let ends: Vec<(String, String)> = [&s2.points[0], s2.points.last().unwrap()]
+            .iter()
+            .map(|p| {
+                let st = line.structure(&p.structure).unwrap();
+                let wire = &st.wire_at_set(p.set).unwrap().label;
+                (
+                    st.id.clone(),
+                    st.strings_to(wire).next().unwrap().label.clone(),
+                )
+            })
+            .collect();
+        let linked = |id: &str, weight: f64| {
+            let mut insulators = ohl_structures::InsulatorLibrary::default();
+            insulators
+                .insert(Path::new(id), strain_assembly(id, weight))
+                .unwrap();
+            let mut l = line.clone();
+            for (structure, label) in &ends {
+                let st = l
+                    .structures
+                    .iter_mut()
+                    .find(|s| s.id == *structure)
+                    .unwrap();
+                let x = st.strings.iter_mut().find(|x| x.label == *label).unwrap();
+                assert_eq!(x.weight, 0.0);
+                x.insulator = Some(id.into());
+            }
+            l.resolve(&ohl_structures::StructureLibrary::default(), &insulators)
+                .unwrap()
+        };
+        let case = WeatherCase::still("80", Temperature::from_celsius(80.0));
+        let solve = |l: &Line| solve_section(l, &s2, cable, &case, &default_fe_budget()).unwrap();
+        let plain = solve(
+            &line
+                .resolve(
+                    &ohl_structures::StructureLibrary::default(),
+                    &ohl_structures::InsulatorLibrary::default(),
+                )
+                .unwrap(),
+        );
+        let n = plain.estimated_weights.len();
+        assert!(plain.estimated_weights[0].is_some_and(|w| w > 0.0));
+        assert!(plain.estimated_weights[n - 1].is_some_and(|w| w > 0.0));
+        let zero = solve(&linked("Strain-3.000m-0N", 0.0));
+        assert_eq!(zero.estimated_weights, plain.estimated_weights);
+        assert_eq!(zero.clamps, plain.clamps);
+        for (a, b) in zero.spans.iter().zip(&plain.spans) {
+            assert_eq!(a.horizontal_tension, b.horizontal_tension);
+            assert_eq!(a.sag, b.sag);
+        }
+        // A real weight overrides the estimate.
+        let heavy = solve(&linked("Strain-heavy", 900.0));
+        assert_eq!(heavy.estimated_weights[0], None);
+        assert_eq!(heavy.estimated_weights[n - 1], None);
+        assert!((heavy.clamps[0][2] - plain.clamps[0][2]).abs() > 1e-3);
+    }
+
+    /// A dead-end string given as geometry only (no weight): its weight is
+    /// estimated so that it stays where the data puts it in the stringing
+    /// state (S2: clipped in at 15 °C), and it moves with the weather.
+    #[test]
+    fn weightless_strain_strings_stay_put_at_stringing_and_move_with_the_weather() {
+        let lib = library();
+        // The example's dead-end strings droop less (5.7°) than the wire
+        // pulls them down (8.4°): no weight holds them there (estimated 0;
+        // freed, they drop 0.23 m). Drooping 12°, as a weight can hold them.
+        let line = with_drooping_dead_ends();
         let s2 = line.sections.iter().find(|s| s.id == "S2").unwrap();
         let cable = lib.get(&s2.cable).unwrap();
         let solve = |case: &WeatherCase| {

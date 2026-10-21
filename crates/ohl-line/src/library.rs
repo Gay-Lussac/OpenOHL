@@ -191,7 +191,11 @@ impl Line {
     /// length to the mm, weight, wind area, stiffness) share an entry — one
     /// of `library` with those values, else a new one (`I-3.500m-900N`,
     /// `Strain-…`); each such string gets its label. Strings of structure
-    /// types are not labelled here (they are the type file's).
+    /// types are not labelled here (they are the type file's). Strings
+    /// without a weight (0 N resolved: geometry only, e.g. imported) are
+    /// left unlabelled: an entry has a weight, and a 0 N one would read as
+    /// a real weight; unlabelled, a strain string keeps the weight the
+    /// solver estimates from where the data puts it.
     pub fn catalogue_strings(&self, resolved: &Line, library: &InsulatorLibrary) -> Catalogue {
         let key_of = |a: &ohl_structures::InsulatorAssembly| {
             string_key(
@@ -221,6 +225,10 @@ impl Line {
                 let Some(length) = r.string_length(rx) else {
                     continue;
                 };
+                if rx.weight == 0.0 {
+                    // Weight unknown: not a library entry (see above).
+                    continue;
+                }
                 let stiffness = rx.stiffness.unwrap_or(self.defaults.insulator_stiffness);
                 let key = string_key(rx.strain, length, rx.weight, rx.wind_area, stiffness);
                 let id = match known.get(&key) {
@@ -597,15 +605,31 @@ mod tests {
     /// the same values share an entry; labelled and resolved with it, each
     /// keeps its weight, wind area, stiffness and length; a second pass
     /// finds nothing; an entry already there with the same values is used.
+    /// Strings without a weight (the example's dead-end strings, geometry
+    /// only) are left unlabelled: no 0 N entry (2026-10-21).
     #[test]
     fn strings_are_taken_into_the_library() {
         let line = crate::tests::example();
         let empty = InsulatorLibrary::default();
         let resolved = line.resolve(&StructureLibrary::default(), &empty).unwrap();
         let c = line.catalogue_strings(&resolved, &empty);
-        let own: usize = line.structures.iter().map(|s| s.strings.len()).sum();
-        assert_eq!(c.links.len(), own);
-        assert!(!c.new.is_empty() && c.new.len() < own, "{}", c.new.len());
+        let strings = || line.structures.iter().flat_map(|s| &s.strings);
+        let weighed = strings().filter(|x| x.weight > 0.0).count();
+        assert!(
+            strings().any(|x| x.weight == 0.0),
+            "the example has weightless strings"
+        );
+        assert_eq!(c.links.len(), weighed);
+        assert!(c.new.iter().all(|a| a.weight.si() > 0.0));
+        for (structure, label, _) in &c.links {
+            let x = line.structure(structure).unwrap().string(label).unwrap();
+            assert!(x.weight > 0.0, "{structure} {label}");
+        }
+        assert!(
+            !c.new.is_empty() && c.new.len() < weighed,
+            "{}",
+            c.new.len()
+        );
         let mut library = InsulatorLibrary::default();
         for a in &c.new {
             a.validate().unwrap();
@@ -619,7 +643,7 @@ mod tests {
             .unwrap();
         for (s, r) in resolved.structures.iter().zip(&again.structures) {
             for (x, y) in s.strings.iter().zip(&r.strings) {
-                assert!(y.insulator.is_some());
+                assert_eq!(y.insulator.is_some(), x.weight > 0.0);
                 assert!(
                     (x.weight - y.weight).abs() < 0.05,
                     "{} {}",
