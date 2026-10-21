@@ -1250,7 +1250,7 @@ mod tests {
                 check,
                 vec![rule(5.0, &[5])],
                 states.clone(),
-                false,
+                None,
                 Some(&read),
                 None,
                 None,
@@ -1349,6 +1349,7 @@ mod tests {
             step,
             sides: WindSides::Both,
             arc: false,
+            ..Default::default()
         };
         assert_eq!(w(false, 50.0).pressures(600.0, 200), vec![600.0]);
         assert_eq!(w(true, 50.0).pressures(0.0, 200), vec![0.0]);
@@ -1435,6 +1436,7 @@ mod tests {
             step: 100.0,
             sides: WindSides::Right,
             arc: false,
+            ..Default::default()
         };
         let started = std::time::Instant::now();
         let (states, stepped) = check(
@@ -1460,6 +1462,7 @@ mod tests {
             step: 10.0,
             sides: WindSides::Both,
             arc: false,
+            ..Default::default()
         };
         let started = std::time::Instant::now();
         let (states, r) = check(&zone, &rules, std::slice::from_ref(&full), &fine, &[p]);
@@ -1607,6 +1610,7 @@ mod tests {
                 step: 50.0,
                 sides,
                 arc: false,
+                ..Default::default()
             };
             let (states, r) = check(&zone, &rules, &[windy(600.0)], &wind, &[p]);
             s1(&r).map(|f| states[f.state].side)
@@ -1629,6 +1633,7 @@ mod tests {
             step: 25.0,
             sides: WindSides::Left,
             arc: false,
+            ..Default::default()
         };
         let rows = vec![
             ZoneRule {

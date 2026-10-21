@@ -213,6 +213,7 @@ fn speed() {
                 step,
                 sides: WindSides::Both,
                 arc: false,
+                ..Default::default()
             },
         ),
         (
@@ -222,6 +223,7 @@ fn speed() {
                 step,
                 sides: WindSides::Both,
                 arc: true,
+                ..Default::default()
             },
         ),
     ] {
@@ -245,7 +247,13 @@ fn speed() {
         } else {
             Vec::new()
         };
-        let (arcs, _) = zone_arcs(&line, &solved.shapes, &cases);
+        let (arcs, _) = zone_arcs(
+            &line,
+            &solved.shapes,
+            &solved.jumpers,
+            &cases,
+            wind.band_margin,
+        );
         let arcs_made = t.elapsed();
         for measure in [Measure::Vertical, Measure::Radial] {
             let zone = Zone::new(measure);

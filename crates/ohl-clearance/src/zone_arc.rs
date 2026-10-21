@@ -9,7 +9,10 @@
 //! attachment axis between still air and the full blowouts of the sides
 //! chosen, at every radius from the smallest to the largest of theirs (a
 //! band, since 2026-10-21) — the danger-tree check's arc ([`SwingArc`]),
-//! shared, not copied.
+//! shared, not copied. The band is widened by its margin, the user's
+//! since 2026-10-21 ([`crate::rules::WindSteps::band_margin`]); the
+//! jumpers a rule checks have bands of their own since 2026-10-21, about
+//! the line through their end clamps.
 //!
 //! - **LiDAR points**: one closed form per point and span — radially
 //!   [`SwingArc::nearest`], vertically [`SwingArc::vertical`] (the band's
@@ -30,6 +33,7 @@
 use std::collections::{HashMap, HashSet};
 
 use ohl_line::Line;
+use ohl_line::jumper::JumperShape;
 use ohl_line::solve::SectionShape;
 use ohl_terrain::Terrain;
 use ohl_weather::WindSide;
@@ -39,7 +43,7 @@ use crate::checks::{
     wires_of,
 };
 use crate::geometry::P3;
-use crate::positions::{SwingArc, WireShape, span_axis};
+use crate::positions::{SwingArc, WireShape, jumper_band, span_axis};
 use crate::rules::Rule;
 use crate::zone::WindState;
 
@@ -106,23 +110,46 @@ pub struct ZoneArc {
     pub radius: f64,
 }
 
-/// The swing arcs of every span of the sections solved (`shapes`, per
-/// state, as [`crate::zone::solve_states`] gives them) for `cases`, and
-/// what could not be made (jumpers have none: they are checked at their
-/// solved positions).
+/// The swing arcs (bands) of every span of the sections solved
+/// (`shapes`, per state, as [`crate::zone::solve_states`] gives them) and,
+/// since 2026-10-21, of every jumper solved (`jumpers`, per state; may
+/// be empty: none) for `cases`, each widened by the band's margin
+/// `margin` (m; [`crate::positions::BAND_MARGIN`] by default), and what
+/// could not be made. A jumper's band is about the line through its two
+/// end clamps in still air; a jumper without one (not solved blown to a
+/// side asked for, or not running steadily along that line) is checked
+/// at its solved positions only (noted).
 pub fn zone_arcs(
     line: &Line,
     shapes: &[Vec<SectionShape>],
+    jumpers: &[Vec<JumperShape>],
     cases: &[ArcCase],
+    margin: f64,
 ) -> (Vec<ZoneArc>, Vec<String>) {
     let mut out = Vec::new();
     let mut notes = Vec::new();
     for (c, case) in cases.iter().enumerate() {
-        let wires = |k: Option<usize>| k.map(|k| wires_of(line, &shapes[k], &[]));
+        let wires = |k: Option<usize>| {
+            k.map(|k| {
+                wires_of(
+                    line,
+                    &shapes[k],
+                    jumpers.get(k).map_or(&[][..], Vec::as_slice),
+                )
+            })
+        };
         let still = wires(Some(case.still)).unwrap_or_default();
         let (left, right) = (wires(case.left), wires(case.right));
-        let mut left_out = 0;
+        let (mut left_out, mut jumpers_out) = (0, 0);
         for w in &still {
+            let jumper = w.section.starts_with("jumper:");
+            let mut missed = || {
+                if jumper {
+                    jumpers_out += 1;
+                } else {
+                    left_out += 1;
+                }
+            };
             let pick = |list: &Option<Vec<Wire>>| -> Option<Option<Wire>> {
                 match list {
                     None => Some(None),
@@ -134,22 +161,28 @@ pub fn zone_arcs(
                 }
             };
             let (Some(l), Some(r)) = (pick(&left), pick(&right)) else {
-                left_out += 1;
+                missed();
                 continue;
             };
-            let Some(axis) = shapes[case.still]
-                .iter()
-                .find(|s| s.section == w.section)
-                .and_then(|s| span_axis(s, w.span))
-            else {
-                left_out += 1;
-                continue;
+            // A span: about its attachments; a jumper: about the line
+            // through its end clamps blown to the left (else in still
+            // air), as the safety volumes take it ([`jumper_band`]).
+            let arc = if jumper {
+                jumper_band(l.as_ref(), w, r.as_ref(), margin)
+            } else {
+                shapes[case.still]
+                    .iter()
+                    .find(|s| s.section == w.section)
+                    .and_then(|s| span_axis(s, w.span))
+                    .and_then(|axis| {
+                        let shape = |x: &Wire| WireShape::new(x.clone(), &axis);
+                        let mid = shape(w);
+                        let l = l.as_ref().map_or_else(|| mid.clone(), shape);
+                        let r = r.as_ref().map_or_else(|| mid.clone(), shape);
+                        SwingArc::with_margin(axis, &l, &mid, &r, margin)
+                    })
             };
-            let shape = |x: &Wire| WireShape::new(x.clone(), &axis);
-            let mid = shape(w);
-            let l = l.as_ref().map_or_else(|| mid.clone(), shape);
-            let r = r.as_ref().map_or_else(|| mid.clone(), shape);
-            match SwingArc::new(axis, &l, &mid, &r) {
+            match arc {
                 Some(arc) => {
                     let radius = arc.extent().0;
                     out.push(ZoneArc {
@@ -160,13 +193,21 @@ pub fn zone_arcs(
                         radius,
                     });
                 }
-                None => left_out += 1,
+                None => missed(),
             }
         }
         if left_out > 0 {
             notes.push(format!(
                 "\"{}\": {left_out} spans without a swing arc (a wire not solved, or not running \
                  steadily along its span)",
+                case.name
+            ));
+        }
+        if jumpers_out > 0 {
+            notes.push(format!(
+                "\"{}\": {jumpers_out} jumpers without a swing band (not solved blown to a side, \
+                 or not running steadily along the line through their ends): checked at their \
+                 solved positions",
                 case.name
             ));
         }
@@ -180,7 +221,14 @@ pub(crate) fn arcs_of_rule(def: &Rule, arcs: &[ZoneArc], used: &[usize]) -> Vec<
     arcs.iter()
         .enumerate()
         .filter(|(_, a)| used.contains(&a.state))
-        .filter(|(_, a)| checked_parts(def, std::slice::from_ref(&a.wire)).len() == 1)
+        // A wire the rule leaves out comes back without points (until
+        // 2026-10-21 every arc was taken: the rule's voltages and wires
+        // were not applied to the arcs).
+        .filter(|(_, a)| {
+            checked_parts(def, std::slice::from_ref(&a.wire))
+                .first()
+                .is_some_and(|w| w.points.len() >= 2)
+        })
         .map(|(k, _)| k)
         .collect()
 }

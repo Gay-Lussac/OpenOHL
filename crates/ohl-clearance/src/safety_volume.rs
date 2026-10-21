@@ -27,7 +27,10 @@
 //!
 //! and its mesh ([`mesher`]) holds it whole: no point of the envelope is
 //! outside the mesh, and the mesh is outside it by at most the tolerance
-//! where it is smooth. Structures and jumpers are not included.
+//! where it is smooth. Structures are not included; the jumpers are
+//! (2026-10-21), at their solved positions and, with the swing arc, on a
+//! band of their own about the line through their end clamps. Every band
+//! is widened by its margin ([`crate::rules::WindSteps::band_margin`]).
 //!
 //! The arc is read through [`SwingArc`]'s public closed form
 //! ([`SwingArc::place`], [`SwingArc::point`]): a small adapter here, to
@@ -120,7 +123,8 @@ impl WindMode {
         matches!(self, Self::Arc | Self::Both)
     }
 
-    /// The positions solved, the wind stepped by `steps`.
+    /// The positions solved, the wind stepped by `steps` (and the swing
+    /// band's margin `steps.band_margin`).
     pub fn options(self, steps: WindSteps) -> PositionOptions {
         PositionOptions {
             swing_arc: self.arc(),
@@ -130,7 +134,19 @@ impl WindMode {
             }),
             // The volume is continuous at the structures (2026-10-21).
             jumpers: true,
+            band_margin: steps.band_margin,
         }
+    }
+}
+
+/// The wind in words, with the swing band's margin when the arc is taken
+/// ("swing arc (band margin 0.15 m)"): as the exports and the command
+/// line say it.
+pub fn wind_text(wind: WindMode, band_margin: f64) -> String {
+    if wind.arc() {
+        format!("{} (band margin {band_margin:.2} m)", wind.describe())
+    } else {
+        wind.describe().to_owned()
     }
 }
 
@@ -142,8 +158,9 @@ pub enum Grouping {
     Wire,
     /// Per circuit: its phases together.
     Circuit,
-    /// Per electrical system: its circuits together (earthed wires, which
-    /// have none: per circuit).
+    /// Per electrical system: its circuits together; the wires without a
+    /// system (earthed wires, sections without one) together in one
+    /// volume [`NO_SYSTEM`] (2026-10-21; before: one per circuit).
     System,
 }
 
@@ -169,6 +186,23 @@ impl Grouping {
             _ => Err(format!("per \"{text}\": use wire, circuit or system")),
         }
     }
+}
+
+/// The key and name of the wires without an electrical system — earthed
+/// wires and any section without one — as one group (2026-10-21): a row
+/// of the systems to choose ([`SafetyParams::systems`]) and, per system,
+/// one volume of that name. Their distance by voltage is taken at 0 kV.
+/// The command line also takes `none` for it ([`no_system_key`]).
+pub const NO_SYSTEM: &str = "(no system)";
+
+/// Whether `text`, as a system chosen on the command line or in a list,
+/// means the wires without a system: [`NO_SYSTEM`], or `none` when the
+/// line has no system of that id or name.
+pub fn no_system_key(line: &Line, text: &str) -> bool {
+    let t = text.trim();
+    t == NO_SYSTEM
+        || (t.eq_ignore_ascii_case("none")
+            && !line.systems.iter().any(|x| x.id == t || x.name == t))
 }
 
 /// A wire's electrical system: its id and the name a volume takes.
@@ -227,8 +261,9 @@ pub struct SafetyParams {
     pub grouping: Grouping,
     /// The circuits taken (empty: all).
     pub circuits: Vec<String>,
-    /// The systems taken, by id (empty: all; when given, earthed wires
-    /// are left out).
+    /// The systems taken, by id (empty: all); [`NO_SYSTEM`] takes the
+    /// wires without a system (earthed wires, sections without one), which
+    /// are left out when not named.
     pub systems: Vec<String>,
     /// The spans taken: (section id, span index from 0) (empty: all). A
     /// span taken brings every wire on it; a jumper comes along when the
@@ -535,7 +570,8 @@ fn outward(mesh: &Mesh, field: &Field) -> f64 {
 }
 
 /// A wire's group: its circuit (an empty circuit: its section) and, per
-/// wire, its phase; per system its system's name (earthed: its circuit).
+/// wire, its phase; per system its system's name (none: [`NO_SYSTEM`],
+/// every wire without a system together).
 fn group_of(
     wire: &crate::checks::Wire,
     grouping: Grouping,
@@ -549,7 +585,10 @@ fn group_of(
     match grouping {
         Grouping::Circuit => (circuit, None),
         Grouping::Wire => (circuit, Some(wire.phase.clone())),
-        Grouping::System => (system.map_or(circuit, |s| s.name.clone()), None),
+        Grouping::System => (
+            system.map_or_else(|| NO_SYSTEM.to_owned(), |s| s.name.clone()),
+            None,
+        ),
     }
 }
 
@@ -640,7 +679,8 @@ pub fn build(
             continue;
         }
         let system = params.system_of.get(&wire.section);
-        if !params.systems.is_empty() && system.is_none_or(|s| !params.systems.contains(&s.id)) {
+        let system_id = system.map_or(NO_SYSTEM, |s| s.id.as_str());
+        if !params.systems.is_empty() && !params.systems.iter().any(|s| s == system_id) {
             continue;
         }
         let kv = wire.kv().unwrap_or(0.0);
@@ -836,6 +876,10 @@ pub fn run(
     // The systems taken by id or name; each wire's system from the line.
     let mut params = params.clone();
     for s in &mut params.systems {
+        if no_system_key(line, s) {
+            *s = NO_SYSTEM.to_owned();
+            continue;
+        }
         match line
             .systems
             .iter()

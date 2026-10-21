@@ -239,6 +239,7 @@ fn the_band_holds_the_steps_tubes() {
         stepped: true,
         step: 100.0,
         sides: crate::rules::WindSides::Both,
+        ..Default::default()
     };
     let positions = solve_positions(
         &line,
@@ -373,6 +374,7 @@ fn the_example_line_s_volumes() {
         stepped: true,
         step: 100.0,
         sides: crate::rules::WindSides::Both,
+        ..Default::default()
     };
     for grouping in [Grouping::Wire, Grouping::Circuit] {
         let t = std::time::Instant::now();
@@ -526,9 +528,10 @@ fn the_jumper_closes_the_gap_at_a_dead_end() {
 }
 
 /// The example line in high wind, swing arc: the jumper's positions are
-/// taken (blown left and right and in still air, as solved; never on an
-/// arc), and the spans' arcs as before; the danger trees' options leave
-/// the jumpers out.
+/// taken (blown left and right as solved, and on a swing band of its own
+/// between them through still air, 2026-10-21), and the spans' arcs as
+/// before; every band widened by the margin asked for; the danger trees'
+/// options leave the jumpers out.
 #[test]
 fn the_volume_s_positions_include_the_jumpers() {
     let (line, library, cases) = example();
@@ -540,10 +543,14 @@ fn the_volume_s_positions_include_the_jumpers() {
         &line,
         &library,
         &windy,
-        WindMode::Arc.options(WindSteps::default()),
+        WindMode::Arc.options(WindSteps {
+            band_margin: 0.4,
+            ..WindSteps::default()
+        }),
         &Budget::new(),
     )
     .unwrap();
+    assert!(positions.notes.is_empty(), "{:?}", positions.notes);
     let span = positions
         .spans
         .iter()
@@ -558,16 +565,20 @@ fn the_volume_s_positions_include_the_jumpers() {
     let mut expected = vec![
         PositionKind::Left.name(),
         PositionKind::Right.name(),
-        PositionKind::Still.name(),
+        PositionKind::Arc.name(),
     ];
     expected.sort_unstable();
     assert_eq!(kinds, expected);
-    assert!(
-        positions
-            .positions
-            .iter()
-            .any(|p| p.kind == PositionKind::Arc)
-    );
+    let arcs: Vec<&SwingArc> = positions
+        .positions
+        .iter()
+        .filter_map(|p| match &p.shape {
+            Shape::Arc(a) => Some(a),
+            _ => None,
+        })
+        .collect();
+    assert!(arcs.len() > 1);
+    assert!(arcs.iter().all(|a| a.margin() == 0.4));
     let plain = solve_positions(
         &line,
         &library,

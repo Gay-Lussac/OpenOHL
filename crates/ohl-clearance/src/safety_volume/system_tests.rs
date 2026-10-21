@@ -30,14 +30,15 @@ fn wire(section: &str, circuit: &str, y: f64, kv: Option<f64>) -> Wire {
     }
 }
 
-/// Four short wires 30 m apart — circuits A and B of system X (220 kV),
-/// circuit C of system Y (380 kV), an earth wire E (no system). The
-/// systems taken pick exactly their wires (X: the sections of A and B,
-/// the earth wire left out); per system one volume per system (X holding
-/// A and B, named after it), the earth wire one of its own (per circuit);
-/// each wire keeps the distance of its own voltage (table 3 m up to
-/// 220 kV, 5 m up to 380 kV, invented values; the earth wire at 0 kV:
-/// 3 m).
+/// Five short wires 30 m apart — circuits A and B of system X (220 kV),
+/// circuit C of system Y (380 kV), two earth wires E and F (no system).
+/// The systems taken pick exactly their wires (X: the sections of A and
+/// B, the earth wires left out; "(no system)": the earth wires only); per
+/// system one volume per system (X holding A and B, named after it), the
+/// earth wires one volume "(no system)" together (2026-10-21; before: one
+/// per circuit); each wire keeps the distance of its own voltage (table
+/// 3 m up to 220 kV, 5 m up to 380 kV, invented values; the earth wires
+/// at 0 kV: 3 m).
 #[test]
 fn chosen_and_grouped_by_system() {
     let positions = Positions::of_wires(
@@ -47,6 +48,7 @@ fn chosen_and_grouped_by_system() {
             wire("SB", "B", 30.0, Some(220.0)),
             wire("SC", "C", 60.0, Some(380.0)),
             wire("SE", "E", 90.0, None),
+            wire("SF", "F", 120.0, None),
         ],
     );
     let of = |id: &str, name: &str| SystemOf {
@@ -84,7 +86,7 @@ fn chosen_and_grouped_by_system() {
     sections.sort_unstable();
     assert_eq!(sections, ["SA", "SB"]);
     assert_eq!(v.volumes.len(), 2);
-    // Per system, every wire: X, Y and the earth wire's circuit.
+    // Per system, every wire: X, Y and the earth wires together.
     let v = build(
         &positions,
         &SafetyParams {
@@ -95,9 +97,12 @@ fn chosen_and_grouped_by_system() {
     )
     .unwrap();
     let names: Vec<&str> = v.volumes.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["System X", "System Y", "E"]);
+    assert_eq!(names, ["System X", "System Y", NO_SYSTEM]);
     assert_eq!(v.volumes[0].sections, ["SA", "SB"]);
     assert_eq!(v.volumes[0].circuit, "A, B");
+    assert_eq!(v.volumes[2].sections, ["SE", "SF"]);
+    assert_eq!(v.volumes[2].circuit, "E, F");
+    assert_eq!(v.volumes[2].kv, None);
     let d: Vec<f64> = v.volumes.iter().map(|s| s.distance).collect();
     assert_eq!(d, [3.0, 5.0, 3.0]);
     for s in &v.volumes {
@@ -115,6 +120,24 @@ fn chosen_and_grouped_by_system() {
     )
     .unwrap();
     assert_eq!(v.volumes.len(), 1);
+    // The wires without a system, ticked like a system: the earth wires
+    // only; with X too, the five but C.
+    let picked = |systems: &[&str]| {
+        let v = build(
+            &positions,
+            &SafetyParams {
+                systems: systems.iter().map(|s| (*s).to_owned()).collect(),
+                ..base.clone()
+            },
+            &Budget::new(),
+        )
+        .unwrap();
+        let mut s: Vec<String> = v.volumes.iter().flat_map(|x| x.sections.clone()).collect();
+        s.sort();
+        s
+    };
+    assert_eq!(picked(&[NO_SYSTEM]), ["SE", "SF"]);
+    assert_eq!(picked(&[NO_SYSTEM, "X"]), ["SA", "SB", "SE", "SF"]);
     // A system with no wire: said so.
     let e = build(
         &positions,
@@ -171,6 +194,14 @@ fn the_example_line_s_system_map() {
     )
     .unwrap_err();
     assert!(e.contains("no system"), "{e}");
+    // `none` and "(no system)" name the wires without a system (the line
+    // has no system called none).
+    assert!(no_system_key(&line, "none") && no_system_key(&line, "None"));
+    assert!(no_system_key(&line, NO_SYSTEM));
+    assert!(!no_system_key(&line, &line.systems[0].id));
+    let mut named = line.clone();
+    named.systems[0].name = "none".into();
+    assert!(!no_system_key(&named, "none"), "a system called none wins");
     // A span the section does not have: refused.
     let section = &line.sections[0];
     let e = run(

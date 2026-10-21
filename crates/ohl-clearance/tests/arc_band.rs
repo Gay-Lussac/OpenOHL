@@ -6,7 +6,8 @@
 //! on the example lines (theory: LiDAR analyses › Danger trees › Wire
 //! positions checked, and Vertical and radial clearances › Arc or
 //! steps): every stepped position's centre line, measured to the band,
-//! and to the arc at the largest radius alone (as before 2026-10-21).
+//! and to the arc at the largest radius alone (as before 2026-10-21) —
+//! the spans', and the jumpers' own bands (2026-10-21).
 
 use std::path::Path;
 
@@ -46,14 +47,17 @@ fn to_outer_arc(arc: &SwingArc, q: [f64; 3]) -> f64 {
 
 /// What a line's steps do against its bands: (step positions, the
 /// farthest centre-line point from the band, where; the farthest from the
-/// outer arc alone, where).
+/// outer arc alone, where; the bands measured).
 struct Measured {
     positions: usize,
     band: (f64, String),
     arc: (f64, String),
+    bands: usize,
 }
 
-fn measure(file: &str, case: &str) -> Measured {
+/// The spans' bands (`jumpers` false) or the jumpers' (true) of `file` in
+/// `case` against its steps at 10 Pa from both sides.
+fn measure(file: &str, case: &str, jumpers: bool) -> Measured {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let line = ohl_line::Line::load(&root.join("examples/synthetic-line").join(file)).unwrap();
     let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
@@ -67,6 +71,7 @@ fn measure(file: &str, case: &str) -> Measured {
         stepped: true,
         step: 10.0,
         sides: WindSides::Both,
+        ..Default::default()
     };
     let positions = solve_positions(
         &line,
@@ -75,7 +80,8 @@ fn measure(file: &str, case: &str) -> Measured {
         PositionOptions {
             swing_arc: true,
             wind_steps: Some(steps),
-            jumpers: false,
+            jumpers,
+            ..Default::default()
         },
         &Budget::new(),
     )
@@ -85,8 +91,12 @@ fn measure(file: &str, case: &str) -> Measured {
         positions: 0,
         band: (0.0, String::new()),
         arc: (0.0, String::new()),
+        bands: 0,
     };
     for span in &positions.spans {
+        if span.wire.section.starts_with("jumper:") != jumpers {
+            continue;
+        }
         let Some(arc) = span
             .positions
             .iter()
@@ -97,6 +107,7 @@ fn measure(file: &str, case: &str) -> Measured {
         else {
             continue;
         };
+        out.bands += 1;
         for &i in &span.positions {
             let p = &positions.positions[i];
             let Shape::Wire(w) = &p.shape else { continue };
@@ -160,7 +171,7 @@ fn the_band_holds_the_steps_at_10_pa() {
     let mut n = 0;
     for file in ["synthetic-line.ohl.json", "crossing-line.ohl.json"] {
         for case in ["high wind", "rime ice + wind"] {
-            let m = measure(file, case);
+            let m = measure(file, case, false);
             eprintln!(
                 "{file}, {case}: {} step positions; farthest from the band {:.4} m ({}), from the arc alone {:.4} m ({})",
                 m.positions, m.band.0, m.band.1, m.arc.0, m.arc.1
@@ -185,4 +196,47 @@ fn the_band_holds_the_steps_at_10_pa() {
     assert!(worst_band.0 <= BAND_MARGIN, "{worst_band:?}");
     // The arc alone misses steps on its inner side by far more.
     assert!(worst_arc.0 > 0.4, "{worst_arc:?}");
+}
+
+/// The jumpers' own bands (2026-10-21; about the line through their end
+/// clamps) against their steps at 10 Pa from both sides, both windy
+/// example cases, on the example line (the crossing line has no jumper),
+/// as the spans' above: every jumper has a band. Measured 2026-10-21: a
+/// step's centre line lies up to **0.293 m** outside the jumper's band
+/// (high wind, blown right at 230 Pa, inside its inner radius; rime ice
+/// and wind: 0.127 m) — more than the default margin [`BAND_MARGIN`]
+/// (0.15 m), against 2.54 m from the arc alone at the largest radius.
+/// The margin is not widened without the owner's decision (reported);
+/// this test records the excess and fails when it changes much. Numbers
+/// printed, see the theory.
+#[test]
+fn the_jumper_bands_hold_the_steps_at_10_pa() {
+    let mut worst = (0.0f64, String::new());
+    let mut worst_arc = (0.0f64, String::new());
+    let (mut n, mut bands) = (0, 0);
+    for case in ["high wind", "rime ice + wind"] {
+        let m = measure("synthetic-line.ohl.json", case, true);
+        eprintln!(
+            "jumpers, {case}: {} bands, {} step positions; farthest from the band {:.4} m ({}), from the arc alone {:.4} m ({})",
+            m.bands, m.positions, m.band.0, m.band.1, m.arc.0, m.arc.1
+        );
+        n += m.positions;
+        bands += m.bands;
+        if m.band.0 > worst.0 {
+            worst = m.band;
+        }
+        if m.arc.0 > worst_arc.0 {
+            worst_arc = m.arc;
+        }
+    }
+    eprintln!(
+        "jumpers: {bands} bands, {n} step positions; band {:.4} m ({}); arc alone {:.4} m ({})",
+        worst.0, worst.1, worst_arc.0, worst_arc.1
+    );
+    assert!(bands > 0 && n > 0);
+    // The jumper's band misses its steps by more than the default
+    // margin (0.293 m measured): recorded, the owner to decide.
+    assert!(worst.0 > BAND_MARGIN && worst.0 < 0.4, "{worst:?}");
+    // The arc alone misses them by far more.
+    assert!(worst_arc.0 > 1.0, "{worst_arc:?}");
 }
