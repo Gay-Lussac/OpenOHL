@@ -213,6 +213,32 @@ fn own_weight(inputs: &Inputs, default_key: &str) -> Result<ForcePerLength, Stri
         .or_else(|_| quantity_input::<ForcePerLength>(inputs, default_key))
 }
 
+/// With optional input `weight_temperature` (the data sheet's reference
+/// temperature of the own weight): `state` with its own weight taken per
+/// metre of unstressed cable at `known` instead,
+/// \\( w\\, e^{-\alpha (t_{known} - t_w)} \\) (owner decision
+/// 2026-10-21), the load's own weight part with it (ice and wind as
+/// given). Without it the weight is the known state's, as given.
+fn weight_at_known(
+    inputs: &Inputs,
+    state: LoadState,
+    alpha: f64,
+    known: Temperature,
+) -> Result<LoadState, String> {
+    if !inputs.contains_key("weight_temperature") {
+        return Ok(state);
+    }
+    let reference = quantity_input::<Temperature>(inputs, "weight_temperature")?;
+    let (q, w, h) = (state.load.si(), state.weight.si(), state.wind.si());
+    let at = w * (-alpha * (known - reference).kelvin()).exp();
+    let vertical = (q - h).max(0.0).sqrt() * (q + h).sqrt() - w + at;
+    Ok(LoadState {
+        load: ForcePerLength::from_si(vertical.hypot(h)),
+        weight: ForcePerLength::from_si(at),
+        ..state
+    })
+}
+
 /// `sagtension.change_of_state`: single span, linear elastic + thermal.
 struct ChangeOfState;
 
@@ -223,7 +249,8 @@ impl Calculation for ChangeOfState {
 
     fn description(&self) -> &'static str {
         "Single-span change of state (inputs: span, rise, axial_stiffness, thermal_expansion, \
-         known_tension, known_load, known_temperature, load, temperature)"
+         known_tension, known_load, known_temperature, load, temperature; optional weight, \
+         wind, known_wind, weight_temperature)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -238,6 +265,9 @@ impl Calculation for ChangeOfState {
         let weight = own_weight(inputs, "known_load")?;
         let known = load_state(inputs, "known_load", "known_temperature", weight)?;
         let state = load_state(inputs, "load", "temperature", weight)?;
+        let (alpha, t) = (cable.thermal_expansion, known.temperature);
+        let known = weight_at_known(inputs, known, alpha, t)?;
+        let state = weight_at_known(inputs, state, alpha, t)?;
         let solution = InstalledSpan::from_known_state(
             geometry,
             cable,
@@ -653,16 +683,8 @@ impl Calculation for WireFePointLoad {
                 Node::fixed(Vector3::new(span, 0.0, 0.0)),
             ],
             cables: vec![
-                CableElement {
-                    i: 0,
-                    j: 1,
-                    properties: props(at),
-                },
-                CableElement {
-                    i: 1,
-                    j: 2,
-                    properties: props(l0 - at),
-                },
+                CableElement::new(0, 1, props(at)),
+                CableElement::new(1, 2, props(l0 - at)),
             ],
             trusses: vec![],
         };

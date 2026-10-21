@@ -401,6 +401,24 @@ fn span_load_scaled(
     span_load(case, cable, d) + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - scale))
 }
 
+/// [`span_load_scaled`] split as the finite elements carry it: per unit of
+/// an element's unstressed length the cable's own weight times `scale`;
+/// per metre of the stretched (real) wire the ice and wind (owner decision
+/// 2026-10-21: they act on the conductor as it is, longer by its elastic
+/// strain; [`ohl_wirefe::CableElement::stretched_load`]).
+fn span_loads_split(
+    case: &WeatherCase,
+    cable: &Cable,
+    d: Vector3<f64>,
+    scale: f64,
+) -> (Vector3<f64>, Vector3<f64>) {
+    let w = cable.weight().si();
+    (
+        Vector3::new(0.0, 0.0, -w * scale),
+        span_load(case, cable, d) + Vector3::new(0.0, 0.0, w),
+    )
+}
+
 /// A node of a holder: fixed (on the structure, or another section's
 /// clamp held where given) or free (a wire point on strings).
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -977,7 +995,8 @@ fn build(
         // unstressed length: the own weight spread over it, the span's
         // total weight unchanged.
         let scale = reference.weight_scale[s] / thermal;
-        let load = span_load_scaled(case, cable, d, scale);
+        // Ice and wind per metre of the stretched wire.
+        let (load, stretched) = span_loads_split(case, cable, d, scale);
         let shape_props = CableProperties {
             unstressed_length: reference.lengths[s],
             axial_stiffness: ea,
@@ -1088,6 +1107,7 @@ fn build(
                     axial_stiffness: ea,
                     load: load + spread_on(prev_s, s0),
                 },
+                stretched_load: stretched,
             });
             (prev_node, prev_s) = (node, s0);
         }
@@ -1100,6 +1120,7 @@ fn build(
                 axial_stiffness: ea,
                 load: load + spread_on(prev_s, reference.lengths[s]),
             },
+            stretched_load: stretched,
         });
         span_elements.push(elements);
     }
@@ -1597,84 +1618,124 @@ fn shared_out(
         (cable.thermal_expansion() * (case.temperature.celsius() - reference.temperature)).exp();
     let total: f64 = reference.lengths.iter().sum();
     let chords: Vec<Vector3<f64>> = clamps.windows(2).map(|c| c[1] - c[0]).collect();
+    // Each span's stretch under its ice and wind (per stretched metre: per
+    // unit unstressed length times the stretch), updated by every
+    // evaluation; `moved` its largest change in the last one.
+    let stretches = std::cell::RefCell::new(vec![1.0; chords.len()]);
+    let moved = std::cell::Cell::new(0.0_f64);
+    let element_budget = ohl_wirefe::catenary_element::default_element_budget();
     // Unstressed lengths at the reference temperature for tension `h`.
     let lengths = |h: f64| -> Result<Vec<f64>, LineError> {
+        moved.set(0.0);
         chords
             .iter()
             .enumerate()
             .map(|(s, d)| {
-                CableProperties::unstressed_length_for_tension(
-                    *d,
-                    h,
-                    ea,
-                    span_load_scaled(case, cable, *d, reference.weight_scale[s] / thermal),
-                    budget,
-                )
-                .map(|l| l / thermal)
-                .map_err(|e| invalid(format!("span {s}: {e}")))
+                let at = |e: ohl_wirefe::ElementError| invalid(format!("span {s}: {e}"));
+                let (own, stretched) =
+                    span_loads_split(case, cable, *d, reference.weight_scale[s] / thermal);
+                let k = stretches.borrow()[s];
+                let load = own + stretched * k;
+                let l = CableProperties::unstressed_length_for_tension(*d, h, ea, load, budget)
+                    .map_err(at)?;
+                if stretched != Vector3::zeros() {
+                    let props = CableProperties {
+                        unstressed_length: l,
+                        axial_stiffness: ea,
+                        load,
+                    };
+                    let state = props.solve(*d, None, &element_budget).map_err(at)?;
+                    let next = props.stretched_length(&state) / l;
+                    if (next - k).abs() > moved.get() || next.is_nan() {
+                        moved.set((next - k).abs());
+                    }
+                    stretches.borrow_mut()[s] = next;
+                }
+                Ok(l / thermal)
             })
             .collect()
     };
     let excess = |h: f64| -> Result<f64, LineError> { Ok(lengths(h)?.iter().sum::<f64>() - total) };
-    // Longer wire for a lower tension: bracket around the guess, then a
-    // bracketed secant (Illinois): a few steps instead of ~45 halvings.
+    // Longer wire for a lower tension: bracket around the guess (within
+    // `spread`), then a bracketed secant (Illinois): a few steps instead of
+    // ~45 halvings.
     let mut steps = 0;
-    let mut step = || {
-        steps += 1;
-        if steps > 200 {
-            Err(invalid("no common tension found in 200 steps".into()))
-        } else {
-            Ok(())
+    let mut search = |guess: f64, spread: f64| -> Result<f64, LineError> {
+        let mut step = || {
+            steps += 1;
+            if steps > 200 {
+                Err(invalid("no common tension found in 200 steps".into()))
+            } else {
+                Ok(())
+            }
+        };
+        let (mut lo, mut hi) = (guess / spread, guess * spread);
+        let mut f_lo = excess(lo)?;
+        while f_lo < 0.0 {
+            step()?;
+            (hi, lo) = (lo, lo / 2.0);
+            f_lo = excess(lo)?;
         }
+        let mut f_hi = excess(hi)?;
+        while f_hi > 0.0 {
+            step()?;
+            (lo, f_lo, hi) = (hi, f_hi, hi * 2.0);
+            f_hi = excess(hi)?;
+        }
+        let mut side = 0;
+        let mut h = 0.5 * (lo + hi);
+        while hi - lo > 1e-9 * hi {
+            step()?;
+            h = (lo * f_hi - hi * f_lo) / (f_hi - f_lo);
+            if !(lo < h && h < hi) {
+                h = 0.5 * (lo + hi);
+            }
+            let f = excess(h)?;
+            if f.abs() < 1e-12 * total {
+                break;
+            }
+            if f > 0.0 {
+                (lo, f_lo) = (h, f);
+                if side == 1 {
+                    f_hi /= 2.0;
+                }
+                side = 1;
+            } else {
+                (hi, f_hi) = (h, f);
+                if side == -1 {
+                    f_lo /= 2.0;
+                }
+                side = -1;
+            }
+        }
+        Ok(h)
     };
-    let (mut lo, mut hi) = (guess / 1.2, guess * 1.2);
-    let mut f_lo = excess(lo)?;
-    while f_lo < 0.0 {
-        step()?;
-        (hi, lo) = (lo, lo / 2.0);
-        f_lo = excess(lo)?;
-    }
-    let mut f_hi = excess(hi)?;
-    while f_hi > 0.0 {
-        step()?;
-        (lo, f_lo, hi) = (hi, f_hi, hi * 2.0);
-        f_hi = excess(hi)?;
-    }
-    let mut side = 0;
-    let mut h = 0.5 * (lo + hi);
-    while hi - lo > 1e-9 * hi {
-        step()?;
-        h = (lo * f_hi - hi * f_lo) / (f_hi - f_lo);
-        if !(lo < h && h < hi) {
-            h = 0.5 * (lo + hi);
+    // The stretches follow the search; once a search ends where they no
+    // longer change, the lengths are those of the ice and wind on the
+    // stretched spans (a fixed point: searched again from there, close by,
+    // until then; exit clause [`ohl_wirefe::model::STRETCH_PASSES`]).
+    let mut h = search(guess, 1.2)?;
+    for _ in 0..ohl_wirefe::model::STRETCH_PASSES {
+        let found = lengths(h)?;
+        if moved.get() <= ohl_wirefe::model::STRETCH_TOLERANCE {
+            return Ok((
+                Reference {
+                    clamps: clamps.to_vec(),
+                    lengths: found,
+                    temperature: reference.temperature,
+                    weight_scale: reference.weight_scale.clone(),
+                },
+                h,
+            ));
         }
-        let f = excess(h)?;
-        if f.abs() < 1e-12 * total {
-            break;
-        }
-        if f > 0.0 {
-            (lo, f_lo) = (h, f);
-            if side == 1 {
-                f_hi /= 2.0;
-            }
-            side = 1;
-        } else {
-            (hi, f_hi) = (h, f);
-            if side == -1 {
-                f_lo /= 2.0;
-            }
-            side = -1;
-        }
+        h = search(h, 1.0 + 1e-4)?;
     }
-    Ok((
-        Reference {
-            clamps: clamps.to_vec(),
-            lengths: lengths(h)?,
-            temperature: reference.temperature,
-            weight_scale: reference.weight_scale.clone(),
-        },
-        h,
-    ))
+    Err(invalid(format!(
+        "the spans' stretch under ice and wind did not settle in {} passes (still changing by \
+         {:.3e})",
+        ohl_wirefe::model::STRETCH_PASSES,
+        moved.get()
+    )))
 }
 
 /// The unstressed length of each span (m) and their temperature (°C) at
@@ -1686,9 +1747,44 @@ pub fn clip_lengths(
     cable: &Cable,
 ) -> Result<(Vec<f64>, f64), LineError> {
     let budget = default_fe_budget();
+    let cable = &*line.bimetallic.apply(cable);
+    let cable = &*strung_cable(section, cable)?;
     let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, &budget)?;
     let r = reference(section, &layout, cable, &budget)?;
     Ok((r.lengths, r.temperature))
+}
+
+/// The cable as strung in `section`: its own weight per metre of
+/// unstressed cable at the section's stringing temperature (owner decision
+/// 2026-10-21). The data sheet's weight is at its reference temperature
+/// ([`Cable::mass_reference_temperature`], 20 °C unless the cable gives
+/// one); at the stringing temperature \\( t_s \\) a metre of the cable holds
+/// \\( w_{ref}\\, e^{-\alpha (t_s - t_{ref})} \\) (the multiplicative thermal
+/// form of the linear finite elements), or
+/// \\( w_{ref} (1 + \varepsilon(0, t_{ref})) / (1 + \varepsilon(0, t_s)) \\)
+/// in the additive strain form of the stress-strain curves (the ruling-span
+/// method, and the finite elements of a cable with curves). From there the
+/// calculations conserve it. The cable returned gives its mass at
+/// \\( t_s \\): applied again, nothing changes.
+pub fn strung_cable<'a>(
+    section: &Section,
+    cable: &'a Cable,
+) -> Result<std::borrow::Cow<'a, Cable>, LineError> {
+    use ohl_core::units::Temperature;
+    let t = Temperature::from_celsius(section.stringing.temperature());
+    if cable.reference_temperature == Some(t) {
+        return Ok(std::borrow::Cow::Borrowed(cable));
+    }
+    let additive =
+        section.calculation.method() == crate::condition::Method::Rs || curves_of(cable).is_some();
+    let factor = if additive {
+        ohl_cables::mechanics::Mechanics::from_cable(cable)
+            .and_then(|m| m.weight_factor(cable.mass_reference_temperature(), t))
+            .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))?
+    } else {
+        cable.weight_factor_at(t)
+    };
+    Ok(std::borrow::Cow::Owned(cable.with_mass_at(t, factor)))
 }
 
 /// Solves one section of a line in a weather case.
@@ -1798,10 +1894,22 @@ fn solve_cases(
     // Places given by station: as fractions of their spans.
     let section = &*line.section_with_fractions(section);
     // The line's bimetallic model for cables that do not give their own.
-    let cable = &*line.bimetallic.apply(cable);
+    let own = &*line.bimetallic.apply(cable);
+    // Its own weight per metre at the stringing temperature; the jumpers
+    // take theirs at their own temperature.
+    let cable = &*strung_cable(section, own)?;
     let calc = section.calculation;
     let solve = |final_state: Option<&FinalState>| match calc.method() {
-        Method::Fe => solve_fe(line, section, cable, cases, final_state, budget, coupling),
+        Method::Fe => solve_fe(
+            line,
+            section,
+            cable,
+            own,
+            cases,
+            final_state,
+            budget,
+            coupling,
+        ),
         // Uniform cases only (checked by the callers).
         Method::Rs => solve_rs(line, section, cable, cases.base, final_state, budget),
     };
@@ -1970,6 +2078,7 @@ pub fn final_state(
     use crate::condition::Condition;
     use ohl_cables::CableModel;
     let cable = &*line.bimetallic.apply(cable);
+    let cable = &*strung_cable(section, cable)?;
     use ohl_cables::mechanics::{MaterialState, Mechanics};
     use ohl_core::units::Force;
     use ohl_sagtension::nonlinear::NonlinearSection;
@@ -2255,10 +2364,12 @@ const CURVE_PASSES: usize = 30;
 /// (\\( 10^{-9} \\) relative, at most [`CURVE_PASSES`] solves). The stringing
 /// state fixes each span's length at zero strain. Other cables: linear,
 /// longer by the final state's permanent stretch.
+#[allow(clippy::too_many_arguments)]
 fn solve_fe(
     line: &Line,
     section: &Section,
     cable: &Cable,
+    jumper_cable: &Cable,
     cases: Cases<'_>,
     final_state: Option<&FinalState>,
     budget: &Budget,
@@ -2277,7 +2388,7 @@ fn solve_fe(
     let jumpers = match &coupling.jumpers {
         Some(j) => std::borrow::Cow::Borrowed(j),
         None => std::borrow::Cow::Owned(crate::jumper::end_loads(line, case, |id| {
-            (id == section.cable).then_some(cable)
+            (id == section.cable).then_some(jumper_cable)
         })),
     };
     let bundle = f64::from(section.bundle.max(1));
@@ -2424,11 +2535,13 @@ fn solve_fe(
             let state = &solution.cables[e];
             max_tension = max_tension.max(state.tension_i).max(state.tension_j);
             let d = pos[element.j] - pos[element.i];
-            let samples = element.properties.shape(d, state, 64);
+            // As solved: its ice and wind per stretched metre included.
+            let props = solution.cable_properties(&built.model, e);
+            let samples = props.shape(d, state, 64);
             // Each element a catenary of its own H and load.
             off = off.max(polyline_error(
                 &samples,
-                state.horizontal / element.properties.load.norm(),
+                state.horizontal / props.load.norm(),
             ));
             let skip = usize::from(!points.is_empty());
             points.extend(samples.into_iter().skip(skip).map(|q| pos[element.i] + q));
@@ -4822,6 +4935,136 @@ mod tests {
                 rs.1
             );
         }
+    }
+
+    /// The data sheet's weight at its reference temperature, taken at the
+    /// stringing temperature (owner decision 2026-10-21). One dead-end span
+    /// (S3's first, its wires fixed at the structures) strung at 10 °C: in
+    /// still air at 10 °C the supports carry its weight, the data sheet's
+    /// 20 °C value per metre at 10 °C times its unstressed length,
+    /// \\( w e^{10\alpha} L_0 \\) (hand check), by the finite elements;
+    /// a cable whose data sheet gives 10 °C weighs \\( w L_0 \\). The ruling
+    /// span takes the additive form's \\( w / (1 - 10\alpha) \\).
+    #[test]
+    fn the_weight_is_the_data_sheets_at_the_stringing_temperature() {
+        use crate::condition::Calculation;
+        let lib = library();
+        let mut line = crate::tests::example();
+        line.sections.retain(|s| s.id == "S3");
+        let s = &mut line.sections[0];
+        s.points.truncate(2);
+        s.calculation = Calculation::INITIAL_FE;
+        s.stringing = Stringing::Tension {
+            horizontal_tension: 20_000.0,
+            temperature: 10.0,
+        };
+        let ends = line.sections[0].points.clone();
+        for p in &ends {
+            let st = line
+                .structures
+                .iter_mut()
+                .find(|x| x.id == p.structure)
+                .unwrap();
+            let wire = st.wire_at_set(p.set).unwrap().label.clone();
+            st.strings.retain(|s| s.wire != wire);
+        }
+        let cable = lib.get(&line.sections[0].cable).unwrap().clone();
+        let alpha = cable.thermal_expansion();
+        let t10 = Temperature::from_celsius(10.0);
+        let budget = default_fe_budget();
+        let carried = |cable: &Cable| {
+            let section = &line.sections[0];
+            let (lengths, _) = clip_lengths(&line, section, cable).unwrap();
+            let shape = solve_section(
+                &line,
+                section,
+                cable,
+                &WeatherCase::still("10", t10),
+                &budget,
+            )
+            .unwrap();
+            let up: f64 = shape
+                .attachment_loads
+                .iter()
+                .flatten()
+                .map(|s| -s.force[2])
+                .sum();
+            (up, lengths[0])
+        };
+        let (up, l0) = carried(&cable);
+        let w = cable.weight().si();
+        let expected = w * (10.0 * alpha).exp() * l0;
+        assert!(
+            ((up - expected) / expected).abs() < 1e-9,
+            "{up} vs {expected}"
+        );
+        // Its data sheet at 10 °C: the weight as given.
+        let mut at10 = cable.clone();
+        at10.reference_temperature = Some(t10);
+        let (up10, l10) = carried(&at10);
+        assert!(((up10 - w * l10) / (w * l10)).abs() < 1e-9, "{up10}");
+        // The conversion, idempotent; the ruling span's additive form.
+        let section = &line.sections[0];
+        let strung = strung_cable(section, &cable).unwrap();
+        assert_eq!(strung.reference_temperature, Some(t10));
+        assert!(matches!(
+            strung_cable(section, &strung).unwrap(),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        let mut rs = section.clone();
+        rs.calculation = Calculation::INITIAL_RS;
+        let additive = strung_cable(&rs, &cable).unwrap().weight().si();
+        assert!((additive / (w / (1.0 - 10.0 * alpha)) - 1.0).abs() < 1e-12);
+    }
+
+    /// The finite elements carry the ice per metre of the stretched wire
+    /// (owner decision 2026-10-21): on the same dead-end span under 12 mm
+    /// of ice the supports carry the own weight per unstressed metre and
+    /// the ice per metre of the span's real length — more than the ice on
+    /// its unstressed length by about its mean strain (hand check of the
+    /// vertical reactions, to the strain's spread along the span).
+    #[test]
+    fn ice_is_carried_per_stretched_metre() {
+        let lib = library();
+        let mut line = crate::tests::example();
+        line.sections.retain(|s| s.id == "S3");
+        line.sections[0].points.truncate(2);
+        let ends = line.sections[0].points.clone();
+        for p in &ends {
+            let st = line
+                .structures
+                .iter_mut()
+                .find(|x| x.id == p.structure)
+                .unwrap();
+            let wire = st.wire_at_set(p.set).unwrap().label.clone();
+            st.strings.retain(|s| s.wire != wire);
+        }
+        let cable = lib.get(&line.sections[0].cable).unwrap();
+        let section = &line.sections[0];
+        let t = line.sections[0].stringing.temperature();
+        let mut iced = WeatherCase::still("ice", Temperature::from_celsius(t));
+        iced.ice_thickness = Length::from_millimeters(12.0);
+        iced.ice_density = Some(ohl_core::units::Density::from_si(913.0));
+        let ice =
+            iced.wire_load(cable.diameter, cable.weight()).vertical.si() - cable.weight().si();
+        let shape = solve_section(&line, section, cable, &iced, &default_fe_budget()).unwrap();
+        let up: f64 = shape
+            .attachment_loads
+            .iter()
+            .flatten()
+            .map(|s| -s.force[2])
+            .sum();
+        let (lengths, _) = clip_lengths(&line, section, cable).unwrap();
+        let own = strung_cable(section, cable).unwrap().weight().si() * lengths[0];
+        let mean_strain = 0.5 * (shape.spans[0].horizontal_tension + shape.spans[0].max_tension)
+            / cable.axial_stiffness().si();
+        let expected = own + ice * lengths[0] * (1.0 + mean_strain);
+        assert!(
+            ((up - expected) / expected).abs() < 2e-6,
+            "{up} vs {expected}: ice on the unstressed length {}",
+            own + ice * lengths[0]
+        );
+        assert!(up > own + ice * lengths[0] * (1.0 + 0.5 * mean_strain));
     }
 
     /// The non-linear model: creep and a heavy load stretch the cable

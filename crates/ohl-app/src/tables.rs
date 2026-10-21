@@ -3578,7 +3578,8 @@ fn jumper_cells(
     };
     j.length = opt_num(&c.get(4), &format!("{name} length"))?;
     j.sag = opt_num(&c.get(5), &format!("{name} sag"))?;
-    j.temperature = opt_num(&c.get(6), &format!("{name} temperature"))?.unwrap_or(15.0);
+    j.temperature = opt_num(&c.get(6), &format!("{name} temperature"))?
+        .unwrap_or(ohl_line::DEFAULT_STRINGING_TEMPERATURE);
     j.bundle = opt_num(&c.get(7), &format!("{name} bundle"))?.map(|v| v as u32);
     j.bundle_spacing = opt_num(&c.get(8), &format!("{name} spacing"))?;
     j.bending_stiffness = opt_num(&c.get(9), &format!("{name} EI"))?;

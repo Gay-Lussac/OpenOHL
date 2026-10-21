@@ -242,7 +242,13 @@ pub fn route_problem(
             min_span: options.min_span,
             clearance: options.clearance,
             horizontal_tension: options.horizontal_tension,
-            weight: cable.weight().si(),
+            // Per metre of the cable at the condition's temperature, as
+            // the spotted sections are strung (owner decision 2026-10-21).
+            weight: cable
+                .weight_at(ohl_core::units::Temperature::from_celsius(
+                    options.temperature,
+                ))
+                .si(),
             span_cost: cost.labour.per_span.unwrap_or(0.0),
             wire_cost_per_m: cable_price * f64::from(conductors),
         },

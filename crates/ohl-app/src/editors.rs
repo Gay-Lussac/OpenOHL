@@ -2628,7 +2628,7 @@ impl SectionForm {
                 points: Vec::new(),
                 stringing: Stringing::Tension {
                     horizontal_tension: 20_000.0,
-                    temperature: 15.0,
+                    temperature: ohl_line::DEFAULT_STRINGING_TEMPERATURE,
                 },
                 note: None,
                 calculation: Default::default(),
@@ -4772,7 +4772,7 @@ pub fn new_jumper(
         "from": from,
         "to": to,
         "sag": ((0.15 * chord).clamp(0.3, 3.0) * 100.0).round() / 100.0,
-        "temperature": 15.0,
+        "temperature": ohl_line::DEFAULT_STRINGING_TEMPERATURE,
     }))
     .map_err(|e| e.to_string())
 }
@@ -4818,7 +4818,7 @@ pub fn new_tap_jumper(
         "from": from,
         "to": to,
         "length": ((1.03 * chord) * 100.0).round() / 100.0,
-        "temperature": 15.0,
+        "temperature": ohl_line::DEFAULT_STRINGING_TEMPERATURE,
     }))
     .map_err(|e| e.to_string())?;
     Ok(j)
