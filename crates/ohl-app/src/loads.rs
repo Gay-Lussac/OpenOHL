@@ -242,7 +242,7 @@ impl LoadsPage {
         // The structure models' section library (the project's).
         let sections = model
             .section_library()
-            .map_err(|e| format!("section library: {e}"));
+            .map_err(|e| format!("cross-section library: {e}"));
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.structures);
         let (tx, rx) = channel();

@@ -56,10 +56,7 @@ pub fn ui(
                 "line",
                 &[
                     ("CRS", line.crs.clone()),
-                    (
-                        "height datum",
-                        crate::crs::describe_height_datum(model),
-                    ),
+                    ("height datum", crate::crs::describe_height_datum(model)),
                     ("structures", line.structures.len().to_string()),
                     ("sections", line.sections.len().to_string()),
                     ("jumpers", line.jumpers.len().to_string()),
@@ -157,7 +154,7 @@ pub fn ui(
                     .button(STRINGS_AND_POINTS)
                     .on_hover_text(format!(
                         "Type {t} on the structure screen: its attachment points, strings, wire \
-                         points and sets beside the pylon in 3D (every structure of the type \
+                         points and sets beside the structure in 3D (every structure of the type \
                          follows when saved)"
                     ))
                     .clicked()
@@ -339,7 +336,14 @@ pub fn ui(
                     ),
                 ));
             }
-            grid(ui, "attachment", &rows.iter().map(|(a, b)| (*a, b.clone())).collect::<Vec<_>>());
+            grid(
+                ui,
+                "attachment",
+                &rows
+                    .iter()
+                    .map(|(a, b)| (*a, b.clone()))
+                    .collect::<Vec<_>>(),
+            );
             ui.separator();
             ui.label(egui::RichText::new("Spans at this attachment").strong());
             for sec in &line.sections {
@@ -410,7 +414,10 @@ pub fn ui(
                 ui.label("Not in the line any more.");
                 return;
             };
-            if ui.link(format!("section {section}, span {}", p.span + 1)).clicked() {
+            if ui
+                .link(format!("section {section}, span {}", p.span + 1))
+                .clicked()
+            {
                 next = Some(Selection::Span {
                     section: section.clone(),
                     span: p.span,
@@ -425,13 +432,11 @@ pub fn ui(
                 .shape(&section, case)
                 .and_then(|s| s.span_points.iter().find(|(l, _)| *l == label))
             {
-                rows.push((
-                    "height (case shown)".to_owned(),
-                    format!("{:.2} m", q[2]),
-                ));
+                rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
             }
             rows.extend(object_rows(p.object.as_ref()));
-            let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+            let rows: Vec<(&str, String)> =
+                rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
             grid(ui, "span-point", &rows);
             let tap = ohl_line::Tap::Span(ohl_line::SpanPointRef {
                 section: section.clone(),
@@ -482,7 +487,9 @@ pub fn ui(
                 .find(|p| p.label == l.from)
                 .map(|p| p.span);
             if let Some(span) = span
-                && ui.link(format!("section {section}, span {}", span + 1)).clicked()
+                && ui
+                    .link(format!("section {section}, span {}", span + 1))
+                    .clicked()
             {
                 next = Some(Selection::Span {
                     section: section.clone(),
@@ -558,7 +565,8 @@ pub fn ui(
                 rows.push(("height (case shown)".to_owned(), format!("{:.2} m", q[2])));
             }
             rows.extend(object_rows(p.object.as_ref()));
-            let rows: Vec<(&str, String)> = rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
+            let rows: Vec<(&str, String)> =
+                rows.iter().map(|(a, b)| (a.as_str(), b.clone())).collect();
             grid(ui, "jumper-point", &rows);
             let tap = ohl_line::Tap::Jumper {
                 jumper: jumper.clone(),
@@ -589,7 +597,10 @@ pub fn ui(
                 }
             }
             let mut rows = vec![
-                ("insulator", s.insulator.clone().unwrap_or_else(|| "–".into())),
+                (
+                    "assembly",
+                    s.insulator.clone().unwrap_or_else(|| "–".into()),
+                ),
                 (
                     "length",
                     s.length
@@ -692,9 +703,14 @@ pub fn ui(
                         .flat_map(move |sec| sec.points.iter().zip(&sh.strings))
                 });
                 for (p, strings) in shapes {
-                    for y in strings.iter().filter(|y| p.structure == structure && y.label == label)
+                    for y in strings
+                        .iter()
+                        .filter(|y| p.structure == structure && y.label == label)
                     {
-                        rows.push(("force", format!("{:.0} N{}", y.force, if y.slack { " (slack)" } else { "" })));
+                        rows.push((
+                            "force",
+                            format!("{:.0} N{}", y.force, if y.slack { " (slack)" } else { "" }),
+                        ));
                     }
                 }
                 for j in &solved.jumpers {
@@ -708,11 +724,20 @@ pub fn ui(
             if let Some(set) = set {
                 rows.push(("set", set.to_string()));
             }
-            grid(ui, "string", &rows.iter().map(|(a, b)| (*a, b.clone())).collect::<Vec<_>>());
+            grid(
+                ui,
+                "string",
+                &rows
+                    .iter()
+                    .map(|(a, b)| (*a, b.clone()))
+                    .collect::<Vec<_>>(),
+            );
             ui.label(
-                egui::RichText::new("Edit tool (or right-click with it): change it and where it hangs")
-                    .small()
-                    .weak(),
+                egui::RichText::new(
+                    "Edit tool (or right-click with it): change it and where it hangs",
+                )
+                .small()
+                .weak(),
             );
         }
         Selection::AlignmentPoint { id } => {
@@ -816,7 +841,9 @@ pub fn ui(
                 for end in [&j.from, &j.to] {
                     if ui.link(end.to_string()).clicked() {
                         next = Some(match end {
-                            ohl_line::JumperEnd::Wire(p) => Selection::Structure(p.structure.clone()),
+                            ohl_line::JumperEnd::Wire(p) => {
+                                Selection::Structure(p.structure.clone())
+                            }
                             ohl_line::JumperEnd::Tap {
                                 tap: ohl_line::Tap::Span(r),
                             } => Selection::SpanPoint {
@@ -868,7 +895,7 @@ pub fn ui(
                 ui,
                 "jumper",
                 &[
-                    ("cable", j.cable.clone()),
+                    ("wire type", j.cable.clone()),
                     (
                         "section",
                         section.map_or("—".into(), |s| {
@@ -902,7 +929,7 @@ pub fn ui(
                             (Some(0.0), _) => "0 (hinged ends)".into(),
                             (Some(e), _) => format!("{e:.1} N·m² (set on the jumper)"),
                             (None, Some(c)) => format!(
-                                "{:.1} N·m² (estimated: {:.2} × the cable's solid-bar {:.0} N·m²{})",
+                                "{:.1} N·m² (estimated: {:.2} × the wire's solid-bar {:.0} N·m²{})",
                                 ohl_line::jumper::jumper_bending_stiffness(j, c, &line.defaults),
                                 j.stiffness_factor
                                     .unwrap_or(line.defaults.jumper_stiffness_factor),
@@ -956,14 +983,25 @@ pub fn ui(
                 egui::Grid::new("jumper-cases")
                     .striped(true)
                     .show(ui, |ui| {
-                        for h in ["case", "length (m)", "sag (m)", "max T (N)", "of RTS", "low z (m)"] {
+                        for h in [
+                            "case",
+                            "length (m)",
+                            "sag (m)",
+                            "max T (N)",
+                            "of RTS",
+                            "low z (m)",
+                        ] {
                             ui.label(egui::RichText::new(h).small());
                         }
                         ui.end_row();
                         // The case of the copy clicked (else the one shown).
                         let shown = model.selection_case.unwrap_or(case);
                         for (k, solved) in model.cases.iter().enumerate() {
-                            let name = case_name(&solved.case.name, k == shown, model.selection_case.is_some());
+                            let name = case_name(
+                                &solved.case.name,
+                                k == shown,
+                                model.selection_case.is_some(),
+                            );
                             ui.label(name);
                             match solved.jumpers.iter().find(|x| x.jumper == id) {
                                 Some(js) => {
@@ -1084,7 +1122,7 @@ pub fn ui(
                 ui,
                 "span",
                 &[
-                    ("cable", sec.cable.clone()),
+                    ("wire type", sec.cable.clone()),
                     (
                         "circuit / phase",
                         format!("{} {}", sec.circuit_name, sec.phase_label),
@@ -1101,7 +1139,11 @@ pub fn ui(
                     ("spans in section", (sec.points.len() - 1).to_string()),
                     (
                         "routes",
-                        line.wire_routes().0.remove(&section).unwrap_or_default().join(", "),
+                        line.wire_routes()
+                            .0
+                            .remove(&section)
+                            .unwrap_or_default()
+                            .join(", "),
                     ),
                 ],
             );
@@ -1128,7 +1170,11 @@ pub fn ui(
                         } else {
                             solved.case.name.clone()
                         };
-                        let name = case_name(&text, k == shown && !mirrored, model.selection_case.is_some());
+                        let name = case_name(
+                            &text,
+                            k == shown && !mirrored,
+                            model.selection_case.is_some(),
+                        );
                         ui.label(name);
                         match solved
                             .shapes

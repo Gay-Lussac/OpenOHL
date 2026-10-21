@@ -32,7 +32,7 @@ pub use ohl_structure_edit::{Geometry, Handle, Removal, geometry};
 pub const EDIT_IN_APP: &str = "Open this type in OHL-Structure…";
 
 /// The 3D view's name (for screen readers and tests).
-pub const VIEW_LABEL: &str = "Pylon in 3D";
+pub const VIEW_LABEL: &str = "Structure in 3D";
 
 /// The table shown left of the view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -396,8 +396,16 @@ impl Workspace {
                     .suffix(" m"),
             );
             for (name, n, help) in [
-                ("I", 1, "An insulator from the point picked down to a new wire point (its set: Set points)"),
-                ("V", 2, "A V: two strings from the two points picked to one wire point below their middle"),
+                (
+                    "One string",
+                    1,
+                    "A string from the point picked down to a new wire point (its set: Sets)",
+                ),
+                (
+                    "Two strings to one wire point",
+                    2,
+                    "Two strings from the two points picked to one wire point below their middle",
+                ),
             ] {
                 if ui
                     .add_enabled(tops.len() == n, egui::Button::new(name))
@@ -412,7 +420,7 @@ impl Workspace {
                     match edit::add_strings(doc, t, &tops, self.string_length) {
                         Ok(w) => {
                             self.message = Some((
-                                format!("added the insulators to wire point {w}: put its set in Set points"),
+                                format!("added the strings to wire point {w}: put its set in Sets"),
                                 false,
                             ));
                             self.selected = vec![Handle::Wire(w)];
@@ -430,7 +438,11 @@ impl Workspace {
             {
                 self.confirm = Some(edit::removal(t, &self.selected[0]));
             }
-            if ui.button("Fit").on_hover_text("Show the whole pylon").clicked() {
+            if ui
+                .button("Fit")
+                .on_hover_text("Show the whole structure")
+                .clicked()
+            {
                 self.camera = None;
             }
             if !self.selected.is_empty() {
@@ -496,7 +508,7 @@ impl Workspace {
             ui.painter_at(rect).text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "The pylon's 3D view needs a GPU (wgpu).",
+                "The structure's 3D view needs a GPU (wgpu).",
                 egui::FontId::proportional(13.0),
                 ui.visuals().text_color(),
             );
@@ -783,22 +795,22 @@ impl Workspace {
                 (
                     Sheet::Points,
                     "Attachment points",
-                    "Where insulators hang on the structure: part of the pylon, moved only here",
+                    "Where strings hang on the structure: part of the structure, moved only here",
                 ),
                 (
                     Sheet::Strings,
-                    "Insulators",
-                    "The strings: each from an attachment point (or another insulator's wire point) to its wire point, by its length and direction",
+                    "Strings",
+                    "The strings: each from an attachment point (or another string's wire point) to its wire point, by its length and direction",
                 ),
                 (
                     Sheet::Wires,
                     "Wire points",
-                    "Where an insulator ends: placed by its string(s); another insulator may hang from it, or a set be on it",
+                    "Where a string ends: placed by its string(s); another string may hang from it, or a set be on it",
                 ),
                 (
                     Sheet::Sets,
-                    "Set points",
-                    "Where a wire is strung: a set number on a wire point; suspension or strain from its insulator",
+                    "Sets",
+                    "Where a wire is strung: a set number on a wire point; suspension or strain from its string",
                 ),
             ] {
                 ui.selectable_value(&mut self.sheet, s, name).on_hover_text(tip);
@@ -819,7 +831,7 @@ impl Workspace {
             .show(ui, |ui| match self.sheet {
                 Sheet::Points => {
                     egui::Grid::new("type-points").striped(true).show(ui, |ui| {
-                        for h in ["attachment point", "x", "y", "z", "on", "insulators"] {
+                        for h in ["attachment point", "x", "y", "z", "on", "strings"] {
                             ui.strong(h);
                         }
                         ui.end_row();
@@ -857,12 +869,12 @@ impl Workspace {
                     egui::Grid::new("type-wires").striped(true).show(ui, |ui| {
                         for (h, tip) in [
                             ("wire point", "Its label"),
-                            ("x", "Placed by its insulator(s); typed only for one no insulator reaches (fixed)"),
+                            ("x", "Placed by its string(s); typed only for one no string reaches (fixed)"),
                             ("y", ""),
                             ("z", ""),
-                            ("held by", "The insulators ending here (two: a V)"),
-                            ("below it", "Insulators hanging from it (a TAK, a V with a string below)"),
-                            ("set", "A set on it: a wire is strung here (Set points)"),
+                            ("held by", "The strings ending here (one, or two to one wire point)"),
+                            ("below it", "Strings hanging from it"),
+                            ("set", "A set on it: a wire is strung here (Sets)"),
                             ("counterweight", "A weight hanging at it"),
                         ] {
                             ui.strong(h).on_hover_text(tip);
@@ -896,7 +908,7 @@ impl Workspace {
                             } else {
                                 for v in at {
                                     ui.label(format!("{v:.3} m"))
-                                        .on_hover_text("Placed by its insulator(s): change their length or direction");
+                                        .on_hover_text("Placed by its string(s): change their length or direction");
                                 }
                             }
                             ui.label(if held.is_empty() {
@@ -973,7 +985,7 @@ impl Workspace {
             let from = picked.clone().unwrap_or_default();
             let can = picked.is_some();
             if ui
-                .add_enabled(can, egui::Button::new("+ New insulator"))
+                .add_enabled(can, egui::Button::new("+ New string"))
                 .on_hover_text(format!(
                     "From {from} (the point picked), {:.2} m, hanging, to a new wire point",
                     self.string_length
@@ -983,7 +995,7 @@ impl Workspace {
             {
                 match edit::new_string(doc, t, &from, None, self.string_length, None) {
                     Ok((l, w)) => {
-                        self.message = Some((format!("insulator {l} from {from} to {w}"), false));
+                        self.message = Some((format!("string {l} from {from} to {w}"), false));
                         self.selected = vec![Handle::Wire(w)];
                         changed = true;
                     }
@@ -1013,7 +1025,7 @@ impl Workspace {
                     })
                     .response
                     .on_hover_text(format!(
-                        "An insulator of the library from {from} (the point picked)"
+                        "An assembly of the library from {from} (the point picked)"
                     ));
             });
             if let Some(id) = chosen
@@ -1022,7 +1034,7 @@ impl Workspace {
                 match edit::new_string(doc, t, &from, Some(a), a.length.si(), None) {
                     Ok((l, w)) => {
                         self.message =
-                            Some((format!("insulator {l} ({id}) from {from} to {w}"), false));
+                            Some((format!("string {l} ({id}) from {from} to {w}"), false));
                         self.selected = vec![Handle::Wire(w)];
                         changed = true;
                     }
@@ -1051,9 +1063,9 @@ impl Workspace {
         let mut changes: Vec<(String, StringChange)> = Vec::new();
         egui::Grid::new("type-strings").striped(true).show(ui, |ui| {
             for (h, tip) in [
-                ("insulator", "Its label"),
-                ("hangs from", "An attachment point of the structure, or another insulator's wire point (a TAK)"),
-                ("wire point", "Where it ends: a new one, or another insulator's (two make a V)"),
+                ("string", "Its label"),
+                ("hangs from", "An attachment point of the structure, or another string's wire point"),
+                ("wire point", "Where it ends: a new one, or another string's (two strings to one wire point)"),
                 ("kind", "Suspension: the wire runs through its set. Strain: the wire ends at its set"),
                 ("assembly", "An assembly of the insulator library (its length, weight, wind area), or none: a length"),
                 ("length", "From its top to its wire point: it places the wire point"),
@@ -1061,7 +1073,7 @@ impl Workspace {
                 ("direction", "In plan, clockwise seen from above (ahead at the project's angle)"),
                 ("weight", "Its weight (default: its assembly's)"),
                 ("wind area", "The area the wind blows on (default: its assembly's)"),
-                ("compression", "The push it may take (V legs); none: tension only"),
+                ("compression", "The push it may take (two strings to one wire point); none: tension only"),
                 ("limits", "Kept, not checked by OpenOHL (for a plugin or a report): the tension it is rated for, the swing from straight down it may take (any direction), across and along the line. Unticked: not given — its assembly's, if it gives one (shown dimmed)"),
                 ("description", "What it is, in words"),
                 ("", ""),
@@ -1154,7 +1166,7 @@ impl Workspace {
                     }
                 } else {
                     let (dn, dr, _) = ends.map_or((0.0, 0.0, 0.0), |(a, b)| polar(a, b));
-                    let why = "A leg of a V: its direction follows where the legs meet (their lengths)";
+                    let why = "One of two strings to one wire point: its direction follows where they meet (their lengths)";
                     ui.label(format!("{dn:.2}°")).on_hover_text(why);
                     ui.label(format!("{:.2}°", (dr + ahead).rem_euclid(360.0))).on_hover_text(why);
                 }
@@ -1191,7 +1203,7 @@ impl Workspace {
                     {
                         save = Some(s.label.clone());
                     }
-                    if ui.small_button("🗑").on_hover_text("Delete this insulator").clicked() {
+                    if ui.small_button("🗑").on_hover_text("Delete this string").clicked() {
                         delete = Some(s.label.clone());
                     }
                 });
@@ -1208,7 +1220,7 @@ impl Workspace {
         }
         if let Some(label) = delete {
             edit::delete_string(doc, t, g, &label);
-            self.message = Some((format!("deleted insulator {label}"), false));
+            self.message = Some((format!("deleted string {label}"), false));
             changed = true;
         }
         if let Some(label) = save {
@@ -1221,7 +1233,7 @@ impl Workspace {
         if t.strings.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No insulator yet: pick an attachment point (or add one), then + New insulator or From the library.",
+                    "No string yet: pick an attachment point (or add one), then + New string or From the library.",
                 )
                 .weak(),
             );
@@ -1238,7 +1250,7 @@ impl Workspace {
             let on: Vec<&ohl_structures::TypeString> =
                 t.strings.iter().filter(|x| x.wire == w).collect();
             if on.is_empty() {
-                "fixed (no insulator)"
+                "fixed (no string)"
             } else if on.iter().any(|x| x.strain) {
                 "strain"
             } else {
@@ -1248,20 +1260,30 @@ impl Workspace {
         let mut drop_set: Option<String> = None;
         egui::Grid::new("type-sets").striped(true).show(ui, |ui| {
             for (h, tip) in [
-                ("set", "Its number: sections and jumpers end here (unique on the structure)"),
+                (
+                    "set",
+                    "Its number: sections and jumpers end here (unique on the structure)",
+                ),
                 ("on wire point", "The wire point it is on"),
-                ("kind", "From its insulator: suspension (the wire runs through) or strain (the wire ends)"),
+                (
+                    "kind",
+                    "From its string: suspension (the wire runs through) or strain (the wire ends)",
+                ),
                 ("", ""),
             ] {
                 ui.strong(h).on_hover_text(tip);
             }
             ui.end_row();
-            let mut sets: Vec<&ohl_structures::TypeWire> = t.wires.iter().filter(|w| w.set.is_some()).collect();
+            let mut sets: Vec<&ohl_structures::TypeWire> =
+                t.wires.iter().filter(|w| w.set.is_some()).collect();
             sets.sort_by_key(|w| w.set);
             for w in sets {
                 let set = w.set.expect("filtered");
                 let mut n = i64::from(set);
-                if ui.add(egui::DragValue::new(&mut n).range(1..=99_999)).changed() {
+                if ui
+                    .add(egui::DragValue::new(&mut n).range(1..=99_999))
+                    .changed()
+                {
                     match edit::set_set(doc, t, &w.label, u32::try_from(n).unwrap_or(set)) {
                         Ok(()) => changed = true,
                         Err(e) => self.message = Some((e, true)),
@@ -1272,7 +1294,11 @@ impl Workspace {
                 egui::ComboBox::from_id_salt(("set-on", set))
                     .selected_text(&on)
                     .show_ui(ui, |ui| {
-                        for x in t.wires.iter().filter(|x| x.set.is_none() || x.label == w.label) {
+                        for x in t
+                            .wires
+                            .iter()
+                            .filter(|x| x.set.is_none() || x.label == w.label)
+                        {
                             ui.selectable_value(&mut on, x.label.clone(), &x.label);
                         }
                     });
@@ -1281,7 +1307,11 @@ impl Workspace {
                     changed = true;
                 }
                 ui.label(kind(&w.label));
-                if ui.small_button("🗑").on_hover_text("Take the set off (the wire point stays)").clicked() {
+                if ui
+                    .small_button("🗑")
+                    .on_hover_text("Take the set off (the wire point stays)")
+                    .clicked()
+                {
                     drop_set = Some(w.label.clone());
                 }
                 ui.end_row();

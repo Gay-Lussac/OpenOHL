@@ -429,7 +429,7 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
             .striped(true)
             .show(ui, |ui| {
                 ui.strong("section");
-                ui.strong("cable");
+                ui.strong("wire type");
                 for c in cases {
                     ui.strong(format!("{} at {} °C", c.name, w.max_temperature));
                 }
@@ -447,7 +447,7 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
                     let conductor = model
                         .library
                         .get(&s.cable)
-                        .ok_or_else(|| format!("cable {} not in the library", s.cable))
+                        .ok_or_else(|| format!("wire type {} not in the library", s.cable))
                         .and_then(|c| {
                             Conductor::from_cable(c)
                                 .map(|c| c.with_defaults(&model.line.defaults))

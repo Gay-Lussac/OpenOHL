@@ -53,7 +53,7 @@ const COMPONENT: &[Field] = &[
         "stress_strain",
         "{ stress_unit = \"MPa\", strain = \"percent\", basis = \"total\", initial = [0.0, 550.0, 0.0, 0.0, 0.0], creep = [0.0, 550.0, 0.0, 0.0, 0.0], final_modulus = 550.0, reference_temperature = \"20 °C\" }",
         "non-linear model: polynomials of this material, stress (stress_unit) of strain (% or unit), \
-         on the total cable area (basis = \"total\": actual values × component area / total \
+         on the total wire area (basis = \"total\": actual values × component area / total \
          area) or its own (\"component\"); initial a0…a4, creep c0…c4, final_modulus per strain \
          unit, the temperature the strand data were obtained at. Bimetallic cables: give the \
          outer and the core their own (what the outer strands do above the transition \
@@ -67,7 +67,7 @@ const CABLE: &[Field] = &[
         "\"new-cable\"",
         "unique id, used by the sections (letters, digits, - _ .)",
     ),
-    ("name", "\"New cable\"", "display name"),
+    ("name", "\"New wire type\"", "display name"),
     (
         "kind",
         "\"acsr\"",
@@ -89,17 +89,17 @@ const CABLE: &[Field] = &[
     (
         "outer",
         "{ area = \"400 mm²\", modulus = \"55 GPa\", thermal_expansion = 23e-6 }",
-        "outer component (the whole cable if homogeneous)",
+        "outer component (the whole wire if homogeneous)",
     ),
     (
         "core",
         "{ area = \"50 mm²\", modulus = \"190 GPa\", thermal_expansion = 11.5e-6 }",
-        "core component (bimetallic cables)",
+        "core component (bimetallic wires)",
     ),
     (
         "model",
         "\"nonlinear\"",
-        "cable model: nonlinear (polynomials for the initial and creep behaviour of the outer \
+        "wire model: nonlinear (polynomials for the initial and creep behaviour of the outer \
          and core materials), linear_creep_tension (linear elastic, permanent stretch due to \
          creep proportional to the creep weather case tension), linear_creep_temperature \
          (linear elastic, permanent stretch due to creep given as a temperature increase)",
@@ -118,7 +118,7 @@ const CABLE: &[Field] = &[
     (
         "bimetallic_behavior",
         "\"compression\"",
-        "bimetallic cables, above the transition temperature: compression (the outer strands \
+        "bimetallic wires, above the transition temperature: compression (the outer strands \
          can go into compression, up to max_virtual_compression) or bird_cage (they take no \
          compression)",
     ),
@@ -138,7 +138,7 @@ const CASE: &[Field] = &[
         "[\"clearance\"]",
         "for choosing cases (e.g. clearance, loads, stringing)",
     ),
-    ("temperature", "\"15 °C\"", "cable temperature"),
+    ("temperature", "\"15 °C\"", "wire temperature"),
     ("ice_thickness", "\"10 mm\"", "radial ice thickness"),
     ("ice_load", "\"15 N/m\"", "or: ice load per length"),
     (
@@ -226,19 +226,19 @@ const INSULATOR: &[Field] = &[
     (
         "length",
         "\"4.5 m\"",
-        "attachment point to clamp (V-string: leg length)",
+        "attachment point to clamp (two strings: each one's length)",
     ),
     ("weight", "\"1500 N\"", "total weight"),
     (
         "axial_stiffness",
         "\"50 MN\"",
-        "axial stiffness of a string or leg",
+        "axial stiffness of a string",
     ),
     ("wind_area", "\"0.5 m²\"", "projected area for wind"),
     (
         "half_width",
         "\"2 m\"",
-        "V-string: centre to each leg attachment",
+        "two strings to one wire point: centre to each one's top",
     ),
 ];
 
@@ -255,7 +255,7 @@ const STRUCTURE: &[Field] = &[
     (
         "height",
         "\"40 m\"",
-        "mast top for the stick drawing (local z)",
+        "shaft top for the stick drawing (local z)",
     ),
     (
         "foot",
@@ -278,7 +278,7 @@ const ATTACHMENT: &[Field] = &[
     (
         "point",
         "[\"0 m\", \"0 m\", \"30 m\"]",
-        "insulator attachment point: across (right looking ahead), along (ahead), up",
+        "the string's top: across (right looking ahead), along (ahead), up",
     ),
     (
         "insulator",
@@ -1133,7 +1133,9 @@ impl LibraryPage {
                         LibraryKind::Cables => "Read the model's wires from this file",
                         LibraryKind::WeatherCases => "Solve the model in these weather cases",
                         LibraryKind::LoadCases => "Compute the structure loads in these load cases",
-                        LibraryKind::Insulators => "Read the insulators from this file's folder",
+                        LibraryKind::Insulators => {
+                            "Read the insulator assemblies from this file's folder"
+                        }
                         LibraryKind::StructureTypes => {
                             "Read the structure types from this file's folder"
                         }
@@ -1196,10 +1198,10 @@ impl LibraryPage {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.workspace.on, false, "Fields")
                     .on_hover_text("The file's fields: its name, points, wire points and strings");
-                ui.selectable_value(&mut self.workspace.on, true, "Pylon")
+                ui.selectable_value(&mut self.workspace.on, true, "Structure")
                     .on_hover_text(
                         "The structure in its own axes: tables of its attachment points, \
-                         strings, wire points and sets on the left, the pylon in 3D on the right",
+                         strings, wire points and sets on the left, the structure in 3D on the right",
                     );
                 ui.separator();
                 let dirty = self.dirty();

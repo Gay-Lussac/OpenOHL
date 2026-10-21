@@ -107,10 +107,10 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             detail: if types > 0 {
                 count(types, "structure type", "structure types")
             } else {
-                "build one from a pylon template (suspension and strain)".into()
+                "build one from a structure template (suspension and strain)".into()
             },
             go: Go::PylonBuilder,
-            link: "New pylon from a template…",
+            link: "New structure from a template…",
             optional: false,
         },
         Step {
@@ -136,17 +136,17 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
                     line.structures.len()
                 )
             } else {
-                "insulator strings (a type brings its own; Add string on a structure point)".into()
+                "strings (a type brings its own; Add string on a structure point)".into()
             },
             go: Go::Hold(Tool::AddString),
             link: "Hold Add string",
             optional: false,
         },
         Step {
-            title: "Cables",
+            title: "Wire types",
             done: !model.library.is_empty(),
             detail: if model.library.is_empty() {
-                "the wire library is empty: add or import a cable file (.ohlw)".into()
+                "the wire library is empty: add or import a wire library file (.ohlw)".into()
             } else {
                 count(model.library.len(), "cable", "cables")
             },

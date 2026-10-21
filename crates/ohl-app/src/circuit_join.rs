@@ -228,7 +228,7 @@ impl CircuitJoin {
         let keep = &self.sides[self.keep];
         let other = &self.sides[1 - self.keep];
         format!(
-            "{}, joining circuit {} into {}",
+            "{}, joining conductor path {} into {}",
             self.what,
             other.label(),
             keep.label()
@@ -252,8 +252,8 @@ pub fn window(ctx: &egui::Context, join: &mut CircuitJoin) -> Outcome {
     let mut open = true;
     let (a, b) = (join.sides[0].label(), join.sides[1].label());
     let title = match join.step {
-        Step::Warn => "Different circuits",
-        Step::Choose => "Join two circuits",
+        Step::Warn => "Different conductor paths",
+        Step::Choose => "Join two conductor paths",
     };
     egui::Window::new(title)
         .id(egui::Id::new("circuit-join"))
@@ -263,21 +263,21 @@ pub fn window(ctx: &egui::Context, join: &mut CircuitJoin) -> Outcome {
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ctx, |ui| match join.step {
             Step::Warn => {
-                ui.heading("You are trying to connect 2 different circuits");
+                ui.heading("You are trying to connect 2 different conductor paths");
                 ui.add_space(4.0);
                 ui.label(format!(
-                    "Jumper {} joins circuit {a} (system {}) and circuit {b} (system {}).",
+                    "Jumper {} joins conductor path {a} (system {}) and conductor path {b} (system {}).",
                     join.jumper.id, join.sides[0].system_text, join.sides[1].system_text,
                 ));
                 ui.label(
-                    "Connected, they become one circuit with one name, phase and system. \
+                    "Connected, they become one conductor path with one circuit name, phase and system. \
                      Continue to compare them and choose which one stays.",
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui
                         .button("Continue")
-                        .on_hover_text("Compare both circuits and choose the one that stays")
+                        .on_hover_text("Compare both conductor paths and choose the one that stays")
                         .clicked()
                     {
                         join.step = Step::Choose;
@@ -292,7 +292,7 @@ pub fn window(ctx: &egui::Context, join: &mut CircuitJoin) -> Outcome {
                 });
             }
             Step::Choose => {
-                ui.label("Choose the circuit that stays. The other one's sections take its name, phase and system.");
+                ui.label("Choose the conductor path that stays. The other one's sections take its circuit name, phase and system.");
                 ui.add_space(6.0);
                 let sides = join.sides.clone();
                 egui::Grid::new("circuit-join-grid")
@@ -305,7 +305,7 @@ pub fn window(ctx: &egui::Context, join: &mut CircuitJoin) -> Outcome {
                             let text = egui::RichText::new(format!("Keep {}", s.label())).strong();
                             if ui
                                 .radio(join.keep == k, text)
-                                .on_hover_text("This circuit stays as it is")
+                                .on_hover_text("This conductor path stays as it is")
                                 .clicked()
                             {
                                 join.keep = k;
@@ -358,7 +358,7 @@ pub fn window(ctx: &egui::Context, join: &mut CircuitJoin) -> Outcome {
                 let keep = &join.sides[join.keep];
                 let other = &join.sides[1 - join.keep];
                 ui.label(format!(
-                    "{} {} ({}) will become circuit {}, phase {}, system {}.",
+                    "{} {} ({}) will become circuit name {}, phase {}, system {}.",
                     if other.sections.len() == 1 {
                         "Section"
                     } else {

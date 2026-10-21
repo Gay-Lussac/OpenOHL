@@ -120,7 +120,7 @@ impl BomWindow {
         }
         self.poll();
         let mut open = true;
-        egui::Window::new("Bill of materials: cables")
+        egui::Window::new("Bill of materials: wires")
             .open(&mut open)
             .default_width(760.0)
             .default_height(520.0)
@@ -175,7 +175,7 @@ impl BomWindow {
                 && let Some(e) = estimate
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("CSV", &["csv"])
-                    .set_file_name("bill-of-materials-cables.csv")
+                    .set_file_name("bill-of-materials-wires.csv")
                     .save_file()
             {
                 self.status = match std::fs::write(&path, e.csv()) {

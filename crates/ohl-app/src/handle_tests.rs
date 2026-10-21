@@ -549,7 +549,7 @@ fn a_v_wire_point_stays_and_its_string_changes_length() {
         crate::handles::command(&m, "T3", &Handle::Point("A2".into()), to).unwrap();
     assert!(
         what.contains(
-            "wire point W2 also held by a string from elsewhere (a V): not moved, \
+            "wire point W2 also held by a string from elsewhere: not moved, \
              string S2 changes length"
         ),
         "{what}"

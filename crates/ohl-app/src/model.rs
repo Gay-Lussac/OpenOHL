@@ -721,7 +721,7 @@ pub fn drawn_bodies(
         return Default::default();
     };
     let library = ohl_sections::SectionLibrary::load(sections).unwrap_or_else(|e| {
-        log::warn!("section library not read for the drawn members: {e}");
+        log::warn!("cross-section library not read for the drawn members: {e}");
         Default::default()
     });
     std::sync::Arc::new(ohl_structures_fe::drawn::Bodies::load(structures, &library))

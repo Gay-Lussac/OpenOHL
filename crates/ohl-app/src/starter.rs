@@ -84,7 +84,7 @@ pub fn fill(
                 std::fs::copy(&f, &to).map_err(|e| format!("{}: {e}", to.display()))?;
             }
         }
-        notes.push(format!("pylon templates in {}", templates.display()));
+        notes.push(format!("structure templates in {}", templates.display()));
     }
     let survey = dir.join(SURVEY);
     let to = beside.join(SURVEY);

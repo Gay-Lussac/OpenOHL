@@ -2220,7 +2220,7 @@ impl Ready {
             missing.dedup();
             match (&previous, missing.is_empty()) {
                 (Some(_), false) => Err(format!(
-                    "the line's cables {} are not in it",
+                    "the line's wire types {} are not in it",
                     missing.join(", ")
                 )),
                 _ => Ok(report),
@@ -3447,7 +3447,7 @@ impl Ready {
                 ));
                 let result = if taken || path.exists() {
                     Err(format!(
-                        "there is an insulator {id} already (rename it in the library)"
+                        "there is an insulator assembly {id} already (rename it in the library)"
                     ))
                 } else {
                     std::fs::create_dir_all(&dir)
@@ -3460,7 +3460,10 @@ impl Ready {
                             LibraryKind::Insulators,
                             PageAction::Saved(path.clone()),
                         );
-                        self.status = Some((format!("insulator {id} saved to the library"), false));
+                        self.status = Some((
+                            format!("insulator assembly {id} saved to the library"),
+                            false,
+                        ));
                     }
                     Err(e) => self.status = Some((e, true)),
                 }
@@ -7314,9 +7317,9 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
     });
     ui.menu_button("Bill of materials", |ui| {
         if ui
-            .button("Cables…")
+            .button("Wires…")
             .on_hover_text(
-                "The wire lengths of each cable (and their stringing), priced with a cost file",
+                "The wire lengths of each wire type (and their stringing), priced with a cost file",
             )
             .clicked()
         {
@@ -7324,7 +7327,7 @@ fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
             ui.close();
         }
         ui.label(
-            egui::RichText::new("Structures, insulators, hardware: not done yet")
+            egui::RichText::new("Structures, insulator assemblies, hardware: not done yet")
                 .small()
                 .weak(),
         );
@@ -7779,7 +7782,7 @@ fn menus(
         }
         ui.separator();
         ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
-        ui.add_enabled(false, egui::Button::new("Insulator swing (to come)"));
+        ui.add_enabled(false, egui::Button::new("String swing (to come)"));
     });
     // A tick menu (the option below): ticking it keeps the menu open;
     // choosing a tool closes it.

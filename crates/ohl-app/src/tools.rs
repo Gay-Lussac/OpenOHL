@@ -144,7 +144,7 @@ impl Tool {
                 "right-click a structure, string, span, jumper, span point or spacer to delete it"
             }
             Tool::GoTo => "right-click to open the Go to window",
-            Tool::Edit => "right-click a structure (its pylon), a string or a span to edit it",
+            Tool::Edit => "right-click a structure, a string or a span to edit it",
             Tool::AddStructure => {
                 "right-click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
             }
