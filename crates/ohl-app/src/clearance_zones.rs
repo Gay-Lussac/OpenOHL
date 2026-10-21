@@ -458,7 +458,8 @@ impl ZoneWindow {
             model.cases.iter().map(|c| c.case.clone()).collect();
         let rules = self.rules.clone();
         let states = zone::wind_states(&cases, |n| rules.iter().any(|r| r.applies(n)), &self.wind);
-        let arc = self.wind.arc;
+        // The swing arc with its band's margin (2026-10-21).
+        let arc = self.wind.arc.then_some(self.wind.band_margin);
         if let Some(why) = self.why_not_run() {
             self.report = Some(Err(format!("not run: {why}")));
             return;
@@ -1492,7 +1493,7 @@ fn run(
     check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
-    arc: bool,
+    arc: Option<f64>,
     cloud: Option<String>,
     ground: Option<Arc<ohl_terrain::Terrain>>,
     scope: Option<std::collections::BTreeSet<String>>,

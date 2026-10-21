@@ -134,6 +134,9 @@ pub fn wind_choice(
                 .on_hover_text("Left and right looking ahead along the line");
         });
     });
+    if wind.arc {
+        changed |= band_margin_ui(ui, id, &mut wind.band_margin);
+    }
     let what = match (wind.arc, wind.stepped) {
         (false, false) => "None ticked: each case's own pressure, blown to each side.",
         (true, false) => "Swing arc: anywhere between the blowouts (closed form).",
@@ -149,7 +152,7 @@ pub fn wind_choice(
             "Alongside each other or alone. The swing arc swings each span as one about the line \
              through its attachment points, between still air and the full blowouts of the sides \
              chosen, at every radius from the smallest to the largest of theirs, widened by \
-             0.15 m (conservative): every angle and radius between is covered. The \
+             the band margin (conservative): every angle and radius between is covered. The \
              steps solve the wires at 0, step, 2 × step … up to the case's pressure: the exact \
              positions at those pressures, nothing between them. Left and right looking ahead \
              along the line."
@@ -186,6 +189,68 @@ pub fn wind_choice(
     }
     changed
 }
+
+/// The swing band's margin (2026-10-21, the owner's decision: editable
+/// wherever the band is used): a field in metres, with the shared
+/// explanation — what it covers, that it is conservative, and that a
+/// smaller value is less safe. True when changed.
+pub fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64) -> bool {
+    let default = ohl_clearance::positions::BAND_MARGIN;
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label("band margin");
+        changed |= ui
+            .push_id((id, "band-margin"), |ui| {
+                ui.add(
+                    egui::DragValue::new(margin)
+                        .speed(0.01)
+                        .range(0.0..=5.0)
+                        .suffix(" m"),
+                )
+            })
+            .inner
+            .on_hover_text(BAND_MARGIN_HELP)
+            .changed();
+        if *margin != default
+            && ui
+                .small_button(format!("{default} m"))
+                .on_hover_text("Back to the default margin")
+                .clicked()
+        {
+            *margin = default;
+            changed = true;
+        }
+    });
+    if *margin < default {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(format!(
+                "Smaller than the default {default} m: less safe, on your responsibility."
+            ))
+            .small(),
+        )
+        .on_hover_text(BAND_MARGIN_HELP);
+    } else {
+        explain(
+            ui,
+            "Band margin: every distance to the swing band taken this much smaller \
+             (conservative).",
+            BAND_MARGIN_HELP,
+        );
+    }
+    changed
+}
+
+/// The band margin's longer explanation (hover).
+pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the largest radius of the \
+    still and blown positions) does not quite hold the wire at intermediate wind pressures: \
+    measured with steps of 10 Pa on the example lines, a span's wire lies up to 0.089 m outside \
+    it (the strings swing and the sag changes). The margin covers that worst excess plus an \
+    allowance for other lines: 0.15 m by default, conservative — every distance to the band is \
+    taken this much smaller, as if the conductor were that much thicker. A jumper's band (about \
+    the line through its end clamps) was measured up to 0.29 m outside on the example line: more \
+    than the default, not yet decided. A smaller value is less safe and on your responsibility; \
+    to be sure on your line, compare with the wind steps.";
 
 /// Size of a drawing, px.
 pub const SIZE: egui::Vec2 = egui::vec2(120.0, 80.0);
@@ -795,5 +860,38 @@ mod tests {
         w.arc = false;
         assert_eq!(solves_per_case(&w, 650.0, true), 1);
         assert_eq!(solves_per_case(&w, 0.0, true), 1);
+    }
+
+    /// The band's margin in the shared wind choice (2026-10-21): shown
+    /// with the swing arc only, with its explanation (conservative); a
+    /// smaller value than the default is warned about, and the default
+    /// is a click away.
+    #[test]
+    fn the_band_margin_with_the_swing_arc() {
+        for (arc, margin) in [(false, 0.15), (true, 0.15), (true, 0.05)] {
+            let mut h = Harness::new_ui(move |ui| {
+                let mut w = WindSteps {
+                    arc,
+                    band_margin: margin,
+                    ..WindSteps::default()
+                };
+                wind_choice(ui, "test", &mut w, true, 600.0);
+            });
+            h.run();
+            assert_eq!(h.query_by_label("band margin").is_some(), arc);
+            assert_eq!(
+                h.query_all_by_label_contains("conservative")
+                    .next()
+                    .is_some(),
+                arc && margin == 0.15
+            );
+            assert_eq!(
+                h.query_all_by_label_contains("less safe, on your responsibility")
+                    .next()
+                    .is_some(),
+                margin < 0.15
+            );
+            assert_eq!(h.query_by_label("0.15 m").is_some(), margin < 0.15);
+        }
     }
 }

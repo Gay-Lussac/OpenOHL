@@ -24,8 +24,8 @@ use std::sync::Arc;
 use eframe::egui;
 use ohl_clearance::rules::{Requirement, WindSides, WindSteps};
 use ohl_clearance::safety_volume::{
-    DEFAULT_TOLERANCE, Grouping, Mesh, MeshStats, SafetyParams, SafetyVolume, SafetyVolumes,
-    WindMode,
+    DEFAULT_TOLERANCE, Grouping, Mesh, MeshStats, NO_SYSTEM, SafetyParams, SafetyVolume,
+    SafetyVolumes, WindMode,
 };
 use ohl_io::safety_volume::{Description, Format};
 use ohl_session::packing::{Reader, Writer};
@@ -135,11 +135,30 @@ pub fn scope_items(line: &ohl_line::Line, scope: Scope) -> Vec<crate::tick_list:
         }
     };
     match scope {
-        Scope::Systems => line
-            .systems
-            .iter()
-            .map(|x| Item::new(&x.id, format!("{} — {} kV", system_name(x), x.voltage_kv)))
-            .collect(),
+        Scope::Systems => {
+            let mut out: Vec<Item> = line
+                .systems
+                .iter()
+                .map(|x| Item::new(&x.id, format!("{} — {} kV", system_name(x), x.voltage_kv)))
+                .collect();
+            // The wires without a system (2026-10-21): earthed wires and
+            // sections without one, ticked like a system.
+            let map = ohl_clearance::safety_volume::system_map(line);
+            let n = line
+                .sections
+                .iter()
+                .filter(|x| !map.contains_key(&x.id))
+                .count();
+            out.push(Item::new(
+                NO_SYSTEM,
+                match n {
+                    0 => format!("{NO_SYSTEM} — earthed wires (none on this line)"),
+                    1 => format!("{NO_SYSTEM} — earthed wires, 1 section"),
+                    n => format!("{NO_SYSTEM} — earthed wires, {n} sections"),
+                },
+            ));
+            out
+        }
         Scope::Circuits => {
             let map = ohl_clearance::safety_volume::system_map(line);
             let mut names: Vec<&str> = line
@@ -275,6 +294,7 @@ impl Settings {
             "margin": self.margin,
             "tolerance": self.tolerance,
             "wind": self.wind.as_str(),
+            "band_margin": self.steps.band_margin,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
             "per": self.grouping.as_str(),
@@ -317,6 +337,8 @@ impl Settings {
                     sides: text("wind_sides")
                         .and_then(|s| WindSides::parse(s).ok())
                         .unwrap_or(WindSides::Both),
+                    // Runs saved before 2026-10-21: the margin then fixed.
+                    band_margin: num("band_margin", d.steps.band_margin),
                 },
                 grouping: text("per").map_or(Ok(d.grouping), Grouping::parse)?,
                 // Runs saved before 2026-10-21: by circuit.
@@ -327,6 +349,19 @@ impl Settings {
             },
             list("cases"),
         ))
+    }
+
+    /// The wind in words, with the band's margin when the arc is taken.
+    pub fn wind_text(&self) -> String {
+        ohl_clearance::safety_volume::wind_text(self.wind, self.steps.band_margin)
+    }
+
+    /// What of `self` (the settings now) differs from `run`'s (a report's)
+    /// that the report does not show by itself: the band's margin with
+    /// the arc on.
+    pub fn changed_since(&self, run: &Settings) -> Option<String> {
+        (run.wind.arc() && self.steps.band_margin != run.steps.band_margin)
+            .then(|| "the band margin".to_owned())
     }
 
     /// The distance and margin in words.
@@ -506,11 +541,17 @@ impl SafetyVolumeWindow {
     /// What the report shown was computed from that changed since, in
     /// words (`None`: nothing, or no report).
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        self.report()?;
-        if let Some(s) = &self.saved_stale {
-            return Some(s.clone());
+        let report = self.report()?;
+        let line = match &self.saved_stale {
+            Some(s) => Some(s.clone()),
+            None => self.job.stamp.out_of_date(model, USES),
+        };
+        // The band's margin changed since (2026-10-21).
+        let settings = self.settings.changed_since(&report.settings);
+        match (line, settings) {
+            (Some(a), Some(b)) => Some(format!("{a}, {b}")),
+            (a, b) => a.or(b),
         }
-        self.job.stamp.out_of_date(model, USES)
     }
 
     /// Starts a run on the model as it is.
@@ -649,7 +690,7 @@ impl SafetyVolumeWindow {
                 "{} volumes, {} from the conductors, {}; {} triangles",
                 report.volumes.volumes.len(),
                 report.settings.distance_text(),
-                report.settings.wind.describe(),
+                report.settings.wind_text(),
                 triangles
             ),
             parameters,
@@ -671,7 +712,7 @@ impl SafetyVolumeWindow {
             line: model.line.name.clone(),
             crs: model.line.crs.clone(),
             distance: report.settings.distance_text(),
-            wind: report.settings.wind.describe().into(),
+            wind: report.settings.wind_text(),
             date,
         };
         let stem: String = format!("{} safety volume", model.line.name)
@@ -984,8 +1025,8 @@ impl SafetyVolumeWindow {
                     for (scope, tip) in [
                         (
                             Scope::Systems,
-                            "Tick the line's electrical systems (earthed wires have none: they \
-                             are left out)",
+                            "Tick the line's electrical systems; the row (no system) holds the \
+                             earthed wires and any section without a system",
                         ),
                         (Scope::Circuits, "Tick the line's circuits"),
                         (
@@ -1027,9 +1068,10 @@ impl SafetyVolumeWindow {
                     ui,
                     "The wires of the systems, circuits or spans ticked.",
                     "All with nothing searched: every wire of the line, also of what is added \
-                     later. By system, earthed wires (no system) are left out: choose by \
-                     circuit to include them. By span: every wire on the spans ticked, and a \
-                     jumper when the spans at both its ends are ticked.",
+                     later. By system, the row (no system) is the earthed wires and any section \
+                     without a system (at 0 kV), ticked like a system. By span: every wire on \
+                     the spans ticked, and a jumper when the spans at both its ends are \
+                     ticked.",
                 );
                 ui.horizontal(|ui| {
                     ui.label("one volume per");
@@ -1039,8 +1081,8 @@ impl SafetyVolumeWindow {
                         .on_hover_text("A circuit's phases together");
                     ui.radio_value(&mut s.grouping, Grouping::System, "system")
                         .on_hover_text(
-                            "Every circuit of one electrical system together (earthed wires: \
-                             per circuit)",
+                            "Every circuit of one electrical system together (the wires without \
+                             a system together: (no system))",
                         );
                 });
                 help::explain(
@@ -1048,17 +1090,18 @@ impl SafetyVolumeWindow {
                     "How the wires are grouped into closed volumes; each wire keeps the distance \
                      of its own voltage.",
                     "Per wire: a circuit's phase through all its sections. Per circuit: its \
-                     phases in one mesh. Per system: every circuit of the system in one mesh \
-                     (earthed wires, which have no system, per circuit). A volume of several \
-                     wires is the union of theirs.",
+                     phases in one mesh. Per system: every circuit of the system in one mesh, \
+                     and the wires without a system (earthed wires) together in one named (no \
+                     system). A volume of several wires is the union of theirs.",
                 );
                 help::explain(
                     ui,
                     "Jumpers included, structures not.",
                     "The jumpers at their solved positions in every case and wind position, so \
-                     the volume is continuous at the structures (a jumper gets no swing arc: its \
-                     blowouts, still air and steps). The structures and their strings are not \
-                     part of the volumes.",
+                     the volume is continuous at the structures; with the swing arc, each jumper \
+                     also on a swing band of its own about the line through its two end clamps, \
+                     widened by the band margin. The structures and their strings are not part \
+                     of the volumes.",
                 );
             });
             help::volume_grouping(ui, s.grouping);
@@ -1104,7 +1147,7 @@ impl SafetyVolumeWindow {
             v.positions,
             v.cases.join(", "),
             r.settings.distance_text(),
-            r.settings.wind.describe()
+            r.settings.wind_text()
         ));
         if !r.meshes {
             ui.colored_label(

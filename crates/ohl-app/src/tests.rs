@@ -1589,6 +1589,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             step: 200.0,
             sides: ohl_clearance::WindSides::Both,
             arc: false,
+            ..Default::default()
         };
         w.rules.push(ohl_clearance::ZoneRule {
             name: "High ground".into(),
@@ -1656,6 +1657,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             step: 10.0,
             sides: ohl_clearance::WindSides::Both,
             arc: false,
+            ..Default::default()
         };
         w.rules.push(ohl_clearance::ZoneRule {
             name: "High ground".into(),
@@ -1693,6 +1695,8 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
         w.wind.arc = true;
     }
     harness.run();
+    // The band's margin beside the arc (2026-10-21), 0.15 m by default.
+    harness.get_by_label("band margin");
     assert!(
         harness
             .query_all_by_label_contains("3 solves for a windy case of 600 Pa")

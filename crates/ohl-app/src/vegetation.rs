@@ -276,6 +276,7 @@ impl Settings {
             "max_base_ground_distance": self.base_limit.0.then_some(self.base_limit.1),
             "search_distance": self.search,
             "swing_arc": self.arc,
+            "band_margin": self.steps.band_margin,
             "wind_steps": self.steps.stepped,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
@@ -360,6 +361,8 @@ impl Settings {
                         .and_then(|s| WindSides::parse(s).ok())
                         .unwrap_or(WindSides::Both),
                     arc: false,
+                    // Runs saved before 2026-10-21: the margin then fixed.
+                    band_margin: num("band_margin", d.steps.band_margin),
                 },
                 ice: (
                     Ice::parse(
@@ -792,6 +795,7 @@ impl VegetationWindow {
             swing_arc: settings.arc,
             wind_steps: settings.steps.stepped.then_some(settings.steps),
             jumpers: false,
+            band_margin: settings.steps.band_margin,
         };
         let ice = match settings.ice.0 {
             Ice::Off => None,
@@ -909,11 +913,19 @@ impl VegetationWindow {
     /// words (`None`: nothing, or no report): the line, the LiDAR points,
     /// the ground ([`crate::revision`]); a saved run: since it was saved.
     pub fn out_of_date(&self, model: &Model) -> Option<String> {
-        self.report()?;
-        if let Some(s) = &self.saved_stale {
-            return Some(s.clone());
+        let report = self.report()?;
+        let line = match &self.saved_stale {
+            Some(s) => Some(s.clone()),
+            None => self.job.stamp.out_of_date(model, USES),
+        };
+        // The band's margin changed since (2026-10-21).
+        let margin = (report.settings.arc
+            && self.settings.steps.band_margin != report.settings.steps.band_margin)
+            .then(|| "the band margin".to_owned());
+        match (line, margin) {
+            (Some(a), Some(b)) => Some(format!("{a}, {b}")),
+            (a, b) => a.or(b),
         }
-        self.job.stamp.out_of_date(model, USES)
     }
 
     /// The saved run `r` shown (its settings, cases and results; its
@@ -1190,6 +1202,9 @@ impl VegetationWindow {
                         "not stepped".into()
                     },
                 ));
+                if w.band_margin != ohl_clearance::positions::BAND_MARGIN {
+                    rows.push(("band margin, m".into(), format!("{}", w.band_margin)));
+                }
             }
             if let Some(a) = v.swing_arc {
                 rows.push(("swing arc".into(), if a { "yes" } else { "no" }.into()));
@@ -2032,6 +2047,28 @@ pub mod saved {
             let back = unpack_points(&text, true).unwrap();
             assert_eq!(back.len(), fall.len());
             assert!(back.iter().all(|p| p.base.is_some()));
+        }
+
+        /// The band's margin is saved with the run (2026-10-21) and read
+        /// back; a run saved before reads the margin then fixed (0.15 m).
+        #[test]
+        fn the_band_margin_is_saved() {
+            let mut s = Settings {
+                arc: true,
+                ..Settings::default()
+            };
+            s.steps.band_margin = 0.3;
+            let v = s.to_json(&["high wind".into()]);
+            assert_eq!(v["band_margin"], 0.3);
+            let (back, _) = Settings::from_json(&v).unwrap();
+            assert_eq!(back, s);
+            let mut old = v.clone();
+            old.as_object_mut().unwrap().remove("band_margin");
+            let (back, _) = Settings::from_json(&old).unwrap();
+            assert_eq!(
+                back.steps.band_margin,
+                ohl_clearance::positions::BAND_MARGIN
+            );
         }
     }
 }
