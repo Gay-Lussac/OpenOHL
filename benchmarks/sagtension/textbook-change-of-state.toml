@@ -415,3 +415,45 @@ line = '''
   "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
 }
 '''
+
+# The same span with the solver option "ice and wind per unstretched metre"
+# (owner decision 2026-10-21, as other programs appear to do it): the
+# treatment before 2026-10-21, so tbice-001's previous value.
+
+[[case]]
+id = "tbice-002"
+title = "Level 300 m under 12 mm of ice at -5 °C: finite elements, ice per unstretched metre (option)"
+calculation = "line.section"
+reference = "Independent elastic span by quadrature, the ice per unstressed metre (benchmarks/reference/textbook_reference.py, iced_span_cases)"
+notes = """The solver option "ice and wind per unstretched metre" (Criteria › Calculation
+options, line file solver.loads_per = "unstretched"; owner decision 2026-10-21: as other programs
+appear to do it): the treatment before 2026-10-21, so the previous release's value of tbice-001,
+42551.16362 N, sag 7.715133902 m. The element's own weight 15.69064 exp(15 alpha) and its ice
+13.50152 N/m both per unit of its unstressed length L0 exp(-15 alpha), no stretch factor.
+Hand check (the vertical reactions): the supports carry (w0 exp(15 alpha) + q_i) L0 exp(-15 alpha)
+= 8762.0386 N, the own weight and the ice on the unstressed length; tbice-001 carries the ice on
+the stretched length, about 1.4e-3 more of it (13.5207 against 13.5015 N/m). Against tbice-001:
+H -0.0468 % (-19.90 N), sag -1.46 mm, max tension -20.09 N: slightly less sag, on the unsafe side
+for clearances (a Simplification, for comparison only)."""
+max_seconds = 5.0
+expected.h_0_n = { value = 42551.16362, rel_tol = 1e-7 }
+expected.max_tension_0_n = { value = 42776.10145, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 7.715133902, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "glaze ice", temperature = "-5 °C", ice_thickness = "12 mm", ice_density = "913 kg/m³" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", reference_temperature = "10 °C", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 6, "name": "ice", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "initial-fe",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}],
+ "solver": {"loads_per": "unstretched"}
+}
+'''

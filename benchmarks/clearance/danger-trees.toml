@@ -263,12 +263,16 @@ expected.radial_m = { value = 0.0, abs_tol = 1e-12 }
 #   still air: (3, 0, 18.5): rho = sqrt(0.3^2 + 1.5^2) = sqrt(2.34)
 #       = 1.529706 m at atan(0.3 / 1.5) = 11.3099 deg (to the right);
 # the band from r = 1.529706 to R = 1.6 m, from -30 to +30 deg. The
-# clearance is the distance less the margin m (0.15 m by default).
+# clearance is the distance less the jumpers' margin m (their own since
+# 2026-10-21, the owner's decision: 0 m by default, no widening; before,
+# the spans' 0.15 m: clearances 1.25 m and 0.379706 m).
 #   jumperband-001: a point 3 m straight below C (z = 17 m): rho 3 at
-#       0 deg: 3 - 1.6 = 1.4 m; clearance 1.4 - 0.15 = 1.25 m.
+#       0 deg: 3 - 1.6 = 1.4 m; clearance 1.4 - 0 = 1.4 m.
 #   jumperband-002: a point 1 m below C (z = 19 m), between the axis and
-#       the band: r - 1 = 0.529706 m; clearance 0.379706 m (about the
+#       the band: r - 1 = 0.529706 m; clearance 0.529706 m (about the
 #       still clamps' line the inner radius would be 1.5 m: 0.5 m).
+#   jumperband-003: jumperband-001 with a jumper margin of 0.35 m entered
+#       by the user: clearance 1.4 - 0.35 = 1.05 m.
 
 [[case]]
 id = "jumperband-001"
@@ -282,7 +286,7 @@ expected.band_inner_radius_m = { value = 1.5297058541, abs_tol = 1e-9 }
 expected.band_from_deg = { value = -30.0, abs_tol = 1e-9 }
 expected.band_to_deg = { value = 30.0, abs_tol = 1e-9 }
 expected.distance_m = { value = 1.4, abs_tol = 1e-12 }
-expected.clearance_m = { value = 1.25, abs_tol = 1e-12 }
+expected.clearance_m = { value = 1.4, abs_tol = 1e-12 }
 
 [[case]]
 id = "jumperband-002"
@@ -291,4 +295,13 @@ calculation = "clearance.jumper_band"
 reference = "Hand calculation (this file)"
 inputs = { gap = "6 m", rise = "0 m", clamp_height = "20 m", still_sag = "1.5 m", blown_sag = "1.6 m", blowout_angle = 30.0, clamp_shift = "0.3 m", point_x = "3 m", point_y = "0.3 m", point_z = "19 m" }
 expected.distance_m = { value = 0.5297058541, abs_tol = 1e-9 }
-expected.clearance_m = { value = 0.3797058541, abs_tol = 1e-9 }
+expected.clearance_m = { value = 0.5297058541, abs_tol = 1e-9 }
+
+[[case]]
+id = "jumperband-003"
+title = "A jumper's swing band, a margin of its own entered"
+calculation = "clearance.jumper_band"
+reference = "Hand calculation (this file)"
+inputs = { gap = "6 m", rise = "0 m", clamp_height = "20 m", still_sag = "1.5 m", blown_sag = "1.6 m", blowout_angle = 30.0, clamp_shift = "0.3 m", point_x = "3 m", point_y = "0.3 m", point_z = "17 m", jumper_band_margin = "0.35 m" }
+expected.distance_m = { value = 1.4, abs_tol = 1e-12 }
+expected.clearance_m = { value = 1.05, abs_tol = 1e-12 }

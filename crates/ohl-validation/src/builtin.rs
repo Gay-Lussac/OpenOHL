@@ -65,6 +65,17 @@ fn band_margin_input(inputs: &Inputs) -> Result<f64, String> {
     }
 }
 
+/// The jumpers' swing band margin of a case: its `jumper_band_margin` (a
+/// length, since 2026-10-21), else the default
+/// [`ohl_clearance::positions::JUMPER_BAND_MARGIN`] (0 m).
+fn jumper_band_margin_input(inputs: &Inputs) -> Result<f64, String> {
+    if inputs.contains_key("jumper_band_margin") {
+        quantity_input::<Length>(inputs, "jumper_band_margin").map(|l| l.si())
+    } else {
+        Ok(ohl_clearance::positions::JUMPER_BAND_MARGIN)
+    }
+}
+
 fn float_input(inputs: &Inputs, name: &str) -> Result<f64, String> {
     let value = inputs
         .get(name)
@@ -1625,7 +1636,9 @@ impl Calculation for SwingArcClearance {
 /// across the line, to the left, as a dead end's clamp moves with the
 /// wind: the band's axis is through the clamps blown to the left); its
 /// swing band ([`ohl_clearance::positions::jumper_band`], widened by
-/// `band_margin`, optional, default 0.15 m) at the place of the point
+/// the jumpers' margin `jumper_band_margin`, optional, default
+/// [`ohl_clearance::positions::JUMPER_BAND_MARGIN`], 0 m, since
+/// 2026-10-21) at the place of the point
 /// (`point_x`, `point_y`, `point_z`), the point's distance to it (to the
 /// centre line) and its clearance (less the margin; a conductor of
 /// radius 0).
@@ -1639,9 +1652,9 @@ impl Calculation for JumperBand {
     fn description(&self) -> &'static str {
         "A jumper's swing band about the line through its end clamps and a point's distance \
          to it (inputs: gap, rise, clamp_height, still_sag, blown_sag, blowout_angle, \
-         clamp_shift, point_x, point_y, point_z, band_margin optional); outputs axis_length_m, \
-         band_radius_m, band_inner_radius_m, band_from_deg, band_to_deg, distance_m, \
-         clearance_m"
+         clamp_shift, point_x, point_y, point_z, jumper_band_margin optional); outputs \
+         axis_length_m, band_radius_m, band_inner_radius_m, band_from_deg, band_to_deg, \
+         distance_m, clearance_m"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -1687,7 +1700,7 @@ impl Calculation for JumperBand {
             Some(&left),
             &wire(0.0, still, 0.0)?,
             Some(&right),
-            band_margin_input(inputs)?,
+            jumper_band_margin_input(inputs)?,
         )
         .ok_or("no band")?;
         let q = [len("point_x")?, len("point_y")?, len("point_z")?];
