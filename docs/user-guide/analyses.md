@@ -236,6 +236,9 @@ span (in parallel on every core):
   every distance to the band taken this much smaller. The default is the
   worst excess measured on the example lines (0.089 m) plus an allowance:
   conservative. A smaller value is less safe and on your responsibility.
+  The jumpers' own margin (below, in the safety volumes and the
+  clearance windows) does not apply here: the danger-tree check leaves
+  the jumpers out.
 - **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
   within reach solved with its section on its own, the span in a weather
   case of its own (its ice weight, the wind on its iced diameter) and the
@@ -323,7 +326,8 @@ widened by the **band margin**: see above). With the arc ticked, a field
 is and a longer text on hover (what it covers, that it is conservative,
 that a smaller value is less safe — said in warning colour below the
 default — and a button back to 0.15 m); the run is saved with it and
-marked *out of date* when it changes. **Wind stepped**
+marked *out of date* when it changes. Under it the **jumper band
+margin** is shown greyed: this check leaves the jumpers out. **Wind stepped**
 (a step in Pa, the sides): still air and every pressure up to the case's.
 Arc and steps work alone or together — the same wind choice as the
 [vertical and radial clearance windows](desktop-app.md#clearances-wind),
@@ -456,6 +460,13 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
   field of the danger-tree check (default 0.15 m, conservative; smaller
   is less safe and on your responsibility). Saved with the run; a change
   marks the run *out of date*.
+- **Jumper band margin** (with the swing arc; since 2026-10-21, the
+  owner's decision): the jumpers' bands' own margin, default 0 m — no
+  widening, so a jumper's band does not hold it between its blowouts (on
+  the example line up to 0.293 m outside): a simplification on your
+  responsibility; enter a value for your jumpers (the wind steps show
+  it). Saved with the run (a run saved before reads the band margin, as
+  its jumpers then took); a change marks the run *out of date*.
 
 #### Safety volumes: distance
 
@@ -542,6 +553,8 @@ ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case 
 
 `--wind none|steps|arc|both`, `--wind-step` (Pa), `--wind-sides
 both|left|right`, `--band-margin` (m, default 0.15; with the arc),
+`--jumper-band-margin` (m, default 0: the jumpers' bands' own margin;
+with the arc),
 `--distance` (required; the rule file's forms),
 `--margin`, `--tolerance`, `--per wire|circuit|system`, `--circuit`
 (repeatable), `--system` (repeatable: a system's id or name; `none` —

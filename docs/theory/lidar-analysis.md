@@ -182,7 +182,12 @@ wind is solved with the wind **from the left and from the right**.
   as a span's: its positions blown left, in still air and blown right,
   about the axis through its **two end clamps** (as solved blown to the
   left, the first solve; `positions::jumper_band`), from the smallest to
-  the largest radius at each place, widened by the same margin \\( m \\).
+  the largest radius at each place, widened by a margin of its own
+  \\( m_j \\) (the owner's decision of 2026-10-21: separate from the
+  spans' \\( m \\), **0 m by default**, entered by the user — the
+  **jumper band margin** beside the band margin in the clearance windows
+  and the safety volumes, `[wind] jumper_band_margin`,
+  `--jumper-band-margin`; saved runs record it).
   A jumper without a band (not solved blown to a side, or not running
   steadily along that axis) is taken at its solved positions, noted.
   Measured 2026-10-21 (`tests/arc_band.rs`) on the example line's jumper
@@ -192,13 +197,18 @@ wind is solved with the wind **from the left and from the right**.
   230 Pa, inside its inner radius: the dead-end clamps it hangs from
   move with the wind and its shape about the clamps' line changes), and
   0.127 m in rime ice and wind; the arc alone at the largest radius
-  misses them by up to 2.54 m. **This exceeds the default margin
-  (0.15 m)**: a jumper's band with the default margin does not hold
-  every intermediate position on the example line, by up to 0.143 m. The
-  margin is not widened without the owner's decision (reported; about
-  0.35 m would hold it with an allowance as the spans'); until then the
-  user may set a larger margin. With the clamps' line through the
+  misses them by up to 2.54 m. With the clamps' line through the
   still-air clamps instead, the excess was larger (0.375 m).
+
+  **Simplification** (the jumpers' margin, 0 m by default; on the user's
+  responsibility; exact: the wind steps): with \\( m_j = 0 \\) a jumper's
+  band is **not conservative between its blowouts** — on the example
+  line it misses the jumper by up to 0.293 m. A jumper swings with its
+  clamps and changes its shape about their line more than a span does,
+  so no one value holds every line; the user enters a value for their
+  jumpers (on the example line about 0.35 m would hold it with an
+  allowance as the spans'), found with the wind steps. The hover text of
+  the field quotes the measured excess.
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\) (the still-air position need not

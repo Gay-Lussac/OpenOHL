@@ -79,6 +79,7 @@ conserved (2026-10-21, below).
 | tbwref-001 | tbcos-001 with the weight given at 20 °C (strung at 10 °C) | \\( w_s = w\\,e^{10\alpha} \\) = 15.69378 N/m, parabolic cubic + reference; +1.38 N on tbcos-001 | \\( 10^{-7} \\) |
 | tbwref-002 | tbheat-002 with the library wire's mass at 40 °C | \\( w_s = w\\,e^{30\alpha} \\), the span's weight 6291.26 N + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbice-001 | the span of tbcos-002 (12 mm of ice at −5 °C) by finite elements, the ice per stretched metre | the closed form (tbcos-002) to 4.2·10⁻⁷, an integration of the ice following the local stretch to 3.3·10⁻⁷ + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbice-002 | tbice-001 with the solver option ice and wind per unstretched metre (2026-10-21, as other programs) | tbice-001's value before 2026-10-21 (42551.16 N); the supports carry the ice on the unstressed length, 8762.04 N + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
 ### Ruling span (`benchmarks/sagtension/textbook-ruling-span.toml`)
 
