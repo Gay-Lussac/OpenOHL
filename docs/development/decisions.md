@@ -25,6 +25,76 @@ of Parts A, B and C).
   O8, O10, O12, U1, U2, U4, U5, U6; C — O2, O9, O11. A one-line "next
   up" heads Parts A and B, taken from existing items and owner
   decisions.
+- **Circuits: objects of the line, defined by the user, following the
+  physical connections** (owner decisions of 2026-10-21: "circuit"
+  stays the term for the name group, the conductors that form one
+  circuit, and is to be definable fully by the user; then, correcting:
+  "circuits can only be merged by physically connecting them; two
+  circuits that are not connected must never be merged"). Built, in
+  active development (not approved yet).
+  - **Before**: a circuit was only a name typed on sections
+    (`circuit_name`), nothing else: no object, no id, no description, no
+    list (an empty circuit could not exist), no rename other than retyping
+    the name on every path. The connections made the *conductor paths*
+    (sections joined by jumpers or a shared wire point; one phase each);
+    the name grouped any paths, connected or not — phases of one circuit
+    are never connected, so the grouping was by name alone. The app kept
+    one name per conductor path when a section's name was typed (its path
+    followed) and when a jumper joined two paths (the window asking which
+    name, phase and system stay); files could still hold a path with two
+    names: the example line's branch S3 is tapped on S1 by a jumper and
+    named *Branch* while S1 is *Example 1*. A name could group paths of
+    several systems, and `--circuits` took names only (a name matching
+    nothing checked nothing).
+  - **Now**: `circuits` in the line file (version 7, covered by the same
+    unreleased raise as the height datum and attachment-point links; OHL
+    XML `<circuit>`; the project's settings row `circuits`): id, name,
+    optional system, description. Members are conductor paths, stored as
+    before on their sections (`circuit_name` = the circuit's name), so
+    splits, joins and section renames need nothing else.
+  - **The connections rule** (refused when a change brings it; a file
+    written with it is read and it is noted in the Circuits table): a
+    conductor path is in one circuit; a circuit holds one conductor path
+    per phase (system and phase label) — two paths of one phase that are
+    not connected are two conductors, so two circuits; a path of another
+    system than the circuit's; a repeated or empty name or id. **No
+    merge**: neither a merge command nor a rename to another circuit's
+    name; two circuits become one only by connecting them (a jumper, a
+    wire strung through), which makes their paths one. *Which name stays*
+    then: the jumper's window asks, as before (the circuit whose name is
+    not chosen keeps its paths that are not connected, or is left with
+    none — kept, noted — and the user may delete it). *Grouping paths of
+    different phases* (L1, L2, L3 of one circuit, never connected to each
+    other) stays allowed: that is what a circuit is — **open question**
+    for the owner below.
+  - **Editing**: the **Circuits** table (Sections menu): add (empty
+    allowed), rename (members follow), system, description, delete
+    (members in none, confirmed), members taken out and put in (a path
+    still in another circuit refused unless taken out in the same
+    Apply); every Apply one command, one undo. **Assign to circuit…** in
+    Properties on a selected wire: its whole conductor path (one wire at
+    a time: the views select one object). The Conductor paths table's
+    name column is now **circuit** (a new name makes the circuit, in the
+    same command; contradictions refused) and its paths are labelled P1,
+    P2… (were C1…).
+  - **Migration**: files without `circuits` are read into one circuit
+    per distinct name on their sections, in their order, id the name
+    (`-2`… when taken), no system (most conservative: no constraint
+    added). The sections are unchanged, so everything grouped by circuit
+    — safety volumes per circuit, circuit-to-circuit rules, phase
+    distance, wire colours — gives the same results (example lines
+    tested; the example's *Example 1* / *Branch* path noted, not
+    changed).
+  - **`--circuits` (`ohl zones`) and `--circuit` (`ohl safety-volume`)**
+    take an id or a name; an unknown one is refused, the circuits listed
+    (most conservative: a typo no longer checks nothing). Rule files'
+    `circuits` keep taking names, unchecked.
+  - **Open questions**: does "unconnected paths are not grouped" mean
+    only paths of one phase (as built), or should a circuit's phases also
+    have to run together (the same end structures)? Should the circuit
+    a connection leaves empty be deleted with it? Should the section
+    editor and the Sections table refuse a change that leaves a path in
+    two circuits (today only the circuit commands refuse it)?
 
 - **Attachment points in the applications: the Link tool and the
   rigid links drawn** (plan steps 5–8 of O3 item 6, the owner's
@@ -177,7 +247,8 @@ of Parts A, B and C).
     three phases of *North*; "per circuit", "circuit to circuit",
     `--circuits NAME`). That meaning is left as "circuit" until the owner
     decides its term (most conservative choice: nothing renamed into a
-    wrong meaning);
+    wrong meaning) — decided the same day: "circuit" it stays, an object
+    of its own (see *Circuits* above);
   - **wire type** for a library entry of the wire library (was "cable");
   - **file keys stay** as they are (`cable`, `circuit_name`, `wires`,
     `[[section]]`…); the glossary gives each term's key; old names are

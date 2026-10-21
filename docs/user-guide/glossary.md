@@ -250,12 +250,21 @@ one phase of one system. *Replaces:* circuit (one row of the former
 *Electrical circuits* table). *German:* Leiterzug (to confirm). *In
 files:* `circuit_starts`.
 
-**Circuit** *(to be decided)* — the name conductor paths carry
-(`circuit_name`), the same on the paths of one circuit's phases (e.g.
-*North* on its L1, L2 and L3); checks and safety volumes may take them
-together ("per circuit", "circuit to circuit"). Kept as *circuit* until
-the owner decides its term. *German:* Strang (to confirm). *In files:*
-`circuit_name`, `--circuits NAME`.
+**Circuit** — the conductors that form one circuit (e.g. *North*: its
+L1, L2 and L3), an object of the line the user defines: id, name,
+optionally its system, a description; its members are conductor paths.
+Circuits follow the physical connections: a conductor path is in one
+circuit, a circuit holds one conductor path per phase, and two circuits
+are never merged — they become one only when connected (a jumper, a wire
+strung through), the jumper's window asking which name stays. Checks and
+safety volumes take them together ("per circuit", "circuit to circuit").
+Decided 2026-10-21. *German:* Strang (to confirm). *In files:*
+`circuits`, a section's `circuit_name` (its circuit's name),
+`--circuits ID|NAME`.
+
+![A circuit North of two phases in a system; its L1 is two sections
+joined by a jumper, one conductor path; a branch of phase L1 not
+connected is a circuit of its own](../images/glossary/circuits.svg)
 
 ## The line and its route
 

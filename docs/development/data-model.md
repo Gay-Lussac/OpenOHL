@@ -240,7 +240,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ohl-line"` | — |
-| `version` | u32 | — | file version (now 7: the optional `height_datum` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `height_datum` | `HeightDatum?` | — | version 7: the heights' vertical datum, `{name, epsg}` — its name (`"LN02"`), the EPSG code of its vertical system (`5728`), either or both (an empty one refused; informative, nothing converted; `HeightDatum::parse` reads them as typed, `label()` → `LN02 (EPSG:5728)`); left out when none. Set in Terrain › Coordinate system › Define… with the CRS (one line-settings edit) or `put` `meta` `line`; the sheets' `{height_datum}` takes `Line::height_datum_label()` (`SheetInfo::height_datum`) first, then the CRS's vertical part (`ohl_drawing::height_datum_of`), then the template's `[if_empty]` | — |
@@ -253,6 +253,7 @@ files](../user-guide/line-file.md).
 | `spacers` | `[Spacer]` | m, N | interphase spacers: an insulator between span points of two sections of one span (`a`, `b`: section id + span point label, each point holding a clamp object — required; files before give bare ends a clamp of no weight, `Line::clamp_spacer_ends`; insulator label or weight, wind area, stiffness; `length` (none: the still-air distance at stringing); `compression` limit, N, from the project defaults when made; both sections by finite elements, ruling span refused); solved by `solve::solve_spacer_group` (the sections joined, in turn, Aitken's relaxation), reported on the section at `a` (`SectionShape::spacers`: ends, axial force, slack, over its limit) | sections + span point labels |
 | `defaults` | `Defaults` | N | the project's default values (Criteria › Default values; `ohl_line::DEFAULT_FIELDS`; the program's in `Defaults::PROGRAM`, the one place they are given — `ohl_thermal` and `ohl_clearance` take theirs from it): what new objects start with and what the calculations take where nothing else gives a value — `spacer_compression` (10 000 N), `jumper_exit_angle_deg` (30°), `jumper_stiffness_factor` (0.2), `jumper_clamp_length` (0.1 m, new clamps), `insulator_stiffness` (EA 5·10⁷ N), `air_density_factor` (Q 0.613), `thermal_emissivity` / `_absorptivity` (0.8), `thermal_roughness` (0.1), `thermal_albedo` (0.1), `thermal_time_step` (10 s), `clearance_wind_step` (50 Pa), `clearance_vertical_band` (0.5 m), `clearance_search_margin` (5 m), `clearance_zone_width` / `_depth` (1 m / 0.2 m, new windows); exported / imported as `.ohldef` (`ohl-defaults`, TOML, sections `[spacer]`, `[jumper]`, `[insulator]`, `[weather]`, `[thermal]`, `[clearance]`, values in their units); OHL XML `<defaults section_key=…>` (only those not the program's). Display settings stay per user | — |
 | `systems` | `[System]` | — | electrical systems | — |
+| `circuits` | `[Circuit]` | — | version 7 (2026-10-21): the circuits, named groups of conductor paths ([below](#electrical-systems-and-circuits-electricalrs)); left out when none; project `meta` row `circuits`; OHL XML `<circuit id name system description>` | system ids |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
 | `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic wire types above the transition temperature, for wire types that do not say | — |
@@ -442,7 +443,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `id` | string | — | unique id | — |
 | `description` | string | — | free text | — |
 | `cable` | string | — | wire type | `.ohlw` wire type `id` |
-| `circuit_name` | string | — | the name of the circuit it is part of (its sections give the same; the conductor paths themselves are traced, `electrical::circuits`); files before version 5: `circuit` | — |
+| `circuit_name` | string | — | the name of the circuit (`Line.circuits`) its conductor path is in (its sections give the same; empty: none); files before version 5: `circuit` | `Circuit.name` |
 | `phase_label` | string | — | phase label, e.g. `L1` | `SystemPhase.label`, `Display.phase_colors` key |
 | `system` | string? | — | system this conductor path carries; given once per path, the other sections of the path follow; none on the whole path: earthed | `System.id` |
 | `bundle` | u32 | — | subconductors (1: single wire) | — |
@@ -555,6 +556,38 @@ whichever section passes through `from`.
 | `SystemPhase.angle_deg` | f64? | ° | AC phase angle (default evenly spread) | — |
 | `SystemPhase.polarity` | i8? | — | DC: +1, −1, 0 (metallic return) | — |
 | `SystemPhase.code` | string? | — | line code (dots and dashes) when drawn by system | — |
+
+**Circuits** (`circuits.rs`, line file version 7, 2026-10-21): the
+conductor paths that form one circuit, defined by the user.
+
+| Entity.field | Type | Unit | Meaning | References |
+|---|---|---|---|---|
+| `Circuit.id` | string | — | unique id (`--circuits` takes it or the name) | — |
+| `Circuit.name` | string | — | unique, no spaces around it | given by its members' `Section.circuit_name` |
+| `Circuit.system` | string? | — | the system its conductor paths are of (none: not said) | `System.id` (validated) |
+| `Circuit.description` | string | — | free text | — |
+
+Its **members** are the conductor paths whose sections give its name
+(`Line::circuit_members`): stored on the sections, so splits, joins and
+renames of sections need nothing else. Rules (owner decision 2026-10-21:
+circuits follow the physical connections; `Line::circuit_conflicts`,
+refused by `Line::check_circuit_change` when a change brings a new one,
+noted when a file has one): a conductor path in one circuit; one
+conductor path per (system, phase label) in a circuit — two of one phase
+not connected are two circuits; a member of the circuit's system. No
+merge: two circuits become one only by a connection (the jumper window's
+choice of the name that stays). An empty circuit is allowed (noted,
+`Line::circuit_notes`). Operations on a copy of the line:
+`add_circuit`, `rename_circuit` (members follow; another circuit's name
+refused), `delete_circuit` (members in none), `assign_to_circuit` (whole
+conductor paths); `ohl_session::line_circuits_change` makes one command
+(the `circuits` settings row and the sections changed).
+`Line::circuit_names_for` resolves `--circuits` / `--circuit` (id or
+name; unknown refused). Files without `circuits`: `Line::adopt_circuits`
+(in `read_older`, on every read and in the session) gives every name
+found on sections and on no circuit a circuit, its id the name (`-2`…
+when taken), no system — the sections unchanged, so everything grouped by
+circuit gives the same results.
 
 Derived, never stored:
 
@@ -1627,7 +1660,7 @@ keeps them equal to what the exporter writes):
 |---|---|
 | `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (5 — the `line` row may hold `height_datum`; 4 before; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`); missing fields and values out of range take the defaults; absent: the defaults) |
 | `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `height_datum` (schema 5, left out when none), `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
+| `model_object(line, kind, id, ord, version, json)` | one row per object of a project line; `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `height_datum` (schema 5, left out when none), `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `circuits` (2026-10-21), `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
 | `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
 | `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the cross-section library), `sheet-templates` (`.ohlsheet`, the drawings' sheet templates with their images embedded; 2026-10-20), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
 | `spatial_index` | plan bounds and tile of every object (ADR-0008) |
