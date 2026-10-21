@@ -12461,9 +12461,21 @@ fn chains_of_strings_end_in_a_v() {
     }
 }
 
-/// A string added gets a library label in the same command: its entry
-/// written into the project's library (same values: the same entry for
-/// the next one), one undo taking both back.
+/// The new string in the open string window given 900 N.
+fn with_weight(h: &mut Harness<'_, App>) {
+    let r = h.state_mut().ready().unwrap();
+    let Some(crate::editors::Form::String(f)) = &mut r.editor else {
+        panic!("{:?}", r.editor);
+    };
+    let row = f.strings.last_mut().expect("the new string");
+    assert_eq!(row.weight, 0.0);
+    row.weight = 900.0;
+}
+
+/// A string added with a weight gets a library label in the same command:
+/// its entry written into the project's library (same values: the same
+/// entry for the next one), one undo taking both back. One added without a
+/// weight (0 N) stays unlabelled: no 0 N entry (2026-10-21).
 #[test]
 fn a_new_string_is_labelled_from_the_library() {
     use crate::tools::Tool;
@@ -12482,7 +12494,33 @@ fn a_new_string_is_labelled_from_the_library() {
         structure: "T2".into(),
         label: top.clone(),
     };
+    // Without a weight first: no label, no entry.
+    let before = {
+        let r = harness.state_mut().ready().unwrap();
+        r.model.types.as_ref().map_or(0, |t| t.1.iter().count())
+    };
     use_tool(&mut harness, Tool::AddString, point.clone(), None);
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let s = r.model.stored_line().unwrap().structure("T2").unwrap();
+        let x = s
+            .strings
+            .iter()
+            .rfind(|x| x.top == top)
+            .expect("the new string");
+        assert_eq!(x.weight, 0.0);
+        assert!(x.insulator.is_none(), "{:?}", x.insulator);
+        let lib = &r.model.types.as_ref().expect("libraries").1;
+        assert!(
+            lib.iter().all(|a| a.weight.si() > 0.0),
+            "no 0 N entry ({before} entries before)"
+        );
+        r.perform(crate::edit::Action::Undo);
+    }
+    use_tool(&mut harness, Tool::AddString, point.clone(), None);
+    with_weight(&mut harness);
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     let (label, entries) = {
         let r = harness.state_mut().ready().unwrap();
@@ -12503,12 +12541,17 @@ fn a_new_string_is_labelled_from_the_library() {
         let label = x.insulator.clone().expect("a library label");
         let lib = &r.model.types.as_ref().expect("libraries").1;
         assert!(lib.get(&label).is_some(), "{label} in the library");
-        // Every own string of T2 is labelled.
-        assert!(s.strings.iter().all(|x| x.insulator.is_some()));
+        // Every own string of T2 with a weight is labelled.
+        assert!(
+            s.strings
+                .iter()
+                .all(|x| x.insulator.is_some() || x.weight == 0.0)
+        );
         (label, lib.iter().count())
     };
     // The same again: the same entry.
     use_tool(&mut harness, Tool::AddString, point, None);
+    with_weight(&mut harness);
     press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
     {
         let r = harness.state_mut().ready().unwrap();
@@ -12577,8 +12620,8 @@ fn the_string_library_is_a_table() {
                 .structures
                 .iter()
                 .flat_map(|s| &s.strings)
-                .all(|x| x.insulator.is_some()),
-            "every own string labelled"
+                .all(|x| x.insulator.is_some() || x.weight == 0.0),
+            "every own string with a weight labelled (weightless ones keep the estimate)"
         );
         let rows = k.rows(&r.model, r.case);
         let total: usize = rows
