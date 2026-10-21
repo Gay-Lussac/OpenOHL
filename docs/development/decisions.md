@@ -7,6 +7,53 @@ result; this page says *what was decided, when and why*. Nothing here is
 approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (Part 1).
 
+## 2026-10-21
+
+- **Lines on the ground beside the line: a set of weather cases** (owner):
+  the lines are the plan envelope over every weather case chosen in the
+  menu, **both wind sides** where a case has wind (whatever side Display
+  weather cases shows: the other side is solved for the lines in the
+  background, `ground_lines::GroundLines`; until it is, the menu says so
+  and the lines take what is solved). The default is the case shown
+  (followed as another is shown). Chosen with ticks in the menu (it stays
+  open): All, None, the case shown, each case by name. Remembered per
+  project as a view setting (`ViewPrefs.ground_lines.shown_case`,
+  `cases` by name; settings of before read with the case shown). The
+  lines kept are keyed by the set of cases (the case shown counts only
+  while ticked). Replaces "the case chosen as shown only" decided on
+  2026-10-20. The envelope over both wind sides lies farther out than the
+  side shown alone: on the example 10 m from the conductors, the right
+  line moves more than 1 m out in high wind (600 Pa), the wind from the
+  left blowing the conductors right.
+- **The lines on the ground include the jumpers** (owner): their solved
+  positions in each case chosen count as conductors (each subconductor),
+  so the lines go on round the structures. Checked on the example at the
+  Y pylon T3, a dead-end of the branch with its jumper across the pylon
+  and an angle tower of the main route: 2 m away, the branch's lines
+  reach back to T3 with the jumper (they would begin 4.5 m out without
+  it), and the main route's lines go round T3 in one piece, crossing
+  themselves nowhere (`ground_lines_tests.rs`).
+- **The near side is the right** (owner, confirmed): looking along
+  increasing stations, for the sheets' corridor sides (`[corridor]
+  near_side`, default `"right"`) and the profile sides of the lines on the
+  ground (right solid, left dashed). Kept as built on 2026-10-20.
+- **The lines on the ground: default distance 10 m** (owner, confirmed):
+  as built on 2026-10-20 (a display value, no rule behind it).
+- **A project height datum** (owner): the project's vertical datum, a
+  name and an optional EPSG code of its vertical system (`LN02` /
+  EPSG:5728, `LHN95`), optional — `ohl_line::HeightDatum`,
+  `Line::height_datum`. Set in Terrain › Coordinate system › Define…
+  next to the coordinate system (one line-settings edit, undone as any)
+  and from the command line as the coordinate system is (`ohl project
+  apply`, a `put` of the `meta` row `line`). The sheets' `{height_datum}`
+  takes it first, then the coordinate system's compound vertical part,
+  then the template's `[if_empty]`. Shown in the coordinate-system window
+  and menu and in the project's properties. Format: line file version
+  **7** (OHL XML follows: `height_datum`, `height_datum_epsg`), project
+  `session_schema` **5** — older files and projects read unchanged, with
+  none; an empty datum is refused. Nothing is converted with it
+  (informative, like the coordinate system): reprojecting keeps it.
+
 ## 2026-10-20
 
 - **Sheet templates: second round of fixes and the owner's additions**
@@ -27,7 +74,7 @@ approved as finished: everything is built and in active development
     (`height_datum`), "unknown coordinate system" (`crs`), "–" (any
     other); the station range's `ends` and the title lines stay empty
     unless named. The project has no vertical datum of its own (a core
-    change, not made).
+    change, not made; the owner decided one on 2026-10-21, above).
   - **Templates carry the words of every generated text**: the legend's
     entries (`[legend.labels]` by entry kind, with placeholders) and the
     panel titles (`[layout] plan_title`, `profile_title`); English stays
@@ -48,8 +95,9 @@ approved as finished: everything is built and in active development
     reads `--lidar` / `--pointcloud`.
   - **The corridor's sides in the profile** (owner): the ground along
     both edges, the **near side the right** looking along increasing
-    stations by default (the plan's lower edge, nearest a reader of the
-    profile under the plan; `[corridor] near_side`), each edge in its own
+    stations by default (confirmed by the owner on 2026-10-21; the plan's
+    lower edge, nearest a reader of the profile under the plan;
+    `[corridor] near_side`), each edge in its own
     pen (`near`, `far`) in the plan, the key map and the profile alike,
     both in the legend. `--side-offset` stays as it was.
   - **The centreline** (owner): the ground on the axis always solid
@@ -76,8 +124,10 @@ approved as finished: everything is built and in active development
   ticked. Kept for the last eight weather cases shown.
 - **Decided here** for the lines on the ground (the most conservative
   choice, open to the owner): default distance **10 m** (a display
-  value, no rule behind it); with several weather cases shown, **the
-  case chosen as shown** only (not the envelope of all of them); spans
+  value, no rule behind it; confirmed by the owner on 2026-10-21); with
+  several weather cases shown, **the case chosen as shown** only (not
+  the envelope of all of them; replaced on 2026-10-21 by a set of cases
+  chosen in the menu, both wind sides); spans
   to structures **away from the alignment** and **other project lines**
   are not taken into account; the lines **end at the first and last
   structure** (no round end caps); where the line leaves the ground

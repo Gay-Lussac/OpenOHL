@@ -43,7 +43,7 @@ none.
 
 | `op` | Fields | Effect |
 |---|---|---|
-| `put` | `kind`, `id`, `value` | Create or replace an object: `meta` (id `line`: `{name, crs, display}`; other line settings have rows of their own), `route`, `alignment`, `alignment_point`, `structure` (with its attachments), `section` (with stringing and loads), `jumper`, `spacer`, `library` (a library file of the project line, id `kind/name`, with its `text`) — the line's objects with `value` as in the line file. |
+| `put` | `kind`, `id`, `value` | Create or replace an object: `meta` (id `line`: `{name, crs, height_datum, display}` — the coordinate system and the heights' vertical datum, `{"name": "LN02", "epsg": 5728}`, are set this way; other line settings have rows of their own), `route`, `alignment`, `alignment_point`, `structure` (with its attachments), `section` (with stringing and loads), `jumper`, `spacer`, `library` (a library file of the project line, id `kind/name`, with its `text`) — the line's objects with `value` as in the line file. |
 | `delete` | `kind`, `id`, `confirm` | Delete an object; when it takes others with it, `confirm` is needed — see below. |
 | `move_structure` | `id`, `position` | Move a structure; its attachments move with it. |
 | `set_stringing` | `section`, `stringing` | Change a section's stringing. |

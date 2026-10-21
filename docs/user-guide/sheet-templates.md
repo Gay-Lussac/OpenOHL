@@ -101,9 +101,11 @@ Formats: `{sheet:03}` (zero padded), `{hscale:.0}` (decimals),
 A **required** field left empty refuses the export, naming the fields
 (a draft copy of the template can untick `required`).
 
-**No empty gaps.** `{height_datum}` is the vertical part of the
-coordinate system when it names one (`EPSG:2056+5728` → `EPSG:5728`, a
-proj4 `+geoidgrids=`); the project has no vertical datum of its own yet.
+**No empty gaps.** `{height_datum}` is the project's height datum
+(Terrain › Coordinate system › Define…, e.g. `LN02 (EPSG:5728)`; see
+[coordinate systems](coordinates.md#in-the-desktop-application-terrain--coordinate-system)),
+else the vertical part of the coordinate system when it names one
+(`EPSG:2056+5728` → `EPSG:5728`, a proj4 `+geoidgrids=`).
 A field that comes out empty is written as `[if_empty]` says — by field
 (`height_datum = "heights above the survey's datum"`) or `"*"` for every
 other — else "unknown datum" (`height_datum`), "unknown coordinate
