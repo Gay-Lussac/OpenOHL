@@ -343,6 +343,81 @@ impl WeatherCase {
     }
 }
 
+/// Tolerance of [`WeatherCase::same_physics`]: relative to the larger
+/// value, absolute below 1 (in SI units, °C for temperatures).
+pub const SAME_PHYSICS_TOLERANCE: f64 = 1e-6;
+
+/// Whether `a` and `b` are the same within [`SAME_PHYSICS_TOLERANCE`].
+fn same_number(a: f64, b: f64) -> bool {
+    (a - b).abs() <= SAME_PHYSICS_TOLERANCE * a.abs().max(b.abs()).max(1.0)
+}
+
+/// Whether two optional numbers are the same: both absent, or both given
+/// and the same.
+fn same_option(a: Option<f64>, b: Option<f64>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => same_number(a, b),
+        _ => false,
+    }
+}
+
+impl WeatherCase {
+    /// Whether `other` puts the same weather on the wires: everything a
+    /// solve, a check or a rating reads of a case is the same, within
+    /// [`SAME_PHYSICS_TOLERANCE`]. The name, the description and the tags
+    /// never matter.
+    ///
+    /// - the cable temperature;
+    /// - the ice: both without ice (a thickness of 0 or a load of 0, any
+    ///   density), or both a **thickness** with the same thickness and
+    ///   density, or both a **load** with the same load and density — a
+    ///   density not given is glaze ice ([`GLAZE_ICE_DENSITY`]), as the
+    ///   loads take it. A thickness and a load are never the same: the
+    ///   load of a thickness depends on the wire's diameter;
+    /// - the wind pressure; with wind, also the side it comes from and the
+    ///   air density factor (one not given is the project's: the same only
+    ///   as another not given). Without wind neither matters (no side, a
+    ///   velocity of 0);
+    /// - the ambient temperature (not given is the same only as not
+    ///   given).
+    pub fn same_physics(&self, other: &Self) -> bool {
+        if !same_number(self.temperature.celsius(), other.temperature.celsius()) {
+            return false;
+        }
+        let ice = match (self.has_ice(), other.has_ice()) {
+            (false, false) => true,
+            (true, true) => {
+                let density = same_number(
+                    self.ice_density_or_glaze().si(),
+                    other.ice_density_or_glaze().si(),
+                );
+                let amount = match (self.ice_load, other.ice_load) {
+                    (None, None) => same_number(self.ice_thickness.si(), other.ice_thickness.si()),
+                    (Some(a), Some(b)) => same_number(a.si(), b.si()),
+                    _ => false,
+                };
+                density && amount
+            }
+            _ => false,
+        };
+        if !ice || !same_number(self.wind_pressure.si(), other.wind_pressure.si()) {
+            return false;
+        }
+        let windy = self.wind_pressure.si() > 0.0 || other.wind_pressure.si() > 0.0;
+        if windy
+            && (self.wind_from != other.wind_from
+                || !same_option(self.air_density_factor, other.air_density_factor))
+        {
+            return false;
+        }
+        same_option(
+            self.ambient_temperature.map(Temperature::celsius),
+            other.ambient_temperature.map(Temperature::celsius),
+        )
+    }
+}
+
 /// File extension of weather case files.
 pub const WEATHER_FILE_EXTENSION: &str = "ohlwc";
 /// Format identifier.
@@ -787,5 +862,153 @@ air_density_factor = 0.6
         assert!(!still.has_ice());
         let iced = still.with_more_ice_load(ForcePerLength::from_newtons_per_meter(5.0), d);
         close(iced.wire_load(d, w).vertical.si(), 20.97, 1e-12);
+    }
+
+    /// The same physics: each field differing makes two cases different;
+    /// the name, the description and the tags never matter; a thickness and
+    /// a load are never the same; without ice or wind, the density, side
+    /// and air density factor do not matter.
+    #[test]
+    fn same_physics_compares_what_the_solve_reads() {
+        let base = WeatherCase {
+            description: "a".into(),
+            tags: vec!["clearance".into()],
+            ice_thickness: Length::from_millimeters(10.0),
+            wind_pressure: Stress::from_pascals(200.0),
+            ambient_temperature: Some(Temperature::from_celsius(35.0)),
+            air_density_factor: Some(0.6),
+            ..WeatherCase::still("one", Temperature::from_celsius(-5.0))
+        };
+        let renamed = WeatherCase {
+            name: "two".into(),
+            description: "other words".into(),
+            tags: vec!["loads".into()],
+            ..base.clone()
+        };
+        assert!(base.same_physics(&renamed) && renamed.same_physics(&base));
+        // Within the tolerance: the same.
+        let near = WeatherCase {
+            temperature: Temperature::from_celsius(-5.0 + 1e-9),
+            wind_pressure: Stress::from_pascals(200.0 * (1.0 + 1e-9)),
+            ..base.clone()
+        };
+        assert!(base.same_physics(&near));
+        // Glaze ice given or not: the same density.
+        let glaze = WeatherCase {
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(GLAZE_ICE_DENSITY)),
+            ..base.clone()
+        };
+        assert!(base.same_physics(&glaze));
+        let differ = |c: WeatherCase, what: &str| {
+            assert!(!base.same_physics(&c), "{what} differs");
+            assert!(!c.same_physics(&base), "{what} differs");
+        };
+        differ(
+            WeatherCase {
+                temperature: Temperature::from_celsius(-4.9),
+                ..base.clone()
+            },
+            "temperature",
+        );
+        differ(
+            WeatherCase {
+                ice_thickness: Length::from_millimeters(10.1),
+                ..base.clone()
+            },
+            "ice thickness",
+        );
+        differ(
+            WeatherCase {
+                ice_density: Some(Density::from_kilograms_per_cubic_meter(500.0)),
+                ..base.clone()
+            },
+            "ice density",
+        );
+        differ(
+            WeatherCase {
+                ice_thickness: Length::ZERO,
+                ..base.clone()
+            },
+            "ice or none",
+        );
+        differ(
+            WeatherCase {
+                wind_pressure: Stress::from_pascals(201.0),
+                ..base.clone()
+            },
+            "wind pressure",
+        );
+        differ(
+            WeatherCase {
+                wind_from: WindSide::Left,
+                ..base.clone()
+            },
+            "wind side",
+        );
+        differ(
+            WeatherCase {
+                air_density_factor: Some(0.613),
+                ..base.clone()
+            },
+            "air density factor",
+        );
+        differ(
+            WeatherCase {
+                air_density_factor: None,
+                ..base.clone()
+            },
+            "air density factor given or not",
+        );
+        differ(
+            WeatherCase {
+                ambient_temperature: Some(Temperature::from_celsius(30.0)),
+                ..base.clone()
+            },
+            "ambient temperature",
+        );
+        differ(
+            WeatherCase {
+                ambient_temperature: None,
+                ..base.clone()
+            },
+            "ambient temperature given or not",
+        );
+        // Ice as a load: the same load and density only; never a
+        // thickness, even one weighing the same on this wire.
+        let d = Length::from_millimeters(28.0);
+        let load = WeatherCase {
+            ice_thickness: Length::ZERO,
+            ice_load: Some(base.wire_load(d, ForcePerLength::ZERO).vertical),
+            ..base.clone()
+        };
+        differ(load.clone(), "ice as a thickness or as a load");
+        let same_load = WeatherCase {
+            name: "load".into(),
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(GLAZE_ICE_DENSITY)),
+            ..load.clone()
+        };
+        assert!(load.same_physics(&same_load));
+        let heavier = WeatherCase {
+            ice_load: Some(ForcePerLength::from_newtons_per_meter(25.0)),
+            ..load.clone()
+        };
+        assert!(!load.same_physics(&heavier), "ice load");
+        let rime = WeatherCase {
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(500.0)),
+            ..load.clone()
+        };
+        assert!(!load.same_physics(&rime), "ice load density");
+        // Without ice: a load of 0 is a thickness of 0, any density;
+        // without wind: no side, a velocity of 0.
+        let hot = WeatherCase::still("80 °C", Temperature::from_celsius(80.0));
+        let hot_too = WeatherCase {
+            name: "Utility 80 °C".into(),
+            ice_load: Some(ForcePerLength::ZERO),
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(500.0)),
+            wind_from: WindSide::Left,
+            air_density_factor: Some(0.5),
+            ..hot.clone()
+        };
+        assert!(hot.same_physics(&hot_too) && hot_too.same_physics(&hot));
     }
 }
