@@ -660,6 +660,7 @@ impl StructureApp {
                 ),
             );
         }
+        let mut frame = None;
         egui::ScrollArea::vertical()
             .id_salt("case-results")
             .auto_shrink([false, true])
@@ -671,12 +672,87 @@ impl StructureApp {
                     }
                 }
                 match &c.fe {
-                    Some(Ok(r)) => case_ui(ui, r),
+                    Some(Ok(r)) => {
+                        frame = offset_moments_ui(ui, r, &t);
+                        case_ui(ui, r);
+                    }
                     Some(Err(e)) => error_label(ui, format!("{}: {e}", c.name)),
                     None => {}
                 }
             });
+        if let Some(joint) = frame {
+            self.make_frame_joint(&joint);
+        }
     }
+}
+
+/// The moment of each attachment point's offset in one case (a rigid link
+/// from its joint, 2026-10-21): applied at the joint where a frame member
+/// meets it; left out where only trusses do, with the offer to make it a
+/// frame joint (the joint returned when that is clicked).
+fn offset_moments_ui(
+    ui: &mut egui::Ui,
+    r: &CaseResult,
+    t: &ohl_structures::StructureType,
+) -> Option<String> {
+    if r.points.is_empty() {
+        return None;
+    }
+    let mut frame = None;
+    egui::CollapsingHeader::new(format!("Offset moments ({})", r.points.len()))
+        .id_salt("offset-moments")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "The moment r × F of each attachment point at an offset from its joint (a \
+                     rigid link), kN·m, structure axes",
+                )
+                .small()
+                .weak(),
+            );
+            egui::Grid::new("offset-moments-grid")
+                .striped(true)
+                .show(ui, |ui| {
+                    for h in ["point", "joint", "Mx", "My", "Mz", "|M|", "at the joint"] {
+                        ui.strong(h);
+                    }
+                    ui.end_row();
+                    for p in &r.points {
+                        let joint = t.point_link(&p.label).map(|(j, _)| j.to_owned());
+                        ui.label(&p.label);
+                        ui.label(joint.as_deref().unwrap_or("—"));
+                        for m in p.moment {
+                            ui.monospace(format!("{:8.2}", m / 1000.0));
+                        }
+                        ui.monospace(format!("{:8.2}", p.size() / 1000.0));
+                        if p.applied {
+                            ui.colored_label(crate::app::ok_color(ui), "applied");
+                        } else {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(ui.visuals().warn_fg_color, "left out")
+                                    .on_hover_text(p.note.as_deref().unwrap_or(
+                                        "only trusses meet the joint: they cannot carry a moment",
+                                    ));
+                                if let Some(j) = &joint
+                                    && ui
+                                        .small_button("Make it a frame joint")
+                                        .on_hover_text(
+                                            "The members meeting the joint made frames (one \
+                                             undo step): they then carry the moment; their \
+                                             sections need iy, iz and torsion",
+                                        )
+                                        .clicked()
+                                {
+                                    frame = Some(j.clone());
+                                }
+                            });
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+    frame
 }
 
 /// One case's pole check.

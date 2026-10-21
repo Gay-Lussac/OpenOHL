@@ -244,6 +244,11 @@ impl StructureApp {
             }
             ui.close();
         }
+        ui.checkbox(&mut self.rigid_links, "Rigid links")
+            .on_hover_text(
+                "The rigid links drawn: from a joint to an attachment point at an offset \
+                 (magenta; none at zero offset)",
+            );
         ui.separator();
         ui.label(egui::RichText::new("Panels").small().weak());
         let tick = |ui: &mut egui::Ui, app: &mut StructureApp, p: Panel| {
@@ -352,6 +357,20 @@ impl StructureApp {
             self.add_insulators();
             self.focus(Panel::PointsInsulators);
         }
+        if item(
+            ui,
+            if self.link.is_some() {
+                "Let go of the Link tool"
+            } else {
+                "Link tool"
+            },
+            true,
+            "Click an attachment point, then the joint to link it to (where it is: the distance \
+             kept as its offset); right-click or Escape cancels",
+            "",
+        ) {
+            self.toggle_link_tool();
+        }
         self.delete_item(ui);
     }
 
@@ -383,9 +402,9 @@ impl StructureApp {
             ui,
             Icon::PointOnJoint,
             "Point on the joint",
-            joints == 1 && self.selected.len() == 1,
+            self.picked_attachable_joint(),
             "A point where strings hang, on the joint selected (it moves with it)",
-            "Select one joint",
+            "Select one joint that is not a support joint (strings hang from attach joints)",
         ) {
             self.point_here();
             self.focus(Panel::PointsInsulators);

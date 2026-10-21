@@ -49,7 +49,7 @@ pub use edits::{
 pub use file::StructureFile;
 pub use generators::{Body, generate};
 pub use geometry::{
-    Geometry, Handle, compass_radius, geometry, geometry_with, pick, polar, position,
+    Geometry, Handle, RigidLink, compass_radius, geometry, geometry_with, pick, polar, position,
 };
 pub use groups::{Group, groups, set_group, set_group_field, set_group_kind, set_group_section};
 pub use load_cases::{
