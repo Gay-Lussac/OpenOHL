@@ -73,6 +73,7 @@ When the first point of a new alignment is typed or clicked on an empty line, th
 - **3D** — ground (shaded), LiDAR points coloured by class role (vegetation green, buildings red, water blue, wires yellow…), structures, strings, wires in their phase colours (bundles as their subconductors, `bundle_spacing` apart — one section, solved and selected as one — held at every clamp by a yoke: a bar for two, a triangle for three, a polygon for more; the back and ahead spans and the jumpers end on its corners), alignments. Navigation: see [Controls](#controls). Height exaggeration in the Model panel.
 - **Plan** — alignments, wires and structures from above, north up, with a scale bar. Drag, scroll at the pointer, double-click to centre. With View › Sheet preview ticked, each sheet of the drawing export is shown as its band along the alignment (the line width each side), its match lines and its number (see [Sheet preview](drawings.md#sheet-preview)).
 - **Profile** — per route, or **All alignments, in order** (the first, then the second… each starting where the one before ends, its name at the start): ground along the centreline, structures and wires by station: the spans between the structures following each other along the alignment, and those to a structure of the route **away from the alignment** (more than 5 m beside it and not tied to one of its points — a connection or termination beside the line, on the route because it gives it): projected at its station, fainter, its distance from the alignment written after its name (*C1 (80 m right)*); the spans along the alignment go on past it. The same holds for the drawings, and the line angles and spans ahead (stationing, structure loads) are taken along the alignment's structures, without those away. **line width ±** (m, default 40 m) is the drawings' line width — one setting with **Line width** in File › Export › Drawings…, kept with the project line (see [Drawings](drawings.md#line-width)) — and shows what lies that far left and right of the alignment: the ground at both edges (thin, darker), the survey points of the terrain surface (dots), the LiDAR points loaded (in their class colours; classes hidden in Terrain › LiDAR classes shown are left out) and the 3D lines and points of the drawings (DXF, in their colours; flat 2D drawings have no heights and are left out; hidden drawings are not drawn), projected on the profile; a structure away from the alignment is shown only within it, and wires out to one beyond it are cut at it (as in the drawings); heights fit the visible stretch, or keep the ratio chosen in View › Profile aspect ratio (written at the top left). Scroll zooms at the pointer (at a fixed ratio the height under the pointer stays under it), drag moves (also up and down at a fixed ratio), double-click shows the whole route. The profile view is **continuous** along the route: it never breaks into sheets. Sheets — their format, scales and breaks — belong to the drawing exports (**File › Export › Drawings…**, see [Drawings](drawings.md#sheets)). The **Sheets** menu above the view (also View › Sheet preview; a menu of ticks, it stays open) shows the export's sheets over the profile and the plan when ticked (off by default): match lines at the sheet ends, sheet numbers in a strip along the bottom, the export's warnings above the view, laid out by the export itself with the settings of the export window and following them as they change (see [Sheet preview](drawings.md#sheet-preview)).
+- **Cross-section** — a 2D cut across the line at a station or a structure, opened with **C**; several at once, each a tab of its own (see [Cross-section view](#cross-section-view)).
 - **Properties** — the selected structure (position, type, attachments, spans through it) or span (wire type, circuit, electrical system and voltage, bundle, horizontal and maximum tension, sag and lowest point in every weather case). Links select related objects. On a span, **Assign to circuit…** puts the wire's whole conductor path (its connected sections) into the [circuit](line-file.md#circuits) chosen — or into none —, out of the one it was in, as one command; another path of the same phase in that circuit that is not connected to it is refused (connect them with a jumper to make them one). New circuits are added in Sections › Circuits.
 - **Model** — layers, sections or jumpers that failed to solve, by weather case (click one: that case is shown, the object selected and the views brought to it), what was loaded and how long it took (folded: **Loaded**; library files of the project are named by their name, not by their working copy's temporary path).
 - **Next steps** — see [Starting from nothing](#starting-from-nothing).
@@ -81,6 +82,83 @@ When the first point of a new alignment is typed or clicked on an empty line, th
 - **Clearances** — clearance violations of the shown weather case (see [Clearances](#clearances)).
 - **Lines on the ground beside the line** — View › Lines on the ground beside the line: a line on each side of each alignment, on the ground, a distance away from the outermost conductor of the weather cases chosen (by default the case shown; both wind sides, the jumpers included) or from the axis, in the 3D and plan views and, if ticked, the profile (see [Lines on the ground beside the line](#lines-on-the-ground-beside-the-line)).
 - **Properties** of the other kinds: a wire point with a set (its strings — top, wire point, length, weight, insulator, compression —, spans and jumpers there), an alignment point (position, tied structure), a LiDAR point (position as drawn, to the millimetre, class and roles; the Edit tool changes it, see [Editing](#editing)).
+
+## Cross-section view
+
+A **cross-section view** is a 2D cut across the line: a vertical plane
+perpendicular to the alignment at a station — at an angle point, along
+the bisector of the line angle, as a structure stands there — or, at a
+structure, the plane holding its cross-arms (its local x axis). Built, in
+active development (not approved yet).
+
+**Opening one.** Press **C** (not while typing in a field; ⌘C / Ctrl+C
+is left alone), or **View › Cross-section…**, to open the
+**Cross-section** window:
+
+- **At a station**: the **alignment** (by default the first of the route
+  the profile shows) and the **station** on it (m from its start);
+- **At a structure**: pick it in the list (the search field filters it
+  as you type) or click it in any view while the window is open;
+- **Depth ±** (default **±10 m**): half the thickness of what is shown
+  along the line — what lies this far before and behind the plane is
+  projected onto it;
+- **Width ±** (default: the line width, the profile's): half the width
+  across the line;
+- **Open cut** (or Enter) opens it; Escape closes the window.
+
+The window opens at the structure selected, at mid-span of the span
+selected, else at the start of the alignment. A cut also opens at once
+from a structure's menu — a right-click on the structure's name in
+Properties, or on its ⤴ in the Structures table: **Cross-section here** —
+and from the profile: a right-click there while the Select tool is held
+offers **Cross-section here (station …)**, at the station under the
+pointer.
+
+**The view.** Each cut is a tab of its own, beside the profile; several
+can be open. It looks **ahead** (along increasing stations): the left of
+the line is on the left, the right on the right, as the view says.
+Across: the offset from the axis (m, right positive; the axis drawn
+blue); up: the height, at the **same scale** (**heights 1:1**; an
+exaggeration of 2, 5, 10 or 20 can be chosen). Its title gives the
+station or structure, the alignment, the depth and width, the bearing
+looked along and the weather case. It shows what lies within the slab,
+projected onto the plane:
+
+- the **ground** cut by the plane: the active terrain surface, else the
+  lowest LiDAR ground point of every half metre across;
+- the **LiDAR points** in the slab, in their class colours (classes
+  hidden in Terrain › LiDAR classes shown are left out), one dot per
+  pixel and colour;
+- the **wires** of the weather case(s) shown (both wind sides when shown,
+  so the wind's blowout is seen): a marker where each crosses the plane,
+  labelled with its circuit and phase, and its curve within the slab
+  (fainter); jumpers too;
+- the **structures** in the slab: their members (levels 2 and 3, the
+  pole's outline) or stick figure, their strings as solved, attachment
+  points (yellow squares, labelled when zoomed in) and joints;
+- the corridor's edges (the width, dashed) and, when their layer is on,
+  where the lines on the ground beside the line cross the plane.
+
+Hovering gives the offset, the height, the height above the ground and
+the distance (in the plane) to the nearest conductor crossing. A click
+selects a wire (its span), a structure or a LiDAR point, as in the other
+views, and what is selected elsewhere is drawn white here; a right-click
+uses the tool held.
+
+**Moving.** Scroll zooms at the pointer, a drag of any button pans, a
+double-click of the select button (or **Fit**) shows the whole width.
+Nothing rotates it. **◀ ▶** (or **,** and **.** with the pointer over the
+view) move the cut one step along the line — the **step** is twice the
+depth by default — and **⏮ ⏭** to the structure before or after on the
+alignment. **depth** and **width** can be changed in the view's bar.
+
+The cut follows edits: the wires and structures are taken from the line
+and the solved cases every frame, so a move or a re-solve shows at once.
+The LiDAR points come from a grid index of the points loaded (8 m
+cells): only the cells meeting the slab are looked at, never the whole
+cloud; points streamed only for the 3D view (beyond the point budget)
+are not in it. Not yet: the swing band, the clearance required around
+each conductor, and an export of the cut (SVG, PNG, DXF).
 
 ## Level of detail
 
@@ -555,11 +633,12 @@ The 3D view is navigated with the mouse and, while the pointer is over it, the k
 | right or middle drag | pan |
 | double-click | fly to the object |
 | G | go to a structure: a window with every structure in a list; Enter goes (selects it, brings the 3D view within 150 m and centres the plan), Escape closes |
+| C | a cross-section: the window that opens a cut across the line at a station or a structure ([Cross-section view](#cross-section-view)); in any view, not while typing |
 | Alt + drag (select button) | a box: the LiDAR points drawn in it, their class changed together ([Editing](#editing)); also in the profile. Not while the mouse is captured; Alt pressed first never captures it |
 | Alt + Shift + drag (select button) | a lasso: the same in a free shape; Escape gives it up. While Alt is held the keys do not move the camera |
 | left drag on a handle | move a point of the structure being edited ([drag handles](#the-structure-screen)); while dragging: X / Y / Z on that axis of the structure, Shift + X / Y / Z in the plane across it, Alt without snapping, Esc cancels |
 
-Two schemes, chosen in **Help › Controls › 3D** (with the speed, the look sensitivity and every key and mouse action; the 3D view shows no help text over it, only "Esc: free the mouse" in first person). **Help › Controls › Plan** and **Profile** list how those views are moved and used (more settings will come there):
+Two schemes, chosen in **Help › Controls › 3D** (with the speed, the look sensitivity and every key and mouse action; the 3D view shows no help text over it, only "Esc: free the mouse" in first person). **Help › Controls › Plan**, **Profile** and **Cross-section** list how those views are moved and used (more settings will come there):
 
 - **Orbit** — left drag turns the view around the point looked at.
 - **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); **Ctrl + wheel** sets the speed (the wheel alone scrolls the hotbar). **Escape** frees the mouse to use the panels (switching to another application frees it too; while a wire is strung or an alignment laid out, the first Escape gives that up and the second frees the mouse).

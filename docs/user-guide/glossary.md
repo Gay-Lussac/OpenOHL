@@ -297,6 +297,14 @@ structures are stationed. *German:* Trassenachse (to confirm).
 to it, and one point may be on several alignments (a junction).
 *Replaces:* angle point, PI. *German:* Winkelpunkt (to confirm).
 
+**Cross-section view** — a 2D cut across the line, perpendicular to the
+alignment at a station (along the bisector at an angle point) or in the
+plane of a structure's cross-arms, looking ahead; it shows what lies
+within ± a depth of the plane, projected onto it (see [Cross-section
+view](desktop-app.md#cross-section-view)). Not a member's cross-section
+(the [cross-section library](section-library.md)). *Replaces:* cut, cross
+profile. *German:* Querprofil (to confirm).
+
 ## Cases and loads
 
 ![Weather case, load case and structure load case, one feeding the
