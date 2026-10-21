@@ -299,7 +299,7 @@ fn an_extension_gets_a_body_and_legs() {
     assert!(
         missing(f.structure(), 3)
             .iter()
-            .any(|m| m.reason == "extension +2: member X2-M1 has no section")
+            .any(|m| m.reason == "extension +2: member X2-M1 has no cross-section")
     );
     f.undo();
     // Leg A one metre longer, then no longer.

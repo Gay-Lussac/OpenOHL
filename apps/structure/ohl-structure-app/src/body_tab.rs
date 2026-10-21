@@ -150,14 +150,14 @@ impl StructureApp {
                     .desired_width(110.0)
                     .hint_text("e.g. body-leg"),
             )
-            .on_hover_text("A member group: sections are set per group (Design › Groups)");
+            .on_hover_text("A member group: cross-sections are set per group (Design › Groups)");
             let n = members.len();
             if ui
                 .add_enabled(
                     n > 0 && !self.body.group_text.trim().is_empty(),
                     egui::Button::new(format!("Set on {n} member(s)")),
                 )
-                .on_hover_text("The group on the members picked; a member joining a group whose members share a section takes it")
+                .on_hover_text("The group on the members picked; a member joining a group whose members share a cross-section takes it")
                 .on_disabled_hover_text("Pick members (Shift + click for more) and type a group")
                 .clicked()
             {
@@ -217,7 +217,13 @@ impl StructureApp {
         });
         egui::Grid::new("members").striped(true).show(ui, |ui| {
             for h in [
-                "member", "from", "to", "length", "group", "section", "made by",
+                "member",
+                "from",
+                "to",
+                "length",
+                "group",
+                "cross-section",
+                "made by",
             ] {
                 ui.strong(h);
             }
@@ -269,7 +275,7 @@ impl StructureApp {
             for (h, tip) in [
                 ("group", "Click: pick its members"),
                 ("members", ""),
-                ("section", "Written on every member of the group"),
+                ("cross-section", "Written on every member of the group"),
                 ("kind", "Written on every member of the group"),
             ]
             .into_iter()
@@ -305,7 +311,7 @@ impl StructureApp {
                         }
                     });
                 if chosen != current {
-                    f.edit(&format!("section of group {}", gr.name), |doc, t| {
+                    f.edit(&format!("cross-section of group {}", gr.name), |doc, t| {
                         set_group_section(
                             doc,
                             t,
@@ -370,8 +376,8 @@ impl StructureApp {
         if sections.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No section yet: type them in the section library (Sections & materials › \
-                     Section library), or add [[section]] tables and their materials (Sections, \
+                    "No cross-section yet: type them in the cross-section library (Cross-sections & materials › \
+                     Cross-section library), or add [[section]] tables and their materials (Cross-sections, \
                      Materials).",
                 )
                 .weak(),

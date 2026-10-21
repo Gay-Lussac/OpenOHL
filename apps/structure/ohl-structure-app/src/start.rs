@@ -105,7 +105,7 @@ impl Default for NewStructure {
 /// where an insulator hangs, 10 m up.
 pub fn minimal(id: &str, name: &str) -> String {
     format!(
-        "# A new structure (OHL-Structure): add points and insulators (Geometry), then its \
+        "# A new structure (OHL-Structure): add points and strings (Geometry), then its \
          body (Body).\nformat = \"ohl-structure\"\nversion = 2\nid = {id:?}\nname = {name:?}\n\
          kind = \"other\"\n\n[[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n"
     )
@@ -163,7 +163,7 @@ impl StructureApp {
             // The OpenOHL mark above the name.
             ui.add(crate::icons::mark(ui.ctx(), 64.0));
             ui.heading("OHL-Structure");
-            ui.label("A structure file (.ohls): its points and insulators, its body, its design.");
+            ui.label("A structure file (.ohls): its points and strings, its body, its design.");
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 ui.add_space((ui.available_width() - 320.0).max(0.0) / 2.0);
@@ -177,7 +177,7 @@ impl StructureApp {
                 if ui
                     .button("New structure…")
                     .on_hover_text(
-                        "An empty level 1 structure, or one built from a pylon template, \
+                        "An empty level 1 structure, or one built from a structure template, \
                          written where you choose",
                     )
                     .clicked()
@@ -270,7 +270,10 @@ impl StructureApp {
                 }
                 if ui.button("Another template file (.ohlpt)…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Pylon template", &ohl_core::files::open_extensions("ohlpt"))
+                        .add_filter(
+                            "Structure template",
+                            &ohl_core::files::open_extensions("ohlpt"),
+                        )
                         .pick_file()
                 {
                     chosen = Some(Source::Template(p, Role::Suspension));
@@ -292,7 +295,7 @@ impl StructureApp {
                     ui.label(
                         egui::RichText::new(
                             "Built with the template's default dimensions (the line \
-                             application's pylon builder sets others).",
+                             application's structure builder sets others).",
                         )
                         .small()
                         .weak(),

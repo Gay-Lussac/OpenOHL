@@ -73,7 +73,7 @@ fn a_typed_section_is_saved_used_and_undone_in_order() {
     app.undo();
     assert_eq!(
         app.undo_name().as_deref(),
-        Some("section library: new section L60")
+        Some("cross-section library: new cross-section L60")
     );
     app.undo();
     assert!(!std::fs::read_to_string(&file).unwrap().contains("L60"));
@@ -81,7 +81,7 @@ fn a_typed_section_is_saved_used_and_undone_in_order() {
     // Redo: the library first, then the member.
     assert_eq!(
         app.redo_name().as_deref(),
-        Some("section library: new section L60")
+        Some("cross-section library: new cross-section L60")
     );
     app.redo();
     assert!(std::fs::read_to_string(&file).unwrap().contains("L60"));
@@ -186,12 +186,12 @@ fn the_section_library_sheet_opens_a_form() {
     std::fs::create_dir_all(&sections).unwrap();
     std::fs::write(sections.join("a.ohlsec"), MATERIALS).unwrap();
     let mut h = harness(&path);
-    menu(&mut h, "Design", "Sections & materials…");
+    menu(&mut h, "Design", "Cross-sections & materials…");
     h.state_mut()
         .sheets
         .insert(Panel::SectionsMaterials, Sheet::Library);
     h.run();
-    h.get_by_label("+ New section").click();
+    h.get_by_label("+ New cross-section").click();
     h.run();
     assert!(h.state().section_editor.editing.is_some());
     // Nothing typed yet: what is wrong is said; typed, the properties.

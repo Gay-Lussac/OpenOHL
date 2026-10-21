@@ -334,8 +334,8 @@ impl StructureApp {
             }
             ui.end_row();
             // A hollow section of the section library, when one fits.
-            ui.strong("section").on_hover_text(
-                "A hollow section of the section library next to the file, of the pole's shape \
+            ui.strong("cross-section").on_hover_text(
+                "A hollow cross-section of the cross-section library next to the file, of the pole's shape \
                  (polygonal with its sides, or circular): its wall, and its material's \
                  elasticity and density when not typed",
             );
@@ -373,7 +373,7 @@ impl StructureApp {
                     })
                     .response
                     .on_disabled_hover_text(
-                        "No hollow section of the pole's shape in a section library (.ohlsec) \
+                        "No hollow cross-section of the pole's shape in a cross-section library (.ohlsec) \
                          next to the file: type the wall",
                     );
             });
@@ -386,7 +386,7 @@ impl StructureApp {
             // Solid: no hollow (wall = "solid"), level 3's wall.
             ui.strong("solid").on_hover_text(
                 "A solid pole (wall = \"solid\"): no hollow. Ticked, it stands for the wall \
-                 thickness; unticked, the wall is not given until typed or a section is chosen",
+                 thickness; unticked, the wall is not given until typed or a cross-section is chosen",
             );
             let now = pole_edit::is_solid(f.doc());
             let mut solid = now;
@@ -449,7 +449,7 @@ impl StructureApp {
             }
         }
         if let Err(e) = self.pole.library(&dir) {
-            error_label(ui, format!("section library not read: {e}"));
+            error_label(ui, format!("cross-section library not read: {e}"));
         }
     }
 }

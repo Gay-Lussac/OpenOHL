@@ -139,7 +139,7 @@ impl StructureApp {
         let dirty = self.dirty();
         if ui
             .add_enabled(!dirty, egui::Button::new("New structure…"))
-            .on_hover_text("An empty level 1 structure, or one built from a pylon template")
+            .on_hover_text("An empty level 1 structure, or one built from a structure template")
             .on_disabled_hover_text("Save or undo the changes first")
             .clicked()
         {
@@ -326,7 +326,7 @@ impl StructureApp {
             ui,
             "Add a point",
             true,
-            "A point where insulators hang, at the top of the stick figure",
+            "A point where strings hang, at the top of the stick figure",
             "",
         ) {
             self.add_point();
@@ -334,19 +334,19 @@ impl StructureApp {
         }
         if item(
             ui,
-            "I insulator below the point",
+            "One string below the point",
             tops == 1,
-            "An insulator from the point selected down to a new wire point",
-            "Select one point (or a wire point: an insulator below it)",
+            "A string from the point selected down to a new wire point",
+            "Select one point (or a wire point: a string below it)",
         ) {
             self.add_insulators();
             self.focus(Panel::PointsInsulators);
         }
         if item(
             ui,
-            "V insulators to one wire point",
+            "Two strings to one wire point",
             tops == 2,
-            "Two insulators from the two points selected to one wire point below their middle",
+            "Two strings from the two points selected to one wire point below their middle",
             "Select two points (Shift + click the second)",
         ) {
             self.add_insulators();
@@ -384,7 +384,7 @@ impl StructureApp {
             Icon::PointOnJoint,
             "Point on the joint",
             joints == 1 && self.selected.len() == 1,
-            "A point where insulators hang, on the joint selected (it moves with it)",
+            "A point where strings hang, on the joint selected (it moves with it)",
             "Select one joint",
         ) {
             self.point_here();

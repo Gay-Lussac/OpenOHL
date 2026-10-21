@@ -64,12 +64,12 @@ impl LibKind {
     /// Its name in the menus and the panel.
     pub fn title(self) -> &'static str {
         match self {
-            LibKind::Sections => "Section libraries",
+            LibKind::Sections => "Cross-section libraries",
             LibKind::Insulators => "Insulator assemblies",
             LibKind::Poles => "Poles",
             LibKind::Models => "Structure models",
             LibKind::Recipes => "Load-case recipes",
-            LibKind::Templates => "Pylon templates",
+            LibKind::Templates => "Structure templates",
         }
     }
 
@@ -144,7 +144,7 @@ impl Folders {
     pub fn import_into(&self, kind: LibKind) -> Result<PathBuf, String> {
         match kind {
             LibKind::Sections if self.sections.is_file() => Err(format!(
-                "the section library given is a file ({}): start with --sections FOLDER to \
+                "the cross-section library given is a file ({}): start with --sections FOLDER to \
                  import into a folder",
                 self.sections.display()
             )),
@@ -323,7 +323,7 @@ pub fn scan(folders: &Folders, t: Option<&StructureType>) -> Listing {
             .collect();
         if !missing_sections.is_empty() {
             listing.missing.push(format!(
-                "section(s) in no library: {} (looked in {})",
+                "cross-section(s) in no library: {} (looked in {})",
                 join(&missing_sections),
                 folders.sections.display()
             ));
@@ -771,7 +771,7 @@ impl StructureApp {
                 (
                     Which::Used,
                     "Export what it uses…",
-                    "The structure, the sections it names (with their materials), its insulators, \
+                    "The structure, the cross-sections it names (with their materials), its insulator assemblies, \
                      pole, model and template, into a folder (structures/, sections/, insulators/…)",
                 ),
                 (

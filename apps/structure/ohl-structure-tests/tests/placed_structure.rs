@@ -337,7 +337,7 @@ t = "5 mm"
         a.missing
             .as_deref()
             .unwrap()
-            .contains("not in the section library"),
+            .contains("not in the cross-section library"),
         "{:?}",
         a.missing
     );

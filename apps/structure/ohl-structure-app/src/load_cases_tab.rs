@@ -307,12 +307,12 @@ impl LoadCasesTab {
                 self.sections_note = Some((
                     if lib.sections.is_empty() {
                         format!(
-                            "no section library at {} (surface loads: no area)",
+                            "no cross-section library at {} (surface loads: no area)",
                             from.display()
                         )
                     } else {
                         format!(
-                            "member areas from {} section(s) of {}",
+                            "member areas from {} cross-section(s) of {}",
                             lib.sections.len(),
                             from.display()
                         )
@@ -322,7 +322,7 @@ impl LoadCasesTab {
                 self.sections = lib;
             }
             Err(e) => {
-                self.sections_note = Some((format!("section library: {e}"), true));
+                self.sections_note = Some((format!("cross-section library: {e}"), true));
                 self.sections = SectionLibrary::default();
             }
         }
@@ -970,7 +970,7 @@ impl StructureApp {
                             ("source", "line, recipe or typed"),
                             (
                                 "area",
-                                "A surface load: the member's area it acts on (the section \
+                                "A surface load: the member's area it acts on (the cross-section \
                                  library's profile width for the direction × length), m²",
                             ),
                             (

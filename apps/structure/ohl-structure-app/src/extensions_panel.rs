@@ -58,7 +58,7 @@ impl StructureApp {
         }
         ui.horizontal_wrapped(|ui| {
             ui.label("extension").on_hover_text(
-                "Height extensions: below the feet; placed, everything above them rises by dz",
+                "Extensions: below the feet; placed, everything above them rises by dz",
             );
             for e in &t.extensions {
                 let on = st.picked.as_deref() == Some(e.name.as_str());
@@ -357,7 +357,7 @@ impl StructureApp {
             ui.strong(format!("members ({})", e.members.len()));
             let mut drop: Option<String> = None;
             egui::Grid::new("ext-members").striped(true).show(ui, |ui| {
-                for h in ["member", "from", "to", "section", ""] {
+                for h in ["member", "from", "to", "cross-section", ""] {
                     ui.strong(h);
                 }
                 ui.end_row();
@@ -377,7 +377,7 @@ impl StructureApp {
                     let r = ui.add(egui::TextEdit::singleline(buf).desired_width(90.0));
                     if r.lost_focus() && *buf != current {
                         let typed = buf.trim().to_owned();
-                        let _ = f.edit("section", |doc, _| {
+                        let _ = f.edit("cross-section", |doc, _| {
                             ext::set_field(
                                 doc,
                                 &name,

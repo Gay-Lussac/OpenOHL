@@ -391,7 +391,7 @@ fn piece_loads(
              {:.2} kN{}",
             size / 1000.0,
             if no_area > 0 {
-                format!(" ({no_area} without an area: not in the section library, left out)")
+                format!(" ({no_area} without an area: not in the cross-section library, left out)")
             } else {
                 String::new()
             }
