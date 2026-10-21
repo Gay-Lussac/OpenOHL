@@ -472,7 +472,7 @@ fn comments_are_kept() {
     let mut f = example("type-02.ohls");
     f.edit("support", |doc, _| set_support(doc, "L0A", Some("fixed")));
     let text = f.text();
-    assert!(text.contains("# The pylon (invented, NOT a real design)"));
+    assert!(text.contains("# The structure (invented, NOT a real design)"));
     assert!(text.contains("node = \"A1\"                          # at the right arm's tip"));
     assert!(text.starts_with("# Derived from the geometry of an existing line"));
 }

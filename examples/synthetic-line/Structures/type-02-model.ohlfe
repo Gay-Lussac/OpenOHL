@@ -1,5 +1,5 @@
 # OpenOHL structure model (.ohlfe): the finite-element model of the
-# synthetic type-02 pylon on its own, as a type names it with
+# synthetic type-02 structure on its own, as a type names it with
 # `model = "type-02-model.ohlfe"` (type-02.ohls holds the same tables
 # itself, a full design). Invented values, NOT a real design.
 format = "ohl-structure-model"

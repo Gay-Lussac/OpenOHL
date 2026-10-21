@@ -138,8 +138,8 @@ by hand and by the reference.
 | tbins-001 | dead-end span blown out by \\( \arctan(qd/w) \\) = 41.741° | exact plane of the load + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 | tbins-002 | suspension string 3 m, 800 N, 0.4 m² in 500 Pa: 36.86° | pendulum formula (40.10°) corrected for the chords' skew + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m/° |
 | tbins-003 | Two strings to one wire point in still air | \\( V / (2\cos\beta) \\) + reference | \\( 10^{-7} \\) |
-| tbins-004 | V in 300 Pa, both legs taut | two-bar statics + reference | \\( 10^{-7} \\) |
-| tbins-005 | V in 1000 Pa: the lee leg slack, the tip on the other leg | pendulum on one leg + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
+| tbins-004 | The same two strings in 300 Pa, both taut | two-bar statics + reference | \\( 10^{-7} \\) |
+| tbins-005 | The same in 1000 Pa: the lee string slack, the wire point on the other | pendulum on one string + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m |
 
 ### CIGRE TB 324 (`benchmarks/sagtension/cigre-tb324.toml`)
 

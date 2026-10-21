@@ -1,5 +1,5 @@
 # Wind blowout of a span, the swing of a suspension string with weight,
-# and the leg forces of a V-string, by the line's finite elements
+# and the forces of two strings to one wire point, by the line's finite elements
 # (line.section). The textbook cable (EA = 30 MN, alpha = 20e-6 /K,
 # 1.6 kg/m, 28 mm), strung at H = 25 kN at 10 °C, solved at 10 °C.
 # The line runs along +x; wind from the right (the default) blows the
@@ -21,7 +21,7 @@
 # (EA/l0 (l - l0), tension only, half their weight and wind at each end),
 # the free clamps by Newton on the force balance; stringing as
 # docs/theory/wirefe.md says (spans at 25 kN in still air, strings plumb
-# and stretched by their load, V tips settled under the spans).
+# and stretched by their load, the wire points of two strings settled under the spans).
 #
 # Tolerance: 1e-7 relative on forces, 1e-6 m on positions, 1e-6° on
 # angles (reference unbalanced forces below 1e-7 N; the code's Newton
@@ -89,7 +89,7 @@ clip_in = true
 weather = { name = "wind", temperature = "10 °C", wind_pressure = "500 Pa" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "I-string", "crs": "local",
+{"format": "ohl-line", "version": 6, "name": "one string", "crs": "local",
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
@@ -108,7 +108,7 @@ line = '''
 
 [[case]]
 id = "tbins-003"
-title = "V-string (legs from ±2.5 m, 3 m above the tip, 400 N each) in still air: equal legs"
+title = "Two strings to one wire point (tops at ±2.5 m, 3 m above it, 400 N each) in still air: equal forces"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: the tip carries half of each span, 4711.09 N (w L0 = 15.69378 x 300.192 = 4711.15 N,
@@ -129,7 +129,7 @@ clip_in = true
 weather = { name = "still", temperature = "10 °C" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+{"format": "ohl-line", "version": 6, "name": "two strings", "crs": "local",
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
@@ -149,7 +149,7 @@ line = '''
 
 [[case]]
 id = "tbins-004"
-title = "Same V in 300 Pa: both legs taut, forces from the geometry"
+title = "The same two strings in 300 Pa: both taut, forces from the geometry"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: the V holds the tip (it moves 0.24 mm), so the spans' pull on it is that of two
@@ -171,7 +171,7 @@ clip_in = true
 weather = { name = "wind", temperature = "10 °C", wind_pressure = "300 Pa" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+{"format": "ohl-line", "version": 6, "name": "two strings", "crs": "local",
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
@@ -191,7 +191,7 @@ line = '''
 
 [[case]]
 id = "tbins-005"
-title = "Same V in 1000 Pa: the leg on the lee side goes slack, the tip swings on the other"
+title = "The same two strings in 1000 Pa: the one on the lee side goes slack, the wire point swings on the other"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the tip (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: T / V = 8417 / 5111 = 1.65 > 0.833: leg L would have to push — it goes slack
@@ -216,7 +216,7 @@ clip_in = true
 weather = { name = "wind", temperature = "10 °C", wind_pressure = "1000 Pa" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "V-string", "crs": "local",
+{"format": "ohl-line", "version": 6, "name": "two strings", "crs": "local",
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},

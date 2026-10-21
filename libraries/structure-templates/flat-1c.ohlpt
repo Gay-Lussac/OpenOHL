@@ -1,4 +1,4 @@
-# Pylon template (see delta-1c.ohlpt for the conventions).
+# Structure template (see delta-1c.ohlpt for the conventions).
 format = "ohl-structure-template"
 version = 1
 id = "flat-1c"
@@ -31,7 +31,7 @@ description = "height of the earth wire peaks"
 [[parameter]]
 name = "earth_half"
 default = "5 m"
-description = "mast to each earth wire"
+description = "shaft to each earth wire"
 
 [[attachment]]
 slot = 1

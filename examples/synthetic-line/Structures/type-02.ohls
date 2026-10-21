@@ -75,9 +75,9 @@ to = "30 m"
 area = "6 m²"
 drag = 3.0
 
-# The pylon (invented, NOT a real design): a square, tapered body of 10
+# The structure (invented, NOT a real design): a square, tapered body of 10
 # panels with X-bracing, plan bracing and two crossarms carrying the
-# points. Every member has a section and the feet are supported, so the
+# points. Every member has a cross-section and the feet are supported, so the
 # type is a full design (detail 3) and the finite-element check uses it.
 # Section values are round invented numbers; a real model takes them from
 # the steel supplier's tables.

@@ -110,7 +110,7 @@ fn libraries_are_imported_listed_and_exported() {
     assert!(dir.join("Sections/example-sections.ohlsec").is_file());
     assert!(h.state().loads.sections.section("EA-61x7").is_some());
     h.get_by_label("example-sections.ohlsec");
-    h.get_by_label("example-suspension-i.ohli");
+    h.get_by_label("example-suspension.ohli");
     h.get_by_label_contains("cross-section(s) in no library: NO-SUCH");
     assert!(
         h.state_mut()
@@ -141,7 +141,7 @@ fn libraries_are_imported_listed_and_exported() {
     let s = std::fs::read_to_string(out.join("sections/example-sections.ohlsec")).unwrap();
     assert!(s.contains("EA-61x7") && !s.contains("UA-83x52x6"), "{s}");
     assert!(out.join("structures/type-01.ohls").is_file());
-    assert!(out.join("insulators/example-suspension-i.ohli").is_file());
+    assert!(out.join("insulators/example-suspension.ohli").is_file());
     std::fs::remove_dir_all(&dir).ok();
 }
 

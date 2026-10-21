@@ -37,7 +37,7 @@ fn formats() -> Vec<(&'static str, Parse)> {
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/insulators/example-v-string.ohli", |t| {
+        ("libraries/insulators/example-two-strings.ohli", |t| {
             ohl_structures::insulators::InsulatorAssembly::parse(Path::new("x.ohli"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
@@ -47,7 +47,7 @@ fn formats() -> Vec<(&'static str, Parse)> {
                 .map(drop)
                 .map_err(|e| e.to_string())
         }),
-        ("libraries/insulators/example-suspension-i.ohli", |t| {
+        ("libraries/insulators/example-suspension.ohli", |t| {
             ohl_structures::insulators::InsulatorAssembly::parse(Path::new("x.ohli"), t)
                 .map(drop)
                 .map_err(|e| e.to_string())
