@@ -134,7 +134,7 @@ fn rows(s: &Section, density: Option<f64>) -> Vec<(&'static str, String, &'stati
         (
             "It",
             p.it.map_or("—".to_owned(), cm4),
-            "torsion constant (see the section library page for its approximations)",
+            "torsion constant (see the cross-section library page for its approximations)",
         ),
         ("Wel,y", cm3(p.wel_y), "elastic modulus about y"),
         ("Wel,z", cm3(p.wel_z), "elastic modulus about z"),
@@ -211,14 +211,14 @@ impl SectionEditor {
     pub fn undo_name(&self) -> Option<String> {
         self.undo
             .last()
-            .map(|e| format!("section library: {}", e.what))
+            .map(|e| format!("cross-section library: {}", e.what))
     }
 
     /// What redo of the library would make again.
     pub fn redo_name(&self) -> Option<String> {
         self.redo
             .last()
-            .map(|e| format!("section library: {}", e.what))
+            .map(|e| format!("cross-section library: {}", e.what))
     }
 }
 
@@ -299,7 +299,7 @@ impl StructureApp {
             Some(t) => t
                 .parse()
                 .map_err(|e| format!("{}: not TOML: {e}", ed.file.display()))?,
-            None => edit::new_library_text("Project sections")
+            None => edit::new_library_text("Project cross-sections")
                 .parse()
                 .map_err(|e| format!("{e}"))?,
         };
@@ -309,9 +309,11 @@ impl StructureApp {
         SectionLibrary::parse(&after).map_err(|e| format!("not saved: {e}"))?;
         write(&ed.file, &after)?;
         let what = match &ed.old {
-            Some(old) if *old != section.id => format!("section {old} renamed {}", section.id),
+            Some(old) if *old != section.id => {
+                format!("cross-section {old} renamed {}", section.id)
+            }
             Some(_) => format!("section {}", section.id),
-            None => format!("new section {}", section.id),
+            None => format!("new cross-section {}", section.id),
         };
         self.library_edited(&what, &ed.file, before, after);
         Ok(format!(
@@ -332,8 +334,13 @@ impl StructureApp {
         edit::remove_section(&mut doc, id)?;
         let after = doc.to_string();
         write(path, &after)?;
-        self.library_edited(&format!("delete section {id}"), path, Some(before), after);
-        Ok(format!("section {id} deleted"))
+        self.library_edited(
+            &format!("delete cross-section {id}"),
+            path,
+            Some(before),
+            after,
+        );
+        Ok(format!("cross-section {id} deleted"))
     }
 
     /// A copy of section `id` of library file `path` to type (a free id).
@@ -387,7 +394,7 @@ impl StructureApp {
                     .any(|o| o.id == s.id && !(mine && ed.old.as_deref() == Some(o.id.as_str())))
                 {
                     section = Err(format!(
-                        "id \"{}\" is taken by a section of {}",
+                        "id \"{}\" is taken by a cross-section of {}",
                         s.id,
                         f.path
                             .file_name()
@@ -408,7 +415,7 @@ impl StructureApp {
             None => {
                 warnings.push(
                     "no material (and the file has no default_material): the finite-element \
-                     model refuses members of this section"
+                     model refuses members of this cross-section"
                         .to_owned(),
                 );
                 None
@@ -417,7 +424,7 @@ impl StructureApp {
                 Some(mat) => Some(mat.density),
                 None => {
                     warnings.push(format!(
-                        "no material \"{m}\" in the section library: add its [[material]] to a \
+                        "no material \"{m}\" in the cross-section library: add its [[material]] to a \
                          .ohlsec file of the library"
                     ));
                     None
@@ -455,7 +462,7 @@ impl StructureApp {
         self.section_editor.editing = None;
         self.section_editor.forget_files();
         self.reload_libraries();
-        Ok(format!("undone: section library: {what}"))
+        Ok(format!("undone: cross-section library: {what}"))
     }
 
     /// Redo of the last library edit undone.
@@ -476,7 +483,7 @@ impl StructureApp {
         self.section_editor.editing = None;
         self.section_editor.forget_files();
         self.reload_libraries();
-        Ok(format!("made again: section library: {what}"))
+        Ok(format!("made again: cross-section library: {what}"))
     }
 
     /// Design › Sections & materials › Section library.
@@ -486,9 +493,9 @@ impl StructureApp {
         };
         let files = self.section_editor.files(&at).to_vec();
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("Section library: {}", at.display()))
+            ui.label(format!("Cross-section library: {}", at.display()))
                 .on_hover_text(
-                    "The library the structure's members take their sections from \
+                    "The library the structure's members take their cross-sections from \
                      (--sections, else Sections/ beside the file; started from the line \
                      application, the project line's library). Changes are written at once \
                      and undone with Edit › Undo.",
@@ -503,8 +510,8 @@ impl StructureApp {
         if let Some(target) = self.section_target() {
             ui.horizontal(|ui| {
                 if ui
-                    .button("+ New section")
-                    .on_hover_text("Type a new section of the library")
+                    .button("+ New cross-section")
+                    .on_hover_text("Type a new cross-section of the library")
                     .clicked()
                 {
                     self.section_editor.editing = Some(Editing {
@@ -514,7 +521,7 @@ impl StructureApp {
                     });
                 }
                 if files.len() > 1 {
-                    ui.label("new sections go into");
+                    ui.label("new cross-sections go into");
                     let mut chosen = target.clone();
                     egui::ComboBox::from_id_salt("section-into")
                         .selected_text(
@@ -537,7 +544,7 @@ impl StructureApp {
                 } else if files.is_empty() {
                     ui.label(
                         egui::RichText::new(format!(
-                            "no library file yet: the first section makes {}",
+                            "no library file yet: the first cross-section makes {}",
                             target.display()
                         ))
                         .weak(),
@@ -574,7 +581,7 @@ impl StructureApp {
             ),
         };
         ui.label(egui::RichText::new(text).weak()).on_hover_text(
-            "The [wind] table of the section library: from a design-code plugin \
+            "The [wind] table of the cross-section library: from a design-code plugin \
              (Load cases › Load cases from a design code…, files written) or typed in a \
              .ohlsec file. Used by the finite-element check's member wind in the line \
              application and by ohl structures fe.",
@@ -584,8 +591,8 @@ impl StructureApp {
     /// The form of the section being typed.
     fn section_form(&mut self, ui: &mut egui::Ui, mut ed: Editing) {
         ui.strong(match &ed.old {
-            Some(old) => format!("Section {old}"),
-            None => "New section".to_owned(),
+            Some(old) => format!("Cross-section {old}"),
+            None => "New cross-section".to_owned(),
         });
         let materials: Vec<String> = self
             .loads
@@ -614,7 +621,7 @@ impl StructureApp {
                     "",
                 );
                 ui.label("shape")
-                    .on_hover_text("The shapes the section library computes");
+                    .on_hover_text("The shapes the cross-section library computes");
                 let title = edit::shape_kind(&ed.draft.shape)
                     .map_or(ed.draft.shape.clone(), |s| s.title.to_owned());
                 egui::ComboBox::from_id_salt("section-shape")
@@ -626,7 +633,7 @@ impl StructureApp {
                     });
                 ui.end_row();
                 ui.label("material").on_hover_text(
-                    "A material of the section library (empty: the file's default_material)",
+                    "A material of the cross-section library (empty: the file's default_material)",
                 );
                 egui::ComboBox::from_id_salt("section-material")
                     .selected_text(if ed.draft.material.is_empty() {
@@ -730,7 +737,14 @@ impl StructureApp {
             .striped(true)
             .show(ui, |ui| {
                 for h in [
-                    "section", "shape", "name", "material", "A", "file", "used", "",
+                    "cross-section",
+                    "shape",
+                    "name",
+                    "material",
+                    "A",
+                    "file",
+                    "used",
+                    "",
                 ] {
                     ui.strong(h);
                 }
@@ -777,7 +791,10 @@ impl StructureApp {
             .iter()
             .all(|f| f.read.as_ref().map_or(true, |l| l.sections.is_empty()))
         {
-            ui.label(egui::RichText::new("No section in the library yet: + New section.").weak());
+            ui.label(
+                egui::RichText::new("No cross-section in the library yet: + New cross-section.")
+                    .weak(),
+            );
         }
         match action {
             Some((path, id, 'e')) => {
@@ -805,11 +822,11 @@ impl StructureApp {
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.label(if n > 0 {
                     format!(
-                        "Delete section {id}? {n} member(s) of this structure use it (and maybe \
-                         other structures of the line): they would have no section."
+                        "Delete cross-section {id}? {n} member(s) of this structure use it (and maybe \
+                         other structures of the line): they would have no cross-section."
                     )
                 } else {
-                    format!("Delete section {id} from the library?")
+                    format!("Delete cross-section {id} from the library?")
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Delete").clicked() {

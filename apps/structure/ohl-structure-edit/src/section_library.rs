@@ -317,18 +317,18 @@ pub fn put_section(
         .iter()
         .any(|s| s == id && Some(s.as_str()) != old)
     {
-        return Err(format!("section \"{id}\" is in the file already"));
+        return Err(format!("cross-section \"{id}\" is in the file already"));
     }
     match old {
         Some(old) => {
             let a = doc
                 .get_mut("section")
                 .and_then(Item::as_array_of_tables_mut)
-                .ok_or_else(|| format!("no section \"{old}\" in the file"))?;
+                .ok_or_else(|| format!("no cross-section \"{old}\" in the file"))?;
             let t = a
                 .iter_mut()
                 .find(|t| t.get("id").and_then(Item::as_str) == Some(old))
-                .ok_or_else(|| format!("no section \"{old}\" in the file"))?;
+                .ok_or_else(|| format!("no cross-section \"{old}\" in the file"))?;
             *t = draft.table(Some(t));
         }
         None => {
@@ -347,7 +347,7 @@ pub fn put_section(
 /// Removes section `id` from a library file.
 pub fn remove_section(doc: &mut DocumentMut, id: &str) -> Result<(), String> {
     if !section_ids(doc).iter().any(|s| s == id) {
-        return Err(format!("no section \"{id}\" in the file"));
+        return Err(format!("no cross-section \"{id}\" in the file"));
     }
     crate::edits::remove_item(doc, "section", "id", id);
     Ok(())

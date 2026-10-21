@@ -111,7 +111,7 @@ fn libraries_are_imported_listed_and_exported() {
     assert!(h.state().loads.sections.section("EA-61x7").is_some());
     h.get_by_label("example-sections.ohlsec");
     h.get_by_label("example-suspension-i.ohli");
-    h.get_by_label_contains("section(s) in no library: NO-SUCH");
+    h.get_by_label_contains("cross-section(s) in no library: NO-SUCH");
     assert!(
         h.state_mut()
             .listing()
@@ -131,7 +131,7 @@ fn libraries_are_imported_listed_and_exported() {
             .is_err()
     );
     h.run();
-    h.get_by_label("Import Section libraries");
+    h.get_by_label("Import Cross-section libraries");
     h.get_by_label_contains("nmae");
     // Export what it uses.
     let out = dir.join("exported");

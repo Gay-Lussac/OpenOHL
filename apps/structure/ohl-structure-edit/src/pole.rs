@@ -176,8 +176,11 @@ pub fn set_shape(doc: &mut DocumentMut, shape: PoleShape, sides: u32) {
 /// they are typed: a text with its unit, else a number.
 pub const POLE_FIELDS: [(&str, &str); 9] = [
     ("material", "wood, steel, concrete or other"),
-    ("wall", "e.g. 8 mm, or solid (none: from the section)"),
-    ("section", "a hollow section of the section library"),
+    ("wall", "e.g. 8 mm, or solid (none: from the cross-section)"),
+    (
+        "section",
+        "a hollow cross-section of the cross-section library",
+    ),
     ("fibre_stress", "wood: e.g. 55 MPa"),
     ("moment_capacity", "at the ground line, e.g. 900 kN m"),
     ("elasticity", "e.g. 210 GPa (P-Delta)"),

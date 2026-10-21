@@ -150,7 +150,7 @@ impl Panel {
         match self {
             Panel::Level => "Level",
             Panel::View3d => "3D view",
-            Panel::PointsInsulators => "Points & insulators",
+            Panel::PointsInsulators => "Points & strings",
             Panel::WiresSets => "Wire points & sets",
             Panel::StructureFields => "Structure fields",
             Panel::Joints => "Joints",
@@ -159,9 +159,9 @@ impl Panel {
             Panel::Pole => "Pole",
             Panel::Extensions => "Extensions",
             Panel::Supports => "Supports",
-            Panel::MemberSections => "Member sections",
+            Panel::MemberSections => "Member cross-sections",
             Panel::Groups => "Groups",
-            Panel::SectionsMaterials => "Sections & materials",
+            Panel::SectionsMaterials => "Cross-sections & materials",
             Panel::PoleDesign => "Pole design",
             Panel::LoadRecipes => "Load recipes",
             Panel::LoadTable => "Load table",
@@ -177,12 +177,10 @@ impl Panel {
             Panel::Level => "The level, what the next one lacks (each item shows its row), advice",
             Panel::View3d => "The structure in 3D: pick, drag joints and points",
             Panel::PointsInsulators => {
-                "Where insulators hang on the structure, and the insulators from them"
+                "Where strings hang on the structure, and the strings from them"
             }
-            Panel::WiresSets => {
-                "Where an insulator ends, and the set numbers where a wire is strung"
-            }
-            Panel::StructureFields => "Its name, height, feet and height extensions",
+            Panel::WiresSets => "Where a string ends, and the set numbers where a wire is strung",
+            Panel::StructureFields => "Its name, height, feet and extensions",
             Panel::Joints => "The body's joints",
             Panel::Members => "The body's members between two joints, with their groups",
             Panel::Generators => {
@@ -191,18 +189,18 @@ impl Panel {
             }
             Panel::Pole => "The pole's outside lines: diameters by height, round or polygonal",
             Panel::Extensions => {
-                "Height extensions: each one's piece below the feet (joints, members) and its \
+                "Extensions: each one's piece below the feet (joints, members) and its \
                  leg extensions"
             }
             Panel::Supports => "Which joints are supported, and how",
-            Panel::MemberSections => "Each member's section, kind and buckling factor",
-            Panel::Groups => "A section and kind for every member of a group",
+            Panel::MemberSections => "Each member's cross-section, kind and buckling factor",
+            Panel::Groups => "A cross-section and kind for every member of a group",
             Panel::SectionsMaterials => {
-                "The [[section]] and [[material]] tables of the file, and the section library's \
-                 sections"
+                "The [[section]] and [[material]] tables of the file, and the cross-section library's \
+                 cross-sections"
             }
             Panel::PoleDesign => {
-                "What the pole check needs: material, wall (or solid) or section, strength"
+                "What the pole check needs: material, wall (or solid) or cross-section, strength"
             }
             Panel::LoadRecipes => "The structure's load cases: each a list of loads",
             Panel::LoadTable => {
@@ -211,7 +209,7 @@ impl Panel {
             Panel::Results => "The cases of the load table solved by the finite-element model",
             Panel::InTheLine => "The line's values at the placed structure, per point and case",
             Panel::Libraries => {
-                "The libraries the structure reads (sections, insulators, poles, models, \
+                "The libraries the structure reads (cross-sections, insulator assemblies, poles, models, \
                  recipes, templates), where from, and what it names that none has"
             }
         }
@@ -254,23 +252,23 @@ impl Panel {
                 (
                     Sheet::Points,
                     "Attachment points",
-                    "Where insulators hang on the structure",
+                    "Where strings hang on the structure",
                 ),
                 (
                     Sheet::Strings,
-                    "Insulators",
-                    "Each from a point (or another insulator's wire point) to its wire point",
+                    "Strings",
+                    "Each from a point (or another string's wire point) to its wire point",
                 ),
             ],
             Panel::WiresSets => &[
                 (
                     Sheet::Wires,
                     "Wire points",
-                    "Where an insulator ends: placed by its insulator(s)",
+                    "Where a string ends: placed by its string(s)",
                 ),
                 (
                     Sheet::Sets,
-                    "Set points",
+                    "Sets",
                     "Where a wire is strung: a set number on a wire point",
                 ),
             ],
@@ -281,12 +279,12 @@ impl Panel {
             Panel::Pole => &[(Sheet::Pole, "Pole", "")],
             Panel::Extensions => &[(Sheet::Extensions, "Extensions", "")],
             Panel::Supports => &[(Sheet::Supports, "Supports", "")],
-            Panel::MemberSections => &[(Sheet::Design, "Member sections", "")],
+            Panel::MemberSections => &[(Sheet::Design, "Member cross-sections", "")],
             Panel::Groups => &[(Sheet::Groups, "Groups", "")],
             Panel::SectionsMaterials => &[
                 (
                     Sheet::Sections,
-                    "Sections",
+                    "Cross-sections",
                     "The [[section]] tables of the file",
                 ),
                 (
@@ -296,8 +294,8 @@ impl Panel {
                 ),
                 (
                     Sheet::Library,
-                    "Section library",
-                    "The section library's sections (the project line's): new, edit, \
+                    "Cross-section library",
+                    "The cross-section library's cross-sections (the project line's): new, edit, \
                      duplicate, delete, their properties computed as typed",
                 ),
             ],

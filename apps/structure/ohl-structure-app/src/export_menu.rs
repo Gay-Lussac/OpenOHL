@@ -58,12 +58,12 @@ impl StructureApp {
                 Some(p) => p.display().to_string(),
                 None => "the window's (as the load panels)".into(),
             };
-            ui.label(format!("Section library: {sections}"));
+            ui.label(format!("Cross-section library: {sections}"));
             ui.horizontal(|ui| {
                 if ui.button("Choose library…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
                         .add_filter(
-                            "Section library",
+                            "Cross-section library",
                             &ohl_core::files::open_extensions("ohlsec"),
                         )
                         .pick_file()

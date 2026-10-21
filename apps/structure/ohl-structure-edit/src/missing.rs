@@ -120,7 +120,7 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
         } else {
             for m in t.members.iter().filter(|m| m.section.is_none()) {
                 out.push(Missing::level(
-                    format!("member {}: no section", m.id),
+                    format!("member {}: no cross-section", m.id),
                     Some(Handle::Member(m.id.clone())),
                     Place::Members,
                 ));
@@ -149,7 +149,7 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
             }
             for m in e.members.iter().filter(|m| m.section.is_none()) {
                 out.push(Missing::level(
-                    format!("extension {}: member {} has no section", e.name, m.id),
+                    format!("extension {}: member {} has no cross-section", e.name, m.id),
                     None,
                     Place::Extensions,
                 ));

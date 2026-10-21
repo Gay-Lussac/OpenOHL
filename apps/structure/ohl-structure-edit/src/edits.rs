@@ -264,7 +264,7 @@ pub fn add_strings(
     length: f64,
 ) -> Result<String, String> {
     if tops.is_empty() || tops.len() > 2 {
-        return Err("pick one point (an I-string) or two (a V)".into());
+        return Err("pick one point (one string) or two (two strings to one wire point)".into());
     }
     if !(length > 0.0 && length < 50.0) {
         return Err("the string length must be between 0 and 50 m".into());
@@ -483,10 +483,10 @@ pub fn new_string(
         return Err(format!("no attachment point or wire point {top}"));
     }
     if !(length > 0.0 && length < 50.0) && assembly.is_none() {
-        return Err("the insulator length must be between 0 and 50 m".into());
+        return Err("the string length must be between 0 and 50 m".into());
     }
     if wire == Some(top) {
-        return Err("an insulator cannot end where it hangs from".into());
+        return Err("a string cannot end where it hangs from".into());
     }
     let wire = match wire {
         Some(w) => w.to_owned(),
@@ -696,7 +696,7 @@ pub fn set_string(
         .strings
         .iter()
         .find(|s| s.label == label)
-        .ok_or_else(|| format!("no insulator {label}"))?;
+        .ok_or_else(|| format!("no string {label}"))?;
     let ends = g.at(&s.top).zip(g.at(&s.wire));
     let len_now = ends.map_or(0.0, |(a, b)| polar(a, b).2);
     let has_assembly = s
@@ -718,17 +718,17 @@ pub fn set_string(
         StringChange::MaxSwingAlong(_) => Some("max_swing_along"),
         _ => None,
     };
-    let e = entry(doc, "string", "label", label).ok_or_else(|| format!("no insulator {label}"))?;
+    let e = entry(doc, "string", "label", label).ok_or_else(|| format!("no string {label}"))?;
     match change {
         StringChange::Top(top) => {
             if top == s.wire {
-                return Err("an insulator cannot end where it hangs from".into());
+                return Err("a string cannot end where it hangs from".into());
             }
             e.insert("top", toml_edit::value(top));
         }
         StringChange::Wire(wire) => {
             if wire == s.top {
-                return Err("an insulator cannot end where it hangs from".into());
+                return Err("a string cannot end where it hangs from".into());
             }
             e.insert("wire", toml_edit::value(wire));
         }
@@ -759,7 +759,7 @@ pub fn set_string(
         },
         StringChange::Length(l) => {
             if !(l > 0.0 && l <= 50.0) {
-                return Err("the insulator length must be between 0 and 50 m".into());
+                return Err("the string length must be between 0 and 50 m".into());
             }
             e.insert("length", length(l));
         }
@@ -864,7 +864,7 @@ pub fn assembly_text(
         .strings
         .iter()
         .find(|x| x.label == label)
-        .ok_or_else(|| format!("no insulator {label}"))?;
+        .ok_or_else(|| format!("no string {label}"))?;
     let a = x.insulator.as_deref().and_then(|i| insulators.get(i));
     let length = match (a, x.length) {
         (Some(a), _) => a.length.si(),
@@ -909,7 +909,7 @@ pub fn assembly_text(
     text.push_str(&format!("id = {}\n", toml_edit::value(id)));
     text.push_str(&format!(
         "name = {}\n",
-        toml_edit::value(format!("{id} (from insulator {label} of {})", t.id))
+        toml_edit::value(format!("{id} (from string {label} of {})", t.id))
     ));
     text.push_str(&format!("kind = \"{kind}\"\n"));
     text.push_str(&format!("length = \"{} m\"\n", round3(length)));

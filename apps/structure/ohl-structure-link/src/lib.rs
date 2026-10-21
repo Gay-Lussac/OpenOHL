@@ -394,7 +394,7 @@ impl MemberAreas for SectionAreas {
         let d = direction.table_vector();
         model.projected_area(k, [d[0], d[1], -d[2]]).ok_or_else(|| {
             let s = &model.sections[model.members[k].section].id;
-            format!("no area: section \"{s}\" is not in the section library")
+            format!("no area: cross-section \"{s}\" is not in the cross-section library")
         })
     }
 }

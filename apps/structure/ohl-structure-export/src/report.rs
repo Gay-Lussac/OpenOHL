@@ -137,7 +137,7 @@ pub fn report_html(input: &ReportInput) -> String {
         ),
         ("Level", format!("{} — {}", d.level(), d.name())),
         ("Extension solved on", extension),
-        ("Section library", input.sections_from.to_owned()),
+        ("Cross-section library", input.sections_from.to_owned()),
         ("Software", input.software.to_owned()),
     ];
     if let Some(date) = input.date {

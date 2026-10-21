@@ -281,7 +281,7 @@ pub fn export_structure(
     if model.members.is_empty() {
         return Err(format!(
             "structure {}: no members (exports need level 3: joints, members with \
-             sections, supports)",
+             cross-sections, supports)",
             structure.id
         ));
     }
@@ -320,7 +320,7 @@ pub fn export_structure(
             Some(p) => {
                 let m = library
                     .material_of(p)
-                    .ok_or_else(|| format!("section {}: no material", s.id))?;
+                    .ok_or_else(|| format!("cross-section {}: no material", s.id))?;
                 let material = ExportMaterial {
                     id: m.id.clone(),
                     name: if m.name.is_empty() {

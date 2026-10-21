@@ -79,13 +79,13 @@ pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 5] = [
     (
         "capacity_tension",
         "N tension",
-        "Tension capacity, instead of the section's (empty: the section's)",
+        "Tension capacity, instead of the cross-section's (empty: the cross-section's)",
         "section",
     ),
     (
         "capacity_compression",
         "N compression",
-        "Compression capacity, instead of the section's and the buckling load (empty: computed)",
+        "Compression capacity, instead of the cross-section's and the buckling load (empty: computed)",
         "computed",
     ),
     (
@@ -261,20 +261,18 @@ impl StructureApp {
     pub fn add_insulators(&mut self) {
         let tops = self.picked_tops();
         let name = match tops.len() {
-            1 => "I",
-            2 => "V",
+            1 => "one string",
+            2 => "two strings to one wire point",
             _ => return,
         };
         let Some(f) = &mut self.file else {
             return;
         };
         let length = self.string_length;
-        match f.edit(&format!("{name} insulator"), |doc, t| {
-            edit::add_strings(doc, t, &tops, length)
-        }) {
+        match f.edit(name, |doc, t| edit::add_strings(doc, t, &tops, length)) {
             Ok(w) => {
                 self.message = Some((
-                    format!("added the insulators to wire point {w}: put its set in Set points"),
+                    format!("added the strings to wire point {w}: put its set in Sets"),
                     false,
                 ));
                 self.selected = vec![Handle::Wire(w)];
@@ -368,7 +366,7 @@ impl StructureApp {
             if area == Area::Geometry {
                 if ui
                     .button("+ Point")
-                    .on_hover_text("A point where insulators hang, at the top of the stick figure (move it in the view or the table)")
+                    .on_hover_text("A point where strings hang, at the top of the stick figure (move it in the view or the table)")
                     .clicked()
                 {
                     self.add_point();
@@ -384,14 +382,14 @@ impl StructureApp {
                         .suffix(" m"),
                 );
                 for (name, n, help) in [
-                    ("I", 1, "An insulator from the point picked down to a new wire point (its set: Set points)"),
-                    ("V", 2, "A V: two insulators from the two points picked to one wire point below their middle"),
+                    ("One string", 1, "A string from the point picked down to a new wire point (its set: Sets)"),
+                    ("Two strings to one wire point", 2, "Two strings from the two points picked to one wire point below their middle"),
                 ] {
                     if ui
                         .add_enabled(tops.len() == n, egui::Button::new(name))
                         .on_hover_text(help)
                         .on_disabled_hover_text(if n == 1 {
-                            "Pick one point (or a wire point: an insulator below it)"
+                            "Pick one point (or a wire point: a string below it)"
                         } else {
                             "Pick two points (Shift + click the second)"
                         })
@@ -424,7 +422,7 @@ impl StructureApp {
                 if matches!(self.selected.as_slice(), [Handle::Joint(_)])
                     && ui
                         .add(crate::icons::Icon::PointOnJoint.button(ui, "Point here"))
-                        .on_hover_text("A point where insulators hang, on this joint (it moves with it)")
+                        .on_hover_text("A point where strings hang, on this joint (it moves with it)")
                         .clicked()
                 {
                     self.point_here();
@@ -483,7 +481,7 @@ impl StructureApp {
                     (
                         "height",
                         "height",
-                        "Top of the mast in the stick drawing (none: the highest point)",
+                        "Top of the shaft in the stick drawing (none: the highest point)",
                         t.height.map(|h| h.si()),
                     ),
                     (
@@ -517,7 +515,7 @@ impl StructureApp {
                 }
             });
         ui.separator();
-        ui.strong("Height extensions").on_hover_text(
+        ui.strong("Extensions").on_hover_text(
             "Named heights added below the reference level: every point above the feet rises by dz",
         );
         let mut drop: Option<String> = None;
@@ -629,13 +627,16 @@ impl StructureApp {
                 ("wire point", "Its label"),
                 (
                     "x",
-                    "Placed by its insulator(s); typed only for one no insulator reaches (fixed)",
+                    "Placed by its string(s); typed only for one no string reaches (fixed)",
                 ),
                 ("y", ""),
                 ("z", ""),
-                ("held by", "The insulators ending here (two: a V)"),
-                ("below it", "Insulators hanging from it"),
-                ("set", "A set on it: a wire is strung here (Set points)"),
+                (
+                    "held by",
+                    "The strings ending here (one, or two to one wire point)",
+                ),
+                ("below it", "Strings hanging from it"),
+                ("set", "A set on it: a wire is strung here (Sets)"),
                 ("counterweight", "A weight hanging at it"),
             ] {
                 ui.strong(h).on_hover_text(tip);
@@ -672,7 +673,7 @@ impl StructureApp {
                 } else {
                     for v in at {
                         ui.label(format!("{v:.3} m")).on_hover_text(
-                            "Placed by its insulator(s): change their length or direction",
+                            "Placed by its string(s): change their length or direction",
                         );
                     }
                 }
@@ -716,7 +717,7 @@ impl StructureApp {
             let on: Vec<&ohl_structures::TypeString> =
                 t.strings.iter().filter(|x| x.wire == w).collect();
             if on.is_empty() {
-                "fixed (no insulator)"
+                "fixed (no string)"
             } else if on.iter().any(|x| x.strain) {
                 "strain"
             } else {
@@ -726,9 +727,15 @@ impl StructureApp {
         let mut drop_set: Option<String> = None;
         egui::Grid::new("sets").striped(true).show(ui, |ui| {
             for (h, tip) in [
-                ("set", "Its number: sections and jumpers end here (unique on the structure)"),
+                (
+                    "set",
+                    "Its number: sections and jumpers end here (unique on the structure)",
+                ),
                 ("on wire point", "The wire point it is on"),
-                ("kind", "From its insulator: suspension (the wire runs through) or strain (the wire ends)"),
+                (
+                    "kind",
+                    "From its string: suspension (the wire runs through) or strain (the wire ends)",
+                ),
                 ("", ""),
             ] {
                 ui.strong(h).on_hover_text(tip);
@@ -743,7 +750,9 @@ impl StructureApp {
                 let r = ui.add(egui::DragValue::new(&mut n).range(1..=99_999));
                 if r.changed() {
                     let n = u32::try_from(n).unwrap_or(set);
-                    if let Err(e) = f.edit("set number", |doc, t| edit::set_set(doc, t, &w.label, n)) {
+                    if let Err(e) =
+                        f.edit("set number", |doc, t| edit::set_set(doc, t, &w.label, n))
+                    {
                         self.message = Some((e, true));
                     }
                 }
@@ -751,7 +760,11 @@ impl StructureApp {
                 egui::ComboBox::from_id_salt(("set-on", set))
                     .selected_text(&on)
                     .show_ui(ui, |ui| {
-                        for x in t.wires.iter().filter(|x| x.set.is_none() || x.label == w.label) {
+                        for x in t
+                            .wires
+                            .iter()
+                            .filter(|x| x.set.is_none() || x.label == w.label)
+                        {
                             ui.selectable_value(&mut on, x.label.clone(), &x.label);
                         }
                     });
@@ -825,18 +838,18 @@ impl StructureApp {
             let can = picked.is_some();
             let length = self.string_length;
             if ui
-                .add_enabled(can, egui::Button::new("+ New insulator"))
+                .add_enabled(can, egui::Button::new("+ New string"))
                 .on_hover_text(format!(
                     "From {from} (the point picked), {length:.2} m, hanging, to a new wire point"
                 ))
                 .on_disabled_hover_text("Add an attachment point first")
                 .clicked()
             {
-                match f.edit("new insulator", |doc, t| {
+                match f.edit("new string", |doc, t| {
                     edit::new_string(doc, t, &from, None, length, None)
                 }) {
                     Ok((l, w)) => {
-                        self.message = Some((format!("insulator {l} from {from} to {w}"), false));
+                        self.message = Some((format!("string {l} from {from} to {w}"), false));
                         self.selected = vec![Handle::Wire(w)];
                     }
                     Err(e) => self.message = Some((e, true)),
@@ -858,18 +871,18 @@ impl StructureApp {
                         }
                     })
                     .response
-                    .on_hover_text(format!("An insulator of the library from {from}"))
+                    .on_hover_text(format!("An assembly of the library from {from}"))
                     .on_disabled_hover_text("No insulator assemblies next to the file");
             });
             if let Some(id) = chosen
                 && let Some(a) = assemblies.iter().find(|a| a.id == id)
             {
-                match f.edit("new insulator", |doc, t| {
+                match f.edit("new string", |doc, t| {
                     edit::new_string(doc, t, &from, Some(a), a.length.si(), None)
                 }) {
                     Ok((l, w)) => {
                         self.message =
-                            Some((format!("insulator {l} ({id}) from {from} to {w}"), false));
+                            Some((format!("string {l} ({id}) from {from} to {w}"), false));
                         self.selected = vec![Handle::Wire(w)];
                     }
                     Err(e) => self.message = Some((e, true)),
@@ -891,9 +904,9 @@ impl StructureApp {
                 ("insulator", "Its label"),
                 (
                     "hangs from",
-                    "An attachment point, or another insulator's wire point",
+                    "An attachment point, or another string's wire point",
                 ),
-                ("wire point", "Where it ends: another insulator's makes a V"),
+                ("wire point", "Where it ends: another string's makes two strings to one wire point"),
                 (
                     "kind",
                     "Suspension: the wire runs through its set. Strain: the wire ends at its set",
@@ -921,11 +934,11 @@ impl StructureApp {
                 ),
                 (
                     "compression",
-                    "The push it may take (V legs); none: tension only",
+                    "The push it may take (two strings to one wire point); none: tension only",
                 ),
                 (
                     "limits",
-                    "Kept with the insulator, not checked by OpenOHL (for a plugin or a report): \
+                    "Kept with the string, not checked by OpenOHL (for a plugin or a report): \
                      the tension it is rated for, the swing from straight down it may take (any \
                      direction), across and along the line. Unticked: not given — its \
                      assembly's, if it gives one (shown dimmed)",
@@ -1018,7 +1031,7 @@ impl StructureApp {
                         put(
                             StringChange::Length(l),
                             r.is_pointer_button_down_on()
-                                .then(|| "insulator length".into()),
+                                .then(|| "string length".into()),
                         );
                     }
                 }
@@ -1043,7 +1056,7 @@ impl StructureApp {
                     if a1.changed() || a2.changed() {
                         let held = (a1.is_pointer_button_down_on()
                             || a2.is_pointer_button_down_on())
-                        .then(|| "insulator direction".into());
+                        .then(|| "string direction".into());
                         put(
                             StringChange::Direction(dn, (dr - ahead).rem_euclid(360.0)),
                             held,
@@ -1051,7 +1064,7 @@ impl StructureApp {
                     }
                 } else {
                     let (dn, dr, _) = ends.map_or((0.0, 0.0, 0.0), |(a, b)| polar(a, b));
-                    let why = "A leg of a V: its direction follows where the legs meet";
+                    let why = "One of two strings to one wire point: its direction follows where they meet";
                     ui.label(format!("{dn:.2}°")).on_hover_text(why);
                     ui.label(format!("{:.2}°", (dr + ahead).rem_euclid(360.0)))
                         .on_hover_text(why);
@@ -1072,7 +1085,7 @@ impl StructureApp {
                     put(
                         StringChange::Weight(w),
                         r.is_pointer_button_down_on()
-                            .then(|| "insulator weight".into()),
+                            .then(|| "string weight".into()),
                     );
                 }
                 let mut wa = s
@@ -1156,7 +1169,7 @@ impl StructureApp {
                             put(
                                 make(on.then_some(x)),
                                 d.is_pointer_button_down_on()
-                                    .then(|| format!("insulator {name} limit")),
+                                    .then(|| format!("string {name} limit")),
                             );
                         }
                     }
@@ -1170,7 +1183,7 @@ impl StructureApp {
                 }
                 if ui
                     .small_button("🗑")
-                    .on_hover_text("Delete this insulator")
+                    .on_hover_text("Delete this string")
                     .clicked()
                 {
                     delete = Some(s.label.clone());
@@ -1182,22 +1195,22 @@ impl StructureApp {
             if let Some(what) = &held {
                 f.begin(what);
             }
-            if let Err(e) = f.edit(&format!("insulator {label}"), |doc, t| {
+            if let Err(e) = f.edit(&format!("string {label}"), |doc, t| {
                 edit::set_string(doc, t, g, insulators, &label, change)
             }) {
                 self.message = Some((e, true));
             }
         }
         if let Some(label) = delete {
-            f.edit("delete insulator", |doc, t| {
+            f.edit("delete string", |doc, t| {
                 edit::delete_string(doc, t, g, &label)
             });
-            self.message = Some((format!("deleted insulator {label}"), false));
+            self.message = Some((format!("deleted string {label}"), false));
         }
         if t.strings.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No insulator yet: pick an attachment point, then + New insulator or From the library.",
+                    "No string yet: pick an attachment point, then + New string or From the library.",
                 )
                 .weak(),
             );
@@ -1364,8 +1377,8 @@ impl StructureApp {
             for (h, tip) in [
                 ("member", ""),
                 (
-                    "section",
-                    "A section of the section library, or a [[section]] of the file; none: a stick",
+                    "cross-section",
+                    "A cross-section of the cross-section library, or a [[section]] of the file; none: a stick",
                 ),
                 (
                     "kind",
@@ -1401,7 +1414,7 @@ impl StructureApp {
                         }
                     });
                 if chosen != current {
-                    f.edit(&format!("section of {}", m.id), |doc, _| {
+                    f.edit(&format!("cross-section of {}", m.id), |doc, _| {
                         edit::set_member_section(
                             doc,
                             &m.id,
@@ -1466,8 +1479,8 @@ impl StructureApp {
         } else if sections.is_empty() {
             ui.label(
                 egui::RichText::new(
-                    "No section yet: type them in the section library (Sections & materials › \
-                     Section library), or add [[section]] tables and their materials (Sections, \
+                    "No cross-section yet: type them in the cross-section library (Cross-sections & materials › \
+                     Cross-section library), or add [[section]] tables and their materials (Cross-sections, \
                      Materials).",
                 )
                 .weak(),
@@ -1553,7 +1566,7 @@ impl StructureApp {
         let label = format!(
             "+ {}",
             if key == "section" {
-                "Section"
+                "Cross-section"
             } else {
                 "Material"
             }

@@ -406,7 +406,7 @@ impl StructureApp {
         let t = f.structure().clone();
         if t.detail() != Detail::Design {
             ui.label(
-                "Results need level 3: every member with a section and a supported joint (or a \
+                "Results need level 3: every member with a cross-section and a supported joint (or a \
                  model = \"….ohlfe\" file), or a pole the pole check can read. What is still \
                  missing is listed in the header.",
             );
