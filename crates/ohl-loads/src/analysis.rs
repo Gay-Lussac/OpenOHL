@@ -106,10 +106,10 @@ impl Analyses {
             .ok()
     }
 
-    /// The finite-element check of a structure of type `t` standing on
-    /// `extension` (none: the type has no model, or no member a
-    /// capacity); `placed`: the structure as resolved, whose attachment
-    /// points give the links (an unlinked one refuses the check). Members with a
+    /// The finite-element check of a structure of type `t` (none: the
+    /// type has no model, or no member a capacity); `placed`: the
+    /// structure as resolved — the extension it stands on, and its
+    /// attachment points' links (an unlinked one refuses the check). Members with a
     /// profile from the section library take the structures' wind of the
     /// case ([`LoadCase::structure_wind`]: across the line, its pressure
     /// times its factor — by default the weather case's pressure and the
@@ -119,12 +119,12 @@ impl Analyses {
         &self,
         t: &StructureType,
         placed: Option<&ohl_line::Structure>,
-        extension: Option<&str>,
         loads: &[Factored],
         case: &LoadCase,
         weather: Option<&WeatherCase>,
         notes: &mut Vec<String>,
     ) -> Option<Check> {
+        let extension = placed.and_then(|s| s.extension.as_deref());
         // Its own model when the extension changes it.
         let key = (
             t.id.clone(),
