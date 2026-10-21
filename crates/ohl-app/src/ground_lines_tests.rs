@@ -762,11 +762,22 @@ fn tile(
 /// 2000 points shown (the display holds a small part of the cloud). With
 /// the tile's counts.
 fn lidar_project(name: &str, ground: u8, step: f64) -> (model::Model, [usize; 3]) {
+    lidar_project_within(name, ground, step, 80.0)
+}
+
+/// [`lidar_project`] with the tile's points within `reach` m of the
+/// spans.
+fn lidar_project_within(
+    name: &str,
+    ground: u8,
+    step: f64,
+    reach: f64,
+) -> (model::Model, [usize; 3]) {
     let first = crate::tests::synthetic_project(name);
     let file = first.sources.file.clone();
     let line = first.line.clone();
     drop(first);
-    let (points, counts) = tile(&line, step, 80.0, 60.0, ground);
+    let (points, counts) = tile(&line, step, reach, 60.0, ground);
     let las = file.with_file_name("tile.las");
     let budget = ohl_core::budget::Budget::new();
     ohl_lidar::classify::write_las(&las, &points, &budget).unwrap();
@@ -1069,4 +1080,264 @@ fn the_tin_deleted_the_lines_go_back_to_the_lidar_ground() {
     assert!(d.offer_build.is_none() && d.gaps == 0, "{:?}", d.notes);
     let (worst, n) = worst_off_ground(&d);
     assert!(n > 1000 && worst <= NOISE + 0.005, "{n} {worst}");
+}
+
+// ---------------------------------------------------------------------
+// The LiDAR corridor of the lines (owner decision of 2026-10-21: "The
+// LiDAR corridor for the ground lines should be modifiable, but after
+// some point it doesn't make much sense anymore").
+
+/// The example line with LiDAR ground points within 160 m of the spans
+/// (a node every 4 m), no terrain surface: 100 m from the axis the lines
+/// go beyond the model's corridor (60 m of the spans) — broken there, the
+/// menu says how wide a corridor covers them (the farthest point of the
+/// lines from the chords, 2 m more, up to the next 5 m: within 120 m).
+/// The corridor widened to 120 m: a ground of the lines' own (the lowest
+/// point of each 1 m cell within 120 m of the chords: more points than
+/// the model's) is built, the lines lie on it whole — no gap, no note,
+/// within the points' noise of the synthetic ground. The model's ground
+/// — the one the checks use — is the same object as before, with the
+/// same points, and the checks' ground is it: their results cannot
+/// change. Asked again for 120 m, the ground kept is taken (not built
+/// again); back to the model's corridor, the lines are as at first.
+#[test]
+fn a_wider_corridor_covers_lines_at_100_m_and_the_checks_keep_their_ground() {
+    let (m, [_, _, in_corridor]) = lidar_project_within("gl-wide", 2, 4.0, 160.0);
+    let g = m.ground.clone().expect("the ground from LiDAR");
+    assert_eq!(g.points().len(), in_corridor);
+    let checks = m.ground_for_checks().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&g, &checks));
+    let mut settings = Settings {
+        on: true,
+        distance: 100.0,
+        from: ground_lines::From::Axis,
+        ..Settings::default()
+    };
+    let mut lines = ground_lines::GroundLines::default();
+    lines.frame(&m, 0, &settings, None);
+    let narrow = lines.drawn.clone().unwrap();
+    assert_eq!(narrow.ground, ground_lines::Ground::Lidar(in_corridor));
+    assert_eq!(narrow.corridor, Some(60.0));
+    assert!(narrow.gaps > 0, "{:?}", narrow.notes);
+    let note = narrow
+        .notes
+        .iter()
+        .find(|n| n.starts_with("lines beyond the LiDAR corridor (±60 m) are broken"))
+        .unwrap_or_else(|| panic!("{:?}", narrow.notes));
+    // 100 m from the axis: 100–110 m from the chords (the attachments
+    // lie beside the axis); 2 m more, to the next 5 m.
+    let to = note
+        .split("widen the corridor to ")
+        .nth(1)
+        .and_then(|t| t.split(" m").next())
+        .and_then(|t| t.parse::<f64>().ok())
+        .unwrap_or_else(|| panic!("{note}"));
+    assert!((105.0..=120.0).contains(&to), "{note}");
+    assert!(note.ends_with("(up to 200 m)"), "{note}");
+    assert_eq!(lines.wide_built, 0);
+    // Widened.
+    settings.lidar_corridor = Some(120.0);
+    lines.frame(&m, 0, &settings, None);
+    let wide = lines.drawn.clone().unwrap();
+    assert_eq!(lines.wide_built, 1);
+    assert_eq!(wide.corridor, Some(120.0));
+    let ground_lines::Ground::Lidar(n) = wide.ground else {
+        panic!("{:?}", wide.ground)
+    };
+    assert!(n > 2 * in_corridor, "{n} of {in_corridor}");
+    assert_eq!(wide.gaps, 0, "{:?}", wide.notes);
+    assert!(wide.notes.is_empty(), "{:?}", wide.notes);
+    let (worst, points) = worst_off_ground(&wide);
+    assert!(points > 2000, "{points} points");
+    assert!(worst <= NOISE + 0.005, "{worst} m off the ground");
+    // The checks' ground unchanged.
+    let after = m.ground.clone().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&g, &after));
+    assert_eq!(after.points().len(), in_corridor);
+    assert!(std::sync::Arc::ptr_eq(&m.ground_for_checks().unwrap(), &g));
+    // Kept by width.
+    settings.lidar_corridor = None;
+    lines.frame(&m, 0, &settings, None);
+    assert_eq!(**lines.drawn.as_ref().unwrap(), *narrow);
+    settings.lidar_corridor = Some(120.0);
+    lines.frame(&m, 0, &settings, None);
+    assert_eq!(lines.wide_built, 1);
+    assert_eq!(**lines.drawn.as_ref().unwrap(), *wide);
+}
+
+/// The widest corridor is 200 m: a wider one asked (a settings file
+/// written by hand) is taken as 200 m; lines 300 m from the axis reach
+/// beyond it and the menu says so, without offering to widen it more. A
+/// corridor no wider than the model's builds nothing.
+#[test]
+fn the_widest_corridor_is_enforced_with_the_message() {
+    let (m, _) = lidar_project_within("gl-widest", 2, 8.0, 100.0);
+    let mut settings = Settings {
+        on: true,
+        distance: 300.0,
+        from: ground_lines::From::Axis,
+        lidar_corridor: Some(500.0),
+        ..Settings::default()
+    };
+    assert_eq!(settings.corridor(&m), ground_lines::MAX_CORRIDOR);
+    assert_eq!(settings.wider(&m), Some(200.0));
+    let mut lines = ground_lines::GroundLines::default();
+    lines.frame(&m, 0, &settings, None);
+    let d = lines.drawn.clone().unwrap();
+    assert_eq!(d.corridor, Some(200.0));
+    let note = d
+        .notes
+        .iter()
+        .find(|n| n.starts_with("lines beyond the LiDAR corridor (±200 m, the widest) are broken"))
+        .unwrap_or_else(|| panic!("{:?}", d.notes));
+    assert!(!note.contains("widen"), "{note}");
+    // No wider than the model's: its ground.
+    settings.lidar_corridor = Some(40.0);
+    assert_eq!(settings.wider(&m), None);
+    settings.lidar_corridor = Some(f64::NAN);
+    assert_eq!(settings.corridor(&m), 60.0);
+    // The notes: within the widest, beyond it.
+    assert_eq!(ground_lines::corridor_for(103.4), 110.0);
+    assert_eq!(ground_lines::corridor_for(98.0), 100.0);
+    assert_eq!(
+        ground_lines::beyond_note(60.0, 250.0),
+        "lines beyond the LiDAR corridor (±60 m) are broken; widen the corridor (up to 200 m): \
+         they reach 250 m from the spans, beyond the widest"
+    );
+    assert_eq!(
+        ground_lines::beyond_note(60.0, 80.0),
+        "lines beyond the LiDAR corridor (±60 m) are broken; widen the corridor to 85 m (up to \
+         200 m)"
+    );
+}
+
+/// The corridor is a view setting remembered with the others: written
+/// when chosen, read back; settings remembered before it read with the
+/// model's.
+#[test]
+fn the_corridor_is_remembered_with_the_view_settings() {
+    let s = Settings {
+        lidar_corridor: Some(150.0),
+        ..Settings::default()
+    };
+    assert!(!s.is_default());
+    let text = serde_json::to_string(&s).unwrap();
+    let back: Settings = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, s);
+    let old: Settings = serde_json::from_str(r#"{"on": true, "distance": 25.0}"#).unwrap();
+    assert_eq!(old.lidar_corridor, None);
+}
+
+/// In the menu: the field **LiDAR corridor ±** (the model's, 60 m, by
+/// default) and, with the lines beyond it, the note saying how wide a
+/// corridor covers them.
+#[test]
+fn the_menu_shows_the_corridor_and_the_note() {
+    let (mut m, _) = lidar_project_within("gl-wide-menu", 2, 8.0, 100.0);
+    m.ground_lines = Settings {
+        on: true,
+        distance: 100.0,
+        from: ground_lines::From::Axis,
+        ..Settings::default()
+    };
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(m, None));
+    h.run();
+    h.get_by_label("View").click();
+    h.run();
+    h.get_by_label_contains("Lines on the ground beside the line")
+        .hover();
+    h.run();
+    assert!(h.query_by_label("LiDAR corridor ±").is_some());
+    assert!(h.query_by_label_contains("within ±60 m").is_some());
+    assert!(
+        h.query_by_label_contains("lines beyond the LiDAR corridor (±60 m) are broken; widen")
+            .is_some()
+    );
+    // Widened: built in the background, then the lines lie on it; the
+    // model's ground untouched.
+    let r = h.state_mut().ready().unwrap();
+    let model_ground = r.model.ground.clone().unwrap();
+    r.model.ground_lines.lidar_corridor = Some(120.0);
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        let r = h.state_mut().ready().unwrap();
+        if !r.ground_lines.building()
+            && r.ground_lines
+                .drawn
+                .as_ref()
+                .is_some_and(|d| d.corridor == Some(120.0))
+        {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 120, "not built in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert_eq!(r.ground_lines.wide_built, 1);
+    assert!(std::sync::Arc::ptr_eq(
+        r.model.ground.as_ref().unwrap(),
+        &model_ground
+    ));
+    assert!(h.query_by_label_contains("within ±120 m").is_some());
+}
+
+/// Timings and memory of the lines' LiDAR ground for 60, 120 and 200 m
+/// on a synthetic cloud of several million points (a node every
+/// `OHL_GL_STEP` m, 0.45 by default, within 210 m of the spans of the
+/// example line; `cargo test -p ohl-app -- --ignored
+/// wide_corridor_timings --nocapture`, `OHL_GL_WIDTHS=120` for one width
+/// per process: the memory is the process's resident size with the
+/// ground held, less before it was built).
+#[test]
+#[ignore = "timings"]
+fn wide_corridor_timings() {
+    let step: f64 = std::env::var("OHL_GL_STEP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.45);
+    let widths: Vec<f64> = std::env::var("OHL_GL_WIDTHS")
+        .ok()
+        .map(|s| s.split(',').filter_map(|w| w.parse().ok()).collect())
+        .unwrap_or_else(|| vec![60.0, 120.0, 200.0]);
+    let t = std::time::Instant::now();
+    let (m, [ground, vegetation, _]) = lidar_project_within("gl-wide-timings", 2, step, 210.0);
+    println!(
+        "{} points ({ground} ground, {vegetation} vegetation), the project made and read in \
+         {:.1?}",
+        ground + vegetation,
+        t.elapsed()
+    );
+    let rss = || -> f64 {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .parse::<f64>()
+            .unwrap()
+            / 1024.0
+    };
+    let spec = m.cloud.clone().unwrap();
+    for w in widths {
+        let before = rss();
+        let t = std::time::Instant::now();
+        let g = crate::lidar_edit::lidar_ground(&spec, &[2], &m.line, w)
+            .unwrap()
+            .unwrap();
+        let took = t.elapsed();
+        let after = rss();
+        println!(
+            "±{w} m: {} ground cells, {} triangles, built in {took:.2?}, +{:.0} MB resident",
+            g.points().len(),
+            g.num_triangles(),
+            after - before
+        );
+        drop(g);
+    }
+    assert!(ground + vegetation > 1_000_000);
 }
