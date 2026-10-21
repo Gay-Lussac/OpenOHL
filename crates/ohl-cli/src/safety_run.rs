@@ -50,12 +50,24 @@ pub struct SafetyArgs {
     /// smooth, m (never inside it).
     #[arg(long, default_value_t = DEFAULT_TOLERANCE)]
     pub tolerance: f64,
-    /// One volume per `wire` (a circuit's phase) or per `circuit`.
+    /// One volume per `wire` (a circuit's phase), per `circuit` or per
+    /// `system` (an electrical system's circuits together; earthed wires
+    /// per circuit).
     #[arg(long, default_value = "wire", value_parser = Grouping::parse)]
     pub per: Grouping,
     /// Only these circuits (repeatable; default all).
     #[arg(long)]
     pub circuit: Vec<String>,
+    /// Only these electrical systems, by id or name (repeatable; default
+    /// all; earthed wires are left out when given). With --circuit too, a
+    /// wire must be in both.
+    #[arg(long)]
+    pub system: Vec<String>,
+    /// Only these spans, `SECTION:N` with N from 1 (repeatable; default
+    /// all): every wire on them (within --circuit / --system), and the
+    /// jumpers whose two ends are on spans taken.
+    #[arg(long, value_parser = safety_volume::parse_span)]
+    pub span: Vec<(String, usize)>,
     /// The line's coordinate system, when the line file has none (or an
     /// informative one): `EPSG:<code>`.
     #[arg(long)]
@@ -86,6 +98,9 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
         tolerance: a.tolerance,
         grouping: a.per,
         circuits: a.circuit.clone(),
+        systems: a.system.clone(),
+        spans: a.span.clone(),
+        ..SafetyParams::default()
     };
     let steps = WindSteps {
         stepped: a.wind.stepped(),

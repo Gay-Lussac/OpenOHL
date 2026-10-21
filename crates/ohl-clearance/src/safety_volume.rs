@@ -5,7 +5,8 @@
 //! Safety volumes for work near the line (theory: Safety volumes): the
 //! space within a distance of the wires in every position of the weather
 //! cases chosen — still air, blown out, at each wind step, anywhere on
-//! the swing arc — as one closed triangle mesh per wire or per circuit.
+//! the swing arc — as one closed triangle mesh per wire, per circuit or
+//! per electrical system.
 //!
 //! The distance is a requirement by voltage ([`Requirement`]), taken at
 //! the nominal voltage of each wire's system (an earthed wire at 0 kV),
@@ -33,6 +34,8 @@
 pub mod mesher;
 pub mod simplify;
 
+#[cfg(test)]
+mod system_tests;
 #[cfg(test)]
 mod tests;
 
@@ -127,7 +130,7 @@ impl WindMode {
     }
 }
 
-/// One volume per wire or per circuit.
+/// One volume per wire, per circuit or per system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Grouping {
     /// Per wire: a circuit's phase through all its sections.
@@ -135,14 +138,21 @@ pub enum Grouping {
     Wire,
     /// Per circuit: its phases together.
     Circuit,
+    /// Per electrical system: its circuits together (earthed wires, which
+    /// have none: per circuit).
+    System,
 }
 
 impl Grouping {
-    /// `wire` or `circuit`.
+    /// Every grouping.
+    pub const ALL: [Grouping; 3] = [Self::Wire, Self::Circuit, Self::System];
+
+    /// `wire`, `circuit` or `system`.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Wire => "wire",
             Self::Circuit => "circuit",
+            Self::System => "system",
         }
     }
 
@@ -151,9 +161,51 @@ impl Grouping {
         match text.trim() {
             "wire" => Ok(Self::Wire),
             "circuit" => Ok(Self::Circuit),
-            _ => Err(format!("per \"{text}\": use wire or circuit")),
+            "system" => Ok(Self::System),
+            _ => Err(format!("per \"{text}\": use wire, circuit or system")),
         }
     }
+}
+
+/// A wire's electrical system: its id and the name a volume takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemOf {
+    /// The system's id.
+    pub id: String,
+    /// Its name (its id when it has none).
+    pub name: String,
+}
+
+/// The system of every section (by id) and every jumper (`jumper:<id>`,
+/// its `from` section's) of `line`; earthed sections are left out. An
+/// invalid line (contradicting assignments) gives none.
+pub fn system_map(line: &Line) -> std::collections::BTreeMap<String, SystemOf> {
+    let mut out = std::collections::BTreeMap::new();
+    let Ok(phases) = line.section_phases() else {
+        return out;
+    };
+    let of = |k: usize| {
+        let s = &line.systems[k];
+        SystemOf {
+            id: s.id.clone(),
+            name: if s.name.is_empty() {
+                s.id.clone()
+            } else {
+                s.name.clone()
+            },
+        }
+    };
+    for (id, a) in &phases {
+        if let Some((k, _)) = a {
+            out.insert(id.clone(), of(*k));
+        }
+    }
+    for j in &line.jumpers {
+        if let Some(Some((k, _))) = line.jumper_section(j).and_then(|s| phases.get(&s.id)) {
+            out.insert(format!("jumper:{}", j.id), of(*k));
+        }
+    }
+    out
 }
 
 /// What a safety volume is made of.
@@ -167,10 +219,21 @@ pub struct SafetyParams {
     /// How far the mesh may lie outside the envelope where it is smooth,
     /// m.
     pub tolerance: f64,
-    /// One volume per wire or per circuit.
+    /// One volume per wire, per circuit or per system.
     pub grouping: Grouping,
     /// The circuits taken (empty: all).
     pub circuits: Vec<String>,
+    /// The systems taken, by id (empty: all; when given, earthed wires
+    /// are left out).
+    pub systems: Vec<String>,
+    /// The spans taken: (section id, span index from 0) (empty: all). A
+    /// span taken brings every wire on it; a jumper comes along when the
+    /// spans at both its ends are taken (continuity).
+    pub spans: Vec<(String, usize)>,
+    /// The system of each section and jumper ([`system_map`]): filled by
+    /// [`run`] from the line; needed by [`build`] for the systems taken
+    /// and the grouping per system.
+    pub system_of: std::collections::BTreeMap<String, SystemOf>,
 }
 
 impl Default for SafetyParams {
@@ -182,6 +245,9 @@ impl Default for SafetyParams {
             tolerance: DEFAULT_TOLERANCE,
             grouping: Grouping::Wire,
             circuits: Vec::new(),
+            systems: Vec::new(),
+            spans: Vec::new(),
+            system_of: Default::default(),
         }
     }
 }
@@ -205,9 +271,10 @@ impl SafetyParams {
 /// One volume: a wire's or a circuit's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SafetyVolume {
-    /// Its name: `circuit phase` or `circuit`.
+    /// Its name: `circuit phase`, `circuit` or (per system) the system's
+    /// name.
     pub name: String,
-    /// Circuit.
+    /// Circuit (per system: its circuits, comma-separated).
     pub circuit: String,
     /// Its phases.
     pub phases: Vec<String>,
@@ -377,8 +444,12 @@ fn outward(mesh: &Mesh, field: &Field) -> f64 {
 }
 
 /// A wire's group: its circuit (an empty circuit: its section) and, per
-/// wire, its phase.
-fn group_of(wire: &crate::checks::Wire, grouping: Grouping) -> (String, Option<String>) {
+/// wire, its phase; per system its system's name (earthed: its circuit).
+fn group_of(
+    wire: &crate::checks::Wire,
+    grouping: Grouping,
+    system: Option<&SystemOf>,
+) -> (String, Option<String>) {
     let circuit = if wire.circuit.is_empty() {
         wire.section.clone()
     } else {
@@ -387,7 +458,39 @@ fn group_of(wire: &crate::checks::Wire, grouping: Grouping) -> (String, Option<S
     match grouping {
         Grouping::Circuit => (circuit, None),
         Grouping::Wire => (circuit, Some(wire.phase.clone())),
+        Grouping::System => (system.map_or(circuit, |s| s.name.clone()), None),
     }
+}
+
+/// A span as typed (`SECTION:N`, N from 1, as shown) read as (section,
+/// index from 0).
+pub fn parse_span(text: &str) -> Result<(String, usize), String> {
+    let bad = || format!("span \"{text}\": write SECTION:N (N from 1)");
+    let (section, n) = text.trim().rsplit_once(':').ok_or_else(bad)?;
+    let n: usize = n.trim().parse().map_err(|_| bad())?;
+    if section.is_empty() || n == 0 {
+        return Err(bad());
+    }
+    Ok((section.to_owned(), n - 1))
+}
+
+/// Whether `wire` is in the spans taken: a span's wire when its section
+/// and index are taken; a jumper when both its ends (its first two
+/// [`crate::checks::Wire::ends`]) are ends of spans taken (`ends`).
+fn span_taken(
+    wire: &crate::checks::Wire,
+    spans: &[(String, usize)],
+    ends: &std::collections::BTreeSet<&str>,
+) -> bool {
+    if spans.is_empty() {
+        return true;
+    }
+    if wire.section.starts_with("jumper:") {
+        return wire.ends.len() >= 2 && wire.ends[..2].iter().all(|e| ends.contains(e.as_str()));
+    }
+    spans
+        .iter()
+        .any(|(s, k)| *s == wire.section && *k == wire.span)
 }
 
 /// The volumes of the positions `positions` (solved by
@@ -408,6 +511,7 @@ pub fn build(
     // The groups, in the order met.
     struct Group {
         key: (String, Option<String>),
+        circuits: Vec<String>,
         phases: Vec<String>,
         sections: Vec<String>,
         kv: Option<f64>,
@@ -421,10 +525,31 @@ pub fn build(
     }
     let mut groups: Vec<Group> = Vec::new();
     let mut notes = positions.notes.clone();
+    // The ends of the spans taken: the jumpers between them come along.
+    let ends: std::collections::BTreeSet<&str> = positions
+        .spans
+        .iter()
+        .map(|s| &s.wire)
+        .filter(|w| {
+            !w.section.starts_with("jumper:")
+                && params
+                    .spans
+                    .iter()
+                    .any(|(s, k)| *s == w.section && *k == w.span)
+        })
+        .flat_map(|w| w.ends.iter().map(String::as_str))
+        .collect();
     for p in &positions.positions {
         let span = &positions.spans[p.span];
         let wire = &span.wire;
+        if !span_taken(wire, &params.spans, &ends) {
+            continue;
+        }
         if !params.circuits.is_empty() && !params.circuits.contains(&wire.circuit) {
+            continue;
+        }
+        let system = params.system_of.get(&wire.section);
+        if !params.systems.is_empty() && system.is_none_or(|s| !params.systems.contains(&s.id)) {
             continue;
         }
         let kv = wire.kv().unwrap_or(0.0);
@@ -434,12 +559,13 @@ pub fn build(
                 wire.circuit, wire.section, kv
             )
         })?;
-        let key = group_of(wire, params.grouping);
+        let key = group_of(wire, params.grouping, system);
         let g = match groups.iter().position(|g| g.key == key) {
             Some(i) => i,
             None => {
                 groups.push(Group {
                     key: key.clone(),
+                    circuits: Vec::new(),
                     phases: Vec::new(),
                     sections: Vec::new(),
                     kv: wire.kv(),
@@ -455,6 +581,9 @@ pub fn build(
             }
         };
         let g = &mut groups[g];
+        if !g.circuits.contains(&wire.circuit) {
+            g.circuits.push(wire.circuit.clone());
+        }
         if !g.phases.contains(&wire.phase) {
             g.phases.push(wire.phase.clone());
         }
@@ -493,12 +622,22 @@ pub fn build(
             }
         }
     }
+    if groups.is_empty() && !params.spans.is_empty() {
+        return Err("no wire on the spans chosen (in the circuits or systems chosen)".into());
+    }
     if groups.is_empty() {
-        return Err(if params.circuits.is_empty() {
-            "no wire position to build a volume around".into()
-        } else {
-            format!("no wire of the circuits {}", params.circuits.join(", "))
-        });
+        return Err(
+            match (params.circuits.is_empty(), params.systems.is_empty()) {
+                (true, true) => "no wire position to build a volume around".into(),
+                (false, true) => format!("no wire of the circuits {}", params.circuits.join(", ")),
+                (true, false) => format!("no wire of the systems {}", params.systems.join(", ")),
+                (false, false) => format!(
+                    "no wire of the circuits {} in the systems {}",
+                    params.circuits.join(", "),
+                    params.systems.join(", ")
+                ),
+            },
+        );
     }
     let mut volumes = Vec::new();
     for mut g in groups {
@@ -546,7 +685,12 @@ pub fn build(
         };
         volumes.push(SafetyVolume {
             name,
-            circuit: g.key.0.clone(),
+            // Per system: the circuits it holds.
+            circuit: if params.grouping == Grouping::System {
+                g.circuits.join(", ")
+            } else {
+                g.key.0.clone()
+            },
             phases: g.phases,
             sections: g.sections,
             kv: g.kv,
@@ -598,6 +742,36 @@ pub fn run(
     if cases.is_empty() {
         return Err("no weather case chosen".into());
     }
+    // The systems taken by id or name; each wire's system from the line.
+    let mut params = params.clone();
+    for s in &mut params.systems {
+        match line
+            .systems
+            .iter()
+            .find(|x| x.id == *s)
+            .or_else(|| line.systems.iter().find(|x| x.name == *s))
+        {
+            Some(x) => *s = x.id.clone(),
+            None => return Err(format!("no system \"{s}\" in the line")),
+        }
+    }
+    for (section, k) in &params.spans {
+        let n = line
+            .sections
+            .iter()
+            .find(|s| s.id == *section)
+            .map(|s| s.points.len().saturating_sub(1))
+            .ok_or_else(|| format!("no section \"{section}\" in the line"))?;
+        if *k >= n {
+            return Err(format!(
+                "section {section} has {n} span{}: no span {}",
+                if n == 1 { "" } else { "s" },
+                k + 1
+            ));
+        }
+    }
+    params.system_of = system_map(line);
+    let params = &params;
     let positions = solve_positions(line, library, cases, wind.options(steps), budget)?;
     build(&positions, params, budget)
 }
