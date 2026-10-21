@@ -281,3 +281,63 @@ fn matching_on_every_type_swap() {
     }
     assert!(offered > 0);
 }
+
+/// `ohl structures derive` (plan step 7): the types derived from a line
+/// without types leave no point of the line typed with them unlinked.
+/// They are written with version-1 `[[attachment]]`s: their points name
+/// no joint (the structure analysis finds them by their attachment, as
+/// before); a point that names one is on an attach joint.
+#[test]
+fn derived_types_leave_no_point_unlinked() {
+    let line = Line::load(&root().join("synthetic-line.ohl.json")).unwrap();
+    let (derived, typed) = line.derive_libraries(false);
+    let mut structures = StructureLibrary::default();
+    for (id, text) in &derived.structure_types {
+        let t = StructureType::parse(Path::new(&format!("{id}.ohls")), text).unwrap();
+        structures
+            .insert(Path::new(&format!("{id}.ohls")), t)
+            .unwrap();
+    }
+    let mut insulators = InsulatorLibrary::default();
+    for (id, text) in &derived.insulators {
+        let a = ohl_structures::InsulatorAssembly::parse(Path::new(&format!("{id}.ohli")), text)
+            .unwrap();
+        insulators
+            .insert(Path::new(&format!("{id}.ohli")), a)
+            .unwrap();
+    }
+    let resolved = typed.resolve(&structures, &insulators).unwrap();
+    let mut n = 0;
+    for s in &resolved.structures {
+        let t = structures
+            .get(s.structure_type.as_deref().unwrap())
+            .unwrap();
+        for p in &s.points {
+            assert!(!p.unlinked, "{} {}", s.id, p.label);
+            if let Some(j) = p.joint.as_deref() {
+                assert_eq!(
+                    t.joint(j).unwrap().kind,
+                    Some(ohl_structures::JointKind::Attach)
+                );
+            }
+            n += 1;
+        }
+    }
+    assert!(n > 0);
+}
+
+/// A line written without links (an importer's or a plugin's: no
+/// `joint`, no `offset`) reads, resolves and keeps its points: those of a
+/// structure without a type are their own joints, untouched.
+#[test]
+fn a_line_without_links_still_reads() {
+    let line = Line::load(&root().join("synthetic-line.ohl.json")).unwrap();
+    let text = line.to_json();
+    assert!(!text.contains("\"joint\""), "no links written");
+    let back = Line::from_json(&text).unwrap();
+    let structures = StructureLibrary::default();
+    let resolved = back
+        .resolve(&structures, &InsulatorLibrary::default())
+        .unwrap();
+    assert_eq!(geometry(&resolved), geometry(&line));
+}
