@@ -105,7 +105,9 @@ pub fn rigid_links(t: &StructureType, s: &Structure) -> Vec<RigidLink> {
 /// `joint` at `offset` (structure axes, m): the point to store as the
 /// structure's own, its position the joint's as placed plus the offset.
 /// The label and description are kept from `old` (the point as it was,
-/// when there was one). Refused: no such joint, or a support joint.
+/// when there was one). Refused: no such joint, or a joint that is not
+/// an attach joint (owner decision 2026-10-21: only attach joints take
+/// links, [`ohl_structures::NOT_ATTACH`]).
 pub fn linked(
     t: &StructureType,
     s: &Structure,
@@ -123,6 +125,13 @@ pub fn linked(
             s.id
         ));
     }
+    if j.kind != Some(JointKind::Attach) {
+        return Err(format!(
+            "{}: joint {joint}: {}",
+            s.id,
+            ohl_structures::NOT_ATTACH
+        ));
+    }
     let local = t
         .joint_local(joint, s.extension.as_deref())
         .ok_or_else(|| format!("{}: no extension {:?}", s.id, s.extension))?;
@@ -136,6 +145,81 @@ pub fn linked(
         offset,
         unlinked: false,
     })
+}
+
+/// Attachment point `p` of a structure turned `rotation_deg` moved to
+/// `to` (global, m): a linked point stays on its joint, its offset
+/// changed by the move in the structure's axes (owner decision
+/// 2026-10-21: the link follows edits); any other point only moves.
+/// `p` is the point as resolved (its position its joint's plus its
+/// offset).
+pub fn moved(p: &StructurePoint, rotation_deg: f64, to: Point) -> StructurePoint {
+    let mut out = StructurePoint {
+        position: to,
+        ..p.clone()
+    };
+    if p.is_linked() {
+        let d = to_local(
+            [0.0; 3],
+            rotation_deg,
+            [
+                to[0] - p.position[0],
+                to[1] - p.position[1],
+                to[2] - p.position[2],
+            ],
+        );
+        out.offset = [0, 1, 2].map(|k| {
+            let v = p.offset[k] + d[k];
+            if v.abs() < ohl_structures::SAME_JOINT {
+                0.0
+            } else {
+                v
+            }
+        });
+    }
+    out
+}
+
+/// A typed structure `new` put in the place of `old` (both as stored):
+/// each linked point of `new` that keeps its joint and offset but moved
+/// in the structure's axes (from its feet, turned with it: a structure
+/// moved or turned with its points is no move of theirs) stays on its
+/// joint, its offset changed by the move ([`moved`]). Nothing is done
+/// when the type, extension or height adjustment change (the joints
+/// move then). Whether anything changed.
+pub fn follow_moves(old: &Structure, new: &mut Structure) -> bool {
+    if new.structure_type.is_none()
+        || old.structure_type != new.structure_type
+        || old.extension != new.extension
+        || old.height_adjust != new.height_adjust
+    {
+        return false;
+    }
+    let mut changed = false;
+    let (at, turned) = (feet(new), new.orientation_deg);
+    for p in &mut new.points {
+        let Some(q) = old.points.iter().find(|q| q.label == p.label) else {
+            continue;
+        };
+        if !p.is_linked() || p.joint != q.joint || p.offset != q.offset {
+            continue;
+        }
+        let a = to_local(feet(old), old.orientation_deg, q.position);
+        let b = to_local(at, turned, p.position);
+        if distance(a, b) <= crate::assembly::KEEP_POSITION {
+            continue;
+        }
+        p.offset = [0, 1, 2].map(|k| {
+            let v = q.offset[k] + b[k] - a[k];
+            if v.abs() < ohl_structures::SAME_JOINT {
+                0.0
+            } else {
+                v
+            }
+        });
+        changed = true;
+    }
+    changed
 }
 
 /// Attachment point `p` unlinked: kept where it is, its structure's loads
@@ -214,10 +298,10 @@ pub enum PointChoice {
 /// The attachment points `points` (global positions, as a resolved
 /// structure has them) matched to the joints of type `t` placed as
 /// structure `s` says (its position, orientation, height adjustment and
-/// extension — of the new type, for a swap): per point, the joint at its
-/// position (exact) — any joint a point may be linked to, not a support
-/// joint — else the nearest attach joint offered with the remaining
-/// distance as its offset (structure axes).
+/// extension — of the new type, for a swap): per point, the attach joint
+/// at its position (exact), else the nearest attach joint offered with
+/// the remaining distance as its offset (structure axes). Only attach
+/// joints take links (owner decision 2026-10-21).
 pub fn match_points(
     t: &StructureType,
     s: &Structure,
@@ -229,7 +313,7 @@ pub fn match_points(
         .map(|p| {
             let exact = joints
                 .iter()
-                .filter(|j| j.joint.kind != Some(JointKind::Support))
+                .filter(|j| j.joint.kind == Some(JointKind::Attach))
                 .find(|j| distance(j.position, p.position) <= ohl_structures::SAME_JOINT)
                 .map(|j| j.joint.id.clone());
             let mut near: Vec<(f64, &PlacedJoint)> = joints

@@ -341,3 +341,67 @@ fn a_line_without_links_still_reads() {
         .unwrap();
     assert_eq!(geometry(&resolved), geometry(&line));
 }
+
+/// The link follows edits (owner decision 2026-10-21): an own point of
+/// structure T1 (turned 90°) on joint N2 moved 1 m north (its x) and
+/// 0.5 m up stays on N2, its offset changed by the move in the
+/// structure's axes, and resolves where it was put; the same structure
+/// moved and turned with its points moves no point on its joints; a
+/// point not linked only moves; the type, extension or height changed:
+/// nothing is followed (the joints move then).
+#[test]
+fn a_moved_point_stays_on_its_joint() {
+    use crate::links::{follow_moves, moved};
+    let insulators = InsulatorLibrary::default();
+    let lib = library(arm_type("5 m"));
+    let point = StructurePoint {
+        joint: Some("N2".into()),
+        offset: [0.0, 0.4, -0.2],
+        ..StructurePoint::at("A1", [0.0; 3])
+    };
+    let resolved = one(vec![point]).resolve(&lib, &insulators).unwrap();
+    let old = resolved.structures[0].clone();
+    let p = old.point("A1").unwrap();
+    let to = [p.position[0], p.position[1] + 1.0, p.position[2] + 0.5];
+    let m = moved(p, old.orientation_deg, to);
+    assert_eq!(m.joint.as_deref(), Some("N2"));
+    assert!(close(m.offset, [1.0, 0.4, 0.3]), "{:?}", m.offset);
+    assert_eq!(m.position, to);
+    // As stored and put again: the offset follows, the point resolves
+    // where it was put.
+    let mut new = old.clone();
+    new.points[0].position = to;
+    assert!(follow_moves(&old, &mut new));
+    assert!(close(new.points[0].offset, [1.0, 0.4, 0.3]));
+    let mut line = one(Vec::new());
+    line.structures[0] = new.clone();
+    let r = line.resolve(&lib, &insulators).unwrap();
+    let q = r.structures[0].point("A1").unwrap();
+    assert!(close(q.position, to), "{q:?}");
+    assert_eq!(q.joint.as_deref(), Some("N2"));
+    // Moved and turned with its points: no move of theirs.
+    let mut carried = old.clone();
+    carried.position = [110.0, 200.0, 500.0];
+    carried.orientation_deg = 0.0;
+    let local = ohl_structures::structures::to_local(
+        crate::links::feet(&old),
+        old.orientation_deg,
+        p.position,
+    );
+    carried.points[0].position =
+        ohl_structures::structures::to_global(crate::links::feet(&carried), 0.0, local);
+    assert!(!follow_moves(&old, &mut carried));
+    assert_eq!(carried.points[0].offset, p.offset);
+    // Not linked: it only moves.
+    let free = StructurePoint {
+        unlinked: true,
+        joint: None,
+        ..p.clone()
+    };
+    assert_eq!(moved(&free, 90.0, to).offset, free.offset);
+    // Another height: nothing followed.
+    let mut higher = old.clone();
+    higher.height_adjust = 1.0;
+    higher.points[0].position = to;
+    assert!(!follow_moves(&old, &mut higher));
+}
