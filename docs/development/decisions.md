@@ -5,9 +5,26 @@ format works, is recorded here with its date, newest first. The theory
 pages, the user guide and the [data model](data-model.md) describe the
 result; this page says *what was decided, when and why*. Nothing here is
 approved as finished: everything is built and in active development
-(not approved yet). Open questions are in the roadmap (Part 1).
+(not approved yet). Open questions are in the roadmap (the open points
+of Parts A, B and C).
 
 ## 2026-10-21
+
+- **Roadmap split by application** (owner request of 2026-10-21, "split
+  the roadmap between OHL-Design and OHL-Structure"). ROADMAP.md stays
+  one file (the book and many pages link to it) with three parts:
+  **Part A — OHL-Design** (the line), **Part B — OHL-Structure** (the
+  structures, marked as an earlier stage, not for use yet) and **Part C
+  — Shared** (the engine, formats, plugins, server and version control,
+  validation and docs, Phase 6, further ahead). Each part has where it
+  stands, open points, known limitations, proposed stages and the
+  detailed record. A pure reorganisation: every item moved verbatim with
+  its id (O1…, U1…) and its owner lines; an item concerning both
+  applications sits where its work is, with a one-line pointer in the
+  other part. Placed: A — O1, O3, O13, U3, U7, U8; B — O4, O5, O6, O7,
+  O8, O10, O12, U1, U2, U4, U5, U6; C — O2, O9, O11. A one-line "next
+  up" heads Parts A and B, taken from existing items and owner
+  decisions.
 
 - **Attachment points in the applications: the Link tool and the
   rigid links drawn** (plan steps 5–8 of O3 item 6, the owner's
