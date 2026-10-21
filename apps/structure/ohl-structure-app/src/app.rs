@@ -150,6 +150,10 @@ pub struct StructureApp {
     /// The section library's sections typed (Design › Sections &
     /// materials › Section library), their undo and redo.
     pub section_editor: crate::section_editor::SectionEditor,
+    /// The Link tool, held (Geometry › Link tool): [`crate::link_tool`].
+    pub link: Option<crate::link_tool::LinkTool>,
+    /// The rigid links drawn in the 3D view (View › Rigid links).
+    pub rigid_links: bool,
 }
 
 impl StructureApp {
@@ -195,6 +199,8 @@ impl StructureApp {
             new_structure: None,
             plugins: Default::default(),
             section_editor: Default::default(),
+            link: None,
+            rigid_links: true,
         }
     }
 
@@ -215,6 +221,7 @@ impl StructureApp {
                 self.selected.clear();
                 self.confirm = None;
                 self.message = None;
+                self.link = None;
                 self.buffers.clear();
                 self.view = View::default();
                 self.drawn = None;
@@ -461,6 +468,11 @@ impl StructureApp {
                 i.consume_key(Modifiers::COMMAND, Key::S),
             )
         });
+        // Escape with the Link tool: the point chosen dropped (or the tool
+        // let go).
+        if self.link.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+            self.cancel_link();
+        }
         if redo {
             self.redo();
         } else if undo {
@@ -679,6 +691,18 @@ impl StructureApp {
         crate::layout::open_panel(&mut self.dock, panel);
     }
 
+    /// Where `p` (local axes) was drawn in the 3D view last (tests).
+    #[cfg(test)]
+    pub fn view_screen(&self, p: [f64; 3]) -> Option<egui::Pos2> {
+        self.view.screen_of(p)
+    }
+
+    /// The joint under the pointer with the Link tool (tests).
+    #[cfg(test)]
+    pub fn view_link_hover(&self) -> Option<String> {
+        self.view.link_hover.clone()
+    }
+
     /// The window's title: the file, starred with unsaved changes.
     fn title(&mut self, ctx: &egui::Context) {
         let title = match &self.file {
@@ -837,7 +861,7 @@ impl StructureApp {
         let key = (
             f.text(),
             self.selected.clone(),
-            self.ahead.to_bits(),
+            self.ahead.to_bits() ^ u64::from(self.rigid_links),
             self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
         );
         if self.drawn.as_ref() != Some(&key) {
@@ -852,6 +876,37 @@ impl StructureApp {
             Area::Results => self.results.overlay(),
             _ => None,
         };
+        let mut g = g;
+        if !self.rigid_links {
+            g.links.clear();
+        }
+        let linkable = crate::link_tool::linkable(&t);
+        // The moments of the points' offsets in the case the results show.
+        let moments: Vec<(String, String)> = self
+            .results
+            .shown()
+            .map(|r| {
+                r.points
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.label.clone(),
+                            format!(
+                                "{}: M = {:.2} kN·m{}",
+                                r.case,
+                                p.size() / 1000.0,
+                                if p.applied {
+                                    ""
+                                } else {
+                                    " (left out: truss joint)"
+                                }
+                            ),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut action = None;
         self.view.ui(
             ui,
             self.rs.as_ref(),
@@ -865,7 +920,17 @@ impl StructureApp {
                 message: &mut self.message,
                 overlay,
                 preview: &self.body.preview,
+                link: self.link.as_mut(),
+                linkable: &linkable,
+                moments: &moments,
+                action: &mut action,
             },
         );
+        match action {
+            Some(crate::view::ViewAction::LinkClick(h)) => self.link_click(h),
+            Some(crate::view::ViewAction::Cancel) => self.cancel_link(),
+            Some(crate::view::ViewAction::Link(a)) => self.link_action(a),
+            None => {}
+        }
     }
 }

@@ -6,7 +6,11 @@
 //! points and strings, the ground at the feet with a compass. A click
 //! picks (Shift + click adds), a drag from a joint or point moves it
 //! (snapped to a grid or onto a joint: one undo step), elsewhere it turns
-//! the view.
+//! the view. Attach joints are ringed in orange, support joints marked
+//! with a green triangle; the rigid links (a point at an offset from its
+//! joint) are drawn as solid magenta rods, picked like their point. With
+//! the Link tool ([`crate::link_tool`]) a click chooses the point, then
+//! its joint; a right-click on a point opens its menu (Link…, Unlink).
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -28,6 +32,22 @@ const PREVIEW: [u8; 4] = [80, 230, 200, 255];
 const POLE: [u8; 4] = [190, 190, 120, 255];
 /// The members of the extension shown.
 const EXTENSION: [u8; 4] = [170, 140, 230, 255];
+/// An attach joint's ring.
+const ATTACH: [u8; 4] = [255, 170, 40, 255];
+/// A rigid link: from a joint to an attachment point at an offset.
+pub const RIGID: [u8; 4] = [230, 80, 220, 255];
+
+/// What the view asks of the application (taken after it is drawn).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewAction {
+    /// A click with the Link tool: on this (a point, or a joint the point
+    /// may be linked to; none: nothing there).
+    LinkClick(Option<Handle>),
+    /// A right-click with the Link tool: cancel.
+    Cancel,
+    /// A point's menu: link, unlink.
+    Link(crate::link_tool::LinkAction),
+}
 
 /// A drag moving a joint or a (wire) point.
 #[derive(Debug, Clone)]
@@ -51,6 +71,13 @@ pub struct View {
     drag: Option<Move>,
     /// A panel's drawing over the structure (loads, results), by its key.
     overlay: Option<(u64, GpuScene)>,
+    /// The point whose menu is open (right-clicked).
+    menu_point: Option<String>,
+    /// Where it was drawn last and its camera (for `View::screen_of`, tests).
+    #[cfg_attr(not(test), allow(dead_code))]
+    last: Option<(egui::Rect, Camera)>,
+    /// The joint under the pointer with the Link tool and a point chosen.
+    pub link_hover: Option<String>,
 }
 
 /// What the view needs to draw and edit.
@@ -72,6 +99,16 @@ pub struct ViewInput<'a> {
     pub overlay: Option<(u64, Scene)>,
     /// What a generator would build: lines drawn over the structure.
     pub preview: &'a [[[f64; 3]; 2]],
+    /// The Link tool, when held.
+    pub link: Option<&'a mut crate::link_tool::LinkTool>,
+    /// The joints a point may be linked to: id, position, attach joint
+    /// already ([`crate::link_tool::linkable`]).
+    pub linkable: &'a [(String, [f64; 3], bool)],
+    /// The moment of each point's offset in the case the results show:
+    /// label, in words.
+    pub moments: &'a [(String, String)],
+    /// What the view asks of the application.
+    pub action: &'a mut Option<ViewAction>,
 }
 
 impl View {
@@ -83,6 +120,14 @@ impl View {
     /// The whole structure in view on the next frame.
     pub fn fit(&mut self) {
         self.camera = None;
+    }
+
+    /// Where `p` (local axes) was drawn on the screen last (tests).
+    #[cfg(test)]
+    pub fn screen_of(&self, p: [f64; 3]) -> Option<egui::Pos2> {
+        let (rect, camera) = self.last?;
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        camera.projector(size)(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
     }
 
     /// The view; edits go into `file`.
@@ -119,8 +164,85 @@ impl View {
         let cam = *camera;
         let projector = cam.projector(size);
         let project = |p: [f64; 3]| projector(p).map(|(q, _)| q);
+        let linking = v.link.as_ref().map(|l| l.point.clone());
+        // The joint a chosen point may be linked to under the pointer.
+        let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3])> {
+            v.linkable
+                .iter()
+                .filter_map(|(id, p, _)| {
+                    let q = project(*p)?;
+                    let d = (q[0] - at[0]).hypot(q[1] - at[1]);
+                    (d <= 12.0).then_some((d, id.clone(), *p))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, id, p)| (id, p))
+        };
+        let hover = response
+            .hover_pos()
+            .filter(|_| matches!(linking, Some(Some(_))))
+            .and_then(|p| joint_at(local(p)));
+        self.link_hover = hover.as_ref().map(|h| h.0.clone());
+        if linking.is_some() {
+            // The Link tool: a click chooses the point, then its joint; a
+            // right-click cancels.
+            if response.secondary_clicked() {
+                *v.action = Some(ViewAction::Cancel);
+            } else if response.clicked()
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                let at = local(pos);
+                let picked = match pick(g, &project, at, 12.0) {
+                    Some(Handle::Point(l)) => Some(Handle::Point(l)),
+                    _ if matches!(linking, Some(Some(_))) => {
+                        joint_at(at).map(|(id, _)| Handle::Joint(id))
+                    }
+                    other => other,
+                };
+                *v.action = Some(ViewAction::LinkClick(picked));
+                self.dirty = true;
+            }
+        } else if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            // A point's menu.
+            self.menu_point = match pick(g, &project, local(pos), 12.0) {
+                Some(Handle::Point(l)) => Some(l),
+                _ => None,
+            };
+        }
+        if linking.is_none()
+            && let Some(l) = self.menu_point.clone()
+        {
+            response.context_menu(|ui| {
+                ui.label(egui::RichText::new(format!("point {l}")).strong());
+                if ui
+                    .button("Link to a joint…")
+                    .on_hover_text("The Link tool on this point: click the joint to link it to")
+                    .clicked()
+                {
+                    *v.action = Some(ViewAction::Link(crate::link_tool::LinkAction::Start(
+                        l.clone(),
+                    )));
+                    ui.close();
+                }
+                if ui
+                    .button("Unlink")
+                    .on_hover_text(
+                        "It keeps its place, a joint of its own on no member (its load then \
+                         reaches no member: link it again for the analysis)",
+                    )
+                    .clicked()
+                {
+                    *v.action = Some(ViewAction::Link(crate::link_tool::LinkAction::Unlink(
+                        l.clone(),
+                    )));
+                    ui.close();
+                }
+            });
+        }
         // Picking: a click picks, Shift + click adds.
-        if response.clicked()
+        if linking.is_none()
+            && response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
             let shift = ui.input(|i| i.modifiers.shift);
@@ -139,7 +261,8 @@ impl View {
             self.dirty = true;
         }
         // A drag from a joint or point moves it; elsewhere it turns the view.
-        if response.drag_started_by(egui::PointerButton::Primary)
+        if linking.is_none()
+            && response.drag_started_by(egui::PointerButton::Primary)
             && let Some(pos) = response.interact_pointer_pos()
             && let Some(h) = pick(g, &project, local(pos), 12.0)
             && !matches!(h, Handle::Member(_))
@@ -227,6 +350,7 @@ impl View {
             self.dirty = false;
         }
         let camera = *self.camera.as_ref().expect("set above");
+        self.last = Some((rect, camera));
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
         let ppp = ui.ctx().pixels_per_point();
         let px = [
@@ -288,7 +412,141 @@ impl View {
             v.ahead,
             v.selected,
         );
+        marks(
+            &painter,
+            rect,
+            &camera.projector(size),
+            g,
+            v.selected,
+            v.moments,
+        );
+        if let Some(Some(point)) = &linking {
+            link_marks(
+                &painter,
+                rect,
+                &camera.projector(size),
+                g,
+                v.linkable,
+                point,
+                hover.as_ref(),
+            );
+        }
     }
+}
+
+/// Over the view: attach joints ringed, support joints marked with a
+/// triangle; the rigid link of the point picked described (its joint,
+/// offset, length, the moment in the case the results show).
+fn marks(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    projector: &impl Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    g: &Geometry,
+    selected: &[Handle],
+    moments: &[(String, String)],
+) {
+    let at =
+        |p: [f64; 3]| projector(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
+    let rgb = |c: [u8; 4]| egui::Color32::from_rgb(c[0], c[1], c[2]);
+    for (id, p, support) in &g.joints {
+        let Some(q) = at(*p) else { continue };
+        if g.attach.contains(id) {
+            painter.circle_stroke(q, 7.0, egui::Stroke::new(2.0, rgb(ATTACH)));
+        } else if *support {
+            let r = 7.0;
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    q + egui::vec2(0.0, 1.0),
+                    q + egui::vec2(-r, r + 4.0),
+                    q + egui::vec2(r, r + 4.0),
+                ],
+                egui::Color32::TRANSPARENT,
+                egui::Stroke::new(2.0, rgb(SUPPORT)),
+            ));
+        }
+    }
+    for h in selected {
+        let Handle::Point(l) = h else { continue };
+        let Some(link) = g.links.iter().find(|x| &x.label == l) else {
+            continue;
+        };
+        let Some(q) = at(link.to) else { continue };
+        let o = link.offset();
+        let mut text = format!(
+            "rigid link {l} — joint {}, offset ({:.3}, {:.3}, {:.3}) m, {:.3} m",
+            link.joint,
+            o[0],
+            o[1],
+            o[2],
+            link.length()
+        );
+        for (_, m) in moments.iter().filter(|m| &m.0 == l) {
+            text.push_str(&format!("\n{m}"));
+        }
+        note(painter, q + egui::vec2(12.0, 12.0), text);
+    }
+}
+
+/// The Link tool with a point chosen: the joints it may be linked to
+/// ringed (attach joints brighter), a line to the one under the pointer
+/// with the offset's length and moment arm.
+fn link_marks(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    projector: &impl Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    g: &Geometry,
+    linkable: &[(String, [f64; 3], bool)],
+    point: &str,
+    hover: Option<&(String, [f64; 3])>,
+) {
+    let at =
+        |p: [f64; 3]| projector(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
+    let green = egui::Color32::from_rgb(120, 240, 140);
+    for (_, p, attach) in linkable {
+        if let Some(q) = at(*p) {
+            let c = if *attach {
+                green
+            } else {
+                green.gamma_multiply(0.55)
+            };
+            painter.circle_stroke(q, 10.0, egui::Stroke::new(2.0, c));
+        }
+    }
+    let Some(from) = g.points.iter().find(|p| p.0 == point).map(|p| p.1) else {
+        return;
+    };
+    let Some((id, j)) = hover else { return };
+    if let (Some(a), Some(b)) = (at(*j), at(from)) {
+        painter.circle_stroke(a, 13.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
+        painter.line_segment([a, b], egui::Stroke::new(2.0, egui::Color32::WHITE));
+        let o = [0, 1, 2].map(|k| from[k] - j[k]);
+        note(
+            painter,
+            a + egui::vec2(14.0, -24.0),
+            format!(
+                "link {point} to joint {id}: {}",
+                crate::link_tool::offset_words(o)
+            ),
+        );
+    }
+}
+
+/// Text on a dark box, kept inside the view.
+fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
+    let galley =
+        painter.layout_no_wrap(text, egui::FontId::proportional(13.0), egui::Color32::WHITE);
+    let clip = painter.clip_rect().shrink(4.0);
+    let size = galley.size();
+    let at = egui::pos2(
+        at.x.min(clip.right() - size.x).max(clip.left()),
+        at.y.min(clip.bottom() - size.y).max(clip.top()),
+    );
+    painter.rect_filled(
+        egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+        3.0,
+        egui::Color32::from_black_alpha(190),
+    );
+    painter.galley(at, galley, egui::Color32::WHITE);
 }
 
 /// The scene: the ground at the feet (a 1 m grid), the axes, the compass,
@@ -345,12 +603,22 @@ fn scene(
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
     }
+    // The rigid links: solid rods from the joint to the point.
+    for l in &g.links {
+        let c = if picked(Handle::Point(l.label.clone())) {
+            PICKED
+        } else {
+            RIGID
+        };
+        s.polyline(&[l.from, l.to], c, 4.0);
+    }
     for l in preview {
         s.polyline(l, PREVIEW, 2.2);
     }
     for (id, p, support) in &g.joints {
         let (c, size) = match (picked(Handle::Joint(id.clone())), support) {
             (true, _) => (PICKED, 11.0),
+            _ if g.attach.contains(id) => (ATTACH, 8.0),
             (false, true) => (SUPPORT, 9.0),
             (false, false) => (STEEL, 6.0),
         };
@@ -487,7 +755,8 @@ fn labels(
         rect.left_bottom() + egui::vec2(8.0, -8.0),
         egui::Align2::LEFT_BOTTOM,
         "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-         wheel: zoom; drag a joint or point to move it; Shift + click: pick another",
+         wheel: zoom; drag a joint or point to move it; Shift + click: pick another; right-click \
+         a point: link, unlink",
         egui::FontId::proportional(11.0),
         egui::Color32::GRAY,
     );

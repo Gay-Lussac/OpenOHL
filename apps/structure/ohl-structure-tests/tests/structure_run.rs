@@ -247,3 +247,84 @@ fn the_pole_check_of_the_line() {
         assert_eq!(checks[0].usage, Some(p.usage));
     }
 }
+
+/// A cantilever crossarm (L = 3 m along x, a frame, fixed at the mast M)
+/// with attachment point A1 linked to its tip T at an offset e = 0.5 m
+/// ahead (y), 10 kN down at A1: the run lists the offset's moment
+/// r × F = (0, 0.5, 0) × (0, 0, −10 kN) = (−5, 0, 0) kN·m, applied at T
+/// (a frame meets it), as the results panel shows it (2026-10-21; the
+/// same as validation case structfe-013).
+#[test]
+fn the_offset_moment_of_each_point_is_reported() {
+    let text = r#"
+format = "ohl-structure"
+version = 6
+id = "arm"
+name = "arm"
+kind = "other"
+
+[analysis]
+nonlinear = false
+self_weight = false
+
+[[node]]
+id = "M"
+point = ["0 m", "0 m", "20 m"]
+support = "fixed"
+
+[[node]]
+id = "T"
+point = ["3 m", "0 m", "20 m"]
+kind = "attach"
+
+[[member]]
+id = "arm"
+nodes = ["M", "T"]
+section = "CHS"
+kind = "frame"
+
+[[point]]
+label = "A1"
+node = "T"
+offset = ["0 m", "0.5 m", "0 m"]
+
+[[load_case]]
+name = "down"
+self_weight = 0
+
+[[load_case.load]]
+value = "10 kN"
+direction = "-z"
+points = ["A1"]
+"#;
+    let lib = ohl_sections::SectionLibrary::parse(TUBE).unwrap();
+    let t = parse(text);
+    let recipes = StructureLoadCases::from_structure(&t).unwrap();
+    let table = ohl_structure_loads::evaluate(&recipes, &t, &LineValues::default());
+    let cases = cases_to_run(&table, &recipes, None);
+    let run = analyse_structure(
+        &RunInput {
+            structure: &t,
+            text,
+            dir: None,
+            sections: &lib,
+            table: &table,
+            recipes: &recipes,
+            cases: &cases,
+            extension: None,
+        },
+        &default_budget(),
+    )
+    .unwrap();
+    let r = run.cases[0].fe.as_ref().unwrap().as_ref().unwrap();
+    assert_eq!(r.points.len(), 1, "{:?}", r.points);
+    let p = &r.points[0];
+    assert_eq!(p.label, "A1");
+    assert!((p.moment[0] + 5000.0).abs() < 1e-6, "{:?}", p.moment);
+    assert!(p.moment[1].abs() < 1e-9 && p.moment[2].abs() < 1e-9);
+    assert!((p.size() - 5000.0).abs() < 1e-6);
+    assert!(p.applied && p.note.is_none());
+    // At the mast: M_x = F·e = 5 kN·m twisting the arm.
+    let m = r.reactions.iter().find(|x| x.joint == "M").unwrap();
+    assert!((m.moment[0] - 5000.0).abs() < 1e-3, "{:?}", m.moment);
+}

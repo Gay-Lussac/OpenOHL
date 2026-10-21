@@ -136,7 +136,7 @@ pub(crate) fn row(
     scroll_to: &mut Option<Handle>,
     h: Handle,
     text: &str,
-) {
+) -> egui::Response {
     let r = ui.selectable_label(selected.contains(&h), text);
     if r.clicked() {
         if ui.input(|i| i.modifiers.shift) {
@@ -154,6 +154,40 @@ pub(crate) fn row(
         r.scroll_to_me(Some(egui::Align::Center));
         *scroll_to = None;
     }
+    r
+}
+
+/// The kind of a joint, chosen in the Joints table: `given` as written,
+/// `worked_out` as read (attach when a point is linked to it, support
+/// with a support). The kind chosen (none: auto) when it changed.
+fn kind_cell(
+    ui: &mut egui::Ui,
+    id: &str,
+    given: Option<ohl_structures::JointKind>,
+    worked_out: Option<ohl_structures::JointKind>,
+) -> Option<Option<ohl_structures::JointKind>> {
+    use ohl_structures::JointKind;
+    let name = |k: Option<JointKind>| k.map_or("none", JointKind::as_str);
+    let text = |k: Option<JointKind>| match k {
+        Some(k) => k.as_str().to_owned(),
+        None => format!("auto ({})", name(worked_out)),
+    };
+    let mut chosen = given;
+    egui::ComboBox::from_id_salt(("joint-kind", id))
+        .selected_text(text(given))
+        .width(110.0)
+        .show_ui(ui, |ui| {
+            for k in [None, Some(JointKind::Attach), Some(JointKind::Support)] {
+                ui.selectable_value(&mut chosen, k, text(k));
+            }
+        })
+        .response
+        .on_hover_text(match worked_out {
+            Some(JointKind::Attach) => "An attach joint: strings hang here",
+            Some(JointKind::Support) => "A support joint: the structure stands on it",
+            None => "An ordinary joint (link a point to it to make it an attach joint)",
+        });
+    (chosen != given).then_some(chosen)
 }
 
 impl StructureApp {
@@ -331,8 +365,48 @@ impl StructureApp {
         }
     }
 
-    /// Body › Point on the joint: a point on the joint picked.
+    /// Joint `id` given kind `kind` (none: worked out): one edit (one undo
+    /// step); refused for a joint carrying points made a support joint.
+    pub fn set_joint_kind(&mut self, id: &str, kind: Option<ohl_structures::JointKind>) {
+        let Some(f) = &mut self.file else {
+            return;
+        };
+        let what = format!(
+            "kind of joint {id}: {}",
+            kind.map_or("auto", ohl_structures::JointKind::as_str)
+        );
+        self.message = Some(
+            match f.edit(&what, |doc, t| {
+                edit::links::set_joint_kind(doc, t, id, kind)
+            }) {
+                Ok(()) => (what, false),
+                Err(e) => (e, true),
+            },
+        );
+    }
+
+    /// One joint picked that strings may hang from (not a support joint).
+    pub fn picked_attachable_joint(&self) -> bool {
+        match (&self.file, self.selected.as_slice()) {
+            (Some(f), [Handle::Joint(j)]) => {
+                f.structure().linkable_joints().iter().any(|x| &x.id == j)
+            }
+            _ => false,
+        }
+    }
+
+    /// Body › Point on the joint: a point on the joint picked (not on a
+    /// support joint: strings hang from attach joints).
     pub fn point_here(&mut self) {
+        if !self.picked_attachable_joint() {
+            self.message = Some((
+                "Point here: pick one joint that is not a support joint (strings hang from \
+                 attach joints)"
+                    .into(),
+                true,
+            ));
+            return;
+        }
         let (Some(f), [Handle::Joint(j)]) = (&mut self.file, self.selected.as_slice()) else {
             return;
         };
@@ -419,7 +493,7 @@ impl StructureApp {
                 {
                     self.add_member();
                 }
-                if matches!(self.selected.as_slice(), [Handle::Joint(_)])
+                if self.picked_attachable_joint()
                     && ui
                         .add(crate::icons::Icon::PointOnJoint.button(ui, "Point here"))
                         .on_hover_text("A point where strings hang, on this joint (it moves with it)")
@@ -429,6 +503,17 @@ impl StructureApp {
                 }
             }
             ui.separator();
+            let mut held = self.link.is_some();
+            if ui
+                .toggle_value(&mut held, "Link")
+                .on_hover_text(
+                    "The Link tool: click an attachment point, then the joint to link it to \
+                     (right-click or Escape: cancel)",
+                )
+                .changed()
+            {
+                self.toggle_link_tool();
+            }
             if ui
                 .add_enabled(self.selected.len() == 1, egui::Button::new("Delete…"))
                 .on_hover_text("Delete what is picked, with what goes with it (asks first)")
@@ -562,25 +647,52 @@ impl StructureApp {
         }
     }
 
+    /// The attachment points: label, where (typed for one of its own),
+    /// its joint, its offset from it (typed for one on a joint or member),
+    /// the offset's length, the strings hanging from it; a row's menu
+    /// links or unlinks it.
     fn points_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
         let Some(f) = &mut self.file else {
             return;
         };
+        let joints = t.joints();
+        let mut action = None;
         egui::Grid::new("points").striped(true).show(ui, |ui| {
-            for h in ["attachment point", "x", "y", "z", "on", "insulators"] {
-                ui.strong(h);
+            for (h, tip) in [
+                ("attachment point", "Where strings hang; right-click: link, unlink"),
+                ("x", "Where it is (typed for a point that is its own joint)"),
+                ("y", ""),
+                ("z", ""),
+                ("joint", "The joint it is linked to (Link tool, or its menu)"),
+                ("offset x", "From its joint to it, m: a rigid link, whose moment the analysis applies at the joint"),
+                ("offset y", ""),
+                ("offset z", ""),
+                ("length", "The offset's length"),
+                ("strings", "Strings hanging from it"),
+            ] {
+                ui.strong(h).on_hover_text(tip);
             }
             ui.end_row();
             for p in &t.points {
                 let hanging = t.strings.iter().filter(|x| x.top == p.label).count();
                 let h = Handle::Point(p.label.clone());
-                row(
+                let r = row(
                     ui,
                     &mut self.selected,
                     &mut self.scroll_to,
                     h.clone(),
                     &p.label,
                 );
+                r.context_menu(|ui| {
+                    if ui.button("Link to a joint…").clicked() {
+                        action = Some(crate::link_tool::LinkAction::Start(p.label.clone()));
+                        ui.close();
+                    }
+                    if ui.button("Unlink").clicked() {
+                        action = Some(crate::link_tool::LinkAction::Unlink(p.label.clone()));
+                        ui.close();
+                    }
+                });
                 let mut at = p.position().map(|v| v.si());
                 let free = p.node.is_none() && p.member.is_none();
                 let mut moved = false;
@@ -591,7 +703,7 @@ impl StructureApp {
                         moved |= r.changed();
                     } else {
                         ui.label(format!("{v:.3} m"))
-                            .on_hover_text("On a joint or member: moved with it");
+                            .on_hover_text("On a joint or member: moved with it (or by its offset)");
                     }
                 }
                 if moved
@@ -601,15 +713,40 @@ impl StructureApp {
                 {
                     self.message = Some((e, true));
                 }
-                ui.label(match (&p.node, &p.member, p.at) {
-                    (Some(n), _, _) => format!("joint {n}"),
-                    (_, Some(m), Some(x)) => format!("member {m} at {x}"),
-                    _ => "—".into(),
+                let own = joints
+                    .iter()
+                    .any(|j| j.id == p.joint && j.source == ohl_structures::JointSource::Point);
+                ui.label(match (&p.member, p.at) {
+                    _ if own => format!("{} (its own)", p.joint),
+                    (Some(m), Some(x)) => format!("{} (member {m} at {x})", p.joint),
+                    _ => p.joint.clone(),
                 });
+                let mut o = t.point_offset(p);
+                let mut shifted = false;
+                for v in &mut o {
+                    if free {
+                        ui.label("—").on_hover_text("Its own joint: no offset");
+                    } else {
+                        let r = coord(ui, v);
+                        hold(f, &r, &format!("offset of point {}", p.label));
+                        shifted |= r.changed();
+                    }
+                }
+                if shifted
+                    && let Err(e) = f.edit(&format!("offset of point {}", p.label), |doc, t| {
+                        edit::links::link_point(doc, t, &p.label, &p.joint, o)
+                    })
+                {
+                    self.message = Some((e, true));
+                }
+                ui.label(format!("{:.3} m", (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()));
                 ui.label(hanging.to_string());
                 ui.end_row();
             }
         });
+        if let Some(a) = action {
+            self.link_action(a);
+        }
         if t.points.is_empty() {
             ui.label(
                 egui::RichText::new("No point yet: + Point (or Point here on a joint, Body).")
@@ -1221,9 +1358,25 @@ impl StructureApp {
         let Some(f) = &mut self.file else {
             return;
         };
+        let joints = t.joints();
+        let mut change = None;
         egui::Grid::new("joints").striped(true).show(ui, |ui| {
-            for h in ["joint", "x", "y", "z", "members"] {
-                ui.strong(h);
+            for (h, tip) in [
+                ("joint", "Its id"),
+                ("x", ""),
+                ("y", ""),
+                ("z", ""),
+                (
+                    "kind",
+                    "attach: strings hang here (through the attachment points linked to it); \
+                     support: where the structure stands on its foundation; none: an ordinary \
+                     joint. \"auto\": not written, worked out (attach when a point is linked \
+                     to it, support when it has a support)",
+                ),
+                ("members", "The members meeting it"),
+                ("points", "The attachment points linked to it"),
+            ] {
+                ui.strong(h).on_hover_text(tip);
             }
             ui.end_row();
             for n in &t.nodes {
@@ -1247,6 +1400,10 @@ impl StructureApp {
                         edit::symmetry::move_to(doc, t, &h, p)
                     });
                 }
+                let worked_out = joints.iter().find(|j| j.id == n.id).and_then(|j| j.kind);
+                if let Some(kind) = kind_cell(ui, &n.id, n.kind, worked_out) {
+                    change = Some((n.id.clone(), kind));
+                }
                 ui.label(
                     t.members
                         .iter()
@@ -1254,9 +1411,20 @@ impl StructureApp {
                         .count()
                         .to_string(),
                 );
+                ui.label(
+                    t.points
+                        .iter()
+                        .filter(|p| p.joint == n.id)
+                        .map(|p| p.label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
                 ui.end_row();
             }
         });
+        if let Some((id, kind)) = change {
+            self.set_joint_kind(&id, kind);
+        }
         if t.nodes.is_empty() {
             ui.label(
                 egui::RichText::new(

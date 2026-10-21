@@ -54,6 +54,40 @@ pub struct Geometry {
     pub pole: Vec<Vec<[f64; 3]>>,
     /// The joints and members of the extension shown (their ids).
     pub extension: std::collections::BTreeSet<String>,
+    /// The attach joints among [`Geometry::joints`] (their ids): strings
+    /// hang there ([`ohl_structures::JointKind::Attach`], given or worked
+    /// out).
+    pub attach: std::collections::BTreeSet<String>,
+    /// The rigid links: from a joint to an attachment point at an offset
+    /// (none drawn at zero offset), [`RigidLink`].
+    pub links: Vec<RigidLink>,
+}
+
+/// A rigid link drawn: from a joint to an attachment point at an offset
+/// (2026-10-21), in the structure's axes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RigidLink {
+    /// The attachment point's label.
+    pub label: String,
+    /// The joint's id.
+    pub joint: String,
+    /// The joint, m.
+    pub from: [f64; 3],
+    /// The attachment point, m.
+    pub to: [f64; 3],
+}
+
+impl RigidLink {
+    /// The offset, from the joint to the point, m.
+    pub fn offset(&self) -> [f64; 3] {
+        [0, 1, 2].map(|k| self.to[k] - self.from[k])
+    }
+
+    /// Its length, m.
+    pub fn length(&self) -> f64 {
+        let o = self.offset();
+        (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()
+    }
 }
 
 /// The geometry of `t` in its axes; strings placed with `insulators`.
@@ -82,6 +116,12 @@ pub fn geometry_with(
             .collect(),
         extension: body.added.clone(),
         pole: pole_wireframe(t),
+        attach: t
+            .joints()
+            .into_iter()
+            .filter(|j| j.kind == Some(ohl_structures::JointKind::Attach))
+            .map(|j| j.id)
+            .collect(),
         ..Default::default()
     };
     let joint = |id: &str| g.joints.iter().find(|j| j.0 == id).map(|j| j.1);
@@ -129,6 +169,32 @@ pub fn geometry_with(
             .iter()
             .map(|p| (p.label.clone(), si(&p.position())))
             .collect();
+    }
+    // The rigid links of the points at an offset from their joints: the
+    // joint where it is drawn (a node of the body, else as the type
+    // places it), the point where it is drawn.
+    let joints = t.joints();
+    for p in &t.points {
+        if t.point_offset(p) == [0.0; 3] {
+            continue;
+        }
+        let Some(to) = g.points.iter().find(|q| q.0 == p.label).map(|q| q.1) else {
+            continue;
+        };
+        let from = g
+            .joints
+            .iter()
+            .find(|j| j.0 == p.joint)
+            .map(|j| j.1)
+            .or_else(|| joints.iter().find(|j| j.id == p.joint).map(|j| j.position));
+        if let Some(from) = from {
+            g.links.push(RigidLink {
+                label: p.label.clone(),
+                joint: p.joint.clone(),
+                from,
+                to,
+            });
+        }
     }
     if t.members.is_empty() {
         // The stick figure (or the body lines), back in local axes.
@@ -216,6 +282,27 @@ pub fn pick(
         )
         .collect();
     if let Some(h) = nearest(handles) {
+        return Some(h);
+    }
+    // A rigid link picks its attachment point.
+    let segment = |a: [f64; 3], b: [f64; 3]| -> Option<f64> {
+        let (qa, qb) = (project(a)?, project(b)?);
+        let (dx, dy) = (qb[0] - qa[0], qb[1] - qa[1]);
+        let len2 = dx * dx + dy * dy;
+        let s = if len2 > 0.0 {
+            (((at[0] - qa[0]) * dx + (at[1] - qa[1]) * dy) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let (x, y) = (qa[0] + s * dx, qa[1] + s * dy);
+        Some(((x - at[0]).powi(2) + (y - at[1]).powi(2)).sqrt())
+    };
+    let links = g
+        .links
+        .iter()
+        .map(|l| (segment(l.from, l.to), Handle::Point(l.label.clone())))
+        .collect();
+    if let Some(h) = nearest(links) {
         return Some(h);
     }
     let mut members = Vec::new();

@@ -42,6 +42,7 @@ mod icons;
 mod in_line_tab;
 mod layout;
 mod libraries;
+mod link_tool;
 mod load_cases_tab;
 mod menus;
 mod plugins_ui;
@@ -75,6 +76,8 @@ mod body_ui_tests;
 mod glyph_tests;
 #[cfg(test)]
 mod layout_tests;
+#[cfg(test)]
+mod link_tests;
 #[cfg(test)]
 mod load_tests;
 #[cfg(test)]

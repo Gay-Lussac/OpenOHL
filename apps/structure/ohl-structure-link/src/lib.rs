@@ -531,6 +531,34 @@ pub struct CaseResult {
     pub took: Duration,
     /// What was left out (rows without a value, moments).
     pub notes: Vec<String>,
+    /// The moment of each attachment point's offset (a rigid link from its
+    /// joint, 2026-10-21): the points at an offset only, in the order of
+    /// the load table.
+    pub points: Vec<PointMoment>,
+}
+
+/// The moment of an attachment point's offset in one case: r × F at its
+/// joint ([`ohl_structures_fe::PointLoad`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointMoment {
+    /// The attachment point's label.
+    pub label: String,
+    /// The moment, N·m, structure axes (z up): the sum over the point's
+    /// rows of the load table.
+    pub moment: [f64; 3],
+    /// Applied at its joint (a frame member carries it); false: left out,
+    /// only trusses meet the joint ([`PointMoment::note`]).
+    pub applied: bool,
+    /// What was left out, in words (none: applied).
+    pub note: Option<String>,
+}
+
+impl PointMoment {
+    /// Its size, N·m.
+    pub fn size(&self) -> f64 {
+        let m = self.moment;
+        (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt()
+    }
 }
 
 impl CaseResult {
@@ -636,6 +664,7 @@ fn analyse_one(
     }
     // The moment of each attachment point's offset (a rigid link to its
     // joint), applied or left out (2026-10-21).
+    let mut points: Vec<PointMoment> = Vec::new();
     for r in table
         .case(&case.name)
         .filter(|r| r.missing.is_none() && r.at == At::Point)
@@ -643,6 +672,25 @@ fn analyse_one(
         let Some(at) = model.point_load(&r.label, [r.force[0], r.force[1], -r.force[2]]) else {
             continue;
         };
+        if at.moment != [0.0; 3] {
+            match points.iter_mut().find(|p| p.label == r.label) {
+                Some(p) => {
+                    for (s, m) in p.moment.iter_mut().zip(at.moment) {
+                        *s += m;
+                    }
+                    p.applied &= at.moment_applied;
+                    if p.note.is_none() {
+                        p.note.clone_from(&at.note);
+                    }
+                }
+                None => points.push(PointMoment {
+                    label: r.label.clone(),
+                    moment: at.moment,
+                    applied: at.moment_applied,
+                    note: at.note.clone(),
+                }),
+            }
+        }
         match at.note {
             Some(n) => notes.push(n),
             None if at.moment_applied => {
@@ -738,5 +786,6 @@ fn analyse_one(
         nonlinear: solution.nonlinear,
         took,
         notes,
+        points,
     })
 }
