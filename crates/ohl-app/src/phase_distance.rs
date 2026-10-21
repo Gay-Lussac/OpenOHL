@@ -1845,9 +1845,10 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
             small(
                 ui,
                 "f: the local sag there, below the chord between the clamps (0 at the \
-                 clamps). l_k: the suspension string's length at each end (I-string: its \
-                 length; V, tension or clamped: 0; below a V: the string below; TAK: its \
-                 suspension string), linear between the ends. Conductors joined by \
+                 clamps). l_k: the suspension string's length at each end (one string: its \
+                 length; two strings to one wire point, tension or clamped: 0; a string \
+                 below two: that string; two tension strings from a string: that string), \
+                 linear between the ends. Conductors joined by \
                  interphase spacers in the span: each one's largest sag between its spacer \
                  clamps (and the span's clamps).",
             );

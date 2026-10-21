@@ -374,8 +374,8 @@
                     <xs:element name="wire_point" type="ohl:point"/>
                     <xs:element name="leg" type="ohl:point" minOccurs="0" maxOccurs="2">
                       <xs:annotation>
-                        <xs:documentation>V-strings: the two legs' points on
-                          the structure (both or none).</xs:documentation>
+                        <xs:documentation>Two strings to one wire point: their
+                          points on the structure (both or none).</xs:documentation>
                       </xs:annotation>
                     </xs:element>
                   </xs:sequence>
