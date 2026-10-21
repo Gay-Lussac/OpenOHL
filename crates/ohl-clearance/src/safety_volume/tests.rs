@@ -136,22 +136,27 @@ fn a_straight_wire_gives_a_capsule() {
     }
 }
 
-/// A swing arc of radius R = 10 m about a level axis 30 m up, from
-/// φ = −40° to +40° (three straight wires turned rigidly), distance
-/// d = 2 m: in the middle of the span the volume reaches
-/// R sin 40° + d = 8.428 m to the right and to the left, R + d = 12 m
-/// below the axis and up to R cos 40° − d = 5.660 m below it at its ends
-/// — the closed form, within the allowance (the mesh is never inside).
+/// A swing arc about a level axis 30 m up: straight wires blown to
+/// φ = ±40° at radius R = 10 m and hanging in still air at r = 8 m (a
+/// band from r to R, turned rigidly), distance d = 2 m, the band's margin
+/// m = [`crate::positions::BAND_MARGIN`] = 0.15 m: D = d + m = 2.15 m.
+/// In the middle of the span the volume reaches R sin 40° + D = 8.578 m
+/// to the right and to the left, R + D = 12.15 m below the axis, and up
+/// to r cos 40° − D = 3.978 m below it (the band's inner end corners,
+/// its highest points; the arc alone at R: R cos 40° − d = 5.660 m) — the
+/// closed form, within the allowance (the mesh is never inside).
 #[test]
 fn the_swing_arc_s_extremes_match_the_closed_form() {
-    let (r, d, z0, l) = (10.0, 2.0, 30.0, 100.0);
+    let (r_out, r_in, d, z0, l) = (10.0, 8.0, 2.0, 30.0, 100.0);
+    let m = crate::positions::BAND_MARGIN;
+    let big = d + m;
     let axis = Axis::new([0.0, 0.0, z0], [l, 0.0, z0]).unwrap();
-    let turned = |phi: f64| {
+    let turned = |phi: f64, r: f64| {
         // Right of the axis looking along +x is −y.
         straight(l, -r * phi.sin(), z0 - r * phi.cos(), None)
     };
     let phi = 40f64.to_radians();
-    let (left, still, right) = (turned(-phi), turned(0.0), turned(phi));
+    let (left, still, right) = (turned(-phi, r_out), turned(0.0, r_in), turned(phi, r_out));
     let shape = |w: &Wire| WireShape::new(w.clone(), &axis);
     let arc = SwingArc::new(axis, &shape(&left), &shape(&still), &shape(&right)).unwrap();
     let mut positions = Positions::default();
@@ -163,7 +168,7 @@ fn the_swing_arc_s_extremes_match_the_closed_form() {
     assert_eq!(s.mesh.open_edges(), 0);
     let a = s.allowance;
     println!(
-        "arc: {} triangles, cell {:.3} m, arc error {:.4} m, allowance {a:.4} m",
+        "band: {} triangles, cell {:.3} m, arc error {:.4} m, allowance {a:.4} m",
         s.mesh.triangles.len(),
         s.stats.cell,
         s.arc_error
@@ -174,7 +179,12 @@ fn the_swing_arc_s_extremes_match_the_closed_form() {
     let lateral = max(&|p| p[1].abs());
     let below = max(&|p| z0 - p[2]);
     let above = max(&|p| p[2] - z0);
-    let (e_lat, e_below, e_top) = (r * phi.sin() + d, r + d, -(r * phi.cos() - d));
+    let (e_lat, e_below, e_top) = (
+        r_out * phi.sin() + big,
+        r_out + big,
+        -(r_in * phi.cos() - big),
+    );
+    assert!((e_lat - 8.578).abs() < 1e-3 && (e_top + 3.978).abs() < 1e-3);
     println!(
         "  lateral {lateral:.4} (closed form {e_lat:.4}), below {below:.4} ({e_below:.4}), top {above:.4} ({e_top:.4})"
     );
@@ -186,13 +196,15 @@ fn the_swing_arc_s_extremes_match_the_closed_form() {
             "{got} vs {exact}"
         );
     }
-    // The arc's exact surface points (radius R + d from the axis, between
-    // the angles) are inside.
+    // The band's exact outer and inner offset points (radius R + D and
+    // r − D from the axis, between the angles) and its inside are inside.
     for k in 0..=20 {
         let p = -phi + 2.0 * phi * f64::from(k) / 20.0;
         for x in [5.0, 50.0, 95.0] {
-            let q = [x, -(r + d) * p.sin(), z0 - (r + d) * p.cos()];
-            assert!(s.mesh.contains(q), "{q:?}");
+            for rad in [r_out + big, r_in - big, 0.5 * (r_out + r_in)] {
+                let q = [x, -rad * p.sin(), z0 - rad * p.cos()];
+                assert!(s.mesh.contains(q), "{q:?}");
+            }
         }
     }
 }
@@ -211,14 +223,16 @@ fn example() -> (ohl_line::Line, ohl_cables::Library, Vec<WeatherCase>) {
     (line, library, cases)
 }
 
-/// Steps against the arc on the example line (high wind 600 Pa, steps of
-/// 100 Pa): how far the centre line of each stepped position lies off the
-/// arc's surface (the arc is a rigid swing at the largest radius; the
-/// steps are the solver's own positions, strings and clamps where they
-/// really swing). Measured, not a design value: each step's tube sticks
-/// out of the arc's volume by at most this.
+/// Steps against the band on the example line (high wind 600 Pa, steps
+/// of 100 Pa, both sides): the band's prims at D = 2 m (and the band's
+/// margin, as [`build`] takes them) hold every step's tube — every point
+/// D away from a stepped position's centre line, in six directions, lies
+/// within the envelope (f ≤ 0). The arc alone at
+/// the largest radius did not: a step's centre line lay up to 1.53 m
+/// inside it (measured 2026-10-20; the band since 2026-10-21, measured at
+/// 10 Pa in `tests/arc_band.rs`).
 #[test]
-fn the_arc_holds_the_steps_up_to_the_rigid_swing() {
+fn the_band_holds_the_steps_tubes() {
     let (line, library, cases) = example();
     let steps = WindSteps {
         arc: false,
@@ -237,19 +251,21 @@ fn the_arc_holds_the_steps_up_to_the_rigid_swing() {
         &Budget::new(),
     )
     .unwrap();
-    let mut worst = (0.0f64, String::new(), 0.0f64);
+    let d = 2.0;
+    let mut worst = (f64::NEG_INFINITY, String::new());
     let mut n = 0;
     for span in &positions.spans {
-        let arcs: Vec<&SwingArc> = span
+        let Some(arc) = span
             .positions
             .iter()
-            .filter_map(|&i| match &positions.positions[i].shape {
+            .find_map(|&i| match &positions.positions[i].shape {
                 Shape::Arc(a) => Some(a),
                 _ => None,
             })
-            .collect();
-        let Some(arc) = arcs.first() else { continue };
-        let (prims, _, _) = arc_prims(arc, 0.0, 0.01);
+        else {
+            continue;
+        };
+        let (prims, _, _) = arc_prims(arc, d + crate::positions::BAND_MARGIN, 0.05);
         let field = Field::new(prims);
         for &i in &span.positions {
             let p = &positions.positions[i];
@@ -262,28 +278,33 @@ fn the_arc_holds_the_steps_up_to_the_rigid_swing() {
             }
             n += 1;
             for q in &w.wire.points {
-                let off = field.value(*q, f64::INFINITY);
-                if off > worst.0 {
-                    // Inside the arc's radius (towards the axis) or out.
-                    let place = arc.place(arc.axis.along(*q));
-                    let polar = arc.axis.polar(*q);
-                    worst = (
-                        off,
-                        positions.describe(i)
-                            + &format!(" {} span {}", span.wire.section, span.wire.span + 1),
-                        polar.rho - place.radius,
-                    );
+                for o in [
+                    [d, 0.0, 0.0],
+                    [-d, 0.0, 0.0],
+                    [0.0, d, 0.0],
+                    [0.0, -d, 0.0],
+                    [0.0, 0.0, d],
+                    [0.0, 0.0, -d],
+                ] {
+                    let x = [q[0] + o[0], q[1] + o[1], q[2] + o[2]];
+                    let f = field.value(x, f64::INFINITY);
+                    if f > worst.0 {
+                        worst = (
+                            f,
+                            positions.describe(i)
+                                + &format!(" {} span {}", span.wire.section, span.wire.span + 1),
+                        );
+                    }
                 }
             }
         }
     }
     println!(
-        "steps against the arc: {n} step positions, the farthest {:.3} m off the arc's surface ({}; {:+.3} m from the arc's radius)",
-        worst.0, worst.1, worst.2
+        "steps against the band: {n} step positions, their tubes at most {:+.4} m outside the band's envelope ({})",
+        worst.0, worst.1
     );
     assert!(n > 0);
-    // Measured (the rigid swing against the solver's own positions).
-    assert!(worst.0 < 2.0, "{worst:?}");
+    assert!(worst.0 <= 0.0, "{worst:?}");
 }
 
 /// By voltage: two straight wires of 220 and 380 kV systems 50 m apart,
@@ -403,4 +424,162 @@ fn the_example_line_s_volumes() {
         };
         assert_eq!(v.volumes.len(), expected);
     }
+}
+
+/// The number of pieces of a mesh: triangles joined through shared
+/// vertices.
+fn pieces(mesh: &Mesh) -> usize {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..mesh.vertices.len()).collect();
+    for t in &mesh.triangles {
+        let a = root(&mut parent, t[0] as usize);
+        for &k in &t[1..] {
+            let b = root(&mut parent, k as usize);
+            parent[b] = a;
+        }
+    }
+    let mut roots: Vec<usize> = mesh
+        .triangles
+        .iter()
+        .map(|t| root(&mut parent, t[0] as usize))
+        .collect();
+    roots.sort_unstable();
+    roots.dedup();
+    roots.len()
+}
+
+/// Continuity at a dead-end structure: section A ends at its clamp
+/// (100, 0, 20), section B starts at the clamp on the structure's other
+/// side (106, 0, 20); a jumper hangs between them, sagging 1.5 m
+/// (parabola). Distance d = 1 m: the two sections' tubes alone end 6 m
+/// apart, a gap of 6 − 2·1 = 4 m (two pieces); with the jumper, its tube
+/// joins them (one closed piece) and every point within d of the jumper
+/// is inside the volume. Structures are not part of the volume.
+#[test]
+fn the_jumper_closes_the_gap_at_a_dead_end() {
+    let a = straight(100.0, 0.0, 20.0, None);
+    let mut b = straight(100.0, 0.0, 20.0, None);
+    b.section = "B".into();
+    for p in &mut b.points {
+        p[0] += 106.0;
+    }
+    let jumper_points: Vec<P3> = (0..=12)
+        .map(|k| {
+            let t = f64::from(k) / 12.0;
+            [100.0 + 6.0 * t, 0.0, 20.0 - 4.0 * 1.5 * t * (1.0 - t)]
+        })
+        .collect();
+    let jumper = Wire {
+        section: "jumper:J".into(),
+        points: jumper_points.clone(),
+        ..a.clone()
+    };
+    let p = SafetyParams {
+        distance: Requirement::Fixed(1.0),
+        tolerance: 0.05,
+        ..SafetyParams::default()
+    };
+    let without = build(
+        &Positions::of_wires("still", vec![a.clone(), b.clone()]),
+        &p,
+        &Budget::new(),
+    )
+    .unwrap();
+    assert_eq!(without.volumes.len(), 1);
+    assert_eq!(pieces(&without.volumes[0].mesh), 2, "the gap without it");
+    let with = build(
+        &Positions::of_wires("still", vec![a, b, jumper]),
+        &p,
+        &Budget::new(),
+    )
+    .unwrap();
+    assert_eq!(with.volumes.len(), 1);
+    let v = &with.volumes[0];
+    println!(
+        "dead end: {} triangles, {} piece(s), sections {:?}",
+        v.mesh.triangles.len(),
+        pieces(&v.mesh),
+        v.sections
+    );
+    assert_eq!(v.mesh.open_edges(), 0);
+    assert_eq!(pieces(&v.mesh), 1, "no gap with the jumper");
+    assert!(v.sections.contains(&"jumper:J".to_owned()));
+    // Points within d of the jumper (on it, and 0.95 m off it across and
+    // below) are inside.
+    for q in &jumper_points {
+        for off in [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.95, 0.0],
+            [0.0, -0.95, 0.0],
+            [0.0, 0.0, -0.95],
+        ] {
+            let x = [q[0] + off[0], q[1] + off[1], q[2] + off[2]];
+            assert!(v.mesh.contains(x), "{x:?}");
+        }
+    }
+}
+
+/// The example line in high wind, swing arc: the jumper's positions are
+/// taken (blown left and right and in still air, as solved; never on an
+/// arc), and the spans' arcs as before; the danger trees' options leave
+/// the jumpers out.
+#[test]
+fn the_volume_s_positions_include_the_jumpers() {
+    let (line, library, cases) = example();
+    let windy: Vec<WeatherCase> = cases
+        .into_iter()
+        .filter(|c| c.name == "high wind")
+        .collect();
+    let positions = solve_positions(
+        &line,
+        &library,
+        &windy,
+        WindMode::Arc.options(WindSteps::default()),
+        &Budget::new(),
+    )
+    .unwrap();
+    let span = positions
+        .spans
+        .iter()
+        .find(|s| s.wire.section == "jumper:J-T3-branch")
+        .expect("the jumper's positions");
+    let mut kinds: Vec<&str> = span
+        .positions
+        .iter()
+        .map(|&i| positions.positions[i].kind.name())
+        .collect();
+    kinds.sort_unstable();
+    let mut expected = vec![
+        PositionKind::Left.name(),
+        PositionKind::Right.name(),
+        PositionKind::Still.name(),
+    ];
+    expected.sort_unstable();
+    assert_eq!(kinds, expected);
+    assert!(
+        positions
+            .positions
+            .iter()
+            .any(|p| p.kind == PositionKind::Arc)
+    );
+    let plain = solve_positions(
+        &line,
+        &library,
+        &windy,
+        PositionOptions::default(),
+        &Budget::new(),
+    )
+    .unwrap();
+    assert!(
+        plain
+            .spans
+            .iter()
+            .all(|s| !s.wire.section.starts_with("jumper:"))
+    );
 }

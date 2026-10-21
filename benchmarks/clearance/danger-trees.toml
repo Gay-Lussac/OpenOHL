@@ -76,16 +76,29 @@ inputs = { ground = "ridge", tree_height = "20 m", growth = "0 m", root_ball = 0
 expected.theta_min_deg = { value = 26.5650511771, abs_tol = 1e-7 }
 expected.fall_margin_m = { value = 6.260990337, abs_tol = 1.1e-3 }
 
-# Swing arc: a level 100 m span along x, attachments 20 m up, a parabola
-# of sag 4 m in still air and 5 m blown by ±40 degrees about its axis. At
-# mid-span the arc has R = max(5, 4, 5) = 5 m from -40 to +40 degrees.
+# Swing arc (a band since 2026-10-21: every radius from the smallest to
+# the largest of the left, still and right positions): a level 100 m span
+# along x, attachments 20 m up, a parabola of sag 4 m in still air and
+# 5 m blown by ±40 degrees about its axis. At mid-span the band runs from
+# r = min(5, 4, 5) = 4 m to R = max(5, 4, 5) = 5 m, from -40 to +40
+# degrees. The clearance is the distance less the band's margin
+# m = 0.15 m (the conductor's radius 0 here).
 #   swingarc-001: a point 8 m straight below the axis (phi = 0, rho = 8):
-#       |8 - 5| = 3 m.
+#       8 - 5 = 3 m; clearance 3 - 0.15 = 2.85 m.
 #   swingarc-002: a point 6 m to the right at the axis height (phi = 90
-#       deg, beyond the arc): to its end (5 sin 40, 5 cos 40 below) =
-#       sqrt((6 - 3.213938)^2 + 3.830222^2) = 4.736322 m.
-#   swingarc-003: at s = 25 m, R = 4 · 5 · 0.25 · 0.75 = 3.75 m; a point
-#       1 m from the axis at 20 deg to the right: 2.75 m.
+#       deg, beyond the band): to its end edge at 40 deg (radii 4 to 5):
+#       the point projects on the edge's direction (cos 40, sin 40) at
+#       6 sin 40 = 3.856726 < 4, so the nearest point is the edge's inner
+#       end (4 cos 40 = 3.064178 below, 4 sin 40 = 2.571150 to the right):
+#       sqrt(3.064178^2 + (6 - 2.571150)^2) = 4.598499 m (the arc alone
+#       at R, before 2026-10-21: 4.736322 m to its end).
+#   swingarc-003: at s = 25 m, R = 4 · 5 · 0.25 · 0.75 = 3.75 m and
+#       r = 4 · 4 · 0.25 · 0.75 = 3.0 m; a point 1 m from the axis at
+#       20 deg to the right, between the axis and the band: r - 1 = 2.0 m
+#       (the arc alone: 3.75 - 1 = 2.75 m).
+#   swingarc-004: a point inside the band at mid-span, rho = 4.5 m at
+#       10 deg to the right (y = -4.5 sin 10 = -0.781417 m,
+#       z = 20 - 4.5 cos 10 = 15.568365 m): 0 m; clearance -0.15 m.
 
 [[case]]
 id = "swingarc-001"
@@ -94,9 +107,11 @@ calculation = "vegetation.swing_arc"
 reference = "Hand calculation (this file)"
 inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "0 m", point_z = "12 m" }
 expected.arc_radius_m = { value = 5.0, abs_tol = 1e-12 }
+expected.arc_inner_radius_m = { value = 4.0, abs_tol = 1e-12 }
 expected.arc_from_deg = { value = -40.0, abs_tol = 1e-9 }
 expected.arc_to_deg = { value = 40.0, abs_tol = 1e-9 }
 expected.distance_m = { value = 3.0, abs_tol = 1e-12 }
+expected.clearance_m = { value = 2.85, abs_tol = 1e-12 }
 
 [[case]]
 id = "swingarc-002"
@@ -104,23 +119,36 @@ title = "Swing arc at mid-span, a point beyond its end"
 calculation = "vegetation.swing_arc"
 reference = "Hand calculation (this file)"
 inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "-6 m", point_z = "20 m" }
-expected.distance_m = { value = 4.736321718, abs_tol = 1e-9 }
+expected.distance_m = { value = 4.598499183, abs_tol = 1e-9 }
 
 [[case]]
 id = "swingarc-003"
-title = "Swing arc at a quarter of the span, a point inside the arc"
+title = "Swing arc at a quarter of the span, a point between the axis and the band"
 calculation = "vegetation.swing_arc"
 reference = "Hand calculation (this file)"
 inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "25 m", point_y = "-0.3420201433 m", point_z = "19.0603073792 m" }
 expected.arc_radius_m = { value = 3.75, abs_tol = 1e-12 }
-expected.distance_m = { value = 2.75, abs_tol = 1e-9 }
+expected.arc_inner_radius_m = { value = 3.0, abs_tol = 1e-12 }
+expected.distance_m = { value = 2.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "swingarc-004"
+title = "Swing arc at mid-span, a point inside the band"
+calculation = "vegetation.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_s = "50 m", point_y = "-0.7814167995 m", point_z = "15.5683651114 m" }
+expected.distance_m = { value = 0.0, abs_tol = 1e-9 }
+expected.clearance_m = { value = -0.15, abs_tol = 1e-9 }
 
 # Vertical and radial clearance to the swing arc (the vertical and radial
 # clearance checks, 2026-10-20; ohl_clearance::positions::SwingArc::
-# vertical). The span of the swing-arc cases above: R = 5 m at mid-span
-# from -40 to +40 degrees ("right" is -y looking along +x). The vertical
-# clearance is to the arc's lowest point over the point's plan position
-# within the band across the line (its highest for a point above):
+# vertical). The span of the swing-arc cases above: the band from r = 4
+# to R = 5 m at mid-span, from -40 to +40 degrees ("right" is -y looking
+# along +x); distances to the centre line (the margin not taken off). The
+# vertical clearance is to the band's lowest point over the point's plan
+# position within the zone's width across the line (its highest for a
+# point above); its extremes lie on the band's boundary — the two
+# circles or the two end edges:
 #   arcclear-001: a point 8 m straight below the axis at mid-span, band
 #       1 m: the arc points within 1 m across have sin(phi) in [-0.2, 0.2],
 #       the lowest at phi = 0, 20 - 5 = 15 m: vertical 15 - 12 = 3 m; the
@@ -136,10 +164,16 @@ expected.distance_m = { value = 2.75, abs_tol = 1e-9 }
 #       over the slice 15 - max(0.001, 0.001) = 14.999 m: vertical
 #       2.999 m (the exact lowest point over the slice is 15 m: the bound
 #       is 1 mm low).
-#   arcclear-004: a point 2 m above the arc's lowest point (z = 18):
-#       above the arc's highest point within the band, at phi = 11.5370
-#       deg: 20 - 5 cos(11.5370) = 15.101021 m: vertical 18 - 15.101021 =
-#       2.898979 m.
+#   arcclear-004: a point 2 m below the axis at mid-span (z = 18), above
+#       the band: its highest point within 1 m across is on the inner
+#       circle at sin(phi) = 1/4 (phi = 14.4775 deg; the 40 deg edges
+#       cross the strip only at rho = 1 / sin 40 = 1.556 m < r): 20 -
+#       4 cos(14.4775) = 16.127017 m: vertical 18 - 16.127017 = 1.872983 m
+#       (the arc alone at R = 5: 2.898979 m); radially r - 2 = 2.0 m (the
+#       arc alone: 3.0 m).
+#   arcclear-006: a point inside the band at mid-span, straight below the
+#       axis at z = 15.5 (rho = 4.5): vertical 0 (between the band's
+#       lowest and highest points over it), radial 0.
 #   arcclear-005: the span inclined, its second end 30 m higher (axis
 #       u = (100, 0, 30)/104.403065, |u_h| = 0.957826, u_z = 0.287348).
 #       At mid-axis (s = 52.201533 m, R = 5 m) the arc's lowest point is
@@ -183,7 +217,8 @@ title = "Swing arc, a point above it"
 calculation = "clearance.swing_arc"
 reference = "Hand calculation (this file)"
 inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "18 m", band = "1 m", depth = "0 m" }
-expected.vertical_m = { value = 2.8989794856, abs_tol = 1e-9 }
+expected.vertical_m = { value = 1.8729833462, abs_tol = 1e-9 }
+expected.radial_m = { value = 2.0, abs_tol = 1e-9 }
 
 [[case]]
 id = "arcclear-005"
@@ -193,3 +228,12 @@ reference = "Hand calculation (this file)"
 inputs = { span = "100 m", rise = "30 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "51.4367394278 m", point_y = "0 m", point_z = "25 m", band = "1 m", depth = "0 m" }
 expected.vertical_m = { value = 5.2108685739, abs_tol = 1e-8 }
 expected.vertical_angle_deg = { value = 0.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "arcclear-006"
+title = "Swing arc, a point inside the band"
+calculation = "clearance.swing_arc"
+reference = "Hand calculation (this file)"
+inputs = { span = "100 m", rise = "0 m", attachment_height = "20 m", still_sag = "4 m", blown_sag = "5 m", blowout_angle = 40.0, point_x = "50 m", point_y = "0 m", point_z = "15.5 m", band = "1 m", depth = "0 m" }
+expected.vertical_m = { value = 0.0, abs_tol = 1e-12 }
+expected.radial_m = { value = 0.0, abs_tol = 1e-12 }
