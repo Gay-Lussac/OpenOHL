@@ -24,6 +24,8 @@ pub mod structures;
 pub mod templates;
 
 #[cfg(test)]
+mod joint_tests;
+#[cfg(test)]
 mod pole_extension_tests;
 
 use std::collections::BTreeMap;
@@ -34,9 +36,10 @@ pub use extensions::{ExtendedBody, Extension, LegExtension};
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary, InsulatorLimits};
 pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape, PoleWall};
 pub use structures::{
-    AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, PlacedAttachment, PlacedPoint,
-    PlacedString, PlacedStrings, PlacedWire, SpanLimit, StructureLibrary, StructureType,
-    StructureWind, TypePoint, TypeString, TypeWire, WindBand,
+    AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, Joint, JointKind, JointSource,
+    PlacedAttachment, PlacedPoint, PlacedString, PlacedStrings, PlacedWire, PointPlace, SAME_JOINT,
+    SpanLimit, StructureLibrary, StructureType, StructureWind, TypePoint, TypeString, TypeWire,
+    WindBand, point_joints,
 };
 
 /// Error loading a library item.
