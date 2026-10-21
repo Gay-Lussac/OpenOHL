@@ -57,6 +57,8 @@ pub enum Tab {
     NextSteps,
     /// A tool window docked as a panel ([`crate::dockable`]).
     Tool(crate::dockable::Panel),
+    /// A cross-section view, by its number ([`crate::xsection`]).
+    CrossSection(u32),
 }
 
 /// Where a tab's context menu moves it.
@@ -110,6 +112,7 @@ impl Tab {
             Tab::CheckLibrary => "Performed checks",
             Tab::NextSteps => "Next steps",
             Tab::Tool(p) => p.name(),
+            Tab::CrossSection(_) => "Cross-section",
         }
     }
 }
@@ -174,6 +177,9 @@ pub struct Ready {
     pub plan: PlanView,
     /// Profile view.
     pub profile: ProfileView,
+    /// The cross-section views open and the window making one
+    /// ([`crate::xsection`]).
+    pub xsections: crate::xsection::CrossSections,
     /// The "Go to structure" window, when open: the structure chosen.
     pub goto: Option<String>,
     /// What the last edit did (or why it was not done: `true`).
@@ -400,6 +406,7 @@ impl Ready {
             view3d,
             plan: PlanView::default(),
             profile: ProfileView::default(),
+            xsections: crate::xsection::CrossSections::default(),
             goto: None,
             status: None,
             confirm: None,
@@ -1203,6 +1210,9 @@ impl TabViewer for Viewer<'_> {
             let title = crate::dockable::host(&self.ctx, |h| h.alive.get(p).cloned());
             return title.unwrap_or_else(|| p.name().to_owned()).into();
         }
+        if let Tab::CrossSection(id) = tab {
+            return self.ready.xsections.title(*id).into();
+        }
         if dirty {
             format!("{} *", tab.title()).into()
         } else {
@@ -1269,6 +1279,10 @@ impl TabViewer for Viewer<'_> {
             p.message = Some(("Apply or revert the changes before closing".into(), true));
             return egui_dock::tab_viewer::OnCloseResponse::Ignore;
         }
+        // A cut's tab closed: the cut goes.
+        if let Tab::CrossSection(id) = tab {
+            self.ready.xsections.views.remove(id);
+        }
         egui_dock::tab_viewer::OnCloseResponse::Close
     }
 
@@ -1284,6 +1298,7 @@ impl TabViewer for Viewer<'_> {
             Tab::View3d => "tab 3d",
             Tab::Plan => "tab plan",
             Tab::Profile => "tab profile",
+            Tab::CrossSection(_) => "tab cross-section",
             Tab::Properties => "tab properties",
             Tab::Model => "tab model",
             Tab::Clearances => "tab clearances",
@@ -1322,6 +1337,8 @@ impl TabViewer for Viewer<'_> {
                 buttons,
             ),
             Tab::Profile => {
+                // Right-click: "Cross-section here" while Select is held.
+                r.profile.cut_menu = select_held;
                 r.profile.vegetation_layers = [
                     r.visible.contains(&Layer::GrowIn),
                     r.visible.contains(&Layer::FallIn),
@@ -1342,9 +1359,31 @@ impl TabViewer for Viewer<'_> {
                         on: None,
                     })
             }
+            Tab::CrossSection(id) => {
+                // The lines on the ground beside the line, as the profile
+                // draws them (their layer ticked).
+                let ground_lines = r.profile.ground_lines.clone();
+                r.xsections
+                    .ui(
+                        *id,
+                        ui,
+                        &r.model,
+                        r.case,
+                        &mut r.selection,
+                        &snaps,
+                        buttons,
+                        ground_lines.as_deref(),
+                    )
+                    .map(|target| crate::selection::Use {
+                        target,
+                        at: None,
+                        on: None,
+                    })
+            }
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
                 let mut start_link = None;
+                let mut cut_at = None;
                 let loads = r.loads.results.as_ref().and_then(|x| x.as_ref().ok());
                 let action = crate::properties::ui(
                     ui,
@@ -1356,10 +1395,14 @@ impl TabViewer for Viewer<'_> {
                         loads: loads.map(Vec::as_slice),
                         editable,
                         start_link: &mut start_link,
+                        cut_at: &mut cut_at,
                     },
                 );
                 if let Some(a) = action {
                     r.perform(a);
+                }
+                if let Some(id) = cut_at {
+                    r.cross_section_at(&id);
                 }
                 if let Some((structure, label)) = start_link {
                     r.hotbar.hold(crate::tools::Tool::Link);
@@ -1468,6 +1511,9 @@ impl TabViewer for Viewer<'_> {
                     Some(crate::tables::TableAction::EditInStructureApp(id)) => {
                         r.edit_structure_in_app(&id);
                     }
+                    Some(crate::tables::TableAction::CrossSection(id)) => {
+                        r.cross_section_at(&id);
+                    }
                     Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None
@@ -1517,10 +1563,72 @@ impl TabViewer for Viewer<'_> {
         if let Some(target) = used {
             r.use_tool(target);
         }
+        // The profile's "Cross-section here".
+        if let Some((alignment, station)) = r.profile.cut_request.take() {
+            r.open_cut(crate::xsection::CutSpec {
+                alignment,
+                at: crate::xsection::At::Station(station),
+                depth: crate::xsection::DEFAULT_DEPTH,
+                width: r.drawings.line_width(),
+            });
+        }
     }
 }
 
 impl Ready {
+    /// Opens the Cross-section window (C, View › Cross-section…): at the
+    /// structure selected, mid-span of the span selected, else the start
+    /// of the alignment the profile shows.
+    pub fn open_cut_dialog(&mut self) {
+        let alignment = self.profile_alignment();
+        let width = self.drawings.line_width();
+        self.xsections
+            .open_dialog(&self.model, &self.selection, alignment, width);
+        self.popup_open = false;
+    }
+
+    /// The first alignment of what the profile shows (by default the
+    /// route with most structures).
+    fn profile_alignment(&mut self) -> Option<String> {
+        let views = self.xsections.alignments(&self.model.line);
+        let show = self
+            .profile
+            .show
+            .clone()
+            .unwrap_or_else(|| crate::profile::default_show(&self.model.line, &views));
+        views
+            .iter()
+            .find(|v| match &show {
+                crate::profile::Show::Route(r) => &v.route == r,
+                crate::profile::Show::Alignment(a) => &v.id == a,
+                crate::profile::Show::All => true,
+            })
+            .map(|v| v.id.clone())
+    }
+
+    /// Opens cut `spec` in a tab of its own.
+    pub fn open_cut(&mut self, spec: crate::xsection::CutSpec) {
+        let id = self.xsections.open(spec);
+        self.open_page = Some((Tab::CrossSection(id), None));
+    }
+
+    /// Opens a cut at structure `id` at once (its menu: Cross-section
+    /// here), the depth by default, the line width across.
+    pub fn cross_section_at(&mut self, id: &str) {
+        let views = self.xsections.alignments(&self.model.line);
+        let preferred = self.profile_alignment().unwrap_or_default();
+        let d = crate::xsection::Dialog::new(
+            &self.model,
+            &views,
+            &Selection::Structure(id.to_owned()),
+            Some(preferred),
+            self.drawings.line_width(),
+        );
+        if let Some(spec) = d.spec(&views) {
+            self.open_cut(spec);
+        }
+    }
+
     /// Selects member `member` of structure `structure` in the structure
     /// screen (the Structure types page's pylon workspace) when it is open
     /// on the structure's type; whether it was.
@@ -2622,6 +2730,7 @@ impl Ready {
             Layer::Selection,
         ]);
         self.profile.invalidate();
+        self.xsections.invalidate();
         self.drawings.invalidate_preview();
     }
 
@@ -4035,6 +4144,7 @@ impl Ready {
                 .filter(|l| !matches!(l, Layer::Ground | Layer::Points)),
         );
         self.profile.invalidate();
+        self.xsections.invalidate();
         self.drawings.invalidate_preview();
     }
 
@@ -4394,6 +4504,16 @@ fn delete_action(line: &ohl_line::Line, target: &Selection) -> Option<crate::edi
     })
 }
 
+/// C opens the Cross-section window (not while typing; ⌘C / Ctrl+C is
+/// not taken).
+fn cut_key(ctx: &egui::Context, r: &mut Ready) {
+    if !ctx.text_edit_focused()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::C))
+    {
+        r.open_cut_dialog();
+    }
+}
+
 /// G opens "Go to structure" (not while typing).
 fn goto_key(ctx: &egui::Context, r: &mut Ready) {
     let open_key = !ctx.text_edit_focused() && ctx.input(|i| i.key_pressed(egui::Key::G));
@@ -4483,6 +4603,36 @@ fn tool_window(r: &Ready, key: &str, title: impl Into<egui::WidgetText>) -> egui
         w.default_pos(at)
     };
     w.collapsible(false).resizable(false).constrain(false)
+}
+
+/// The Cross-section window: Open cut (or Enter) opens a cut in a tab of
+/// its own, Escape closes. A structure clicked in a view while it is open
+/// is taken.
+fn cut_window(ctx: &egui::Context, r: &mut Ready) {
+    let Some(mut d) = r.xsections.dialog.take() else {
+        return;
+    };
+    d.follow(&r.selection);
+    let views = r.xsections.alignments(&r.model.line);
+    let mut out = crate::xsection::DialogOut::None;
+    tool_window(r, "xsection", "Cross-section").show(ctx, |ui| {
+        out = crate::xsection::dialog_ui(ui, &mut d, &r.model.line, &views);
+    });
+    if out == crate::xsection::DialogOut::None && !ctx.text_edit_focused() {
+        if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            out = crate::xsection::DialogOut::Open;
+        } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            out = crate::xsection::DialogOut::Close;
+        }
+    }
+    match out {
+        crate::xsection::DialogOut::Open => match d.spec(&views) {
+            Some(spec) => r.open_cut(spec),
+            None => r.xsections.dialog = Some(d),
+        },
+        crate::xsection::DialogOut::Close => {}
+        crate::xsection::DialogOut::None => r.xsections.dialog = Some(d),
+    }
 }
 
 /// The Go to window: Enter goes, Escape closes.
@@ -4895,6 +5045,7 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     }
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
+    cut_window(ctx, r);
     move_window(ctx, r);
     point_delete_window(ctx, r);
     spread_delete_window(ctx, r);
@@ -5082,14 +5233,17 @@ pub enum ControlsPage {
     Plan,
     /// The profile.
     Profile,
+    /// A cross-section view.
+    CrossSection,
 }
 
 impl ControlsPage {
     /// Every page, in the menu's order.
-    pub const ALL: [ControlsPage; 3] = [
+    pub const ALL: [ControlsPage; 4] = [
         ControlsPage::View3d,
         ControlsPage::Plan,
         ControlsPage::Profile,
+        ControlsPage::CrossSection,
     ];
 
     /// Name in the menu.
@@ -5098,6 +5252,7 @@ impl ControlsPage {
             ControlsPage::View3d => "3D",
             ControlsPage::Plan => "Plan",
             ControlsPage::Profile => "Profile",
+            ControlsPage::CrossSection => "Cross-section",
         }
     }
 }
@@ -5193,6 +5348,7 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     let mut rows = c.describe();
                     rows.push(row("1–9, wheel", "choose a tool of the hotbar"));
                     rows.push(row("E", "tool inventory"));
+                    rows.push(row("C", "cross-section: a cut across the line (a window)"));
                     controls_grid(ui, "controls-3d", &rows);
                 }
                 ControlsPage::Plan => {
@@ -5202,6 +5358,7 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     ];
                     rows.extend(clicks);
                     rows.push(row(select_double, "select and centre on it"));
+                    rows.push(row("C", "cross-section: a cut across the line (a window)"));
                     controls_grid(ui, "controls-plan", &rows);
                 }
                 ControlsPage::Profile => {
@@ -5224,7 +5381,29 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                         format!("Alt + Shift + {select} drag"),
                         "lasso: the same in a free shape (Esc: give up)".into(),
                     ));
+                    rows.push(row(
+                        "right-click (Select held)",
+                        "a menu: Cross-section here (at that station)",
+                    ));
+                    rows.push(row("C", "cross-section: a cut across the line (a window)"));
                     controls_grid(ui, "controls-profile", &rows);
+                }
+                ControlsPage::CrossSection => {
+                    let mut rows = vec![
+                        row("drag (any button)", "pan (across and up and down)"),
+                        row("scroll", "zoom at the pointer"),
+                    ];
+                    rows.extend(clicks);
+                    rows.push(row(select_double, "fit the whole width"));
+                    rows.push(row(
+                        ", (comma)",
+                        "move the cut one step back along the line",
+                    ));
+                    rows.push(row(". (full stop)", "move the cut one step ahead"));
+                    rows.push(row("⏮ ⏭", "move the cut to the structure before / after"));
+                    rows.push(row("C", "another cut (a window)"));
+                    rows.push(row("—", "no rotation: the view always looks ahead"));
+                    controls_grid(ui, "controls-xsection", &rows);
                 }
             }
         });
@@ -7265,6 +7444,20 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         let _ = dock.set_active_tab(path);
         return;
     }
+    // A cut: a tab beside the profile (or of the first group).
+    if let Tab::CrossSection(_) = tab {
+        let beside = dock
+            .find_tab_from(|t| matches!(t, Tab::CrossSection(_)))
+            .or_else(|| dock.find_tab(&Tab::Profile));
+        match beside {
+            Some(path) => {
+                dock.set_focused_node_and_surface(path.node_path());
+                dock.push_to_focused_leaf(tab);
+            }
+            None => dock.push_to_first_leaf(tab),
+        }
+        return;
+    }
     let group = |t: &Tab| match t {
         Tab::Library(_) => 1,
         Tab::Table(_) => 2,
@@ -7585,6 +7778,16 @@ fn menus(
             }
         });
         item(ui, Command::DisplayCases, out);
+        if ui
+            .button("Cross-section… (C)")
+            .on_hover_text(
+                "A 2D cut across the line at a station or a structure, in a tab of its own",
+            )
+            .clicked()
+        {
+            r.open_cut_dialog();
+            ui.close();
+        }
         crate::menu::options_menu(ui, "Profile aspect ratio", |ui| {
             // Remembered with the other display choices when the app saves.
             crate::profile::ratio_menu(ui, &mut r.model.profile_ratio);
@@ -8398,6 +8601,7 @@ impl eframe::App for App {
                 history_window(ui.ctx(), ready);
                 crate::versions::window(ui.ctx(), ready);
                 goto_key(ui.ctx(), ready);
+                cut_key(ui.ctx(), ready);
                 edit_keys(ui.ctx(), ready);
                 {
                     let _t = crate::perf::span("hooks: clearances");

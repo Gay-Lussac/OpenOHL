@@ -95,6 +95,7 @@ mod view3d;
 mod wire_style;
 mod wirefit;
 mod working_tree;
+mod xsection;
 
 /// The application's name, as the window title shows it.
 pub const APP_NAME: &str = "OHL-Design";
@@ -133,6 +134,8 @@ mod tests;
 mod ux_tests;
 #[cfg(test)]
 mod vegetation_tests;
+#[cfg(test)]
+mod xsection_tests;
 
 /// OHL-Design, the line application of OpenOHL — view and edit a line
 /// model in 3D, plan and profile.
