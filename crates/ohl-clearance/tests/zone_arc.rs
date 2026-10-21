@@ -38,7 +38,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
     vec![
         ZoneRule {
             name: "ground".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: Vec::new(),
             distance: Requirement::Fixed(required),
             classes: Vec::new(),
@@ -48,7 +48,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
         },
         ZoneRule {
             name: "points".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: Vec::new(),
             distance: Requirement::Fixed(required),
             classes: vec![5],

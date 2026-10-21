@@ -15,7 +15,7 @@
 //! - **Radial** ([`Measure::Radial`]): the shortest 3D distance from the
 //!   wire.
 //!
-//! Each rule ([`ZoneRule`]) gives the wires' voltage (or any), the weather
+//! Each rule ([`ZoneRule`]) gives the wires' voltages (or any), the weather
 //! cases, the distance to keep and the targets: LiDAR classes, the ground
 //! surface. A window's rules are kept as a rule file (`.ohlr`,
 //! [`to_rule_set`], [`from_rule_set`]): one `[[rule]]` per row and target,
@@ -121,9 +121,10 @@ impl Zone {
 pub struct ZoneRule {
     /// Name, for reports.
     pub name: String,
-    /// Nominal voltage of the wires checked, kV (0: earthed wires); `None`:
-    /// every wire.
-    pub voltage: Option<f64>,
+    /// Nominal voltages of the wires checked, kV (0: earthed wires); empty:
+    /// every wire. Optional with any distance: a table by voltage or base
+    /// + per kV already depends on the voltage (owner, 2026-10-21).
+    pub voltages: Vec<f64>,
     /// Weather cases (names, `*` `?` wildcards); empty: every case.
     pub cases: Vec<String>,
     /// Clearance to keep: a distance, or by the wire's nominal voltage (a
@@ -171,7 +172,7 @@ impl ZoneRule {
                 exclude_near_ends: 0.0,
                 exclude_spans_at: Vec::new(),
                 circuits: CircuitFilter::Any,
-                voltages: self.voltage.into_iter().collect(),
+                voltages: self.voltages.clone(),
                 wires: self.wires,
                 vertical_depth: if vertical { zone.depth } else { 0.0 },
                 target,
@@ -233,9 +234,9 @@ pub struct Imported {
 }
 
 /// The rules of `set` for a window of `measure`: ground and point rules
-/// with a requirement of that measure, one row per voltage of the rule
-/// (one row for any voltage when it names none), each row with the rule's
-/// requirement as written — a distance, a table by voltage or base + per
+/// with a requirement of that measure, one row per rule with the rule's
+/// voltages (none: any voltage; never one row per voltage, 2026-10-21)
+/// and its requirement as written — a distance, a table by voltage or base + per
 /// kV (`voltages`: those of the line, 0 for earthed wires: those a
 /// table does not reach are noted). Roles become the classes of `classes_with_role`. A ground
 /// rule following a point rule with the same name and requirement joins
@@ -285,10 +286,10 @@ pub fn from_rule_set(
         if rule.exclude_near_ends > 0.0 || !rule.exclude_spans_at.is_empty() {
             out.notes.push(note("its exclusion zones are not kept"));
         }
-        // One row per voltage of the rule (none: any voltage), each with
-        // the rule's requirement: a requirement by voltage stays one, the
-        // voltages of the line it does not reach noted.
-        let rows: Vec<(Option<f64>, Requirement)> = if rule.voltages.is_empty() {
+        // One row per rule, with the rule's voltages (none: any voltage)
+        // and its requirement: a requirement by voltage stays one, the
+        // voltages it does not reach noted (and left out of the row).
+        let rows: Vec<(Vec<f64>, Requirement)> = if rule.voltages.is_empty() {
             if required.by_voltage() {
                 for &kv in voltages {
                     if let Err(e) = required.at(kv) {
@@ -296,20 +297,22 @@ pub fn from_rule_set(
                     }
                 }
             }
-            vec![(None, required.clone())]
+            vec![(Vec::new(), required.clone())]
         } else {
-            let mut rows = Vec::new();
+            let mut kept = Vec::new();
             for &kv in &rule.voltages {
                 match required.at(kv) {
-                    Ok(_) => rows.push((Some(kv), required.clone())),
+                    Ok(_) => kept.push(kv),
                     Err(e) => out.notes.push(note(&e)),
                 }
             }
-            if rows.is_empty() {
+            if kept.is_empty() {
                 out.notes
                     .push(note("left out: no required clearance for its voltages"));
+                Vec::new()
+            } else {
+                vec![(kept, required.clone())]
             }
-            rows
         };
         if out.width.is_none() && !rows.is_empty() {
             out.width = Some(rule.vertical_band);
@@ -320,10 +323,10 @@ pub fn from_rule_set(
         let width = (measure == Measure::Vertical)
             .then_some(rule.vertical_band)
             .filter(|w| out.width.is_some_and(|z| (z - w).abs() > 1e-9));
-        for (voltage, distance) in rows {
+        for (voltages, distance) in rows {
             let row = ZoneRule {
                 name: rule.name.clone(),
-                voltage,
+                voltages,
                 cases: rule.cases.clone(),
                 distance,
                 classes: classes.clone(),
@@ -338,11 +341,17 @@ pub fn from_rule_set(
                 && !last.classes.is_empty()
                 && (
                     &last.name,
-                    last.voltage,
+                    &last.voltages,
                     &last.cases,
                     &last.distance,
                     last.wires,
-                ) == (&row.name, row.voltage, &row.cases, &row.distance, row.wires)
+                ) == (
+                    &row.name,
+                    &row.voltages,
+                    &row.cases,
+                    &row.distance,
+                    row.wires,
+                )
                 && last.width == row.width
             {
                 last.ground = true;
@@ -783,8 +792,7 @@ pub fn check_zones(
                         Wires::Sections => "section",
                         Wires::Jumpers => "jumper",
                     },
-                    rule.voltage
-                        .map_or("any voltage".into(), |v| format!("{v} kV"))
+                    voltages_text(&rule.voltages)
                 ));
                 continue;
             }
@@ -1091,6 +1099,22 @@ fn check_block(parts: &mut [Part], arcs: &[ZoneArc], block: &[([f64; 3], u8)]) {
     }
 }
 
+/// A rule's voltages in words: "any voltage", "220 kV", "110 or 220 kV".
+pub fn voltages_text(voltages: &[f64]) -> String {
+    match voltages {
+        [] => "any voltage".into(),
+        [v] => format!("{v} kV"),
+        [first @ .., last] => format!(
+            "{} or {last} kV",
+            first
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// Whether a rule checks jumpers.
 pub fn jumpers_needed(rules: &[ZoneRule]) -> bool {
     rules.iter().any(|r| r.wires != Wires::Sections)
@@ -1110,7 +1134,7 @@ pub fn sections_needed(line: &Line, rules: &[ZoneRule]) -> Vec<String> {
                 .map_or(0.0, |p| p.nominal_kv);
             rules
                 .iter()
-                .any(|r| r.voltage.is_none_or(|v| (v - kv).abs() < 1e-6))
+                .any(|r| r.voltages.is_empty() || r.voltages.iter().any(|v| (v - kv).abs() < 1e-6))
         })
         .map(|s| s.id.clone())
         .collect()
@@ -1141,7 +1165,7 @@ mod tests {
     fn rule(distance: f64, classes: &[u8]) -> ZoneRule {
         ZoneRule {
             name: "r".into(),
-            voltage: None,
+            voltages: Vec::new(),
             cases: Vec::new(),
             distance: Requirement::Fixed(distance),
             classes: classes.to_vec(),
@@ -1579,7 +1603,7 @@ mod tests {
         // a 110 kV rule checks none.
         let at = |kv| {
             [ZoneRule {
-                voltage: Some(kv),
+                voltages: vec![kv],
                 ..rule(5.0, &[5])
             }]
         };
@@ -1638,7 +1662,7 @@ mod tests {
         let rows = vec![
             ZoneRule {
                 name: "Trees \"high\"".into(),
-                voltage: Some(220.0),
+                voltages: vec![220.0],
                 cases: vec!["high wind".into(), "max temperature".into()],
                 distance: Requirement::Fixed(4.5),
                 classes: vec![5, 6],
@@ -1648,7 +1672,7 @@ mod tests {
             },
             ZoneRule {
                 name: "Ground points".into(),
-                voltage: None,
+                voltages: Vec::new(),
                 cases: Vec::new(),
                 distance: Requirement::Fixed(3.25),
                 classes: vec![2],
@@ -1659,7 +1683,7 @@ mod tests {
             },
             ZoneRule {
                 name: "Terrain, earth wires".into(),
-                voltage: Some(0.0),
+                voltages: vec![0.0],
                 cases: Vec::new(),
                 distance: Requirement::Fixed(2.0),
                 classes: Vec::new(),
@@ -1733,15 +1757,15 @@ mod tests {
         assert_eq!(RuleSet::parse(&set.to_toml()).unwrap(), set);
         let roles = |r: &str| if r == "building" { vec![6] } else { vec![] };
         let v = from_rule_set(&set, Measure::Vertical, roles, &[0.0, 220.0]);
-        let got: Vec<(Option<f64>, Requirement, Vec<u8>)> = v
+        let got: Vec<(Vec<f64>, Requirement, Vec<u8>)> = v
             .rules
             .iter()
-            .map(|r| (r.voltage, r.distance.clone(), r.classes.clone()))
+            .map(|r| (r.voltages.clone(), r.distance.clone(), r.classes.clone()))
             .collect();
         assert_eq!(
             got,
             vec![(
-                None,
+                Vec::new(),
                 Requirement::ByVoltage(vec![(0.0, 5.0), (150.0, 6.0), (245.0, 6.5)]),
                 vec![6]
             )]
@@ -1768,5 +1792,42 @@ mod tests {
             "{:?}",
             high.notes
         );
+    }
+
+    /// A rule with a table by voltage *and* a filter of several voltages
+    /// (an older file): one window row with those voltages, never one row
+    /// per voltage (2026-10-21); written back the same, and checking only
+    /// the wires of its voltages. A voltage the table does not reach is
+    /// noted and left out of the row.
+    #[test]
+    fn a_rule_of_several_voltages_is_one_row() {
+        let text = r#"
+            format = "ohl-clearance-rules"
+            version = 1
+            [[rule]]
+            name = "Trees"
+            target = "ground"
+            vertical = { by_voltage = [[0, "5 m"], [150, "6 m"], [400, "7 m"]] }
+            voltages = [110, 220, 500]
+        "#;
+        let set = RuleSet::parse(text).unwrap();
+        let v = from_rule_set(&set, Measure::Vertical, |_| vec![], &[0.0, 220.0]);
+        assert_eq!(v.rules.len(), 1);
+        assert_eq!(v.rules[0].voltages, vec![110.0, 220.0]);
+        assert!(v.notes.iter().any(|n| n.contains("500")), "{:?}", v.notes);
+        let back = to_rule_set(
+            "w",
+            &Zone::new(Measure::Vertical),
+            &WindSteps::default(),
+            &CheckScope::default(),
+            &v.rules,
+        );
+        assert_eq!(back.rules.len(), 1);
+        assert_eq!(back.rules[0].voltages, vec![110.0, 220.0]);
+        assert_eq!(back.rules[0].vertical, set.rules[0].vertical);
+        assert!(back.rules[0].checks_voltage(Some(220.0)));
+        assert!(!back.rules[0].checks_voltage(None));
+        assert_eq!(voltages_text(&[110.0, 220.0]), "110 or 220 kV");
+        assert_eq!(voltages_text(&[]), "any voltage");
     }
 }
