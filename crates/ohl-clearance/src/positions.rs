@@ -764,6 +764,50 @@ impl WireShape {
 /// other lines (`tests/arc_band.rs`). Exact: a solve at every pressure.
 pub const BAND_MARGIN: f64 = 0.15;
 
+/// The jumpers' band margin by default, m: **0, no widening** (the
+/// owner's decision of 2026-10-21: a value of its own, entered by the
+/// user for their jumpers; [`crate::rules::WindSteps::jumper_band_margin`],
+/// [`PositionOptions::jumper_band_margin`], [`BandMargins::jumper`]).
+/// **Simplification** (on the user's responsibility; exact: the wind
+/// steps): with 0 a jumper's band ([`jumper_band`]) is *not* conservative
+/// between its blowouts — measured 2026-10-21 with steps of 10 Pa from
+/// both sides on the example line's jumper, a step's centre line lies up
+/// to 0.293 m outside it (high wind, blown right at 230 Pa, inside its
+/// inner radius; `tests/arc_band.rs`). A jumper swings with its clamps
+/// and changes its shape more than a span: the value that holds it is the
+/// user's to find for their jumpers (the wind steps show it).
+pub const JUMPER_BAND_MARGIN: f64 = 0.0;
+
+/// The swing bands' margins, m: the spans' and the jumpers' (2026-10-21,
+/// the owner's decision: separate values). Every distance to a band is
+/// taken this much smaller.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandMargins {
+    /// The spans' bands ([`BAND_MARGIN`] by default).
+    pub span: f64,
+    /// The jumpers' bands ([`JUMPER_BAND_MARGIN`] by default).
+    pub jumper: f64,
+}
+
+impl Default for BandMargins {
+    fn default() -> Self {
+        Self {
+            span: BAND_MARGIN,
+            jumper: JUMPER_BAND_MARGIN,
+        }
+    }
+}
+
+impl BandMargins {
+    /// What is wrong with either margin, if anything: each must be a
+    /// number ≥ 0.
+    pub fn problem(&self) -> Option<String> {
+        crate::rules::band_margin_problem(self.span).or_else(|| {
+            crate::rules::band_margin_problem(self.jumper).map(|e| format!("jumper {e}"))
+        })
+    }
+}
+
 /// The swing arc of a span, a **band** since 2026-10-21: the span
 /// swinging as one about its axis between its left and right blowout,
 /// through its still-air position, at every radius from the smallest to
@@ -1481,10 +1525,14 @@ pub struct PositionOptions {
     /// of its own (section `jumper:<id>`, span 0), its axis from its first
     /// to its last point (its two end clamps as first solved).
     pub jumpers: bool,
-    /// The swing band's margin, m ([`BAND_MARGIN`] by default; the
-    /// user's, 2026-10-21): every distance to a band taken this much
-    /// smaller.
+    /// The spans' swing band margin, m ([`BAND_MARGIN`] by default; the
+    /// user's, 2026-10-21): every distance to a span's band taken this
+    /// much smaller.
     pub band_margin: f64,
+    /// The jumpers' swing band margin, m ([`JUMPER_BAND_MARGIN`], 0, by
+    /// default; the user's, 2026-10-21): every distance to a jumper's
+    /// band taken this much smaller.
+    pub jumper_band_margin: f64,
 }
 
 impl Default for PositionOptions {
@@ -1494,6 +1542,7 @@ impl Default for PositionOptions {
             wind_steps: None,
             jumpers: false,
             band_margin: BAND_MARGIN,
+            jumper_band_margin: JUMPER_BAND_MARGIN,
         }
     }
 }
@@ -1503,7 +1552,8 @@ impl Default for PositionOptions {
 /// span's ([`SwingArc`]), about the axis through its two end clamps — its
 /// first and last points blown to the left (else in still air) —, from
 /// the smallest to the largest radius at each place, widened by the
-/// band's margin `margin` (m). A side not given takes the still air.
+/// jumpers' band margin `margin` (m; [`JUMPER_BAND_MARGIN`], 0, by
+/// default since 2026-10-21: not conservative between the blowouts). A side not given takes the still air.
 /// None when the ends coincide or a position does not run steadily along
 /// the axis (the jumper is then taken at its solved positions).
 pub fn jumper_band(
@@ -1797,7 +1847,7 @@ pub fn solve_positions(
                 // About its end clamps blown to the left: the span's axis
                 // (it was made from that solve, the first).
                 (Some(wl), Some(wr)) if jumper => {
-                    jumper_band(Some(wl), w, Some(wr), options.band_margin)
+                    jumper_band(Some(wl), w, Some(wr), options.jumper_band_margin)
                 }
                 (Some(wl), Some(wr)) => SwingArc::with_margin(
                     axis,

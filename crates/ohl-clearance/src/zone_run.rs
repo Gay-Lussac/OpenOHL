@@ -50,8 +50,9 @@ pub struct ZoneCheckResult {
     pub arcs: Vec<ArcCase>,
     /// The spans' (and jumpers') swing arcs checked (over every case).
     pub arc_spans: usize,
-    /// The swing band's margin, m (none: no arc).
-    pub band_margin: Option<f64>,
+    /// The swing bands' margins, m: the spans' and the jumpers' (none: no
+    /// arc).
+    pub band_margin: Option<crate::positions::BandMargins>,
     /// The sections solved (ids).
     pub sections: Vec<String>,
     /// What was found.
@@ -77,7 +78,8 @@ impl ZoneCheckResult {
 /// ([`solve_states`]; `done` counts them), then checked ([`check_zones`])
 /// against `ground` and the points `points` reads around the wires (within
 /// the zone's search distance, else as far as the rules reach) — with
-/// `arc` (the band's margin, m), each span's swing arc too — and each
+/// `arc` (the bands' margins, m: the spans' and the jumpers'), each
+/// span's swing arc too — and each
 /// jumper's a rule checks, since 2026-10-21 — ([`arc_cases`],
 /// [`zone_arcs`]; the states must hold each windy case's still air, as
 /// [`crate::zone::wind_states`] gives them with the arc on). Stops when
@@ -90,7 +92,7 @@ pub fn run_zone_check(
     check: &CheckScope,
     rules: Vec<ZoneRule>,
     states: Vec<WindState>,
-    arc: Option<f64>,
+    arc: Option<crate::positions::BandMargins>,
     points: Option<&PointReader>,
     ground: Option<&Terrain>,
     sections_scope: Option<&BTreeSet<String>>,
@@ -146,11 +148,11 @@ pub fn run_zone_check(
     } else {
         Vec::new()
     };
-    let margin = arc.unwrap_or(crate::positions::BAND_MARGIN);
-    if let Some(e) = crate::rules::band_margin_problem(margin) {
+    let margins = arc.unwrap_or_default();
+    if let Some(e) = margins.problem() {
         return Err(e);
     }
-    let (arcs, arc_notes) = zone_arcs(line, &solved.shapes, &solved.jumpers, &cases, margin);
+    let (arcs, arc_notes) = zone_arcs(line, &solved.shapes, &solved.jumpers, &cases, margins);
     // Points around the wires at every wind position, within reach.
     let reach = match zone.search {
         Some(d) => d,

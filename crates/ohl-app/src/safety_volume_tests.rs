@@ -343,9 +343,17 @@ fn safety_volumes_by_system() {
     assert_eq!(saved["band_margin"], 0.15);
     let mut old = saved.clone();
     old.as_object_mut().unwrap().remove("band_margin");
+    old.as_object_mut().unwrap().remove("jumper_band_margin");
     let (back, _) = Settings::from_json(&old).unwrap();
     assert_eq!(
         back.steps.band_margin,
+        ohl_clearance::positions::BAND_MARGIN
+    );
+    // The jumpers' own margin (2026-10-21): recorded, default 0; a run
+    // saved before it read as its jumpers were then (the spans' margin).
+    assert_eq!(saved["jumper_band_margin"], 0.0);
+    assert_eq!(
+        back.steps.jumper_band_margin,
         ohl_clearance::positions::BAND_MARGIN
     );
     let mut arc = settings.clone();
@@ -354,7 +362,18 @@ fn safety_volumes_by_system() {
     now.steps.band_margin = 0.3;
     assert_eq!(now.changed_since(&arc).as_deref(), Some("the band margin"));
     assert_eq!(now.changed_since(&settings), None, "no arc: no band");
-    assert_eq!(arc.wind_text(), "swing arc (band margin 0.15 m)");
+    let mut jumper = arc.clone();
+    jumper.steps.jumper_band_margin = 0.35;
+    assert_eq!(
+        jumper.changed_since(&arc).as_deref(),
+        Some("the jumper band margin")
+    );
+    now.steps.jumper_band_margin = 0.35;
+    assert_eq!(now.changed_since(&arc).as_deref(), Some("the band margins"));
+    assert_eq!(
+        arc.wind_text(),
+        "swing arc (band margin 0.15 m, jumpers 0.00 m)"
+    );
     // A run saved before: by circuit, every circuit.
     let mut old = saved.clone();
     old.as_object_mut().unwrap().remove("scope");

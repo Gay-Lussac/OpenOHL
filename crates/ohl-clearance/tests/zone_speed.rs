@@ -252,7 +252,7 @@ fn speed() {
             &solved.shapes,
             &solved.jumpers,
             &cases,
-            wind.band_margin,
+            wind.margins(),
         );
         let arcs_made = t.elapsed();
         for measure in [Measure::Vertical, Measure::Radial] {

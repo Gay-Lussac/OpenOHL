@@ -530,8 +530,9 @@ fn the_jumper_closes_the_gap_at_a_dead_end() {
 /// The example line in high wind, swing arc: the jumper's positions are
 /// taken (blown left and right as solved, and on a swing band of its own
 /// between them through still air, 2026-10-21), and the spans' arcs as
-/// before; every band widened by the margin asked for; the danger trees'
-/// options leave the jumpers out.
+/// before; the spans' bands widened by their margin asked for, the
+/// jumper's by its own (2026-10-21); the danger trees' options leave the
+/// jumpers out.
 #[test]
 fn the_volume_s_positions_include_the_jumpers() {
     let (line, library, cases) = example();
@@ -545,6 +546,7 @@ fn the_volume_s_positions_include_the_jumpers() {
         &windy,
         WindMode::Arc.options(WindSteps {
             band_margin: 0.4,
+            jumper_band_margin: 0.25,
             ..WindSteps::default()
         }),
         &Budget::new(),
@@ -578,7 +580,22 @@ fn the_volume_s_positions_include_the_jumpers() {
         })
         .collect();
     assert!(arcs.len() > 1);
-    assert!(arcs.iter().all(|a| a.margin() == 0.4));
+    // The jumper's band its own margin, every span's the spans'.
+    let jumper_arc = span
+        .positions
+        .iter()
+        .find_map(|&i| match &positions.positions[i].shape {
+            Shape::Arc(a) => Some(a),
+            _ => None,
+        })
+        .expect("the jumper's band");
+    assert_eq!(jumper_arc.margin(), 0.25);
+    assert_eq!(
+        arcs.iter().filter(|a| a.margin() == 0.25).count(),
+        1,
+        "one jumper"
+    );
+    assert!(arcs.iter().all(|a| a.margin() == 0.4 || a.margin() == 0.25));
     let plain = solve_positions(
         &line,
         &library,

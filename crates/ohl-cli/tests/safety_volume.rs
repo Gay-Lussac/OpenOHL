@@ -46,7 +46,11 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
     );
     // Two circuits, 220 kV: 4 m; the band's margin by default.
     assert!(text.contains("Example 1: 220 kV — d 4.00 m"), "{text}");
-    assert!(text.contains("swing arc (band margin 0.15 m)"), "{text}");
+    // The jumpers' own margin (2026-10-21): 0 by default.
+    assert!(
+        text.contains("swing arc (band margin 0.15 m, jumpers 0.00 m)"),
+        "{text}"
+    );
     assert!(text.contains("Branch: 220 kV — d 4.00 m"), "{text}");
     for ext in ["dxf", "prj", "ifc", "kmz"] {
         let f = dir.join(format!("safety-volume.{ext}"));
@@ -87,6 +91,20 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--band-margin"));
+    // A negative jumper band margin: refused too.
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("safety-volume")
+        .arg(ex.join("synthetic-line.ohl.json"))
+        .arg("--weather")
+        .arg(ex.join("weather-cases.ohlwc"))
+        .args(["--cases", "high wind", "--wind", "arc", "--distance", "3"])
+        .args(["--jumper-band-margin=-0.1"])
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--jumper-band-margin"));
     std::fs::remove_dir_all(&dir).ok();
 }
 

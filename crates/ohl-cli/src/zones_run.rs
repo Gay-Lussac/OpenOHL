@@ -116,6 +116,13 @@ pub struct ZonesArgs {
     /// responsibility.
     #[arg(long)]
     pub band_margin: Option<f64>,
+    /// The jumpers' swing band margin, m (the rule file's `[wind]
+    /// jumper_band_margin`; default 0 m, no widening — the jumper's band
+    /// then does not hold it between its blowouts: on the user's
+    /// responsibility, a value to enter for their jumpers; exact: the
+    /// wind steps).
+    #[arg(long)]
+    pub jumper_band_margin: Option<f64>,
     /// Step the wind by this many Pa from 0 up to each case's pressure
     /// (the rule file's `[wind] steps` and `step`).
     #[arg(long)]
@@ -393,6 +400,12 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         }
         wind.band_margin = m;
     }
+    if let Some(m) = args.jumper_band_margin {
+        if let Some(e) = ohl_clearance::rules::band_margin_problem(m) {
+            return Err(format!("--jumper-band-margin: {e}"));
+        }
+        wind.jumper_band_margin = m;
+    }
     if let Some(step) = args.wind_step {
         if !(step.is_finite() && step > 0.0) {
             return Err("--wind-step must be > 0 Pa".into());
@@ -511,7 +524,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         &check,
         rules,
         states,
-        wind.arc.then_some(wind.band_margin),
+        wind.arc.then_some(wind.margins()),
         cloud.is_some().then_some(&read as _),
         ground.as_ref().map(|(t, _)| t),
         None,
@@ -540,14 +553,17 @@ fn describe_check(z: &Zone, wind: &WindSteps, check: &ohl_clearance::CheckScope)
         ohl_clearance::WindSides::Left => "the left",
         ohl_clearance::WindSides::Right => "the right",
     };
-    let margin = wind.band_margin;
+    let margin = format!(
+        "band margin {} m, jumpers {} m",
+        wind.band_margin, wind.jumper_band_margin
+    );
     parts.push(if wind.stepped && wind.arc {
         format!(
-            "wind stepped by {} Pa from {sides}, and the swing arc (band margin {margin} m)",
+            "wind stepped by {} Pa from {sides}, and the swing arc ({margin})",
             wind.step
         )
     } else if wind.arc {
-        format!("the cases' wind from {sides} and the swing arc (band margin {margin} m)")
+        format!("the cases' wind from {sides} and the swing arc ({margin})")
     } else if wind.stepped {
         format!("wind stepped by {} Pa from {sides}", wind.step)
     } else {

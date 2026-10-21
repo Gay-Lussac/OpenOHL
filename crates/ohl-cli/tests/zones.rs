@@ -306,17 +306,28 @@ fn exit_codes() {
             "--swing-arc",
             "--band-margin",
             "0.3",
+            "--jumper-band-margin",
+            "0.35",
         ]))
         .output()
         .unwrap();
     let said = String::from_utf8_lossy(&arc.stdout);
-    assert!(said.contains("swing arc (band margin 0.3 m)"), "{said}");
+    assert!(
+        said.contains("swing arc (band margin 0.3 m, jumpers 0.35 m)"),
+        "{said}"
+    );
     let refused = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .args(args(&["--measure", "radial", "--band-margin=-1"]))
         .output()
         .unwrap();
     assert_eq!(refused.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--band-margin"));
+    let refused = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(args(&["--measure", "radial", "--jumper-band-margin=-1"]))
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--jumper-band-margin"));
     // No weather case file: an error.
     let none = ohl(&["zones", &text(&line), "--rules", &text(&kept)]);
     assert_eq!(none.status.code(), Some(2));

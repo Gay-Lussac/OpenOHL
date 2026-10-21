@@ -277,6 +277,7 @@ impl Settings {
             "search_distance": self.search,
             "swing_arc": self.arc,
             "band_margin": self.steps.band_margin,
+            "jumper_band_margin": self.steps.jumper_band_margin,
             "wind_steps": self.steps.stepped,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
@@ -363,6 +364,9 @@ impl Settings {
                     arc: false,
                     // Runs saved before 2026-10-21: the margin then fixed.
                     band_margin: num("band_margin", d.steps.band_margin),
+                    // Not used by the danger-tree check (no jumpers); kept
+                    // as the shared wind choice gives it.
+                    jumper_band_margin: num("jumper_band_margin", d.steps.jumper_band_margin),
                 },
                 ice: (
                     Ice::parse(
@@ -796,6 +800,7 @@ impl VegetationWindow {
             wind_steps: settings.steps.stepped.then_some(settings.steps),
             jumpers: false,
             band_margin: settings.steps.band_margin,
+            ..PositionOptions::default()
         };
         let ice = match settings.ice.0 {
             Ice::Off => None,
@@ -934,27 +939,31 @@ impl VegetationWindow {
         let (report, params) = saved::read(r)?;
         // What changed since: the line by its fingerprints, the points by
         // their state, the ground by its source.
-        let mut what = Vec::new();
+        let mut what: Vec<String> = Vec::new();
         if let Some(s) = model.session() {
             if let Ok(now) = s.check_state()
                 && !reports::changed_since(&r.state, &now).is_empty()
             {
-                what.push("the line");
+                what.push("the line".into());
             }
             if params.get("points_state").and_then(Value::as_str) != Some(&s.points_state()) {
-                what.push("the LiDAR points");
+                what.push("the LiDAR points".into());
             }
         }
         if params.get("ground").and_then(Value::as_str) != Some(&ground_key(model)) {
-            what.push("the ground");
+            what.push("the ground".into());
         }
+        // The ice and wind per stretched or unstretched metre (2026-10-21).
+        what.extend(crate::revision::saved_loads_per_changed(&params, model));
         self.saved_stale = match what.as_slice() {
             [] => None,
-            [one] => Some((*one).to_owned()),
+            [one] => Some(one.clone()),
             [first @ .., last] => Some(format!("{} and {last}", first.join(", "))),
         };
         // Unchanged: tracked from now on, as a run.
-        self.job.stamp.set(model.revision());
+        self.job
+            .stamp
+            .set(crate::revision::saved_revision(&params, model));
         self.settings = report.settings.clone();
         self.cases = report
             .cases
@@ -980,6 +989,8 @@ impl VegetationWindow {
         parameters["points_state"] = json!(s.points_state());
         parameters["ground"] = json!(ground_key(model));
         parameters["version"] = json!(SAVED_VERSION);
+        // The ice and wind per stretched or unstretched metre (2026-10-21).
+        parameters["loads_per"] = json!(self.job.stamp.loads_per(model).as_str());
         let (enc, fall) = report
             .spans
             .iter()
@@ -1205,6 +1216,12 @@ impl VegetationWindow {
                 if w.band_margin != ohl_clearance::positions::BAND_MARGIN {
                     rows.push(("band margin, m".into(), format!("{}", w.band_margin)));
                 }
+                if w.jumper_band_margin != ohl_clearance::positions::JUMPER_BAND_MARGIN {
+                    rows.push((
+                        "jumper band margin, m (no jumpers here)".into(),
+                        format!("{}", w.jumper_band_margin),
+                    ));
+                }
             }
             if let Some(a) = v.swing_arc {
                 rows.push(("swing arc".into(), if a { "yes" } else { "no" }.into()));
@@ -1317,7 +1334,8 @@ impl VegetationWindow {
                     arc: s.arc,
                     ..s.steps
                 };
-                help::wind_choice(ui, "vegetation", &mut wind, false, full);
+                // The danger-tree check leaves the jumpers out: their margin greyed.
+                help::wind_choice(ui, "vegetation", &mut wind, false, full, false);
                 s.arc = wind.arc;
                 s.steps = WindSteps { arc: false, ..wind };
                 ui.horizontal(|ui| {
@@ -2058,8 +2076,10 @@ pub mod saved {
                 ..Settings::default()
             };
             s.steps.band_margin = 0.3;
+            s.steps.jumper_band_margin = 0.2;
             let v = s.to_json(&["high wind".into()]);
             assert_eq!(v["band_margin"], 0.3);
+            assert_eq!(v["jumper_band_margin"], 0.2);
             let (back, _) = Settings::from_json(&v).unwrap();
             assert_eq!(back, s);
             let mut old = v.clone();
