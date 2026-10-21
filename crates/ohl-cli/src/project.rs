@@ -97,7 +97,7 @@ pub enum ProjectCommand {
         /// Wire library for --solve (default: the shipped libraries/cables).
         #[arg(long)]
         library: Option<PathBuf>,
-        /// Cable temperature for --solve, °C.
+        /// Wire temperature for --solve, °C.
         #[arg(long, default_value_t = 15.0)]
         temperature: f64,
     },
@@ -532,7 +532,7 @@ pub struct Libraries {
     pub structures: PathBuf,
     /// Insulator assembly folder.
     pub insulators: PathBuf,
-    /// Section library, if any.
+    /// Cross-cross-section library, if any.
     pub sections: Option<PathBuf>,
     /// Where each came from, one line per kind: "cables: the project's
     /// (2 files)".

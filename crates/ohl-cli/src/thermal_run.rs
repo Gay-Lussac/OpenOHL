@@ -34,8 +34,8 @@ pub struct AmpacityArgs {
     /// libraries/cables).
     #[arg(long)]
     library: Option<PathBuf>,
-    /// Cable id.
-    #[arg(long)]
+    /// Wire type id (`--cable` is still read).
+    #[arg(long = "wire-type", alias = "cable")]
     cable: String,
     /// Ambient cases (.ohlta).
     #[arg(long)]
@@ -66,7 +66,7 @@ pub struct AmpacityArgs {
     time_step: Option<f64>,
     /// Default values (.ohldef, Criteria › Default values exported):
     /// emissivity, absorptivity, roughness, albedo and time step where the
-    /// cable or the case gives none (default: the program's).
+    /// wire type or the case gives none (default: the program's).
     #[arg(long)]
     defaults: Option<PathBuf>,
     /// Print the transient every this many seconds.
@@ -118,7 +118,7 @@ pub struct LimitArgs {
     /// Required vertical ground clearance, m (adds a ground rule).
     #[arg(long)]
     clearance: Option<f64>,
-    /// Survey points (CSV / XYZ) for the ground surface.
+    /// Survey points (CSV / XYZ) for the terrain surface.
     #[arg(long)]
     terrain: Option<PathBuf>,
     /// LiDAR tiles (LAS/LAZ file or directory).
@@ -130,13 +130,13 @@ pub struct LimitArgs {
     /// Class scheme (.ohlc) of the LiDAR; default ASPRS LAS 1.4.
     #[arg(long)]
     lidar_classes: Option<PathBuf>,
-    /// Role of the classes that make the ground surface.
+    /// Role of the classes that make the terrain surface.
     #[arg(long, default_value = "ground")]
     ground_role: String,
     /// Half width of the LiDAR corridor around the spans, m.
     #[arg(long, default_value_t = 60.0)]
     corridor: f64,
-    /// Longest triangle side of the LiDAR ground surface, m.
+    /// Longest triangle side of the LiDAR terrain surface, m.
     #[arg(long, default_value_t = 50.0)]
     max_edge: f64,
     /// Thin the LiDAR ground points: lowest point per cell of this size, m.
@@ -201,7 +201,7 @@ fn ampacity(a: &AmpacityArgs) -> Result<(), String> {
     let library = ohl_cables::Library::load(&library_path).map_err(|e| e.to_string())?;
     let cable = library
         .get(&a.cable)
-        .ok_or_else(|| format!("cable {} is not in {}", a.cable, library_path.display()))?;
+        .ok_or_else(|| format!("wire type {} is not in {}", a.cable, library_path.display()))?;
     let defaults = match &a.defaults {
         Some(p) => std::fs::read_to_string(p)
             .map_err(|e| format!("{}: {e}", p.display()))
@@ -520,6 +520,34 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The wire type is given with `--wire-type`; `--cable`, its name
+    /// before the glossary (2026-10-21), is still read.
+    #[test]
+    fn wire_type_flag_and_its_older_name() {
+        #[derive(clap::Parser)]
+        struct Cli {
+            #[command(subcommand)]
+            command: ThermalCommand,
+        }
+        for flag in ["--wire-type", "--cable"] {
+            let cli = <Cli as clap::Parser>::try_parse_from([
+                "ohl",
+                "ampacity",
+                flag,
+                "acsr-x",
+                "--ambient",
+                "a.ohlta",
+                "--max-temp",
+                "80",
+            ])
+            .unwrap();
+            let ThermalCommand::Ampacity(args) = cli.command else {
+                panic!("not ampacity");
+            };
+            assert_eq!(args.cable, "acsr-x", "{flag}");
+        }
+    }
     use super::*;
 
     fn root() -> PathBuf {

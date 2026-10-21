@@ -7,7 +7,7 @@
 //! ([`ohl_clearance::zone::run_zone_check`]): the zone, the rules, the
 //! wind and what is solved come from a rule file (`.ohlr`, its `[check]`
 //! and `[wind]`), the targets from the project — its point cloud and its
-//! ground surface — or from files given.
+//! terrain surface — or from files given.
 //!
 //! Exit status: 0 with no violation, 1 with violations, 2 on an error.
 
@@ -66,7 +66,7 @@ pub struct ZonesArgs {
     /// Read no point cloud (the ground only).
     #[arg(long, conflicts_with = "cloud")]
     pub no_cloud: bool,
-    /// Survey points (CSV / XYZ) for the ground surface (default: the
+    /// Survey points (CSV / XYZ) for the terrain surface (default: the
     /// project's surface of the checks, else its active surface, else the
     /// ground classes of the point cloud).
     #[arg(long)]
@@ -581,7 +581,7 @@ fn target_name(class: Option<u8>, scheme: &ohl_lidar::ClassScheme) -> String {
 }
 
 /// The findings: the violations (worst first), then each rule's lowest
-/// clearance that keeps its requirement — `(status, finding)`.
+/// clearance that keeps its required clearance — `(status, finding)`.
 fn rows(r: &ZoneCheckResult) -> Vec<(&'static str, &ZoneFinding)> {
     let mut out: Vec<(&'static str, &ZoneFinding)> =
         r.zone.findings.iter().map(|f| ("violation", f)).collect();
@@ -780,7 +780,7 @@ pub fn nothing_within_reach(rows: &[(&str, Option<f64>)], notes: &[String]) -> V
 pub const CSV_HEADER: &str = "status,rule,section,span,case,wind_pa,wind_from,target,class,clearance_m,required_m,count,wire_x,wire_y,wire_z,target_x,target_y,target_z,arc_deg\n";
 
 /// Every finding as CSV: the violations, then each rule's lowest clearance
-/// that keeps its requirement (`status` ok).
+/// that keeps its required clearance (`status` ok).
 pub fn csv(r: &ZoneCheckResult, scheme: &ohl_lidar::ClassScheme) -> String {
     let mut out = String::from(CSV_HEADER);
     for (status, f) in rows(r) {

@@ -83,7 +83,7 @@ are errors (a typo never goes unnoticed).
 Ampacity at a maximum temperature, per ambient case:
 
 ```bash
-ohl thermal ampacity --cable acsr-drake-26-7 \
+ohl thermal ampacity --wire-type acsr-drake-26-7 \
     --ambient examples/synthetic-line/thermal-ambient.ohlta --max-temp 80
 ```
 

@@ -28,7 +28,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Job {
-    /// Cable id in the library.
+    /// Wire type id in the library.
     cable: String,
     /// Wire library (`.ohlw` file or directory), relative to the job file (default: the shipped
     /// `libraries/cables`).
@@ -48,7 +48,7 @@ struct Job {
     final_conditions: Option<FinalInput>,
 }
 
-/// Cases defining the final condition of a non-linear cable.
+/// Cases defining the final condition of a non-linear wire.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FinalInput {
@@ -479,7 +479,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let library = Library::load(&library_dir).map_err(|e| e.to_string())?;
     let cable = library.get(&job.cable).ok_or_else(|| {
         format!(
-            "cable \"{}\" not found in {}",
+            "wire type \"{}\" not found in {}",
             job.cable,
             library_dir.display()
         )
@@ -506,7 +506,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
 
     let mut out = String::new();
     let _ = writeln!(out, "OpenOHL sag-tension — {}", path.display());
-    let _ = writeln!(out, "Cable: {} ({})", cable.name, cable.id);
+    let _ = writeln!(out, "Wire type: {} ({})", cable.name, cable.id);
     let _ = writeln!(
         out,
         "  EA {:.2} MN, α {:.2e} /K, RTS {}, weight {} at {} (data sheet), {} at stringing ({})",
@@ -703,7 +703,7 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let _ = writeln!(
         out,
         "\nModel: exact catenary, equal horizontal tension in the section; weather table and criteria use the\n\
-         linear-elastic cable (non-linear curves, when the cable has them, are reported separately above).\n\
+         linear-elastic wire (non-linear curves, when the wire type has them, are reported separately above).\n\
          Wind and ice use the resultant load in the span plane."
     );
     Ok(JobOutput {

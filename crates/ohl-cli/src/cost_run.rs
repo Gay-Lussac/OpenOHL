@@ -46,7 +46,7 @@ pub struct SpotArgs {
     /// Route id (see ohl line --stations); default: the first route.
     #[arg(long)]
     route: Option<String>,
-    /// Survey points (CSV / XYZ) for the ground surface.
+    /// Survey points (CSV / XYZ) for the terrain surface.
     #[arg(long)]
     terrain: PathBuf,
     /// Structure type directory (.ohls): the candidates are the types (and
@@ -62,8 +62,8 @@ pub struct SpotArgs {
     /// Unit costs (.ohlcost).
     #[arg(long)]
     cost: PathBuf,
-    /// Cable id of the wire whose clearance is kept.
-    #[arg(long)]
+    /// Wire type id of the wire whose clearance is kept (`--cable` is still read).
+    #[arg(long = "wire-type", alias = "cable")]
     cable: String,
     /// Horizontal tension of the wire in the design (maximum sag)
     /// condition, kN.
@@ -212,7 +212,7 @@ pub fn spot(args: &SpotArgs) -> Result<(), String> {
         &line, &terrain, &types, &ins, &library, &cost, &options,
     )?;
     println!(
-        "route {}: {:.1} m, {} candidates, {} angle point(s)",
+        "route {}: {:.1} m, {} candidates, {} alignment point(s)",
         rp.route.id,
         rp.problem.ground.last().map_or(0.0, |g| g[0]),
         rp.problem.candidates.len(),

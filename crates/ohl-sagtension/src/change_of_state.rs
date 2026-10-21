@@ -168,7 +168,7 @@ pub(crate) fn span_at(
         let next = stretch(&solution)?;
         if !(next.is_finite() && next > 0.0) {
             return Err(SagTensionError::InvalidInput(format!(
-                "stretch {next} of the cable is not positive"
+                "stretch {next} of the wire is not positive"
             )));
         }
         if state.weight.si() == 0.0 || (next - k).abs() <= 4.0 * f64::EPSILON * next {
@@ -177,7 +177,7 @@ pub(crate) fn span_at(
         k = next;
     }
     Err(SagTensionError::InvalidInput(format!(
-        "the stretch of the cable (its own weight spread over it) did not settle in \
+        "the stretch of the wire (its own weight spread over it) did not settle in \
          {STRETCH_PASSES} passes at H = {h:.3} N"
     )))
 }

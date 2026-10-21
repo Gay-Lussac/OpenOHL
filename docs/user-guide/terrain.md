@@ -177,7 +177,7 @@ With several weather cases (`--weather`), each case is reported in turn, then th
 ```text
 envelope over 3 weather cases (glaze ice, max temperature, rime ice + wind) and 1 case pairs (glaze ice × max temperature):
   rule "Ground": lowest vertical 4.64 m (S2 span 1, max temperature); lowest radial 4.63 m (S2 span 1, max temperature)
-    below the requirement in some case: 1
+    below the required clearance in some case: 1
       S2 span 1: vertical 4.64 m (max temperature), radial 4.63 m (max temperature) — in: glaze ice, max temperature
 ```
 

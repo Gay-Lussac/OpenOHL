@@ -307,7 +307,7 @@ pub fn from_rule_set(
             }
             if rows.is_empty() {
                 out.notes
-                    .push(note("left out: no requirement for its voltages"));
+                    .push(note("left out: no required clearance for its voltages"));
             }
             rows
         };
@@ -916,7 +916,7 @@ pub fn check_zones(
                 None => {
                     report
                         .notes
-                        .push(format!("\"{}\": no ground surface", rules[p.rule].name));
+                        .push(format!("\"{}\": no terrain surface", rules[p.rule].name));
                     continue;
                 }
             },

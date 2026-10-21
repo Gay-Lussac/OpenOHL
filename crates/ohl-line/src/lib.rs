@@ -1781,7 +1781,7 @@ pub const DEFAULT_FIELDS: &[DefaultField] = &[
         true,
         1.0,
         "jumper stiffness factor",
-        "A jumper's estimated bending stiffness: this share of its cable's solid-bar stiffness (a jumper giving no EI nor factor)"
+        "A jumper's estimated bending stiffness: this share of its wire's solid-bar stiffness (a jumper giving no EI nor factor)"
     ),
     default_field!(
         "jumper",
@@ -1825,7 +1825,7 @@ pub const DEFAULT_FIELDS: &[DefaultField] = &[
         false,
         1.0,
         "emissivity",
-        "A conductor's emissivity, when neither its cable nor the ambient case gives one"
+        "A conductor's emissivity, when neither its wire type nor the ambient case gives one"
     ),
     default_field!(
         "thermal",
@@ -1836,7 +1836,7 @@ pub const DEFAULT_FIELDS: &[DefaultField] = &[
         false,
         1.0,
         "solar absorptivity",
-        "A conductor's solar absorptivity, when neither its cable nor the ambient case gives one"
+        "A conductor's solar absorptivity, when neither its wire type nor the ambient case gives one"
     ),
     default_field!(
         "thermal",

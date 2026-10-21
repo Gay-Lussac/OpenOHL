@@ -230,12 +230,12 @@ struct LineArgs {
     /// the program).
     #[arg(long)]
     library: Option<PathBuf>,
-    /// Structure type directory (.ohls pylon files), for typed structures
+    /// Structure type directory (.ohls structure files), for typed structures
     /// (default: a project's own, else the `Structures` folder next to the
     /// line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
-    /// Section library (.ohlsec file or folder) the structure models'
+    /// Cross-cross-section library (.ohlsec file or folder) the structure models'
     /// members refer to (default: a project's own, else the `Sections`
     /// folder next to the line or project file, if there is one).
     #[arg(long)]
@@ -244,7 +244,7 @@ struct LineArgs {
     /// own, else the shipped libraries/insulators).
     #[arg(long)]
     insulators: Option<PathBuf>,
-    /// Cable temperature, °C.
+    /// Wire temperature, °C.
     #[arg(long, default_value_t = 15.0)]
     temperature: f64,
     /// Wind pressure on the wires, Pa (perpendicular to each span).
@@ -301,11 +301,11 @@ struct LineArgs {
     /// Print stationing, offsets and line angles of every route.
     #[arg(long)]
     stations: bool,
-    /// Survey points (CSV / XYZ) for the ground surface: enables the
+    /// Survey points (CSV / XYZ) for the terrain surface: enables the
     /// ground clearance check and draws the ground in the viewer.
     #[arg(long)]
     terrain: Option<PathBuf>,
-    /// LiDAR tiles (LAS/LAZ file or directory): ground surface built from
+    /// LiDAR tiles (LAS/LAZ file or directory): terrain surface built from
     /// the classes with the ground role, inside a corridor along the spans.
     #[arg(long, conflicts_with = "terrain")]
     lidar: Option<PathBuf>,
@@ -318,13 +318,13 @@ struct LineArgs {
     /// Class scheme (.ohlc) of the LiDAR; default ASPRS LAS 1.4.
     #[arg(long)]
     lidar_classes: Option<PathBuf>,
-    /// Role of the classes that make the ground surface.
+    /// Role of the classes that make the terrain surface.
     #[arg(long, default_value = "ground")]
     ground_role: String,
     /// Half width of the LiDAR corridor around the spans, m.
     #[arg(long, default_value_t = 60.0)]
     corridor: f64,
-    /// Longest triangle side of the LiDAR ground surface, m (no ground is
+    /// Longest triangle side of the LiDAR terrain surface, m (no ground is
     /// invented across larger gaps).
     #[arg(long, default_value_t = 50.0)]
     max_edge: f64,
@@ -654,11 +654,11 @@ enum StructuresCommand {
         /// Line file (.ohl.json).
         file: PathBuf,
         /// Output directory (created): structures/, insulators/, typed line;
-        /// with --inline-strings: the project folder, pylon files go to its
+        /// with --inline-strings: the project folder, structure files go to its
         /// Structures/ folder.
         #[arg(long)]
         out: PathBuf,
-        /// Write simple pylon files: the strings in each structure type
+        /// Write simple structure files: the strings in each structure type
         /// (length, weight, top and bottom labels), no insulator library.
         #[arg(long)]
         inline_strings: bool,
@@ -1943,7 +1943,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             out: dir.clone(),
         });
         // Structures at levels 2 and 3: their members on their own layer
-        // (profiles from the section library the checks read).
+        // (profiles from the cross-section library the checks read).
         let bodies = if legacy.is_some() || drawing_spec.is_some() {
             let sections = match sections_arg
                 .clone()
@@ -1952,7 +1952,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 // Drawn only: a library that does not read leaves models
                 // naming its sections unread (their members not drawn).
                 Some(p) => ohl_sections::SectionLibrary::load(&p).unwrap_or_else(|e| {
-                    eprintln!("warning: section library not read for the drawings: {e}");
+                    eprintln!("warning: cross-section library not read for the drawings: {e}");
                     ohl_sections::SectionLibrary::default()
                 }),
                 None => ohl_sections::SectionLibrary::default(),
@@ -2406,7 +2406,7 @@ fn structures_derive(file: &std::path::Path, out: &std::path::Path, inline: bool
         );
         if inline {
             println!(
-                "Note: one simple pylon file per type in {}; string weights come from the line when given; labels A<set>-<phase> (top) and W<set>-<phase> (bottom) can be renamed.",
+                "Note: one simple structure file per type in {}; string weights come from the line when given; labels A<set>-<phase> (top) and W<set>-<phase> (bottom) can be renamed.",
                 sdir.display()
             );
         } else {

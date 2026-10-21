@@ -5,7 +5,7 @@
 //! Clearance checks of `ohl line`, for one or several weather cases.
 //!
 //! [`prepare`] runs once: rules (from a file, and `--clearance` as a
-//! vertical ground rule), the class scheme, the ground surface (survey,
+//! vertical ground rule), the class scheme, the terrain surface (survey,
 //! LiDAR tiles or a project's point cloud), the points of the classes the
 //! rules need inside a corridor around the line's spans (kept in memory as
 //! whole millimetres, exact for LiDAR), and the other lines. [`check`] then
@@ -49,7 +49,7 @@ pub struct Options<'a> {
 pub struct Prepared {
     rules: Vec<Rule>,
     scheme: ohl_lidar::ClassScheme,
-    /// Ground surface, if any.
+    /// Terrain surface, if any.
     pub ground: Option<Terrain>,
     /// Points of the point rules' classes: millimetres from `origin`, class.
     points: Vec<([i32; 3], u8)>,
@@ -435,7 +435,7 @@ fn report_pairs(
         lowest(pairs.iter().map(|p| &p.result))
     );
     let bad: Vec<&PairResult> = pairs.iter().filter(|p| p.result.violates()).collect();
-    println!("  pairs below the requirement: {}", bad.len());
+    println!("  pairs below the required clearance: {}", bad.len());
     for pr in bad.iter().take(20) {
         println!(
             "    {:<24} – {:<24} {}",
@@ -571,7 +571,7 @@ pub fn check(
                     };
                     key(x.1).total_cmp(&key(y.1))
                 });
-                println!("  wires below the requirement: {}", bad.len());
+                println!("  wires below the required clearance: {}", bad.len());
                 for (w, r) in bad.iter().take(20) {
                     println!("    {:<24} {}", wire_name(&wires[*w]), describe(r));
                 }
@@ -685,7 +685,7 @@ pub fn cross_cases(
 }
 
 /// The envelope over all cases: per rule the lowest clearances with the
-/// governing case, and every wire (pair) below a requirement in any case.
+/// governing case, and every wire (pair) below a required clearance in any case.
 pub fn envelope_report(p: &Prepared, env: &ohl_clearance::Envelope, csv: &mut String) {
     let (pairs, cases): (Vec<&String>, Vec<&String>) =
         env.cases().iter().partition(|c| c.contains(" × "));
@@ -727,7 +727,10 @@ pub fn envelope_report(p: &Prepared, env: &ohl_clearance::Envelope, csv: &mut St
         }
         println!("  rule \"{}\": {}", rule.name, parts.join("; "));
         let bad = env.violations(ri);
-        println!("    below the requirement in some case: {}", bad.len());
+        println!(
+            "    below the required clearance in some case: {}",
+            bad.len()
+        );
         for e in bad.iter().take(20) {
             let measure = |m: &Option<(ohl_clearance::Hit, String)>, what: &str| {
                 m.as_ref()

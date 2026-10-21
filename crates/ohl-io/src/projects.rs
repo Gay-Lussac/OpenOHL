@@ -52,7 +52,7 @@ impl ImportedProject {
             }
             let Some(cable) = library.get(&s.cable) else {
                 failed.push(format!(
-                    "{}: cable {} not in the wire library",
+                    "{}: wire type {} not in the wire library",
                     s.id, s.cable
                 ));
                 continue;

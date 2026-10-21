@@ -201,7 +201,7 @@ pub fn route_problem(
     }
     let cable = cables
         .get(&options.cable)
-        .ok_or_else(|| format!("cable {} not in the wire library", options.cable))?;
+        .ok_or_else(|| format!("wire type {} not in the wire library", options.cable))?;
     let found = candidates(types, insulators, cost, &mut notes);
     if found.is_empty() {
         return Err("no structure type has a price in the cost file".into());
@@ -212,7 +212,7 @@ pub fn route_problem(
     let cable_price = cost.cable(&options.cable).map_or_else(
         || {
             notes.push(format!(
-                "cable {}: no price, wire not costed",
+                "wire type {}: no price, wire not costed",
                 options.cable
             ));
             0.0

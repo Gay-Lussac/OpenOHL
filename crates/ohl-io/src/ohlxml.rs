@@ -1370,7 +1370,11 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 legs: match legs.len() {
                     0 => None,
                     2 => Some([legs[0], legs[1]]),
-                    n => return Err(format!("structure {id}: {n} legs (a V-string has 2)")),
+                    n => {
+                        return Err(format!(
+                            "structure {id}: {n} legs (two strings to one wire point: 2)"
+                        ));
+                    }
                 },
                 top_label: owned(a, "top_label").unwrap_or_default(),
                 bottom_label: owned(a, "bottom_label").unwrap_or_default(),

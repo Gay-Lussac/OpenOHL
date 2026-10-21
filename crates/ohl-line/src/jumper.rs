@@ -1406,7 +1406,7 @@ pub fn solve_jumper_in(
     if taut && (!jumper.supports().is_empty() || !jumper.points.is_empty()) {
         return Err(invalid(format!(
             "taut: {l0:.2} m long between clamps {:.2} m apart in this weather case, with \
-             helping strings or points along it (a taut jumper is solved as a plain cable)",
+             helping strings or points along it (a taut jumper is solved as a plain wire)",
             d.norm()
         )));
     }
@@ -1747,7 +1747,7 @@ pub fn solve_one_jumper_in(
 ) -> Result<JumperShape, LineError> {
     let cable = library.get(&jumper.cable).ok_or_else(|| {
         LineError::Invalid(format!(
-            "jumper {}: cable \"{}\" not in the libraries",
+            "jumper {}: wire type \"{}\" not in the libraries",
             jumper.id, jumper.cable
         ))
     })?;

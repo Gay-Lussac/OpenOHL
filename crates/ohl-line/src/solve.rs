@@ -2767,7 +2767,7 @@ pub fn solve_one(
 ) -> Result<SectionShape, LineError> {
     let cable = library.get(&section.cable).ok_or_else(|| {
         LineError::Invalid(format!(
-            "section {}: cable {} is not in the wire library",
+            "section {}: wire type {} is not in the wire library",
             section.id, section.cable
         ))
     })?;
@@ -3089,7 +3089,7 @@ fn cable_of<'a>(
 ) -> Result<&'a Cable, LineError> {
     library.get(&section.cable).ok_or_else(|| {
         LineError::Invalid(format!(
-            "section {}: cable \"{}\" not in the libraries",
+            "section {}: wire type \"{}\" not in the libraries",
             section.id, section.cable
         ))
     })
@@ -3213,7 +3213,7 @@ pub fn solve_spacer_group(
         fail(
             results,
             format!(
-                "section {}: spacers on a section sharing an assembly (a TAK) are not supported yet",
+                "section {}: spacers on a section sharing an assembly are not supported yet",
                 line.sections[k].id
             ),
         );

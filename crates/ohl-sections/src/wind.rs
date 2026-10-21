@@ -133,7 +133,7 @@ impl StructureWind {
     /// section library".
     pub fn source_name(&self) -> &str {
         if self.source.trim().is_empty() {
-            "the section library's [wind]"
+            "the cross-section library's [wind]"
         } else {
             &self.source
         }

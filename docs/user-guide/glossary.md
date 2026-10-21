@@ -142,7 +142,7 @@ LWL-Erdseil; Bündelleiter, Teilleiter.
 **Wire type** — a library entry of the **wire library** (`.ohlw`): its
 stranding, diameter, mass, modulus, expansion and the data sheet's values.
 *Replaces:* cable, cable file. *German:* Seiltyp. *In files:* `cable`
-(sections, jumpers), the folder `cables/`, `--cable` (unchanged).
+(sections, jumpers), the folder `cables/`; on the command line `--wire-type` (`--cable` still read).
 
 **Wire condition** — the state the wire is solved in: initial, after
 creep, after load (or the larger sag of the two). Not a case.

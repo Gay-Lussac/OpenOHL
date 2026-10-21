@@ -258,9 +258,11 @@ impl Pole {
             p.density.map(|d| d.si()),
         );
         if let Some(sid) = &p.section {
-            let s = library
-                .section(sid)
-                .ok_or_else(|| bad(format!("section {sid} is not in the section library")))?;
+            let s = library.section(sid).ok_or_else(|| {
+                bad(format!(
+                    "cross-section {sid} is not in the cross-section library"
+                ))
+            })?;
             let t = match (&s.shape, p.polygon_sides()) {
                 (ohl_sections::Shape::PolygonalHollow { sides, t, .. }, Some(n)) if *sides == n => {
                     *t
