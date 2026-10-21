@@ -350,8 +350,8 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
         Some((0, 1))
     );
     // The preview.
-    h.get_by_label_contains("weather case \"max temperature\": exists");
-    h.get_by_label_contains("weather case \"Test warm wind\": will be created");
+    h.get_by_label_contains("weather case \"max temperature\": uses your case \"max temperature\"");
+    h.get_by_label_contains("weather case \"Test warm wind\": creates \"Test warm wind\"");
     assert!(h.query_all_by_label_contains("42").count() >= 1);
     h.get_by_label("Apply preset").click();
     h.run_steps(3);
@@ -394,5 +394,136 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
             .any(|c| c.case.name == "Test warm wind")
     );
     assert_eq!(r.model.session().unwrap().log().unwrap().len(), entries + 1);
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+/// A vegetation preset whose cases the project has under other names
+/// (owner, 2026-10-21): "Utility vegetation 80 °C" is the project's "max
+/// temperature" (80 °C, still air) — used and ticked, nothing created;
+/// its "everyday" (20 °C) is not the project's (10 °C) — created as
+/// "everyday (preset)", the preview saying so. Undo takes everything
+/// back.
+#[test]
+fn a_preset_uses_the_projects_cases_of_the_same_weather() {
+    let (file, mut h) = opened("veg-preset-same");
+    let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n\
+                 [vegetation]\nclasses = [5]\n";
+    let cases = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                 [[case]]\nname = \"Utility vegetation 80 °C\"\ntemperature = \"80 °C\"\n\
+                 [[case]]\nname = \"everyday\"\ntemperature = \"20 °C\"\n";
+    {
+        let r = h.state_mut().ready().unwrap();
+        let w = &mut r.rule_editor.presets;
+        w.list = vec![crate::rule_editor::PluginPresets {
+            plugin: "code-a".into(),
+            presets: ohl_io::codes::check_rule_presets(
+                "code-a",
+                vec![ohl_plugins::RulePreset {
+                    name: "trees".into(),
+                    description: "invented test values".into(),
+                    rules: rules.into(),
+                    weather_cases: cases.into(),
+                }],
+            ),
+        }];
+        w.asked = true;
+        r.vegetation.preset = Some((0, 0));
+    }
+    h.run_steps(2);
+    let (names, entries) = {
+        let r = h.state_mut().ready().unwrap();
+        let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+        (names, r.model.session().unwrap().log().unwrap().len())
+    };
+    h.get_by_label_contains(
+        "weather case \"Utility vegetation 80 °C\": uses your case \"max temperature\"",
+    );
+    h.get_by_label_contains(
+        "weather case \"everyday\": creates \"everyday (preset)\" (your \"everyday\" has other",
+    );
+    h.get_by_label("Apply preset").click();
+    h.run_steps(3);
+    let steps = {
+        let r = h.state_mut().ready().unwrap();
+        let now: Vec<&str> = r.model.cases.iter().map(|c| c.case.name.as_str()).collect();
+        assert_eq!(now.len(), names.len() + 1, "{now:?}");
+        assert!(!now.contains(&"Utility vegetation 80 °C"), "{now:?}");
+        let ticked: Vec<&str> = r
+            .vegetation
+            .cases
+            .iter()
+            .map(|&k| r.model.cases[k].case.name.as_str())
+            .collect();
+        assert_eq!(
+            ticked,
+            ["max temperature", "everyday (preset)"],
+            "{:?}",
+            r.status
+        );
+        let everyday = r
+            .model
+            .cases
+            .iter()
+            .find(|c| c.case.name == "everyday")
+            .unwrap();
+        assert_eq!(everyday.case.temperature.celsius(), 10.0);
+        r.model.session().unwrap().log().unwrap().len() - entries
+    };
+    // One change: Undo gives the project's cases as before.
+    assert_eq!(steps, 1);
+    let r = h.state_mut().ready().unwrap();
+    r.perform(crate::edit::Action::Undo);
+    h.run_steps(3);
+    let r = h.state_mut().ready().unwrap();
+    let back: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    assert_eq!(back, names);
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+/// One big combined preset (40 clearance rules and a `[vegetation]`
+/// table; owner, 2026-10-21: presets are per check): the vegetation panel
+/// lists it, takes no rule and brings only its own cases — "Veg hot"
+/// (80 °C) uses the project's "max temperature", "Veg wind" is created;
+/// none of the clearance rules' cases.
+#[test]
+fn the_vegetation_panel_takes_only_its_part_of_a_big_preset() {
+    let (file, mut h) = opened("veg-preset-big");
+    {
+        let r = h.state_mut().ready().unwrap();
+        let w = &mut r.rule_editor.presets;
+        w.list = vec![crate::rule_editor::PluginPresets {
+            plugin: "code-big".into(),
+            presets: Ok(vec![crate::preset_cases::tests::big_preset("")]),
+        }];
+        w.asked = true;
+        r.vegetation.preset = Some((0, 0));
+    }
+    h.run_steps(2);
+    let names: Vec<String> = {
+        let r = h.state_mut().ready().unwrap();
+        r.model.cases.iter().map(|c| c.case.name.clone()).collect()
+    };
+    h.get_by_label_contains("weather case \"Veg hot\": uses your case \"max temperature\"");
+    h.get_by_label_contains("weather case \"Veg wind\": creates \"Veg wind\"");
+    assert_eq!(h.query_all_by_label_contains("\"V hot\"").count(), 0);
+    h.get_by_label("Apply preset").click();
+    h.run_steps(3);
+    let r = h.state_mut().ready().unwrap();
+    let added: Vec<String> = r
+        .model
+        .cases
+        .iter()
+        .map(|c| c.case.name.clone())
+        .filter(|n| !names.contains(n))
+        .collect();
+    assert_eq!(added, ["Veg wind"], "{:?}", r.status);
+    let ticked: Vec<&str> = r
+        .vegetation
+        .cases
+        .iter()
+        .map(|&k| r.model.cases[k].case.name.as_str())
+        .collect();
+    assert_eq!(ticked, ["max temperature", "Veg wind"]);
+    assert_eq!(r.vegetation.settings.classes, [5]);
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }

@@ -59,6 +59,7 @@ mod placed_editor;
 mod placement;
 mod plan;
 mod plugins;
+mod preset_cases;
 mod preview3d;
 mod profile;
 mod project_lines;
