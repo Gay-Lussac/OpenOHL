@@ -42,8 +42,9 @@ Mastvorlage (to confirm). *In files:* the format id `ohl-structure-template` and
 (`ohl-pylon-template`, `pylon-templates/`, `Pylon templates`,
 `PylonTemplates/`) still read.
 
-**Structure point** — a point fixed on the structure where strings hang
-(the structure screen's table *Attachment points*). *In files:* `points`
+**Structure point** — a point fixed on the structure where strings hang;
+the structure screens show them as *Attachment points* (and the drawings
+above label them so). *In files:* `points`
 (line file), `[[point]]` (`.ohls`). *German:* Aufhängepunkt (to confirm).
 
 **Joint** *(planned, 2026-10-21)* — in OHL-Structure, a node of the
@@ -134,7 +135,7 @@ files:* `wires` (line file), `[[wire]]` (`.ohls`), a string's `wire`.
 a wire is connected to. Sections and jumpers end at a structure and a
 set. A wire point without a set only joins strings. *Replaces:* slot (in
 structure templates). *German:* Phasenplatz (to confirm). *In files:*
-`set`; `slot` in `.ohlpt` files is read as before.
+`set`; in a structure template (`.ohlpt`), the key `slot`.
 
 **Wire** — any wire strung in a section: a **conductor** (it carries a
 phase) or an **earth wire** (earthed, no phase; an **OPGW** is an earth
