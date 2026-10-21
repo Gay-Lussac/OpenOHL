@@ -138,6 +138,70 @@ approved as finished: everything is built and in active development
   guide](../user-guide/design-codes.md#a-presets-weather-cases),
   [plugins](plugins.md#matching-a-presets-weather-cases))
 
+- **The cable's own weight is conserved in every calculation** (owner
+  decision: "Wasn't it already the case? Please correct it."). The
+  textbook validation found that in the finite elements a span's
+  unstressed length grew by \\( e^{\alpha\Delta t} \\) while its load stayed
+  per unit of that length, so a hot span weighed more than its cable
+  (+0.04 % on H at 70 °C, +0.17 % at 150 °C on the textbook span). Every
+  solver path was checked:
+  - *already right:* the finite elements under elastic stretch (the
+    elastic catenary carries its load per unit of unstressed length);
+    point loads, bodies and strings (forces, unchanged by temperature);
+    ice and wind (per metre of the real conductor: they act on the longer
+    or shorter cable as it is, in the finite elements as in the closed
+    forms);
+  - *not right, corrected:* the finite elements' thermal lengthening
+    (`ohl-wirefe` section model, `ohl-line` sections and rolling), the
+    linear models' creep stretch, the stress-strain curves' strain and
+    the bimetallic core branch in the finite elements, spread loads and
+    jumpers — the own weight is now \\( w/(k\,e^{\alpha\Delta t}) \\) per
+    unit of the element's length (\\( k \\) the lengthening without mass);
+    the closed-form change of state, tension sections, governing tension,
+    loaded spans and the ruling-span (stress-strain) method, which took
+    the same load per metre of *stretched* cable in every state, so their
+    spans grew heavier with every lengthening, thermal or elastic (+0.25 %
+    of weight at 150 °C) — the own weight is now per metre of unstressed
+    cable at the known (stringing) state's temperature, \\( w/k \\) per
+    stretched metre, \\( k = e^{\alpha\Delta t}(1 + \bar T/EA) \\) or, in
+    the additive form, \\( (1+\varepsilon)/(1+\varepsilon_w) \\); creep and
+    permanent set add length, not weight.
+  A load state now says which part of its load is the own weight and
+  which part is wind (`ohl_sagtension::LoadState::weight`, `wind`; the
+  validation inputs `weight`, `wind`). Effect on the textbook span:
+  closed form −0.12 % on H at 70 °C, −0.28 % at 150 °C, sag 5–6 mm less
+  (most of it the stringing state's weight, 0.08 % too heavy before);
+  FE −0.12 % at 80 °C on the three-span section, +0.04 % at −20 °C. On
+  the synthetic example line (FE, strung at 15 °C): H −0.11 % at 80 °C,
+  −0.24 % at 150 °C, +0.05 % at −20 °C, +0.015 % iced; sags within 2 mm.
+  With it the closed form and the finite elements agree to 10⁻⁶ on a
+  single span, FE and ruling span differ only by the thermal form
+  (+0.047 % at 150 °C on 400 m), and CIGRE TB 324 sec. 6.1 comes within
+  the printed rounding (tolerance 2.5 N → 0.5 N). 25 validation cases
+  changed value (each recomputed by its independent reference; two
+  safety-volume cases moved within their tolerances, by 0.005 % and
+  0.8 mm); 3 cases
+  added (`tbheat-001…003`: a 400 m span at 150 °C weighing what it
+  weighs when strung, closed form, FE and ruling span). Left as stated
+  Simplifications: in the finite elements ice and wind per metre of
+  unstressed (not stretched) conductor, about 0.1 % less ice and wind;
+  the closed form spreading the weight evenly over the stretched span.
+  The mass per length is taken at the stringing temperature (the
+  datasheet's own temperature is not in the cable data).
+- **Strain strings without a weight keep the estimated weight when they
+  name a 0 N assembly** (owner request, found on a real line: after the
+  string catalogue linked imported strain strings to "0 N" library
+  entries, the median sag difference to another program's results grew
+  from 0.7–2.4 cm to 2–9 cm, +0.29 m on short dead-end spans). A strain
+  string whose resolved weight is 0 — its own or its assembly's — counts
+  as without a weight, whether or not it names an assembly, and gets the
+  weight that holds it where the data puts it; an assembly with a real
+  weight gives that weight. The string catalogue
+  (`Line::catalogue_strings`) no longer takes strings without a weight
+  into the library: they stay unlabelled (chosen over an assembly
+  "without a weight": the data model's assemblies always have one, and
+  0 N would read as a real weight to every other user of the library).
+
 ## 2026-10-20
 
 - **Sheet templates: second round of fixes and the owner's additions**
