@@ -3,7 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Terrain › Coordinate system: say which system the project's coordinates
-//! are in (Define), convert points between systems (Calculator), move the
+//! are in and the vertical datum of its heights (Define), convert points
+//! between systems (Calculator), move the
 //! whole project into another system (Reproject, into a new project file).
 
 use std::path::{Path, PathBuf};
@@ -290,11 +291,62 @@ fn row_hover(k: &ohl_crs::Known) -> String {
 }
 
 /// Terrain › Coordinate system › Define: the system the project's
-/// coordinates are in (nothing moves).
+/// coordinates are in and the vertical datum of its heights (nothing
+/// moves).
 #[derive(Debug, Clone, Default)]
 pub struct Define {
     /// The chooser.
     pub picker: Picker,
+    /// The height datum's name as typed (`LN02`).
+    pub datum_name: String,
+    /// Its EPSG code as typed (`5728`, `EPSG:5728`).
+    pub datum_epsg: String,
+}
+
+impl Define {
+    /// The project's system and height datum.
+    pub fn new(model: &Model) -> Self {
+        let h = model.line.height_datum.clone().unwrap_or_default();
+        Self {
+            picker: Picker::new(&model.line.crs),
+            datum_name: h.name,
+            datum_epsg: h.epsg.map(|c| c.to_string()).unwrap_or_default(),
+        }
+    }
+
+    /// The system chosen; nothing chosen: the project's, kept.
+    pub fn crs_or<'a>(&'a self, model: &'a Model) -> &'a str {
+        match self.picker.spec.trim() {
+            "" => model.line.crs.trim(),
+            spec => spec,
+        }
+    }
+
+    /// The height datum typed (none: not given), or why it does not read.
+    pub fn height_datum(&self) -> Result<Option<ohl_line::HeightDatum>, String> {
+        ohl_line::HeightDatum::parse(&self.datum_name, &self.datum_epsg)
+    }
+}
+
+/// What the sheets' `{height_datum}` reads for the datum `datum` and the
+/// coordinate system `crs`: the datum, else the vertical part of the
+/// system, else none (the template's text for an empty field).
+pub fn sheet_height_datum(datum: Option<&ohl_line::HeightDatum>, crs: &str) -> Option<String> {
+    datum
+        .map(ohl_line::HeightDatum::label)
+        .filter(|s| !s.is_empty())
+        .or_else(|| Some(ohl_drawing::height_datum_of(crs)).filter(|s| !s.is_empty()))
+}
+
+/// The project's height datum in words, for the menus and properties.
+pub fn describe_height_datum(model: &Model) -> String {
+    match &model.line.height_datum {
+        Some(h) => h.label(),
+        None => match sheet_height_datum(None, &model.line.crs) {
+            Some(v) => format!("not given ({v} from the coordinate system)"),
+            None => "not given".into(),
+        },
+    }
 }
 
 /// Terrain › Coordinate system › Calculator: points from one system to
@@ -437,8 +489,14 @@ pub struct Windows {
 
 /// What the windows ask of the application.
 pub enum Request {
-    /// Define: set the line's coordinate system (an edit).
-    Define(String),
+    /// Define: set the line's coordinate system and height datum (an
+    /// edit).
+    Define {
+        /// The coordinate system.
+        crs: String,
+        /// The height datum (none: not given).
+        height_datum: Option<ohl_line::HeightDatum>,
+    },
     /// Open this project (the reprojected one).
     Open(PathBuf),
 }
@@ -461,6 +519,10 @@ impl Windows {
                          reprojecting).",
                     );
                     ui.label(format!("Now: {}", ohl_crs::describe(&model.line.crs)));
+                    ui.label(format!(
+                        "Height datum now: {}",
+                        describe_height_datum(model)
+                    ));
                     ui.separator();
                     d.picker.ui(ui, "define");
                     let valid = d.picker.crs();
@@ -473,21 +535,73 @@ impl Windows {
                              projected system",
                         );
                     }
+                    // Unchanged, or nothing chosen (a local system no
+                    // cartographic one reads): kept as it is.
+                    let crs_ok = valid.as_ref().is_ok_and(|c| !c.is_geographic())
+                        || d.picker.spec.trim().is_empty()
+                        || d.picker.spec.trim() == model.line.crs.trim();
+                    ui.separator();
+                    ui.strong("Height datum");
+                    ui.label(
+                        egui::RichText::new(
+                            "The vertical datum the heights are in (optional): its name and, \
+                             when it has one, the EPSG code of its vertical system. Written on \
+                             the sheets ({height_datum}); nothing is converted.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    egui::Grid::new("define-height-datum")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Name");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut d.datum_name)
+                                    .hint_text("e.g. LN02, LHN95")
+                                    .desired_width(160.0),
+                            );
+                            ui.end_row();
+                            ui.label("EPSG code");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut d.datum_epsg)
+                                    .hint_text("e.g. 5728 (optional)")
+                                    .desired_width(160.0),
+                            );
+                            ui.end_row();
+                        });
+                    let datum = d.height_datum();
+                    match &datum {
+                        Ok(h) => {
+                            let on_sheets = sheet_height_datum(h.as_ref(), d.crs_or(model))
+                                .unwrap_or_else(|| "the template's text for an empty field".into());
+                            ui.label(
+                                egui::RichText::new(format!("On the sheets: {on_sheets}"))
+                                    .small()
+                                    .weak(),
+                            );
+                        }
+                        Err(e) => {
+                            crate::menu::error_label(ui, e.as_str());
+                        }
+                    }
                     if let Err(why) = model.can_edit() {
                         crate::menu::error_label(ui, format!("read-only: {why}"));
                     }
                     ui.horizontal(|ui| {
                         ok = ui
                             .add_enabled(
-                                model.can_edit().is_ok() && valid.is_ok_and(|c| !c.is_geographic()),
+                                model.can_edit().is_ok() && crs_ok && datum.is_ok(),
                                 egui::Button::new("OK"),
                             )
                             .clicked();
                         cancel = ui.button("Cancel").clicked();
                     });
                 });
-            if ok {
-                request = Some(Request::Define(d.picker.spec.trim().to_owned()));
+            if ok && let Ok(height_datum) = d.height_datum() {
+                request = Some(Request::Define {
+                    crs: d.crs_or(model).to_owned(),
+                    height_datum,
+                });
             }
             if !open || ok || cancel {
                 self.define = None;
