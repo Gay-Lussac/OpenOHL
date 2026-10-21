@@ -3,7 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The explanations shared by the check panels — the vegetation and
-//! danger-tree panel and the Vertical and Radial clearances windows — so
+//! danger-tree panel, the Vertical and Radial clearances windows and the
+//! Safety volumes window — so
 //! that they read as one family: a heading per group of settings with a
 //! link to its user-guide section, a line or two beside each value (a
 //! longer text on hover), the wind choice (none, steps, swing arc or
@@ -13,7 +14,10 @@
 //! the falling tree with its root-ball hinge and allowance, grow-in
 //! around a wire, the wind positions (swing arc, steps), a tree base and
 //! its nearest ground point, unbalanced ice on one span, the vertical
-//! zone under a wire and the radial distance around it.
+//! zone under a wire and the radial distance around it; for the
+//! safety-volume window, the distance around a conductor, the volumes
+//! per wire, circuit or system, and the mesh outside the exact volume
+//! where two tubes meet.
 
 use eframe::egui;
 use ohl_clearance::rules::{WindSides, WindSteps};
@@ -543,6 +547,182 @@ pub fn radial_zone(ui: &mut egui::Ui) {
     text(&p, wire + egui::vec2(8.0, 2.0), "d", ink.key);
 }
 
+/// The safety distance, seen along the wire: the conductor, the distance
+/// d around its surface and the margin beyond it (dashed).
+pub fn safety_distance(ui: &mut egui::Ui, distance: f64, margin: f64) {
+    let (p, r, ink) = canvas(
+        ui,
+        "drawing: safety distance",
+        "Seen along the wire: the volume reaches the distance d from the conductor's surface (each \
+         subconductor of a bundle, iced in a case with ice), then the margin, in every direction \
+         and in every wire position.",
+    );
+    let c = r.center() + egui::vec2(-18.0, 0.0);
+    let total = (distance + margin).max(1e-6);
+    let scale = 32.0 / total as f32;
+    let conductor = 3.0;
+    let r1 = conductor + distance.max(0.0) as f32 * scale;
+    let r2 = r1 + margin.max(0.0) as f32 * scale;
+    p.circle_filled(c, r1, ink.key.gamma_multiply(0.12));
+    p.circle_stroke(c, r1, egui::Stroke::new(1.5, ink.key));
+    if r2 > r1 + 0.5 {
+        p.extend(egui::Shape::dashed_line(
+            &(0..=40)
+                .map(|i| {
+                    let a = i as f32 / 40.0 * std::f32::consts::TAU;
+                    c + egui::vec2(a.cos(), a.sin()) * r2
+                })
+                .collect::<Vec<_>>(),
+            egui::Stroke::new(1.0, ink.line),
+            3.0,
+            2.0,
+        ));
+    }
+    p.circle_filled(c, conductor, ink.wire);
+    p.line_segment(
+        [c + egui::vec2(conductor, 0.0), c + egui::vec2(r1, 0.0)],
+        egui::Stroke::new(1.0, ink.key),
+    );
+    let x = r.right() - 40.0;
+    text(&p, egui::pos2(x, r.top() + 14.0), "d", ink.key);
+    text(&p, egui::pos2(x, r.top() + 28.0), "+ margin", ink.line);
+}
+
+/// One volume per wire, per circuit or per system: two circuits of
+/// three wires (the first two of one system), and the outlines a volume
+/// takes.
+pub fn volume_grouping(ui: &mut egui::Ui, grouping: ohl_clearance::safety_volume::Grouping) {
+    use ohl_clearance::safety_volume::Grouping;
+    let (p, r, ink) = canvas(
+        ui,
+        "drawing: grouping",
+        "Seen along the line, two systems: per wire each conductor has a volume of its own; per \
+         circuit the phases of a circuit are one volume; per system every circuit of one \
+         electrical system is one volume.",
+    );
+    let y0 = r.top() + 22.0;
+    let dx = 14.0;
+    let left = [
+        egui::pos2(r.left() + 18.0, y0),
+        egui::pos2(r.left() + 18.0, y0 + dx * 1.6),
+        egui::pos2(r.left() + 18.0, y0 + dx * 3.2),
+    ];
+    let mid = left.map(|q| q + egui::vec2(28.0, 0.0));
+    let right = left.map(|q| q + egui::vec2(78.0, 0.0));
+    let blob = |pts: &[egui::Pos2]| {
+        let min = pts
+            .iter()
+            .fold(egui::pos2(f32::MAX, f32::MAX), |a, b| a.min(*b));
+        let max = pts
+            .iter()
+            .fold(egui::pos2(f32::MIN, f32::MIN), |a, b| a.max(*b));
+        p.rect_stroke(
+            egui::Rect::from_min_max(min, max).expand(6.0),
+            6.0,
+            egui::Stroke::new(1.2, ink.key),
+            egui::StrokeKind::Middle,
+        );
+    };
+    match grouping {
+        Grouping::Wire => {
+            for q in left.iter().chain(&mid).chain(&right) {
+                blob(&[*q]);
+            }
+        }
+        Grouping::Circuit => {
+            blob(&left);
+            blob(&mid);
+            blob(&right);
+        }
+        Grouping::System => {
+            let both: Vec<egui::Pos2> = left.iter().chain(&mid).copied().collect();
+            blob(&both);
+            blob(&right);
+        }
+    }
+    for q in left.iter().chain(&mid).chain(&right) {
+        p.circle_filled(*q, 3.0, ink.wire);
+    }
+    text(
+        &p,
+        egui::pos2(r.left() + 6.0, r.top() + 8.0),
+        "system A",
+        ink.line,
+    );
+    text(
+        &p,
+        egui::pos2(r.left() + 84.0, r.top() + 8.0),
+        "B",
+        ink.line,
+    );
+}
+
+/// The mesh and the exact volume: a smooth part of the surface (an arc),
+/// the triangles' sides outside it by at most the tolerance; where two
+/// tubes meet, the sides bridge the groove.
+pub fn mesh_outside(ui: &mut egui::Ui, tolerance: f64) {
+    let (p, r, ink) = canvas(
+        ui,
+        "drawing: mesh outside",
+        "The exact volume (solid) and the mesh (its triangles' sides, dashed): the mesh holds the \
+         exact volume whole, never inside it, and lies outside it by at most the tolerance where \
+         the volume is smooth. Where two tubes meet, the triangles bridge the groove between them \
+         (up to one grid cell farther out).",
+    );
+    let ground = r.bottom() - 18.0;
+    // Two tubes meeting: two circles' upper halves, joined at a groove.
+    let ra = 24.0_f32;
+    let ca = egui::pos2(r.left() + 34.0, ground);
+    let cb = egui::pos2(r.left() + 70.0, ground);
+    let arc = |c: egui::Pos2, from: f32, to: f32| -> Vec<egui::Pos2> {
+        (0..=20)
+            .map(|i| {
+                let a = from + (to - from) * i as f32 / 20.0;
+                c + egui::vec2(a.cos(), -a.sin()) * ra
+            })
+            .collect()
+    };
+    // Where the circles cross: x half-way, y from the radius.
+    let half = (cb.x - ca.x) / 2.0;
+    let meet = (ra * ra - half * half).max(0.0).sqrt();
+    let a_meet = meet.atan2(half);
+    let mut exact = arc(ca, std::f32::consts::PI, a_meet);
+    exact.extend(arc(cb, std::f32::consts::PI - a_meet, 0.0));
+    p.add(egui::Shape::line(exact, egui::Stroke::new(1.5, ink.wire)));
+    // The mesh: chords pushed out by the tolerance, a side across the
+    // groove.
+    let out = 2.0 + (tolerance.clamp(0.0, 1.0) as f32) * 6.0;
+    let mesh: Vec<egui::Pos2> = [
+        (ca, std::f32::consts::PI),
+        (ca, 2.4),
+        (ca, 1.7),
+        (cb, 1.4),
+        (cb, 0.7),
+        (cb, 0.0),
+    ]
+    .iter()
+    .map(|(c, a)| *c + egui::vec2(a.cos(), -a.sin()) * (ra + out))
+    .collect();
+    p.extend(egui::Shape::dashed_line(
+        &mesh,
+        egui::Stroke::new(1.0, ink.key),
+        3.0,
+        2.0,
+    ));
+    text(
+        &p,
+        egui::pos2(r.left() + 4.0, r.bottom() - 8.0),
+        &format!("outside by ≤ {tolerance:.2} m"),
+        ink.key,
+    );
+    text(
+        &p,
+        egui::pos2((ca.x + cb.x) / 2.0 - 8.0, ground - meet - 14.0),
+        "groove",
+        ink.line,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +748,11 @@ mod tests {
                     unbalanced_ice(ui, steps > 0);
                     vertical_zone(ui, a / 2.0, k);
                     radial_zone(ui);
+                    safety_distance(ui, a / 4.0, k);
+                    for g in ohl_clearance::safety_volume::Grouping::ALL {
+                        volume_grouping(ui, g);
+                    }
+                    mesh_outside(ui, k);
                 });
                 h.run();
                 for name in [
@@ -578,9 +763,12 @@ mod tests {
                     "drawing: unbalanced ice",
                     "drawing: vertical zone",
                     "drawing: radial distance",
+                    "drawing: safety distance",
+                    "drawing: mesh outside",
                 ] {
                     h.get_by_label(name);
                 }
+                assert_eq!(h.query_all_by_label("drawing: grouping").count(), 3);
             }
         }
     }
