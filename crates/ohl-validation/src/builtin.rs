@@ -40,6 +40,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(ThermalSteady));
     registry.register(Box::new(SpottingLevel));
     registry.register(Box::new(StructureFe));
+    registry.register(Box::new(StructureFePoint));
     registry.register(Box::new(StructurePole));
     registry.register(Box::new(StructureMemberWind));
     registry.register(Box::new(StructureWindRule));
@@ -922,6 +923,72 @@ impl Calculation for StructureFe {
         }
         out.insert("iterations".into(), s.iterations as f64);
         out.insert("passes".into(), f64::from(s.passes));
+        Ok(out)
+    }
+}
+
+/// `structures.fe_point`: a structure type (`.ohls` text holding its
+/// members) under one load at one of its attachment points, through the
+/// point's link to its joint (its offset's moment, a member split at a
+/// point along it).
+struct StructureFePoint;
+
+impl Calculation for StructureFePoint {
+    fn id(&self) -> &'static str {
+        "structures.fe_point"
+    }
+
+    fn description(&self) -> &'static str {
+        "Structure type under a load at an attachment point (inputs: structure = .ohls \
+         text, point = its label, force_x, force_y, force_z in N, structure axes); outputs \
+         u_<node>_<dof>, r_<node>_<dof>, n_<member> as structures.fe, moment_x, moment_y, \
+         moment_z (N m: the moment of the point's offset), moment_applied (1: a frame \
+         carries it)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let model =
+            ohl_structures_fe::Model::from_structure_type(string_input(inputs, "structure")?)?;
+        let label = string_input(inputs, "point")?;
+        let force = [
+            float_input(inputs, "force_x")?,
+            float_input(inputs, "force_y")?,
+            float_input(inputs, "force_z")?,
+        ];
+        let at = model
+            .point_load(label, force)
+            .ok_or_else(|| format!("no attachment point {label} in the model"))?;
+        let loads = ohl_structures_fe::Loads {
+            nodal: at.loads.clone(),
+            self_weight: 0.0,
+        };
+        let (s, _) =
+            ohl_structures_fe::analyse(&model, &loads, 1.0, &ohl_structures_fe::default_budget())
+                .map_err(|e| e.to_string())?;
+        let dofs = ohl_structures_fe::solve::DOF_NAMES;
+        let mut out = Outputs::new();
+        for (k, d) in s.displacements.iter().enumerate() {
+            for (c, v) in d.iter().enumerate() {
+                out.insert(format!("u_{}_{}", model.node_name(k), dofs[c]), *v);
+            }
+        }
+        for (m, f) in model.members.iter().zip(&s.members) {
+            out.insert(format!("n_{}", m.id), f.axial);
+        }
+        for r in &s.reactions {
+            let id = &model.nodes[r.node].id;
+            for k in 0..3 {
+                out.insert(format!("r_{id}_{}", dofs[k]), r.force[k]);
+                out.insert(format!("r_{id}_{}", dofs[3 + k]), r.moment[k]);
+            }
+        }
+        for (k, c) in ["x", "y", "z"].iter().enumerate() {
+            out.insert(format!("moment_{c}"), at.moment[k]);
+        }
+        out.insert(
+            "moment_applied".into(),
+            f64::from(u8::from(at.moment_applied)),
+        );
         Ok(out)
     }
 }

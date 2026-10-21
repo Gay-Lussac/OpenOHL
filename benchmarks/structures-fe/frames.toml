@@ -675,3 +675,103 @@ expected.slack_AM = { value = 0.0, abs_tol = 1e-12 }
 expected.r_A_z = { value = 500.0, rel_tol = 1e-9 }
 expected.r_A_ry = { value = -500.0, rel_tol = 1e-9 }
 expected.r_B_ry = { value = 500.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-013"
+title = "Crossarm tip with an offset hanging load (a rigid link): reaction moment about the arm F·e, torsion F·e·L/GJ"
+calculation = "structures.fe_point"
+reference = "Statics of a rigid link (the force moved to the joint with its moment r × F) and Saint-Venant torsion of a cantilever (e.g. Timoshenko & Gere, Mechanics of Materials)"
+notes = "A cantilever crossarm L = 3 m along x, fixed at the mast (node M), a frame; the attachment point A1 linked to its tip T at an offset e = 0.5 m ahead (y); F = 10 kN down at A1. At T: F and the moment r × F = (0, e, 0) × (0, 0, −F) = (−F·e, 0, 0) = (−5 kN m, 0, 0). At M: R_z = F, M_x = F·e = 5 kN m (twisting the arm), M_y = −F·L = −30 kN m. Tip twist −F·e·L/(G·J) with G = E/2.6, J = Iy + Iz = 4e-6 m4: −15000·2.6/(210e9·4e-6) = −0.0464285714 rad. First order, no self-weight."
+max_seconds = 1.0
+inputs.point = "A1"
+inputs.force_x = 0.0
+inputs.force_y = 0.0
+inputs.force_z = -10000.0
+inputs.structure = '''
+[analysis]
+nonlinear = false
+self_weight = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "M"
+point = ["0 m", "0 m", "20 m"]
+support = "fixed"
+[[node]]
+id = "T"
+point = ["3 m", "0 m", "20 m"]
+kind = "attach"
+[[member]]
+id = "arm"
+nodes = ["M", "T"]
+section = "s"
+kind = "frame"
+[[point]]
+label = "A1"
+node = "T"
+offset = ["0 m", "0.5 m", "0 m"]
+'''
+expected.moment_x = { value = -5000.0, rel_tol = 1e-12 }
+expected.moment_y = { value = 0.0, abs_tol = 1e-12 }
+expected.moment_z = { value = 0.0, abs_tol = 1e-12 }
+expected.moment_applied = { value = 1.0, abs_tol = 1e-12 }
+expected.r_M_z = { value = 10000.0, rel_tol = 1e-9 }
+expected.r_M_rx = { value = 5000.0, rel_tol = 1e-9 }
+expected.r_M_ry = { value = -30000.0, rel_tol = 1e-9 }
+expected.u_T_rx = { value = -0.04642857142857143, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-014"
+title = "Attachment point along a frame member: the member split there, fixed-end beam with a load at a quarter"
+calculation = "structures.fe_point"
+reference = "Euler–Bernoulli beam theory: a beam fixed at both ends with a point load at a from one end (e.g. Roark's Formulas for Stress and Strain, fixed–fixed beam, intermediate load)"
+notes = "One frame member L = 4 m along x, fixed at A and B, I = 2e-6 m4; the attachment point P1 along it at a = 1 m (at = 0.25, b = 3 m): the analysis splits the member there (one member in the file, two pieces solved, results per member). P = 1 kN down: R_A = P·b²(3a + b)/L³ = 843.75 N, M_A = P·a·b²/L² = 562.5 N m (−562.5 about y), R_B = P·a²(a + 3b)/L³ = 156.25 N, M_B = P·a²·b/L² = 187.5 N m; deflection at P1 P·a³·b³/(3·E·I·L³) = 3.3482142857e-4 m down. First order, no self-weight."
+max_seconds = 1.0
+inputs.point = "P1"
+inputs.force_x = 0.0
+inputs.force_y = 0.0
+inputs.force_z = -1000.0
+inputs.structure = '''
+[analysis]
+nonlinear = false
+self_weight = false
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "beam"
+nodes = ["A", "B"]
+section = "s"
+kind = "frame"
+[[point]]
+label = "P1"
+member = "beam"
+at = 0.25
+'''
+expected.r_A_z = { value = 843.75, rel_tol = 1e-9 }
+expected.r_A_ry = { value = -562.5, rel_tol = 1e-9 }
+expected.r_B_z = { value = 156.25, rel_tol = 1e-9 }
+expected.r_B_ry = { value = 187.5, rel_tol = 1e-9 }
+expected.u_P1_z = { value = -0.00033482142857142855, rel_tol = 1e-9 }
+expected.moment_applied = { value = 0.0, abs_tol = 1e-12 }

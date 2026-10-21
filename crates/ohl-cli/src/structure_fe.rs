@@ -263,9 +263,13 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             .map(|(case, at)| {
                 let mut nodal = Vec::new();
                 for (point, [t, l, v]) in at {
-                    nodal.extend(model.point_loads(&point, [t, l, -v]).ok_or_else(|| {
+                    let at = model.point_load(&point, [t, l, -v]).ok_or_else(|| {
                         format!("{case}: the model has no node for point {point}")
-                    })?);
+                    })?;
+                    if let Some(n) = &at.note {
+                        println!("  {case}: {n}");
+                    }
+                    nodal.extend(at.loads);
                 }
                 Ok((case, nodal))
             })

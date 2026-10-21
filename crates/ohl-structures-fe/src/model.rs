@@ -628,8 +628,11 @@ pub struct NodalLoad {
     pub moment: [f64; 3],
 }
 
-/// A structure type's point along a member (not on a joint): its loads
-/// go to the member's two end nodes.
+/// A structure type's attachment point along a member (not on a joint):
+/// on a frame member (`kind = "frame"`) strictly between its ends, the
+/// analysis splits the member there ([`Model::split`]) and the load acts
+/// at the joint it makes; else its force goes to the member's two end
+/// nodes, (1 − `at`) and `at`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberPoint {
     /// The point's label.
@@ -638,6 +641,23 @@ pub struct MemberPoint {
     pub member: usize,
     /// Fraction of the member's length from its first node, 0–1.
     pub at: f64,
+    /// The joint the point is linked to there
+    /// ([`ohl_structures::point_joints`]: points at one place share it).
+    pub joint: String,
+    /// From the joint to the point, structure axes, m (a rigid link).
+    pub offset: [f64; 3],
+}
+
+/// A structure type's attachment point on a node (`[[point]] node`, or a
+/// point at a node's position): several may share a node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JointPoint {
+    /// The point's label.
+    pub label: String,
+    /// Node (index).
+    pub node: usize,
+    /// From the node to the point, structure axes, m (a rigid link).
+    pub offset: [f64; 3],
 }
 
 /// Analysis settings of a model.
@@ -689,6 +709,9 @@ pub struct Model {
     pub loads: Vec<NodalLoad>,
     /// The structure type's points along members.
     pub member_points: Vec<MemberPoint>,
+    /// The structure type's points on nodes (2026-10-21; a separate
+    /// model's nodes name theirs by [`Node::attachment`]).
+    pub joint_points: Vec<JointPoint>,
 }
 
 fn dof_index(name: &str) -> Option<usize> {
@@ -886,6 +909,7 @@ impl Model {
             members,
             loads,
             member_points: Vec::new(),
+            joint_points: Vec::new(),
         };
         model.check()?;
         Ok(model)
@@ -960,53 +984,14 @@ impl Model {
             .and_then(toml::Value::as_array)
             .cloned()
             .unwrap_or_default();
-        strip(&mut nodes, &["made_by"]);
-        let mut along = Vec::new();
-        let points = file.get("point").and_then(toml::Value::as_array);
-        for p in points.into_iter().flatten() {
-            let Some(label) = p.get("label").and_then(toml::Value::as_str) else {
-                continue;
-            };
-            if let Some(member) = p.get("member").and_then(toml::Value::as_str) {
-                let at = p
-                    .get("at")
-                    .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
-                    .ok_or_else(|| format!("point {label}: member {member} without at"))?;
-                along.push((label.to_string(), member.to_string(), at));
-                continue;
-            }
-            let Some(at) = p.get("node").and_then(toml::Value::as_str) else {
-                continue;
-            };
-            let node = nodes
-                .iter_mut()
-                .filter_map(toml::Value::as_table_mut)
-                .find(|n| n.get("id").and_then(toml::Value::as_str) == Some(at))
-                .ok_or_else(|| format!("point {label}: no joint {at}"))?;
-            match node.get("attachment").and_then(toml::Value::as_str) {
-                Some(other) if other != label => {
-                    return Err(format!(
-                        "joint {at} carries points {other} and {label}: one point per joint"
-                    ));
-                }
-                _ => {
-                    node.insert("attachment".into(), label.into());
-                }
-            }
-        }
+        // A joint's kind (attach, support) is the structure's, not the model's.
+        strip(&mut nodes, &["made_by", "kind"]);
         model.insert("node".into(), nodes.into());
         let mut out = Self::parse_with(
             &toml::to_string(&model).map_err(|e| e.to_string())?,
             library,
         )?;
-        for (label, member, at) in along {
-            let member = out
-                .members
-                .iter()
-                .position(|m| m.id == member)
-                .ok_or_else(|| format!("point {label}: no member {member}"))?;
-            out.member_points.push(MemberPoint { label, member, at });
-        }
+        out.link_points(file.get("point").and_then(toml::Value::as_array))?;
         out.check()?;
         Ok(out)
     }
@@ -1166,31 +1151,6 @@ impl Model {
             }
         }
         Ok(())
-    }
-
-    /// The node at the structure's point labelled `label`.
-    pub fn attachment_node(&self, label: &str) -> Option<usize> {
-        self.nodes
-            .iter()
-            .position(|n| n.attachment.as_deref() == Some(label))
-    }
-
-    /// The loads at the structure's point labelled `label` with `force`
-    /// (N, structure axes): at its node, or shared to the two end nodes
-    /// of its member by `at` (statically equivalent for a point on the
-    /// member's axis). None: no such point in the model.
-    pub fn point_loads(&self, label: &str, force: [f64; 3]) -> Option<Vec<NodalLoad>> {
-        let at = |node: usize, share: f64| NodalLoad {
-            node,
-            force: force.map(|f| f * share),
-            moment: [0.0; 3],
-        };
-        if let Some(node) = self.attachment_node(label) {
-            return Some(vec![at(node, 1.0)]);
-        }
-        let p = self.member_points.iter().find(|p| p.label == label)?;
-        let m = &self.members[p.member];
-        Some(vec![at(m.i, 1.0 - p.at), at(m.j, p.at)])
     }
 
     /// Length of a member, m.

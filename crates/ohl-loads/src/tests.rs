@@ -484,6 +484,65 @@ fn structure_analysis_on_the_example_line() {
     assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
 }
 
+/// The placed structure's links reach the structure check (2026-10-21):
+/// T2's attachment point A1 unlinked refuses its finite-element check
+/// (the loads not applied: usage infinite, said why); linked again to its
+/// joint at an offset, the check runs, and since only trusses meet the
+/// joint the offset's moment is left out with a note.
+#[test]
+fn the_structure_check_follows_the_links() {
+    let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let insulators = ohl_structures::InsulatorLibrary::default();
+    let stored = Line::load(&ex().join("synthetic-line-typed.ohl.json")).unwrap();
+    let (_, library, weather, cases) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let t2 = |point: ohl_line::StructurePoint| {
+        let mut line = stored.clone();
+        let s = line.structures.iter_mut().find(|s| s.id == "T2").unwrap();
+        s.points = vec![point];
+        let mut line = line.resolve(&types, &insulators).unwrap();
+        line.creep_stretch.creep_case = Some("everyday".into());
+        let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+        let usage = capacity::usage(&line, &types, &library, &weather, &loads);
+        usage[0]
+            .structures
+            .iter()
+            .find(|s| s.structure == "T2")
+            .cloned()
+            .unwrap()
+    };
+    let at = stored
+        .resolve(&types, &insulators)
+        .unwrap()
+        .structure("T2")
+        .unwrap()
+        .point("A1")
+        .unwrap()
+        .clone();
+    let unlinked = t2(ohl_line::StructurePoint {
+        unlinked: true,
+        ..at.clone()
+    });
+    let fe = unlinked.fe.unwrap();
+    assert!(fe.usage.is_infinite(), "{fe:?}");
+    assert!(fe.governs.contains("A1 is not linked"), "{fe:?}");
+    let offset = t2(ohl_line::StructurePoint {
+        joint: Some("A1".into()),
+        offset: [0.0, 0.5, 0.0],
+        ..at
+    });
+    let fe = offset.fe.unwrap();
+    assert!(fe.usage.is_finite() && fe.usage > 0.0, "{fe:?}");
+    assert!(
+        offset
+            .notes
+            .iter()
+            .any(|n| n.contains("attachment point A1") && n.contains("frame joint")),
+        "{:?}",
+        offset.notes
+    );
+}
+
 /// With a section library holding the example tower's section ids (as
 /// invented angles), its members take them and the wind of the load case
 /// on their profiles: the FE usage is that of the model solved by hand
@@ -715,6 +774,7 @@ fn jumper_support_strings_load_their_tops() {
         description: Default::default(),
         label: "JS".into(),
         position: [middle[0], middle[1], middle[2] + 2.0],
+        ..Default::default()
     });
     st.wires.push(ohl_line::WirePoint {
         description: Default::default(),

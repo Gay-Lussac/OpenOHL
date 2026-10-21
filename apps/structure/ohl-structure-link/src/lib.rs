@@ -634,6 +634,31 @@ fn analyse_one(
             "{left_out} row(s) without a value left out (no line value, no area, …)"
         ));
     }
+    // The moment of each attachment point's offset (a rigid link to its
+    // joint), applied or left out (2026-10-21).
+    for r in table
+        .case(&case.name)
+        .filter(|r| r.missing.is_none() && r.at == At::Point)
+    {
+        let Some(at) = model.point_load(&r.label, [r.force[0], r.force[1], -r.force[2]]) else {
+            continue;
+        };
+        match at.note {
+            Some(n) => notes.push(n),
+            None if at.moment_applied => {
+                let m = at.moment;
+                notes.push(format!(
+                    "attachment point {}: the moment of its offset ({:.2}, {:.2}, {:.2}) kN m \
+                     applied at its joint",
+                    r.label,
+                    m[0] / 1000.0,
+                    m[1] / 1000.0,
+                    m[2] / 1000.0
+                ));
+            }
+            None => {}
+        }
+    }
     if table.case(&case.name).any(|r| r.note.contains("moment")) {
         notes.push("moments of [[load]] are not in the table: left out".into());
     }
