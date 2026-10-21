@@ -7,7 +7,8 @@
 Tension section with equal horizontal tension in every span and a conserved
 total unstressed length (see crates/ohl-sagtension/src/section.rs). Uses the
 numerical integrals of reference_change_of_state.py and a secant root on
-log(H) with a fixed iteration cap. Also prints the classic ruling span and
+log(H) with a fixed iteration cap. The cable's own weight is conserved:
+each span carries it spread over its own length (reference_change_of_state.py). Also prints the classic ruling span and
 the tension obtained by treating the section as one level ruling span.
 
 Run: python3 benchmarks/sagtension/reference_section.py  (standard library only)
@@ -21,17 +22,18 @@ KNOWN = (28_000.0, 15.97, 15.0)  # H, load, temperature
 TARGET = (15.97, 75.0)
 
 
-def unstrained_total(H, w):
+def unstrained_total(H, w, thermal=1.0):
+    """Total unstressed length at the reference temperature (own weight w)."""
     total = 0.0
     for S, h in SPANS:
-        L, integral = cos.length_and_tension_integral(S, h, H, w)
-        total += L / (1 + integral / L / cos.EA)
+        L, _, _, k = cos.conserved(S, h, H, w, 0.0, thermal)
+        total += L / k
     return total
 
 
 def solve(L0, t0, w, t):
-    target = L0 * math.exp(cos.ALPHA * (t - t0))
-    f = lambda log_h: unstrained_total(math.exp(log_h), w) - target
+    thermal = math.exp(cos.ALPHA * (t - t0))
+    f = lambda log_h: unstrained_total(math.exp(log_h), w, thermal) - L0
     a, b = math.log(10_000.0), math.log(40_000.0)
     fa, fb = f(a), f(b)
     for _ in range(50):

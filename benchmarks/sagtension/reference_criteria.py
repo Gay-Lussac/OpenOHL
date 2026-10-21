@@ -27,7 +27,8 @@ CRITERIA = [
 
 def state_after(h_ref, load, temperature):
     L0 = cos.unstressed_length(S, H_RISE, h_ref, REF[0])
-    return cos.solve(S, H_RISE, L0, REF[1], load, temperature)
+    # The own weight REF[0] conserved; the rest of the load ice.
+    return cos.solve(S, H_RISE, L0, REF[1], load, temperature, own=REF[0])
 
 
 def measure(result, kind):

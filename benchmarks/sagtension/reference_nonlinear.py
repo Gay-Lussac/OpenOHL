@@ -10,6 +10,10 @@ Re-implements the composite non-linear cable model from its definition
 - span length and mean tension by Simpson integration of the textbook
   catenary, not closed forms;
 - section tension by the secant method on log H.
+The cable's own weight is conserved (owner decision 2026-10-21): W per
+metre of the cable unstressed at the stringing temperature (15 C), the
+length L0 (1 + eps(0, 15 C)); a span of strain eps carries
+W (1 + eps(0, 15 C)) / (1 + eps) per metre (a fixed point), ice as given.
 
 Cable: the SYNTHETIC test cable (invented curves, not a real conductor):
 outer 400 mm², alpha 23e-6, initial 250 e - 110 e^2 + 40 e^3 - 8 e^4 MPa
@@ -98,9 +102,28 @@ def sag(S, H, w):
     return C * (math.cosh(S / (2 * C)) - 1)
 
 
+T_STRUNG = 15.0
+
+
+def loaded(S, H, w, t, state, perms=(0.0, 0.0)):
+    """(length, mean tension, strain, load per metre) at H: the own weight W
+    spread over the span, the rest of w (ice) as given."""
+    m = strain(0.0, T_STRUNG, "initial")
+    k = 1.0
+    for _ in range(100):
+        q = W / k + (w - W)
+        L, Tm = span(S, H, q)
+        e = strain(Tm, t, state, perms)
+        k_new = (1 + e) / (1 + m)
+        if abs(k_new - k) <= 1e-14 * k:
+            break
+        k = k_new
+    return L, Tm, e, q
+
+
 def unstrained(S, H, w, t, state, perms=(0.0, 0.0)):
-    L, Tm = span(S, H, w)
-    return L / (1 + strain(Tm, t, state, perms))
+    L, _, e, _ = loaded(S, H, w, t, state, perms)
+    return L / (1 + e)
 
 
 def solve(S, L0, w, t, state, perms=(0.0, 0.0)):
@@ -122,13 +145,15 @@ if __name__ == "__main__":
     L0 = unstrained(S, 25_000.0, W, 15.0, "initial")
     # Final condition: after creep at 15 C bare vs after max load -10 C, 30 N/m.
     h_creep = solve(S, L0, W, 15.0, "creep")
-    perm_creep = permanent(span(S, h_creep, W)[1], 15.0, "creep")
+    perm_creep = permanent(loaded(S, h_creep, W, 15.0, "creep")[1], 15.0, "creep")
     h_load = solve(S, L0, 30.0, -10.0, "initial")
-    perm_load = permanent(span(S, h_load, 30.0)[1], -10.0, "initial")
+    perm_load = permanent(loaded(S, h_load, 30.0, -10.0, "initial")[1], -10.0, "initial")
     e_creep, e_load = strain(0.0, T_REF, "final", perm_creep), strain(0.0, T_REF, "final", perm_load)
     perms, cause = (perm_creep, "creep") if e_creep >= e_load else (perm_load, "load")
     print(f"final governed by {cause}: permanent {perms}")
     for label, w, t in [("75 C bare", W, 75.0), ("-10 C, 30 N/m", 30.0, -10.0)]:
         hi = solve(S, L0, w, t, "initial")
         hf = solve(S, L0, w, t, "final", perms)
-        print(f"{label}: H initial {hi:.10g}  H final {hf:.10g}  sag initial {sag(S, hi, w):.10g}  sag final {sag(S, hf, w):.10g}")
+        qi = loaded(S, hi, w, t, "initial")[3]
+        qf = loaded(S, hf, w, t, "final", perms)[3]
+        print(f"{label}: H initial {hi:.10g}  H final {hf:.10g}  sag initial {sag(S, hi, qi):.10g}  sag final {sag(S, hf, qf):.10g}")

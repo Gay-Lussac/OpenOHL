@@ -2,7 +2,8 @@
 # unstressed length. Reference values computed independently by
 # reference_section.py. Cable: EA = 34.64 MN, alpha = 18.9e-6 /K.
 # For this inclined section the classic ruling-span approximation gives
-# 21343.36 N (+0.116 %), which the exact solution avoids.
+# 21319.34 N (+0.116 %), which the exact solution avoids. The cable's own
+# weight is conserved (owner decision 2026-10-21; before: 21318.68 N exact).
 
 [[case]]
 id = "section-001"
@@ -27,5 +28,5 @@ spans = [
 ]
 
 [case.expected]
-horizontal_tension_n = { value = 21318.6775, rel_tol = 1e-7 }
+horizontal_tension_n = { value = 21294.6858, rel_tol = 1e-7 }
 ruling_span_m = { value = 310.6197279, rel_tol = 1e-9 }

@@ -18,17 +18,22 @@
 # Expected values: benchmarks/reference/textbook_reference.py — the spans
 # by quadrature in 3D, the clamps by Newton on the nodal force balance,
 # the stringing as docs/theory/wirefe.md says (each span at 25 kN in still
-# air, strings plumb, stretched by their load).
+# air, strings plumb, stretched by their load). Every method keeps the
+# cable's own weight (owner decision 2026-10-21: per metre of the cable as
+# strung, spread over its longer or shorter length).
 #
-# The approximation, stated (80 °C): exact equal H 18312.83 N; the classical
-# ruling span 288.314 m gives 18312.01 N (-0.0045 %: for level spans the
+# The approximation, stated (80 °C): exact equal H 18287.29 N; the classical
+# ruling span 288.314 m gives 18286.48 N (-0.0044 %: for level spans the
 # ruling span is the parabolic form of the exact equal-H section);
-# with real strings the spans carry 18176.65 N (200 m, -0.74 %),
-# 18357.69 N (350 m, +0.25 %) and 18242.81 N (250 m, -0.38 %): the
+# with real strings the spans carry 18154.06 N (200 m, -0.73 %),
+# 18334.74 N (350 m, +0.26 %) and 18220.08 N (250 m, -0.37 %): the
 # ruling-span method overestimates the hot tension of the short spans
 # (their sags are larger than it says) and underestimates the long span's.
-# At -20 °C the signs turn: 30227.81 / 30160.57 / 30203.99 N against the
-# exact equal H 30176.66 N (+0.17 %, -0.05 %, +0.09 %).
+# At -20 °C the signs turn: 30239.56 / 30172.33 / 30215.74 N against the
+# exact equal H 30192.53 N (+0.16 %, -0.07 %, +0.08 %). Before 2026-10-21
+# (the weight per unit of the thermally longer length): 18312.83 N exact,
+# 18176.65 / 18357.69 / 18242.81 N with strings at 80 °C (0.13 % higher),
+# 30227.81 / 30160.57 / 30203.99 N at -20 °C (0.04 % lower).
 #
 # Tolerance: 1e-7 relative on forces, 1e-6 m on positions, 1e-6° on
 # angles: the reference's unbalanced nodal forces are below 1e-7 N and the
@@ -40,8 +45,9 @@ title = "Three level spans 200/350/250 m: 25 kN at 10 °C -> 80 °C, exact equal
 calculation = "sagtension.section"
 reference = "Independent quadrature + secant (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: RS = sqrt((200^3 + 350^3 + 250^3) / 800) = sqrt(83125) = 288.3140649 m.
-The change of state of one 288.314 m span: 18316.8 N by the parabolic cubic (+0.022 %),
-18312.01 N by the exact catenary (-0.0045 %); the exact section 18312.83 N."""
+The change of state of one 288.314 m span: 18291.3 N by the parabolic cubic (+0.022 %, with
+the loads per stretched metre), 18286.48 N by the exact catenary (-0.0044 %); the exact
+section 18287.29 N (before 2026-10-21: 18312.83 N)."""
 max_seconds = 1.0
 
 [case.inputs]
@@ -59,7 +65,7 @@ spans = [
 ]
 
 [case.expected]
-horizontal_tension_n = { value = 18312.82557, rel_tol = 1e-7 }
+horizontal_tension_n = { value = 18287.28712, rel_tol = 1e-7 }
 ruling_span_m = { value = 288.3140649, rel_tol = 1e-9 }
 
 [[case]]
@@ -69,21 +75,21 @@ calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the clamps (benchmarks/reference/textbook_reference.py)"
 notes = """Hand: the strings carry the spans' tension difference. At the clamp the horizontal
 force of each span is its H (constant along a span without wind), so
-H(350) - H(200) = N1 sin(phi1) = 4627.722 x sin 2.241981° = 181.04 N = 18357.690 - 18176.653;
-H(350) - H(250) = N2 sin(phi2) = 5018.653 x sin 1.311653° = 114.88 N. The clamps move
-3.0003 m x sin(phi): +0.1174 m and -0.0687 m towards the 350 m span."""
+H(350) - H(200) = N1 sin(phi1) = 4621.664 x sin 2.240575° = 180.686 N = 18334.742 - 18154.056;
+H(350) - H(250) = N2 sin(phi2) = 5012.050 x sin 1.310839° = 114.658 N. The clamps move
+3.0003 m x sin(phi): +0.1173 m and -0.0686 m towards the 350 m span."""
 max_seconds = 5.0
-expected.h_0_n = { value = 18176.65329, rel_tol = 1e-7 }
-expected.h_1_n = { value = 18357.68962, rel_tol = 1e-7 }
-expected.h_2_n = { value = 18242.80928, rel_tol = 1e-7 }
-expected.clamp_x_1_m = { value = 200.1173707, abs_tol = 1e-6 }
-expected.clamp_z_1_m = { value = 30.00201899, abs_tol = 1e-6 }
-expected.clamp_x_2_m = { value = 549.9313211, abs_tol = 1e-6 }
-expected.clamp_z_2_m = { value = 30.00048504, abs_tol = 1e-6 }
-expected.string_1_0_n = { value = 4627.722486, rel_tol = 1e-7 }
-expected.string_1_0_along_deg = { value = 2.241980758, abs_tol = 1e-6 }
-expected.string_2_0_n = { value = 5018.653405, rel_tol = 1e-7 }
-expected.string_2_0_along_deg = { value = -1.311653262, abs_tol = 1e-6 }
+expected.h_0_n = { value = 18154.05622, rel_tol = 1e-7 }
+expected.h_1_n = { value = 18334.74222, rel_tol = 1e-7 }
+expected.h_2_n = { value = 18220.08426, rel_tol = 1e-7 }
+expected.clamp_x_1_m = { value = 200.1172972, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 30.00201647, abs_tol = 1e-6 }
+expected.clamp_x_2_m = { value = 549.9313637, abs_tol = 1e-6 }
+expected.clamp_z_2_m = { value = 30.00048446, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 4621.663507, rel_tol = 1e-7 }
+expected.string_1_0_along_deg = { value = 2.240575119, abs_tol = 1e-6 }
+expected.string_2_0_n = { value = 5012.050445, rel_tol = 1e-7 }
+expected.string_2_0_along_deg = { value = -1.310838865, abs_tol = 1e-6 }
 
 [case.inputs]
 clip_in = true
@@ -117,17 +123,17 @@ id = "tbrs-003"
 title = "Same section by finite elements, clipped in: -20 °C (strings swing to the short spans)"
 calculation = "line.section"
 reference = "Independent 3D quadrature + Newton on the clamps (benchmarks/reference/textbook_reference.py)"
-notes = """Hand: H(200) - H(350) = 30227.815 - 30160.566 = 67.25 N = 4615.792 x sin 0.834789°;
-H(250) - H(350) = 43.43 N = 5008.104 x sin 0.496815°."""
+notes = """Hand: H(200) - H(350) = 30239.558 - 30172.333 = 67.224 N = 4618.381 x sin 0.834017°;
+H(250) - H(350) = 43.409 N = 5010.930 x sin 0.496355°."""
 max_seconds = 5.0
-expected.h_0_n = { value = 30227.81458, rel_tol = 1e-7 }
-expected.h_1_n = { value = 30160.56574, rel_tol = 1e-7 }
-expected.h_2_n = { value = 30203.99076, rel_tol = 1e-7 }
-expected.clamp_x_1_m = { value = 199.9562881, abs_tol = 1e-6 }
-expected.clamp_x_2_m = { value = 550.0260155, abs_tol = 1e-6 }
-expected.string_1_0_n = { value = 4615.791928, rel_tol = 1e-7 }
-expected.string_1_0_along_deg = { value = -0.8347887654, abs_tol = 1e-6 }
-expected.string_2_0_along_deg = { value = 0.4968150621, abs_tol = 1e-6 }
+expected.h_0_n = { value = 30239.55775, rel_tol = 1e-7 }
+expected.h_1_n = { value = 30172.33336, rel_tol = 1e-7 }
+expected.h_2_n = { value = 30215.74262, rel_tol = 1e-7 }
+expected.clamp_x_1_m = { value = 199.9563285, abs_tol = 1e-6 }
+expected.clamp_x_2_m = { value = 550.0259913, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = 4618.381106, rel_tol = 1e-7 }
+expected.string_1_0_along_deg = { value = -0.8340172813, abs_tol = 1e-6 }
+expected.string_2_0_along_deg = { value = 0.4963546663, abs_tol = 1e-6 }
 
 [case.inputs]
 clip_in = true
@@ -163,13 +169,14 @@ calculation = "line.section"
 reference = "Independent quadrature + secant, additive strain (benchmarks/reference/textbook_reference.py)"
 notes = """The line's RS: the spans between the clamps where they hang at stringing (the inner
 clamps 0.3 mm lower than the dead-ends: the strings' stretch), the linear stress-strain
-model's additive strain eps = Tmean/EA + alpha (t - 20 °C). 18317.98 N: +0.028 % on the
-exact multiplicative section (tbrs-001), the two thermal forms' difference
-(docs/theory/sagtension.md)."""
+model's additive strain eps = Tmean/EA + alpha (t - 20 °C), the own weight per stretched
+metre w (1 + eps(0, 10 °C)) / (1 + eps). 18292.45 N: +0.028 % on the exact multiplicative
+section (tbrs-001), the two thermal forms' difference (docs/theory/sagtension.md). Before
+2026-10-21: 18317.98 N."""
 max_seconds = 5.0
-expected.h_0_n = { value = 18317.97519, rel_tol = 1e-7 }
-expected.h_1_n = { value = 18317.97519, rel_tol = 1e-7 }
-expected.h_2_n = { value = 18317.97519, rel_tol = 1e-7 }
+expected.h_0_n = { value = 18292.45472, rel_tol = 1e-7 }
+expected.h_1_n = { value = 18292.45472, rel_tol = 1e-7 }
+expected.h_2_n = { value = 18292.45472, rel_tol = 1e-7 }
 
 [case.inputs]
 weather = { name = "hot", temperature = "80 °C" }

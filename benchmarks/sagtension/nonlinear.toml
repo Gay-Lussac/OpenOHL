@@ -3,6 +3,9 @@
 # with different numerics). Uses a SYNTHETIC cable with invented curves — this
 # validates the implementation of the method, not any real conductor.
 # Comparison against published examples (CIGRE TB 324, …) is still to come.
+# The cable's own weight (the known state's load) is conserved in every
+# state (owner decision 2026-10-21): per metre of unstressed cable at the
+# known temperature, spread over the span's length; ice as given.
 
 [[case]]
 id = "nonlinear-001"
@@ -10,10 +13,10 @@ title = "Synthetic cable, level 300 m: initial and final (after load) at 75 °C"
 calculation = "sagtension.nonlinear"
 reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
 max_seconds = 2.0
-expected.h_initial_n = { value = 20273.02239, rel_tol = 1e-7 }
-expected.h_final_n = { value = 18688.8357, rel_tol = 1e-7 }
-expected.sag_initial_m = { value = 8.716906998, rel_tol = 1e-7 }
-expected.sag_final_m = { value = 9.457685024, rel_tol = 1e-7 }
+expected.h_initial_n = { value = 20253.45375, rel_tol = 1e-7 }
+expected.h_final_n = { value = 18664.35583, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 8.708281255, rel_tol = 1e-7 }
+expected.sag_final_m = { value = 9.447843873, rel_tol = 1e-7 }
 expected.final_cause = { value = 1.0, abs_tol = 0.0 }
 
 [case.inputs]
@@ -45,8 +48,8 @@ title = "Synthetic cable: at the max load case, final equals initial (reloading 
 calculation = "sagtension.nonlinear"
 reference = "Independent re-implementation (benchmarks/sagtension/reference_nonlinear.py)"
 max_seconds = 2.0
-expected.h_initial_n = { value = 41994.2706, rel_tol = 1e-7 }
-expected.h_final_n = { value = 41994.2706, rel_tol = 1e-7 }
+expected.h_initial_n = { value = 41996.09907, rel_tol = 1e-7 }
+expected.h_final_n = { value = 41996.09907, rel_tol = 1e-7 }
 expected.final_cause = { value = 1.0, abs_tol = 0.0 }
 
 [case.inputs]

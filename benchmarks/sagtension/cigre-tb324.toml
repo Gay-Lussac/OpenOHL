@@ -248,10 +248,13 @@ Printed: H = 20745 N, sag 8.5 m (the extracted equation reads 5.8, its digits re
 the text gives the sag 0.5 m above the initial 8.0 m), strain +228 µstrain.
 The brochure's model: L = L_ref (1 + (H - H_ref)/EA), H the horizontal tension. The reference
 reproduces it: 20744.73 N (prints 20745). OpenOHL's change of state stretches the cable by
-its mean tension, multiplicatively: 20742.77 N (reference, the same model as the code), 1.97 N
-(0.0095 %) lower, a documented model difference, not an error. Tolerance 2.5 N = 0.5 N printed
-rounding + 2.0 N model difference. Sag 8.4698 m against 8.5 m printed to 0.1 m (0.05 m)."""
+its mean tension, multiplicatively, and keeps the cable's own weight (10.89 N/m per metre of
+unstressed cable; of the 15.6 N/m, the wind is the rest: sqrt(15.6^2 - 10.89^2) = 11.16996 N/m):
+20745.36 N (reference, the same model as the code), 0.62 N above the brochure's model and 0.36 N
+from the printed value. Tolerance 0.5 N, the printed rounding alone (before 2026-10-21 2.5 N: the
+weight then grew with the stretch, 20742.77 N, 1.97 N below the brochure's model). Sag 8.4651 m
+against 8.5 m printed to 0.1 m (0.05 m)."""
 max_seconds = 1.0
-inputs = { span = "300 m", rise = "0 m", axial_stiffness = "23.7367e6 N", thermal_expansion = 23e-6, known_tension = "15330 N", known_load = "10.89 N/m", known_temperature = "15 °C", load = "15.6 N/m", temperature = "15 °C" }
-expected.horizontal_tension_n = { value = 20745.0, abs_tol = 2.5 }
+inputs = { span = "300 m", rise = "0 m", axial_stiffness = "23.7367e6 N", thermal_expansion = 23e-6, known_tension = "15330 N", known_load = "10.89 N/m", known_temperature = "15 °C", load = "15.6 N/m", wind = "11.16995524 N/m", temperature = "15 °C" }
+expected.horizontal_tension_n = { value = 20745.0, abs_tol = 0.5 }
 expected.sag_m = { value = 8.5, abs_tol = 0.05 }

@@ -16,6 +16,11 @@
 //!
 //! \\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\, e^{\alpha (t - t_0)} \\]
 //!
+//! The cable's own weight is conserved as in
+//! [`change_of_state`](crate::change_of_state): each span carries
+//! \\( w / (e^{\alpha (t - t_0)} (1 + \bar T_i/EA)) \\) per metre of its
+//! stretched length (one \\( H \\), a load per metre of its own per span).
+//!
 //! The left side decreases strictly with \\( H \\), so the root is unique and
 //! found by bracketed bisection with exit clauses. With one span this is
 //! exactly [`InstalledSpan`](crate::InstalledSpan). Insulator swing geometry
@@ -24,8 +29,8 @@
 use ohl_core::budget::{Budget, Stop};
 use ohl_core::units::{Force, Length, Temperature};
 
-use crate::catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};
-use crate::change_of_state::{ElasticCable, LoadState};
+use crate::catenary::{SagTensionError, SpanGeometry, SpanSolution};
+use crate::change_of_state::{ElasticCable, LoadState, mean_strain, span_at};
 
 /// Classic ruling span \\( \sqrt{\sum S_i^3 / \sum S_i} \\) from the
 /// horizontal span lengths.
@@ -40,13 +45,6 @@ pub fn ruling_span(spans: &[SpanGeometry]) -> Result<Length, SagTensionError> {
         (c + x * x * x, s + x)
     });
     Ok(Length::from_si((cubes / sum).sqrt()))
-}
-
-/// Stressed length / (1 + mean strain) of one span: its unstressed length
-/// at the current temperature.
-fn unstrained_length(solution: &SpanSolution, cable: ElasticCable) -> f64 {
-    let length = solution.length().si();
-    length / (1.0 + solution.tension_integral() / length / cable.axial_stiffness.si())
 }
 
 /// A cable strung through a tension section.
@@ -81,8 +79,9 @@ impl TensionSection {
         state: LoadState,
         horizontal_tension: Force,
     ) -> Result<Self, SagTensionError> {
-        let catenary = Catenary::new(horizontal_tension, state.load)?;
-        let unstressed = Self::total_unstrained(&spans, cable, catenary)?;
+        state.check()?;
+        let unstressed =
+            Self::total_unstrained(&spans, cable, horizontal_tension.si(), &state, 1.0)?.1;
         Ok(Self {
             spans,
             cable,
@@ -91,21 +90,31 @@ impl TensionSection {
         })
     }
 
+    /// The spans at tension `h` in `state` (each its own weight per metre,
+    /// [`span_at`]) and their total unstressed length at the reference
+    /// temperature; `thermal` is \\( e^{\alpha (t - t_0)} \\).
     fn total_unstrained(
         spans: &[SpanGeometry],
         cable: ElasticCable,
-        catenary: Catenary,
-    ) -> Result<f64, SagTensionError> {
+        h: f64,
+        state: &LoadState,
+        thermal: f64,
+    ) -> Result<(Vec<SpanSolution>, f64), SagTensionError> {
         if spans.is_empty() {
             return Err(SagTensionError::InvalidInput(
                 "a section needs at least one span".into(),
             ));
         }
         let mut total = 0.0;
+        let mut solved = Vec::with_capacity(spans.len());
         for &geometry in spans {
-            total += unstrained_length(&catenary.solve(geometry)?, cable);
+            let (solution, stretch) = span_at(h, state, geometry, |s| {
+                Ok(thermal * (1.0 + mean_strain(s, cable)))
+            })?;
+            total += solution.length().si() / stretch;
+            solved.push(solution);
         }
-        Ok(total)
+        Ok((solved, total))
     }
 
     /// Solves the section at a load and temperature.
@@ -118,17 +127,17 @@ impl TensionSection {
         state: LoadState,
         budget: &Budget,
     ) -> Result<SectionSolution, SagTensionError> {
-        let target = self.unstressed_length.si()
-            * (self.cable.thermal_expansion
-                * (state.temperature - self.reference_temperature).kelvin())
-            .exp();
+        state.check()?;
+        let thermal = (self.cable.thermal_expansion
+            * (state.temperature - self.reference_temperature).kelvin())
+        .exp();
+        let target = self.unstressed_length.si();
+        let at = |h: f64| Self::total_unstrained(&self.spans, self.cable, h, &state, thermal);
         // True when the trial tension is too low (cable longer than needed),
         // including "too slack to compute".
         let too_low = |h: f64| -> Result<bool, SagTensionError> {
-            match Catenary::new(Force::from_si(h), state.load)
-                .and_then(|c| Self::total_unstrained(&self.spans, self.cable, c))
-            {
-                Ok(total) => Ok(total > target),
+            match at(h) {
+                Ok((_, total)) => Ok(total > target),
                 Err(SagTensionError::TooSlack { .. }) => Ok(true),
                 Err(other) => Err(other),
             }
@@ -163,15 +172,10 @@ impl TensionSection {
                 hi = mid;
             }
         }
-        let catenary = Catenary::new(Force::from_si(0.5 * (lo + hi)), state.load)?;
-        let spans = self
-            .spans
-            .iter()
-            .map(|&g| catenary.solve(g))
-            .collect::<Result<Vec<_>, _>>()?;
+        let h = 0.5 * (lo + hi);
         Ok(SectionSolution {
-            horizontal_tension: catenary.horizontal_tension,
-            spans,
+            horizontal_tension: Force::from_si(h),
+            spans: at(h)?.0,
         })
     }
 }
@@ -197,11 +201,20 @@ mod tests {
         }
     }
 
+    /// Drake (own weight 15.97 N/m) under `load` (the rest ice), its
+    /// weight per metre given at `weight_at` °C (the reference).
+    fn state_ref(load: f64, celsius: f64, weight_at: f64) -> LoadState {
+        let w = 15.97 * (-drake().thermal_expansion * (weight_at - 15.0)).exp();
+        LoadState::loaded(
+            ForcePerLength::from_newtons_per_meter(w),
+            ForcePerLength::from_newtons_per_meter(load - 15.97),
+            ForcePerLength::ZERO,
+            Temperature::from_celsius(celsius),
+        )
+    }
+
     fn state(load: f64, celsius: f64) -> LoadState {
-        LoadState {
-            load: ForcePerLength::from_newtons_per_meter(load),
-            temperature: Temperature::from_celsius(celsius),
-        }
+        state_ref(load, celsius, 15.0)
     }
 
     fn level(spans: &[f64]) -> Vec<SpanGeometry> {
@@ -317,16 +330,17 @@ mod tests {
         )
         .unwrap();
         let hot = section.solve(state(15.97, 80.0), &budget).unwrap();
+        // Defined again at 80 °C: the same cable weighs less per metre there.
         let again = TensionSection::from_known_state(
             spans,
             drake(),
-            state(15.97, 80.0),
+            state_ref(15.97, 80.0, 80.0),
             hot.horizontal_tension,
         )
         .unwrap();
         close(
             again
-                .solve(state(15.97, 15.0), &budget)
+                .solve(state_ref(15.97, 15.0, 80.0), &budget)
                 .unwrap()
                 .horizontal_tension
                 .kilonewtons(),

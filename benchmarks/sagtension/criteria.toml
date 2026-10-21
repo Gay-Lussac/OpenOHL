@@ -1,6 +1,9 @@
 # Governing stringing tension from tension criteria. Reference values computed
 # independently by reference_criteria.py (independent change-of-state model with
 # an outer bisection). Cable: EA = 34.64 MN, alpha = 18.9e-6 /K, RTS 138.8 kN.
+# The cable's own weight (the known state's load) is conserved in every
+# state (owner decision 2026-10-21): per metre of unstressed cable at the
+# known temperature, spread over the span's length; ice as given.
 
 [[case]]
 id = "criteria-001"
@@ -23,7 +26,7 @@ criteria = [
 ]
 
 [case.expected]
-reference_tension_n = { value = 20391.66353, rel_tol = 1e-7 }
+reference_tension_n = { value = 20385.79007, rel_tol = 1e-7 }
 governing_index = { value = 1.0, abs_tol = 0.0 }
-utilisation_0 = { value = 0.7345700119, rel_tol = 1e-7 }
+utilisation_0 = { value = 0.7343584319, rel_tol = 1e-7 }
 utilisation_1 = { value = 1.0, rel_tol = 1e-7 }
