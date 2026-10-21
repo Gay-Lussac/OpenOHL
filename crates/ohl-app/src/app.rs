@@ -4859,16 +4859,23 @@ fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Com
                 .small()
                 .weak(),
         );
+        ui.label(
+            egui::RichText::new(format!(
+                "Height datum: {}",
+                crate::crs::describe_height_datum(&r.model)
+            ))
+            .small()
+            .weak(),
+        );
         if ui
             .button("Define…")
             .on_hover_text(
-                "Which coordinate system the project's coordinates are in (nothing moves)",
+                "Which coordinate system the project's coordinates are in, and the vertical \
+                 datum of its heights (nothing moves)",
             )
             .clicked()
         {
-            r.crs.define = Some(crate::crs::Define {
-                picker: crate::crs::Picker::new(&r.model.line.crs),
-            });
+            r.crs.define = Some(crate::crs::Define::new(&r.model));
             ui.close();
         }
         if ui
@@ -5089,10 +5096,11 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
 /// Calculator, Reproject (a new project, opened when done).
 fn crs_windows(ctx: &egui::Context, r: &mut Ready) {
     match r.crs.show(ctx, &r.model) {
-        Some(crate::crs::Request::Define(spec)) => {
+        Some(crate::crs::Request::Define { crs, height_datum }) => {
             if let Ok(e) = &r.model.editing {
                 let mut line = e.session.line().clone();
-                line.crs = spec;
+                line.crs = crs;
+                line.height_datum = height_datum;
                 let command = ohl_session::line_settings_change(e.session.line(), &line);
                 r.perform(crate::edit::Action::Command {
                     what: "coordinate system".into(),

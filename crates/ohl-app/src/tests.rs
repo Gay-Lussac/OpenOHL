@@ -6879,6 +6879,88 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     assert!(err.unwrap_err().contains("exists already"));
 }
 
+/// The height datum in Terrain › Coordinate system › Define…, next to
+/// the coordinate system (kept as it is: the project's local system is
+/// no cartographic one, and OK still takes the datum): a code that is no
+/// number is said and OK is off; a name and a code set the project's
+/// datum (one edit, kept in the project, undone as any edit), shown in
+/// the menu, the window and the properties of the project.
+#[test]
+fn the_height_datum_is_defined_with_the_coordinate_system() {
+    let model = synthetic_project("height-datum");
+    let crs = model.line.crs.clone();
+    assert!(ohl_crs::Crs::parse(&crs).is_err(), "{crs}");
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    h.run();
+    h.get_by_label("height datum");
+    h.get_by_label("not given");
+    let open_define = |h: &mut Harness<'_, App>| {
+        h.get_by_label("Terrain").click();
+        h.run();
+        h.get_by_label_contains("Coordinate system").click();
+        h.run();
+        h.get_by_label("Define…").click();
+        h.run();
+    };
+    open_define(&mut h);
+    {
+        let d = h.state_mut().ready().unwrap().crs.define.as_mut().unwrap();
+        assert_eq!((d.datum_name.as_str(), d.datum_epsg.as_str()), ("", ""));
+        d.datum_name = "LN02".into();
+        d.datum_epsg = "LN".into();
+    }
+    h.run();
+    h.get_by_label_contains("is not an EPSG code");
+    h.get_by_label("OK").click();
+    h.run();
+    assert!(
+        h.state_mut().ready().unwrap().crs.define.is_some(),
+        "OK is off"
+    );
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .crs
+        .define
+        .as_mut()
+        .unwrap()
+        .datum_epsg = "EPSG:5728".into();
+    h.run();
+    h.get_by_label("On the sheets: LN02 (EPSG:5728)");
+    h.get_by_label("OK").click();
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.crs.define.is_none());
+    let want = Some(ohl_line::HeightDatum {
+        name: "LN02".into(),
+        epsg: Some(5728),
+    });
+    assert_eq!(r.model.line.height_datum, want);
+    assert_eq!(r.model.line.crs, crs, "the system kept");
+    let e = r.model.editing.as_ref().unwrap();
+    assert_eq!(e.session.line().height_datum, want, "kept in the project");
+    h.run();
+    h.get_by_label("LN02 (EPSG:5728)");
+    // Shown again when the window opens.
+    open_define(&mut h);
+    h.get_by_label("Height datum now: LN02 (EPSG:5728)");
+    {
+        let r = h.state_mut().ready().unwrap();
+        let d = r.crs.define.as_ref().unwrap();
+        assert_eq!(
+            (d.datum_name.as_str(), d.datum_epsg.as_str()),
+            ("LN02", "5728")
+        );
+        r.crs.define = None;
+    }
+    // Undone as any edit.
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.perform(crate::edit::Action::Undo));
+    assert_eq!(r.model.line.height_datum, None);
+}
+
 #[test]
 #[ignore = "writes images of the coordinate system windows to OHL_SHOTS (a look by eye)"]
 fn coordinate_system_window_images() {
@@ -6901,7 +6983,11 @@ fn coordinate_system_window_images() {
         let r = harness.state_mut().ready().unwrap();
         let mut p = crate::crs::Picker::new("EPSG:2056");
         p.filter = "LV95".into();
-        r.crs.define = Some(crate::crs::Define { picker: p });
+        let mut d = crate::crs::Define::new(&r.model);
+        d.picker = p;
+        d.datum_name = "LN02".into();
+        d.datum_epsg = "5728".into();
+        r.crs.define = Some(d);
     }
     shot(&mut harness, "define");
     {
@@ -15286,6 +15372,21 @@ fn drawings_take_a_sheet_template_its_fields_and_versions() {
         "the version in the legend"
     );
     assert!(svg.contains("OHL_VERSIONS") || svg.contains("as built"));
+    // `{height_datum}`: none given, the template's text for an empty
+    // field; the project's height datum when given (2026-10-21).
+    assert!(
+        svg.contains("(not given). Coordinates"),
+        "the [if_empty] text"
+    );
+    m.line.height_datum = Some(ohl_line::HeightDatum {
+        name: "LN02".into(),
+        epsg: Some(5728),
+    });
+    let input = Input::new(&m, 0, &w).unwrap();
+    crate::drawings::run(&input, &|_, _| {}).unwrap();
+    let svg = std::fs::read_to_string(dir.join("main-sheet-01.svg")).unwrap();
+    assert!(svg.contains("Heights above LN02 (EPSG:5728). Coordinates"));
+    m.line.height_datum = None;
     let _ = std::fs::remove_dir_all(&dir);
     // The lines below the lowest conductor, from the ground rules: in the
     // sheet preview over the profile too (a rule naming no case: the

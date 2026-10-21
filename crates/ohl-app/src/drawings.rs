@@ -743,7 +743,7 @@ impl Input {
                     .map(|c| c.0.clone())
                     .collect::<Vec<_>>()
                     .join(", "),
-                height_datum: String::new(),
+                height_datum: model.line.height_datum_label(),
             },
             role: (!s.role.is_empty()).then(|| s.role.clone()),
             corridor: s.corridor,

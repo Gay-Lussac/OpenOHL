@@ -56,6 +56,10 @@ pub fn ui(
                 "line",
                 &[
                     ("CRS", line.crs.clone()),
+                    (
+                        "height datum",
+                        crate::crs::describe_height_datum(model),
+                    ),
                     ("structures", line.structures.len().to_string()),
                     ("sections", line.sections.len().to_string()),
                     ("jumpers", line.jumpers.len().to_string()),
