@@ -246,6 +246,21 @@ impl Mechanics {
         self.reference_temperature
     }
 
+    /// The own weight per metre of unstressed cable at `at` over the data
+    /// sheet's at `reference`, in the additive strain form of the curves:
+    /// \( (1 + \varepsilon(0, t_{ref})) / (1 + \varepsilon(0, t)) \), the
+    /// zero-tension lengths of the initial state (owner decision
+    /// 2026-10-21; [`crate::Cable::weight_factor_at`] is the
+    /// multiplicative form's).
+    pub fn weight_factor(
+        &self,
+        reference: Temperature,
+        at: Temperature,
+    ) -> Result<f64, CableError> {
+        let zero = |t| self.strain(Force::ZERO, t, &MaterialState::Initial);
+        Ok((1.0 + zero(reference)?) / (1.0 + zero(at)?))
+    }
+
     /// Whether any component has non-linear curves.
     pub fn is_nonlinear(&self) -> bool {
         self.components.iter().any(|c| c.curves.is_some())

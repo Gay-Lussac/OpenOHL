@@ -130,8 +130,13 @@ pub struct Cable {
     pub source: Option<String>,
     /// Overall diameter.
     pub diameter: Length,
-    /// Mass per unit length.
+    /// Mass per unit length, as the data sheet gives it: per metre of
+    /// unstressed cable at [`Cable::reference_temperature`].
     pub mass_per_length: MassPerLength,
+    /// The data sheet's reference temperature of `mass_per_length` (wire
+    /// library version 2). None: [`DEFAULT_REFERENCE_TEMPERATURE_C`].
+    #[serde(default)]
+    pub reference_temperature: Option<Temperature>,
     /// Rated tensile strength (RTS / RBS / UTS).
     pub rated_tensile_strength: Force,
     /// Outer component (whole cable for homogeneous cables).
@@ -396,9 +401,50 @@ impl Cable {
         self.components().map(|c| c.area).sum()
     }
 
-    /// Weight per unit length under standard gravity.
+    /// Weight per unit length under standard gravity, as the data sheet
+    /// gives it: per metre of unstressed cable at
+    /// [`Cable::mass_reference_temperature`]. The calculations take it at
+    /// the stringing temperature ([`Cable::weight_at`]).
     pub fn weight(&self) -> ForcePerLength {
         self.mass_per_length.weight()
+    }
+
+    /// The temperature of the data sheet's mass per length: the cable's
+    /// `reference_temperature`, else [`DEFAULT_REFERENCE_TEMPERATURE_C`].
+    pub fn mass_reference_temperature(&self) -> Temperature {
+        self.reference_temperature
+            .unwrap_or_else(|| Temperature::from_celsius(DEFAULT_REFERENCE_TEMPERATURE_C))
+    }
+
+    /// The own weight per metre of unstressed cable at `temperature`: the
+    /// data sheet's spread over the cable's free thermal length there,
+    /// \( w_{ref}\, e^{-lpha (t - t_{ref})} \) (composite
+    /// \( lpha \), the multiplicative thermal form of the linear
+    /// calculations; owner decision 2026-10-21). The cable's mass does not
+    /// change: a metre of it at a higher temperature holds less of it.
+    pub fn weight_at(&self, temperature: Temperature) -> ForcePerLength {
+        self.weight() * self.weight_factor_at(temperature)
+    }
+
+    /// \( e^{-lpha (t - t_{ref})} \): [`Cable::weight_at`] over the data
+    /// sheet's weight.
+    pub fn weight_factor_at(&self, temperature: Temperature) -> f64 {
+        (-self.thermal_expansion() * (temperature - self.mass_reference_temperature()).kelvin())
+            .exp()
+    }
+
+    /// The same cable with its mass per length per metre of unstressed
+    /// cable at `temperature`, the mass's reference temperature then
+    /// `temperature`, scaled by `factor` (the weight there over the data
+    /// sheet's: [`Cable::weight_factor_at`] in the multiplicative form, the
+    /// stress-strain curves' equivalent in the additive one). Applied again
+    /// at the same temperature with the factor 1, it changes nothing.
+    pub fn with_mass_at(&self, temperature: Temperature, factor: f64) -> Cable {
+        Cable {
+            mass_per_length: self.mass_per_length * factor,
+            reference_temperature: Some(temperature),
+            ..self.clone()
+        }
     }
 
     /// Composite axial stiffness \\( EA = \sum E_i A_i \\).
@@ -546,6 +592,14 @@ impl Cable {
                 return Err(error(format!("{name} must be positive, got {value}")));
             }
         }
+        if let Some(t) = self.reference_temperature
+            && !(-100.0..=300.0).contains(&t.celsius())
+        {
+            return Err(error(format!(
+                "reference_temperature = {} °C is outside -100–300 °C",
+                t.celsius()
+            )));
+        }
         for (label, c) in [("outer", Some(&self.outer)), ("core", self.core.as_ref())] {
             let Some(c) = c else { continue };
             if !(c.area.si().is_finite() && c.area.si() > 0.0) {
@@ -629,8 +683,13 @@ pub const WIRE_FILE_EXTENSION: &str = "ohlw";
 /// Value of the optional `format` header of wire libraries.
 pub const WIRE_FILE_FORMAT: &str = "ohl-wire";
 
-/// Latest wire library format version.
-pub const WIRE_FILE_VERSION: u32 = 1;
+/// Latest wire library format version: 2 adds a cable's optional
+/// `reference_temperature` (of its mass per length).
+pub const WIRE_FILE_VERSION: u32 = 2;
+
+/// The temperature of a data sheet's mass per length when the cable does
+/// not give one, °C (owner decision 2026-10-21).
+pub const DEFAULT_REFERENCE_TEMPERATURE_C: f64 = 20.0;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -953,6 +1012,67 @@ mod tests {
             1e-12,
         );
         assert_close(c.weight().newtons_per_meter(), 1.628 * 9.806_65, 1e-12);
+    }
+
+    /// The data sheet's weight at its reference temperature, taken at
+    /// another (owner decision 2026-10-21). Hand: Drake's composite
+    /// α = 1.8856e-5 /K (above); 20 °C by default, so at 10 °C a metre holds
+    /// e^(10 α) = 1.000188579 of the 20 °C metre's mass; given at 40 °C,
+    /// at 10 °C e^(30 α).
+    #[test]
+    fn weight_from_the_data_sheet_temperature() {
+        let c = drake();
+        let alpha = c.thermal_expansion();
+        let w = 1.628 * 9.806_65;
+        assert_eq!(c.reference_temperature, None);
+        assert_close(c.mass_reference_temperature().celsius(), 20.0, 1e-15);
+        let t10 = Temperature::from_celsius(10.0);
+        assert_close(c.weight_at(t10).si(), w * (10.0 * alpha).exp(), 1e-14);
+        assert_close(c.weight_factor_at(t10), 1.000_188_579, 1e-9);
+        assert_close(c.weight_at(Temperature::from_celsius(20.0)).si(), w, 1e-15);
+        // Given at 40 °C.
+        let mut hot = drake();
+        hot.reference_temperature = Some(Temperature::from_celsius(40.0));
+        assert_close(hot.weight_at(t10).si(), w * (30.0 * alpha).exp(), 1e-14);
+        // The cable at 10 °C: its mass there, applied again unchanged.
+        let strung = c.with_mass_at(t10, c.weight_factor_at(t10));
+        assert_eq!(strung.reference_temperature, Some(t10));
+        assert_close(strung.weight().si(), c.weight_at(t10).si(), 1e-15);
+        assert_eq!(strung.weight_factor_at(t10), 1.0);
+        assert_eq!(
+            strung.with_mass_at(t10, strung.weight_factor_at(t10)),
+            strung
+        );
+        // The additive form of a linear cable: (1 + α (20 - 20)) /
+        // (1 + α (10 - 20)) for the curves' reference 20 °C.
+        let m = mechanics::Mechanics::from_cable(&c).unwrap();
+        let additive = m
+            .weight_factor(Temperature::from_celsius(20.0), t10)
+            .unwrap();
+        assert_close(additive, 1.0 / (1.0 - 10.0 * alpha), 1e-12);
+        // The two forms differ by (α Δt)² / 2 or so, ~1e-8.
+        assert!((additive - c.weight_factor_at(t10)).abs() < 1e-7);
+    }
+
+    #[test]
+    fn reference_temperature_is_read_and_checked() {
+        let text = |t: &str| {
+            format!(
+                "format = \"ohl-wire\"\nversion = 2\n[[cable]]\nid = \"c\"\nname = \"c\"\n\
+                 kind = \"aaac\"\ndiameter = \"28 mm\"\nmass_per_length = \"1.6 kg/m\"\n\
+                 reference_temperature = \"{t}\"\nrated_tensile_strength = \"120 kN\"\n\
+                 outer = {{ area = \"400 mm²\", modulus = \"75 GPa\", thermal_expansion = 20e-6 }}\n"
+            )
+        };
+        let mut lib = Library::default();
+        lib.add_toml(Path::new("a.ohlw"), &text("15 °C")).unwrap();
+        let c = lib.get("c").unwrap();
+        assert_close(c.mass_reference_temperature().celsius(), 15.0, 1e-12);
+        let mut bad = Library::default();
+        let e = bad
+            .add_toml(Path::new("b.ohlw"), &text("500 °C"))
+            .unwrap_err();
+        assert!(e.to_string().contains("reference_temperature"), "{e}");
     }
 
     #[test]
