@@ -478,7 +478,6 @@ pub fn usage_with_sections(
                             || t.model.is_some()
                             || t.pole_detail() == Some(ohl_structures::Detail::Design)
                     });
-                    let extension = structure.and_then(|s| s.extension.as_deref());
                     let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
                     // Per conductor position (a suspension point, or a
                     // dead-end's back and ahead strings together): its wire
@@ -675,9 +674,7 @@ pub fn usage_with_sections(
                         .map(|(label, p)| ((*label).clone(), p.factored))
                         .collect();
                     let fe = type_def.and_then(|t| {
-                        analyses.fe(
-                            t, structure, extension, &factored, &r.case, case, &mut notes,
-                        )
+                        analyses.fe(t, structure, &factored, &r.case, case, &mut notes)
                     });
                     let pole = type_def
                         .and_then(|t| analyses.pole(t, &factored, &r.case, case, &mut notes));
