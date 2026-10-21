@@ -459,6 +459,17 @@
           </xs:complexType>
         </xs:element>
 
+        <!-- A circuit (version 7, 2026-10-21): its members are the
+             conductor paths whose sections give its name (circuit_name). -->
+        <xs:element name="circuit" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="system" type="xs:string"/>
+            <xs:attribute name="description" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+
         <xs:element name="section" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:sequence>

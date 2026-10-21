@@ -726,6 +726,8 @@ struct Meta {
     display: ohl_line::Display,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     systems: Vec<ohl_line::electrical::System>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    circuits: Vec<ohl_line::circuits::Circuit>,
     #[serde(
         default,
         skip_serializing_if = "ohl_line::condition::CreepStretch::is_empty"
@@ -756,6 +758,7 @@ impl Meta {
             alignment: line.alignment.clone(),
             display: line.display.clone(),
             systems: line.systems.clone(),
+            circuits: line.circuits.clone(),
             creep_stretch: line.creep_stretch.clone(),
             bimetallic: line.bimetallic,
             solver: line.solver,
@@ -771,8 +774,9 @@ impl Meta {
 /// undo one each: `line` (name, CRS, display) and one row per setting.
 /// Projects written before kept them all in `line`: read as defaults
 /// under the rows ([`meta_of`]), until the first change writes the rows.
-const META_ROWS: [&str; 7] = [
+const META_ROWS: [&str; 8] = [
     "systems",
+    "circuits",
     "creep_stretch",
     "bimetallic",
     "solver",
@@ -792,6 +796,7 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
         // Every row written, defaults too (a row overrides the old one).
         let v = match key {
             "systems" => json(&meta.systems),
+            "circuits" => json(&meta.circuits),
             "creep_stretch" => json(&meta.creep_stretch),
             "bimetallic" => json(&meta.bimetallic),
             "solver" => json(&meta.solver),
@@ -871,6 +876,28 @@ pub fn line_settings_change(before: &Line, after: &Line) -> Command {
             })
             .collect(),
     }
+}
+
+/// A change of circuits ([`ohl_line::circuits`]) as one command: the
+/// settings rows that differ between `before` and `after` (the circuits
+/// list) and the puts of the sections whose circuit differs (their
+/// `circuit_name`). Refused when `after` has a circuit contradiction
+/// `before` had not ([`Line::check_circuit_change`]).
+pub fn line_circuits_change(before: &Line, after: &Line) -> Result<Command, String> {
+    after.check_circuit_change(before)?;
+    let mut commands = vec![line_settings_change(before, after)];
+    for s in &after.sections {
+        let old = before.sections.iter().find(|x| x.id == s.id);
+        if old.is_some_and(|o| o.circuit_name != s.circuit_name) {
+            commands.push(Command::Put {
+                kind: Kind::Section,
+                id: s.id.clone(),
+                value: json(s),
+                ord: None,
+            });
+        }
+    }
+    Ok(Command::Batch { commands })
 }
 
 /// The puts of the line's settings (name, CRS, display, systems, creep
@@ -1092,6 +1119,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         jumpers: vec![],
         display: meta.display,
         systems: meta.systems,
+        circuits: meta.circuits,
         creep_stretch: meta.creep_stretch,
         bimetallic: meta.bimetallic,
         solver: meta.solver,
@@ -2429,6 +2457,12 @@ impl Session {
                     .id = new_id.clone();
                 let mut line = self.line.clone();
                 line.systems = systems;
+                // The circuits of the system follow.
+                for c in &mut line.circuits {
+                    if c.system.as_deref() == Some(&id) {
+                        c.system = Some(new_id.clone());
+                    }
+                }
                 self.primitives(line_settings_change(&self.line, &line), out, notes, user)?;
                 for sec in &self.line.sections {
                     if sec.system.as_deref() == Some(&id) {
