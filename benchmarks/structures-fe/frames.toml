@@ -729,10 +729,10 @@ expected.u_T_rx = { value = -0.04642857142857143, rel_tol = 1e-9 }
 
 [[case]]
 id = "structfe-014"
-title = "Attachment point along a frame member: the member split there, fixed-end beam with a load at a quarter"
+title = "Attachment point written along a frame member (files before 2026-10-21): a joint inserted there, the member split; fixed-end beam with a load at a quarter"
 calculation = "structures.fe_point"
 reference = "Euler–Bernoulli beam theory: a beam fixed at both ends with a point load at a from one end (e.g. Roark's Formulas for Stress and Strain, fixed–fixed beam, intermediate load)"
-notes = "One frame member L = 4 m along x, fixed at A and B, I = 2e-6 m4; the attachment point P1 along it at a = 1 m (at = 0.25, b = 3 m): the analysis splits the member there (one member in the file, two pieces solved, results per member). P = 1 kN down: R_A = P·b²(3a + b)/L³ = 843.75 N, M_A = P·a·b²/L² = 562.5 N m (−562.5 about y), R_B = P·a²(a + 3b)/L³ = 156.25 N, M_B = P·a²·b/L² = 187.5 N m; deflection at P1 P·a³·b³/(3·E·I·L³) = 3.3482142857e-4 m down. First order, no self-weight."
+notes = "One frame member L = 4 m along x, fixed at A and B, I = 2e-6 m4; the attachment point P1 along it at a = 1 m (at = 0.25, b = 3 m): read with a joint P1 inserted there (kind attach) and the member split into two continuous pieces (beam, beam-2: the same section and kind, a rigid connection, each buckling over the whole beam), the point on P1 (owner decision 2026-10-21: a point needs a joint). P = 1 kN down: R_A = P·b²(3a + b)/L³ = 843.75 N, M_A = P·a·b²/L² = 562.5 N m (−562.5 about y), R_B = P·a²(a + 3b)/L³ = 156.25 N, M_B = P·a²·b/L² = 187.5 N m; deflection at P1 P·a³·b³/(3·E·I·L³) = 3.3482142857e-4 m down. First order, no self-weight."
 max_seconds = 1.0
 inputs.point = "P1"
 inputs.force_x = 0.0

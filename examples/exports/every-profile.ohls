@@ -7,10 +7,12 @@ id = "every-profile"
 name = "Every profile (invented)"
 kind = "other"
 
+# P1 hangs a quarter up m-EA: on joint P1 inserted there (a point needs a
+# joint, 2026-10-21), m-EA split into two continuous pieces, each buckling
+# over the whole 5 m.
 [[point]]
 label = "P1"
-member = "m-EA"
-at = 0.25
+node = "P1"
 
 [[node]]
 id = "N0"
@@ -31,11 +33,17 @@ spring = [0, 0, 0, 0, 0, 2000]
 id = "N3"
 point = ["4 m", "3 m", "5 m"]
 
+[[node]]
+id = "P1"
+point = ["0.0 m", "0.0 m", "1.25 m"]
+kind = "attach"
+
 [[member]]
 id = "m-EA"
-nodes = ["N0", "N1"]
+nodes = ["N0", "P1"]
 section = "EA-61x7"
 kind = "frame"
+lk = "5.0 m"
 
 [[member]]
 id = "m-UA"
@@ -87,6 +95,13 @@ id = "m-GEN"
 nodes = ["N0", "N3"]
 section = "GEN-1"
 check = false
+
+[[member]]
+id = "m-EA-2"
+nodes = ["P1", "N1"]
+section = "EA-61x7"
+kind = "frame"
+lk = "5.0 m"
 
 [[load]]
 node = "N3"

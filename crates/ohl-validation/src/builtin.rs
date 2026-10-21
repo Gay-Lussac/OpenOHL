@@ -940,8 +940,8 @@ impl Calculation for StructureFe {
 
 /// `structures.fe_point`: a structure type (`.ohls` text holding its
 /// members) under one load at one of its attachment points, through the
-/// point's link to its joint (its offset's moment, a member split at a
-/// point along it).
+/// point's link to its joint (its offset's moment; a point a file places
+/// along a member is on a joint inserted there, the member split).
 struct StructureFePoint;
 
 impl Calculation for StructureFePoint {

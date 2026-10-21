@@ -28,8 +28,8 @@ fn repo() -> PathBuf {
 }
 
 /// The shipped structure types: every point where its file puts it (on
-/// its joint exactly, along its member as before), every point linked
-/// to a joint, the detail levels as before the joints had kinds.
+/// its joint exactly), every point linked to a joint, the detail levels
+/// as before the joints had kinds.
 #[test]
 fn shipped_types_keep_their_points() {
     let files = [
@@ -87,7 +87,6 @@ fn shipped_types_keep_their_points() {
                     assert_eq!(&j.id, n);
                     assert_eq!(at, j.position, "{file} {}", p.label);
                 }
-                (None, JointSource::Member { .. }) => assert_eq!(at, j.position),
                 (None, JointSource::Point) => {
                     // Its own joint: the point's position, its label.
                     assert_eq!(at, j.position);
@@ -122,9 +121,8 @@ fn type_02_points_link_to_their_joints() {
 }
 
 /// The joints points make: a stick figure's point is its own joint, its
-/// label the id (`-a`, `-a2`… when a node has it); points along a member
-/// at one place share one joint; a point at a node's position is linked
-/// to that node.
+/// label the id (`-a`, `-a2`… when a node has it); a point at a node's
+/// position is linked to that node.
 #[test]
 fn joints_made_by_points() {
     let joints = [
@@ -136,20 +134,18 @@ fn joints_made_by_points() {
         &joints,
         &[
             ("A1", PointPlace::Free([-3.0, 0.0, 10.0])),
-            ("B", PointPlace::Member("arm", 0.25)),
-            ("B2", PointPlace::Member("arm", 0.25)),
-            ("B3", PointPlace::Member("arm", 0.5)),
             ("C", PointPlace::Free([9.0, 9.0, 9.0])),
             ("D", PointPlace::Free([1.0, 0.0, 10.0 + 1e-7])),
             ("E", PointPlace::Joint("N5")),
         ],
     );
-    assert_eq!(ids, ["A1-a2", "B", "B", "B3", "N5", "A1-a", "N5"]);
+    assert_eq!(ids, ["A1-a2", "N5", "A1-a", "N5"]);
 }
 
 /// An offset puts the point away from its joint; the joint keeps its
-/// place. A point on a node, along a member, with offsets; a point at a
-/// position of its own may not take one.
+/// place. A point on a node, and one written along a member (on the
+/// joint inserted there), with offsets; a point at a position of its own
+/// may not take one.
 #[test]
 fn offsets_from_joints() {
     let t = read(&format!(
@@ -166,13 +162,9 @@ fn offsets_from_joints() {
     assert_eq!(t.point_link("tip2"), Some(("N2", [0.0; 3])));
     let mid = t.joint("mid").unwrap();
     assert_eq!(mid.position, [-5.0, 0.0, 30.0]);
-    assert_eq!(
-        mid.source,
-        JointSource::Member {
-            member: "arm".into(),
-            at: 0.5
-        }
-    );
+    assert_eq!(mid.source, JointSource::Node);
+    assert_eq!(mid.kind, Some(JointKind::Attach));
+    assert_eq!(t.point_link("mid"), Some(("mid", [0.0, 0.0, -1.0])));
     assert_eq!(t.joint_local("N2", None), Some([-10.0, 0.0, 30.0]));
     // N1 is supported, N2 carries points; both kinds worked out.
     assert_eq!(t.joint("N1").unwrap().kind, Some(JointKind::Support));

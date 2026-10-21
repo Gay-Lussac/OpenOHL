@@ -24,7 +24,10 @@ fn example_library() -> SectionLibrary {
     SectionLibrary::load(&root().join("libraries/sections/example-sections.ohlsec")).unwrap()
 }
 
-/// A small invented frame using every shape of the example library.
+/// A small invented frame using every shape of the example library. Its
+/// point P1 is written along member m-EA, as files before 2026-10-21 put
+/// it: read with a joint P1 inserted there, m-EA split into m-EA (N0–P1)
+/// and m-EA-2 (P1–N1).
 const SHAPES: &str = r#"
 format = "ohl-structure"
 version = 2
@@ -438,7 +441,7 @@ fn ifc_members_and_ifc2x3() {
     assert!(p.header.contains("ReferenceView_V1.2"));
     p.check_attributes(Schema::Ifc4);
     assert_eq!(p.count("IFCSTRUCTURALCURVEMEMBER"), 0);
-    assert_eq!(p.count("IFCMEMBER"), 9);
+    assert_eq!(p.count("IFCMEMBER"), 10);
     let old = ifc::ifc(
         &s,
         &IfcOptions {
@@ -452,13 +455,13 @@ fn ifc_members_and_ifc2x3() {
     assert!(p.header.contains("FILE_SCHEMA(('IFC2X3'))"));
     assert!(p.header.contains("CoordinationView_V2.0"));
     p.check_attributes(Schema::Ifc2x3);
-    assert_eq!(p.count("IFCMEMBER"), 9);
+    assert_eq!(p.count("IFCMEMBER"), 10);
     assert_eq!(p.count("IFCBUILDINGSTOREY"), 1);
     // IfcPerson WR1: a family or a given name (IfcOpenShell's rule check).
     let person = &p.of("IFCPERSON")[0];
     assert!(person[1] != "$" || person[2] != "$", "{person:?}");
     // Every profile with geometry is a solid; "general" has none.
-    assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 8);
+    assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 9);
     assert_eq!(p.count("IFCPROFILEDEF"), 0);
     assert!(
         ifc::ifc(
@@ -510,7 +513,7 @@ fn profiles_per_shape() {
         assert_eq!(p.count(kind), 1, "{kind}");
     }
     assert_eq!(p.count("IFCLSHAPEPROFILEDEF"), 2);
-    assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 8);
+    assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 9);
     // The equal angle: 61 × 61 × 7, root radius 8 mm; its centroid on the
     // axis (the position moves the box centre off it).
     let l = p
@@ -667,7 +670,17 @@ fn saf_sheets_and_round_trip() {
 
 #[test]
 fn saf_parametric_shapes() {
-    let s = shapes();
+    let mut s = shapes();
+    // A load at a place along a member (no attachment point gives one
+    // since 2026-10-21: they are on joints), as the export model takes it.
+    s.load_cases[0].loads.push(ExportLoad {
+        label: "m-IS".into(),
+        place: LoadPlace::OnMember {
+            member: 3,
+            at: 0.25,
+        },
+        force: [0.0, 0.0, -1000.0],
+    });
     let back = xlsx::read(&saf::workbook(&s).unwrap()).unwrap();
     let cs = back
         .iter()
@@ -745,8 +758,8 @@ fn csv_tables() {
         ]
     );
     let lines = |n: &str| t.iter().find(|(x, _)| *x == n).unwrap().1.lines().count() - 1;
-    assert_eq!(lines("nodes.csv"), 4);
-    assert_eq!(lines("members.csv"), 9);
+    assert_eq!(lines("nodes.csv"), 5);
+    assert_eq!(lines("members.csv"), 10);
     assert_eq!(lines("sections.csv"), 9);
     assert_eq!(lines("supports.csv"), 2);
     assert_eq!(lines("loads.csv"), 3);
@@ -1038,5 +1051,6 @@ fn a_tension_member_keeps_its_bending() {
     assert!(members.starts_with("id,node_i,node_j,section,kind,bending,check,length_m,"));
     assert!(members.contains("\nm-RHS,N1,N3,RHS-121x79x5,tension,1,1,"));
     assert!(members.contains("\nm-GEN,N0,N3,GEN-1,truss,0,0,"));
-    assert!(members.contains("\nm-EA,N0,N1,EA-61x7,frame,0,1,"));
+    assert!(members.contains("\nm-EA,N0,P1,EA-61x7,frame,0,1,"));
+    assert!(members.contains("\nm-EA-2,P1,N1,EA-61x7,frame,0,1,"));
 }

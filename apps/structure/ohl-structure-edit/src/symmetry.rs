@@ -323,13 +323,9 @@ pub fn move_to(
     h: &Handle,
     at: [f64; 3],
 ) -> Result<(), String> {
+    // A point moves on its own (its offset), its joint stays.
     let joint = match h {
         Handle::Joint(id) => Some(id.clone()),
-        Handle::Point(l) => t
-            .points
-            .iter()
-            .find(|p| &p.label == l)
-            .and_then(|p| p.node.clone()),
         _ => None,
     };
     match joint {

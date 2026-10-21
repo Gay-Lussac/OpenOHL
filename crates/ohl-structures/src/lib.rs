@@ -15,10 +15,13 @@
 //! - [`pole`]: the pole of a pole structure, named (`.ohlp`) or described
 //!   in the structure file (`[pole]`, levels 1 to 3).
 //! - [`extensions`]: height extensions, their bodies and leg extensions.
+//! - [`on_members`]: joints inserted on members (a point read from a
+//!   file that put it along a member).
 
 pub mod derive;
 pub mod extensions;
 pub mod insulators;
+pub mod on_members;
 pub mod pole;
 pub mod structures;
 pub mod templates;
@@ -37,9 +40,9 @@ pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary, Insulato
 pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape, PoleWall};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, Joint, JointKind, JointSource,
-    PlacedAttachment, PlacedPoint, PlacedString, PlacedStrings, PlacedWire, PointPlace, SAME_JOINT,
-    SpanLimit, StructureLibrary, StructureType, StructureWind, TypePoint, TypeString, TypeWire,
-    WindBand, point_joints,
+    NOT_ATTACH, PlacedAttachment, PlacedPoint, PlacedString, PlacedStrings, PlacedWire, PointPlace,
+    SAME_JOINT, SpanLimit, StructureLibrary, StructureType, StructureWind, TypePoint, TypeString,
+    TypeWire, WindBand, point_joints,
 };
 
 /// Error loading a library item.

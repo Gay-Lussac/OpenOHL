@@ -267,6 +267,38 @@ pub(crate) fn find(model: &Model, inactive: &[bool]) -> Vec<Stabilisation> {
     out
 }
 
+/// The directions node `n` cannot move in with no frame member at it:
+/// those its members (all of them, as trusses), supports and springs do
+/// not reach (as [`find`] holds them). None for a node without members
+/// or with a frame member.
+pub(crate) fn free_translations(model: &Model, n: usize) -> Vec<[f64; 3]> {
+    let members: Vec<usize> = (0..model.members.len())
+        .filter(|&k| model.members[k].i == n || model.members[k].j == n)
+        .collect();
+    if members.is_empty() || members.iter().any(|&k| model.members[k].is_frame()) {
+        return Vec::new();
+    }
+    let node = &model.nodes[n];
+    let mut s = Matrix3::zeros();
+    for &k in &members {
+        let m = &model.members[k];
+        let d = sub(model.nodes[m.j].point, model.nodes[m.i].point);
+        let l = norm(d);
+        let e = Vector3::new(d[0] / l, d[1] / l, d[2] / l);
+        s += e * e.transpose();
+    }
+    let held = |d: usize| node.fixed[d] || node.spring[d] > 0.0;
+    for d in 0..3 {
+        if held(d) {
+            s[(d, d)] += 1.0;
+        }
+    }
+    free_directions(s, |d| !held(d))
+        .into_iter()
+        .map(|(d, _)| d)
+        .collect()
+}
+
 /// Turns the ground holds of free translations into holds relative to the
 /// ends of the straight lines of members through their joint, where those
 /// ends are held (module docs). Rounds: a joint whose every line reaches
