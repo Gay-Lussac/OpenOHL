@@ -68,3 +68,83 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("--distance"));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `--system` (by name) and `--per system`: the example line's one system
+/// holds both circuits, so one volume, named after the system; an
+/// unknown system refused.
+#[test]
+fn safety_volumes_by_system() {
+    let dir = std::env::temp_dir().join(format!("ohl-safety-system-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    let ex = root().join("examples/synthetic-line");
+    let run = |system: &str| {
+        Command::new(env!("CARGO_BIN_EXE_ohl"))
+            .arg("safety-volume")
+            .arg(ex.join("synthetic-line.ohl.json"))
+            .arg("--weather")
+            .arg(ex.join("weather-cases.ohlwc"))
+            .args(["--cases", "max temperature", "--distance", "3"])
+            .args(["--tolerance", "0.3", "--per", "system", "--format", "dxf"])
+            .args(["--system", system])
+            .arg("--out")
+            .arg(&dir)
+            .output()
+            .unwrap()
+    };
+    let out = run("220 kV example system");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("220 kV example system: 220 kV — d 3.00 m"),
+        "{text}"
+    );
+    assert_eq!(text.matches(" triangles, ").count(), 1, "{text}");
+    let out = run("nope");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no system \"nope\""));
+    // Two spans of S1 and the branch's first span, per wire: the wires
+    // S1 and S3 only (S2 untouched).
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("safety-volume")
+        .arg(ex.join("synthetic-line.ohl.json"))
+        .arg("--weather")
+        .arg(ex.join("weather-cases.ohlwc"))
+        .args(["--cases", "max temperature", "--distance", "3"])
+        .args(["--tolerance", "0.3", "--format", "dxf"])
+        .args(["--span", "S1:1", "--span", "S1:2", "--span", "S3:1"])
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(text.matches(" triangles, ").count(), 2, "{text}");
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("safety-volume")
+        .arg(ex.join("synthetic-line.ohl.json"))
+        .args([
+            "--distance",
+            "3",
+            "--span",
+            "S1:9",
+            "--cases",
+            "max temperature",
+        ])
+        .arg("--weather")
+        .arg(ex.join("weather-cases.ohlwc"))
+        .arg("--out")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no span 9"));
+    std::fs::remove_dir_all(&dir).ok();
+}

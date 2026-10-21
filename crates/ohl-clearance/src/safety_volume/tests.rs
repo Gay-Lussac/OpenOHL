@@ -399,6 +399,7 @@ fn the_example_line_s_volumes() {
         let expected = match grouping {
             Grouping::Wire => 3,
             Grouping::Circuit => 2,
+            Grouping::System => 1,
         };
         assert_eq!(v.volumes.len(), expected);
     }
