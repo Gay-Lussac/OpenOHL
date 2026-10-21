@@ -40,8 +40,8 @@ Guiding principles:
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- 156 validation cases pass (47 textbook and CIGRE TB 324 cases added
-  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21); the private Swiss plugin and the importers of
+- 158 validation cases pass (47 textbook and CIGRE TB 324 cases added
+  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 
 ### Just finished (2026-10-18)
@@ -85,8 +85,14 @@ From the review of 2026-10-18 (quick wins are being done now):
   *Built (in active development, not approved yet): the terms agreed on
   2026-10-21 in the [Glossary](docs/user-guide/glossary.md) (Help ›
   Glossary in both apps, with drawings); the texts renamed step by step
-  (decision log 2026-10-21). Attachment points as their own objects,
-  linked to typed joints: planned.*
+  (decision log 2026-10-21). Attachment points linked to typed joints
+  (attach, support), offsets as rigid links whose moments the analysis
+  applies, members split at points along them, exact matching with the
+  nearest attach joint offered on a structure change, link / relink /
+  unlink commands (`ohl structures points`, `ohl structures link`,
+  session `link_point`, `unlink_point`, `relink_points`): built in the
+  engine, in active development (not approved yet); the Link tool and
+  the drawn links in both applications are next.*
 - **"String all sets…"**: one command to string every set along an
   alignment or from one structure to another (preview, undo).
 - **Option "tools act on left-click"** (today a right-click uses a tool;

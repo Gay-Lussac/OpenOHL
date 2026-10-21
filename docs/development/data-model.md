@@ -157,7 +157,10 @@ application raises a file to 6 when it writes a generator using one
 `body::OPTIONS_VERSION`), and only then; a file without a `version`
 stays without, and a version is never lowered. Version 6 is one
 unreleased raise: it also covers anything else added to `.ohls` before
-the next release (another new field then needs no 7): a member's
+the next release (another new field then needs no 7): a joint's `kind`
+and an attachment point's `offset` (2026-10-21; `ohl_structure_edit::
+links`, `LINKS_VERSION`, writes 6 only when it writes one) are such
+fields, and so is a member's
 `bending` (a `tension` member that also bends: a tower program's
 tension-only beam) and `check = false` (a modelling member, not checked)
 are such fields, and made `.ohlfe` **3**; nothing in OpenOHL writes them
@@ -169,7 +172,15 @@ attributes `height_datum`, `height_datum_epsg`), and the project file's
 `session_schema` **5** (the `meta` row `line` may hold it: an older
 program refuses the project instead of dropping the datum when it writes
 that row; opening a project of schema 4 or before converts nothing, it
-has none, and marks it 5). The export
+has none, and marks it 5). The attachment points' links (2026-10-21:
+`StructurePoint` `joint`, `offset`, `unlinked`) are covered by the same
+unreleased raise — line file 7 (OHL XML: `<point>` attributes `joint`,
+`offset_x`, `offset_y`, `offset_z`, `unlinked`), project schema 5 (the
+structure rows carry the keys); `.ohlfe` stays 3 (a separate model's
+nodes still name their points by `attachment`); the line-values JSON and
+the export model JSON are unchanged (the points keep their labels).
+Nothing written before changes when read: links are worked out in
+memory and written with the object when it is next saved. The export
 model's member `kind` (CSV, IFC `TENSION_MEMBER`, SAF "Tension only")
 takes the value `tension` too; `ohl_structure_link::ExportMember` carries
 `bending` and `check` (`ExportMember::is_frame`): a tension-only member
@@ -367,6 +378,9 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `StructurePoint.label` | string | — | unique among the structure's points **and** wire points | — |
 | `StructurePoint.position` | `[x,y,z]` | m (global) | where strings hang | — |
 | `StructurePoint.description` | string | — | free text | — |
+| `StructurePoint.joint` | string? | — | line file 7 (2026-10-21): the joint of the structure's type the **attachment point** is linked to (`StructureType::joints`); none on a typed structure: as its type's point of the label, else a joint at its position (`library::link_point`, in `Line::resolve`); not used without a type (each point its own joint) | `[[node]] id`, or a joint the points make (`ohl_structures::point_joints`) |
+| `StructurePoint.offset` | `[x,y,z]` | m (structure axes) | from the joint to the point: a rigid link, its moment r × F applied at the joint by the structure analysis; written only when not zero. Resolved: position = joint as placed + offset turned with the structure; a written position kept within `assembly::KEEP_POSITION` (1 µm), so a round trip moves nothing | — |
+| `StructurePoint.unlinked` | bool | — | written only when true: kept at `position`, the structure's finite-element check refused until it is linked again; also set when resolved if its joint is not in the type (`StructurePoint::is_linked`) | — |
 | `WirePoint.label` | string | — | unique among points and wire points | — |
 | `WirePoint.position` | `[x,y,z]` | m (global) | position in still air: **placed from its strings** (`Structure::place_wires`); given only for one no string reaches (fixed) | — |
 | `WirePoint.set` | u32? | — | set number, unique on the structure: sections and jumpers end here. None: strings only meet here | — |
@@ -947,13 +961,13 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | `height` | length? | m | shaft top for the default stick drawing |
 | `foot` | length? | m | local z of the feet (default 0: ground) |
 | `source` | string? | — | where the data comes from |
-| `[[point]]` | `TypePoint` | m | `label`, `description`, and `point` **or** `node` (joint id) **or** `member` + `at` (0–1 from its first joint); in the finite-element model (`Model::member_points`, `Model::point_loads`) a point along a member shares its loads to the member's joints, (1 − `at`) and `at` |
+| `[[point]]` | `TypePoint` | m | an **attachment point**: `label`, `description`, and `point` **or** `node` (joint id) **or** `member` + `at` (0–1 from its first joint); version 6: `offset` (with `node` or `member`: from the joint, local axes — a rigid link; refused with `point`). Every point is linked to a joint when read (`TypePoint::joint`, `StructureType::joints`, `point_joints`): its `node`; along a member one joint per place (`JointSource::Member`, id = the first point's label); a point at its own position: the node naming it as `attachment`, else a node at that position (within `SAME_JOINT`, 1 µm), else its own joint (`JointSource::Point`; id = its label, `-a`, `-a2`… when a node has it). Several points may share a joint. In the finite-element model (`Model::joint_points`, `Model::member_points`, `Model::point_load`, `Model::linked_load`, `ohl_structures_fe::links`): the force at the joint, plus r × F where a frame member meets it (only trusses: left out, `PointLoad::note`); along a frame member strictly inside it the member is split for the analysis (`Model::split`, `Solution::pieces`: results per member, usage the worst piece's, each piece buckling over the whole member's length); along a truss member shared to its ends, (1 − `at`) and `at`. A point on its own joint on a structure with members is a missing item for level 3 |
 | `[[wire]]` | `TypeWire` | m, N | `label`, `description`, `set?`, `point?` (else it hangs below its strings), `weight?` |
 | `[[string]]` | `TypeString` | m, N, m² | `label`, `description`, `top`, `wire`, `insulator?` **or** `length` + `weight`, `compression?`, `wind_area?`, `strain`, `angle?` (from straight down), `direction?` (in plan, 0 ahead); version 4: `max_load?` (force), `max_swing?`, `max_swing_across?`, `max_swing_along?` (angles) — limits not checked (`TypeString::limits`, `InsulatorLimits`; placed: `PlacedString::limits`, its own only); `side` (`ahead`/`back`) in files written before: level, 0° or 180° |
 | `[[attachment]]` | `TypeAttachment` | — | version 1: `set`, `phase`, `point`, `insulator` or inline `string`, `side` |
 | `[[extension]]` | `Extension`: `name`, `dz`; version 3: `[[extension.node]]` (`TypeNode`), `[[extension.member]]` (`TypeMember`), `[[extension.leg]]` (`LegExtension`: `leg`, `dz`) | m | extensions; at level 3 a piece below the feet (joints with z from `foot − dz` to `foot`, ids unique with the body's; members between its joints and the body's) and leg extensions. `StructureType::extended(ext) -> ExtendedBody` applies the rule (`crates/ohl-structures/src/extensions.rs`, [user guide](../user-guide/structure-library.md#extensions-and-leg-extensions)): the piece added, body joints it reaches lose their support, a leg's support joint slides `dz` lower along its steepest rising member; a placed structure on such an extension is analysed on `Model::from_structure_type_extended` (`ohl_loads` keys its models by type and extension) |
 | `[[body]]` | `points` | m | outline polylines (stick drawing) |
-| `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `made_by?` | m | structure joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it |
+| `[[node]]` | `id`, `point`, `support?`, `spring?`, `attachment?`, `kind?`, `made_by?` | m | structure joints (detail 2–3); `made_by`: the `[[generator]]` that wrote it; version 6 `kind` (`JointKind`): `attach` (strings hang here) or `support` (the feet; its fixity is `support`) — only these two, none written: worked out (`Joint::kind`: attach when a point is linked to it or it names an `attachment`, support when supported); a point on a `support` joint refused; `kind = "support"` without a `support` a missing item for level 3. `ohl_structures_fe` leaves `kind` out of the model |
 | `[[member]]` | `id`, `nodes` (2 ids), `section?`, `kind?` (`truss`/`frame`/`cable`; version 5, `.ohlfe` version 2: `tension`, a truss in tension and in compression up to its own buckling load — `MemberKind::Tension`, `solve::buckling_loads` (π²EI_min/L_k², L_k = `lk` or `k`·L; 0 without a second moment), beyond it bowed (`MemberForces::bowed`, axial −N_cr) or, with 0, slack (`MemberForces::slack`) by the solver's active-set iterations, `Solution::passes`; kept active as a truss only as the last resort when the set does not settle even with its ties split, `Solution::kept_active`, approximate), `bending?` (version 6, `.ohlfe` version 3: a `tension` member that also bends and twists as a frame while it is in the model — `Member::bending`, `Member::is_frame`; a tower program's tension-only beam; bowed or slack: as a truss, without bending; kept active as a frame; refused on another kind), `check?` (version 6, `.ohlfe` version 3: `false` — a modelling member, a tower program's fictitious member: solved, no usage, `Member::check`, `check::NOT_CHECKED`), `reference?`, `roll?`, `orientation?` (an angle's legs towards two structure directions, `"x+y-"`, instead of `reference` and `roll`), `k?`, `lk?` (effective length instead of k × length), `pretension?`, `capacity_tension?`, `capacity_compression?` (forces replacing the computed capacities in the usage), `dead_load_factor?` (on its self-weight, instead of `[analysis]`'s), `group?`, `made_by?` | m, N | structure members; `group`: its member group (no table of groups: a section — or `lk`, the capacities, the dead-load factor — per group is written on each member); `made_by` as for joints. `ohl_structures_fe` leaves `group` and `made_by` out of the model |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ohl-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`, `width?` (not the last panel; `Panel::width`), `redundants?` (`none`/`one`/`two`, `body::Redundants`), `plan?` (`none`/`x`/`diamond`, `body::Plan`)}], `plan_auto?` (`body::Plan`; slope changes and crossarm levels); crossarm `points`, `shape` (`triangular`/`rectangular`), `one_arm?` (bool); the optional fields are written only when on and read as off when absent (older files read as before, built the same: `generators_tests.rs` keeps a reference); version 6: the structure application raises the file to 6 when it writes a generator using one (`Generator::uses_options`), so an older one says "newer" instead of refusing them as unknown fields; peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
@@ -1706,7 +1720,17 @@ points; `wires`: a typed new structure's wire points as placed,
 `{label, set}` — the session does not read the structure library;
 `sets`: `{from, to}` old set → new set, `to` left out: removed;
 `confirm`), `rename`, `rename_attachment`, `rename_point`, `rename_system`,
-`replace_line`, `change_points`, `batch`. Each is expanded into puts and deletes, the whole
+`replace_line`, `change_points`, `batch`; (2026-10-21) `link_point`
+(`structure`, `label`, `joint`, `offset`, `position`: the attachment
+point made the structure's own, linked — also a relink), `unlink_point`
+(`structure`, `label`, `position`), `relink_points` (`structure`,
+`points`: `StructurePoint`s as they are to be) — each one log entry;
+`replace_structure` takes `points` (`{label, joint?, offset?}`: an old
+attachment point carried by the new structure linked so, or removed and
+listed). The session does not read the structure library: the caller
+computes positions and matches (`ohl_line::links`: `placed_joints`,
+`rigid_links`, `linked`, `unlinked`, `match_points` — exact, else the
+nearest attach joint offered with its offset — `with_points`). Each is expanded into puts and deletes, the whole
 line is validated, and the log keeps the command, its inverse, the objects
 changed and the sections to recalculate.
 

@@ -333,7 +333,7 @@ pub struct InlineString {
 /// `node`, `member`, `at`). It is on a joint (`node`), along a member
 /// (`member`, `at`: the joint the analysis puts there), or at a position
 /// of its own (`point`: a stick figure's — the point is then its own
-/// joint, [`PointJoint`]). On a joint or a member it may sit at an
+/// joint, [`JointSource::Point`]). On a joint or a member it may sit at an
 /// `offset` from it (version 6): a rigid link from the joint to the
 /// point, whose moment the structure analysis applies.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
