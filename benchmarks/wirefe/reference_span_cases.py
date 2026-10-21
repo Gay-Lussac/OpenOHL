@@ -7,7 +7,10 @@
 A tension section of two level 300 m spans: dead-ends with their clamps at
 (0, 27) and (600, 27) m, a suspension string in the middle hanging from
 (300, 30) m (3 m, 800 N, axial stiffness 5e7 N, tension only, its weight
-half on the clamp). Cable EA = 34.64 MN, alpha = 18.9e-6 /K, 1.6285 kg/m (g = 9.80665).
+half on the clamp). Cable EA = 34.64 MN, alpha = 18.9e-6 /K, 1.6285 kg/m (g = 9.80665)
+as its data sheet gives it, at 20 deg C (the wire library's default
+reference temperature, owner decision 2026-10-21): per metre of unstressed
+cable at the stringing temperature, 15 deg C, it is w exp(-alpha (15 - 20)).
 
 Stringing: 28 kN horizontal in both spans at 15 deg C, bare, the string
 plumb and stretched by the clamp's load (fixed point, converged); this
@@ -17,7 +20,10 @@ A state: each span its own temperature and load per metre (its unstressed
 length times exp(alpha (t - 15))). The cable's own weight is conserved
 (owner decision 2026-10-21): per metre of that longer unstressed length it
 is w exp(-alpha (t - 15)), so a span weighs w L0 hot or cold; ice is per
-metre of the real cable and is not scaled. The clamp's position is found by Newton
+metre of the real cable, stretched by its tension (owner decision
+2026-10-21): per unit unstressed length it is ice k with the span's stretch
+k = 1 + (1/EA L) int T ds (closed form below), a fixed point solved with the
+span's forces. The clamp's position is found by Newton
 on its two coordinates (finite differences, fixed cap) until the forces on
 it balance: the two spans' end tensions, the string's pull and half its
 weight. Each span is the closed-form elastic catenary (Irvine) between its
@@ -37,7 +43,8 @@ import math
 
 EA = 34.64e6
 ALPHA = 18.9e-6
-W = 1.6285 * 9.80665
+W_DATA_SHEET = 1.6285 * 9.80665  # at 20 deg C
+W = W_DATA_SHEET * math.exp(-ALPHA * (15.0 - 20.0))  # at stringing, 15 deg C
 H_STRING = 28_000.0
 T_STRING = 15.0
 ATTACH = (300.0, 30.0)
@@ -73,14 +80,32 @@ def newton2(f, x, scale, cap=60):
     return x
 
 
-def span_forces(L, w, chord):
-    """(H, V at start, Tz at end) of a span of length L under w on chord."""
-    H, V = newton2(
-        lambda p: [ends(p[0], p[1], L, w)[0] - chord[0], ends(p[0], p[1], L, w)[1] - chord[1]],
-        [25_000.0, -w * L / 2],
-        [1e-3, 1e-3],
-    )
-    return H, V, V + w * L
+def tension_integral(H, V, L, w):
+    """int_0^L T ds for T = sqrt(H^2 + (V + w s)^2): [G(V1) - G(V0)] / w,
+    G(v) = (v T + H^2 asinh(v / H)) / 2."""
+    g = lambda v: 0.5 * (v * math.hypot(H, v) + H * H * math.asinh(v / H))
+    return (g(V + w * L) - g(V)) / w
+
+
+def span_forces(L, w, chord, ice=0.0):
+    """(H, V at start, Tz at end) of a span of length L under its own
+    weight w per unstressed metre and `ice` per stretched metre on chord
+    (the ice per unstressed metre ice k, k the span's stretch: fixed point)."""
+    k = 1.0
+    for _ in range(100):
+        q = w + ice * k
+        H, V = newton2(
+            lambda p: [ends(p[0], p[1], L, q)[0] - chord[0], ends(p[0], p[1], L, q)[1] - chord[1]],
+            [25_000.0, -q * L / 2],
+            [1e-3, 1e-3],
+        )
+        k_new = 1 + tension_integral(H, V, L, q) / EA / L
+        if ice == 0.0 or abs(k_new - k) <= 1e-14:
+            break
+        k = k_new
+    else:
+        raise RuntimeError("stretch did not settle")
+    return H, V, V + q * L
 
 
 def length_for(H, chord, w):
@@ -115,11 +140,12 @@ def state(lengths, spans):
     clamp, swing, string force."""
     length, weight, k = STRING
     L = [l * math.exp(ALPHA * (t - T_STRING)) for l, (t, _, _) in zip(lengths, spans)]
-    w = [own * math.exp(-ALPHA * (t - T_STRING)) + ice for t, own, ice in spans]
+    w = [own * math.exp(-ALPHA * (t - T_STRING)) for t, own, _ in spans]
+    ice = [i for _, _, i in spans]
 
     def parts(c):
-        h0, _, tz0 = span_forces(L[0], w[0], (c[0] - ENDS[0][0], c[1] - ENDS[0][1]))
-        h1, v1, _ = span_forces(L[1], w[1], (ENDS[1][0] - c[0], ENDS[1][1] - c[1]))
+        h0, _, tz0 = span_forces(L[0], w[0], (c[0] - ENDS[0][0], c[1] - ENDS[0][1]), ice[0])
+        h1, v1, _ = span_forces(L[1], w[1], (ENDS[1][0] - c[0], ENDS[1][1] - c[1]), ice[1])
         ax, az = ATTACH[0] - c[0], ATTACH[1] - c[1]
         d = math.hypot(ax, az)
         t = max(0.0, k * (d / length - 1))
@@ -136,8 +162,9 @@ def state(lengths, spans):
 
 
 if __name__ == "__main__":
-    # The validation cases (1.6285 kg/m), then the unit test of
-    # ohl_wirefe::section (15.97 N/m, the same geometry).
+    # The validation cases (1.6285 kg/m at 20 deg C: W at 15 deg C), then
+    # the unit test of ohl_wirefe::section (15.97 N/m at stringing, the same
+    # geometry: that model takes the weight as given at stringing).
     for w, label in ((W, "span_cases.toml"), (15.97, "ohl_wirefe::section test, 15.97 N/m")):
         lengths = strung(w)
         print(f"{label}: unstressed lengths at 15 C: {lengths[0]:.10f} {lengths[1]:.10f}")

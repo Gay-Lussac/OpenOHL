@@ -10,13 +10,17 @@
 # the middle clamp's position until the two spans' end forces, the
 # string's pull and half its weight balance; each span's own weight
 # conserved (owner decision 2026-10-21: w exp(-alpha (t - 15 °C)) per unit
-# of its thermally longer unstressed length, ice per metre as given).
+# of its thermally longer unstressed length, w the cable's 1.6285 kg/m at
+# its data sheet's 20 °C taken at the stringing 15 °C, x exp(5 alpha));
+# the ice per metre of the stretched span (owner decision 2026-10-21: per
+# unit unstressed length times the span's stretch, a fixed point).
 # Hand checks:
 #   001 both spans alike: the string stays plumb, H the same in both.
 #   002 span 0 iced: H0 > H1 and the string swings into span 0 (negative)
 #       by tan(phi) = (H1 - H0) / (vertical at the clamp):
-#       H0 - H1 = 338.28 N = 6702.47 N · sin(2.8930°) — the iced span sags
-#       more, pulls the clamp 0.151 m towards it.
+#       H0 - H1 = 338.75 N = 6704.64 N · sin(2.8961°) — the iced span sags
+#       more, pulls the clamp 0.152 m towards it. Before 2026-10-21 (the
+#       weight at 15 °C, the ice per unstressed metre): 338.28 N, 2.8930°.
 #   003 span 0 hot (60 °C), span 1 at 15 °C: the hot span slackens, the
 #       string swings towards span 1 (positive), H1 > H0.
 
@@ -27,11 +31,11 @@ calculation = "line.span_cases"
 reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
 max_seconds = 2.0
 inputs = { temperature = "-5 °C", span_temperature = "-5 °C", span_ice_load = "0 N/m" }
-expected.h0_n = { value = 31748.4993, rel_tol = 1e-7 }
-expected.h1_n = { value = 31748.4993, rel_tol = 1e-7 }
+expected.h0_n = { value = 31747.9236, rel_tol = 1e-7 }
+expected.h1_n = { value = 31747.9236, rel_tol = 1e-7 }
 expected.clamp_x_m = { value = 300.0, abs_tol = 1e-6 }
 expected.swing_deg = { value = 0.0, abs_tol = 1e-6 }
-expected.string_n = { value = 5192.931196, rel_tol = 1e-7 }
+expected.string_n = { value = 5193.385253, rel_tol = 1e-7 }
 
 [[case]]
 id = "spancases-002"
@@ -40,12 +44,12 @@ calculation = "line.span_cases"
 reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
 max_seconds = 2.0
 inputs = { temperature = "-5 °C", span_temperature = "-5 °C", span_ice_load = "10 N/m" }
-expected.h0_n = { value = 38955.76421, rel_tol = 1e-7 }
-expected.h1_n = { value = 38617.48385, rel_tol = 1e-7 }
-expected.clamp_x_m = { value = 299.8485668, abs_tol = 1e-6 }
-expected.clamp_z_m = { value = 27.00342178, abs_tol = 1e-6 }
-expected.swing_deg = { value = -2.893003418, abs_tol = 1e-6 }
-expected.string_n = { value = 6702.472242, rel_tol = 1e-7 }
+expected.h0_n = { value = 38963.2608, rel_tol = 1e-7 }
+expected.h1_n = { value = 38624.50623, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 299.8484035, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.00342991, abs_tol = 1e-6 }
+expected.swing_deg = { value = -2.896124769, abs_tol = 1e-6 }
+expected.string_n = { value = 6704.6402, rel_tol = 1e-7 }
 
 [[case]]
 id = "spancases-003"
@@ -54,9 +58,9 @@ calculation = "line.span_cases"
 reference = "Independent evaluation (benchmarks/wirefe/reference_span_cases.py)"
 max_seconds = 2.0
 inputs = { temperature = "15 °C", span_temperature = "60 °C", span_ice_load = "0 N/m" }
-expected.h0_n = { value = 24695.69634, rel_tol = 1e-7 }
-expected.h1_n = { value = 24908.23182, rel_tol = 1e-7 }
-expected.clamp_x_m = { value = 300.1226834, abs_tol = 1e-6 }
-expected.clamp_z_m = { value = 27.00219746, abs_tol = 1e-6 }
-expected.swing_deg = { value = 2.34349071, abs_tol = 1e-6 }
-expected.string_n = { value = 5197.708867, rel_tol = 1e-7 }
+expected.h0_n = { value = 24696.09671, rel_tol = 1e-7 }
+expected.h1_n = { value = 24908.64914, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 300.1226825, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.0021974, abs_tol = 1e-6 }
+expected.swing_deg = { value = 2.343472685, abs_tol = 1e-6 }
+expected.string_n = { value = 5198.163237, rel_tol = 1e-7 }
