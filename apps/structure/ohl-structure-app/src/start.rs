@@ -82,9 +82,12 @@ pub struct NewStructure {
 
 impl Default for NewStructure {
     fn default() -> Self {
-        let dir = ohl_core::files::shipped_library("pylon-templates");
-        let templates = ohl_core::files::files_with_extension(&dir, "ohlpt")
-            .into_iter()
+        // The shipped folder, and its name before 2026-10-21.
+        let templates = ohl_structures::templates::SHIPPED_FOLDERS
+            .iter()
+            .flat_map(|f| {
+                ohl_core::files::files_with_extension(&ohl_core::files::shipped_library(f), "ohlpt")
+            })
             .filter_map(|p| {
                 let text = std::fs::read_to_string(&p).ok()?;
                 let t = PylonTemplate::parse(&p, &text).ok()?;

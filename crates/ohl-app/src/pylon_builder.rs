@@ -10,8 +10,9 @@
 //! stood on the line with the Add structure tool (on an alignment point:
 //! also on the alignment's other points, [`crate::placement`]).
 //!
-//! The templates are those shipped (`libraries/pylon-templates`) and the
-//! project's own (`Pylon templates` next to the line): the library grows
+//! The templates are those shipped (`libraries/structure-templates`) and
+//! the project's own (`Structure templates` next to the line; the folders'
+//! names before 2026-10-21 still read): the library grows
 //! with files.
 
 use std::collections::BTreeSet;
@@ -19,26 +20,31 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use ohl_structures::LibraryItem;
-use ohl_structures::templates::{PylonTemplate, Role, Values};
+use ohl_structures::templates::{self, PylonTemplate, Role, Values};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::model::Model;
 
-/// The folder of a project's own pylon templates.
+/// The folder of a project's own structure templates.
 pub fn project_templates(model: &Model) -> PathBuf {
-    crate::model::model_dir(&model.sources).join("Pylon templates")
+    crate::model::model_dir(&model.sources).join(templates::PROJECT_FOLDERS[0])
 }
 
-/// The pylon templates: shipped, then the project's (a project's template
+/// The structure templates: shipped, then the project's (a project's template
 /// of the same id is used instead of the shipped one). What could not be
 /// read is said.
 pub fn templates(model: &Model) -> (Vec<PylonTemplate>, Vec<String>) {
     let mut out: Vec<PylonTemplate> = Vec::new();
     let mut errors = Vec::new();
-    for dir in [
-        ohl_core::files::shipped_library("pylon-templates"),
-        project_templates(model),
-    ] {
+    // The names before 2026-10-21 first: a template in the current folder
+    // replaces one of the same id there.
+    let before = crate::model::model_dir(&model.sources).join(templates::PROJECT_FOLDERS[1]);
+    let shipped = templates::SHIPPED_FOLDERS
+        .iter()
+        .rev()
+        .map(|f| ohl_core::files::shipped_library(f));
+    let own = [before, project_templates(model)];
+    for dir in shipped.chain(own) {
         for path in ohl_core::files::files_with_extension(&dir, PylonTemplate::EXTENSION) {
             let read = std::fs::read_to_string(&path)
                 .map_err(|e| format!("{}: {e}", path.display()))
@@ -409,7 +415,7 @@ impl PylonBuilder {
     fn content(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<BuilderAction> {
         let mut out = None;
         if self.templates.is_empty() {
-            ui.label("No structure template found (libraries/pylon-templates, or the project's Pylon templates folder).");
+            ui.label("No structure template found (libraries/structure-templates, or the project's Structure templates folder).");
             return None;
         }
         for e in &self.errors {
@@ -775,7 +781,7 @@ mod tests {
 
     fn delta() -> PylonTemplate {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../libraries/pylon-templates/delta-1c.ohlpt");
+            .join("../../libraries/structure-templates/delta-1c.ohlpt");
         PylonTemplate::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap()
     }
 

@@ -6,11 +6,16 @@
 //!
 //! Basic kinds (DESIGN_GOALS §11):
 //!
-//! - `suspension`: an I-string hanging from its attachment point;
-//! - `v_string`: two legs from points at ±`half_width` (transverse) to one
-//!   clamp below; legs carry tension only;
+//! - `suspension`: one string hanging from its attachment point; with
+//!   `legs = 2` (version 3), two strings from points at ±`half_width`
+//!   (transverse) to one clamp below, each carrying tension only;
 //! - `strain`: a dead-end assembly along the line from the attachment point
 //!   to the clamp.
+//!
+//! Strings combine; their combinations are not types (owner decision
+//! 2026-10-21). Files before version 3 gave two strings to one clamp as
+//! `kind = "v_string"`: still read, the same as `kind = "suspension"`
+//! with `legs = 2`, and written in the new form.
 //!
 //! General linked assemblies (yokes, jumper support strings…) will extend
 //! this as a graph of nodes and elements (DESIGN_GOALS §6).
@@ -19,14 +24,14 @@
 //! format = "ohl-insulator"
 //! version = 1
 //! id = "I-380-double"
-//! name = "380 kV double I-string"
+//! name = "380 kV double suspension string"
 //! kind = "suspension"
 //! length = "5.2 m"
 //! weight = "1.4 kN"
 //! ```
 //!
 //! **Limits** (version 2, optional, [`InsulatorLimits`]): the tension the
-//! assembly is rated for (`max_load = "120 kN"`; a V-string: each leg's)
+//! assembly is rated for (`max_load = "120 kN"`; two strings: each one's)
 //! and the swing angles it may take (`max_swing = "60 deg"` from straight
 //! down in any direction, `max_swing_across` / `max_swing_along`
 //! projected across / along the line). OpenOHL checks none of them: absent,
@@ -41,10 +46,18 @@ use serde::Deserialize;
 pub const INSULATOR_FILE_EXTENSION: &str = "ohli";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
-/// Newest format version read: 2 adds the optional limits
-/// (`max_load`, `max_swing`, `max_swing_across`, `max_swing_along`,
+/// Newest format version read: 3 writes two strings to one clamp as
+/// `kind = "suspension"` with `legs = 2` (`kind = "v_string"` of the
+/// versions before still read); 2 adds the optional limits (`max_load`,
+/// `max_swing`, `max_swing_across`, `max_swing_along`,
 /// [`InsulatorLimits`]); version 1 files read as before.
-pub const INSULATOR_FILE_VERSION: u32 = 2;
+pub const INSULATOR_FILE_VERSION: u32 = 3;
+
+/// The version that brought `legs` (written only by an assembly of two
+/// strings).
+const LEGS_VERSION: u32 = 3;
+/// The version that brought the limits.
+const LIMITS_VERSION: u32 = 2;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ohl_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
@@ -58,17 +71,87 @@ fn default_stiffness() -> Force {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AssemblyKind {
-    /// I-string.
+    /// One suspension string.
     Suspension,
-    /// Two-leg V-string.
+    /// Two suspension strings to one clamp (`kind = "suspension"`,
+    /// `legs = 2`; files before version 3: `kind = "v_string"`).
     VString,
     /// Dead-end (strain) assembly.
     Strain,
 }
 
+/// An insulator assembly as its file gives it: `legs` (version 3) is
+/// folded into [`InsulatorAssembly::kind`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AssemblyFile {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    version: Option<u32>,
+    id: String,
+    name: String,
+    kind: AssemblyKind,
+    #[serde(default)]
+    legs: Option<u32>,
+    #[serde(default)]
+    source: Option<String>,
+    length: Length,
+    #[serde(default)]
+    weight: Force,
+    #[serde(default = "default_stiffness")]
+    axial_stiffness: Force,
+    #[serde(default)]
+    wind_area: Area,
+    #[serde(default)]
+    half_width: Option<Length>,
+    #[serde(default)]
+    max_load: Option<Force>,
+    #[serde(default)]
+    max_swing: Option<Angle>,
+    #[serde(default)]
+    max_swing_across: Option<Angle>,
+    #[serde(default)]
+    max_swing_along: Option<Angle>,
+}
+
+impl TryFrom<AssemblyFile> for InsulatorAssembly {
+    type Error = String;
+
+    fn try_from(f: AssemblyFile) -> Result<Self, String> {
+        let kind = match (f.kind, f.legs) {
+            (kind, None) => kind,
+            (AssemblyKind::Suspension, Some(1)) => AssemblyKind::Suspension,
+            (AssemblyKind::Suspension | AssemblyKind::VString, Some(2)) => AssemblyKind::VString,
+            (AssemblyKind::Strain, Some(1)) => AssemblyKind::Strain,
+            (AssemblyKind::Strain, Some(2)) => {
+                return Err("legs = 2 is for a suspension assembly only".into());
+            }
+            (_, Some(n)) => return Err(format!("legs = {n}: 1 or 2")),
+        };
+        Ok(InsulatorAssembly {
+            format: f.format,
+            version: f.version,
+            id: f.id,
+            name: f.name,
+            kind,
+            source: f.source,
+            length: f.length,
+            weight: f.weight,
+            axial_stiffness: f.axial_stiffness,
+            wind_area: f.wind_area,
+            half_width: f.half_width,
+            max_load: f.max_load,
+            max_swing: f.max_swing,
+            max_swing_across: f.max_swing_across,
+            max_swing_along: f.max_swing_along,
+        })
+    }
+}
+
 /// An insulator assembly.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "AssemblyFile")]
 pub struct InsulatorAssembly {
     /// `"ohl-insulator"` (optional header).
     #[serde(default)]
@@ -85,8 +168,8 @@ pub struct InsulatorAssembly {
     /// Where the data comes from.
     #[serde(default)]
     pub source: Option<String>,
-    /// Length from attachment point to clamp (suspension, strain), or leg
-    /// length (V-string).
+    /// Length from attachment point to clamp (suspension, strain), or each
+    /// string's length (two strings to one clamp).
     pub length: Length,
     /// Total weight of the assembly.
     #[serde(default)]
@@ -97,10 +180,11 @@ pub struct InsulatorAssembly {
     /// Projected area for wind load.
     #[serde(default)]
     pub wind_area: Area,
-    /// V-string: transverse distance from the centre to each leg attachment.
+    /// Two strings to one clamp: transverse distance from the centre to
+    /// each string's top.
     #[serde(default)]
     pub half_width: Option<Length>,
-    /// The tension it is rated for (a V-string: each leg's); not checked
+    /// The tension it is rated for (two strings: each one's); not checked
     /// by OpenOHL ([`InsulatorLimits`]).
     #[serde(default)]
     pub max_load: Option<Force>,
@@ -229,39 +313,44 @@ impl InsulatorAssembly {
         }
         self.limits().check()?;
         match (self.kind, self.half_width) {
-            (AssemblyKind::VString, None) => Err("a v_string needs half_width".into()),
+            (AssemblyKind::VString, None) => Err("legs = 2 needs half_width".into()),
             (AssemblyKind::VString, Some(hw)) if !(hw.si() > 0.0 && hw < self.length) => {
-                Err("half_width must be positive and shorter than the leg length".into())
+                Err("half_width must be positive and shorter than the string length".into())
             }
             (AssemblyKind::Suspension | AssemblyKind::Strain, Some(_)) => {
-                Err("half_width is only for v_string assemblies".into())
+                Err("half_width is only for an assembly of two strings (legs = 2)".into())
             }
             _ => Ok(()),
         }
     }
 
     /// The assembly as an `.ohli` file (what [`Library::load_dir`] reads
-    /// back), values in SI units; version 1 unless it gives limits.
+    /// back), values in SI units: version 3 for two strings to one clamp
+    /// (`legs = 2`), else 2 when it gives limits, else 1 (the oldest
+    /// version that holds it, so an older program still reads it).
     ///
     /// [`Library::load_dir`]: crate::Library::load_dir
     pub fn to_toml(&self) -> String {
         let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
         let kind = match self.kind {
-            AssemblyKind::Suspension => "suspension",
-            AssemblyKind::VString => "v_string",
+            AssemblyKind::Suspension | AssemblyKind::VString => "suspension",
             AssemblyKind::Strain => "strain",
         };
-        // Version 1 unless it gives limits (an older program reads it).
-        let version = if self.limits().is_empty() {
-            1
+        let version = if self.kind == AssemblyKind::VString {
+            LEGS_VERSION
+        } else if !self.limits().is_empty() {
+            LIMITS_VERSION
         } else {
-            INSULATOR_FILE_VERSION
+            1
         };
         let mut out = format!(
             "format = \"{INSULATOR_FILE_FORMAT}\"\nversion = {version}\nid = {}\nname = {}\nkind = \"{kind}\"\n",
             quote(&self.id),
             quote(&self.name)
         );
+        if self.kind == AssemblyKind::VString {
+            out += "legs = 2\n";
+        }
         if let Some(s) = &self.source {
             out += &format!("source = {}\n", quote(s));
         }
@@ -280,7 +369,8 @@ impl InsulatorAssembly {
     }
 
     /// Vertical drop from the attachment point to the clamp in still air,
-    /// m: the string length for suspension, the leg depth for V-strings, 0
+    /// m: the string length for suspension, the depth of two strings to one
+    /// clamp, 0
     /// for strain assemblies — whose direction and droop are not properties
     /// of the assembly: they follow the conductor tension (a strain string
     /// on a steep down-lead hangs 47° below horizontal in real data), so the
@@ -356,6 +446,47 @@ mod tests {
         InsulatorAssembly::parse(Path::new("t.ohli"), text)
     }
 
+    /// Two strings to one clamp: `legs = 2` (version 3) and the older
+    /// `kind = "v_string"` read the same; written as `legs = 2`, version
+    /// 3; `legs` other than 1 or 2, or 2 on a strain assembly, refused.
+    #[test]
+    fn two_strings_as_legs_and_as_the_older_v_string() {
+        let new = parse(
+            "format = \"ohl-insulator\"\nversion = 3\nid = \"V1\"\nname = \"V\"\nkind = \"suspension\"\nlegs = 2\nlength = \"5 m\"\nhalf_width = \"3 m\"",
+        )
+        .unwrap();
+        let old = parse(
+            "format = \"ohl-insulator\"\nversion = 2\nid = \"V1\"\nname = \"V\"\nkind = \"v_string\"\nlength = \"5 m\"\nhalf_width = \"3 m\"",
+        )
+        .unwrap();
+        assert_eq!(new.kind, AssemblyKind::VString);
+        assert_eq!(new.kind, old.kind);
+        assert!((new.vertical_drop() - 4.0).abs() < 1e-12);
+        let text = old.to_toml();
+        assert!(
+            text.contains("version = 3")
+                && text.contains("kind = \"suspension\"")
+                && text.contains("legs = 2")
+                && !text.contains("v_string"),
+            "{text}"
+        );
+        assert_eq!(parse(&text).unwrap().kind, AssemblyKind::VString);
+        let one =
+            parse("id = \"I\"\nname = \"I\"\nkind = \"suspension\"\nlegs = 1\nlength = \"5 m\"")
+                .unwrap();
+        assert_eq!(one.kind, AssemblyKind::Suspension);
+        for bad in [
+            "kind = \"suspension\"\nlegs = 3\nlength = \"5 m\"\nhalf_width = \"1 m\"",
+            "kind = \"strain\"\nlegs = 2\nlength = \"5 m\"\nhalf_width = \"1 m\"",
+            "kind = \"suspension\"\nlegs = 2\nlength = \"5 m\"",
+        ] {
+            assert!(
+                parse(&format!("id = \"X\"\nname = \"X\"\n{bad}")).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
     #[test]
     fn suspension_and_v_string() {
         let i = parse(
@@ -420,7 +551,7 @@ mod tests {
         ] {
             assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
         }
-        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 3\n{base}")).unwrap_err();
+        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 4\n{base}")).unwrap_err();
         assert!(e.to_string().contains("newer"), "{e}");
     }
 

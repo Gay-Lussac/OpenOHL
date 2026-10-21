@@ -235,7 +235,7 @@ const INSULATORS: &[Column] = &[
         "kind",
         90.0,
         Yes,
-        "suspension (one string), strain (a dead end) or v_string (one of two strings to a wire point)",
+        "suspension (one string), strain (a dead end) or two strings (to one wire point: legs = 2 in the file; v_string still read)",
     ),
     (
         "length",
@@ -2736,7 +2736,7 @@ fn choices(
             true,
         ),
         (TableKind::Insulators, "kind") => (
-            ["suspension", "strain", "v_string"]
+            ["suspension", "strain", "two strings"]
                 .map(str::to_owned)
                 .to_vec(),
             false,
@@ -4004,7 +4004,7 @@ fn insulator_rows(model: &Model) -> Vec<Row> {
                 match a.kind {
                     ohl_structures::AssemblyKind::Suspension => "suspension",
                     ohl_structures::AssemblyKind::Strain => "strain",
-                    ohl_structures::AssemblyKind::VString => "v_string",
+                    ohl_structures::AssemblyKind::VString => "two strings",
                 }
                 .into(),
                 f(a.length.si(), 3),
@@ -4052,10 +4052,10 @@ fn insulator_changes(model: &Model, rows: &[Row], page: &TablePage) -> Result<Ch
         a.kind = match c.get(2).trim() {
             "suspension" => AssemblyKind::Suspension,
             "strain" => AssemblyKind::Strain,
-            "v_string" => AssemblyKind::VString,
+            "two strings" | "v_string" => AssemblyKind::VString,
             other => {
                 return Err(format!(
-                    "{}: kind \"{other}\": suspension, strain or v_string",
+                    "{}: kind \"{other}\": suspension, strain or two strings",
                     a.id
                 ));
             }

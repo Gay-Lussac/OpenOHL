@@ -50,6 +50,12 @@ approved as finished: everything is built and in active development
     joint, strings hang from attachment points, and they are matched to
     the new structure's attach joints when a structure changes. The
     glossary carries both entries marked *planned (2026-10-21)*.
+  Formats (old names always read): `.ohli` version **3** writes two
+  strings to one clamp as `legs = 2`; structure templates' format id
+  `ohl-structure-template` and folders `structure-templates`,
+  `Structure templates`, `StructureTemplates/`; the sag-tension job's
+  `[fe.two_strings]`; the command line's `--wire-type`
+  ([data model](data-model.md#file-headers)).
   The docs' links and anchors are checked by `tools/check_doc_links.py`
   (mdbook does not check anchors).
 

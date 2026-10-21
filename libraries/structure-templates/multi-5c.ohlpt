@@ -3,7 +3,7 @@
 # crossarm (slots 10-13), two three-phase circuits on the middle crossarm
 # (left 1-3, right 4-6) and two on the bottom one (left 7-9, right
 # 16-18); an earth wire at the peak (19).
-format = "ohl-pylon-template"
+format = "ohl-structure-template"
 version = 1
 id = "multi-5c"
 name = "Five circuits on three crossarms, one earth wire"

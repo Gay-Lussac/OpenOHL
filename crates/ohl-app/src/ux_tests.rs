@@ -99,7 +99,7 @@ fn a_starter_project_has_the_libraries_and_nothing_else() {
         assert_eq!(kept, wanted, "{kind}");
     }
     drop(session);
-    assert!(dir.join("Pylon templates/delta-1c.ohlpt").is_file());
+    assert!(dir.join("Structure templates/delta-1c.ohlpt").is_file());
     assert!(dir.join(crate::starter::SURVEY).is_file());
     // Opened: the libraries are read; the line still needs its route.
     let m = load(&path);
@@ -112,6 +112,23 @@ fn a_starter_project_has_the_libraries_and_nothing_else() {
     assert!(!done("A route") && !done("An alignment") && !done("Structures on the line"));
     assert!(done("Wire types") && done("Structure types") && done("Weather cases"));
     assert!(done("Load cases"));
+    // A project's own template is found in its folder, and in the folder's
+    // name before 2026-10-21 ("Pylon templates") too.
+    let own = |m: &crate::model::Model| {
+        let (all, errors) = crate::pylon_builder::templates(m);
+        assert!(errors.is_empty(), "{errors:?}");
+        all.iter().any(|t| t.id == "starter-own")
+    };
+    let delta = std::fs::read_to_string(dir.join("Structure templates/delta-1c.ohlpt")).unwrap();
+    let mine = delta.replace("id = \"delta-1c\"", "id = \"starter-own\"");
+    assert_ne!(mine, delta);
+    std::fs::write(dir.join("Structure templates/own.ohlpt"), &mine).unwrap();
+    assert!(own(&m));
+    std::fs::remove_file(dir.join("Structure templates/own.ohlpt")).unwrap();
+    assert!(!own(&m));
+    std::fs::create_dir_all(dir.join("Pylon templates")).unwrap();
+    std::fs::write(dir.join("Pylon templates/own.ohlpt"), &mine).unwrap();
+    assert!(own(&m));
     // An empty project: nothing but its line.
     let empty =
         crate::files::create_project(&dir.join("empty"), "Empty", "local", "tester").unwrap();

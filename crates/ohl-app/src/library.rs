@@ -221,7 +221,12 @@ const INSULATOR: &[Field] = &[
         "unique id, used by structure types and strings",
     ),
     ("name", "\"New insulator\"", "display name"),
-    ("kind", "\"suspension\"", "suspension, v_string or strain"),
+    ("kind", "\"suspension\"", "suspension or strain"),
+    (
+        "legs",
+        "2",
+        "suspension: 2 = two strings to one clamp (needs half_width; version 3)",
+    ),
     ("source", "\"\"", "where the values come from"),
     (
         "length",

@@ -578,12 +578,12 @@ the line application and `ohl line` keep them for a structure's folder:
 | Poles | `.ohlp` | beside the structure file |
 | Structure models | `.ohlfe` | beside the structure file |
 | Load-case recipes | `.ohlslc` | beside the structure file |
-| Structure templates | `.ohlpt` | `PylonTemplates/` beside the structure file |
+| Structure templates | `.ohlpt` | `StructureTemplates/` beside the structure file (`PylonTemplates/`, the name before 2026-10-21, still read) |
 
 The structure templates are kept apart in the two applications: OHL-Structure
-reads and imports them in `PylonTemplates/` beside the structure file;
+reads and imports them in `StructureTemplates/` beside the structure file;
 the line application's structure builder reads the project's own in a
-`Pylon templates` folder beside the line. **New structure…** offers only
+`Structure templates` folder beside the line. **New structure…** offers only
 the templates shipped with OpenOHL (or another template file chosen).
 
 **File › Libraries ›**:
@@ -605,7 +605,7 @@ the templates shipped with OpenOHL (or another template file chosen).
   application's layout — `structures/` (the structure file as edited,
   its pole and model), `sections/` (each cross-section library with only the
   cross-sections the structure names and the materials they use, comments
-  kept), `insulators/` (its assemblies), `pylon-templates/` (the template
+  kept), `insulators/` (its assemblies), `structure-templates/` (the template
   it was built from). **Export every library…** writes every file read.
 - **Libraries panel…**: the **Libraries** panel (also in View) lists per
   kind the files read and where from, each with its ids (a cross-section

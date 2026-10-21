@@ -1,6 +1,6 @@
 # Pylon template (see delta-1c.ohlpt for the conventions).
 # Circuit 1 on the left (slots 1-3, top to bottom), circuit 2 on the right (4-6).
-format = "ohl-pylon-template"
+format = "ohl-structure-template"
 version = 1
 id = "barrel-2c"
 name = "Barrel, two circuits, one earth wire"
