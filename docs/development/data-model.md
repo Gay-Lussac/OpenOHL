@@ -736,11 +736,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   class numbers), `clearance` and `fall_allowance` (a distance, a table
   by voltage or a formula, as `vertical`), `growth_per_year`, `years`,
   `buffer`, `fall_in`, `root_ball`, `min_tree_height`, `max_tree_height`,
-  `max_base_ground_distance`, `search_distance`, `swing_arc`; the wind
+  `max_base_ground_distance`, `search_distance`, `swing_arc`, and since
+  2026-10-21 `cases` (the weather cases the check runs in, names of the
+  preset's cases with `*` `?`; written only when given); the wind
   steps are the file's `[wind]`. A file may hold it without any
   `[[rule]]`: a design code's preset of the vegetation check
   ([plugins](plugins.md#vegetation-presets)). Unknown keys are refused.
   Older programs refuse a file with it (an unknown table).
+- `checks` (optional, top level, 2026-10-21, `RuleSet::checks`,
+  `PresetCheck`): the checks a preset is for, of `vertical`, `radial`,
+  `vegetation` (an unknown one refused; written only when given); absent,
+  `RuleSet::is_for` tells them from the content (a vertical distance, a
+  radial one, `[vegetation]`). Each place takes only its part of a preset
+  ([plugins](plugins.md#presets-per-check)). Older programs refuse a file
+  with it (an unknown key).
 - The desktop Vertical and Radial clearance windows keep their rules next
   to the model, in `<model>.vertical-clearances.ohlr` and
   `<model>.radial-clearances.ohlr` (one `[[rule]]` per row and target
@@ -866,7 +875,11 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   opens (merged into the chosen rule file or replacing its rules, the
   preset's tables copied as written); `ohl code generate` and `ohl code
   rule-presets --out` write them as `<plugin>-rules-<name>.ohlr` (and
-  `.ohlwc`).
+  `.ohlwc`). Applied in the app, a preset's weather cases are matched to
+  the project's by physics first, then by name (2026-10-21, `ohl-app`
+  `preset_cases::Plan`): the rules rewritten to name an equivalent
+  project case, only the others created (`"<name> (preset)"` on a name
+  clash).
 
 ### Structure type (`.ohls`)
 
@@ -1265,7 +1278,7 @@ left the wind on the bare diameter), `wind_pressure`, `wind_from`
 `without_ice`, `with_more_ice_thickness` (a thickness grows; a load
 becomes the load out to the iced diameter plus twice the extra) and
 `with_more_ice_load` (the ice weight plus the extra, as a load at the
-case's density, else glaze ice); `has_ice`.
+case's density, else glaze ice); `has_ice`. `same_physics` (2026-10-21): whether two cases put the same weather on the wires (temperature; ice none on both, or the same thickness and density, or the same load and density, glaze ice when none given — a thickness never equals a load; wind pressure, and with wind its side and `air_density_factor`; `ambient_temperature`; within `SAME_PHYSICS_TOLERANCE` 1e-6 relative), never the name, description or tags — how a preset's cases are matched to the project's ([plugins](plugins.md#matching-a-presets-weather-cases)).
 
 **A weather case per span** (2026-10-20, in memory only):
 `ohl_line::solve::SpanCases` — `base` (the section's case) and `spans`

@@ -369,17 +369,25 @@ Docking or moving the panel keeps them. **Export CSV…** writes the worst
 points of every span and every point found (with case and position),
 **Export lines (CSV)…** the isoclearance lines.
 
-**Presets.** The **Preset** dropdown lists the presets of every
-design-code plugin turned on, grouped by plugin (the description on
+**Presets.** The **Preset** dropdown lists the vegetation presets of
+every design-code plugin turned on (a preset with vegetation settings;
+the panel takes only those, its wind steps and its own weather cases,
+never its clearance rules or their cases — see [Presets per
+check](design-codes.md#presets-per-check)), grouped by plugin (the description on
 hover; one that has none for this check says so). A vegetation preset
 sets the classes, the clearance and allowance (by voltage), the growth,
 the danger-tree values, the search distance and the wind steps, and names
 its weather cases. Chosen, it is previewed — every value, and for each of
-its weather cases whether the project has it (*exists*; by name — one of
-the same name with other values is kept as the project's, and says so) or
-it **will be created**. **Apply preset** puts the values in (edit them
-freely after), creates the missing cases in the project's weather cases
-(one change of the project, undone by Undo) and ticks the preset's cases.
+its weather cases what applying it does: **uses your case X** (a case of
+the project with the same weather — temperature, ice, wind and the rest
+a solve reads — whatever its name; with several, the first in your list,
+and it says so) or **creates Y** (none is the same; when your project
+already has a case of that name with other values, it is created as
+"Y (preset)" and yours is kept). See [A preset's weather
+cases](design-codes.md#a-presets-weather-cases). **Apply preset** puts
+the values in (edit them freely after), creates the cases to create in
+the project's weather cases (one change of the project, undone by Undo)
+and ticks the preset's cases — your own where they are used.
 The same dropdown lists the presets in the rule editor's **Load preset…**
 and in the vertical and radial clearance windows (**Plugin preset**,
 then **Load**).

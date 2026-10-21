@@ -287,7 +287,7 @@ A **preset of the vegetation and danger-tree check** is a rule preset (the
 same `rule-presets` export, nothing added to the interface) whose `rules`
 text carries a `[vegetation]` table — with or without `[[rule]]`s (a
 preset holding only `[vegetation]` is listed for the vegetation check
-only; the rule editor and the clearance windows list those with rules).
+only; see [Presets per check](#presets-per-check)).
 Hosts before 2026-10-20 refuse a preset without rules; plugins built
 before load unchanged and give none. What a plugin returns, per preset:
 
@@ -318,14 +318,15 @@ before load unchanged and give none. What a plugin returns, per preset:
   max_tree_height = "40 m"
   fall_in = true
   swing_arc = false
+  cases = ["Veg hot", "Veg wind"]   # its weather cases (2026-10-21; `*` `?`)
   ```
 
 - `weather-cases`: an `.ohlwc` file's text with the cases the check runs
   in (e.g. a hot case and a warm windy one); empty: none. When the preset
-  is applied, the cases the project lacks (**by name**: a case of the
-  same name with other values is kept as the project's, the preview says
-  so) are created in the project's weather cases (one undoable change)
-  and every case of the preset is ticked for the run.
+  is applied, its cases are matched to the project's (below), those with
+  no equal are created in the project's weather cases (one undoable
+  change), and every case of the preset — the project's own where one is
+  used — is ticked for the run.
 
 Unknown keys are refused (as everywhere in a rule file). Distances are
 lengths (`"9 m"` or a number of metres); a table's rows are
@@ -342,6 +343,79 @@ writing clearance presets — `Preset`, `RuleFile` —, the `code_plugin!`
 macro implementing the world). A plugin for the Swiss LeV exists
 separately; it is not part of the public code. See
 [Design codes](../user-guide/design-codes.md).
+
+### Presets per check
+
+A preset is **per check** (owner, 2026-10-21): applying one brings only
+what that check needs, so one big preset may hold the rules of many
+checks in a row (dozens of rules, vertical and radial, any targets, each
+with its own cases) plus a `[vegetation]` table.
+
+- **Which places list it**: the vegetation panel those with a
+  `[vegetation]` table; the Vertical clearances window those with a rule
+  with a vertical distance; the Radial window those with a radial one;
+  the rule editor every preset. A rule file may **declare** its checks
+  instead, at the top level (optional, additive; files without it are
+  classified by content as above):
+
+  ```toml
+  checks = ["vertical", "radial", "vegetation"]
+  ```
+
+  (`ohl_clearance::rules::PresetCheck`, `RuleSet::checks`,
+  `RuleSet::is_for`; an unknown name is refused; `ohl code rule-presets`
+  prints `for: …`.)
+- **What each takes** (`ohl-app` `preset_cases::Part`): the Vertical
+  window its vertical rules (those with both distances included), the
+  Radial window its radial ones, each with `[wind]` and `[check]`, and
+  only the weather cases those rules name (`cases`, `case_pairs`, with
+  `*` `?`; a rule naming none uses the project's cases and needs none of
+  the preset's); the vegetation panel its `[vegetation]` and `[wind]`, no
+  rule, and its own cases — `[vegetation] cases` when given (each must
+  name one of the preset's cases), else the preset's cases no rule names,
+  else (no rules) all; the rule editor every rule and the cases they
+  name (not `[vegetation]`). **No case only another check uses is
+  created.** The cases taken are then matched (below).
+- The previews group the rules by target (ground, LiDAR classes, the
+  line's own wires, other lines) and give per rule the cases it uses, in
+  the project's names.
+
+### Matching a preset's weather cases
+
+Wherever the desktop application applies a preset with weather cases —
+the rule editor's Load preset…, the Vertical / Radial clearance windows
+(the project's preset files and the plugin presets), the vegetation
+panel — its cases are matched to the project's **by physics first, then
+by name** (owner, 2026-10-21; `ohl-app`'s `preset_cases`):
+
+- **Equivalent** (`ohl_weather::WeatherCase::same_physics`): the same
+  cable temperature; the same ice — none on both (a thickness or a load
+  of 0, any density), or both a thickness with the same thickness and
+  density, or both a load with the same load and density (a density not
+  given is glaze ice, 913 kg/m³); the same wind pressure, and with wind
+  above 0 the same side (`wind_from`) and air density factor (not given
+  equals only not given); the same ambient temperature (likewise).
+  Numbers within 1e-6 relative to the larger value (absolute below 1, SI
+  units, °C). Name, description and tags never matter. A thickness and a
+  load are never equivalent (the weight of a thickness depends on the
+  wire's diameter). Conditions (initial / final / creep) and per-span
+  cases are not part of a weather case (they are the line's), so they
+  are not compared.
+- A preset case equivalent to a project case **uses it**: the preset's
+  rules are rewritten to name the project's case (`cases`, and each side
+  of `case_pairs`; a `*` `?` pattern matching a renamed case becomes the
+  names it matched; other entries stay as written, comments kept), and
+  it is not created. With several equivalent, the **first in the
+  project's order**; the preview says which others are the same.
+- Only a case with no equivalent is **created**; one whose name the
+  project gives to a non-equivalent case is created as `"<name>
+  (preset)"` (then `(preset 2)`, …), the rules naming it so.
+- Without a weather case file of its own (the model's still-air 15 °C
+  case only), the project has nothing to match: the preset's file is used
+  for the model, as before.
+- The previews list per preset case "uses your case X" / "creates Y".
+- The command line applies no preset to a project: `ohl code rule-presets
+  --out` and `ohl code generate` write the preset files only.
 
 ## Sheet template presets
 
