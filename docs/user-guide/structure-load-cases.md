@@ -130,10 +130,10 @@ opened on its own. Such values can be typed into the table.
 - **A value of the case** (`value`): along its direction, signed.
 - **A pressure**: pressure × the member's area along the direction, the
   total per member, along the direction. The area comes from the
-  [section library](section-library.md): the profile's width seen along
+  [cross-section library](section-library.md): the profile's width seen along
   the direction (in the member's cross-section plane) × the member's
   length × sin θ (θ between the direction and the member; across the
-  member: width × length). No drag factor. A member whose section is not
+  member: width × length). No drag factor. A member whose cross-section is not
   in the library has **no area** (the row says why).
 
 The load is the value × `factor` × `one_sided`.

@@ -9,12 +9,12 @@ in the [theory manual](../theory/thermal.md).
 
 ## What the conductor needs
 
-The cable's `[cable.electrical]` data in the wire library
+The wire type's `[cable.electrical]` data in the wire library
 ([Wire library files](wire-library.md)): at least one **AC resistance**
 (two or more at different temperatures — linear between and beyond them),
 and preferably the **emissivity** and **solar absorptivity** (0.8 each when
-neither the cable nor the ambient case gives them). The diameter comes from
-the cable; the heat capacity for transients is estimated from its
+neither the wire type nor the ambient case gives them). The diameter comes from
+the wire type; the heat capacity for transients is estimated from its
 components (aluminium outer wires, steel core) and its mass.
 
 ```toml
@@ -70,7 +70,7 @@ solar_flux = "0 W/m²"     # instead of the sun's position: irradiance on the co
 | `line_azimuth` | the conductor's direction from north; without it the sun shines across it |
 | `atmosphere` | `clear` (default) or `industrial` |
 | `solar_flux` | instead of the position: the irradiance on the conductor's projected area, W/m² — `0 W/m²` for night |
-| `emissivity`, `absorptivity` | instead of the cable's |
+| `emissivity`, `absorptivity` | instead of the wire type's |
 | `albedo` | CIGRE: ground reflectance, default 0.1 |
 | `clearness_ratio` | CIGRE: \\( N_s \\), default 1.0 clear, 0.8 industrial |
 | `roughness` | CIGRE: surface roughness \\( R_s \\), default 0.1 (round outer wires) |
@@ -97,7 +97,7 @@ Drake 795 kcmil 26/7 ACSR — IEEE 738-2012, 3 ambient cases
 - `--current 900` instead of `--max-temp`: the steady-state temperature;
 - `--current 1000 --from-current 500`: the temperature after switching from
   500 A (steady) to 1000 A, every `--print-every` s (300) for `--duration` s
-  (3600), in `--time-step` s steps (10, or the default values'); `--defaults FILE.ohldef` (Criteria › Default values exported): the emissivity, absorptivity, roughness, albedo and time step where the cable or the case gives none; `--heat-capacity` J/(m·K) instead
+  (3600), in `--time-step` s steps (10, or the default values'); `--defaults FILE.ohldef` (Criteria › Default values exported): the emissivity, absorptivity, roughness, albedo and time step where the wire type or the case gives none; `--heat-capacity` J/(m·K) instead
   of the estimate;
 - `--method cigre601` or `cigre207` (default `ieee738`); `--case NAME`
   (wildcards, repeatable) for some cases; `--csv FILE` for the results (the

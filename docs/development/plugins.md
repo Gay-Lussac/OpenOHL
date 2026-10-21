@@ -26,8 +26,8 @@ A plugin may add columns to the app's tables, declared in its manifest
 
 ```toml
 [[column]]
-table = "circuits"         # structures, sections, circuits, systems,
-                           # jumpers, alignments or routes
+table = "circuits"         # structures, sections, circuits (the Conductor
+                           # paths table), systems, jumpers, alignments or routes
 name = "insulation_level"  # unique in the plugin: letters, digits, _ -
 title = "insulation level" # header (default: name)
 help = "…"                 # shown on the header
@@ -204,7 +204,7 @@ interface: the `code-wind-plugin` world (`include code-plugin; export
 structure-wind;`), extension point `design-code` as before.
 
 - `structure-wind(parameters)` reads the same parameter file and returns
-  **none** (the code gives no factors) or a section library's text
+  **none** (the code gives no factors) or a cross-section library's text
   (`.ohlsec`, TOML) holding **only** a `[wind]` table: `source` (free
   text, shown with the results), `drag` (a factor per profile shape:
   `equal_angle`, `unequal_angle`, `channel`, `i_section`,
@@ -213,7 +213,7 @@ structure-wind;`), extension point `design-code` as before.
   lattice face's drag by its solidity ratio) and `shielding` (`solidity`,
   optional `spacing`, `factor`: the factor on a face behind another by the
   front face's solidity ratio and the spacing ratio), each optional — see
-  [Section library](../user-guide/section-library.md#wind-factors-for-structures-wind).
+  [Cross-section library](../user-guide/section-library.md#wind-factors-for-structures-wind).
   An error string is shown to the user, as for `generate`.
 - **OpenOHL measures, the plugin gives the numbers**: the faces of the
   lattice, their solidity ratios, which face is in front of which member
@@ -224,11 +224,11 @@ structure-wind;`), extension point `design-code` as before.
 - The host (`WasmHost::load_code`) looks for the export
   (`ohl:plugin/structure-wind@0.1.0`): a plugin built without it loads
   and runs as before and gives none (`WasmCodePlugin::structure_wind`
-  returns `None`). It checks the text as the section library reads it, a
+  returns `None`). It checks the text as the cross-section library reads it, a
   `[wind]` table and nothing else (`ohl_io::codes::check_structure_wind`),
   and `ohl code generate`, Criteria › Design code and OHL-Structure's Load
   cases from a design code write it as `<plugin>-wind.ohlsec` into the
-  section library.
+  cross-section library.
 - **Backwards compatible**: the interface version stays 0.3 (`sdk =
   "0.3"`): nothing a plugin of 0.3 implements changed, the export is only
   looked for. `plugins/codes/*` implement it as a stub returning none
@@ -389,7 +389,7 @@ panel — its cases are matched to the project's **by physics first, then
 by name** (owner, 2026-10-21; `ohl-app`'s `preset_cases`):
 
 - **Equivalent** (`ohl_weather::WeatherCase::same_physics`): the same
-  cable temperature; the same ice — none on both (a thickness or a load
+  wire temperature; the same ice — none on both (a thickness or a load
   of 0, any density), or both a thickness with the same thickness and
   density, or both a load with the same load and density (a density not
   given is glaze ice, 913 kg/m³); the same wind pressure, and with wind
@@ -527,9 +527,9 @@ about 0.3 s to load the plugin once.
 
 ## String limits: what a plugin sees
 
-A string (insulator) may carry limits that **OpenOHL does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OpenOHL checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
+A string may carry limits that **OpenOHL does not check** — the tension it is rated for and the swings it may take ([String limits](../user-guide/structure-library.md#string-limits-not-checked)). Absent means not given: nothing checks it. Given, nothing in OpenOHL checks it either: a plugin (or a report, or a script) does, where its rules need it. What it gets:
 
-- **Export model** (`io` plugins, `export-model`): the `line` holds every string with its own `max_load` (N), `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (degrees) — structure types placed and the limits of the insulator a string names filled in where it gives none (absent keys: not given). Each case's `strings` gives, per string, the solved axial force `force_n` (whole bundle, tension positive), its swing `swing_deg` (from straight down), `swing_across_deg` and `swing_along_deg` (the angles of its projections on the structure's planes across and along the line, positive to the right and ahead), and its limits beside them as `max_load_n`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (`null`: not given). A plugin compares, e.g. `abs(swing_across_deg) > max_swing_across_deg`. The format stays version 1: keys were only added.
+- **Export model** (`io` plugins, `export-model`): the `line` holds every string with its own `max_load` (N), `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (degrees) — structure types placed and the limits of the assembly a string names filled in where it gives none (absent keys: not given). Each case's `strings` gives, per string, the solved axial force `force_n` (whole bundle, tension positive), its swing `swing_deg` (from straight down), `swing_across_deg` and `swing_along_deg` (the angles of its projections on the structure's planes across and along the line, positive to the right and ahead), and its limits beside them as `max_load_n`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` (`null`: not given). A plugin compares, e.g. `abs(swing_across_deg) > max_swing_across_deg`. The format stays version 1: keys were only added.
 - **Check plugins** (`check`): the WIT records pass no strings (a check measures conductor pairs), so the interface is unchanged (still `ohl:plugin@0.1.0`); a check that needs the limits reads them from the line as above.
 - **Rust** (built-in checks, reports, the server): `ohl_line::InsulatorString::limits()` → `StringLimits`, `Line::string_limits(structure, label)`, and next to each solved string `solve::StringState::{force, limits, swing}` and `jumper::JumperStringShape::{force, limits, swing}`; `ohl_line::swing(orientation_deg, top, bottom)` for any other position. Library side: `InsulatorAssembly::limits()`, `TypeString::limits()` (`ohl_structures::InsulatorLimits`).
 - **Python**: the line's JSON (the console's `ohl` module) carries the same `max_*` keys on its strings.

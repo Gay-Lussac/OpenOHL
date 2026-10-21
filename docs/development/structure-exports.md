@@ -5,8 +5,8 @@ Status: **built, in active development (not approved yet)**; pre-alpha (first wr
 `apps/structure/ohl-structure-export` ([crates](structure-app.md)); user
 guide: [The structure application › Export](../user-guide/structure-app.md#export).
 
-A **level 3** structure (joints, members with sections, supports) is
-written with its sections (from the [section library](../user-guide/section-library.md)
+A **level 3** structure (joints, members with cross-sections, supports) is
+written with its cross-sections (from the [cross-section library](../user-guide/section-library.md)
 or the file's own `[[section]]` tables), materials, supports, member kinds
 and load cases (a [load table](../user-guide/structure-load-cases.md)).
 Only open, documented formats are written; no proprietary binary format.
@@ -40,7 +40,7 @@ program with SAF **1.0.5**) [S1].
 
 All are written from plain data (`ohl_structure_link::ExportStructure`,
 made by `ohl_structure_link::export_structure` from the structure file,
-the section library and a `LoadTable`): SI units, the structure's axes
+the cross-section library and a `LoadTable`): SI units, the structure's axes
 (x right, y ahead, z up), no map coordinates. GlobalIds (IFC) and `Id`s
 (SAF) are hashes of the structure's id and each object's id, so an
 export of the same structure gives the same ids, and an object keeps its
@@ -55,7 +55,7 @@ line's default) the same structure gives the same bytes in every format.
 |---|---|
 | `[[node]]` `point`, `support` (`fixed`, `pinned`, a list of x, y, z, rx, ry, rz), `spring` | joint, held directions, springs (N/m, N·m/rad) |
 | `[[member]]` `nodes`, `section`, `kind` (truss, frame, cable, tension), `bending`, `check`, `reference`, `roll`, `k`, `pretension` | member with its **local axes** worked out exactly as the FE model does (`member_axes`: y in the plane of x and the reference — global z, or global x for a vertical member — then the roll about x); k and pretension carried along |
-| section of the library (`.ohlsec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
+| cross-section of the library (`.ohlsec`) | profile `Shape` and dimensions, A, Iy, Iz, It, Wpl, the centroid relative to the outline box |
 | `[[section]]` table | A, Iy, Iz, It only (no shape) |
 | material (library or `[[material]]`) | E, G, density, yield |
 | load table rows (`ohl_structure_loads::LoadTable`) | per case: a point's load at the joint carrying it, or **at its place along the member** (a `[[point]]` with `member`, `at`); a joint's load; a member's surface load as a **uniform load** (total ÷ length); right, ahead, down → x, y, −z |
@@ -67,7 +67,7 @@ then the recipes evaluated with the line's values) and the values typed
 over the table. The command-line tool (and the application for a
 structure opened on its own) takes the file's recipes evaluated without
 line values — rows needing a line value are left out and counted in a
-note; surface loads on the members' areas from the section library
+note; surface loads on the members' areas from the cross-section library
 (`ohl_structure_link::SectionAreas`) — and its `[[load]]` tables as case
 `model`; a load table written by the application (CSV) can be given
 instead.
@@ -77,17 +77,17 @@ instead.
 | Export data | IFC4 |
 |---|---|
 | structure | `IfcProject` (units: m, rad, N, Pa, kg, m², m³ and the derived units of the values written), `IfcSite` at the origin |
-| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OHL_Member` (Section, Kind, EffectiveLengthFactor, Pretension, From, To; where set: Bending `IFCBOOLEAN(.T.)` for a tension-only member that bends, Check `IFCBOOLEAN(.F.)` for a member not design-checked) |
+| member (physical) | `IfcMember` (`.MEMBER.`), `ObjectType` = kind; placement at the first joint with Z along the member and X along its local y; representations `Axis` (`Curve3D` line) and `Body` (`SweptSolid`: `IfcExtrudedAreaSolid` of the profile over the length); property set `OHL_Member` (Cross-section, Kind, EffectiveLengthFactor, Pretension, From, To; where set: Bending `IFCBOOLEAN(.T.)` for a tension-only member that bends, Check `IFCBOOLEAN(.F.)` for a member not design-checked) |
 | profile: equal / unequal angle | `IfcLShapeProfileDef` (Depth h, Width b, Thickness t, FilletRadius r) |
 | channel | `IfcUShapeProfileDef` (Depth h, FlangeWidth b, WebThickness tw, FlangeThickness tf, FilletRadius r) |
-| I section | `IfcIShapeProfileDef` (OverallWidth b, OverallDepth h, tw, tf, r) |
+| I-section | `IfcIShapeProfileDef` (OverallWidth b, OverallDepth h, tw, tf, r) |
 | rectangular hollow | `IfcRectangleHollowProfileDef` (XDim b, YDim h, WallThickness t) |
 | circular hollow | `IfcCircleHollowProfileDef` (Radius d/2, WallThickness t) |
 | round bar | `IfcCircleProfileDef` (Radius d/2) |
 | polygonal hollow (pole) | `IfcArbitraryProfileDefWithVoids` (outer and inner `IfcPolyline`, a side at the bottom) |
 | `general`, `[[section]]` table | `IfcProfileDef` by name only (IFC4 allows it); no solid, the axis only |
 | profile position | the parameterised profile's `Position` moves the outline box so that the **centroid** lies on the member's axis (IFC4 places a parameterised profile at the centre of its box); profile x = member local y, profile y = local z |
-| section and material | `IfcMaterialProfile` / `IfcMaterialProfileSet` / `IfcMaterialProfileSetUsage` (cardinal point 10, the centroid), associated with the physical and the analysis member; `IfcProfileProperties` `Pset_ProfileMechanical` (CrossSectionArea, TorsionalConstantX) and `OHL_Section` (SecondMomentLocalY, SecondMomentLocalZ: about the member's local y and z) |
+| cross-section and material | `IfcMaterialProfile` / `IfcMaterialProfileSet` / `IfcMaterialProfileSetUsage` (cardinal point 10, the centroid), associated with the physical and the analysis member; `IfcProfileProperties` `Pset_ProfileMechanical` (CrossSectionArea, TorsionalConstantX) and `OHL_Section` (SecondMomentLocalY, SecondMomentLocalZ: about the member's local y and z) |
 | material | `IfcMaterial` (category from E and density, below) with `IfcMaterialProperties` `Pset_MaterialMechanical` (YoungModulus, ShearModulus, PoissonRatio), `Pset_MaterialCommon` (MassDensity), `Pset_MaterialSteel` (YieldStress) |
 | analysis model | `IfcStructuralAnalysisModel` (`.LOADING_3D.`, a shared placement at the origin), items assigned by `IfcRelAssignsToGroup`, serving the site (`IfcRelServicesBuildings`) |
 | joint | `IfcStructuralPointConnection` with an `IfcVertexPoint` topology; a support as `IfcBoundaryNodeCondition`: held `IFCBOOLEAN(.T.)`, free `.F.`, a spring as `IfcLinearStiffnessMeasure` / `IfcRotationalStiffnessMeasure` |
@@ -103,11 +103,11 @@ The members only, as above, with the differences of the older schema:
 an owner history on every object (its person: family name `Unknown`, since IFC2x3's `IfcPerson` needs a name, rule WR1, and nobody's name is written), the members in a building storey
 (site, building, storey), profile `Position` always given, fillet radii
 left out when 0 (they must be positive there), `IfcMaterial` by name
-associated with the members, no `IfcProfileDef` by name (a section
+associated with the members, no `IfcProfileDef` by name (a cross-section
 without geometry gives an axis only). A detailing program's conversion
 maps profile and material **names** to its catalogues (missing ones are
 asked for): the profile name written is the
-section's id.
+cross-section's id.
 
 ### SAF (2.2.0)
 
@@ -115,8 +115,8 @@ section's id.
 |---|---|---|
 | `Project`, `Model` | property name in column A, value in B | `SAF Version` 2.2.0, `Global coordinate system` Z vertical, `LCS of cross-section` ZYX, `System of units` Metric, `National code` EC-Standard-EN (required by SAF; OpenOHL does not tie the export to a code) |
 | `StructuralMaterial` | one per material | `Type` from E and density (below), `Quality` = the material's name, E and G in MPa, unit mass kg/m³, Poisson's ratio E/2G − 1 |
-| `StructuralCrossSection` | one per section | **Parametric**: angle → `Angle` (H; B; t; R; R1 = h; b; t; r; 0), channel → `Channel` (H; B; t; s; R = h; b; tf; tw; r), I → `I rolled` (H; B; t; s; R = h; b; tf; tw; r), rectangular hollow → `Tube` (H; B; s; R; r1 = h; b; t; 0; 0), circular hollow → `Pipe` (D; t), round bar → `Circle` (D), parameters in mm. **General** (polygonal hollow, `general`, `[[section]]` tables): `Profile` names a `CompositeShapeDef` row. A, Iy, Iz, It, Wply, Wplz given for every section |
-| `CompositeShapeDef` | sections without a parametric shape | polygonal hollow: the outline (counter-clockwise, with the material) and the opening (clockwise); `general`: its outline box; a `[[section]]` table: **a square of the same area** (no shape is known; its A, Iy, Iz, It are in the cross-section row) |
+| `StructuralCrossSection` | one per cross-section | **Parametric**: angle → `Angle` (H; B; t; R; R1 = h; b; t; r; 0), channel → `Channel` (H; B; t; s; R = h; b; tf; tw; r), I → `I rolled` (H; B; t; s; R = h; b; tf; tw; r), rectangular hollow → `Tube` (H; B; s; R; r1 = h; b; t; 0; 0), circular hollow → `Pipe` (D; t), round bar → `Circle` (D), parameters in mm. **General** (polygonal hollow, `general`, `[[section]]` tables): `Profile` names a `CompositeShapeDef` row. A, Iy, Iz, It, Wply, Wplz given for every cross-section |
+| `CompositeShapeDef` | cross-sections without a parametric shape | polygonal hollow: the outline (counter-clockwise, with the material) and the opening (clockwise); `general`: its outline box; a `[[section]]` table: **a square of the same area** (no shape is known; its A, Iy, Iz, It are in the cross-section row) |
 | `StructuralPointConnection` | one per joint | m |
 | `StructuralCurveMember` | one per member | `Nodes` "first; second", `Segments` Line, `LCS` **z by vector** with the member's local z, rotation 0 (the roll is in the vector), `System line` Centre, analysis eccentricities 0; `Behaviour in analysis`: truss → Axial force only, frame → Standard, cable and tension → Tension only, a tension member with `bending` → Standard; `Layer` "OHL: tension only, bending" and/or "OHL: not checked" where it applies, else empty |
 | `StructuralPointSupport` | one per supported joint | In node, Global; each direction Rigid, Free or Flexible (stiffness MN/m, MN·m/rad); `Type` Fixed, Hinged or Custom |
@@ -175,7 +175,7 @@ case unless the engineer sets it up as tension-only there.
 
 ### Material category
 
-The section library does not say what a material is; IFC's category and
+The cross-section library does not say what a material is; IFC's category and
 SAF's `Type` are guessed from E and the density: steel 180–230 GPa,
 aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 20 GPa and 1000 kg/m³, else Other.
@@ -199,11 +199,11 @@ aluminium 60–80 GPa, concrete 20–50 GPa above 2000 kg/m³, timber below
 - **Member wind areas**, wind bands, the structure's points, strings,
   wire points, insulators, capacities: not part of an analysis model.
 - **Shapes**: SAF has no parametric polygonal tube; it goes as a general
-  polygon. The root radius of angles, channels and I sections is kept;
+  polygon. The root radius of angles, channels and I-sections is kept;
   toe radii and flange slopes do not exist in the library. `[[section]]`
   tables have no shape: IFC writes the profile by name only (no solid),
   SAF an equal-area square.
-- **Unequal angles** keep h along the section's z and b along y. IFC's
+- **Unequal angles** keep h along the cross-section's z and b along y. IFC's
   convention puts the longer leg along the profile's y; an angle whose b
   is longer than h is written as it is (the attributes allow it).
 - **IFC2x3** carries no analysis model and no material values (the
@@ -249,7 +249,7 @@ writes the IFC4 (with and without the analysis model), IFC2x3 and SAF
 exports of three structures — the example lattice
 `examples/synthetic-line/Structures/type-02.ohls` (`[[section]]` tables:
 no shapes), the invented `examples/exports/every-profile.ohls` (every
-profile of the example section library, a spring support, a load along a
+profile of the example cross-section library, a spring support, a load along a
 member, a tension-only member that bends and a member not checked) and a body built by the generators (X panels with horizontals,
 triangular crossarms, a peak; library angles) — and runs the script on
 them. The test runs only when `OHL_IFC_PYTHON` names a Python with
@@ -284,7 +284,7 @@ export; the polygonal pole profile is checked through `every-profile`.
   (IFC4 with the analysis model); `OHL_Member` (IFC4); its `Body` built by
   IfcOpenShell's geometry kernel with a positive volume, the solid's
   centroid on the member's axis (a warning beyond 1 mm), and in IFC4 the
-  volume against A × L of the section (a warning beyond 3 %).
+  volume against A × L of the cross-section (a warning beyond 3 %).
 - Every profile with geometry has `OHL_Section` (IFC4).
 
 **SAF, per file** (the standard library only; the published SAF
@@ -313,7 +313,7 @@ within 0.1 % of the library's area). Warnings left: the SAF export of
 `type-02` has Iy, Iz and It = 0 for its three `[[section]]` tables, which
 give the area only (its members are truss members, which need only A); an
 analysis program may refuse zero bending stiffness for a frame member —
-give such sections in the section library.
+give such cross-sections in the cross-section library.
 Rerun on 2026-10-19 after `every-profile` gained a tension-only member
 that bends and a member not checked (`Bending`, `Check` in `OHL_Member`,
 the analysis members' `Description`, SAF `Layer`): 12 files, 0 errors.
@@ -325,7 +325,7 @@ the analysis members' `Description`, SAF `Layer`): 12 files, 0 errors.
   (no MVD checker); whether an analysis program creates its analytical
   members, supports and load cases from the IFC4 file; whether a
   steel-detailing program converts the IFC2x3 members into native parts,
-  and how it maps the profile names (the section ids) and the material
+  and how it maps the profile names (the cross-section ids) and the material
   names to its catalogues; the profile orientation (roll) a program
   shows.
 - SAF: every rule of the specification itself (no schema or SDK here):

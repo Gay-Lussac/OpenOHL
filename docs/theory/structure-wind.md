@@ -3,7 +3,7 @@
 Implemented in `crates/ohl-structures-fe/src/wind.rs` (`faces`,
 `MemberWindSetup`, `Model::member_wind_with`), with the factors read by
 `crates/ohl-sections/src/wind.rs` (`StructureWind`, the `[wind]` table of
-the section library). Built, in active development (not approved yet);
+the cross-section library). Built, in active development (not approved yet);
 pre-alpha: results must be verified by a qualified engineer.
 
 **What is OpenOHL's and what is data.** The geometry is computed here:
@@ -16,7 +16,7 @@ function of the front face's solidity ratio and the spacing ratio — are
 **data**: a design-code plugin returns them from the user's parameter
 file (the optional `structure-wind` export, see [Writing
 plugins](../development/plugins.md#wind-factors-for-structures)), or the
-user types them into a `[wind]` table of the section library ([Section
+user types them into a `[wind]` table of the cross-section library ([Cross-section
 library](../user-guide/section-library.md#wind-factors-for-structures-wind)).
 OpenOHL ships no such values. Without them the member wind is the one of
 [Structure analysis](structures-fe.md#member-wind): one generic drag
@@ -29,7 +29,7 @@ shielding factors as data. (The generic drag factor 1 is a
 
 ## Member force
 
-For a member with a profile from the section library, the wind of
+For a member with a profile from the cross-section library, the wind of
 pressure \\( q \\) blowing along the unit vector \\( \hat{\mathbf w} \\)
 gives, with the member's axis \\( \hat{\mathbf x} \\) and the wind's
 component normal to it
@@ -111,7 +111,7 @@ face's true silhouette, overlaps once and plates included.
 
 For a wind direction \\( \hat{\mathbf w} \\), a face **faces the wind**
 when \\( |\hat{\mathbf n}\cdot\hat{\mathbf w}| > 10^{-3} \\) (an edge-on
-face — a side of a square tower under a wind along its other sides —
+face — a side of a square lattice tower under a wind along its other sides —
 neither shelters nor is sheltered). A member that lies in a face facing
 the wind is **shielded** when the line from its middle back against the
 wind meets another face facing the wind (one the member is not in),
@@ -150,7 +150,7 @@ bracing, inner diagonals) are never shielded and take their full wind,
 where a code would also shelter them behind the windward face. Exact: the
 code's rule for inner members, as data.
 
-A code that gives one force coefficient for a whole lattice section
+A code that gives one force coefficient for a whole lattice cross-section
 (windward and leeward faces together) is expressed as a face drag by
 solidity with a shielding factor of 0: the near faces carry the whole
 force, the far ones none.
@@ -176,7 +176,7 @@ force, the far ones none.
   area width × length × \\( \sin\theta \\) — more than the cross-flow
   force above (\\( \sin^2\theta \\)) for a member at an angle to the
   wind — and nothing is shielded. **Simplification:** no drag factor (1),
-  which can be lower than a code's (unsafe); a member whose section is not
+  which can be lower than a code's (unsafe); a member whose cross-section is not
   in the library has no area (said in its row). Exact: the member wind
   above, with the code's factors.
 
@@ -188,6 +188,6 @@ the faces found (four sides and the top), the solidity ratio
 \\( \varphi = 0.05 \cdot (10 + 2\sqrt{20}) / 8 = 0.1184 \\) by hand, the
 far face shielded, the force along the wind by hand; and the same panel
 without factors (today's generic drag, nothing shielded). Unit tests
-(`wind_tests.rs`) add a two-panel tower with a plan diagonal (the plane
+(`wind_tests.rs`) add a two-panel lattice tower with a plan diagonal (the plane
 through the body dropped), the face drag by solidity, a spacing axis,
 the table's range, and the members shielded at 45°.

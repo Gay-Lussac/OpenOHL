@@ -2,8 +2,8 @@
 
 **OHL-Structure** (the program `ohl-structure`), the structure
 application of OpenOHL, edits one structure file (`.ohls`) in a window of its
-own, from level 1 (a stick figure: the points where insulators hang) to
-level 3 (a full design: every member with its section, the supports).
+own, from level 1 (a stick figure: the points where strings hang) to
+level 3 (a full design: every member with its cross-section, the supports).
 See [Building structures](../development/structure-building.md) for
 what the levels mean and what comes next.
 
@@ -20,7 +20,7 @@ Options:
 |---|---|
 | `--insulators DIR` | the insulator assemblies strings may take; default: the file's folder and an `Insulators` folder there |
 | `--ahead DEG` | which plan angle means ahead along the line, for the compass; default 0 |
-| `--sections FILE\|DIR` | the [section library](section-library.md) (a `.ohlsec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
+| `--sections FILE\|DIR` | the [cross-section library](section-library.md) (a `.ohlsec` file or a folder of them) the members' areas come from; default: the `Sections` folder beside the file |
 | `--structure ID` | the placed structure whose loads these are: values typed over the load table are kept for it (below) |
 | `--line-values FILE` | the line's values at that placed structure (a line-values file, written by the line application); read again when it changes |
 | `--version` | prints the version and the build id — the git commit it was built from, e.g. `ohl-structure 0.0.1 (build 1a2b3c4d5e6f)` — and stops |
@@ -39,11 +39,11 @@ the name; the window has OHL-Structure's icon): **Open a structure…**,
 the files opened recently (a click opens one; kept between runs), **New
 structure…** and **Plugins…** (the [plugin manager](#plugins)). **New
 structure…** (also in the File menu) asks an id and a name and what to
-start from: **Empty** — one point where an insulator hangs, a level 1
-stick figure to build from — or a **pylon template** (`.ohlpt`: the
+start from: **Empty** — one point where a string hangs, a level 1
+stick figure to build from — or a **structure template** (`.ohlpt`: the
 templates shipped with OpenOHL, or **Another template file (.ohlpt)…**), built
 for suspension or strain with the template's default dimensions (the
-line application's pylon builder sets others). **Create…** asks where
+line application's structure builder sets others). **Create…** asks where
 to write the file (`<id>.ohls`; an existing file is not replaced) and
 opens it.
 
@@ -58,7 +58,7 @@ type id first (**Make it a structure file and edit it…**).
 
 The line application only edits a structure's basics (attachment
 points, strings, wire points and sets); its body — joints, members,
-sections, materials, supports, generators, the pole, extensions — and
+cross-sections, materials, supports, generators, the pole, extensions — and
 its design are edited here.
 
 Build it next to the line application, from the same code (in the
@@ -115,7 +115,7 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   for T7: the project has no load cases. Add them in the line
   application (Criteria › Load cases, or a design-code plugin)…*; a case
   of the line without values (its sections not solved in it); a case
-  **incomplete** — *Case ice incomplete: section S12 not solved (why) —
+  **incomplete** — *Case ice incomplete: cross-section S12 not solved (why) —
   the line's forces at T2 lack its wires…*: a section or jumper at this
   structure did not solve in that case, so its forces are missing and the
   values too low (that case's rows in the load table start their note
@@ -179,8 +179,8 @@ yet; **About OHL-Structure**: version, licence);
 OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
 elsewhere. Each work menu lists
 its **panels** (*Joints…*, *Generators…*, *Pole…*: opened if closed and
-brought to the front) and its **actions** (Geometry: *Add a point*, *I
-insulator below the point*, *V insulators to one wire point*, *Delete
+brought to the front) and its **actions** (Geometry: *Add a point*, *One
+string below the point*, *Two strings to one wire point*, *Delete
 what is selected…*; Body: *Add a joint*, *Member between the two joints*,
 *Point on the joint*, *Symmetry* ›, *Make symmetric*, *Delete what is
 selected…* — *Add a joint*, *Member…*, *Point on the joint*, *Symmetry*,
@@ -213,23 +213,23 @@ at the bottom of the window.
 | Menu | Panels |
 |---|---|
 | — | **Level**, **3D view**, **Libraries** (closed by default; View or File › Libraries) |
-| **Geometry** (level 1) | **Points & insulators** (Attachment points, Insulators), **Wire points & sets** (Wire points, Set points), **Structure fields** |
+| **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
-| **Design** (level 3) | **Supports**, **Member sections**, **Groups**, **Sections & materials**, **Pole design** |
+| **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design** |
 | **Load cases** | **Load recipes**, **Load table** |
 | **Results** | **FE results** |
 | **In the line** | **Line values** |
 
 The level of the file decides the panel in front when it opens: Points &
-insulators at level 1, Joints at level 2 (the Pole for a pole), Supports
+strings at level 1, Joints at level 2 (the Pole for a pole), Supports
 at level 3 (Pole design for a pole). Panels closed by default (Structure
-fields, Pole, Extensions, Sections & materials, Pole design) open from
+fields, Pole, Extensions, Cross-sections & materials, Pole design) open from
 their menu or from View.
 
 - **Level** panel: **Level N — name** (worked out from the file, never
   stated), the structure's id and name, its file, *\* unsaved*. Under it,
   **for level N + 1:** what the next level still lacks — no member yet,
-  a member without a section (one item per member), no supported joint,
+  a member without a cross-section (one item per member), no supported joint,
   and the same for each extension with a piece. A supported joint is one
   with a `support`: a structure standing only on `spring`s does not
   reach level 3 (this is how the level is worked out now). Each item is a link: it brings the panel and table
@@ -253,9 +253,9 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points, Insulators (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Set points, Structure (name, height, feet, height extensions) | **+ Point**, **I** and **V** presets for the points picked, **Delete…** (lists what goes with it first) |
-| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
-| **Design** (level 3) | Pole (pole structures: material, section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Section library** (the section library's sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing sections](section-library.md#typing-sections-in-ohl-structure)); the section lists of Members and Groups hold the library's sections first, then the file's | — |
+| **Geometry** (level 1) | Attachment points, Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Delete…** (lists what goes with it first) |
+| **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint, **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
+| **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
 | **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
@@ -295,8 +295,8 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     tip at the point and one above it); the point is put on the arm's
     tip, so it carries its loads in the analysis. **Several points on one
     arm**: the points on one side at one level (an inner and an outer
-    phase, a V string's two upper points) make one arm, the outermost at
-    its tip and the others each on a section of the arm, every point on
+    phase, the two upper points of two strings to one wire point) make one arm, the outermost at
+    its tip and the others each on a cross-section of the arm, every point on
     a joint.
   - *Peak*: a tip above the top of the body, or one at each earth-wire
     point ticked, joined to the joints at the top.
@@ -304,7 +304,7 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     redundant added by hand, say) copied to the opposite face, without
     doubling those there already.
 - **Rebuild** replaces only what the generator made. What was set on its
-  joints and members (a section, a kind, a group, a support) stays when
+  joints and members (a cross-section, a kind, a group, a support) stays when
   they come again; joints and members made by hand are never touched; a
   joint it no longer makes stays while a member made by hand or a point
   uses it, and is listed under the table (*kept, as made by hand*).
@@ -318,9 +318,9 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   the Members table; **Pick them** picks the members the filter shows),
   type a group and **Set on N member(s)**; **No group** takes them out.
   The generators give their members groups (`body-leg`,
-  `body-bracing-3`, `arm1-top`…). In **Design › Groups** a section and a
+  `body-bracing-3`, `arm1-top`…). In **Design › Groups** a cross-section and a
   kind are chosen per group and written on each of its members; a member
-  joining a group whose members share a section takes it.
+  joining a group whose members share a cross-section takes it.
 
 ## Poles and extensions
 
@@ -334,10 +334,10 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   shown as such; **Bring it into this file** writes its outline and
   fields into the structure file (one undo step; the pole check gives
   the same numbers). A `.ohlp` without a wall brings none: level 3
-  lists it until you type a thickness, tick solid or pick a section. Diameters at two heights make level 2.
+  lists it until you type a thickness, tick solid or pick a cross-section. Diameters at two heights make level 2.
 - **Design › Pole design…**: the material (wood, steel, concrete, other), a
-  **section** of the section library next to the file (a polygonal
-  hollow section with the pole's sides, or a circular hollow one for a
+  **cross-section** of the cross-section library next to the file (a polygonal
+  hollow cross-section with the pole's sides, or a circular hollow one for a
   round pole: its wall, and its material's elasticity and density), or
   the wall typed, or **solid** ticked (`wall = "solid"`: no hollow; it
   stands for the wall at level 3; unticked, the wall is not given again;
@@ -354,10 +354,10 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
   faces braced — legs only, single diagonal or X, horizontals on
   request; it replaces the piece there), or by hand (**Joint** at the
   bottom of the piece, **Member between the 2 picked joints**); its
-  joints (support) and members (section) in two tables, 🗑 per row. Its
+  joints (support) and members (cross-section) in two tables, 🗑 per row. Its
   **legs**: a leg A–D one `dz` longer (**+ Leg**), the `dz` dragged, 🗑.
   Every change is one undo step. The header lists, for level 3, an
-  extension member without a section or a piece without a support, and
+  extension member without a cross-section or a piece without a support, and
   as advice an extension without members (*the FE model leaves it
   out*).
 
@@ -398,14 +398,14 @@ structure, as `<name>.<structure>.loads.csv`. Unsaved typed values count
 as unsaved changes.
 
 **Surface loads** (a `pressure` on `members`) take each member's area
-from the section library (`--sections`, else the `Sections` folder
+from the cross-section library (`--sections`, else the `Sections` folder
 beside the file; the line application passes the project's): the
 profile's width seen along the pressure's direction (in the member's
 cross-section plane) × the member's length × sin θ, θ the angle between
 the direction and the member — for a member across the direction,
-width × length. The row shows the area used. A member whose section is
+width × length. The row shows the area used. A member whose cross-section is
 not in the library, or a structure whose model does not build, has **no
-area** and says why. The line under the buttons says how many sections
+area** and says why. The line under the buttons says how many cross-sections
 were read and from where.
 
 **Arrows** draws the loads of the case shown in the view, ending at
@@ -425,7 +425,7 @@ line's wind (−x for wind from the right); a pole takes the same
 pressure as its wind. So a line case solved here loads the body with the
 same pressure as the line's **fe** and **pole** checks. (How the
 pressure becomes member forces still differs: the line's member wind
-takes the section library's drag and shielding factors, the surface
+takes the cross-section library's drag and shielding factors, the surface
 loads here the projected area without drag or shielding,
 [theory](../theory/structures-fe.md#the-structures-wind-of-a-load-case).) Recipes take it with `what = "structure_wind_factored"` (or
 `structure_wind`, unfactored) on `members`; **Take the line's load
@@ -436,7 +436,7 @@ shows **no line value**, the line cases no wind rows (as before).
 
 ## Results
 
-At level 3 (every member with a section and a joint with a `support`,
+At level 3 (every member with a cross-section and a joint with a `support`,
 or a `model = "….ohlfe"`, or a pole the pole check can read) **▶ Run**
 solves the cases of the load table with the finite-element model (and
 the pole check, below): the case chosen, or every case. Rows without a
@@ -461,7 +461,7 @@ without a capacity —, the deformed shape is drawn **Deformed ×** larger
 as the loads on the foundations. Results of an earlier file or table are
 marked; run again.
 
-**On an extension.** A structure with height extensions has an
+**On an extension.** A structure with extensions has an
 **Extension** choice in the panel's header (the same as the 3D view's,
 Body › Extensions): the cases are solved on the structure standing on
 it — the model the line uses for a placed structure on that extension:
@@ -504,7 +504,7 @@ as a printable HTML page — one file, no external resources, it prints
 from any browser — and the members' results beside it as
 `<name>.members.csv` (`case,member,axial_n,usage,governs,slack`). The
 page holds the structure's id, name, kind, file, level, the extension
-solved on and the section library; the sections and materials used
+solved on and the cross-section library; the cross-sections and materials used
 (area, E, f<sub>y</sub>, weight, members, length) and the pole; the load
 cases (description, strength and self-weight factors, rows and rows
 without a value, Σ loads, status); the usage per check with its
@@ -568,21 +568,21 @@ asks first: **Save and close**, **Close without saving** or **Cancel**.
 
 ## Libraries
 
-A structure reads these libraries — each, but the pylon templates, where
+A structure reads these libraries — each, but the structure templates, where
 the line application and `ohl line` keep them for a structure's folder:
 
 | Library | Files | Read from (and imported into) |
 |---|---|---|
-| Section libraries | `.ohlsec` | `--sections` (a folder), else `Sections/` beside the structure file |
+| Cross-section libraries | `.ohlsec` | `--sections` (a folder), else `Sections/` beside the structure file |
 | Insulator assemblies | `.ohli` | `--insulators`, else the structure's folder and its `Insulators/` (imported into `Insulators/`) |
 | Poles | `.ohlp` | beside the structure file |
 | Structure models | `.ohlfe` | beside the structure file |
 | Load-case recipes | `.ohlslc` | beside the structure file |
-| Pylon templates | `.ohlpt` | `PylonTemplates/` beside the structure file |
+| Structure templates | `.ohlpt` | `PylonTemplates/` beside the structure file |
 
-The pylon templates are kept apart in the two applications: OHL-Structure
+The structure templates are kept apart in the two applications: OHL-Structure
 reads and imports them in `PylonTemplates/` beside the structure file;
-the line application's pylon builder reads the project's own in a
+the line application's structure builder reads the project's own in a
 `Pylon templates` folder beside the line. **New structure…** offers only
 the templates shipped with OpenOHL (or another template file chosen).
 
@@ -591,27 +591,27 @@ the templates shipped with OpenOHL (or another template file chosen).
 - **Import *library* ›** *A file…* or *The files of a folder…*: every
   file is read and checked first, then copied into the folder of the
   table (a file of the same name is replaced). A file that does not read
-  — a typo, a wrong unit — or a section or assembly whose id another file
+  — a typo, a wrong unit — or a cross-section or assembly whose id another file
   of that folder has already stops the import with nothing copied; the
   reasons are shown in a window (they scroll in a box of fixed height).
   The libraries are read again at once (the load panels' member areas,
-  the strings' assemblies, the pole's sections). Started from a project
+  the strings' assemblies, the pole's cross-sections). Started from a project
   (**Open in OHL-Structure…** in the line application), the folders are the project's
   working copy: the line application notices the new files within half
   a second, stores them into the project and reads its libraries again.
-  Load-case recipes and pylon templates are not project libraries: they
+  Load-case recipes and structure templates are not project libraries: they
   stay in the working copy and are not stored into the project.
 - **Export what it uses…**: into a folder chosen, in the line
   application's layout — `structures/` (the structure file as edited,
-  its pole and model), `sections/` (each section library with only the
-  sections the structure names and the materials they use, comments
+  its pole and model), `sections/` (each cross-section library with only the
+  cross-sections the structure names and the materials they use, comments
   kept), `insulators/` (its assemblies), `pylon-templates/` (the template
   it was built from). **Export every library…** writes every file read.
 - **Libraries panel…**: the **Libraries** panel (also in View) lists per
-  kind the files read and where from, each with its ids (a section
-  library's sections, with how many the structure uses), why a file does
+  kind the files read and where from, each with its ids (a cross-section
+  library's cross-sections, with how many the structure uses), why a file does
   not read, and at the top what the structure **names that no library
-  has**: section ids (members, extension members, the pole) not defined
+  has**: cross-section ids (members, extension members, the pole) not defined
   in the file's own `[[section]]` tables nor in a library, insulator
   assemblies, the pole file, the structure model. A recipes file has
   **Take its cases** (into the structure file, one undo step). **⟳
@@ -648,7 +648,7 @@ What applies here:
 
 **File › Export** writes the structure as it is in the window (unsaved
 edits included) for another program. It needs **level 3**: joints,
-members with sections, a supported joint.
+members with cross-sections, a supported joint.
 
 | Entry | File | Meant for |
 |---|---|---|
@@ -663,9 +663,9 @@ Pre-alpha, in active development: the exports are checked with free tools (IfcOp
 File-format plugins turned on are listed under the entries, greyed: they
 write the line's export model, not a structure.
 
-Members carry their sections as real profiles (angles, channels, I
-sections, tubes, round bars, polygonal tubes) when the section comes from
-the [section library](section-library.md); a section given only by its
+Members carry their cross-sections as real profiles (angles, channels, I
+cross-sections, tubes, round bars, polygonal tubes) when the cross-section comes from
+the [cross-section library](section-library.md); a cross-section given only by its
 values (`[[section]]`) has no shape (IFC: the member's axis only; SAF: a
 square of the same area, its values given).
 
@@ -681,7 +681,7 @@ checked", the `check` column). See
 
 Under the entries:
 
-- **Section library**: by default the window's (`--sections`, else the
+- **Cross-section library**: by default the window's (`--sections`, else the
   `Sections` folder beside the file — the one the load panels use);
   **Choose library…** takes another file.
 - **Loads**: by default the **Load table panel's table**: for a placed

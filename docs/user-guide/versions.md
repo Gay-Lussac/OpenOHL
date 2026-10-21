@@ -22,7 +22,7 @@ command; revisions are the named states between them.
 ## The working state
 
 Every branch is a **project line** with a **working state** of its own
-(see [Project lines and phases](project-lines.md)): what you edit is the
+(see [Project lines and stages](project-lines.md)): what you edit is the
 working state of the line you work on. Commands change it as before (each
 logged, undoable per user and per line). A **commit** records it as a
 revision of that branch. **Check out** chooses the line you work on: nothing

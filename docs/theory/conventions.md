@@ -21,7 +21,7 @@ All values are computed in **SI base units**, as `f64`:
 What the files store differs for two quantities, so that they read naturally:
 
 - **Line model** (line file, OHL XML, project tables): plain SI numbers, except **angles in degrees** (fields ending in `_deg`) and **temperatures in °C**. Voltages are in kV (`_kv`) and frequencies in Hz (`_hz`).
-- **Library files** (TOML: cables, insulators, structure types, weather and load cases): every value carries its unit as text (`"12.5 m"`, `"20 °C"`, `"30 deg"`), any supported unit, converted to SI when read.
+- **Library files** (TOML: wire types, insulators, structure types, weather and load cases): every value carries its unit as text (`"12.5 m"`, `"20 °C"`, `"30 deg"`), any supported unit, converted to SI when read.
 
 The conversion to radians and kelvin happens when the files are read; nothing is stored in radians or kelvin.
 

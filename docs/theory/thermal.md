@@ -17,11 +17,11 @@ Per unit length of conductor, with a uniform conductor temperature
   two nearest temperatures given, extrapolated on the same line beyond them
   (IEEE 738 clause 4.4.4; skin and magnetic effects are in the AC values).
   A single value \\( R(T_1) \\) is scaled with the temperature coefficient
-  \\( \alpha_{20} \\) of the cable's current-carrying material,
+  \\( \alpha_{20} \\) of the wire's current-carrying material,
   \\( R(T) = R(T_1)\,(1 + \alpha_{20}(T - 20))/(1 + \alpha_{20}(T_1 - 20)) \\):
   0.00403 /K for aluminium and its alloys (AAC, AAAC, ACSR, ACSS, ACAR,
   ACCC, and OPGW, whose outer wires are aluminium alloy or aluminium-clad),
-  0.0045 /K for steel wire. A cable of kind `other` or `adss` has no known
+  0.0045 /K for steel wire. A wire type of kind `other` or `adss` has no known
   coefficient and needs two temperatures. Holding a single value constant
   instead would understate the hot resistance by about a fifth for an
   aluminium conductor rated at 100 °C, and overstate the ampacity.
@@ -50,16 +50,16 @@ constant of overhead conductors is several minutes, so the step error is far
 below 0.01 °C; halving it changes the result by less than 10⁻³ °C in the
 tests). One iteration per step; exit clauses: the number of steps + 1 and
 10 s. The last step is shortened to end at the duration.
-The heat capacity \\( m c_p \\) is estimated from the cable's components
+The heat capacity \\( m c_p \\) is estimated from the wire's components
 (aluminium outer wires 955 J/(kg·K), steel core 476 J/(kg·K), with IEEE 738's
 temperature coefficients; steel outer wires for a steel wire, and rough
-typical values, 1000 J/(kg·K), for the composite core of ACCC; the cable's
+typical values, 1000 J/(kg·K), for the composite core of ACCC; the wire's
 mass shared between them by area × density) unless given; for Drake this gives 1306 J/(m·K), against about
 1310 J/(m·K) in the IEEE example.
 **Simplification:** that estimate of the heat capacity (transient only).
 A lower heat capacity heats the conductor faster after a step of current;
 the estimate can be off either way for cores of other materials. Exact:
-the cable's heat capacity given.
+the wire's heat capacity given.
 
 ## IEEE Std 738-2012
 
@@ -195,7 +195,7 @@ its temperature changed, and checked by the rules that apply to that case
 
 **Conservative:** the limit is the last temperature that passed, up to
 0.5 °C below the exact one. Exact: the temperature where the governing
-clearance equals its requirement.
+clearance equals its required clearance.
 
 The span and rule failing just above the limit are reported (the
 *governing* span). Clearance falls with temperature as the sag grows; the

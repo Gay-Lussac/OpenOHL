@@ -70,7 +70,8 @@ file).
 a stick figure; **level 2**, sticks of the structure (joints and members
 without cross-sections); **level 3**, the full design (every member with
 its cross-section, the joints supported). *Replaces:* level of detail (for
-structures; the 3D view's *display detail* is another thing). *German:*
+structures; the views' *level of detail*, how finely they draw by distance,
+is another thing). *German:*
 Detaillierungsstufe (to confirm). *In files:* `detail`.
 
 **Cross-section** — the shape and size of a member (an angle, a tube…),
@@ -278,8 +279,9 @@ point cloud, LandXML…). *Replaces:* ground surface, surface (alone), TIN
 (as a noun). *German:* Geländemodell.
 
 **Point cloud** — LAS/LAZ points read from a file or kept in a project;
-*LiDAR* names the way they were measured (LiDAR classes). *Replaces:*
-LiDAR (as a noun). *German:* Punktwolke. *On the command line:*
+*LiDAR* names the way they were measured and goes with what comes of
+it (LiDAR classes, the ground built from LiDAR). *German:* Punktwolke.
+*On the command line:*
 `--lidar FILE`, `--pointcloud PROJECT#name` (unchanged).
 
 **Survey points** — measured ground points (CSV / XYZ). *German:*

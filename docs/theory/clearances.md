@@ -194,7 +194,7 @@ and the TIN (no closed form).
 The outer surface's angles nearest the hanging position are checked
 first, then the inner surface and the edges; a piece of
 the next angles that cannot come below the lowest clearance found so
-far, nor below the requirement, is passed over (its bound from the
+far, nor below the required clearance, is passed over (its bound from the
 highest ground near it, as below): the counts and the lowest clearance
 are those of every angle checked in full.
 
@@ -296,11 +296,11 @@ whole metres; the earlier code is kept for them).
   without its exact distance when the distance to its bounding box (in
   plan within the zone's width, for the vertical) shows that it can give
   neither a smaller clearance than the smallest found nor one below the
-  requirement. Equal clearances keep the first found, as before.
+  required clearance. Equal clearances keep the first found, as before.
 - **The highest ground per cell** (`checks::GroundMax`, 5 m cells in
   tiles of 64 × 64): a piece (radially a sample every 0.5 m) whose lowest
   point is higher above the highest ground near it than the smallest
-  clearance so far (and the requirement) is passed over — for the
+  clearance so far (and the required clearance) is passed over — for the
   radial, the ground within \\( r = \sqrt{(t + a)^2 + (s/2)^2} \\) of the
   sample (\\( t \\) the threshold, \\( a \\) the allowance, \\( s \\) the
   sample spacing): a triangle nearer in plan is under that ground, one

@@ -26,7 +26,7 @@ All of them are written directly by OpenOHL from the public specifications (no G
 
 ## Export
 
-Exports are written by `ohl line` after solving, so they use the same libraries, pylon files and weather cases (`--weather`, `--case`, `--tag`):
+Exports are written by `ohl line` after solving, so they use the same libraries, structure files and weather cases (`--weather`, `--case`, `--tag`):
 
 ```bash
 ohl line examples/synthetic-line/synthetic-line.ohl.json \
@@ -68,7 +68,7 @@ Options:
 
 ### IFC
 
-`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a mast with arms to the insulator points) and its insulator strings, with property set `OHL_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OHL_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
+`ifc` writes an IFC4 file (STEP, `ReferenceView`): a project with metre, radian, newton and volt units and a site placed at the first structure. Each structure is an `IfcBuildingElementProxy` placed and turned like the structure, drawn as 3D lines (its stick drawing; else a shaft with arms to the structure points) and its strings, with property set `OHL_Structure` (id, type, extension, orientation, routes). Each span or jumper is an `IfcCableSegment` (`CONDUCTORSEGMENT`) drawn as a 3D polyline, with property set `OHL_Wire` (case, section, span, cable, circuit, phase, system, nominal voltage, horizontal and largest tension, sag). Option `cases`: `first` (default) or `all`. Coordinates are the line's; no map conversion is written.
 
 ### Tables (XLSX)
 
@@ -103,7 +103,7 @@ ohl project import-file points.geojson --into new.ohl --user ann --option crs=EP
 
 `structures-csv`, `structures-geojson`, `structures-shp` and LandXML points are read the same way:
 
-- Every point becomes a structure; a point whose id is a structure of the line moves and turns it — attachments, V-string legs and stick drawings move with it — and keeps its type unless the file gives one.
+- Every point becomes a structure; a point whose id is a structure of the line moves and turns it — attachments, strings and stick drawings move with it — and keeps its type unless the file gives one.
 - With a polyline in the file (a GeoJSON LineString, the first shapefile polyline — a `routes` shapefile in the zip first —, a LandXML alignment), the points are ordered by their station along it, and the route `route` (default `main`) runs through them with the polyline as its alignment. A new line always gets that route (in file order without a polyline).
 - New structures without an orientation are turned square to the bisector of the line at them.
 

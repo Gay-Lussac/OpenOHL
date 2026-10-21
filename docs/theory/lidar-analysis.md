@@ -124,7 +124,7 @@ wind is solved with the wind **from the left and from the right**.
   through its two attachment points \\( A_1, A_2 \\) (string tops; at a
   dead-end, the clamp), unit vector \\( \mathbf u = (A_2 - A_1)/|A_2 - A_1| \\).
   As built, an attachment is the top of the one string hanging below it
-  at a point inside the section; at the section's ends, a V-string or a
+  at a point inside the section; at the section's ends, two strings to one wire point or a
   wire fixed to the structure, the clamp (as solved in the case's first
   position; the string tops do not move).
   At a station \\( s \\) along the span (a fraction of its length), the
@@ -342,7 +342,7 @@ is the difference; the worst position (hot, left, right or on the arc) is
 reported.
 
 As built (2026-10-20): \\( c_{\text{req}} \\) is one distance or a
-requirement by voltage, as the clearance rules write it — a table "up to
+required clearance by voltage, as the clearance rules write it — a table "up to
 kV → distance" (the first row whose voltage is not exceeded; above the
 last row its distance) or \\( c_0 + c_1 (U - U_0) \\) above \\( U_0 \\) —
 evaluated for each span at the nominal voltage \\( U \\) of its wire's
@@ -366,7 +366,7 @@ falls to.
 
 **The tree base needs a ground point near it** (optional,
 `max_base_ground_distance`, e.g. 5 m): the ground's height below the
-point — its base — is taken only when a point the ground surface is built
+point — its base — is taken only when a point the terrain surface is built
 from (a TIN vertex: a LiDAR ground point or a survey point) lies within
 that horizontal distance; else the point has no base and no fall-in check,
 and is counted as "no ground point within the distance" (with the points
@@ -565,7 +565,7 @@ coarsened.
   span's nearest point or enters its worst list is worked out fully
   then. Counts never depend on it (a bound from 0 up never counts).
 - **Ground once per point.** The height above the ground (for fall-in)
-  comes from the ground surface once per point; the fall sector's resting
+  comes from the terrain surface once per point; the fall sector's resting
   angle \\( \theta_{\min} \\) is computed only for points that are near
   enough, by stepping along the fall direction at the TIN's resolution.
 - **Unbalanced ice only where trees are.** A span is solved with its own

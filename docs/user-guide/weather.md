@@ -1,6 +1,6 @@
 # Weather cases (`.ohlwc`)
 
-A weather case is a cable temperature, ice and wind. Cases are kept in a
+A weather case is a wire temperature, ice and wind. Cases are kept in a
 file and each run chooses the ones it needs.
 
 ```toml
@@ -34,7 +34,7 @@ wind_pressure = "200 Pa"
 | `name` | yes | Unique name. |
 | `description` | no | Free text. |
 | `tags` | no | Words for choosing cases (`clearance`, `loads`, …). |
-| `temperature` | yes | Cable temperature. |
+| `temperature` | yes | Wire temperature. |
 | `ice_thickness` | no | Radial ice thickness. |
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | Default glaze ice, 913 kg/m³. With a thickness: the ice weight. With a load: the iced diameter, for the wind and the clearances. |
