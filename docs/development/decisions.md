@@ -37,6 +37,62 @@ approved as finished: everything is built and in active development
   in a settings file is taken as 200 m. A view setting
   (`ViewPrefs.ground_lines.lidar_corridor`), remembered per project on
   this computer. Built, in active development (not approved yet).
+- **The swing band's margin is editable everywhere it is used** (the
+  owner): default 0.15 m (`positions::BAND_MARGIN`, the measured worst
+  excess plus an allowance; **Conservative**), a field **band margin**
+  beside the swing arc in the Vertical and Radial clearance windows, the
+  vegetation panel and the safety volumes (shared helper
+  `check_help::band_margin_ui`: a line, hover text on what it covers,
+  conservative, a smaller value less safe and on the user's
+  responsibility — a warning below the default, a button back to it);
+  rule files `[wind] band_margin` (additive, written only when not the
+  default; presets may set it); `--band-margin` on `ohl zones`,
+  `ohl lidar vegetation` and `ohl safety-volume`; saved runs record it
+  (`band_margin`; older runs read 0.15 m) and are out of date when it
+  changes with the arc on. Engine: `WindSteps::band_margin`,
+  `PositionOptions::band_margin`, `SwingArc::with_margin`,
+  `run_zone_check`'s arc as `Option<margin>`; a negative margin refused.
+  Results with the default are unchanged. Validation: the band cases
+  take an optional `band_margin` (the default cases unchanged),
+  `swingarc-005` with 0.4 m (clearance 3 − 0.4 = 2.6 m by hand).
+- **Jumpers get their own swing band** (the owner): a jumper's positions
+  blown left, in still air and blown right form a band like a span's,
+  about the axis through its two end clamps (as solved blown to the left,
+  the first solve — the axis its positions are placed on), from the
+  smallest to the largest radius, widened by the band margin
+  (`positions::jumper_band`). Used wherever jumpers are included: the
+  safety volumes, and the vertical and radial checks for the rules whose
+  `wires` take jumpers (before: "jumpers have no swing arc", checked at
+  their solved positions). A jumper without a band (not solved blown to
+  a side, or not running steadily along its clamps' line) keeps its
+  solved positions (noted). **Measured** against steps of 10 Pa from both
+  sides (`tests/arc_band.rs`) on the example line's jumper, both windy
+  cases (158 stepped positions): up to **0.293 m** outside the band
+  (high wind, blown right at 230 Pa, inside the inner radius; rime ice
+  and wind 0.127 m), against 2.54 m from the arc alone at the largest
+  radius. **This exceeds the default margin by 0.143 m**; the margin is
+  not widened without the owner's approval (reported: about 0.35 m would
+  hold it with an allowance as the spans'; or a margin of its own for
+  jumpers). With the axis through the still-air clamps the excess was
+  0.375 m, so the blown-left clamps are kept. Validation
+  `jumperband-001`, `-002` (by hand).
+- **Fixed: a rule's voltages and wires were not applied to the swing
+  arcs** in the vertical and radial checks (`zone_arc::arcs_of_rule`
+  tested the length of `checked_parts`, which keeps a left-out wire
+  without points): every rule checked every span's arc, also of other
+  voltages or of the sections in a jumpers-only rule. Found while adding
+  the jumpers' bands; results with the arc and rules limited by voltage
+  or wires change (fewer, correct findings).
+- **Wires without a system as one group** (the owner): in the safety
+  volumes the scope by Systems lists a row **(no system)** — the earthed
+  wires and any section without a system — ticked like a system
+  (`safety_volume::NO_SYSTEM`; `ohl safety-volume --system none`, or
+  `"(no system)"`; `none` means a system when the line has one of that
+  id or name); per system they form one volume "(no system)" instead of
+  one per circuit; their distance by voltage stays at 0 kV. This
+  replaces the agent's choice of earlier today (left out by system, per
+  circuit). "By system" exists nowhere else (the clearance checks choose
+  by voltage and circuit), so nothing else changes.
 
 - **Lines on the ground beside the line without a terrain surface**
   (owner request: "make sure the line on the side of the conductors also

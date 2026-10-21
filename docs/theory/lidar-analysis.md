@@ -150,11 +150,17 @@ wind is solved with the wind **from the left and from the right**.
   pressure passed up to 1.53 m nearer the axis (measured on the example
   line). Exact: a solve at every pressure.
 
-  **Conservative:** the band is widened by a margin
-  \\( m = 0.15 \\) m on every side (`positions::BAND_MARGIN`; every
-  distance to it taken \\( m \\) smaller, as if the conductor were that
-  much thicker), because the band alone does not quite hold every
-  intermediate position. Measured 2026-10-21 (`tests/arc_band.rs`) on the
+  **Conservative:** the band is widened by a margin \\( m \\) on every
+  side, 0.15 m by default (`positions::BAND_MARGIN`; every distance to it
+  taken \\( m \\) smaller, as if the conductor were that much thicker),
+  because the band alone does not quite hold every intermediate
+  position. Since 2026-10-21 (the owner's decision) \\( m \\) is a
+  **parameter**: the default is the measured worst excess below plus an
+  allowance, and the user may change it — in the vegetation panel, the
+  clearance windows and the safety volumes (**band margin**), the rule
+  file (`[wind] band_margin`) and the command line (`--band-margin`);
+  saved runs record it. A smaller value than the default is less safe
+  and **on the user's responsibility**. Measured 2026-10-21 (`tests/arc_band.rs`) on the
   example line and the crossing line, both windy example cases (600 Pa;
   200 Pa with rime ice), steps of 10 Pa from both sides (1738 stepped
   positions): a step's centre line lies at most **0.089 m** outside the
@@ -168,6 +174,31 @@ wind is solved with the wind **from the left and from the right**.
   band (tolerance 0). It also takes 0.15 m off the clearances on the
   outer side, where the arc alone was already conservative (the price of
   one margin for every side). Exact: a solve at every pressure.
+
+  **Jumpers** (2026-10-21, the owner's decision): where jumpers are
+  taken — the safety volumes, and the vertical and radial clearance
+  checks for the rules that check jumpers (the danger-tree check leaves
+  jumpers out) — each jumper with the swing arc on has a band of its own,
+  as a span's: its positions blown left, in still air and blown right,
+  about the axis through its **two end clamps** (as solved blown to the
+  left, the first solve; `positions::jumper_band`), from the smallest to
+  the largest radius at each place, widened by the same margin \\( m \\).
+  A jumper without a band (not solved blown to a side, or not running
+  steadily along that axis) is taken at its solved positions, noted.
+  Measured 2026-10-21 (`tests/arc_band.rs`) on the example line's jumper
+  (the crossing line has none), both windy example cases, steps of 10 Pa
+  from both sides (158 stepped positions): a step's centre line lies up
+  to **0.293 m** outside the jumper's band (high wind, blown right at
+  230 Pa, inside its inner radius: the dead-end clamps it hangs from
+  move with the wind and its shape about the clamps' line changes), and
+  0.127 m in rime ice and wind; the arc alone at the largest radius
+  misses them by up to 2.54 m. **This exceeds the default margin
+  (0.15 m)**: a jumper's band with the default margin does not hold
+  every intermediate position on the example line, by up to 0.143 m. The
+  margin is not widened without the owner's decision (reported; about
+  0.35 m would hold it with an allowance as the spans'); until then the
+  user may set a larger margin. With the clamps' line through the
+  still-air clamps instead, the excess was larger (0.375 m).
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\) (the still-air position need not

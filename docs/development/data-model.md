@@ -724,7 +724,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   (`WindSteps::arc`; the danger-tree check's `positions::SwingArc`,
   shared). `ohl line` ignores it. A vegetation preset's `[wind] arc =
   true` turns its swing arc on too (its own `swing_arc` decides when
-  given).
+  given). Since 2026-10-21 `band_margin` (a length ≥ 0,
+  `WindSteps::band_margin`, default `positions::BAND_MARGIN` 0.15 m;
+  written only when not the default, so a file without it is written as
+  before; older programs refuse a file with it, an unknown key): the
+  swing band's margin, for the clearance windows, `ohl zones`, the
+  vegetation panel (a preset's `[wind]`) and the safety volumes; a
+  negative one refused. `zone::run_zone_check` takes the arc as
+  `Option<f64>` (the margin; none: no arc), its `ZoneCheckResult` has
+  `band_margin`; `zone_arcs` takes the jumpers solved and the margin.
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
@@ -846,14 +854,21 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `SwingArc::place(s)` gives an `ArcPlace` with `centre`, `radius` (the
   largest of the three, R), `inner` (the smallest, r), `from`, `to`;
   `SwingArc::nearest` is 0 inside the band; `outer` and `allowance()`
-  include `positions::BAND_MARGIN` (0.15 m, every distance taken that
-  much smaller); `thickness()` and `line_at_radius(φ, t)` (t from the
+  include the band's margin (every distance taken that much smaller):
+  `positions::BAND_MARGIN` (0.15 m) by `SwingArc::new`, any ≥ 0 by
+  `SwingArc::with_margin` (2026-10-21; `margin()` gives it);
+  `thickness()` and `line_at_radius(φ, t)` (t from the
   inner, 0, to the outer radius, 1) are new. `PositionOptions::jumpers`
   (2026-10-21, default false; the safety volumes set it): the jumpers too,
   each a span of its own (section `jumper:<id>`, span 0, its axis from
-  its first to its last point) at its solved positions in every solve
-  (left, right, still — kind `still` also for a windy case's still air
-  solved for the arc — and every step), never on a swing arc. `VegetationParams::clearance_by_voltage` and
+  its first to its last point as first solved, blown left) at its solved
+  positions in every solve (left, right, every step; still air when the
+  arc is off) and, with `swing_arc`, a `PositionKind::Arc` position of
+  its own (`positions::jumper_band`: the band about the line through its
+  end clamps blown left; a jumper without one keeps its still air, kind
+  `still`, noted). `PositionOptions::band_margin` (2026-10-21, default
+  0.15 m; `PositionOptions` no longer derives `Default`, its `Default`
+  sets it): every band's margin. `VegetationParams::clearance_by_voltage` and
   `allowance_by_voltage` (a `rules::Requirement`, else `clearance` and
   `fall_allowance`) give each span its distance by its wire's voltage
   (`VegetationCheck::required`). Results per span:
@@ -1489,8 +1504,11 @@ the `PATH`. Request on the tool's input, reply on its output; exit status
 Computed, not stored in the line. `SafetyParams`: `distance`
 (`Requirement`), `margin`, `tolerance`, `grouping` (`Wire`, `Circuit`,
 `System` — 2026-10-21: the circuits of one electrical system together;
-earthed wires per circuit), `circuits` (names; empty: all), `systems`
-(system ids; empty: all; earthed wires left out when given),
+the wires without a system, earthed wires and sections without one, one
+volume `NO_SYSTEM` "(no system)"), `circuits` (names; empty: all),
+`systems` (system ids; empty: all; `NO_SYSTEM` takes the wires without a
+system, left out when not named; `run` reads `none` as it too unless the
+line has a system of that id or name, `no_system_key`),
 `spans` (section id, span index from 0; empty: all; a jumper kept when
 its first two `ends` are ends of spans taken), `parse_span`
 (`SECTION:N`, N from 1),
@@ -1499,7 +1517,9 @@ its first two `ends` are ends of spans taken), `parse_span`
 the system and its `circuit` lists its circuits); `WindMode` (`None`, `Steps`, `Arc`, `Both`) with `WindSteps`
 gives the positions (`positions::solve_positions`, with
 `PositionOptions::jumpers` since 2026-10-21: a volume's `sections` then
-names its jumpers, `jumper:<id>`, too). `SafetyVolumes`:
+names its jumpers, `jumper:<id>`, too; `WindSteps::band_margin` the
+bands' margin, `wind_text` the wind in words with it — the exports'
+`Description::wind`). `SafetyVolumes`:
 `volumes`, `cases`, `positions`, `notes`; each `SafetyVolume`: `name`,
 `circuit`, `phases`, `sections`, `kv`, `distance`, `margin`, `outer`,
 `positions`, `arc_error`, `arc_error_median`, `allowance`, `stats`
@@ -1599,7 +1619,8 @@ case names), `clearance` and `fall_allowance` (as a rule file writes a
 distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
 `growth_per_year`, `years`, `buffer`, `fall_in`, `root_ball`,
 `min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
-no limit), `search_distance`, `swing_arc`, `wind_steps`, `wind_step`
+no limit), `search_distance`, `swing_arc`, `band_margin` (m, since
+2026-10-21; absent in older runs: 0.15 m), `wind_steps`, `wind_step`
 (Pa), `wind_sides`, `unbalanced_ice` (`off`, `case`, `thickness`,
 `extra`, `load`) and `unbalanced_ice_value`, `keep`, `isoclearance`
 (`interval`, `max_level`, `spacing`; null: none) — and what the run read:
@@ -1623,9 +1644,12 @@ The safety volumes (`check` `ohl.safety-volume`, title "Safety
 volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
 `parameters`: `version` (1), `cases` (weather case names), `distance` (as
 a rule file writes a distance), `margin`, `tolerance` (m), `wind`
-(`none`, `steps`, `arc`, `both`), `wind_step` (Pa), `wind_sides`, `per`
+(`none`, `steps`, `arc`, `both`), `band_margin` (m, since 2026-10-21;
+absent in older runs: 0.15 m), `wind_step` (Pa), `wind_sides`, `per`
 (`wire`, `circuit`, `system`), `scope` (`systems`, `circuits` or `spans`,
-2026-10-21; absent: circuits), `circuits`, `systems` (ids) and `spans`
+2026-10-21; absent: circuits), `circuits`, `systems` (ids; since
+2026-10-21 `(no system)`, `safety_volume::NO_SYSTEM`, for the wires
+without a system) and `spans`
 (`SECTION:N`, N from 1) — the ticks of each list
 (only the scope's list is used), empty: all. Their `results`: `positions`, `notes`,
 `volumes` [{`name`, `circuit`, `phases`, `sections`, `kv` (null:

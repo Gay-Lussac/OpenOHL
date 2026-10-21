@@ -25,8 +25,9 @@ wire in any of its positions:
   three) — the positions of the danger-tree check
   ([LiDAR analyses › Wire positions checked](lidar-analysis.md#wire-positions-checked)) —
   and, since 2026-10-21, the **jumpers** at their solved positions in
-  each of those solves (blown left and right, still air, every step;
-  never on a swing arc).
+  each of those solves (blown left and right, every step, still air) and,
+  with the swing arc, on a **swing band of their own** about the line
+  through their two end clamps (still air then inside the band).
 - \\( d(U) \\): the distance of the rule at the nominal voltage \\( U \\)
   of the wire's system (an earthed wire at 0 kV): one distance, a table
   "up to kV → distance" or \\( d_0 + d_1 (U - U_0) \\) above \\( U_0 \\),
@@ -51,7 +52,10 @@ clamp, so its tube joins the tubes of the sections it connects and the
 volume is **continuous at the structures** (a dead end, a branch).
 
 The **swing arc** contributes every point within \\( D_k + m_b \\) of the
-band (\\( m_b = 0.15 \\) m its margin): at a place \\( s \\) along the
+band (\\( m_b \\) its margin, 0.15 m by default; since 2026-10-21 a
+parameter — the window's **band margin**, `--band-margin` — recorded
+with a saved run: a smaller value is less safe and on the user's
+responsibility): at a place \\( s \\) along the
 span's axis the annular sector of centre \\( C(s) \\) from radius
 \\( r(s) \\) to \\( R(s) \\) between \\( \varphi_L(s) \\) and
 \\( \varphi_R(s) \\) — the closed form of the danger-tree page, with its
@@ -60,6 +64,18 @@ the band's margin; the angles from the smallest to the largest) and its
 **Simplification** (a rigid swing). Distances are measured in 3D, so
 beyond the band's ends and beyond the span's ends the volume is rounded
 (balls of radius \\( D \\)).
+
+A **jumper's band** (2026-10-21, the owner's decision) is the same
+closed form about the axis through the jumper's two end clamps (blown to
+the left, the first solve; `positions::jumper_band`), from the smallest
+to the largest radius of its three positions, widened by the same
+\\( m_b \\), meshed as a span's. **Not conservative with the default
+margin on the example line:** its jumper's 10 Pa steps lie up to
+0.293 m outside its band, 0.143 m more than the default margin covers
+([the swing arc](lidar-analysis.md#wire-positions-checked)); reported to
+the owner, the margin not widened without the owner's decision. The
+jumper's solved positions (blown left and right, every step) remain
+tubes of their own, so the volume holds them exactly.
 
 As built, the band's boundary is cut into triangles: its outer and inner
 surfaces (radius \\( R \\) and \\( r \\)), its two end edges swept along
@@ -96,11 +112,13 @@ at both its ends are ticked. Grouping
 changes only which positions one mesh holds: each wire keeps the
 distance \( d(U) \) of its own system's voltage, so a volume per circuit
 or per system is the union of its wires' volumes (meshed as one).
-Earthed wires have no system: per system they make a volume per
-circuit, and a choice by system leaves them out (tick their circuits to
-include them); they keep the distance at 0 kV and are never given the
-distance of a system they do not belong to. A choice made while the
-owner has not ruled on it (an open question).
+The wires without a system — earthed wires and any section without
+one — are one group since 2026-10-21 (the owner's decision,
+`safety_volume::NO_SYSTEM`, "(no system)"): a row of the systems to
+tick (`--system none`), and per system one volume of that name. They
+keep the distance at 0 kV and are never given the distance of a system
+they do not belong to. (Before, per system they made a volume per
+circuit and a choice by system left them out.)
 
 ## The mesh
 
@@ -217,9 +235,15 @@ outward.
   mesh); with a jumper sagging 1.5 m between the clamps, one closed piece
   holding every point within 0.95 m of the jumper.
 - `the_volume_s_positions_include_the_jumpers` (the example line, high
-  wind, swing arc): the branch's jumper is taken blown left, blown right
-  and in still air; the danger-tree check's positions leave jumpers out,
-  as before.
+  wind, swing arc, a band margin of 0.4 m): the branch's jumper is taken
+  blown left, blown right and on its own swing band (2026-10-21), every
+  band with the margin asked for; the danger-tree check's positions leave
+  jumpers out, as before.
+- `chosen_and_grouped_by_system`: two earth wires of two circuits make
+  one volume "(no system)" per system, and ticking "(no system)" takes
+  them alone (2026-10-21).
+- Validation `jumperband-001`, `-002` (2026-10-21): a jumper's band about
+  its end clamps blown to the left, by hand (`benchmarks/clearance/danger-trees.toml`).
 
 ## The files
 

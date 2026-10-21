@@ -54,10 +54,23 @@ alone or together:
   pressure, which sags less, than to the arc — by 0.47 m on the example
   line (below).
 
-  **Conservative:** the band widened by its margin \\( m = 0.15 \\) m on
-  every side (the measured worst excess of the 10 Pa steps over the
-  band, 0.089 m, plus an allowance of 0.061 m:
-  [the swing arc](lidar-analysis.md#wire-positions-checked)).
+  **Conservative:** the band widened by its margin \\( m \\) on every
+  side, 0.15 m by default (the measured worst excess of the 10 Pa steps
+  over the band, 0.089 m, plus an allowance of 0.061 m:
+  [the swing arc](lidar-analysis.md#wire-positions-checked)). Since
+  2026-10-21 the margin is a parameter (`[wind] band_margin`, the
+  windows' **band margin**, `ohl zones --band-margin`): a smaller value
+  is less safe and on the user's responsibility.
+
+  **Jumpers** (2026-10-21): the jumpers a rule checks (`wires` jumpers or
+  both) have a band of their own, about the line through their two end
+  clamps (blown to the left, the first solve), from the smallest to the
+  largest radius of their three positions, widened by the same margin
+  (`positions::jumper_band`). Before, they were checked at their solved
+  positions only. On the example line the jumper's band does **not**
+  hold its 10 Pa steps within the default margin: up to 0.293 m outside
+  ([the swing arc](lidar-analysis.md#wire-positions-checked)) — reported
+  to the owner, the margin not widened without the owner's decision.
 
   **Conservative:** the arc runs from the smallest to the largest of
   \\( \varphi_L, \varphi_0, \varphi_R \\).
@@ -250,7 +263,8 @@ radially, with the ground, 29 s against 113 s and 19 s).
   swing. Measured on the example line (`zone_arc`, every span's lowest
 clearance to the ground and to 4000 invented points): with the band
 (2026-10-21) the arc is never above the steps (50 Pa), vertically nor
-radially (radially at least 0.189 m below them at every span), and below
+radially (radially at least 0.189 m below them at every span; with the
+default margin), and below
 them by up to 1.22 m elsewhere. Before, at the largest radius only, it
 was radially above them by up to 2.1 cm (S2's first span, a point 2.2 cm
 from the solved wire at some pressure, 4.2 cm from the arc), and a point
