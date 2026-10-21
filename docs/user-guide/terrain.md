@@ -111,15 +111,21 @@ steps = true        # every pressure from 0 up to the case's, in steps
 step = "50 Pa"
 sides = "both"      # both, left or right
 arc = true          # each span also on its swing arc (2026-10-20; default false)
+band_margin = "0.15 m"  # the swing band's margin (2026-10-21; default 0.15 m)
 ```
 
 `arc = true` adds each span's swing arc between still air and the full
 blowouts of the sides chosen (three solves per windy case; since
 2026-10-21 a band of every radius from the smallest to the largest of the
-three positions, widened by 0.15 m; see [Arc or
+three positions, widened by the band margin; see [Arc or
 steps](../theory/clearances.md#arc-or-steps-speed-and-quality)); alone or
-with the steps. A file without it reads as before, and is written
-without it.
+with the steps; since 2026-10-21 the jumpers a rule checks have bands of
+their own. A file without it reads as before, and is written without it.
+`band_margin` (2026-10-21, a length ≥ 0): every distance to a swing band
+is taken this much smaller; default 0.15 m (conservative: the measured
+worst excess plus an allowance); a smaller value is on your
+responsibility. Written only when not the default (older programs refuse
+a file with it: an unknown key); a design code's preset may set it.
 
 and a `[check]` table — what those windows and `ohl zones` solve and
 read; `ohl line` ignores it too:
@@ -231,7 +237,7 @@ are.
 | `--terrain FILE`, `--surface NAME` | The ground: survey points, or a surface stored in the project. Default: the project's surface of the checks, else its active surface (as set by an earlier build), else the ground classes of the point cloud along the spans (lowest point per square metre, triangles of up to 50 m) — as the program builds it. |
 | `--lidar-classes FILE` | Class scheme (`.ohlc`); default the point cloud's own, else ASPRS. |
 | `--library`, `--structures`, `--insulators` | As for `ohl line`: for a project, the libraries it keeps with its current line; else (and for a kind the project holds none of) the shipped wire and insulator libraries, the `Structures` folder next to the file. |
-| `--swing-arc`, `--wind-step PA`, `--wind-sides both\|left\|right` | Override the rule file's `[wind]`: add the swing arc, step the wind by this step, the sides. |
+| `--swing-arc`, `--wind-step PA`, `--wind-sides both\|left\|right`, `--band-margin M` | Override the rule file's `[wind]`: add the swing arc, step the wind by this step, the sides, the swing band's margin (m, 2026-10-21; default the file's, else 0.15 m). |
 | `--search-distance M`, `--circuits NAME`, `--method fe\|rs` | Override the rule file's `[check]` (`--circuits` repeatable; `""`: the sections without a circuit). |
 | `--csv FILE` | Every finding: `status` (`violation`, then `ok` for each rule's lowest clearance that keeps it), rule, section, span, case, wind pressure and side (`arc` on the swing arc), target, class, clearance and required distance, count, the wire and target points, and `arc_deg` (the angle on the swing arc, degrees from the vertical, positive to the right; empty off it). |
 | `--time-limit S` | Stop after this many seconds (default 600): solving every wind position and reading the points. |

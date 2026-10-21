@@ -229,9 +229,13 @@ span (in parallel on every core):
   along its swing between the left and the right blowout (the span
   swinging as one about the line through its attachment points; since
   2026-10-21 at every radius from the smallest to the largest of the
-  three — a band — widened by 0.15 m on every side, so that it holds the
-  positions at every intermediate pressure, also for a tree between the
-  axis and the arc).
+  three — a band — widened by the **band margin** on every side, so that
+  it holds the positions at every intermediate pressure, also for a tree
+  between the axis and the arc).
+- **Band margin** (`--band-margin M`, default 0.15 m; since 2026-10-21):
+  every distance to the band taken this much smaller. The default is the
+  worst excess measured on the example lines (0.089 m) plus an allowance:
+  conservative. A smaller value is less safe and on your responsibility.
 - **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
   within reach solved with its section on its own, the span in a weather
   case of its own (its ice weight, the wind on its iced diameter) and the
@@ -314,7 +318,12 @@ the values typed.
 The **weather cases** ticked (the list stays open while you tick): a case
 without wind as it is, a windy case blown to the left and to the right.
 **Swing arc**: every position between the two blowouts (a band of radii,
-widened by 0.15 m: see above). **Wind stepped**
+widened by the **band margin**: see above). With the arc ticked, a field
+**band margin** (m, default 0.15 m) follows, with a line saying what it
+is and a longer text on hover (what it covers, that it is conservative,
+that a smaller value is less safe — said in warning colour below the
+default — and a button back to 0.15 m); the run is saved with it and
+marked *out of date* when it changes. **Wind stepped**
 (a step in Pa, the sides): still air and every pressure up to the case's.
 Arc and steps work alone or together — the same wind choice as the
 [vertical and radial clearance windows](desktop-app.md#clearances-wind),
@@ -415,9 +424,10 @@ closed volume per wire (a circuit's phase through all its sections), per
 circuit or per electrical system, shown in the 3D view and the plan, saved with the line and
 exported as georeferenced files. Since 2026-10-21 the **jumpers** are
 part of it (at their solved positions in each case: blown left and
-right, still air, every step), so the volume is continuous at the
-structures; the structures themselves (steel, insulators, fittings) are
-not.
+right, still air, every step; with the swing arc, on a swing band of
+their own about the line through their two end clamps), so the volume is
+continuous at the structures; the structures themselves (steel,
+insulators, fittings) are not.
 
 **In the desktop app:** Checks › **Safety volumes…** The window reads
 as the [vegetation panel](#the-vegetation-panel) and the clearance
@@ -435,12 +445,17 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
 - **Wind**: the two ticks shared with the danger-tree check — **swing
   arc** (also every position between the two blowouts: the span swinging
   about its attachment axis over the band from the smallest to the largest
-  radius of its positions, widened by 0.15 m, closed form) and **wind stepped** by **step
+  radius of its positions, widened by the **band margin**, closed form;
+  each jumper on a band of its own) and **wind stepped** by **step
   Pa** (also still air and every pressure up to the case's, from the
   sides chosen); both, either or none (none: the blowouts at full wind).
   The window says how many solves a windy case needs, and suggests the
   arc when the steps need many. The drawing shows the positions seen
   along a span.
+- **Band margin** (with the swing arc; since 2026-10-21): the shared
+  field of the danger-tree check (default 0.15 m, conservative; smaller
+  is less safe and on your responsibility). Saved with the run; a change
+  marks the run *out of date*.
 
 #### Safety volumes: distance
 
@@ -467,16 +482,19 @@ and the swing arc, the volumes grouped, a mesh where two tubes meet).
   **Invert** act on the rows shown only, and "n of m ticked" counts the
   ticks. The list scrolls in a box of fixed height (hundreds of spans
   stay quick). All with nothing searched: every one, also those added
-  later; none ticked: Run says to tick one. A span ticked brings every
+  later; none ticked: Run says to tick one. Systems end with a row
+  **(no system)** (since 2026-10-21): the earthed wires and any section
+  without a system, ticked like a system (their distance at 0 kV). A span ticked brings every
   wire on it; a jumper comes along when the spans at both its ends are
   ticked (continuity).
 - **One volume per**: **wire** (a circuit's phase through all its
   sections), **circuit** (its phases together) or **system** (every
-  circuit of one electrical system together; earthed wires, which have no
-  system, per circuit). The distance by voltage still uses each wire's
-  own system voltage.
-- The jumpers are part of the volumes (at their solved positions); the
-  structures are not.
+  circuit of one electrical system together; since 2026-10-21 the wires
+  without a system — earthed wires — together in one volume named
+  **(no system)**). The distance by voltage still uses each wire's own
+  system voltage.
+- The jumpers are part of the volumes (at their solved positions, and on
+  a swing band of their own with the swing arc); the structures are not.
 
 #### Safety volumes: mesh
 
@@ -493,7 +511,8 @@ tubes meet the triangles bridge the groove, so this can be larger than
 the tolerance). The volumes are drawn translucent in the 3D view (layer
 *Safety volumes*) and their outlines in the plan while the window is
 open. When the line or its weather cases change the window says *out of
-date* (the layers dimmed) with **Run again**.
+date* (the layers dimmed) with **Run again** (also when the band margin
+changes with the swing arc on).
 
 **Save in Performed checks** keeps the run (its settings — with the
 scope, the ticks and the grouping — and the volumes' meshes) with the project line; Checks › Performed checks opens it again.
@@ -522,9 +541,12 @@ ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case 
 ```
 
 `--wind none|steps|arc|both`, `--wind-step` (Pa), `--wind-sides
-both|left|right`, `--distance` (required; the rule file's forms),
+both|left|right`, `--band-margin` (m, default 0.15; with the arc),
+`--distance` (required; the rule file's forms),
 `--margin`, `--tolerance`, `--per wire|circuit|system`, `--circuit`
-(repeatable), `--system` (repeatable: a system's id or name), `--span
+(repeatable), `--system` (repeatable: a system's id or name; `none` —
+or `"(no system)"` — for the wires without a system, unless the line
+has a system called so), `--span
 SECTION:N` (repeatable, N from 1: every wire on the spans; given
 together, a wire must match each filter),
 `--crs` (when the line file has none), `--format` (dxf, ifc, kml, kmz),
