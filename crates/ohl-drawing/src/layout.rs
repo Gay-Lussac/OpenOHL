@@ -1676,10 +1676,14 @@ pub struct ElevationDrawing {
     /// The leader from where it stands to the elevation's base (none:
     /// under half a millimetre on paper).
     pub leader: Option<[[f64; 2]; 2]>,
-    /// Its labels (number, type, height above its top; each suspension
-    /// string's length beside it): where (station, offset), the text,
-    /// whether it is centred on the point (else it starts there).
-    pub labels: Vec<([f64; 2], String, bool)>,
+    /// Its labels (number, type, height above its top; the chain of
+    /// heights on one side, the arms' heights and the vertical strings'
+    /// lengths on the other): where (station, offset), the text, and
+    /// where the point is along the text.
+    pub labels: Vec<([f64; 2], String, Anchor)>,
+    /// Its dimension lines and the leaders to labels moved clear of each
+    /// other (station, offset), drawn thin.
+    pub dims: Vec<Vec<[f64; 2]>>,
     /// The role of the version it belongs to (none: the line's own).
     pub role: Option<String>,
 }
@@ -1727,18 +1731,42 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
                 let (u, z) = (u * he, (z - m.base) * he);
                 move_by(base, u * across[0] + z * up[0], u * across[1] + z * up[1])
             };
-            // Seen along the line: across it (the offset) and up.
-            let drawn = if m.members.is_empty() {
-                &m.sticks
-            } else {
-                &m.members
+            // Seen along the line: across it (the offset) and up: its
+            // members, else its stick drawing (which may hold a whole
+            // lattice); with the stick figure asked for, a schematic one
+            // (the mast from its base to its top, an arm out to each
+            // point, the strings), in (across, height), m.
+            let top = structure_top(m);
+            let schematic = || -> Vec<Vec<[f64; 2]>> {
+                let mut f = vec![vec![[0.0, m.base], [0.0, top]]];
+                for p in &m.attachments {
+                    let u = p[1] - m.offset;
+                    if u.abs() > 0.2 {
+                        f.push(vec![[0.0, p[2]], [u, p[2]]]);
+                    }
+                }
+                for st in &m.strings {
+                    f.push(vec![
+                        [st.top[1] - m.offset, st.top[2]],
+                        [st.bottom[1] - m.offset, st.bottom[2]],
+                    ]);
+                }
+                f
             };
-            let mut lines: Vec<(Vec<[f64; 2]>, bool)> = drawn
+            let of = |l: &Vec<[f64; 3]>| l.iter().map(|p| [p[1] - m.offset, p[2]]).collect();
+            let figure: Vec<Vec<[f64; 2]>> = if e.stick {
+                schematic()
+            } else if m.members.is_empty() {
+                m.sticks.iter().map(of).collect()
+            } else {
+                m.members.iter().map(of).collect()
+            };
+            let mut lines: Vec<(Vec<[f64; 2]>, bool)> = figure
                 .iter()
-                .map(|l| (l.iter().map(|p| at(p[1] - m.offset, p[2])).collect(), false))
+                .map(|l| (l.iter().map(|p| at(p[0], p[1])).collect(), false))
                 .collect();
             let outline = silhouette(&m.pole, 1);
-            if !outline.is_empty() {
+            if !outline.is_empty() && !e.stick {
                 lines.push((
                     outline.iter().map(|p| at(p[0] - m.offset, p[1])).collect(),
                     true,
@@ -1748,7 +1776,6 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
                 lines.push((vec![at(0.0, m.base), at(0.0, m.top)], false));
             }
             // Labels: above its top, one after the other away from it.
-            let top = structure_top(m);
             let mut words = Vec::new();
             if e.labels.number {
                 words.push(m.id.clone());
@@ -1762,25 +1789,146 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
                 words.push(format!("{:.1} m", top - m.base));
             }
             let head = at(0.0, top);
-            let mut labels: Vec<([f64; 2], String, bool)> = words
+            let mut labels: Vec<([f64; 2], String, Anchor)> = words
                 .into_iter()
                 .enumerate()
                 .map(|(k, w)| {
                     let away = 2.0 + 0.36 * size + 1.25 * size * k as f64;
-                    (move_by(head, up[0] * away, up[1] * away), w, true)
+                    (move_by(head, up[0] * away, up[1] * away), w, Anchor::Middle)
                 })
                 .collect();
-            if e.labels.string_length {
-                for s in m.strings.iter().filter(|s| s.suspension) {
-                    let mid_u = 0.5 * (s.top[1] + s.bottom[1]) - m.offset;
-                    let mid_z = 0.5 * (s.top[2] + s.bottom[2]);
-                    let p = at(mid_u, mid_z);
-                    labels.push((
-                        move_by(p, across[0] * 1.2, across[1] * 1.2 + 0.36 * size),
-                        format!("{:.2} m", s.length),
-                        false,
-                    ));
+            // The sides: what is drawn's extent across, mm on paper from
+            // the structure's axis (the point is turned with the height).
+            let mut us: Vec<f64> = figure.iter().flatten().map(|p| p[0]).collect();
+            if !e.stick {
+                us.extend(m.pole.iter().flatten().map(|p| p[1] - m.offset));
+            }
+            let (u_min, u_max) = us
+                .iter()
+                .fold((0.0f64, 0.0f64), |(a, b), &u| (a.min(u), b.max(u)));
+            let (u_min, u_max) = (u_min * he, u_max * he);
+            let v = |z: f64| (z - m.base) * he; // mm up from the base
+            // A point `u` mm across and `v` mm up from the base, in the
+            // route's metres.
+            let local = |u: f64, vv: f64| {
+                move_by(base, u * across[0] + vv * up[0], u * across[1] + vv * up[1])
+            };
+            // Which way "across" runs on paper: the right-hand column's
+            // texts start at their point, the left-hand one's end there.
+            let right_anchor = if across[0] >= 0.0 {
+                Anchor::Start
+            } else {
+                Anchor::End
+            };
+            let left_anchor = if across[0] >= 0.0 {
+                Anchor::End
+            } else {
+                Anchor::Start
+            };
+            let words_of = |kind: &str, key: &str, value: f64| {
+                o.template
+                    .legend
+                    .label(kind, &[(key, &format!("{value:.2}"))])
+            };
+            // Lengths within 5 cm of each other written as one range.
+            let ranges = |mut ls: Vec<f64>| -> Vec<String> {
+                ls.sort_by(f64::total_cmp);
+                let mut groups: Vec<(f64, f64)> = Vec::new();
+                for l in ls {
+                    match groups.last_mut() {
+                        Some(g) if l - g.0 < 0.05 => g.1 = l,
+                        _ => groups.push((l, l)),
+                    }
                 }
+                groups
+                    .into_iter()
+                    .map(|(a, b)| {
+                        let v = if b - a < 0.005 {
+                            format!("{a:.2}")
+                        } else {
+                            format!("{a:.2}–{b:.2}")
+                        };
+                        o.template
+                            .legend
+                            .label("elevation_string", &[("length", &v)])
+                    })
+                    .collect()
+            };
+            let mut dims: Vec<Vec<[f64; 2]>> = Vec::new();
+            // The arms: the levels of its own points (where strings hang
+            // from it; within 0.3 m taken as one), not the points strings
+            // hang from below other strings.
+            let mut arms: Vec<f64> = m.attachments.iter().map(|p| p[2]).collect();
+            arms.retain(|z| z.is_finite() && *z > m.base + 0.1);
+            arms.sort_by(f64::total_cmp);
+            arms.dedup_by(|a, b| (*a - *b).abs() < 0.3);
+            let gap = 1.2 * size; // between two texts of a column, mm
+            if e.labels.dimensions && !arms.is_empty() {
+                let mut levels = vec![m.base];
+                levels.extend(arms.iter().copied().filter(|z| *z < top - 0.3));
+                levels.push(top);
+                let x = u_min - 2.5; // the chain, mm across
+                dims.push(vec![local(x, 0.0), local(x, v(top))]);
+                for &z in &levels {
+                    dims.push(vec![local(x - 0.8, v(z)), local(x + 0.8, v(z))]);
+                }
+                let wanted: Vec<(f64, String)> = levels
+                    .windows(2)
+                    .map(|w| {
+                        (
+                            0.5 * (v(w[0]) + v(w[1])),
+                            words_of("elevation_dimension", "length", w[1] - w[0]),
+                        )
+                    })
+                    .collect();
+                place_column(&wanted, gap, |vv, at_v, text| {
+                    let tx = x - 1.2;
+                    labels.push((local(tx, at_v - 0.35 * size), text, left_anchor));
+                    if (at_v - vv).abs() > 0.3 {
+                        dims.push(vec![local(tx + 0.2, at_v), local(x, vv)]);
+                    }
+                });
+            }
+            // The right-hand column, one line per arm: its height above
+            // the base and the length of the vertical (suspension) strings
+            // hanging from it (strain strings lie along the line; within
+            // 20° of the vertical counts as vertical).
+            let mut right: Vec<(f64, String)> = Vec::new();
+            for &z in &arms {
+                let mut parts = Vec::new();
+                if e.labels.arm_heights {
+                    parts.push(words_of("elevation_arm", "height", z - m.base));
+                }
+                if e.labels.string_length {
+                    let lengths: Vec<f64> = m
+                        .strings
+                        .iter()
+                        .filter(|s| (s.top[2] - z).abs() < 0.3)
+                        .filter(|s| {
+                            let d = [
+                                s.bottom[0] - s.top[0],
+                                s.bottom[1] - s.top[1],
+                                s.bottom[2] - s.top[2],
+                            ];
+                            let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                            len > 1e-6 && -d[2] / len > 20f64.to_radians().cos()
+                        })
+                        .map(|s| s.length)
+                        .collect();
+                    parts.extend(ranges(lengths));
+                }
+                if !parts.is_empty() {
+                    right.push((v(z), parts.join(", ")));
+                }
+            }
+            if !right.is_empty() {
+                let x = u_max + 1.5;
+                place_column(&right, gap, |vv, at_v, text| {
+                    labels.push((local(x, at_v - 0.35 * size), text, right_anchor));
+                    if (at_v - vv).abs() > 0.3 {
+                        dims.push(vec![local(x - 0.2, at_v), local(u_max + 0.3, vv)]);
+                    }
+                });
             }
             let stand = [m.station, m.offset];
             let paper = ((stand[0] - base[0]) * h).hypot((stand[1] - base[1]) * plan_k);
@@ -1790,6 +1938,7 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
                 lines,
                 leader: (paper > 0.5 && !version).then_some([stand, base]),
                 labels,
+                dims,
                 role: if version {
                     role.map(str::to_owned)
                 } else {
@@ -1798,6 +1947,21 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
             }
         })
         .collect()
+}
+
+/// Places the texts of a column, `wanted` (height mm up the elevation,
+/// text), from the highest down, each at its own height unless that is
+/// within `gap` of the one above it: then just below that one. Calls
+/// `put(wanted height, height placed, text)` for each.
+fn place_column(wanted: &[(f64, String)], gap: f64, mut put: impl FnMut(f64, f64, String)) {
+    let mut order: Vec<&(f64, String)> = wanted.iter().collect();
+    order.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut last = f64::INFINITY;
+    for (v, text) in order {
+        let at = v.min(last - gap);
+        put(*v, at, text.clone());
+        last = at;
+    }
 }
 
 /// The elevations of `d` (drawn already) within frame `f`'s station range,
@@ -1835,11 +1999,27 @@ fn elevations_on_paper(
                     bb[3].max(p[1]),
                 ];
             }
-            for (p, _, _) in &e.labels {
+            for (p, text, anchor) in &e.labels {
+                let q = to_paper(p);
+                // (An estimate of the text's width.)
+                let w = 0.55 * size * text.chars().count() as f64;
+                let (x0, x1) = match anchor {
+                    Anchor::Start => (q[0], q[0] + w),
+                    Anchor::Middle => (q[0] - w / 2.0, q[0] + w / 2.0),
+                    Anchor::End => (q[0] - w, q[0]),
+                };
+                bb = [
+                    bb[0].min(x0),
+                    bb[1].min(q[1] - size),
+                    bb[2].max(x1),
+                    bb[3].max(q[1]),
+                ];
+            }
+            for p in e.dims.iter().flatten() {
                 let q = to_paper(p);
                 bb = [
                     bb[0].min(q[0]),
-                    bb[1].min(q[1] - size),
+                    bb[1].min(q[1]),
                     bb[2].max(q[0]),
                     bb[3].max(q[1]),
                 ];
@@ -1935,17 +2115,26 @@ fn draw_elevations(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Fra
                 None,
             ));
         }
-        for (at, words, centred) in &e.labels {
+        let thin = Pen {
+            width: (p.width * 0.6).min(0.13),
+            dash: None,
+            ..p.clone()
+        };
+        for d in &e.dims {
+            items.push(path(
+                Layer::Elevations,
+                d.iter().map(|q| [f.x(q[0]), f.plan_y(q[1])]).collect(),
+                thin.clone(),
+                None,
+            ));
+        }
+        for (at, words, anchor) in &e.labels {
             items.push(Item::Text(Text {
                 layer: Layer::Elevations,
                 at: [f.x(at[0]), f.plan_y(at[1])],
                 text: words.clone(),
                 size,
-                anchor: if *centred {
-                    Anchor::Middle
-                } else {
-                    Anchor::Start
-                },
+                anchor: *anchor,
                 bold: false,
                 color: p.color,
             }));

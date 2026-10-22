@@ -296,10 +296,19 @@ pub struct Elevations {
     pub labels: ElevationLabels,
     /// Size of the labels, mm.
     pub text_size: f64,
+    /// A schematic stick figure (the mast from base to top, an arm out to
+    /// each point, the strings) instead of the members, the pole's
+    /// outline or the stick drawing (which may hold a whole lattice):
+    /// easier to read at a small scale.
+    pub stick: bool,
 }
 
 /// What is written at each elevation: its number above its top, its type,
-/// its height, and the length of each suspension string beside it.
+/// its height, the length of each vertical (suspension) string, the
+/// heights from its base to its first arm, between its arms and to its top
+/// (a chain of dimensions on one side), and each arm's height above its
+/// base (on the other side). Placed clear of the structure and of each
+/// other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ElevationLabels {
     /// The structure's number (id).
@@ -308,12 +317,30 @@ pub struct ElevationLabels {
     pub type_name: bool,
     /// Its height: the highest point above its base, m.
     pub height: bool,
-    /// The length of each suspension string, m (the model's strings).
+    /// The length of each vertical (suspension) string, m (the model's
+    /// strings; strain strings, lying along the line, are not written).
     pub string_length: bool,
+    /// The chain of heights: base to the first arm, between the arms,
+    /// the last arm to the top, m.
+    pub dimensions: bool,
+    /// Each arm's height above the base, m (the arms: the levels the
+    /// strings hang from).
+    pub arm_heights: bool,
 }
 
 impl ElevationLabels {
-    /// From the names `number`, `type`, `height`, `string_length`.
+    /// The names accepted.
+    pub const NAMES: [&'static str; 6] = [
+        "number",
+        "type",
+        "height",
+        "string_length",
+        "dimensions",
+        "arm_heights",
+    ];
+
+    /// From the names `number`, `type`, `height`, `string_length`,
+    /// `dimensions`, `arm_heights`.
     pub fn parse(names: &[impl AsRef<str>]) -> Result<Self, String> {
         let mut l = Self::default();
         for n in names {
@@ -322,10 +349,13 @@ impl ElevationLabels {
                 "type" => l.type_name = true,
                 "height" => l.height = true,
                 "string_length" => l.string_length = true,
+                "dimensions" => l.dimensions = true,
+                "arm_heights" => l.arm_heights = true,
                 "" => {}
                 other => {
                     return Err(format!(
-                        "elevation label \"{other}\": give number, type, height or string_length"
+                        "elevation label \"{other}\": give number, type, height, string_length, \
+                         dimensions or arm_heights"
                     ));
                 }
             }
@@ -340,6 +370,8 @@ impl ElevationLabels {
             (self.type_name, "type"),
             (self.height, "height"),
             (self.string_length, "string_length"),
+            (self.dimensions, "dimensions"),
+            (self.arm_heights, "arm_heights"),
         ]
         .into_iter()
         .filter_map(|(on, n)| on.then_some(n))
@@ -356,6 +388,7 @@ impl Default for Elevations {
             scale: None,
             labels: ElevationLabels::default(),
             text_size: 2.0,
+            stick: false,
         }
     }
 }
@@ -415,6 +448,9 @@ impl Options {
         }
         if let Some(s) = e.size {
             self.elevations.text_size = s.0;
+        }
+        if e.stick == Some(true) {
+            self.elevations.stick = true;
         }
         if self.corridor.is_none() {
             self.corridor = t.corridor.width.map(|w| w.0);
@@ -1903,6 +1939,99 @@ pub(crate) mod tests {
         let span = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
             - xs.iter().copied().fold(f64::INFINITY, f64::min);
         assert!((span - 15.0).abs() < 1e-6, "{span}");
+    }
+
+    /// The elevations as stick figures with their heights: a schematic
+    /// figure (mast, an arm out to each point, the strings) even where
+    /// members exist; the chain of heights base → arms → top on one side,
+    /// one line per arm on the other (its height, its vertical strings'
+    /// lengths, near-equal ones as one range), the texts of a column never
+    /// closer than their spacing.
+    #[test]
+    fn elevations_as_stick_figures_carry_their_heights() {
+        let (line, ..) = solved();
+        let mut options = Options::default();
+        let mut d = main_route(&options);
+        d.set_members(|id| (id == "T2").then(|| tower(&line, id)).flatten());
+        // T2: arms at 20 and 28 m (two points each), a vertical string of
+        // 3 m and one of 3.02 m at 28 m, a strain string (along the line)
+        // at 20 m, the top at 32 m.
+        let m = d.structures.iter_mut().find(|m| m.id == "T2").unwrap();
+        let (st, off, base) = (m.station, m.offset, m.base);
+        m.top = base + 32.0;
+        m.attachments = vec![
+            [st, off - 4.0, base + 20.0],
+            [st, off + 4.0, base + 20.0],
+            [st, off - 5.0, base + 28.0],
+            [st, off + 5.0, base + 28.0],
+            [st, off, base + 32.0],
+        ];
+        let string = |u: f64, z: f64, along: f64, drop: f64, length: f64| StringMark {
+            label: String::new(),
+            top: [st, off + u, base + z],
+            bottom: [st + along, off + u, base + z - drop],
+            length,
+            suspension: along == 0.0,
+        };
+        m.strings = vec![
+            string(-5.0, 28.0, 0.0, 3.0, 3.0),
+            string(5.0, 28.0, 0.0, 3.02, 3.02),
+            string(4.0, 20.0, 4.0, 0.3, 4.0),
+        ];
+        m.sticks.clear();
+        options.elevations = Elevations {
+            place: ElevationPlace::Above,
+            labels: ElevationLabels::parse(&["dimensions", "arm_heights", "string_length"])
+                .unwrap(),
+            stick: true,
+            ..Elevations::default()
+        };
+        let all = elevations(&d, &options);
+        let e = all.iter().find(|e| e.id == "T2").unwrap();
+        // Mast, 4 arms (the top point on the mast: none), 3 strings.
+        assert_eq!(e.lines.len(), 1 + 4 + 3);
+        let texts: Vec<&str> = e.labels.iter().map(|l| l.1.as_str()).collect();
+        // The chain: 20 m to the first arm, 8 m between, 4 m to the top.
+        for t in ["20.00 m", "8.00 m", "4.00 m"] {
+            assert!(texts.contains(&t), "{t}: {texts:?}");
+        }
+        // One line per arm; the strain string not written.
+        assert!(texts.contains(&"28.00 m, string 3.00–3.02 m"), "{texts:?}");
+        assert!(texts.contains(&"20.00 m"), "{texts:?}");
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.contains("4.00 m,") || t.contains("string 4"))
+        );
+        // A column's texts never closer than 1.2 × their size on paper.
+        let plan_k = 1000.0
+            / options
+                .plan_offset_scale
+                .unwrap_or(options.horizontal_scale);
+        let mut ys: Vec<f64> = e
+            .labels
+            .iter()
+            .filter(|l| l.2 == crate::model::Anchor::Start)
+            .map(|l| l.0[1] * plan_k)
+            .collect();
+        ys.sort_by(f64::total_cmp);
+        for w in ys.windows(2) {
+            assert!(
+                w[1] - w[0] >= 1.2 * options.elevations.text_size - 1e-9,
+                "{ys:?}"
+            );
+        }
+        // The chain and its 4 ticks, and a leader to the 28 m arm's line
+        // (pushed down clear of the 32 m one, 2 mm above it on paper):
+        // thin lines of their own.
+        assert_eq!(e.dims.len(), 1 + 4 + 1);
+        // Without the option: the members again.
+        options.elevations.stick = false;
+        let e = elevations(&d, &options)
+            .into_iter()
+            .find(|e| e.id == "T2")
+            .unwrap();
+        assert_eq!(e.lines.len(), tower(&line, "T2").unwrap().len());
     }
 
     fn warnings_of(d: &RouteDrawing, o: &Options) -> Vec<String> {

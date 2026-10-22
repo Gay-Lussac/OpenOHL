@@ -584,7 +584,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 17] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 20] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -622,6 +622,11 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 17] = [
     ("isoclearance", "isoclearance {level}", &["level"]),
     ("lidar", "{name} (LiDAR class {class})", &["name", "class"]),
     ("version", "{label}: {words}", &["label", "words"]),
+    // The elevations' words (written at each structure, not in the
+    // legend).
+    ("elevation_string", "string {length} m", &["length"]),
+    ("elevation_arm", "{height} m", &["height"]),
+    ("elevation_dimension", "{length} m", &["length"]),
 ];
 
 impl LegendSpec {
@@ -927,10 +932,13 @@ pub struct ElevationSpec {
     pub rotation: Option<f64>,
     /// Its own scale denominator (none: the horizontal scale).
     pub scale: Option<f64>,
-    /// Labels: `"number"`, `"type"`, `"height"`, `"string_length"`.
+    /// Labels: `"number"`, `"type"`, `"height"`, `"string_length"`,
+    /// `"dimensions"`, `"arm_heights"`.
     pub labels: Option<Vec<String>>,
     /// Size of the labels.
     pub size: Option<Mm>,
+    /// The stick figure even where members or a pole outline exist.
+    pub stick: Option<bool>,
     /// Its pen.
     #[serde(default)]
     pub pen: PenSpec,
@@ -1726,9 +1734,10 @@ impl SheetTemplate {
             ));
         }
         for l in self.elevations.labels.iter().flatten() {
-            if !["number", "type", "height", "string_length"].contains(&l.as_str()) {
+            if !crate::ElevationLabels::NAMES.contains(&l.as_str()) {
                 return Err(format!(
-                    "elevations.labels: \"{l}\" (give number, type, height, string_length)"
+                    "elevations.labels: \"{l}\" (give {})",
+                    crate::ElevationLabels::NAMES.join(", ")
                 ));
             }
         }

@@ -516,9 +516,14 @@ struct DrawingArgs {
     #[arg(long, value_parser = scale)]
     elevation_scale: Option<f64>,
     /// What is written at each elevation: number, type, height,
-    /// string_length (comma-separated).
+    /// string_length (vertical strings), dimensions (base to the first
+    /// arm, between the arms, to the top), arm_heights (comma-separated).
     #[arg(long, value_delimiter = ',')]
     elevation_labels: Vec<String>,
+    /// The elevations as stick figures even where the members or a pole's
+    /// outline exist (levels 2 and 3).
+    #[arg(long)]
+    elevation_stick: bool,
     /// Isoclearance lines on the plan every this many metres (layer
     /// OHL_ISOCLEARANCE): the ground's clearance to the wires of the cases
     /// drawn (the worst of them; a windy case blown left and right), over
@@ -595,6 +600,7 @@ struct ElevationChoice {
     rotation: Option<f64>,
     scale: Option<f64>,
     labels: Vec<String>,
+    stick: bool,
 }
 
 impl ElevationChoice {
@@ -614,6 +620,9 @@ impl ElevationChoice {
         }
         if !self.labels.is_empty() {
             e.labels = ohl_drawing::ElevationLabels::parse(&self.labels)?;
+        }
+        if self.stick {
+            e.stick = true;
         }
         Ok(e)
     }
@@ -654,6 +663,7 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
             rotation: args.elevation_rotation,
             scale: args.elevation_scale,
             labels: args.elevation_labels.clone(),
+            stick: args.elevation_stick,
         },
         isoclearance: args.isoclearance_interval.map(|interval| {
             (

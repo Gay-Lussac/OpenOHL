@@ -69,6 +69,9 @@ pub struct SheetChoice {
     pub elevation_scale: Option<f64>,
     /// What is written at each elevation.
     pub elevation_labels: Vec<String>,
+    /// The elevations as stick figures (none: as the template says).
+    #[serde(default)]
+    pub elevation_stick: Option<bool>,
     /// The LiDAR classes drawn, codes comma separated (none: the
     /// template's `[lidar] classes`).
     pub lidar_classes: Option<String>,
@@ -99,6 +102,7 @@ impl Default for SheetChoice {
             bands: true,
             elevation_scale: None,
             elevation_labels: Vec::new(),
+            elevation_stick: None,
             lidar_classes: None,
         }
     }
