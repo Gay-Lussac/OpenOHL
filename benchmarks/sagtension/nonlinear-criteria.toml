@@ -1,210 +1,209 @@
 # Tension criteria on the non-linear model (2026-10-22), each in a
 # condition: initial (as strung), after creep, after load. The unknown is the
-# stringing tension (horizontal, 60 °F, bare, initial curve); each trial
+# stringing tension (horizontal, 15 °C, bare, initial curve); each trial
 # strings the cable, takes both permanent sets from it and solves each
 # criterion's case in its condition; the governing criterion is found by
 # iteration (a bisection per criterion, then a check of all at the smallest,
 # repeated while one is above its limit).
 #
-# The cable and cases of crosscheck-drake.toml: the DRAKE-LIKE test cable
-# (curves from a public-domain library's test data, source not stated; test
-# input only, not CIGRE TB 324 data), level 365.76 m; creep 60 °F bare;
-# heaviest load 0.5 in ice, 8 psf, 0 °F. RTS 140118.981 N.
+# The cable and cases of nonlinear-states.toml: the INVENTED test cable (not
+# a real conductor), level 300 m; creep 15 °C bare; heaviest load 30 N/m at
+# -10 °C; RTS 140 kN. The limits are INVENTED (fractions of that RTS), not
+# from any code or utility. These cases replace those on the Drake-like
+# cable (removed 2026-10-22).
 #
-# Expected values: benchmarks/sagtension/reference_crosscheck.py (the
-# independent model of crosscheck-drake.toml; a bisection of fixed length per
-# criterion, then the same check). Tolerance 1e-7 relative on the tension
-# (the code's bisection stops at 1e-10, the reference's at 75 kN / 2^48),
-# 1e-6 on the utilisations.
+# Expected values: benchmarks/sagtension/reference_invented_states.py (a
+# bisection of fixed length per criterion, then the same check). Tolerance
+# 1e-7 relative on the tension (the code's bisection stops at 1e-10, the
+# reference's at 75 kN / 2^48), 1e-6 on the utilisations.
 
-# Hand: the criterion's case is the reference case on the initial curve, so the
-# stringing tension is the limit, 26689.329692 N.
+# By hand: the criterion's case is the reference case on the initial curve, so
+# the stringing tension is the limit, 25000 N.
 [[case]]
 id = "nlcrit-001"
-title = "Non-linear criteria, Drake-like cable 365.76 m: H initial at 60 °F <= 26689.33 N: the stringing tension itself"
+title = "Non-linear criteria, invented cable 300 m: H initial at 15 °C <= 25000 N: the stringing tension itself"
 calculation = "sagtension.nonlinear_criteria"
-reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py)"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
 max_seconds = 20.0
-expected.reference_tension_n = { value = 26689.32969, rel_tol = 1e-7 }
+expected.reference_tension_n = { value = 25000, rel_tol = 1e-7 }
 expected.governing_index = { value = 0, abs_tol = 0.0 }
 expected.utilisation_0 = { value = 1, abs_tol = 1e-6 }
 
 [case.inputs]
-span = "365.76 m"
-known_load = "15.965729813 N/m"
-known_temperature = "15.555555556 °C"
-creep_load = "15.965729813 N/m"
-creep_temperature = "15.555555556 °C"
-max_load = "36.865347248 N/m"
-max_wind = "20.509298261 N/m"
-max_temperature = "-17.777777778 °C"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
 criteria = [
-  { label = "H initial 60 F", load = "15.965729813 N/m", temperature = "15.555555556 °C", condition = "initial", limit = "horizontal", value = "26689.329692 N" },
+  { label = "H initial 15 C", load = "15.690640 N/m", temperature = "15 °C", condition = "initial", limit = "horizontal", value = "25000 N" },
 ]
 
 [case.inputs.cable]
-id = "drake-like"
-name = "Drake-like test cable"
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
 kind = "acsr"
-source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
-diameter = "28.1432 mm"
-mass_per_length = "1.628051354 kg/m"
-rated_tensile_strength = "140118.981 N"
-outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
-core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
 
-# The creep set grows with the stringing tension; the reference bisects with
-# the set recomputed at every trial.
+# By hand (proportion from nlstate-001: after creep 0.94319 of the stringing
+# tension at 15 °C): 0.16 x 140 kN = 22400 N after creep gives about
+# 22400 / 0.94319 = 23749 N; the set grows with the stringing tension, so
+# a little less (the reference: 23595.46 N).
 [[case]]
 id = "nlcrit-002"
-title = "Non-linear criteria, Drake-like cable 365.76 m: H after creep at 60 °F <= 18 % RTS"
+title = "Non-linear criteria, invented cable 300 m: H after creep at 15 °C <= 16 % RTS"
 calculation = "sagtension.nonlinear_criteria"
-reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py)"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
 max_seconds = 20.0
-expected.reference_tension_n = { value = 27208.97311, rel_tol = 1e-7 }
+expected.reference_tension_n = { value = 23595.46375, rel_tol = 1e-7 }
 expected.governing_index = { value = 0, abs_tol = 0.0 }
 expected.utilisation_0 = { value = 1, abs_tol = 1e-6 }
 
 [case.inputs]
-span = "365.76 m"
-known_load = "15.965729813 N/m"
-known_temperature = "15.555555556 °C"
-creep_load = "15.965729813 N/m"
-creep_temperature = "15.555555556 °C"
-max_load = "36.865347248 N/m"
-max_wind = "20.509298261 N/m"
-max_temperature = "-17.777777778 °C"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
 criteria = [
-  { label = "H after creep 60 F", load = "15.965729813 N/m", temperature = "15.555555556 °C", condition = "creep", limit = "horizontal_ratio", value = 0.18 },
+  { label = "H after creep 15 C <= 16 % RTS", load = "15.690640 N/m", temperature = "15 °C", condition = "creep", limit = "horizontal_ratio", value = 0.16 },
 ]
 
 [case.inputs.cable]
-id = "drake-like"
-name = "Drake-like test cable"
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
 kind = "acsr"
-source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
-diameter = "28.1432 mm"
-mass_per_length = "1.628051354 kg/m"
-rated_tensile_strength = "140118.981 N"
-outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
-core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
 
-# Hand: after load, the final state reloads onto the initial curve at the
-# load case (the set's own case), so this equals nlcrit-004.
+# By hand: after load equals initial at the load-stretch case (nlstate-004,
+# the signed set), so this equals nlcrit-004.
 [[case]]
 id = "nlcrit-003"
-title = "Non-linear criteria, Drake-like cable 365.76 m: support after load at the heavy case <= 40 % RTS"
+title = "Non-linear criteria, invented cable 300 m: support after load at the max load case <= 30 % RTS"
 calculation = "sagtension.nonlinear_criteria"
-reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py)"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
 max_seconds = 20.0
-expected.reference_tension_n = { value = 27916.52235, rel_tol = 1e-7 }
+expected.reference_tension_n = { value = 24595.59197, rel_tol = 1e-7 }
 expected.governing_index = { value = 0, abs_tol = 0.0 }
 expected.utilisation_0 = { value = 1, abs_tol = 1e-6 }
 
 [case.inputs]
-span = "365.76 m"
-known_load = "15.965729813 N/m"
-known_temperature = "15.555555556 °C"
-creep_load = "15.965729813 N/m"
-creep_temperature = "15.555555556 °C"
-max_load = "36.865347248 N/m"
-max_wind = "20.509298261 N/m"
-max_temperature = "-17.777777778 °C"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
 criteria = [
-  { label = "support after load, heavy", load = "36.865347248 N/m", wind = "20.509298261 N/m", temperature = "-17.777777778 °C", condition = "load", limit = "support_ratio", value = 0.4 },
+  { label = "support after load max <= 30 % RTS", load = "30 N/m", temperature = "-10 °C", condition = "load", limit = "support_ratio", value = 0.3 },
 ]
 
 [case.inputs.cable]
-id = "drake-like"
-name = "Drake-like test cable"
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
 kind = "acsr"
-source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
-diameter = "28.1432 mm"
-mass_per_length = "1.628051354 kg/m"
-rated_tensile_strength = "140118.981 N"
-outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
-core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
 
-# The same limit on the initial state: the same stringing tension as
-# nlcrit-003 (hand), 0.40 x 140118.981 = 56047.59 N at the supports.
+# By hand (proportion from nlstate-004: at 25 kN the max load case gives
+# H = 42243.55 N, at the supports H cosh(S/2C) with C = H/30 = 1408.1 m:
+# 42483.6 N): 0.30 x 140 kN = 42000 N is reached a little below 25 kN —
+# about 25000 x 42000 / 42483.6 = 24715 N, less as H grows less than in
+# proportion (the reference: 24595.59 N).
 [[case]]
 id = "nlcrit-004"
-title = "Non-linear criteria, Drake-like cable 365.76 m: support initial at the heavy case <= 40 % RTS"
+title = "Non-linear criteria, invented cable 300 m: support initial at the max load case <= 30 % RTS"
 calculation = "sagtension.nonlinear_criteria"
-reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py)"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
 max_seconds = 20.0
-expected.reference_tension_n = { value = 27916.52235, rel_tol = 1e-7 }
+expected.reference_tension_n = { value = 24595.59197, rel_tol = 1e-7 }
 expected.governing_index = { value = 0, abs_tol = 0.0 }
 expected.utilisation_0 = { value = 1, abs_tol = 1e-6 }
 
 [case.inputs]
-span = "365.76 m"
-known_load = "15.965729813 N/m"
-known_temperature = "15.555555556 °C"
-creep_load = "15.965729813 N/m"
-creep_temperature = "15.555555556 °C"
-max_load = "36.865347248 N/m"
-max_wind = "20.509298261 N/m"
-max_temperature = "-17.777777778 °C"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
 criteria = [
-  { label = "support initial, heavy", load = "36.865347248 N/m", wind = "20.509298261 N/m", temperature = "-17.777777778 °C", condition = "initial", limit = "support_ratio", value = 0.4 },
+  { label = "support initial max <= 30 % RTS", load = "30 N/m", temperature = "-10 °C", condition = "initial", limit = "support_ratio", value = 0.3 },
 ]
 
 [case.inputs.cable]
-id = "drake-like"
-name = "Drake-like test cable"
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
 kind = "acsr"
-source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
-diameter = "28.1432 mm"
-mass_per_length = "1.628051354 kg/m"
-rated_tensile_strength = "140118.981 N"
-outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
-core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
 
-# Estimate by hand from xdrake-001 (strung at 26689.33 N: after creep 24822.22 N,
-# after load 24727.59 N at 60 °F, about proportional): 20 % RTS initial gives
-# 28023.8 N; 15 % RTS = 21017.8 N after creep gives about 21017.8 / 0.9300
-# = 22599 N; H/w <= 1400 m (22352.0 N) after load about 22352.0 / 0.9265
-# = 24125 N; the heavy case far below 50 % RTS. After creep governs; the
-# proportion overestimates it (the creep set grows with the stringing
-# tension, the H lost to it with it): the reference gives 21975.9 N.
+# By hand (proportions from nlstate-001: after creep 0.94319, after load
+# 0.90722 of the stringing tension at 15 °C): 20 % RTS initial gives
+# 28000 N; 15 % RTS = 21000 N after creep about 21000 / 0.94319 = 22265 N;
+# H/w <= 1400 m (21966.9 N) after load about 21966.9 / 0.90722 = 24213 N;
+# the max load case far below 40 % RTS. After creep governs; the proportion
+# overestimates it (the creep set grows with the stringing tension): the
+# reference gives 21956.84 N.
 [[case]]
 id = "nlcrit-005"
-title = "Non-linear criteria, Drake-like cable 365.76 m: four criteria in three conditions: after creep governs"
+title = "Non-linear criteria, invented cable 300 m: four criteria in three conditions: after creep governs"
 calculation = "sagtension.nonlinear_criteria"
-reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py)"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
 max_seconds = 20.0
-expected.reference_tension_n = { value = 21975.89636, rel_tol = 1e-7 }
+expected.reference_tension_n = { value = 21956.84175, rel_tol = 1e-7 }
 expected.governing_index = { value = 1, abs_tol = 0.0 }
-expected.utilisation_0 = { value = 0.7841869891, abs_tol = 1e-6 }
+expected.utilisation_0 = { value = 0.7841729196, abs_tol = 1e-6 }
 expected.utilisation_1 = { value = 1, abs_tol = 1e-6 }
-expected.utilisation_2 = { value = 0.9367506524, abs_tol = 1e-6 }
-expected.utilisation_3 = { value = 0.6792803379, abs_tol = 1e-6 }
+expected.utilisation_2 = { value = 0.9256557477, abs_tol = 1e-6 }
+expected.utilisation_3 = { value = 0.6908434415, abs_tol = 1e-6 }
 
 [case.inputs]
-span = "365.76 m"
-known_load = "15.965729813 N/m"
-known_temperature = "15.555555556 °C"
-creep_load = "15.965729813 N/m"
-creep_temperature = "15.555555556 °C"
-max_load = "36.865347248 N/m"
-max_wind = "20.509298261 N/m"
-max_temperature = "-17.777777778 °C"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
 criteria = [
-  { label = "H initial 60 F <= 20 % RTS", load = "15.965729813 N/m", temperature = "15.555555556 °C", condition = "initial", limit = "horizontal_ratio", value = 0.2 },
-  { label = "H after creep 60 F <= 15 % RTS", load = "15.965729813 N/m", temperature = "15.555555556 °C", condition = "creep", limit = "horizontal_ratio", value = 0.15 },
-  { label = "H/w after load 60 F <= 1400 m", load = "15.965729813 N/m", temperature = "15.555555556 °C", condition = "load", limit = "catenary_constant", value = "1400 m" },
-  { label = "support initial heavy <= 50 % RTS", load = "36.865347248 N/m", wind = "20.509298261 N/m", temperature = "-17.777777778 °C", condition = "initial", limit = "support_ratio", value = 0.5 },
+  { label = "H initial 15 C <= 20 % RTS", load = "15.690640 N/m", temperature = "15 °C", condition = "initial", limit = "horizontal_ratio", value = 0.2 },
+  { label = "H after creep 15 C <= 15 % RTS", load = "15.690640 N/m", temperature = "15 °C", condition = "creep", limit = "horizontal_ratio", value = 0.15 },
+  { label = "H/w after load 15 C <= 1400 m", load = "15.690640 N/m", temperature = "15 °C", condition = "load", limit = "catenary_constant", value = "1400 m" },
+  { label = "support initial max <= 40 % RTS", load = "30 N/m", temperature = "-10 °C", condition = "initial", limit = "support_ratio", value = 0.4 },
 ]
 
 [case.inputs.cable]
-id = "drake-like"
-name = "Drake-like test cable"
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
 kind = "acsr"
-source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
-diameter = "28.1432 mm"
-mass_per_length = "1.628051354 kg/m"
-rated_tensile_strength = "140118.981 N"
-outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
-core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
-
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }

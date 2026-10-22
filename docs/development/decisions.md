@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **Sag-tension follow-ups** (owner, 2026-10-22). Built, in active
+  development (not approved yet).
+  - **Range warnings only where the cable gives a range**: without a
+    component's `max_strain` there is no warning (the 1 % default for
+    the warnings is gone; the curves must still rise up to 1 % to be
+    inverted). `nonlinear-003…004` unchanged (the synthetic core's
+    strains were within 1 %); `nonlinear-005…006` added (an invented soft
+    cable beyond 1 %: no warning without a range, six with 1 % given).
+  - **The sheave model is not wanted**: removed from the follow-ups; the
+    in-the-blocks simplification stays, marked as such.
+  - **No Drake-like curves** ("Don't take it into the examples and checks
+    if we don't have it."): the cross-check on curves from a library's
+    test data of unstated source is removed — `xdrake-001…009`
+    (`crosscheck-drake.toml`), their reference script
+    (`reference_crosscheck.py`) and the criteria cases on that cable.
+    The features they validated keep their validation on an **invented**
+    cable (the synthetic curves with a core steeper than its final
+    modulus, so a negative set) against a new independent
+    re-implementation (`reference_invented_states.py`): `nlstate-001…005`
+    (both final states, the governing one per case, after load equal to
+    initial at the load-stretch case) and `nlcrit-001…005` rebuilt
+    (tension criteria; invented limits). The code agrees with it to the
+    case tolerance (1e-7). The validation page's Table 3 lead keeps one
+    neutral sentence without numbers. `examples/sagtension/drake-section.toml`
+    and the sagging cases stay: they use linear, published-type data only.
+
 - **Lines on the ground: the weather cases and project lines displayed**
   (owner, 2026-10-22: "Only the displayed weather cases and project
   lines."). Built, in active development (not approved yet).

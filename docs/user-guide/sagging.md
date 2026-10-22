@@ -33,7 +33,7 @@ temperature, the wire has rolled through the blocks and the offsets give
 the marks that put each span back to its sagged length. Sheaves that pass
 the tension along the wire (and their friction) are not modelled: on
 inclined spans they give offsets and sag corrections of a few millimetres
-even at the sagging temperature (a follow-up).
+even at the sagging temperature (a sheave model is not wanted: the owner's decision of 2026-10-22).
 
 **Warnings.** A wire with stress-strain curves warns when a state lies
 beyond its curves' range (`max_strain` in the [wire library](wire-library.md)).

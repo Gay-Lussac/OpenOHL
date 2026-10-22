@@ -12,8 +12,11 @@
 # 0.15484 % - 23e-6 x (-10 - 20) = 0.22384 % > 0.2 %: a warning in each of
 # the three states (both final states reload onto the initial curve
 # there). At 75 °C (as nonlinear-001): 20389.83 N, 0.18764 % total, outer
-# 0.18764 % - 23e-6 x 55 = 0.06114 % < 0.2 %: none. The core's 0.189 %
-# and 0.124 % stay within its default 1 %.
+# 0.18764 % - 23e-6 x 55 = 0.06114 % < 0.2 %: none. The core gives no
+# max_strain: no range, never warned (owner, 2026-10-22; until then a 1 %
+# default, which its 0.189 % and 0.124 % stayed within: the counts are
+# unchanged). nonlinear-005 below: the core strained beyond 1 % without a
+# range gives no warning.
 
 [[case]]
 id = "nonlinear-003"
@@ -78,3 +81,76 @@ mass_per_length = "1.6 kg/m"
 rated_tensile_strength = "140 kN"
 outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, max_strain = 0.2 } }
 core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1800.0, -120.0, 30.0, -5.0], final_modulus = 1900.0 } }
+
+# No range given (2026-10-22): an INVENTED soft cable — the synthetic
+# curves above with every stress a tenth (moduli 55 and 190 MPa per %),
+# neither component with a max_strain. Strung at 25 kN, at the max load
+# case (30 N/m, -10 °C) its strain passes 1 % (hand estimate: a composite
+# stiffness of about 3 MN per unit strain, a tenth of the synthetic
+# cable's, so some 35-45 kN strain it beyond 1 %; nonlinear-006 counts
+# it with a range of 1 % given). Without a max_strain there is no warning
+# (owner, 2026-10-22: no 1 % default).
+[[case]]
+id = "nonlinear-005"
+title = "Invented soft cable without max_strain, strained beyond 1 %: no range warning"
+calculation = "sagtension.nonlinear"
+reference = "Owner decision 2026-10-22 (no range given, no warning); the strain beyond 1 % shown by nonlinear-006"
+max_seconds = 2.0
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "25 kN"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "30 N/m"
+temperature = "-10 °C"
+
+[case.inputs.cable]
+id = "invented-soft"
+name = "Invented soft test cable"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "5.5 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 25.0, -11.0, 4.0, -0.8], creep = [0.0, 16.0, -6.0, 1.5, -0.2], final_modulus = 55.0, max_compression = 0.0 } }
+core = { area = "65 mm²", modulus = "19 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 180.0, -12.0, 3.0, -0.5], final_modulus = 190.0 } }
+
+# The same cable with max_strain = 1 % given on both components (what the
+# old default took): both strained beyond 1 % in each of the three states
+# at the max load case.
+[[case]]
+id = "nonlinear-006"
+title = "Invented soft cable with max_strain = 1 % on both components: beyond the range at the max load case"
+calculation = "sagtension.nonlinear"
+reference = "Hand estimate of the strain (nonlinear-005's notes); the count from the range given"
+max_seconds = 2.0
+expected.beyond_range = { value = 6.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "25 kN"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "30 N/m"
+temperature = "-10 °C"
+
+[case.inputs.cable]
+id = "invented-soft"
+name = "Invented soft test cable"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "5.5 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 25.0, -11.0, 4.0, -0.8], creep = [0.0, 16.0, -6.0, 1.5, -0.2], final_modulus = 55.0, max_compression = 0.0, max_strain = 1.0 } }
+core = { area = "65 mm²", modulus = "19 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 180.0, -12.0, 3.0, -0.5], final_modulus = 190.0, max_strain = 1.0 } }

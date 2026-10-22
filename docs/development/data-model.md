@@ -748,8 +748,9 @@ when one of its wire types gives the field (`LibraryPage::save`); without it a
 file keeps its version.
 
 **Stress-strain curves and the sag-tension job** (2026-10-22). A
-component's `stress_strain.max_strain` (optional, strain units; 1 % when
-absent — unchanged) now also says where the results warn: a state beyond
+component's `stress_strain.max_strain` (optional, strain units; absent:
+the curves must rise up to 1 %, and since 2026-10-22 no range warning)
+now also says where the results warn: a state beyond
 it is flagged (`Mechanics::beyond_range`, `NonlinearSection::range_warnings`,
 `SectionShape::flags`), the polynomial still evaluated. The wire format is
 unchanged. `MaterialState::Final { permanent }` holds a **signed** set per
