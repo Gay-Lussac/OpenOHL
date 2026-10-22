@@ -376,6 +376,20 @@ and not undone.
   same name in the same layer replaces it. It runs in the background;
   the project opens again to show them. An image is decoded whole (3 bytes
   per pixel: 10 000 × 10 000 pixels need 300 MB).
+- **TIFF variants read**: uncompressed, LZW, deflate, PackBits and
+  **JPEG-compressed** TIFFs, in strips or tiled, grey, RGB or RGBA of 8 or
+  16 bits — and **JPEG-compressed YCbCr** TIFFs, as GDAL writes them with
+  `COMPRESS=JPEG PHOTOMETRIC=YCBCR` and many mapping agencies publish
+  their orthophotos (the JPEG tables in the file's `JPEGTables` tag, the
+  chroma subsampled): their strips or tiles are decoded and turned into
+  RGB as JPEG defines it (built, in active development (not approved
+  yet)). A TIFF of any other kind — a palette, CMYK, CIE Lab, floating
+  point, more bands — is refused with a message naming it (for example
+  *palette, 8 bits, uncompressed, in strips*) and the workaround: convert
+  it to a JPEG with a world file (`.jgw`), or to a plain RGB TIFF, e.g.
+  `gdal_translate -co COMPRESS=DEFLATE -co PHOTOMETRIC=RGB in.tif out.tif`
+  (`-expand rgb` for a palette). The GeoTIFF tags or the world file place
+  it as for any other image.
 - **ECW** files are converted to GeoTIFF first by an external converter you
   install yourself: GDAL's `gdal_translate` **with the ECW driver** (ECW is
   a proprietary format whose decoder needs a licensed SDK; it is not part

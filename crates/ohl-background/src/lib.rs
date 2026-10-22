@@ -7,7 +7,9 @@
 //! - **Orthophotos** (and any north-up raster): GeoTIFF, or TIFF / JPEG /
 //!   PNG with a world file, imported as JPEG tiles of [`TILE`] pixels with
 //!   a zoom pyramid (each level half the last, down to one tile), grouped
-//!   in named layers (e.g. one per survey). ECW files are converted to
+//!   in named layers (e.g. one per survey). TIFFs the `image` crate does
+//!   not read — JPEG-compressed YCbCr ones above all — are read with the
+//!   `tiff` crate ([`tiff_image`]). ECW files are converted to
 //!   GeoTIFF first by an external converter the user installs
 //!   ([`convert_with`]); none is shipped (ECW decoding needs a licensed
 //!   SDK).
@@ -19,6 +21,7 @@
 
 pub mod dxf;
 pub mod georef;
+pub mod tiff_image;
 
 use std::path::{Path, PathBuf};
 
@@ -260,6 +263,41 @@ pub fn georef_of(path: &Path) -> Result<(Georef, Option<u16>), String> {
     ))
 }
 
+/// Decodes image `path` (TIFF, JPEG, PNG…) as RGB, 8 bits, within
+/// [`MAX_IMAGE_SIDE`] and [`MAX_IMAGE_BYTES`]: with the `image` crate;
+/// a TIFF it does not read (JPEG-compressed YCbCr above all) with the
+/// `tiff` crate ([`tiff_image::read`]); a TIFF neither reads, refused
+/// with its variant and the workaround.
+pub fn decode_image(path: &Path) -> Result<RgbImage, String> {
+    let at = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+    let mut reader = image::ImageReader::open(path)
+        .map_err(|e| at(&e))?
+        .with_guessed_format()
+        .map_err(|e| at(&e))?;
+    let tiff = reader.format() == Some(image::ImageFormat::Tiff);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_SIDE);
+    limits.max_image_height = Some(MAX_IMAGE_SIDE);
+    limits.max_alloc = Some(MAX_IMAGE_BYTES);
+    reader.limits(limits);
+    match reader.decode() {
+        Ok(img) => Ok(img.to_rgb8()),
+        // Past the limits: said as such, not tried again.
+        Err(image::ImageError::Limits(e)) => Err(at(&e)),
+        Err(e) if tiff => {
+            tiff_image::read(path, MAX_IMAGE_SIDE, MAX_IMAGE_BYTES).map_err(|again| {
+                if again.contains(tiff_image::WORKAROUND) {
+                    again
+                } else {
+                    let variant = tiff_image::variant_of(path).unwrap_or_else(|| "unknown".into());
+                    tiff_image::unsupported(path, &variant, &format!("{e}; {again}"))
+                }
+            })
+        }
+        Err(e) => Err(at(&e)),
+    }
+}
+
 /// Converts `input` (e.g. an ECW file) to a GeoTIFF in `out_dir` with
 /// `converter` (GDAL's `gdal_translate`, with the ECW driver for ECW
 /// files): `converter -of GTiff input out.tif`. Returns the GeoTIFF.
@@ -403,19 +441,7 @@ impl Store {
             Some(g) => g,
             None => georef_of(path).map_err(err)?.0,
         };
-        let mut reader = image::ImageReader::open(path)
-            .map_err(|e| err(format!("{}: {e}", path.display())))?
-            .with_guessed_format()
-            .map_err(|e| err(format!("{}: {e}", path.display())))?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(MAX_IMAGE_SIDE);
-        limits.max_image_height = Some(MAX_IMAGE_SIDE);
-        limits.max_alloc = Some(MAX_IMAGE_BYTES);
-        reader.limits(limits);
-        let mut img = reader
-            .decode()
-            .map_err(|e| err(format!("{}: {e}", path.display())))?
-            .to_rgb8();
+        let mut img = decode_image(path).map_err(err)?;
         let (width, height) = img.dimensions();
         let mut levels = 1u8;
         while (width.max(height) >> (levels - 1)) > TILE {
