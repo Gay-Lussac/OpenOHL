@@ -246,6 +246,33 @@ fn max_support(solution: &SectionSolution) -> Force {
         .fold(Force::ZERO, Force::max)
 }
 
+/// The warning when the tension at the most tensioned support of
+/// `solution` exceeds the wire's rated tensile strength `rts` (owner,
+/// 2026-10-22: always warned): "span 2: tension … exceeds the wire's rated
+/// tensile strength (RTS …, 103.0 %)", one per span above it.
+fn rts_warnings(solution: &SectionSolution, rts: Force, units: UnitSystem) -> Vec<String> {
+    if rts.si().is_nan() || rts.si() <= 0.0 {
+        return Vec::new();
+    }
+    solution
+        .spans
+        .iter()
+        .enumerate()
+        .map(|(k, s)| (k, s.tension_left().max(s.tension_right())))
+        .filter(|(_, t)| *t > rts)
+        .map(|(k, t)| {
+            format!(
+                "span {}: tension {} at the most tensioned support exceeds the wire's rated \
+                 tensile strength (RTS {}, {:.1} %)",
+                k + 1,
+                show(t, units, 2),
+                show(rts, units, 2),
+                100.0 * t.si() / rts.si()
+            )
+        })
+        .collect()
+}
+
 /// The creep case and the heaviest load case of the final states: from
 /// `[final]`, else the reference case and the weather case with the largest
 /// load.
@@ -355,6 +382,9 @@ fn nonlinear_report(
             ("after creep", &fin.after_creep, &states.after_creep),
             ("after load", &fin.after_load, &states.after_load),
         ] {
+            for w in rts_warnings(solution, cable.rated_tensile_strength, units) {
+                warnings.push(format!("\"{}\" {label}: {w}", case.name));
+            }
             for w in section
                 .range_warnings(solution, &s, material)
                 .map_err(|e| e.to_string())?
@@ -905,11 +935,15 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         "  {:<24} {:>9} {:>12} {:>14} {:>16} {:>7} {:>10}",
         "case", "temp", "load", "H", "max support T", "% RTS", "max sag"
     );
+    let mut over = Vec::new();
     for case in &job.weather {
         let s = state(case, cable);
         let solution = section
             .solve(s, &budget)
             .map_err(|e| format!("case \"{}\": {e}", case.name))?;
+        for w in rts_warnings(&solution, rts, units) {
+            over.push(format!("\"{}\": {w}", case.name));
+        }
         let support = max_support(&solution);
         let sag = solution
             .spans
@@ -927,6 +961,9 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
             support / rts * 100.0,
             show(sag, units, 2)
         );
+    }
+    for w in &over {
+        let _ = writeln!(out, "  Warning: {w}");
     }
 
     if mechanics.is_nonlinear() {
@@ -1102,6 +1139,36 @@ mod tests {
         let csv = output.chart_csv.unwrap();
         assert_eq!(csv.lines().count(), 1 + 9, "header + 9 temperatures");
         assert!(csv.starts_with("temperature_c,horizontal_tension_n,sag_span1_m"));
+    }
+
+    /// Above the wire's strength (owner, 2026-10-22): strung at 150 kN, the
+    /// Drake of the example (RTS 138.8 kN) is warned about in every case.
+    #[test]
+    fn a_tension_above_the_rts_is_warned() {
+        let dir = std::env::temp_dir().join(format!("ohl-st-rts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables");
+        let job = dir.join("job.toml");
+        std::fs::write(
+            &job,
+            format!(
+                "cable = \"acsr-drake-26-7\"\nlibrary = '{}'\nspans = [{{ span = \"300 m\", rise = \"0 m\" }}]\n\
+                 [reference]\nweather = \"everyday\"\n[stringing]\nhorizontal_tension = \"150 kN\"\n\
+                 [[weather]]\nname = \"everyday\"\ntemperature = \"15 °C\"\n",
+                library.display()
+            ),
+        )
+        .unwrap();
+        let report = run(&job, UnitSystem::Metric).unwrap().report;
+        let warning = report
+            .lines()
+            .find(|l| l.contains("Warning: \"everyday\": span 1: tension"))
+            .unwrap_or_else(|| panic!("{report}"));
+        assert!(
+            warning.contains("exceeds the wire's rated tensile strength (RTS 138.78 kN"),
+            "{warning}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -199,7 +199,7 @@ const SECTIONS: &[Column] = &[
         "H kN",
         65.0,
         Yes,
-        "horizontal tension of the first span in each display case — type a target (one number: in the first display case): the condition giving it is found",
+        "horizontal tension of the first span in each display case (\"above RTS\" where a span's tension at its most tensioned support exceeds the wire's rated tensile strength) — type a target (one number: in the first display case): the condition giving it is found",
     ),
     (
         "max sag m",
@@ -1630,11 +1630,20 @@ impl TableKind {
                                     .collect::<Vec<_>>()
                                     .join("; ")
                             }),
-                            // One value per display case.
+                            // One value per display case; a case where a
+                            // span's tension exceeds the wire's RTS says so
+                            // (owner, 2026-10-22).
                             shapes
                                 .iter()
-                                .filter_map(|x| x.spans.first())
-                                .map(|sp| f(sp.horizontal_tension / 1000.0, 2))
+                                .filter_map(|x| {
+                                    let sp = x.spans.first()?;
+                                    let over = if ohl_line::solve::above_rts(x) {
+                                        " (above RTS)"
+                                    } else {
+                                        ""
+                                    };
+                                    Some(format!("{}{over}", f(sp.horizontal_tension / 1000.0, 2)))
+                                })
                                 .collect::<Vec<_>>()
                                 .join(" / "),
                             shapes
