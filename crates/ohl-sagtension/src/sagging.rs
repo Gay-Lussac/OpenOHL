@@ -45,7 +45,7 @@ const SIMPSON_INTERVALS: usize = 1024;
 /// \\[ t_n = 2n \int_0^L \frac{ds}{c} = 2n \sqrt{\frac{q}{gH}} \int_0^S
 ///     \sqrt{\cosh\frac{x - x_m}{C}}\\,dx \\]
 ///
-/// (composite Simpson, [`SIMPSON_INTERVALS`] intervals). For a taut level
+/// (composite Simpson, 1024 intervals). For a taut level
 /// span this is the field formula \\( t_n \approx 2n\sqrt{8D/g} \\), i.e.
 /// \\( D \approx g t_n^2 / (32 n^2) \\).
 pub fn stopwatch_time(span: &SpanSolution, waves: u32) -> f64 {
