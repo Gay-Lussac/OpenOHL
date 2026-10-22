@@ -567,3 +567,341 @@ fn plan_culls_and_thins_what_is_drawn() {
     assert!(dots.insert(egui::pos2(11.0, 10.0)));
     assert!(!dots.insert(egui::pos2(-50.0, 10.0)), "off the view");
 }
+
+/// A drawing as large as the background of a long line (invented, the
+/// same every time): over an area 28 km long along x through the
+/// synthetic example and `width` m wide, parcels of 40 m (eight corners
+/// and a number each), 300 buildings (with a name), 600 boundary marks
+/// (small circles of 73 points) and 300 points a km², contour lines 30 m
+/// apart with a vertex every 2 m. The corridor of a line (1.2 km): 51 000
+/// lines with 2.2 million vertices, 31 000 texts.
+pub fn large_drawing(width: f64) -> crate::backgrounds::LoadedDrawing {
+    use ohl_background::dxf::{DrawingLayer, Label, Mark, Polyline};
+    // A small linear congruential generator: the same drawing every time.
+    let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+    let mut rand = move || {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let (x0, x1) = (-13_400.0, 14_600.0);
+    let (y0, y1) = (280.0 - width / 2.0, 280.0 + width / 2.0);
+    let km2 = (x1 - x0) * (y1 - y0) / 1e6;
+    let per_km2 = |n: f64| (n * km2) as usize;
+    let z = 500.0;
+    let layer = |name: &str, color: [u8; 3]| DrawingLayer {
+        name: name.into(),
+        color,
+        off: false,
+    };
+    let mut d = ohl_background::Drawing {
+        layers: vec![
+            layer("Parcels", [200, 200, 200]),
+            layer("Buildings", [230, 120, 90]),
+            layer("Marks", [120, 220, 120]),
+            layer("Contours", [160, 120, 60]),
+            layer("Texts", [240, 240, 240]),
+        ],
+        ..Default::default()
+    };
+    // Parcels: 40 m cells, eight corners each, a little jittered; a number
+    // in each.
+    const CORNERS: [(f64, f64); 8] = [
+        (0.0, 0.0),
+        (0.5, 0.0),
+        (1.0, 0.0),
+        (1.0, 0.5),
+        (1.0, 1.0),
+        (0.5, 1.0),
+        (0.0, 1.0),
+        (0.0, 0.5),
+    ];
+    let cell = 40.0;
+    let (nx, ny) = (((x1 - x0) / cell) as usize, ((y1 - y0) / cell) as usize);
+    for i in 0..nx {
+        for j in 0..ny {
+            let (cx, cy) = (x0 + i as f64 * cell, y0 + j as f64 * cell);
+            let points = CORNERS
+                .iter()
+                .map(|(u, v)| {
+                    [
+                        cx + u * cell + rand() - 0.5,
+                        cy + v * cell + rand() - 0.5,
+                        z,
+                    ]
+                })
+                .collect();
+            d.lines.push(Polyline {
+                layer: 0,
+                color: [200, 200, 200],
+                points,
+                closed: true,
+            });
+            d.texts.push(Label {
+                layer: 4,
+                color: [240, 240, 240],
+                at: [cx + 0.4 * cell, cy + 0.5 * cell, z],
+                height: 1.5,
+                angle_deg: 0.0,
+                text: format!("{}", 1000 + i * ny + j),
+            });
+        }
+    }
+    let mut at = || [x0 + rand() * (x1 - x0), y0 + rand() * (y1 - y0), z];
+    for _ in 0..per_km2(300.0) {
+        let c = at();
+        let s = at();
+        // Sides of 8 to 18 m by 6 to 14 m.
+        let (w, h) = (
+            8.0 + 10.0 * (s[0] - x0) / (x1 - x0),
+            6.0 + 8.0 * (s[1] - y0) / (y1 - y0),
+        );
+        d.lines.push(Polyline {
+            layer: 1,
+            color: [230, 120, 90],
+            points: vec![
+                c,
+                [c[0] + w, c[1], z],
+                [c[0] + w, c[1] + h, z],
+                [c[0], c[1] + h, z],
+            ],
+            closed: true,
+        });
+        d.texts.push(Label {
+            layer: 4,
+            color: [240, 240, 240],
+            at: [c[0] + 1.0, c[1] + 1.0, z],
+            height: 1.0,
+            angle_deg: 30.0,
+            text: "Building".into(),
+        });
+    }
+    for _ in 0..per_km2(600.0) {
+        let c = at();
+        d.lines.push(Polyline {
+            layer: 2,
+            color: [120, 220, 120],
+            points: (0..=72)
+                .map(|k| {
+                    let a = f64::from(k) * 5f64.to_radians();
+                    [c[0] + 0.3 * a.cos(), c[1] + 0.3 * a.sin(), z]
+                })
+                .collect(),
+            closed: false,
+        });
+    }
+    for _ in 0..per_km2(300.0) {
+        let c = at();
+        d.points.push(Mark {
+            layer: 2,
+            color: [120, 220, 120],
+            at: c,
+        });
+    }
+    let contours = ((y1 - y0) / 30.0) as u32;
+    for k in 0..contours {
+        let y = y0 + (f64::from(k) + 0.5) * 30.0;
+        let n = ((x1 - x0) / 2.0) as usize;
+        d.lines.push(Polyline {
+            layer: 3,
+            color: [160, 120, 60],
+            points: (0..=n)
+                .map(|i| {
+                    let x = x0 + i as f64 * 2.0;
+                    [x, y + 8.0 * (x / 150.0).sin(), z + f64::from(k % 40)]
+                })
+                .collect(),
+            closed: false,
+        });
+    }
+    let info = ohl_background::DrawingInfo {
+        name: "large".into(),
+        source: "invented".into(),
+        crs: String::new(),
+        items: (d.lines.len() + d.points.len() + d.texts.len()) as u64,
+        bounds: d.bounds(),
+    };
+    crate::backgrounds::LoadedDrawing::new(info, d)
+}
+
+/// What a flight measured ([`fly`]).
+struct Flight {
+    /// Median frame, ms.
+    median: f64,
+    /// Slowest frame, ms.
+    max: f64,
+    /// Mean time per frame of each phase, ms.
+    phases: Vec<(&'static str, f64)>,
+    /// Segments, points, triangles drawn in the last frame.
+    drawn: [u64; 3],
+    /// Segments, points, triangles the chunks hold on the GPU.
+    held: [u64; 3],
+}
+
+/// Frame times while flying along the line, the eye `distance` m behind
+/// its target: the camera moved `step` m along x every frame (chunks change level and are built as they come
+/// near), `frames` frames: the median and slowest frame, ms, the mean
+/// time per frame of each phase, what the 3D view drew last and what its
+/// chunks hold on the GPU then. A frame is timed until the GPU has drawn
+/// it.
+fn fly(model: Model, distance: f64, step: f64, frames: usize) -> Flight {
+    let state: std::rc::Rc<std::cell::RefCell<Option<eframe::egui_wgpu::RenderState>>> =
+        Default::default();
+    let keep = state.clone();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .with_max_steps(10_000)
+        .wgpu()
+        .build_eframe(move |cc| {
+            *keep.borrow_mut() = cc.wgpu_render_state.clone();
+            App::with_model(model, cc.wgpu_render_state.clone())
+        });
+    let device = state.borrow().as_ref().expect("a GPU").device.clone();
+    h.step();
+    h.state_mut().show_tab(Tab::View3d);
+    let start = {
+        let r = h.state_mut().ready().unwrap();
+        let st = &r.model.line.structures;
+        st[st.len() / 2].position
+    };
+    let camera = |x: f64| ohl_render::Camera {
+        target: [x, start[1], start[2] + 30.0],
+        distance,
+        yaw: std::f64::consts::PI,
+        pitch: 15f64.to_radians(),
+        fov_y: 45f64.to_radians(),
+        exaggeration: 1.0,
+        ortho: false,
+    };
+    // From 6 km east, flying west.
+    let x0 = start[0] + 6_000.0;
+    h.state_mut().ready().unwrap().view3d.camera = Some(camera(x0));
+    for _ in 0..200 {
+        h.step();
+        if h.state_mut().ready().unwrap().view3d.pending() == 0 {
+            break;
+        }
+    }
+    crate::perf::enable(true);
+    let _ = crate::perf::take();
+    let mut times = Vec::new();
+    for k in 0..frames {
+        h.state_mut().ready().unwrap().view3d.camera = Some(camera(x0 - step * k as f64));
+        let t = Instant::now();
+        h.step();
+        // The frame's image drawn by the GPU too.
+        let _ = device.poll(eframe::wgpu::PollType::wait_indefinitely());
+        times.push(t.elapsed().as_secs_f64() * 1e3);
+    }
+    crate::perf::enable(false);
+    let phases = crate::perf::take()
+        .into_iter()
+        .map(|(n, d, _)| (n, d.as_secs_f64() * 1e3 / frames as f64))
+        .collect();
+    let r = h.state_mut().ready().unwrap();
+    let drawn = r.view3d.drawn_counts(&r.visible);
+    let held = r.view3d.held_counts();
+    let max = times.iter().copied().fold(0.0, f64::max);
+    Flight {
+        median: median(&mut times),
+        max,
+        phases,
+        drawn,
+        held,
+    }
+}
+
+/// The frame benchmark with a large drawing ([`large_drawing`]) over the
+/// synthetic example, 1.2 km and 9 km wide: indexing and building its
+/// chunks, the views of [`LOOKS`], then flying along the line.
+///
+/// ```bash
+/// OHL_REQUIRE_GPU_TESTS=1 cargo test --release -p ohl-app drawing_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn drawing_benchmark() {
+    use crate::scene::Layer;
+    if !gpu() {
+        return;
+    }
+    let frames = ohl_core::env::var("OHL_BENCH_FRAMES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20);
+    // The corridor of a line, then a map sheet as wide as a third of its
+    // length.
+    for width in [1_200.0, 9_000.0] {
+        println!("--- a drawing {width} m wide");
+        let with_drawing = || {
+            let mut model = synthetic();
+            model.backgrounds.drawings.push(large_drawing(width));
+            model
+        };
+        let started = Instant::now();
+        let model = with_drawing();
+        let d = &model.backgrounds.drawings[0].drawing;
+        println!(
+            "drawing: {} lines ({} vertices), {} points, {} texts, made in {:.1?}",
+            d.lines.len(),
+            d.lines.iter().map(|l| l.points.len()).sum::<usize>(),
+            d.points.len(),
+            d.texts.len(),
+            started.elapsed()
+        );
+        let started = Instant::now();
+        let index = crate::chunks::ChunkIndex::new(&model, Layer::Drawings, 0);
+        println!(
+            "index: {} chunks in {:.1?}",
+            index.keys().count(),
+            started.elapsed()
+        );
+        let row = crate::lod::LodSettings::default().row(Layer::Drawings);
+        for level in 0..3 {
+            let started = Instant::now();
+            let segments: usize = index
+                .keys()
+                .map(|(t, _)| {
+                    index
+                        .build(&model, Layer::Drawings, &t, level, &row)
+                        .counts()
+                        .0
+                })
+                .sum();
+            let n = index.keys().count().max(1);
+            println!(
+                "level {level}: every chunk built in {:.1?} ({:.2} ms a chunk), {segments} segments",
+                started.elapsed(),
+                started.elapsed().as_secs_f64() * 1e3 / n as f64
+            );
+        }
+        let rows = measure(model, &LOOKS, frames);
+        println!("{}", report(&rows));
+        // 10 km each.
+        for (distance, step) in [(400.0, 50.0), (2_500.0, 100.0)] {
+            let frames = (10_000.0 / step) as usize;
+            let Flight {
+                median,
+                max,
+                phases,
+                drawn,
+                held,
+            } = fly(with_drawing(), distance, step, frames);
+            println!(
+                "flying {step} m a frame, {distance} m behind: frame {median:.2} ms (max \
+                 {max:.2}), 3D drew {} seg / {} pts / {} tri; chunks hold {:.0} MB",
+                drawn[0],
+                drawn[1],
+                drawn[2],
+                // Segments 32 bytes, points 20, triangles 3 × 16.
+                (held[0] * 32 + held[1] * 20 + held[2] * 48) as f64 / 1e6
+            );
+            for (n, ms) in &phases {
+                if *ms >= 0.01 {
+                    println!("    {n:<28} {ms:>8.2} ms");
+                }
+            }
+        }
+    }
+}

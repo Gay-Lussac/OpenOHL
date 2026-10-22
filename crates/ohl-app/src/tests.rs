@@ -7221,6 +7221,21 @@ fn backgrounds_are_kept_shown_and_hidden() {
     assert_eq!(r.model.view_prefs().hidden_backgrounds.len(), 2);
     let s = crate::scene::layer(&r.model, Layer::Drawings, 0, &Selection::None);
     assert_eq!(s.counts().0, 0, "hidden in 3D too");
+    // A drawing hidden: its chunks made again; an edit of the line or
+    // the whole layer hidden: kept (a large drawing takes a while).
+    assert!(r.view3d.dirty.contains(&Layer::Drawings));
+    r.view3d.dirty.clear();
+    r.refresh_views();
+    assert!(r.view3d.dirty.contains(&Layer::Structures));
+    assert!(!r.view3d.dirty.contains(&Layer::Drawings));
+    r.view3d.dirty.clear();
+    harness
+        .get_by_label_contains("Drawings (plan and 3D views)")
+        .click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(!r.visible.contains(&Layer::Drawings));
+    assert!(!r.view3d.dirty.contains(&Layer::Drawings));
 }
 
 #[test]
@@ -7423,7 +7438,10 @@ fn drawings_have_levels_of_detail() {
     assert!(CHUNKED.contains(&Layer::Drawings));
     assert_eq!(DetailKind::of(Layer::Drawings), DetailKind::Tolerance);
     let row = LodSettings::default().row(Layer::Drawings);
-    assert_eq!((row.render_distance, row.detail), (10_000.0, [0.5, 2.0]));
+    assert_eq!(
+        (row.render_distance, row.from, row.detail),
+        (10_000.0, [300.0, 2_000.0], [0.2, 1.5])
+    );
     row.check(Layer::Drawings).unwrap();
     // Douglas–Peucker: a fine arc of radius 100 m (1° steps) within 0.5 m.
     let arc: Vec<[f64; 3]> = (0..=90)
@@ -7453,7 +7471,7 @@ fn drawings_have_levels_of_detail() {
     };
     let full = lines(0, &model);
     assert!(full >= 4, "{full}");
-    // A 1 m line: drawn at level 0, left out at level 2 (2 m tolerance).
+    // A 1 m line: drawn at level 0, left out at level 2 (1.5 m tolerance).
     let d = std::sync::Arc::make_mut(&mut model.backgrounds.drawings[0].drawing);
     d.lines.push(ohl_background::dxf::Polyline {
         layer: 0,
