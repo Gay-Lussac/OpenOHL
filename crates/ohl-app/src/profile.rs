@@ -845,6 +845,16 @@ impl ProfileView {
             .is_none_or(|(k, _)| *k != (view_key, hidden))
         {
             let mut out = Vec::new();
+            // The dots as one mesh of small squares (as a circle that
+            // small looks): tens of thousands of circle shapes cost their
+            // tessellation every frame, a mesh next to nothing.
+            let mut dots = egui::epaint::Mesh::default();
+            let mut dot = |q: egui::Pos2, r: f32, c: egui::Color32| {
+                dots.add_colored_rect(
+                    egui::Rect::from_center_size(q, egui::vec2(2.0 * r, 2.0 * r)),
+                    c,
+                );
+            };
             // One dot per pixel: points falling on a pixel already dotted
             // look the same drawn once (a far view of a long corridor has
             // tens of thousands).
@@ -855,11 +865,7 @@ impl ProfileView {
             for p in &survey[from..to.max(from)] {
                 let q = to_screen(p[0], p[1]);
                 if dotted.insert(q) {
-                    out.push(egui::Shape::circle_filled(
-                        q,
-                        1.2,
-                        egui::Color32::from_rgb(120, 150, 110),
-                    ));
+                    dot(q, 1.2, egui::Color32::from_rgb(120, 150, 110));
                 }
             }
             // The LiDAR points (classes hidden in Terrain › LiDAR classes
@@ -878,14 +884,11 @@ impl ProfileView {
                 };
                 let q = to_screen(p[0], p[1]);
                 if dotted.insert(q) {
-                    out.push(egui::Shape::circle_filled(
-                        q,
-                        1.0,
-                        egui::Color32::from_rgb(col[0], col[1], col[2]),
-                    ));
+                    dot(q, 1.0, egui::Color32::from_rgb(col[0], col[1], col[2]));
                     self.lidar_dots.push((q, (*at, *c)));
                 }
             }
+            out.push(egui::Shape::mesh(dots));
             for (_, prof) in &d.sides {
                 for run in prof {
                     let pts = crate::plan::thin_px(
@@ -1010,6 +1013,11 @@ impl ProfileView {
             }
         }
         for m in &d.structures {
+            // Only those within the stretch shown (with room for their
+            // width and name).
+            if m.station < s0 - 100.0 || m.station > s1 + 100.0 {
+                continue;
+            }
             let selected = matches!(selection, Selection::Structure(id) if *id == m.id);
             // Away from the alignment (a connection beside the line, on the
             // route because it gives it): projected, fainter, its distance
@@ -1029,7 +1037,21 @@ impl ProfileView {
             } else {
                 &m.members
             };
-            if lines.is_empty() {
+            // Under 80 px tall on the screen its bars blur into one shape:
+            // the mast and an arm out to each point instead (display only;
+            // a lattice has thousands of bars, each a shape every frame).
+            let tall = (to_screen(m.station, m.base).y - to_screen(m.station, m.top).y).abs();
+            if !lines.is_empty() && tall < 80.0 && lines.len() > 40 {
+                let stroke = egui::Stroke::new(if selected { 2.0 } else { 1.0 }, col);
+                painter.line_segment(
+                    [to_screen(m.station, m.base), to_screen(m.station, m.top)],
+                    stroke,
+                );
+                for p in &m.attachments {
+                    painter
+                        .line_segment([to_screen(m.station, p[2]), to_screen(p[0], p[2])], stroke);
+                }
+            } else if lines.is_empty() {
                 painter.line_segment(
                     [to_screen(m.station, m.base), to_screen(m.station, m.top)],
                     egui::Stroke::new(if selected { 3.0 } else { 1.5 }, col),

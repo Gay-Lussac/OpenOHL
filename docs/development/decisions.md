@@ -28,6 +28,19 @@ of Parts A, B and C).
 **Mixed paper sizes stay free (owner, 2026-10-22):** no rule keeping one
 sheet height — the goal is that the drawing fits.
 
+**Lag on a real line: picking and the profile (2026-10-22)**
+
+- Measured on a copy of a real line (lattice towers, two DXF drawings):
+  a click took 3.1 s (the rigid links' joints looked up quadratically
+  for every structure, though none had a link), and the profile under
+  the 3D view drew every structure's every member each frame, off the
+  screen too (175 000 shapes, 21 ms a frame).
+- Fixed without changing any computed number: no joints placed for a
+  structure without an offset link, joints listed once; the profile
+  draws only the structures in view, and a structure under 80 px tall
+  with more than 40 bars as its mast and arms (display only), its dots
+  as one mesh. A click 25 ms, a frame about 2.6 ms.
+
 **DXF drawings in the 3D view: level of detail (2026-10-22)**
 
 - Asked whether a DXF background's level of detail is defined: it is.

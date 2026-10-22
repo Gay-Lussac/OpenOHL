@@ -1550,7 +1550,9 @@ impl StructureType {
     /// joints the points make themselves (a point at a position of its
     /// own: [`JointSource::Point`]), in the order of the points.
     pub fn joints(&self) -> Vec<Joint> {
-        let linked = |id: &str| self.points.iter().any(|p| p.joint == id);
+        let linked_ids: std::collections::HashSet<&str> =
+            self.points.iter().map(|p| p.joint.as_str()).collect();
+        let linked = |id: &str| linked_ids.contains(id);
         let mut out: Vec<Joint> = self
             .nodes
             .iter()
@@ -1567,8 +1569,10 @@ impl StructureType {
                 source: JointSource::Node,
             })
             .collect();
+        let mut seen: std::collections::HashSet<String> =
+            out.iter().map(|j| j.id.clone()).collect();
         for p in &self.points {
-            if out.iter().any(|j| j.id == p.joint) {
+            if !seen.insert(p.joint.clone()) {
                 continue;
             }
             out.push(Joint {
