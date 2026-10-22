@@ -46,6 +46,40 @@ struct Job {
     fe: Option<FeInput>,
     #[serde(default, rename = "final")]
     final_conditions: Option<FinalInput>,
+    #[serde(default)]
+    sagging: Option<SaggingInput>,
+}
+
+/// Sagging outputs ([`ohl_sagtension::sagging`]): the section in the
+/// stringing state at the sagging temperature.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SaggingInput {
+    /// Conductor temperature at sagging (default: the reference case's).
+    temperature: Option<Temperature>,
+    /// Numbers of waves timed by the stopwatch (default 1 and 3).
+    #[serde(default)]
+    waves: Vec<u32>,
+    /// Temperature at clipping in, for the clipping offsets (default: the
+    /// sagging temperature, where the offsets are zero).
+    clip_temperature: Option<Temperature>,
+    /// Transits: one per span to sight.
+    #[serde(default)]
+    transit: Vec<TransitInput>,
+}
+
+/// A transit sighting a span ([`ohl_sagtension::sagging::angle_of_sight`]).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransitInput {
+    /// Span number, 1-based as in the report.
+    span: usize,
+    /// The instrument's distance below the back support (positive down).
+    below_back: Length,
+    /// Horizontal distance of the instrument from the back support
+    /// (default 0: at it).
+    #[serde(default)]
+    from_back: Length,
 }
 
 /// Cases defining the final condition of a non-linear wire.
@@ -125,6 +159,10 @@ struct CriterionInput {
     weather: String,
     limit: String,
     value: toml::Value,
+    /// Non-linear wires: `initial` (default), `creep` (after creep) or
+    /// `load` (after load).
+    #[serde(default)]
+    condition: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -208,20 +246,14 @@ fn max_support(solution: &SectionSolution) -> Force {
         .fold(Force::ZERO, Force::max)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nonlinear_report(
-    out: &mut String,
-    job: &Job,
+/// The creep case and the heaviest load case of the final states: from
+/// `[final]`, else the reference case and the weather case with the largest
+/// load.
+fn final_cases<'a>(
+    job: &'a Job,
     cable: &Cable,
-    mechanics: ohl_cables::mechanics::Mechanics,
-    spans: &[SpanGeometry],
-    stringing: Force,
-    reference_case: &WeatherCase,
-    units: UnitSystem,
-) -> Result<(), String> {
-    use ohl_cables::mechanics::MaterialState;
-    use ohl_sagtension::nonlinear::{FinalCause, NonlinearSection, final_condition};
-
+    reference_case: &'a WeatherCase,
+) -> Result<(&'a WeatherCase, &'a WeatherCase), String> {
     let creep_case = match job
         .final_conditions
         .as_ref()
@@ -247,6 +279,24 @@ fn nonlinear_report(
             })
             .ok_or("no weather cases")?,
     };
+    Ok((creep_case, load_case))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn nonlinear_report(
+    out: &mut String,
+    job: &Job,
+    cable: &Cable,
+    mechanics: ohl_cables::mechanics::Mechanics,
+    spans: &[SpanGeometry],
+    stringing: Force,
+    reference_case: &WeatherCase,
+    units: UnitSystem,
+) -> Result<(), String> {
+    use ohl_cables::mechanics::MaterialState;
+    use ohl_sagtension::nonlinear::{FinalCause, NonlinearSection, final_states, governing_final};
+
+    let (creep_case, load_case) = final_cases(job, cable, reference_case)?;
     let budget = default_solver_budget();
     let section = NonlinearSection::from_known_state(
         spans.to_vec(),
@@ -256,13 +306,17 @@ fn nonlinear_report(
         &MaterialState::Initial,
     )
     .map_err(|e| e.to_string())?;
-    let (final_state, cause) = final_condition(
+    let states = final_states(
         &section,
         state(creep_case, cable),
         state(load_case, cable),
         &budget,
     )
     .map_err(|e| e.to_string())?;
+    let name = |c: FinalCause| match c {
+        FinalCause::Creep => "creep",
+        FinalCause::Load => "load",
+    };
     let _ = writeln!(
         out,
         "\nNon-linear stress-strain and creep (strung on the initial curve at {} / \"{}\")",
@@ -271,42 +325,258 @@ fn nonlinear_report(
     );
     let _ = writeln!(
         out,
-        "  Final condition governed by {} (creep at \"{}\", heaviest load \"{}\")",
-        match cause {
-            FinalCause::Creep => "creep",
-            FinalCause::Load => "load",
-        },
+        "  Final states: after creep at \"{}\", after load at \"{}\"; per case the one leaving the \
+         wire longer governs (lower H, larger sag); at the creep tension: {}",
         creep_case.name,
-        load_case.name
+        load_case.name,
+        name(states.longer)
     );
     let _ = writeln!(
         out,
-        "  {:<24} {:>12} {:>12} {:>12} {:>12}",
-        "case", "H initial", "H final", "sag initial", "sag final"
+        "  {:<24} {:>12} {:>12} {:>12} {:>8} {:>12} {:>12}",
+        "case", "H initial", "H creep", "H load", "governs", "sag initial", "sag final"
     );
+    let sag = |sol: &SectionSolution| {
+        sol.spans
+            .iter()
+            .map(|sp| sp.sag())
+            .fold(Length::ZERO, Length::max)
+    };
+    let mut warnings = Vec::new();
     for case in &job.weather {
         let s = state(case, cable);
         let initial = section
             .solve(s, &MaterialState::Initial, &budget)
             .map_err(|e| format!("case \"{}\": {e}", case.name))?;
-        let final_ = section
-            .solve(s, &final_state, &budget)
+        let fin = governing_final(&section, &states, s, &budget)
             .map_err(|e| format!("case \"{}\": {e}", case.name))?;
-        let sag = |sol: &SectionSolution| {
-            sol.spans
-                .iter()
-                .map(|sp| sp.sag())
-                .fold(Length::ZERO, Length::max)
+        for (label, solution, material) in [
+            ("initial", &initial, &MaterialState::Initial),
+            ("after creep", &fin.after_creep, &states.after_creep),
+            ("after load", &fin.after_load, &states.after_load),
+        ] {
+            for w in section
+                .range_warnings(solution, &s, material)
+                .map_err(|e| e.to_string())?
+            {
+                warnings.push(format!("\"{}\" {label}: {w}", case.name));
+            }
+        }
+        let _ = writeln!(
+            out,
+            "  {:<24} {:>12} {:>12} {:>12} {:>8} {:>12} {:>12}",
+            case.name,
+            show(initial.horizontal_tension, units, 2),
+            show(fin.after_creep.horizontal_tension, units, 2),
+            show(fin.after_load.horizontal_tension, units, 2),
+            name(fin.governing),
+            show(sag(&initial), units, 2),
+            show(sag(fin.solution()), units, 2)
+        );
+    }
+    for w in &warnings {
+        let _ = writeln!(out, "  Warning: {w}");
+    }
+    Ok(())
+}
+
+/// The stringing tension from the criteria on the non-linear model; the
+/// report's table.
+#[allow(clippy::too_many_arguments)]
+fn nonlinear_criteria(
+    out: &mut String,
+    job: &Job,
+    cable: &Cable,
+    mechanics: &ohl_cables::mechanics::Mechanics,
+    spans: &[SpanGeometry],
+    reference_case: &WeatherCase,
+    units: UnitSystem,
+) -> Result<Force, String> {
+    use ohl_sagtension::criteria::{
+        Condition, NonlinearCases, NonlinearCriterion, governing_tension_nonlinear,
+    };
+    let (creep_case, load_case) = final_cases(job, cable, reference_case)?;
+    let criteria = job
+        .criterion
+        .iter()
+        .map(|c| {
+            let condition = match c.condition.as_deref().unwrap_or("initial") {
+                "initial" => Condition::Initial,
+                "creep" => Condition::AfterCreep,
+                "load" => Condition::AfterLoad,
+                other => {
+                    return Err(format!(
+                        "criterion \"{}\": unknown condition \"{other}\" (initial, creep or load)",
+                        c.weather
+                    ));
+                }
+            };
+            Ok(NonlinearCriterion {
+                criterion: criterion(c, &job.weather, cable)?,
+                condition,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let governing = governing_tension_nonlinear(
+        spans,
+        mechanics,
+        cable.rated_tensile_strength,
+        NonlinearCases {
+            reference: state(reference_case, cable),
+            creep: state(creep_case, cable),
+            max_load: state(load_case, cable),
+        },
+        &criteria,
+        &default_criteria_budget(),
+    )
+    .map_err(|e| e.to_string())?;
+    let _ = writeln!(
+        out,
+        "\nStringing tension (governing, non-linear model): {} at \"{}\" (creep at \"{}\", \
+         heaviest load \"{}\")",
+        show(governing.reference_tension, units, 2),
+        reference_case.name,
+        creep_case.name,
+        load_case.name
+    );
+    let _ = writeln!(
+        out,
+        "  {:<28} {:<12} {:<34} {:>11}",
+        "criterion", "condition", "limit", "utilisation"
+    );
+    for (i, (c, r)) in criteria.iter().zip(&governing.criteria).enumerate() {
+        let mark = if i == governing.governing {
+            "  ← governs"
+        } else {
+            ""
         };
         let _ = writeln!(
             out,
-            "  {:<24} {:>12} {:>12} {:>12} {:>12}",
-            case.name,
-            show(initial.horizontal_tension, units, 2),
-            show(final_.horizontal_tension, units, 2),
-            show(sag(&initial), units, 2),
-            show(sag(&final_), units, 2)
+            "  {:<28} {:<12} {:<34} {:>10.1} %{mark}",
+            c.criterion.label,
+            c.condition.to_string(),
+            c.criterion.limit.to_string(),
+            r.utilisation * 100.0
         );
+    }
+    Ok(governing.reference_tension)
+}
+
+/// The sagging outputs of the section in the stringing state
+/// ([`ohl_sagtension::sagging`]). `solve` gives the section at a
+/// temperature (bare, still air, initial), `unstressed` each span's
+/// unstressed length in such a solution.
+fn sagging_report(
+    out: &mut String,
+    input: &SaggingInput,
+    reference_case: &WeatherCase,
+    solve: &dyn Fn(Temperature) -> Result<SectionSolution, String>,
+    unstressed: &dyn Fn(&SectionSolution, Temperature) -> Result<Vec<f64>, String>,
+    units: UnitSystem,
+) -> Result<(), String> {
+    use ohl_sagtension::sagging;
+    let t = input.temperature.unwrap_or(reference_case.temperature);
+    let waves = if input.waves.is_empty() {
+        vec![1, 3]
+    } else {
+        input.waves.clone()
+    };
+    if waves.contains(&0) {
+        return Err("[sagging] waves must be 1 or more".into());
+    }
+    let solved = solve(t)?;
+    let dt = 0.5;
+    let per_k = sagging::temperature_correction(
+        &solve(Temperature::from_celsius(t.celsius() - dt))?,
+        &solve(Temperature::from_celsius(t.celsius() + dt))?,
+        dt,
+    );
+    let _ = writeln!(
+        out,
+        "\nSagging (in the blocks, initial state, bare, still air, at {}; H {})",
+        show(t, units, 1),
+        show(solved.horizontal_tension, units, 2)
+    );
+    let mut header = format!(
+        "  {:>4} {:>10} {:>10} {:>12} {:>14} {:>12}",
+        "span", "sag", "level sag", "incl. corr.", "sag per K", "dyno back"
+    );
+    let _ = write!(header, " {:>12}", "dyno ahead");
+    for n in &waves {
+        let _ = write!(
+            header,
+            " {:>10}",
+            format!("{n} wave{}", if *n == 1 { "" } else { "s" })
+        );
+    }
+    let _ = writeln!(out, "{header}");
+    for (i, sp) in solved.spans.iter().enumerate() {
+        let per_k_shown = Length::from_si(per_k[i]);
+        let mut line = format!(
+            "  {:>4} {:>10} {:>10} {:>12} {:>14} {:>12} {:>12}",
+            i + 1,
+            show(sp.sag(), units, 3),
+            show(sagging::level_sag(sp), units, 3),
+            show(sagging::inclined_correction(sp), units, 3),
+            format!("{}/K", show(per_k_shown, units, 4)),
+            show(sagging::dynamometer(sp, true), units, 2),
+            show(sagging::dynamometer(sp, false), units, 2)
+        );
+        for n in &waves {
+            let _ = write!(line, " {:>9.2}s", sagging::stopwatch_time(sp, *n));
+        }
+        let _ = writeln!(out, "{line}");
+    }
+    let _ = writeln!(
+        out,
+        "  (sag: vertical, where the wire is parallel to the chord; level sag: a level span's of the \
+         same span, H and load; incl. corr. = sag - level sag; stopwatch: the return time of n waves)"
+    );
+    for transit in &input.transit {
+        let sp = solved
+            .spans
+            .get(transit.span.wrapping_sub(1))
+            .ok_or_else(|| format!("[[sagging.transit]]: no span {}", transit.span))?;
+        let sight =
+            sagging::angle_of_sight(sp, transit.from_back, -transit.below_back, sp.geometry.span)
+                .map_err(|e| format!("transit in span {}: {e}", transit.span))?;
+        let below_ahead = sp.geometry.rise - sight.target_elevation;
+        let _ = writeln!(
+            out,
+            "  Transit, span {}: {} below the back support, {} from it: angle of sight {:+.4}°, \
+             tangent {} from the back support, target {} below the ahead support",
+            transit.span,
+            show(transit.below_back, units, 2),
+            show(transit.from_back, units, 2),
+            sight.angle.to_degrees(),
+            show(sight.tangent_x, units, 2),
+            show(below_ahead, units, 3)
+        );
+    }
+    let clip_t = input.clip_temperature.unwrap_or(t);
+    let clipped = solve(clip_t)?;
+    let offsets =
+        sagging::clipping_offsets(&unstressed(&solved, t)?, &unstressed(&clipped, clip_t)?);
+    let shown: Vec<String> = offsets[..offsets.len().saturating_sub(1)]
+        .iter()
+        .enumerate()
+        .map(|(i, o)| format!("{}: {}", i + 2, show(Length::from_si(*o), units, 3)))
+        .collect();
+    if !shown.is_empty() {
+        let _ = writeln!(
+            out,
+            "  Clipping offsets, clipped in at {} (structure from the first dead-end = 1; positive: \
+             the clamp point lies that far into the span ahead, along the unstressed wire): {}",
+            show(clip_t, units, 1),
+            shown.join(", ")
+        );
+        if clip_t == t {
+            let _ = writeln!(
+                out,
+                "  (clipped at the sagging temperature: zero in this model, one horizontal tension \
+                 in the blocks; sheaves and their friction are not modelled)"
+            );
+        }
     }
     Ok(())
 }
@@ -506,6 +776,19 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
     let cable = &datasheet.with_mass_at(strung_at, datasheet.weight_factor_at(strung_at));
     let reference = state(reference_case, cable);
 
+    let mechanics =
+        ohl_cables::mechanics::Mechanics::from_cable(cable).map_err(|e| e.to_string())?;
+    // The additive form's weight at stringing (the non-linear model).
+    let nl_cable_owned = if mechanics.is_nonlinear() {
+        let factor = mechanics
+            .weight_factor(datasheet.mass_reference_temperature(), strung_at)
+            .map_err(|e| e.to_string())?;
+        Some(datasheet.with_mass_at(strung_at, factor))
+    } else {
+        None
+    };
+    let nl_cable = nl_cable_owned.as_ref().unwrap_or(cable);
+
     let mut out = String::new();
     let _ = writeln!(out, "OpenOHL sag-tension — {}", path.display());
     let _ = writeln!(out, "Wire type: {} ({})", cable.name, cable.id);
@@ -540,7 +823,27 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
             );
             s.horizontal_tension
         }
+        (None, false) if mechanics.is_nonlinear() => nonlinear_criteria(
+            &mut out,
+            &job,
+            nl_cable,
+            &mechanics,
+            &spans,
+            reference_case,
+            units,
+        )?,
         (None, false) => {
+            if let Some(c) = job
+                .criterion
+                .iter()
+                .find(|c| c.condition.as_deref().is_some_and(|x| x != "initial"))
+            {
+                return Err(format!(
+                    "criterion \"{}\": a condition after creep or load needs a wire type with \
+                     stress-strain curves (the linear wire has no permanent set)",
+                    c.weather
+                ));
+            }
             let criteria = job
                 .criterion
                 .iter()
@@ -623,23 +926,57 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         );
     }
 
-    let mechanics =
-        ohl_cables::mechanics::Mechanics::from_cable(cable).map_err(|e| e.to_string())?;
     if mechanics.is_nonlinear() {
-        // The additive form's weight at stringing.
-        let factor = mechanics
-            .weight_factor(datasheet.mass_reference_temperature(), strung_at)
-            .map_err(|e| e.to_string())?;
         nonlinear_report(
             &mut out,
             &job,
-            &datasheet.with_mass_at(strung_at, factor),
-            mechanics,
+            nl_cable,
+            mechanics.clone(),
             &spans,
             stringing,
             reference_case,
             units,
         )?;
+    }
+
+    if let Some(input) = &job.sagging {
+        if mechanics.is_nonlinear() {
+            use ohl_cables::mechanics::MaterialState;
+            use ohl_sagtension::nonlinear::NonlinearSection;
+            let ns = NonlinearSection::from_known_state(
+                spans.clone(),
+                mechanics.clone(),
+                state(reference_case, nl_cable),
+                stringing,
+                &MaterialState::Initial,
+            )
+            .map_err(|e| e.to_string())?;
+            let bare = |t: Temperature| state(&WeatherCase::still("sagging", t), nl_cable);
+            sagging_report(
+                &mut out,
+                input,
+                reference_case,
+                &|t| {
+                    ns.solve(bare(t), &MaterialState::Initial, &budget)
+                        .map_err(|e| e.to_string())
+                },
+                &|sol, t| {
+                    ns.span_unstressed_lengths(sol, &bare(t), &MaterialState::Initial)
+                        .map_err(|e| e.to_string())
+                },
+                units,
+            )?;
+        } else {
+            let bare = |t: Temperature| state(&WeatherCase::still("sagging", t), cable);
+            sagging_report(
+                &mut out,
+                input,
+                reference_case,
+                &|t| section.solve(bare(t), &budget).map_err(|e| e.to_string()),
+                &|sol, t| Ok(section.span_unstressed_lengths(sol, &bare(t))),
+                units,
+            )?;
+        }
     }
 
     if let Some(fe) = &job.fe {
@@ -704,9 +1041,9 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
 
     let _ = writeln!(
         out,
-        "\nModel: exact catenary, equal horizontal tension in the section; weather table and criteria use the\n\
-         linear-elastic wire (non-linear curves, when the wire type has them, are reported separately above).\n\
-         Wind and ice use the resultant load in the span plane."
+        "\nModel: exact catenary, equal horizontal tension in the section; the weather table uses the\n\
+         linear-elastic wire (non-linear curves, when the wire type has them, are reported separately above,\n\
+         and the criteria then use them). Wind and ice use the resultant load in the span plane."
     );
     Ok(JobOutput {
         report: out,
@@ -769,17 +1106,95 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/sagtension/synthetic-nonlinear.toml");
         let report = run(&path, UnitSystem::Metric).unwrap().report;
-        assert!(
-            report.contains("Final condition governed by load"),
-            "{report}"
-        );
-        // At the governing heaviest case, final equals initial.
+        assert!(report.contains("at the creep tension: load"), "{report}");
+        // At the heaviest case (the load-stretch case), after load equals
+        // initial: H initial, H creep, H load, governs, sags.
         let line = report
             .lines()
             .rfind(|l| l.trim_start().starts_with("cold + ice"))
             .unwrap();
         let cols: Vec<&str> = line.split_whitespace().collect();
-        assert_eq!(cols[3], cols[5], "{line}");
+        assert_eq!(cols[3], cols[7], "{line}");
+        assert_eq!(cols[10], cols[12], "{line}");
+        // Hot: both final states reported, the governing one's sag.
+        let hot = report
+            .lines()
+            .rfind(|l| l.trim_start().starts_with("hot 75"))
+            .unwrap();
+        assert!(hot.contains("load") || hot.contains("creep"), "{hot}");
+        // The sagging outputs.
+        assert!(report.contains("Sagging (in the blocks"), "{report}");
+        assert!(report.contains("Transit, span 2"), "{report}");
+    }
+
+    /// A job file next to the examples, from `text` (the library path made
+    /// absolute).
+    fn job(name: &str, text: &str) -> PathBuf {
+        let library = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/sagtension/synthetic-library");
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(
+            &path,
+            text.replace(
+                "library = \"synthetic-library\"",
+                &format!("library = '{}'", library.display()),
+            ),
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn criteria_on_the_nonlinear_model_with_conditions() {
+        let synthetic = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/sagtension/synthetic-nonlinear.toml");
+        // No line endings in the patterns: Windows checkouts may use CRLF.
+        let text = std::fs::read_to_string(synthetic).unwrap().replace("[stringing]", "").replace(
+            "horizontal_tension = \"25 kN\"",
+            "[[criterion]]\nweather = \"everyday\"\nlimit = \"horizontal\"\nvalue = \"25 kN\"\n\n\
+             [[criterion]]\nweather = \"everyday\"\nlimit = \"horizontal\"\nvalue = \"25 kN\"\n\
+             condition = \"creep\"",
+        );
+        let report = run(&job("ohl-cli-nl-criteria.toml", &text), UnitSystem::Metric)
+            .unwrap()
+            .report;
+        // The initial one at its own case governs: the stringing tension is
+        // its limit; after creep the same limit is met with room.
+        assert!(
+            report.contains("Stringing tension (governing, non-linear model): 25.00 kN"),
+            "{report}"
+        );
+        assert!(report.contains("after creep"), "{report}");
+        // A condition on a linear wire is refused.
+        let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables");
+        let linear = std::fs::read_to_string(example())
+            .unwrap()
+            .replace("value = 0.18", "value = 0.18\ncondition = \"creep\"")
+            .replace(
+                "\"../../libraries/cables\"",
+                &format!("'{}'", library.display()),
+            );
+        let path = std::env::temp_dir().join("ohl-cli-linear-condition.toml");
+        std::fs::write(&path, linear).unwrap();
+        let error = run(&path, UnitSystem::Metric).err().unwrap();
+        assert!(
+            error.contains("needs a wire type with stress-strain curves"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn sagging_outputs_of_the_example() {
+        let report = run(&example(), UnitSystem::Metric).unwrap().report;
+        assert!(
+            report.contains("Sagging (in the blocks, initial state"),
+            "{report}"
+        );
+        assert!(
+            report.contains("Clipping offsets, clipped in at 10.0 °C"),
+            "{report}"
+        );
+        assert!(report.contains("Transit, span 3"), "{report}");
     }
 
     #[test]
