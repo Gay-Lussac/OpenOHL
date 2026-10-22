@@ -232,11 +232,18 @@ pub fn run(input: &Input) -> Result<Report, String> {
 }
 
 /// Rule files to choose from: the one given, then the project's clearance
-/// rules (`*.ohlr`; next to a line file). Rules come from the design code
-/// used: none are shipped.
+/// rules (`*.ohlr`; next to a line file) — but those holding only tension
+/// rules (the wire tension check's, 2026-10-22: nothing to check here).
+/// Rules come from the design code used: none are shipped.
 pub fn rule_files(model: &Model, given: Option<&Path>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = given.map(Path::to_path_buf).into_iter().collect();
+    let tension_only = |p: &Path| {
+        RuleSet::load(p).is_ok_and(|s| s.rules.is_empty() && !s.tension_rules.is_empty())
+    };
     for p in model.project_files("rules") {
+        if tension_only(&p) {
+            continue;
+        }
         // The project's copy of the file given: listed once.
         if !out.iter().any(|q| q.file_name() == p.file_name()) {
             out.push(p);
