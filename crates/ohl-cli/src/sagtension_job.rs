@@ -462,6 +462,9 @@ fn nonlinear_criteria(
     Ok(governing.reference_tension)
 }
 
+/// Each span's unstressed length in a solution at a temperature.
+type SpanLengths<'a> = dyn Fn(&SectionSolution, Temperature) -> Result<Vec<f64>, String> + 'a;
+
 /// The sagging outputs of the section in the stringing state
 /// ([`ohl_sagtension::sagging`]). `solve` gives the section at a
 /// temperature (bare, still air, initial), `unstressed` each span's
@@ -471,7 +474,7 @@ fn sagging_report(
     input: &SaggingInput,
     reference_case: &WeatherCase,
     solve: &dyn Fn(Temperature) -> Result<SectionSolution, String>,
-    unstressed: &dyn Fn(&SectionSolution, Temperature) -> Result<Vec<f64>, String>,
+    unstressed: &SpanLengths<'_>,
     units: UnitSystem,
 ) -> Result<(), String> {
     use ohl_sagtension::sagging;
