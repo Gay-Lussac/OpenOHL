@@ -159,3 +159,138 @@ fn a_ray_goes_through_what_is_projected_there() {
         assert!((on[k] - p[k]).abs() < 1e-3, "{on:?} vs {p:?}");
     }
 }
+
+/// A slab looking east about x = 0: ±5 m along x, ±20 m across (y).
+fn slab_east() -> Clip {
+    Clip {
+        origin: at(0.0, 0.0, 0.0),
+        ahead: [1.0, 0.0],
+        depth: 5.0,
+        width: 20.0,
+    }
+}
+
+/// Looking east the right is south: a point 3 m ahead and 10 m south is
+/// inside; 6 m ahead or 21 m north is not. A box reaching into the slab
+/// from far away meets it; one beside it does not, even when its plan
+/// extent overlaps the slab's on one axis only.
+#[test]
+fn the_clip_box_holds_the_slab() {
+    let c = slab_east();
+    assert_eq!(c.right(), [0.0, -1.0]);
+    assert!(c.contains(at(3.0, -10.0, 99.0)));
+    assert!(!c.contains(at(6.0, 0.0, 0.0)));
+    assert!(!c.contains(at(0.0, 21.0, 0.0)));
+    let b = |x0: f64, y0: f64, x1: f64, y1: f64| Bounds {
+        min: at(x0, y0, -10.0),
+        max: at(x1, y1, 10.0),
+    };
+    assert!(c.meets(&b(4.0, 19.0, 400.0, 400.0)));
+    assert!(!c.meets(&b(5.5, -100.0, 400.0, 100.0)));
+    assert!(!c.meets(&b(-4.0, 20.5, 4.0, 30.0)));
+    // A slab at 45°: the bounds' corner near its side, outside it (an
+    // overlap of the plan ranges is not enough).
+    let d = Clip {
+        ahead: [std::f64::consts::FRAC_1_SQRT_2; 2],
+        ..c
+    };
+    assert!(!d.meets(&b(10.0, 10.0, 14.0, 14.0)));
+    assert!(d.meets(&b(-1.0, -1.0, 1.0, 1.0)));
+    // Culling: a frustum clipped to it sees only what meets it.
+    let mut cam = Camera::fit(&b(-50.0, -50.0, 50.0, 50.0));
+    cam.yaw = std::f64::consts::PI; // eye west, looking east
+    cam.pitch = 0.0;
+    let f = crate::lod::Frustum::new(&cam, 1.5);
+    assert!(f.sees(&b(30.0, -1.0, 32.0, 1.0)));
+    let f = f.clipped(Some(c));
+    assert!(!f.sees(&b(30.0, -1.0, 32.0, 1.0)));
+    assert!(f.sees(&b(-1.0, -1.0, 1.0, 1.0)));
+}
+
+/// Orthographic, looking east level: one scale everywhere — two points
+/// 10 m apart across are as far apart on the screen at the target and
+/// 40 m nearer the eye; heights at the same scale; the depth grows away
+/// from the eye; a ray goes straight ahead through where it was cast.
+#[test]
+fn an_orthographic_camera_draws_one_scale() {
+    let mut cam = Camera::fit(&Bounds {
+        min: at(-10.0, -10.0, 0.0),
+        max: at(10.0, 10.0, 20.0),
+    });
+    cam.target = at(0.0, 0.0, 10.0);
+    cam.yaw = std::f64::consts::PI;
+    cam.pitch = 0.0;
+    cam.ortho = true;
+    let size = [800.0, 600.0];
+    let m = cam.metres_per_pixel(size[1]);
+    let px = |p| cam.project(p, size).unwrap();
+    for x in [0.0, -40.0] {
+        let (a, _) = px(at(x, 0.0, 10.0));
+        let (b, _) = px(at(x, -10.0, 10.0));
+        // South is to the right looking east.
+        assert!(((b[0] - a[0]) * m - 10.0).abs() < 1e-6, "{a:?} {b:?}");
+        let (c, _) = px(at(x, 0.0, 20.0));
+        assert!(((a[1] - c[1]) * m - 10.0).abs() < 1e-6);
+    }
+    let (_, near) = px(at(-40.0, 0.0, 10.0));
+    let (_, far) = px(at(0.0, 0.0, 10.0));
+    assert!(near < far && (far - near - 40.0).abs() < 1e-6);
+    // Nothing behind the eye is dropped (the eye stands far back).
+    assert!(cam.project(cam.eye(), size).is_some());
+    let (a, d) = cam.ray([500.0, 200.0], size).unwrap();
+    assert!((d[0] - 1.0).abs() < 1e-9 && d[1].abs() < 1e-9 && d[2].abs() < 1e-9);
+    let (q, _) = px([a[0] + 1000.0, a[1], a[2]]);
+    assert!((q[0] - 500.0).abs() < 1e-6 && (q[1] - 200.0).abs() < 1e-6);
+}
+
+/// Clipped, a wire across the slab is drawn only within it, a point
+/// beyond it not at all.
+#[test]
+fn the_renderer_draws_only_what_is_in_the_clip_box() {
+    let mut s = Scene::new(O);
+    // A red wire along y (across the slab, beyond its width too), at
+    // x = 0; a green dot 30 m ahead (outside).
+    s.polyline(
+        &[at(0.0, -60.0, 10.0), at(0.0, 60.0, 10.0)],
+        [230, 40, 40, 255],
+        4.0,
+    );
+    s.point(at(30.0, 0.0, 15.0), [40, 230, 40, 255], 12.0);
+    let mut cam = Camera::fit(&s.bounds().unwrap());
+    cam.target = at(0.0, 0.0, 10.0);
+    cam.yaw = std::f64::consts::PI;
+    cam.pitch = 0.0;
+    cam.ortho = true;
+    cam.distance = 60.0 / (0.5 * cam.fov_y).tan() * 0.5;
+    let (w, h) = (320, 240);
+    let image = match render_rgba_clipped(&[&s], &cam, w, h, Some(slab_east())) {
+        Ok(i) => i,
+        Err(e) => {
+            assert!(
+                ohl_core::env::var_os("OHL_REQUIRE_GPU_TESTS").is_none(),
+                "no GPU: {e}"
+            );
+            eprintln!("skipping: {e}");
+            return;
+        }
+    };
+    let px = |x: u32, y: u32| {
+        let k = (4 * (y * w + x)) as usize;
+        [image[k], image[k + 1], image[k + 2]]
+    };
+    let size = [f64::from(w), f64::from(h)];
+    let screen = |p| {
+        let (q, _) = cam.project(p, size).unwrap();
+        (q[0].round() as u32, q[1].round() as u32)
+    };
+    let red = |c: [u8; 3]| c[0] > 150 && c[1] < 100;
+    // Inside: the wire 10 m right; outside: 40 m left, 40 m right.
+    let (x, y) = screen(at(0.0, -10.0, 10.0));
+    assert!(red(px(x, y)), "{:?}", px(x, y));
+    for side in [40.0, -40.0] {
+        let (x, y) = screen(at(0.0, side, 10.0));
+        assert_eq!(px(x, y), BACKGROUND, "at {side}");
+    }
+    let (x, y) = screen(at(30.0, 0.0, 15.0));
+    assert_eq!(px(x, y), BACKGROUND, "the dot beyond the depth");
+}

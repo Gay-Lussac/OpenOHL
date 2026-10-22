@@ -197,6 +197,101 @@ pub struct Camera {
     pub fov_y: f64,
     /// Vertical exaggeration of heights (1 = true scale).
     pub exaggeration: f64,
+    /// Orthographic (parallel) projection: what lies in the plane through
+    /// the target across the view is shown at one scale, whatever its
+    /// distance; the view's height is what a perspective view shows at
+    /// the target (`2 · distance · tan(fov_y / 2)`), so zooming changes
+    /// it the same way.
+    pub ortho: bool,
+}
+
+/// How far behind its target an orthographic camera stands, beyond its
+/// distance (what is between the eye and the target is then not cut off
+/// by the near plane), m.
+const ORTHO_BACK: f64 = 10_000.0;
+
+/// A box that clips what is drawn ([`Renderer::set_clip`]) and culled
+/// ([`lod::Frustum::clipped`]): a vertical slab about a plane, `depth` m
+/// before and behind it and `width` m either side of `origin` across, of
+/// any height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Clip {
+    /// A point of the plane (its middle across), project coordinates.
+    pub origin: [f64; 3],
+    /// The plane's normal in plan (unit): the direction looked in.
+    pub ahead: [f64; 2],
+    /// Half the thickness, along `ahead`, m.
+    pub depth: f64,
+    /// Half the width, across, m.
+    pub width: f64,
+}
+
+impl Clip {
+    /// The direction across, to the right looking ahead.
+    pub fn right(&self) -> [f64; 2] {
+        [self.ahead[1], -self.ahead[0]]
+    }
+
+    /// How far ahead of the plane and right of `origin` plan point `p` is.
+    pub fn local(&self, p: [f64; 2]) -> [f64; 2] {
+        let d = [p[0] - self.origin[0], p[1] - self.origin[1]];
+        let r = self.right();
+        [
+            d[0] * self.ahead[0] + d[1] * self.ahead[1],
+            d[0] * r[0] + d[1] * r[1],
+        ]
+    }
+
+    /// Whether `p` lies in the box.
+    pub fn contains(&self, p: [f64; 3]) -> bool {
+        let [a, o] = self.local([p[0], p[1]]);
+        a.abs() <= self.depth && o.abs() <= self.width
+    }
+
+    /// The box's corners in plan: behind left, behind right, ahead
+    /// right, ahead left.
+    pub fn corners(&self) -> [[f64; 2]; 4] {
+        let r = self.right();
+        let at = |a: f64, o: f64| {
+            [
+                self.origin[0] + a * self.ahead[0] + o * r[0],
+                self.origin[1] + a * self.ahead[1] + o * r[1],
+            ]
+        };
+        let (d, w) = (self.depth, self.width);
+        [at(-d, -w), at(-d, w), at(d, w), at(d, -w)]
+    }
+
+    /// Whether `bounds` meets the box (exact in plan: the separating axes
+    /// of two rectangles).
+    pub fn meets(&self, bounds: &Bounds) -> bool {
+        // The box's axes: the bounds' corners all on one side.
+        let mut lo = [f64::INFINITY; 2];
+        let mut hi = [f64::NEG_INFINITY; 2];
+        for x in [bounds.min[0], bounds.max[0]] {
+            for y in [bounds.min[1], bounds.max[1]] {
+                let l = self.local([x, y]);
+                for k in 0..2 {
+                    lo[k] = lo[k].min(l[k]);
+                    hi[k] = hi[k].max(l[k]);
+                }
+            }
+        }
+        let half = [self.depth, self.width];
+        if (0..2).any(|k| lo[k] > half[k] || hi[k] < -half[k]) {
+            return false;
+        }
+        // The plan axes: the box's corners all on one side.
+        let c = self.corners();
+        (0..2).all(|k| {
+            let (a, b) = c
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+                    (a.min(p[k]), b.max(p[k]))
+                });
+            a <= bounds.max[k] && b >= bounds.min[k]
+        })
+    }
 }
 
 impl Camera {
@@ -209,7 +304,20 @@ impl Camera {
             pitch: 35f64.to_radians(),
             fov_y: 45f64.to_radians(),
             exaggeration: 1.0,
+            ortho: false,
         }
+    }
+
+    /// Unit vector from the target to the eye.
+    fn backward(&self) -> [f64; 3] {
+        let (cp, sp) = (self.pitch.cos(), self.pitch.sin());
+        [cp * self.yaw.cos(), cp * self.yaw.sin(), sp]
+    }
+
+    /// Metres per pixel at the target in a view `height` pixels high
+    /// (orthographic: everywhere in the planes across the view).
+    pub fn metres_per_pixel(&self, height: f64) -> f64 {
+        2.0 * self.distance * (0.5 * self.fov_y).tan() / height.max(1.0)
     }
 
     /// Eye position, project coordinates.
@@ -280,8 +388,16 @@ impl Camera {
                 (p[2] - self.target[2]) * ex + self.target[2] - origin[2],
             )
         };
+        // Orthographic: the eye far behind the target (nothing near is
+        // cut off), the same view direction.
+        let back = if self.ortho {
+            self.distance + ORTHO_BACK
+        } else {
+            self.distance
+        };
         let eye = {
-            let e = self.eye();
+            let b = self.backward();
+            let e = [0, 1, 2].map(|k| self.target[k] + back * b[k]);
             Point3::new(e[0] - origin[0], e[1] - origin[1], e[2] - origin[2])
         };
         let view = Matrix4::look_at_rh(&eye, &rel(self.target), &Vector3::z());
@@ -289,24 +405,48 @@ impl Camera {
         let far = self.distance * 50.0 + 1e4;
         // wgpu clip space: depth 0–1.
         let f = 1.0 / (0.5 * self.fov_y).tan();
-        let proj = Matrix4::new(
-            f / aspect,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            f,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            far / (near - far),
-            near * far / (near - far),
-            0.0,
-            0.0,
-            -1.0,
-            0.0,
-        );
+        let proj = if self.ortho {
+            // Half the view's height at the target: distance · tan(fov / 2).
+            let h = self.distance / f;
+            let far = back + far;
+            Matrix4::new(
+                1.0 / (h * aspect),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0 / h,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0 / (near - far),
+                near / (near - far),
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            )
+        } else {
+            Matrix4::new(
+                f / aspect,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                f,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                far / (near - far),
+                near * far / (near - far),
+                0.0,
+                0.0,
+                -1.0,
+                0.0,
+            )
+        };
         // Vertical exaggeration about the target height.
         let t = self.target[2] - origin[2];
         let scale = Matrix4::new(
@@ -354,17 +494,29 @@ impl Camera {
         (n > 1e-12).then(|| (a, d.map(|v| v / n)))
     }
 
-    /// [`Camera::project`] for many points: the matrix is made once.
+    /// [`Camera::project`] for many points: the matrix is made once. The
+    /// depth is the distance from the eye along the view (orthographic:
+    /// from the eye's plane through [`Camera::eye`]; points behind it
+    /// are still shown, at a negative depth).
     pub fn projector(&self, size: [f64; 2]) -> impl Fn([f64; 3]) -> Option<([f64; 2], f64)> {
         let m = self.view_proj_f64(self.target, size[0] / size[1].max(1.0));
         let t = self.target;
+        let (ortho, b, d) = (self.ortho, self.backward(), self.distance);
         move |p| {
             let v = m * nalgebra::Vector4::new(p[0] - t[0], p[1] - t[1], p[2] - t[2], 1.0);
             if v.w <= 1e-9 {
                 return None;
             }
             let (x, y) = (v.x / v.w, v.y / v.w);
-            Some(([(x + 1.0) * 0.5 * size[0], (1.0 - y) * 0.5 * size[1]], v.w))
+            let depth = if ortho {
+                d - (0..3).map(|k| (p[k] - t[k]) * b[k]).sum::<f64>()
+            } else {
+                v.w
+            };
+            Some((
+                [(x + 1.0) * 0.5 * size[0], (1.0 - y) * 0.5 * size[1]],
+                depth,
+            ))
         }
     }
 }
@@ -437,6 +589,7 @@ pub struct Renderer {
     uniform: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     targets: Option<Targets>,
+    clip: Option<Clip>,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -444,6 +597,10 @@ impl std::fmt::Debug for Renderer {
         f.debug_struct("Renderer").finish_non_exhaustive()
     }
 }
+
+/// Bytes of the uniforms: the view-projection matrix, the viewport, the
+/// clip box ([`Clip`]).
+const UNIFORM_BYTES: u64 = 112;
 
 /// Background colour (sRGB).
 pub const BACKGROUND: [u8; 3] = [24, 28, 34];
@@ -457,7 +614,7 @@ impl Renderer {
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("uniforms"),
-            size: 80,
+            size: UNIFORM_BYTES,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -465,7 +622,7 @@ impl Renderer {
             label: Some("uniforms"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -562,7 +719,16 @@ impl Renderer {
             uniform,
             bind_group,
             targets: None,
+            clip: None,
         }
+    }
+
+    /// Draws only what lies in `clip` from the next [`Renderer::render`]
+    /// on (`None`: everything): every fragment of a surface, line or
+    /// point outside the box is left out, so what crosses its sides is
+    /// cut exactly there.
+    pub fn set_clip(&mut self, clip: Option<Clip>) {
+        self.clip = clip;
     }
 
     fn targets(&mut self, device: &wgpu::Device, size: [u32; 2]) -> &Targets {
@@ -633,12 +799,23 @@ impl Renderer {
         // share it).
         let origin = layers.first().map_or(camera.target, |l| l.origin);
         let m = camera.view_proj_f64(origin, aspect);
-        let mut data = [0f32; 20];
+        let mut data = [0f32; UNIFORM_BYTES as usize / 4];
         for (k, v) in m.iter().enumerate() {
             data[k] = *v as f32;
         }
         data[16] = size[0] as f32;
         data[17] = size[1] as f32;
+        // The clip box: its origin relative to the scene's, on (1), its
+        // direction ahead, half depth and half width.
+        if let Some(c) = &self.clip {
+            data[20] = (c.origin[0] - origin[0]) as f32;
+            data[21] = (c.origin[1] - origin[1]) as f32;
+            data[22] = 1.0;
+            data[24] = c.ahead[0] as f32;
+            data[25] = c.ahead[1] as f32;
+            data[26] = c.depth as f32;
+            data[27] = c.width as f32;
+        }
         queue.write_buffer(&self.uniform, 0, bytemuck::cast_slice(&data));
         self.targets(device, size);
         let (pipelines, bind_group) = (&self.pipelines, &self.bind_group);
@@ -728,10 +905,22 @@ pub fn render_rgba(
     width: u32,
     height: u32,
 ) -> Result<Vec<u8>, String> {
+    render_rgba_clipped(scenes, camera, width, height, None)
+}
+
+/// [`render_rgba`] of only what lies in `clip` ([`Renderer::set_clip`]).
+pub fn render_rgba_clipped(
+    scenes: &[&Scene],
+    camera: &Camera,
+    width: u32,
+    height: u32,
+    clip: Option<Clip>,
+) -> Result<Vec<u8>, String> {
     let (device, queue) = headless_device()?;
     let gpu: Vec<GpuScene> = scenes.iter().map(|s| GpuScene::new(&device, s)).collect();
     let refs: Vec<&GpuScene> = gpu.iter().collect();
     let mut renderer = Renderer::new(&device);
+    renderer.set_clip(clip);
     let texture = renderer.render(&device, &queue, &refs, camera, [width, height]);
     // Rows padded to 256 bytes for the copy.
     let row = (4 * width).div_ceil(256) * 256;

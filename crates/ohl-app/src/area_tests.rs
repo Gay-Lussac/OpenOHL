@@ -294,6 +294,7 @@ fn a_million_points_are_selected_and_changed_in_seconds() {
         pitch: 89.9f64.to_radians(),
         fov_y: 45f64.to_radians(),
         exaggeration: 1.0,
+        ortho: false,
     };
     let size = [1400.0, 900.0];
     let project = camera.projector(size);

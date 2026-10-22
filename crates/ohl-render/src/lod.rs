@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use crate::{Bounds, Camera, GpuScene};
+use crate::{Bounds, Camera, Clip, GpuScene};
 
 /// Levels of detail per chunk: 0 full detail, 1, 2 coarsest.
 pub const LODS: usize = 3;
@@ -50,6 +50,7 @@ pub struct Frustum {
     m: nalgebra::Matrix4<f64>,
     target: [f64; 3],
     eye: [f64; 3],
+    clip: Option<Clip>,
 }
 
 impl Frustum {
@@ -59,13 +60,24 @@ impl Frustum {
             m: camera.view_proj_f64(camera.target, aspect),
             target: camera.target,
             eye: camera.eye(),
+            clip: None,
         }
+    }
+
+    /// The frustum seeing only what meets `clip` (`None`: all it holds):
+    /// chunks and nodes outside the box are neither built nor drawn.
+    pub fn clipped(mut self, clip: Option<Clip>) -> Self {
+        self.clip = clip;
+        self
     }
 
     /// Whether any of `bounds` may be in view: false only when its eight
     /// corners all lie outside the same side of the frustum (conservative:
     /// a box across a frustum corner is kept).
     pub fn sees(&self, bounds: &Bounds) -> bool {
+        if self.clip.is_some_and(|c| !c.meets(bounds)) {
+            return false;
+        }
         let mut out = [true; 6];
         for k in 0..8 {
             let p = [0, 1, 2].map(|a| {
@@ -276,6 +288,7 @@ mod tests {
             pitch: 0.0,
             fov_y: 45f64.to_radians(),
             exaggeration: 1.0,
+            ortho: false,
         }
     }
 

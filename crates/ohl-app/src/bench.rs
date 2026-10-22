@@ -169,6 +169,7 @@ fn set_look(app: &mut App, look: Look) -> Tab {
                 pitch: 5f64.to_radians(),
                 fov_y: 45f64.to_radians(),
                 exaggeration: 1.0,
+                ortho: false,
             });
             Tab::View3d
         }
@@ -180,6 +181,7 @@ fn set_look(app: &mut App, look: Look) -> Tab {
                 pitch: 20f64.to_radians(),
                 fov_y: 45f64.to_radians(),
                 exaggeration: 1.0,
+                ortho: false,
             });
             Tab::View3d
         }
