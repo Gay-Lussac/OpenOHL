@@ -3,12 +3,14 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The cross-section view ([`crate::xsection`]): C opens its window, a
-//! cut opens at a station or a structure (depth ±10 m by default), the
-//! plane is perpendicular to the alignment (the bisector at an angle
-//! point) or holds a structure's cross-arms, the wires cross it where
-//! they hang, only the LiDAR points of the slab are shown (from the
-//! index), nothing rotates it, it steps along the line, and its clicks
-//! select in every view.
+//! cut opens at a station or a structure (depth ±10 m by default) in a 3D
+//! panel of its own, the plane is perpendicular to the alignment (the
+//! bisector at an angle point) or holds a structure's cross-arms, the
+//! wires cross it where they hang, the panel starts in the front view
+//! (orthographic, looking ahead), turns as the 3D view and comes back,
+//! draws only what lies in the slab (the LiDAR points from the index),
+//! picks and uses the tools as the 3D view, steps along the line with its
+//! camera, and is outlined in the main 3D view.
 //!
 //! The example line (`examples/synthetic-line`): alignment `main` runs
 //! east from (0, 0) to the Y pylon T3 at (640, 0), then turns 10° left to
@@ -56,6 +58,25 @@ fn harness(model: model::Model) -> Harness<'static, App> {
     h
 }
 
+/// A harness drawing with the GPU (none without one: the test is
+/// skipped).
+fn gpu_harness(model: model::Model) -> Option<Harness<'static, App>> {
+    if let Err(e) = ohl_render::headless_device() {
+        assert!(
+            ohl_core::env::var_os("OHL_REQUIRE_GPU_TESTS").is_none(),
+            "no GPU: {e}"
+        );
+        eprintln!("skipping: {e}");
+        return None;
+    }
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .wgpu()
+        .build_eframe(move |cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    Some(h)
+}
+
 fn spec(at: At) -> CutSpec {
     CutSpec {
         alignment: "main".into(),
@@ -77,20 +98,51 @@ fn only_cut(h: &mut Harness<'_, App>) -> u32 {
     *r.xsections.views.keys().next().unwrap()
 }
 
-/// Where (offset, height) of cut `id` was drawn on the screen.
-fn on_screen(h: &mut Harness<'_, App>, id: u32, p: [f64; 2]) -> egui::Pos2 {
+/// Opens cut `at` in a panel floating in a window of its own (the whole
+/// cut in view, beside the 3D view); its number.
+fn open_floating(h: &mut Harness<'_, App>, at: At) -> u32 {
+    h.state_mut().ready().unwrap().open_cut(spec(at));
+    h.run_steps(3);
+    let id = *h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .xsections
+        .views
+        .keys()
+        .last()
+        .unwrap();
+    crate::app::move_page(
+        h.state_mut().dock(),
+        Tab::CrossSection(id),
+        crate::app::Place::Window,
+    );
+    h.run_steps(4);
+    id
+}
+
+/// Where point `p` is drawn in cut `id`'s panel (none: outside its slab
+/// or behind the eye).
+fn on_screen(h: &mut Harness<'_, App>, id: u32, p: [f64; 3]) -> Option<egui::Pos2> {
     let r = h.state_mut().ready().unwrap();
     let v = &r.xsections.views[&id];
-    let (rect, c, s, ex) = (
-        v.rect.unwrap(),
-        v.centre.unwrap(),
-        v.scale.unwrap(),
-        v.exaggeration,
-    );
-    egui::pos2(
-        rect.center().x + ((p[0] - c[0]) / s) as f32,
-        rect.center().y - ((p[1] - c[1]) * ex / s) as f32,
-    )
+    let rect = v.view.rect.unwrap();
+    let cam = v.view.camera.unwrap();
+    let size = [f64::from(rect.width()), f64::from(rect.height())];
+    let project = crate::view3d::clipped_projector(&cam, size, v.clip());
+    project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
+}
+
+/// The point of cut `id`'s plane `offset` right of the axis, `z` high.
+fn in_plane(h: &mut Harness<'_, App>, id: u32, offset: f64, z: f64) -> [f64; 3] {
+    let r = h.state_mut().ready().unwrap();
+    let p = r.xsections.views[&id]
+        .placed
+        .clone()
+        .unwrap()
+        .plane
+        .at(offset);
+    [p[0], p[1], z]
 }
 
 fn click(h: &mut Harness<'_, App>, at: egui::Pos2, button: egui::PointerButton) {
@@ -104,6 +156,46 @@ fn click(h: &mut Harness<'_, App>, at: egui::Pos2, button: egui::PointerButton) 
         });
     }
     h.run();
+}
+
+/// A drag of `button` from `from` by `by` points, in five moves.
+fn drag(h: &mut Harness<'_, App>, button: egui::PointerButton, from: egui::Pos2, by: egui::Vec2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(from));
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run();
+    for k in 1..=5 {
+        h.input_mut()
+            .events
+            .push(egui::Event::PointerMoved(from + by * (k as f32 / 5.0)));
+        h.run();
+    }
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: from + by,
+        button,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run();
+}
+
+/// The camera of cut `id`'s panel.
+fn camera(h: &mut Harness<'_, App>, id: u32) -> ohl_render::Camera {
+    h.state_mut().ready().unwrap().xsections.views[&id]
+        .view
+        .camera
+        .unwrap()
+}
+
+/// Whether cut `id`'s panel shows its front view.
+fn in_front_view(h: &mut Harness<'_, App>, id: u32) -> bool {
+    let r = h.state_mut().ready().unwrap();
+    let v = &r.xsections.views[&id];
+    crate::xsection::is_front(&v.view.camera.unwrap(), &v.placed.clone().unwrap().plane)
 }
 
 /// C opens the window (⌘C / Ctrl+C does not), with a depth of ±10 m and
@@ -335,10 +427,512 @@ fn wires_cross_the_plane_where_they_hang() {
     assert!(c.structures.is_empty());
     let wide = crate::xsection::contents(&m, case, &p.plane, 160.0, 40.0);
     assert!(wide.structures.iter().any(|s| s.id == "T1"));
+    // In the front view (1:1, orthographic) the crossing is drawn the
+    // hand offset right of the axis, the hand height above the ground's
+    // level, at one scale.
+    let cam = crate::xsection::front_camera(&p.plane, [z - 30.0, z + 10.0], 40.0, 1.5);
+    let size = [900.0, 600.0];
+    let m_px = cam.metres_per_pixel(size[1]);
+    let q = |o: f64, h: f64| {
+        let a = p.plane.at(o);
+        cam.project([a[0], a[1], h], size).unwrap().0
+    };
+    let (axis, wire) = (q(0.0, hand_height - 10.0), q(hand_offset, hand_height));
+    assert!(((wire[0] - axis[0]) * m_px - hand_offset).abs() < 1e-6);
+    assert!(((axis[1] - wire[1]) * m_px - 10.0).abs() < 1e-6);
 }
 
-/// Only the LiDAR points within the slab are shown, and they come from
-/// the index: of 10 000 points far away none is looked at.
+/// The cut opens in its front view: orthographic, level, looking ahead
+/// (at station 155 m, east: the eye west of the plane), its target on
+/// the plane's axis. A point 6 m right of the axis is drawn right of it,
+/// one 6 m left as far left, both at the axis's height on the screen; 10
+/// m up is as many points as 10 m across (1:1); the whole width (±40 m)
+/// is in view.
+#[test]
+fn a_cut_opens_in_its_front_view() {
+    let mut h = harness(synthetic());
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .open_cut(spec(At::Station(155.0)));
+    h.run_steps(3);
+    let id = only_cut(&mut h);
+    assert!(in_front_view(&mut h, id));
+    let cam = camera(&mut h, id);
+    assert!(cam.ortho && cam.pitch == 0.0 && cam.exaggeration == 1.0);
+    // From the target to the eye: west.
+    assert!((cam.yaw.cos() + 1.0).abs() < 1e-12, "{}", cam.yaw);
+    assert!((cam.target[0] - 155.0).abs() < 1e-9 && cam.target[1].abs() < 1e-9);
+    let z = cam.target[2];
+    let mut at = |o: f64, dz: f64| {
+        let p = in_plane(&mut h, id, o, z + dz);
+        on_screen(&mut h, id, p).unwrap()
+    };
+    let (c, r, l, up, across) = (
+        at(0.0, 0.0),
+        at(6.0, 0.0),
+        at(-6.0, 0.0),
+        at(0.0, 10.0),
+        at(10.0, 0.0),
+    );
+    assert!(r.x > c.x && l.x < c.x);
+    assert!(((r.x - c.x) - (c.x - l.x)).abs() < 1e-3);
+    assert!((r.y - c.y).abs() < 1e-3 && (l.y - c.y).abs() < 1e-3);
+    assert!(((c.y - up.y) - (across.x - c.x)).abs() < 1e-3);
+    let (w0, w1) = (at(-40.0, 0.0), at(40.0, 0.0));
+    let rect = h.state_mut().ready().unwrap().xsections.views[&id]
+        .rect
+        .unwrap();
+    for p in [w0, w1] {
+        assert!(rect.contains(p), "{p:?} in {rect:?}");
+    }
+}
+
+/// The panel turns, pans and zooms as the 3D view (a drag of the button
+/// that orbits there turns it here); "Back to the cut view" and Home
+/// bring the front view back as it was; it can be shown in perspective.
+#[test]
+fn the_panel_turns_as_the_3d_view_and_comes_back() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    let id = open_floating(&mut h, At::Structure("T2".into()));
+    assert!(in_front_view(&mut h, id));
+    // Fitted again to the floating panel.
+    h.get_by_label("Back to the cut view").click();
+    h.run_steps(2);
+    let front = camera(&mut h, id);
+    let (rect, controls) = {
+        let r = h.state_mut().ready().unwrap();
+        (
+            r.xsections.views[&id].rect.unwrap(),
+            r.view3d.controls.clone(),
+        )
+    };
+    let orbit = [
+        egui::PointerButton::Primary,
+        egui::PointerButton::Secondary,
+        egui::PointerButton::Middle,
+    ]
+    .into_iter()
+    .find(|b| controls.drag(*b) == crate::controls::Drag::Orbit)
+    .expect("a button orbits");
+    drag(&mut h, orbit, rect.center(), egui::vec2(80.0, 40.0));
+    let turned = camera(&mut h, id);
+    assert!(
+        (turned.yaw - front.yaw).abs() > 0.1 && (turned.pitch - front.pitch).abs() > 0.1,
+        "{turned:?}"
+    );
+    assert!(!in_front_view(&mut h, id));
+    // The wheel zooms.
+    h.input_mut()
+        .events
+        .push(egui::Event::PointerMoved(rect.center()));
+    h.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 3.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    h.run_steps(10);
+    assert!(camera(&mut h, id).distance < turned.distance);
+    h.get_by_label("Back to the cut view").click();
+    h.run_steps(2);
+    assert!(in_front_view(&mut h, id));
+    assert_eq!(camera(&mut h, id), front);
+    // Home, the pointer over the panel.
+    drag(&mut h, orbit, rect.center(), egui::vec2(-60.0, 30.0));
+    assert!(!in_front_view(&mut h, id));
+    h.hover_at(rect.center());
+    h.run();
+    press(&mut h, egui::Key::Home, egui::Modifiers::NONE);
+    h.run_steps(2);
+    assert!(in_front_view(&mut h, id));
+    // Perspective, and back.
+    h.get_by_label("Perspective").click();
+    h.run_steps(2);
+    assert!(!camera(&mut h, id).ortho);
+    h.get_by_label("Orthographic").click();
+    h.run_steps(2);
+    assert!(camera(&mut h, id).ortho);
+}
+
+/// Idle, the panel draws nothing new: frames for other reasons show the
+/// image already drawn (no chunk built, no image rendered).
+#[test]
+fn an_idle_panel_draws_nothing_new() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    let id = open_floating(&mut h, At::Station(155.0));
+    h.run_steps(6);
+    let count = |h: &mut Harness<'_, App>| {
+        let v = &h.state_mut().ready().unwrap().xsections.views[&id].view;
+        (v.images_drawn, v.chunks_built)
+    };
+    let before = count(&mut h);
+    assert!(before.0 > 0);
+    h.run_steps(5);
+    assert_eq!(count(&mut h), before);
+}
+
+/// Only what lies in the slab is drawn. Mid-span T1–T2 (station 155 m,
+/// ±10 m): T2 stands 155 m ahead, right behind the plane in the front
+/// view, yet nothing is drawn where its attachment point A1 (6 m right)
+/// and its mast would be; in a cut at T2 they are. The structures' chunks
+/// built are only those meeting the slab.
+#[test]
+fn only_what_lies_in_the_slab_is_drawn() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    let (a1, base) = {
+        let r = h.state_mut().ready().unwrap();
+        let t2 = r.model.line.structure("T2").unwrap();
+        let a1 = t2.points.iter().find(|p| p.label == "A1").unwrap().position;
+        (a1, t2.position)
+    };
+    // The cross-arm's middle (the line's axis is drawn dashed at offset 0
+    // in the panel).
+    let arm = [0.5 * (base[0] + a1[0]), 0.5 * (base[1] + a1[1]), a1[2]];
+    let drawn_at = |h: &mut Harness<'_, App>, id: u32, p: [f64; 3]| -> bool {
+        let (rect, cam) = {
+            let r = h.state_mut().ready().unwrap();
+            let v = &r.xsections.views[&id];
+            (v.rect.unwrap(), v.view.camera.unwrap())
+        };
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        let (q, _) = cam.project(p, size).unwrap();
+        let image = h.render().unwrap();
+        let k = image.width() as f32 / 1400.0;
+        let (x, y) = (rect.min.x + q[0] as f32, rect.min.y + q[1] as f32);
+        let mut any = false;
+        for dx in -2..=2 {
+            for dy in -2..=2 {
+                let px = image
+                    .get_pixel(
+                        ((x + dx as f32) * k).round() as u32,
+                        ((y + dy as f32) * k).round() as u32,
+                    )
+                    .0;
+                any |= [px[0], px[1], px[2]] != ohl_render::BACKGROUND;
+            }
+        }
+        any
+    };
+    let mid = open_floating(&mut h, At::Station(155.0));
+    h.run_steps(4);
+    assert!(!drawn_at(&mut h, mid, a1), "T2's A1 is not in the slab");
+    assert!(
+        !drawn_at(&mut h, mid, arm),
+        "T2's cross-arm is not in the slab"
+    );
+    let (built, all) = {
+        let r = h.state_mut().ready().unwrap();
+        let stats = r.xsections.views[&mid]
+            .view
+            .lod_stats(crate::scene::Layer::Structures)
+            .unwrap();
+        (stats.drawn.iter().sum::<usize>(), stats.chunks)
+    };
+    assert!(built < all, "{built} of {all} chunks drawn");
+    // Closed; at T2 they are drawn.
+    h.state_mut().ready().unwrap().xsections.views.remove(&mid);
+    h.run_steps(2);
+    let at_t2 = open_floating(&mut h, At::Structure("T2".into()));
+    h.run_steps(4);
+    assert!(drawn_at(&mut h, at_t2, a1), "T2's A1 in its own cut");
+    assert!(
+        drawn_at(&mut h, at_t2, arm),
+        "T2's cross-arm in its own cut"
+    );
+}
+
+/// A click on a wire where it crosses the plane selects its span (the
+/// selection the other views show); a click on the mast of T2 in a cut
+/// at T2 selects T2; a structure outside the slab is never picked.
+#[test]
+fn picking_in_the_panel_selects_in_every_view() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    h.state_mut().ready().unwrap().set_case(0);
+    h.run();
+    let id = open_floating(&mut h, At::Station(155.0));
+    let crossing = {
+        let r = h.state_mut().ready().unwrap();
+        r.xsections.views[&id]
+            .contents
+            .wires
+            .iter()
+            .find(|w| {
+                w.select
+                    == Selection::Span {
+                        section: "S1".into(),
+                        span: 0,
+                    }
+            })
+            .unwrap()
+            .crossings[0]
+    };
+    let p = in_plane(&mut h, id, crossing[0], crossing[1]);
+    let at = on_screen(&mut h, id, p).unwrap();
+    click(&mut h, at, egui::PointerButton::Primary);
+    let span = Selection::Span {
+        section: "S1".into(),
+        span: 0,
+    };
+    assert_eq!(h.state_mut().ready().unwrap().selection, span);
+    // Where T2's mast would be (behind the plane): nothing of T2.
+    let base = h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .line
+        .structure("T2")
+        .unwrap()
+        .position;
+    let behind = {
+        let r = h.state_mut().ready().unwrap();
+        let v = &r.xsections.views[&id];
+        let rect = v.rect.unwrap();
+        let cam = v.view.camera.unwrap();
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        let (q, _) = cam
+            .project([base[0], base[1], base[2] + 12.0], size)
+            .unwrap();
+        rect.min + egui::vec2(q[0] as f32, q[1] as f32)
+    };
+    click(&mut h, behind, egui::PointerButton::Primary);
+    assert_ne!(
+        h.state_mut().ready().unwrap().selection,
+        Selection::Structure("T2".into())
+    );
+    // At T2, its mast clicked.
+    let id2 = open_floating(&mut h, At::Structure("T2".into()));
+    let mast = h.state_mut().ready().unwrap().xsections.views[&id2]
+        .contents
+        .structures
+        .iter()
+        .find(|s| s.id == "T2")
+        .unwrap()
+        .lines[0]
+        .clone();
+    let mid = [
+        0.5 * (mast[0][0] + mast[1][0]),
+        0.5 * (mast[0][1] + mast[1][1]) - 5.0,
+    ];
+    let p = in_plane(&mut h, id2, mid[0], mid[1]);
+    let at = on_screen(&mut h, id2, p).unwrap();
+    click(&mut h, at, egui::PointerButton::Primary);
+    assert_eq!(
+        h.state_mut().ready().unwrap().selection,
+        Selection::Structure("T2".into())
+    );
+}
+
+/// The tool held works in the panel as in the 3D view: Go to, its
+/// button clicked on T2's mast in a cut at T2, opens its window at T2
+/// (the example is a read-only line file: the editing tools would only
+/// say so); Select, clicked with the same button, selects.
+#[test]
+fn the_tool_held_works_in_the_panel() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    let id = open_floating(&mut h, At::Structure("T2".into()));
+    let mast = h.state_mut().ready().unwrap().xsections.views[&id]
+        .contents
+        .structures
+        .iter()
+        .find(|s| s.id == "T2")
+        .unwrap()
+        .lines[0]
+        .clone();
+    let mid = [
+        0.5 * (mast[0][0] + mast[1][0]),
+        0.5 * (mast[0][1] + mast[1][1]) - 5.0,
+    ];
+    let p = in_plane(&mut h, id, mid[0], mid[1]);
+    let at = on_screen(&mut h, id, p).unwrap();
+    let tool = {
+        let r = h.state_mut().ready().unwrap();
+        r.hotbar.hold(crate::tools::Tool::GoTo);
+        crate::controls::click_buttons(r.view3d.controls.tools_on_left, false).1
+    };
+    click(&mut h, at, tool);
+    assert_eq!(
+        h.state_mut().ready().unwrap().goto.as_deref(),
+        Some("T2"),
+        "Go to opened at T2"
+    );
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.goto = None;
+        r.selection = Selection::None;
+        r.hotbar.hold(crate::tools::Tool::Select);
+    }
+    h.run();
+    click(&mut h, at, tool);
+    assert_eq!(
+        h.state_mut().ready().unwrap().selection,
+        Selection::Structure("T2".into())
+    );
+}
+
+/// ▶ steps ahead by twice the depth, ◀ back, the full stop and comma
+/// keys over the panel the same, ⏭ goes to the next structure. The
+/// camera, turned, keeps its pose relative to the plane: 20 m further
+/// east, as high above the ground, turned the same.
+#[test]
+fn the_cut_steps_along_the_line() {
+    let mut h = harness(synthetic());
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .open_cut(spec(At::Station(155.0)));
+    h.run_steps(3);
+    let id = only_cut(&mut h);
+    let station = |h: &mut Harness<'_, App>| {
+        h.state_mut().ready().unwrap().xsections.views[&id]
+            .placed
+            .clone()
+            .unwrap()
+            .station
+    };
+    // Turned: from the south-west, above, 3 m right of the axis.
+    let turned = {
+        let v = h
+            .state_mut()
+            .ready()
+            .unwrap()
+            .xsections
+            .views
+            .get_mut(&id)
+            .unwrap();
+        let mut c = v.view.camera.unwrap();
+        c.yaw += 0.5;
+        c.pitch = 0.3;
+        c.target[1] -= 3.0;
+        v.view.set_camera(c);
+        c
+    };
+    h.get_by_label("▶").click();
+    h.run_steps(2);
+    assert!((station(&mut h) - 175.0).abs() < 1e-9);
+    let moved = camera(&mut h, id);
+    let dz = {
+        let g = h.state_mut().ready().unwrap().model.ground.clone().unwrap();
+        g.height(175.0, 0.0).unwrap() - g.height(155.0, 0.0).unwrap()
+    };
+    assert!((moved.target[0] - turned.target[0] - 20.0).abs() < 1e-9);
+    assert!((moved.target[1] - turned.target[1]).abs() < 1e-9);
+    assert!((moved.target[2] - turned.target[2] - dz).abs() < 1e-9);
+    assert!((moved.yaw - turned.yaw).abs() < 1e-12 && moved.pitch == turned.pitch);
+    h.get_by_label("◀").click();
+    h.run_steps(2);
+    h.get_by_label("◀").click();
+    h.run_steps(2);
+    assert!((station(&mut h) - 135.0).abs() < 1e-9);
+    // Keys, with the pointer over the panel.
+    let rect = h.state_mut().ready().unwrap().xsections.views[&id]
+        .rect
+        .unwrap();
+    h.hover_at(rect.center());
+    h.run();
+    press(&mut h, egui::Key::Period, egui::Modifiers::NONE);
+    h.run();
+    assert!((station(&mut h) - 155.0).abs() < 1e-9);
+    press(&mut h, egui::Key::Comma, egui::Modifiers::NONE);
+    h.run();
+    assert!((station(&mut h) - 135.0).abs() < 1e-9);
+    // The next structure: T2 at 310 m; then T3.
+    h.get_by_label("⏭").click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
+        At::Structure("T2".into())
+    );
+    assert!((station(&mut h) - 310.0).abs() < 1e-6);
+    h.get_by_label("⏭").click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
+        At::Structure("T3".into())
+    );
+    // At T3 the plane turned by 4.76° (its cross-arms): the camera too.
+    let at_t3 = camera(&mut h, id);
+    assert!((at_t3.yaw - turned.yaw - 4.76f64.to_radians()).abs() < 1e-9);
+    h.get_by_label("⏮").click();
+    h.run_steps(2);
+    assert_eq!(
+        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
+        At::Structure("T2".into())
+    );
+}
+
+/// The main 3D view outlines the slab of every cut open (its box from
+/// the ground to the top, ±10 m along, ±40 m across); a click on the
+/// outline brings the cut's panel to the front.
+#[test]
+fn the_main_3d_view_outlines_the_slab() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .open_cut(spec(At::Station(155.0)));
+    h.run_steps(3);
+    let id = only_cut(&mut h);
+    let outline = {
+        let r = h.state_mut().ready().unwrap();
+        assert_eq!(r.view3d.cut_outlines.len(), 1);
+        r.view3d.cut_outlines[0].clone()
+    };
+    assert_eq!(outline.id, id);
+    // Behind left (west, north), ahead right (east, south).
+    let c = outline.corners;
+    assert!((c[0][0] - 145.0).abs() < 1e-9 && (c[0][1] - 40.0).abs() < 1e-9);
+    assert!((c[2][0] - 165.0).abs() < 1e-9 && (c[2][1] + 40.0).abs() < 1e-9);
+    assert!(c[4][2] > c[0][2]);
+    // The cut hidden behind the profile, the 3D view in front.
+    h.state_mut().show_tab(Tab::Profile);
+    h.state_mut().show_tab(Tab::View3d);
+    h.run_steps(3);
+    let hidden = h.state_mut().ready().unwrap().xsections.views[&id].drawn_frame;
+    // Looking at the slab from the south-west.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [155.0, 0.0, 0.5 * (c[0][2] + c[4][2])];
+        cam.distance = 300.0;
+    }
+    h.run_steps(2);
+    let at = {
+        let r = h.state_mut().ready().unwrap();
+        let rect = r.view3d.rect.unwrap();
+        let cam = r.view3d.camera.unwrap();
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        let mid = [0, 1, 2].map(|k| 0.5 * (c[2][k] + c[6][k]));
+        let (q, _) = cam.project(mid, size).unwrap();
+        rect.min + egui::vec2(q[0] as f32, q[1] as f32)
+    };
+    click(&mut h, at, egui::PointerButton::Primary);
+    h.run_steps(3);
+    let r = h.state_mut().ready().unwrap();
+    assert!(r.view3d.picked_cut.is_none());
+    let shown = r.xsections.views[&id].drawn_frame;
+    assert!(
+        shown > hidden,
+        "the cut's panel came forward: {hidden:?} {shown:?}"
+    );
+}
+
+/// Only the LiDAR points within the slab are found, from the index: of
+/// 10 000 points far away none is looked at; the panel draws none of
+/// them (their chunks are not built).
 #[test]
 fn lidar_points_within_the_slab_only() {
     let mut m = synthetic();
@@ -376,224 +970,111 @@ fn lidar_points_within_the_slab_only() {
     got.sort_unstable();
     assert_eq!(got, vec![[-30, 5050], [390, 5040]]);
     assert!(s.tested <= 4, "looked at {} points", s.tested);
-    // In the view: dotted, none of the others.
-    let mut h = harness(m);
-    {
-        let r = h.state_mut().ready().unwrap();
-        r.open_cut(spec(At::Station(155.0)));
-    }
-    h.run_steps(3);
-    let id = only_cut(&mut h);
-    let r = h.state_mut().ready().unwrap();
-    let v = &r.xsections.views[&id];
-    assert_eq!(v.lidar_dots.len(), 2);
-}
-
-/// Nothing rotates the view: drags of every button, a two-finger turn,
-/// the keys that turn the 3D view; the plane stays, the view only pans
-/// (the axes stay horizontal and vertical: one scale across, the same
-/// times the exaggeration up).
-#[test]
-fn no_rotation_input_has_any_effect() {
-    let mut h = harness(synthetic());
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .open_cut(spec(At::Structure("T2".into())));
-    h.run_steps(3);
-    let id = only_cut(&mut h);
-    let before = {
-        let r = h.state_mut().ready().unwrap();
-        let v = &r.xsections.views[&id];
-        (v.placed.clone().unwrap(), v.scale.unwrap(), v.rect.unwrap())
+    // In the panel: the far points' chunks are not drawn.
+    let Some(mut h) = gpu_harness(m) else {
+        return;
     };
-    let c = before.2.center();
-    for button in [
-        egui::PointerButton::Primary,
-        egui::PointerButton::Secondary,
-        egui::PointerButton::Middle,
-    ] {
-        h.input_mut().events.push(egui::Event::PointerMoved(c));
-        h.input_mut().events.push(egui::Event::PointerButton {
-            pos: c,
-            button,
-            pressed: true,
-            modifiers: egui::Modifiers::NONE,
-        });
-        h.run();
-        for k in 1..=5 {
-            h.input_mut().events.push(egui::Event::PointerMoved(
-                c + egui::vec2(10.0 * k as f32, 6.0 * k as f32),
-            ));
-            h.run();
-        }
-        h.input_mut().events.push(egui::Event::PointerButton {
-            pos: c + egui::vec2(50.0, 30.0),
-            button,
-            pressed: false,
-            modifiers: egui::Modifiers::NONE,
-        });
-        h.run();
-    }
-    h.input_mut().events.push(egui::Event::PointerMoved(c));
-    h.input_mut().events.push(egui::Event::Rotate(0.8));
-    h.run();
-    for key in [
-        egui::Key::Q,
-        egui::Key::E,
-        egui::Key::ArrowLeft,
-        egui::Key::ArrowRight,
-    ] {
-        press(&mut h, key, egui::Modifiers::NONE);
-    }
+    let id = open_floating(&mut h, At::Station(155.0));
+    h.run_steps(4);
     let r = h.state_mut().ready().unwrap();
-    let v = &r.xsections.views[&id];
-    assert_eq!(
-        v.placed.clone().unwrap(),
-        before.0,
-        "the plane did not turn"
+    let drawn = r.xsections.views[&id]
+        .view
+        .drawn_lidar(&r.model, &r.visible);
+    let far = at(1000.0, 500.0, 510.0);
+    assert!(!drawn.is_empty(), "the slab's points drawn");
+    assert!(
+        drawn.iter().all(|(q, _)| q[0] < far[0] - 100_000),
+        "no far point drawn"
     );
-    assert_eq!(v.scale.unwrap(), before.1, "drags pan, never zoom or turn");
-    // Panned by the drags: three drags of 50 points across and 30 down.
-    let centre = v.centre.unwrap();
-    assert!(centre[0].abs() > 1.0, "panned: {centre:?}");
-    // Points of one height are drawn level; of one offset, plumb.
-    let a = on_screen(&mut h, id, [-5.0, 520.0]);
-    let b = on_screen(&mut h, id, [5.0, 520.0]);
-    let up = on_screen(&mut h, id, [-5.0, 530.0]);
-    assert!((a.y - b.y).abs() < 1e-3 && (a.x - up.x).abs() < 1e-3);
+    assert!(drawn.iter().any(|(q, _)| *q == at(160.0, 3.0, 505.0)));
 }
 
-/// ▶ steps ahead by twice the depth, ◀ back, the full stop and comma
-/// keys over the view the same, ⏭ goes to the next structure.
+/// Pictures of the window, of a cut's front view and turned, and of the
+/// slab outlined in the main 3D view, with LiDAR points around
+/// (`OHL_RENDER_PNG`: the folder; a GPU needed).
 #[test]
-fn the_cut_steps_along_the_line() {
-    let mut h = harness(synthetic());
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .open_cut(spec(At::Station(155.0)));
+fn pictures_of_the_cross_section() {
+    let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let mut m = synthetic();
+    // Ground (class 2) and trees (class 5) around the first span.
+    let ground = m.ground.clone().unwrap();
+    let o = m.origin;
+    let mm = |v: f64| (v * 1000.0).round() as i32;
+    let mut points = Vec::new();
+    for i in 0..400 {
+        for j in 0..90 {
+            let (x, y) = (f64::from(i) * 0.8, -45.0 + f64::from(j));
+            let Some(z) = ground.height(x, y) else {
+                continue;
+            };
+            let k = (i * 7 + j * 13) % 11;
+            points.push(([mm(x - o[0]), mm(y - o[1]), mm(z - o[2])], 2u8));
+            if (y > 14.0 || y < -20.0) && k < 4 {
+                let top = 6.0 + f64::from((i * 3 + j * 5) % 9);
+                let zt = z + top * f64::from(k + 1) / 4.0;
+                points.push(([mm(x - o[0]), mm(y - o[1]), mm(zt - o[2])], 5));
+            }
+        }
+    }
+    m.points = points;
+    let Some(mut h) = gpu_harness(m) else {
+        return;
+    };
+    let shot = |h: &mut Harness<'_, App>, name: &str| {
+        let image = h.render().unwrap();
+        crate::write_png(
+            &dir.join(format!("{name}.png")),
+            image.width(),
+            image.height(),
+            image.as_raw(),
+        )
+        .unwrap();
+    };
+    h.state_mut().ready().unwrap().selection = Selection::Structure("T2".into());
+    press(&mut h, egui::Key::C, egui::Modifiers::NONE);
+    h.run_steps(3);
+    shot(&mut h, "window");
+    h.get_by_label("Open cut").click();
     h.run_steps(3);
     let id = only_cut(&mut h);
-    let station = |h: &mut Harness<'_, App>| {
-        h.state_mut().ready().unwrap().xsections.views[&id]
-            .placed
-            .clone()
-            .unwrap()
-            .station
-    };
-    h.get_by_label("▶").click();
-    h.run_steps(2);
-    assert!((station(&mut h) - 175.0).abs() < 1e-9);
-    h.get_by_label("◀").click();
-    h.run_steps(2);
-    h.get_by_label("◀").click();
-    h.run_steps(2);
-    assert!((station(&mut h) - 135.0).abs() < 1e-9);
-    // Keys, with the pointer over the view.
+    crate::app::move_page(
+        h.state_mut().dock(),
+        Tab::CrossSection(id),
+        crate::app::Place::Window,
+    );
+    h.run_steps(6);
+    shot(&mut h, "cut-front-view");
     let rect = h.state_mut().ready().unwrap().xsections.views[&id]
         .rect
         .unwrap();
-    h.hover_at(rect.center());
-    h.run();
-    press(&mut h, egui::Key::Period, egui::Modifiers::NONE);
-    h.run();
-    assert!((station(&mut h) - 155.0).abs() < 1e-9);
-    press(&mut h, egui::Key::Comma, egui::Modifiers::NONE);
-    h.run();
-    assert!((station(&mut h) - 135.0).abs() < 1e-9);
-    // The next structure: T2 at 310 m; then T3.
-    h.get_by_label("⏭").click();
-    h.run_steps(2);
-    assert_eq!(
-        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
-        At::Structure("T2".into())
+    drag(
+        &mut h,
+        egui::PointerButton::Primary,
+        rect.center(),
+        egui::vec2(120.0, 50.0),
     );
-    assert!((station(&mut h) - 310.0).abs() < 1e-6);
-    h.get_by_label("⏭").click();
-    h.run_steps(2);
-    assert_eq!(
-        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
-        At::Structure("T3".into())
-    );
-    h.get_by_label("⏮").click();
-    h.run_steps(2);
-    assert_eq!(
-        h.state_mut().ready().unwrap().xsections.views[&id].spec.at,
-        At::Structure("T2".into())
-    );
-}
-
-/// A click on a wire's crossing in the cut selects its span (the other
-/// views share the selection); a click on the structure selects it; a
-/// structure selected elsewhere is drawn selected (white) in the cut.
-/// "Cross-section here" from a structure's menu opens a cut at it.
-#[test]
-fn selection_syncs_with_the_other_views() {
-    let mut h = harness(synthetic());
-    h.state_mut().ready().unwrap().set_case(0);
-    h.run();
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .open_cut(spec(At::Station(155.0)));
-    h.run_steps(3);
-    let id = only_cut(&mut h);
-    let crossing = {
+    h.run_steps(6);
+    shot(&mut h, "cut-orbited");
+    // The main 3D view on the slab.
+    let c = h.state_mut().ready().unwrap().view3d.cut_outlines[0].corners;
+    {
         let r = h.state_mut().ready().unwrap();
-        r.xsections.views[&id]
-            .contents
-            .wires
-            .iter()
-            .find(|w| {
-                w.select
-                    == Selection::Span {
-                        section: "S1".into(),
-                        span: 0,
-                    }
-            })
-            .unwrap()
-            .crossings[0]
-    };
-    let at = on_screen(&mut h, id, crossing);
-    click(&mut h, at, egui::PointerButton::Primary);
-    assert_eq!(
-        h.state_mut().ready().unwrap().selection,
-        Selection::Span {
-            section: "S1".into(),
-            span: 0
-        }
+        r.selection = Selection::None;
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [310.0, 0.0, 0.5 * (c[0][2] + c[4][2])];
+        cam.distance = 260.0;
+    }
+    crate::app::move_page(
+        h.state_mut().dock(),
+        Tab::CrossSection(id),
+        crate::app::Place::Left,
     );
-    // At T2, its mast clicked.
-    h.state_mut().ready().unwrap().cross_section_at("T2");
-    h.run_steps(3);
-    let r = h.state_mut().ready().unwrap();
-    let id2 = *r
-        .xsections
-        .views
-        .iter()
-        .find(|(_, v)| v.spec.at == At::Structure("T2".into()))
-        .unwrap()
-        .0;
-    assert_eq!(r.xsections.views[&id2].spec.depth, DEFAULT_DEPTH);
-    let mast = r.xsections.views[&id2]
-        .contents
-        .structures
-        .iter()
-        .find(|s| s.id == "T2")
-        .unwrap()
-        .lines[0]
-        .clone();
-    let mid = [
-        0.5 * (mast[0][0] + mast[1][0]),
-        0.5 * (mast[0][1] + mast[1][1]) - 5.0,
-    ];
-    let at = on_screen(&mut h, id2, mid);
-    click(&mut h, at, egui::PointerButton::Primary);
-    assert_eq!(
-        h.state_mut().ready().unwrap().selection,
-        Selection::Structure("T2".into())
-    );
+    h.state_mut().show_tab(Tab::View3d);
+    h.run_steps(8);
+    shot(&mut h, "main-3d-slab-outline");
 }
 
 /// Help › Controls has a Cross-section page; C is listed.
@@ -632,95 +1113,4 @@ fn the_profile_right_click_opens_a_cut_at_its_station() {
         At::Station(s) => assert!((s - expected).abs() < 1e-6, "{s} {expected}"),
         ref other => panic!("{other:?}"),
     }
-}
-
-/// Pictures of the window and of cuts at a structure and mid-span, with
-/// LiDAR points around (`OHL_RENDER_PNG`: the folder; a GPU needed).
-#[test]
-fn pictures_of_the_cross_section() {
-    let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") else {
-        return;
-    };
-    if ohl_render::headless_device().is_err() {
-        return;
-    }
-    let dir = std::path::PathBuf::from(dir);
-    let mut m = synthetic();
-    // Ground (class 2) and trees (class 5) around the first span.
-    let ground = m.ground.clone().unwrap();
-    let o = m.origin;
-    let mm = |v: f64| (v * 1000.0).round() as i32;
-    let mut points = Vec::new();
-    for i in 0..400 {
-        for j in 0..90 {
-            let (x, y) = (f64::from(i) * 0.8, -45.0 + f64::from(j));
-            let Some(z) = ground.height(x, y) else {
-                continue;
-            };
-            let k = (i * 7 + j * 13) % 11;
-            points.push(([mm(x - o[0]), mm(y - o[1]), mm(z - o[2])], 2u8));
-            if (y > 14.0 || y < -20.0) && k < 4 {
-                let top = 6.0 + f64::from((i * 3 + j * 5) % 9);
-                let zt = z + top * f64::from(k + 1) / 4.0;
-                points.push(([mm(x - o[0]), mm(y - o[1]), mm(zt - o[2])], 5));
-            }
-        }
-    }
-    m.points = points;
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(1500.0, 950.0))
-        .wgpu()
-        .build_eframe(move |cc| App::with_model(m, cc.wgpu_render_state.clone()));
-    h.run();
-    let shot = |h: &mut Harness<'_, App>, name: &str| {
-        let image = h.render().unwrap();
-        crate::write_png(
-            &dir.join(format!("{name}.png")),
-            image.width(),
-            image.height(),
-            image.as_raw(),
-        )
-        .unwrap();
-    };
-    h.state_mut().ready().unwrap().selection = Selection::Structure("T3".into());
-    press(&mut h, egui::Key::C, egui::Modifiers::NONE);
-    h.run_steps(3);
-    shot(&mut h, "window");
-    h.get_by_label("Open cut").click();
-    h.run_steps(3);
-    let id = only_cut(&mut h);
-    crate::app::move_page(
-        h.state_mut().dock(),
-        Tab::CrossSection(id),
-        crate::app::Place::Window,
-    );
-    h.run_steps(4);
-    shot(&mut h, "cut-at-structure-T3");
-    h.state_mut().ready().unwrap().selection = Selection::None;
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .open_cut(spec(At::Station(157.5)));
-    h.run_steps(3);
-    let id = *h
-        .state_mut()
-        .ready()
-        .unwrap()
-        .xsections
-        .views
-        .keys()
-        .last()
-        .unwrap();
-    crate::app::move_page(
-        h.state_mut().dock(),
-        Tab::CrossSection(id),
-        crate::app::Place::Window,
-    );
-    h.run_steps(4);
-    let rect = h.state_mut().ready().unwrap().xsections.views[&id]
-        .rect
-        .unwrap();
-    h.hover_at(rect.center() + egui::vec2(60.0, -40.0));
-    h.run_steps(2);
-    shot(&mut h, "cut-at-mid-span");
 }

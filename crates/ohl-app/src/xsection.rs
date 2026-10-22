@@ -2,42 +2,50 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The cross-section view: a 2D cut across the line, at a station of an
+//! The cross-section view: a cut across the line, at a station of an
 //! alignment (perpendicular to it; at an angle point, along the bisector)
-//! or at a structure (in the plane of its cross-arms). It shows what lies
-//! within ± the depth of the plane (along the line) and ± the width
-//! across, projected onto the plane: the ground cut by it, the LiDAR
-//! points, the wires (where each crosses the plane, and its curve within
-//! the slab), the structures (members or stick figure, strings,
-//! attachment points, joints), the corridor's edges and the lines on the
-//! ground beside the line.
+//! or at a structure (in the plane of its cross-arms), shown in a 3D
+//! panel of its own (2026-10-22). The panel is the 3D view of the line
+//! (the same renderer, layers, controls, tools and picking) with only
+//! what lies within ± the depth of the plane (along the line) and ± the
+//! width across drawn, culled and picked: a clip box ([`Clip`]) cuts the
+//! surfaces, wires and points exactly at its sides, and only the chunks
+//! and point nodes meeting it are built ([`crate::view3d::View3d::clip`]).
 //!
-//! The view looks **ahead** (along increasing stations): the left of the
-//! line is on the left. Horizontal: the offset across the line (m, 0 the
-//! axis, right positive); vertical: the height, at the same scale (an
-//! exaggeration can be chosen). Scroll zooms at the pointer, a drag of
-//! any button pans, a double-click of the select button fits; nothing
-//! rotates it. Several cuts can be open, each its own tab
+//! A cut opens in its **front view** ([`front_camera`]): orthographic,
+//! looking **ahead** (along increasing stations), perpendicular to the
+//! plane — the left of the line on the left, offsets across horizontal,
+//! heights vertical, 1:1. It then turns, pans, zooms and flies as the 3D
+//! view does; "Back to the cut view" (Home) brings the front view back.
+//! Moving the cut (◀ ▶, ⏮ ⏭, comma, full stop) carries the camera with
+//! it ([`carry`]). Several cuts can be open, each its own tab
 //! ([`CrossSections`]); C opens the window that makes one ([`Dialog`]).
+//! The main 3D view outlines every cut's slab; a click on an outline
+//! brings its panel forward.
 //!
-//! The LiDAR points come from a slab query on a grid index of the points
-//! loaded ([`PointGrid`]): only the cells meeting the slab are looked at.
+//! The hover readouts are where the pointer's ray meets the plane:
+//! offset, height, height above the ground and the distance to the
+//! nearest conductor crossing the plane ([`contents`]). The ground for
+//! that comes from the ground surface cut by the plane, else from the
+//! LiDAR points of the slab, found on a grid index of the points loaded
+//! ([`PointGrid`]): only the cells meeting the slab are looked at.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use eframe::egui;
 use ohl_line::route::AlignmentView;
+use ohl_render::{Camera, Clip};
 
-use crate::model::{LidarPoint, Model};
+use crate::model::Model;
+use crate::scene::Layer;
 use crate::selection::Selection;
+use crate::view3d::{CutOutline, View3d};
 
 /// The depth a cut opens with: what lies this far before and behind the
 /// plane (along the line) is shown, m.
 pub const DEFAULT_DEPTH: f64 = 10.0;
-
-/// The vertical exaggerations offered (1: true scale, the default).
-pub const EXAGGERATIONS: [f64; 5] = [1.0, 2.0, 5.0, 10.0, 20.0];
 
 /// A station this close to an alignment point (m) is cut along the
 /// bisector of the angle there, as structures stand.
@@ -703,8 +711,71 @@ pub struct Readout {
 /// index, the ground surface, a serial counted up when it is forgotten.
 type SlabKey = ([u64; 6], GridKey, usize, u64);
 
-/// One cut and its view.
-#[derive(Debug)]
+/// The vertical field of view of a cut's camera (the main view's).
+const FOV_Y_DEG: f64 = 45.0;
+
+/// The camera of the front view of a cut: orthographic, looking ahead
+/// along the line, level (perpendicular to the plane); the whole width
+/// and the heights `heights` (lowest, highest) in view in a view of
+/// `aspect` (width / height). Offsets across are horizontal (right of the
+/// line on the right), heights vertical, at the same scale.
+pub fn front_camera(plane: &Plane, heights: [f64; 2], width: f64, aspect: f64) -> Camera {
+    // Room below, and more above (the panel's title is written there).
+    let range = (heights[1] - heights[0]).max(5.0);
+    let (z0, z1) = (heights[0] - 0.08 * range, heights[1] + 0.25 * range);
+    let fov_y = FOV_Y_DEG.to_radians();
+    let half = (0.5 * (z1 - z0)).max(1.1 * width / aspect.max(0.05));
+    Camera {
+        target: [plane.origin[0], plane.origin[1], 0.5 * (z0 + z1)],
+        distance: (half / (0.5 * fov_y).tan()).max(1.0),
+        // From the target to the eye: behind the plane.
+        yaw: (-plane.ahead[1]).atan2(-plane.ahead[0]),
+        pitch: 0.0,
+        fov_y,
+        exaggeration: 1.0,
+        ortho: true,
+    }
+}
+
+/// Whether `camera` shows the front view of `plane`: orthographic, level,
+/// looking ahead.
+pub fn is_front(camera: &Camera, plane: &Plane) -> bool {
+    let yaw = (-plane.ahead[1]).atan2(-plane.ahead[0]);
+    let turn = (camera.yaw - yaw).rem_euclid(std::f64::consts::TAU);
+    camera.ortho
+        && camera.pitch.abs() < 1e-9
+        && (turn < 1e-9 || turn > std::f64::consts::TAU - 1e-9)
+}
+
+/// Moves `camera` with the cut from plane `from` to `to`: it keeps its
+/// pose relative to the plane (as far ahead and across of it, turned as
+/// much from it), its height moved by `dz`.
+pub fn carry(camera: &mut Camera, from: &Plane, to: &Plane, dz: f64) {
+    let t = camera.target;
+    let (a, o) = (from.along(t), from.offset(t));
+    let r = to.right();
+    camera.target = [
+        to.origin[0] + a * to.ahead[0] + o * r[0],
+        to.origin[1] + a * to.ahead[1] + o * r[1],
+        t[2] + dz,
+    ];
+    let bearing = |p: &Plane| p.ahead[1].atan2(p.ahead[0]);
+    camera.yaw += bearing(to) - bearing(from);
+}
+
+/// Where the ray from `a` along `d` meets the plane: (offset, height);
+/// none when it runs along the plane.
+pub fn on_plane(plane: &Plane, a: [f64; 3], d: [f64; 3]) -> Option<[f64; 2]> {
+    let towards = d[0] * plane.ahead[0] + d[1] * plane.ahead[1];
+    if towards.abs() < 1e-6 {
+        return None;
+    }
+    let t = -plane.along(a) / towards;
+    let p = [0, 1, 2].map(|k| a[k] + t * d[k]);
+    Some([plane.offset(p), p[2]])
+}
+
+/// One cut and its panel: a 3D view of the line clipped to the slab.
 pub struct CutView {
     /// What it is.
     pub spec: CutSpec,
@@ -714,19 +785,28 @@ pub struct CutView {
     pub error: Option<String>,
     /// The step of ◀ ▶, m (none: twice the depth).
     pub step: Option<f64>,
-    /// The vertical exaggeration (1: true scale).
-    pub exaggeration: f64,
-    /// The middle of the view: offset, height.
-    pub centre: Option<[f64; 2]>,
-    /// Metres per point across (heights: divided by the exaggeration).
-    pub scale: Option<f64>,
+    /// Its 3D view: the main view's layers, drawn, culled and picked
+    /// only within the slab ([`View3d::clip`]).
+    pub view: View3d,
+    /// The front view is set up in the next frame (opened, "Back to the
+    /// cut view", Home).
+    pub to_front: bool,
+    /// The overlays of the main view are taken in the next frame (all of
+    /// them: opened).
+    fresh: bool,
+    /// The plane the camera was placed for: when the cut moves, the
+    /// camera keeps its pose relative to the plane.
+    plane_shown: Option<Plane>,
     slab: Option<(SlabKey, Arc<Slab>)>,
     /// The wires and structures of the last frame.
     pub contents: Contents,
-    /// The LiDAR points dotted in the last frame: where, the point.
-    pub lidar_dots: Vec<(egui::Pos2, LidarPoint)>,
+    /// The heights from the ground to the top of what the slab holds
+    /// (the last frame).
+    pub heights: Option<[f64; 2]>,
     /// Where the view was drawn.
     pub rect: Option<egui::Rect>,
+    /// The frame it was last drawn in (its tab in front).
+    pub drawn_frame: Option<u64>,
     /// What the pointer is over.
     pub readout: Option<Readout>,
 }
@@ -745,20 +825,24 @@ pub enum Step {
 }
 
 impl CutView {
-    /// A view of cut `spec`.
+    /// A view of cut `spec`: every layer to build, in the front view.
     pub fn new(spec: CutSpec) -> Self {
+        let mut view = View3d::default();
+        view.dirty.receive(Layer::ALL);
         Self {
             spec,
             placed: None,
             error: None,
             step: None,
-            exaggeration: 1.0,
-            centre: None,
-            scale: None,
+            view,
+            to_front: true,
+            fresh: true,
+            plane_shown: None,
             slab: None,
             contents: Contents::default(),
-            lidar_dots: Vec::new(),
+            heights: None,
             rect: None,
+            drawn_frame: None,
             readout: None,
         }
     }
@@ -768,10 +852,43 @@ impl CutView {
         self.step.unwrap_or(2.0 * self.spec.depth).max(0.1)
     }
 
-    /// Fits the view again in the next frame.
-    pub fn fit(&mut self) {
-        self.centre = None;
-        self.scale = None;
+    /// Back to the front view in the next frame.
+    pub fn front(&mut self) {
+        self.to_front = true;
+    }
+
+    /// The slab's box (none: not placed).
+    pub fn clip(&self) -> Option<Clip> {
+        let p = self.placed.as_ref()?;
+        Some(Clip {
+            origin: [p.plane.origin[0], p.plane.origin[1], 0.0],
+            ahead: p.plane.ahead,
+            depth: self.spec.depth,
+            width: self.spec.width,
+        })
+    }
+
+    /// The slab's outline for the main view (none: not placed or not
+    /// drawn yet).
+    pub fn outline(&self, id: u32) -> Option<CutOutline> {
+        let clip = self.clip()?;
+        let [z0, z1] = self.heights?;
+        let c = clip.corners();
+        let at = |k: usize, z: f64| [c[k][0], c[k][1], z];
+        Some(CutOutline {
+            id,
+            corners: [
+                at(0, z0),
+                at(1, z0),
+                at(2, z0),
+                at(3, z0),
+                at(0, z1),
+                at(1, z1),
+                at(2, z1),
+                at(3, z1),
+            ],
+            label: format!("Cut {}", self.place_text().replace("structure ", "")),
+        })
     }
 
     /// Where the cut is, in words: "structure T3" or "station 0+155.0".
@@ -821,6 +938,35 @@ impl CutView {
     }
 }
 
+/// Takes the main view's overlays of `layers` into a cut's view (the
+/// clearance marks, the vegetation found, the safety volumes, the wire
+/// being strung, the lines on the ground).
+fn take_overlays(view: &mut View3d, main: &View3d, layers: &HashSet<Layer>) {
+    if layers.contains(&Layer::Clearances) {
+        view.marks.clone_from(&main.marks);
+        view.marks_stale = main.marks_stale;
+    }
+    if [Layer::GrowIn, Layer::FallIn, Layer::Isoclearance]
+        .iter()
+        .any(|l| layers.contains(l))
+    {
+        view.vegetation.clone_from(&main.vegetation);
+    }
+    if layers.contains(&Layer::SafetyVolume) {
+        view.safety_volume.clone_from(&main.safety_volume);
+    }
+    if layers.contains(&Layer::Draft) {
+        view.draft.clone_from(&main.draft);
+        view.removed.clone_from(&main.removed);
+    }
+    if layers.contains(&Layer::GroundLines) {
+        view.ground_lines.clone_from(&main.ground_lines);
+    }
+    if layers.contains(&Layer::Points) {
+        view.forget_stream();
+    }
+}
+
 /// The cross-sections open, the window that opens them, the LiDAR index
 /// they share.
 #[derive(Default)]
@@ -834,6 +980,32 @@ pub struct CrossSections {
     alignments: crate::plan::AlignmentViews,
     /// Counted up when the slabs are forgotten.
     serial: u64,
+}
+
+/// What a cut's panel works with: the application's state the 3D view
+/// takes, and the main 3D view (its controls, its overlays, its chunk
+/// indexes are shared).
+pub struct PanelCtx<'a> {
+    /// The GPU (none: no image).
+    pub rs: Option<&'a eframe::egui_wgpu::RenderState>,
+    /// The line.
+    pub model: &'a Model,
+    /// The weather case shown.
+    pub case: usize,
+    /// The selection, shared with the other views.
+    pub selection: &'a mut Selection,
+    /// The layers shown.
+    pub visible: &'a HashSet<Layer>,
+    /// What a click may pick.
+    pub snaps: &'a crate::selection::Snaps,
+    /// The level-of-detail settings.
+    pub lod: &'a crate::lod::LodSettings,
+    /// Select is the tool held.
+    pub select_held: bool,
+    /// The main 3D view.
+    pub main: &'a mut View3d,
+    /// The Link tool's overlay (a point chosen).
+    pub link: Option<crate::link_tool::LinkOverlay>,
 }
 
 impl CrossSections {
@@ -854,6 +1026,38 @@ impl CrossSections {
     pub fn invalidate_points(&mut self) {
         self.serial += 1;
         self.grid = None;
+    }
+
+    /// Hands the layers the main view marked for rebuilding since the
+    /// last call on to every cut's view, with their overlays; whether
+    /// there were any (and a cut open).
+    pub fn hand_on(&mut self, main: &mut View3d) -> bool {
+        let log = main.dirty.take_log();
+        if log.is_empty() || self.views.is_empty() {
+            return false;
+        }
+        for v in self.views.values_mut() {
+            take_overlays(&mut v.view, main, &log);
+            v.view.dirty.receive(log.iter().copied());
+        }
+        true
+    }
+
+    /// The outlines of the cuts' slabs (for the main view).
+    pub fn outlines(&self) -> Vec<CutOutline> {
+        self.views
+            .iter()
+            .filter_map(|(id, v)| v.outline(*id))
+            .collect()
+    }
+
+    /// Frees the mouse held by a cut's view.
+    pub fn free_mouse(&mut self, ctx: &egui::Context) {
+        for v in self.views.values_mut() {
+            if v.view.captured {
+                View3d::set_captured(&mut v.view.captured, ctx, false);
+            }
+        }
     }
 
     /// The line's alignments.
@@ -894,143 +1098,54 @@ impl CrossSections {
         self.dialog = Some(Dialog::new(model, &views, selection, alignment, width));
     }
 
-    /// Shows cut `id` in its tab: what a click of the tool button picked.
-    #[allow(clippy::too_many_arguments)]
+    /// Shows cut `id` in its panel: what the tool button was used on.
     pub fn ui(
         &mut self,
         id: u32,
         ui: &mut egui::Ui,
-        model: &Model,
-        case: usize,
-        selection: &mut Selection,
-        snaps: &crate::selection::Snaps,
-        buttons: (egui::PointerButton, egui::PointerButton),
-        ground_lines: Option<&crate::ground_lines::Drawn>,
-    ) -> Option<Selection> {
-        let views = self.alignments(&model.line);
-        let grid = self.grid(model);
+        cx: PanelCtx<'_>,
+    ) -> Option<crate::selection::Use> {
+        let views = self.alignments(&cx.model.line);
+        let grid = self.grid(cx.model);
         let serial = self.serial;
         let Some(view) = self.views.get_mut(&id) else {
             ui.label("This cut is closed.");
             return None;
         };
-        view_ui(
-            view,
-            ui,
-            Ctx {
-                model,
-                case,
-                views: &views,
-                grid: &grid,
-                serial,
-                snaps,
-                buttons,
-                ground_lines,
-            },
-            selection,
-        )
+        panel_ui(view, ui, cx, &views, &grid, serial)
     }
 }
 
-/// What a cut's view draws with.
-struct Ctx<'a> {
-    model: &'a Model,
-    case: usize,
-    views: &'a [AlignmentView],
-    grid: &'a PointGrid,
-    serial: u64,
-    snaps: &'a crate::selection::Snaps,
-    buttons: (egui::PointerButton, egui::PointerButton),
-    ground_lines: Option<&'a crate::ground_lines::Drawn>,
+/// A length for a scale bar about `target` points long at `m` metres per
+/// point: 1, 2 or 5 × a power of ten.
+fn scale_length(m: f64, target: f64) -> f64 {
+    let want = (m * target).max(1e-6);
+    let p = 10f64.powf(want.log10().floor());
+    [1.0, 2.0, 5.0, 10.0]
+        .into_iter()
+        .map(|k| k * p)
+        .rfind(|l| *l <= want)
+        .unwrap_or(p)
 }
 
-/// Screen ↔ cut: offset and height to points and back.
-#[derive(Debug, Clone, Copy)]
-struct Frame {
-    rect: egui::Rect,
-    centre: [f64; 2],
-    scale: f64,
-    exaggeration: f64,
-}
-
-impl Frame {
-    fn to_screen(self, p: [f64; 2]) -> egui::Pos2 {
-        let c = self.rect.center();
-        egui::pos2(
-            c.x + ((p[0] - self.centre[0]) / self.scale) as f32,
-            c.y - ((p[1] - self.centre[1]) * self.exaggeration / self.scale) as f32,
-        )
-    }
-
-    fn to_cut(self, q: egui::Pos2) -> [f64; 2] {
-        let c = self.rect.center();
-        [
-            self.centre[0] + f64::from(q.x - c.x) * self.scale,
-            self.centre[1] - f64::from(q.y - c.y) * self.scale / self.exaggeration,
-        ]
-    }
-}
-
-/// The distance from `p` to segment `a`–`b` (points).
-fn to_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
-    let ab = b - a;
-    let len2 = ab.length_sq();
-    let t = if len2 > 0.0 {
-        ((p - a).dot(ab) / len2).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    p.distance(a + t * ab)
-}
-
-/// The grid step for `range` m shown in about `n` lines.
-fn grid_step(range: f64, n: f64) -> f64 {
-    [
-        0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0,
-    ]
-    .into_iter()
-    .find(|s| range / s <= n)
-    .unwrap_or(2000.0)
-}
-
-#[allow(clippy::too_many_lines)]
-fn view_ui(
-    view: &mut CutView,
-    ui: &mut egui::Ui,
-    cx: Ctx<'_>,
-    selection: &mut Selection,
-) -> Option<Selection> {
-    let model = cx.model;
-    let mut step: Option<Step> = None;
-    // The bar: move the cut, its depth and width, the exaggeration.
+/// The bar of a cut's panel: move the cut, its depth and width, back to
+/// the front view, the projection. What to move it by.
+fn bar_ui(ui: &mut egui::Ui, view: &mut CutView) -> Option<Step> {
+    let mut step = None;
     ui.horizontal_wrapped(|ui| {
-        if ui
-            .button("⏮")
-            .on_hover_text("To the structure before")
-            .clicked()
-        {
-            step = Some(Step::PreviousStructure);
-        }
-        if ui
-            .button("◀")
-            .on_hover_text("One step back along the line (comma)")
-            .clicked()
-        {
-            step = Some(Step::Back);
-        }
-        if ui
-            .button("▶")
-            .on_hover_text("One step ahead along the line (full stop)")
-            .clicked()
-        {
-            step = Some(Step::Ahead);
-        }
-        if ui
-            .button("⏭")
-            .on_hover_text("To the next structure")
-            .clicked()
-        {
-            step = Some(Step::NextStructure);
+        for (text, hover, how) in [
+            ("⏮", "To the structure before", Step::PreviousStructure),
+            ("◀", "One step back along the line (comma)", Step::Back),
+            (
+                "▶",
+                "One step ahead along the line (full stop)",
+                Step::Ahead,
+            ),
+            ("⏭", "To the next structure", Step::NextStructure),
+        ] {
+            if ui.button(text).on_hover_text(hover).clicked() {
+                step = Some(how);
+            }
         }
         ui.label("step");
         let mut s = view.step_length();
@@ -1065,41 +1180,68 @@ fn view_ui(
                 .max_decimals(1)
                 .suffix(" m"),
         )
-        .on_hover_text("What lies this far left and right of the axis is shown");
+        .on_hover_text("What lies this far either side of the line is shown");
         ui.separator();
-        egui::ComboBox::from_id_salt(("xsection-exaggeration", ui.id()))
-            .selected_text(if view.exaggeration == 1.0 {
-                "heights 1:1".to_owned()
-            } else {
-                format!("heights ×{}", view.exaggeration)
-            })
-            .show_ui(ui, |ui| {
-                for k in EXAGGERATIONS {
-                    let text = if k == 1.0 {
-                        "1:1 (true scale)".to_owned()
-                    } else {
-                        format!("heights ×{k}")
-                    };
-                    if ui.selectable_label(view.exaggeration == k, text).clicked() {
-                        view.exaggeration = k;
-                        view.fit();
-                    }
-                }
-            })
-            .response
-            .on_hover_text("Vertical exaggeration (1:1 by default: the same scale both ways)");
         if ui
-            .button("Fit")
-            .on_hover_text("Show the whole width")
+            .button("Back to the cut view")
+            .on_hover_text(
+                "Looking ahead along the line, perpendicular to the plane, orthographic, \
+                 the whole width in view (Home)",
+            )
             .clicked()
         {
-            view.fit();
+            view.front();
+        }
+        if let Some(c) = view.view.camera.as_mut() {
+            for (ortho, text, hover) in [
+                (
+                    true,
+                    "Orthographic",
+                    "One scale everywhere: offsets and heights measured as drawn",
+                ),
+                (false, "Perspective", "As the eye sees it, as the 3D view"),
+            ] {
+                if ui
+                    .selectable_label(c.ortho == ortho, text)
+                    .on_hover_text(hover)
+                    .clicked()
+                {
+                    c.ortho = ortho;
+                }
+            }
         }
     });
-    let (rect, response) =
-        ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
-    // , and . step the cut under the pointer.
-    if response.hovered() && !ui.ctx().text_edit_focused() {
+    step
+}
+
+fn panel_ui(
+    view: &mut CutView,
+    ui: &mut egui::Ui,
+    cx: PanelCtx<'_>,
+    views: &[AlignmentView],
+    grid: &PointGrid,
+    serial: u64,
+) -> Option<crate::selection::Use> {
+    let PanelCtx {
+        rs,
+        model,
+        case,
+        selection,
+        visible,
+        snaps,
+        lod,
+        select_held,
+        main,
+        link,
+    } = cx;
+    let mut step = bar_ui(ui, view);
+    // , and . step the cut, Home goes back to the front view, while the
+    // pointer is over the panel.
+    let over = view
+        .rect
+        .zip(ui.input(|i| i.pointer.latest_pos()))
+        .is_some_and(|(r, p)| r.contains(p));
+    if over && !ui.ctx().text_edit_focused() {
         ui.input_mut(|i| {
             if i.consume_key(egui::Modifiers::NONE, egui::Key::Comma) {
                 step = Some(Step::Back);
@@ -1107,12 +1249,15 @@ fn view_ui(
             if i.consume_key(egui::Modifiers::NONE, egui::Key::Period) {
                 step = Some(Step::Ahead);
             }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::Home) {
+                view.to_front = true;
+            }
         });
     }
     if let Some(how) = step {
-        view.move_by(&model.line, cx.views, how);
+        view.move_by(&model.line, views, how);
     }
-    match place(&model.line, cx.views, &view.spec) {
+    match place(&model.line, views, &view.spec) {
         Ok(p) => {
             view.placed = Some(p);
             view.error = None;
@@ -1122,25 +1267,20 @@ fn view_ui(
             view.error = Some(e);
         }
     }
-    view.rect = Some(rect);
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(24, 28, 34));
     let Some(placed) = view.placed.clone() else {
-        painter.text(
-            rect.left_top() + egui::vec2(8.0, 6.0),
-            egui::Align2::LEFT_TOP,
+        ui.colored_label(
+            egui::Color32::from_rgb(230, 120, 100),
             format!(
                 "Cross-section: {}",
                 view.error.as_deref().unwrap_or("not placed")
             ),
-            egui::FontId::proportional(12.0),
-            egui::Color32::from_rgb(230, 120, 100),
         );
         return None;
     };
     let plane = placed.plane;
     let (depth, width) = (view.spec.depth, view.spec.width);
-    // The slab: made again when the cut moves or the points change.
+    // The slab (its LiDAR points from the index, the ground cut by the
+    // plane): made again when the cut moves or the points change.
     let key: SlabKey = (
         [
             plane.origin[0].to_bits(),
@@ -1150,295 +1290,89 @@ fn view_ui(
             depth.to_bits(),
             width.to_bits(),
         ],
-        cx.grid.key,
+        grid.key,
         model
             .ground
             .as_ref()
             .map_or(0, |g| std::sync::Arc::as_ptr(g) as usize),
-        cx.serial,
+        serial,
     );
     if view.slab.as_ref().is_none_or(|(k, _)| *k != key) {
-        view.slab = Some((key, Arc::new(slab(model, cx.grid, &plane, depth, width))));
+        view.slab = Some((key, Arc::new(slab(model, grid, &plane, depth, width))));
     }
     let slab = view.slab.as_ref().expect("made above").1.clone();
-    view.contents = contents(model, cx.case, &plane, depth, width);
-    // Fitted: the whole width, the heights from the ground to the top.
-    if view.centre.is_none() || view.scale.is_none() {
-        let c = &view.contents;
-        let mut heights: Vec<f64> = slab
-            .ground
-            .iter()
-            .flatten()
-            .chain(
-                c.wires
-                    .iter()
-                    .flat_map(|w| w.crossings.iter().chain(w.curve.iter().flatten())),
-            )
-            .chain(c.structures.iter().flat_map(|s| s.lines.iter().flatten()))
-            .map(|p| p[1])
-            .collect();
-        if heights.is_empty() {
-            heights = slab.lidar.iter().map(|p| p.0[1]).collect();
+    view.contents = contents(model, case, &plane, depth, width);
+    view.heights = Some(heights(&slab, &view.contents));
+    // What the main view holds: its controls, its overlays, its chunk
+    // indexes.
+    view.view.controls = main.controls.clone();
+    if !Rc::ptr_eq(&view.view.indexes, &main.indexes) {
+        view.view.indexes = main.indexes.clone();
+    }
+    if std::mem::take(&mut view.fresh) {
+        take_overlays(&mut view.view, main, &Layer::ALL.into_iter().collect());
+    }
+    view.view.measure.clone_from(&main.measure);
+    view.view.handles.target.clone_from(&main.handles.target);
+    view.view.link = link;
+    view.view.dirty.take_log();
+    // The camera: the front view, else carried with the cut.
+    let clip = view.clip();
+    view.view.clip = clip;
+    let heights = view.heights.unwrap_or([0.0, 50.0]);
+    if view.to_front || view.view.camera.is_none() {
+        let avail = ui.available_size();
+        let aspect = f64::from(avail.x) / f64::from(avail.y.max(1.0));
+        view.view
+            .set_camera(front_camera(&plane, heights, width, aspect));
+        view.to_front = false;
+        view.plane_shown = Some(plane);
+    } else if let Some(old) = view.plane_shown
+        && old != plane
+    {
+        let ground = |p: &Plane| {
+            model
+                .ground
+                .as_deref()
+                .and_then(|g| g.height(p.origin[0], p.origin[1]))
+        };
+        let dz = match (ground(&old), ground(&plane)) {
+            (Some(a), Some(b)) => b - a,
+            _ => 0.0,
+        };
+        if let Some(c) = view.view.camera.as_mut() {
+            carry(c, &old, &plane, dz);
         }
-        let (mut z0, mut z1) = heights
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), z| {
-                (a.min(*z), b.max(*z))
-            });
-        if !z0.is_finite() {
-            (z0, z1) = (0.0, 50.0);
-        }
-        let pad = (z1 - z0).max(5.0) * 0.08;
-        let (z0, z1) = (z0 - pad, z1 + pad);
-        let w = f64::from(rect.width()).max(1.0);
-        let h = f64::from(rect.height()).max(1.0);
-        let scale = (2.2 * width / w).max((z1 - z0) * view.exaggeration / h);
-        view.scale = Some(scale.max(1e-4));
-        view.centre = Some([0.0, 0.5 * (z0 + z1)]);
+        view.plane_shown = Some(plane);
     }
-    let (buttons_select, buttons_tool) = cx.buttons;
-    // Pan with any button, zoom at the pointer; no rotation.
-    if response.dragged() {
-        let d = response.drag_delta();
-        let (c, s) = (
-            view.centre.as_mut().expect("fitted"),
-            view.scale.expect("fitted"),
-        );
-        c[0] -= f64::from(d.x) * s;
-        c[1] += f64::from(d.y) * s / view.exaggeration;
-    }
-    if response.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll != 0.0
-            && let Some(pos) = response.hover_pos()
-        {
-            let before = Frame {
-                rect,
-                centre: view.centre.expect("fitted"),
-                scale: view.scale.expect("fitted"),
-                exaggeration: view.exaggeration,
-            };
-            let at = before.to_cut(pos);
-            let f = (-f64::from(scroll) * 0.002).exp();
-            let scale = (before.scale * f).clamp(1e-3, 100.0);
-            let c = rect.center();
-            view.scale = Some(scale);
-            view.centre = Some([
-                at[0] - f64::from(pos.x - c.x) * scale,
-                at[1] + f64::from(pos.y - c.y) * scale / view.exaggeration,
-            ]);
-        }
-    }
-    if response.double_clicked_by(buttons_select) {
-        view.fit();
-        ui.ctx().request_repaint();
-    }
-    let frame = Frame {
-        rect,
-        centre: view.centre.expect("fitted"),
-        scale: view.scale.expect("fitted"),
-        exaggeration: view.exaggeration,
+    let used = view.view.ui(
+        ui,
+        rs,
+        model,
+        case,
+        selection,
+        visible,
+        snaps,
+        lod,
+        select_held,
+    );
+    // Its controls' speed (Ctrl + wheel) kept for every view.
+    main.controls.speed = view.view.controls.speed;
+    let Some(rect) = view.view.rect else {
+        return used;
     };
-    let to_screen = |p: [f64; 2]| frame.to_screen(p);
-    let [o0, z1] = frame.to_cut(rect.left_top());
-    let [o1, z0] = frame.to_cut(rect.right_bottom());
-    // The grid: heights and offsets.
-    let grid_col = egui::Color32::from_gray(45);
-    let label_col = egui::Color32::from_gray(130);
-    let zs = grid_step(z1 - z0, 8.0);
-    let mut z = (z0 / zs).ceil() * zs;
-    while z < z1 {
-        let y = to_screen([o0, z]).y;
-        painter.line_segment(
-            [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
-            egui::Stroke::new(1.0, grid_col),
-        );
-        painter.text(
-            egui::pos2(rect.max.x - 4.0, y - 2.0),
-            egui::Align2::RIGHT_BOTTOM,
-            format!("{z:.0}"),
-            egui::FontId::proportional(10.0),
-            label_col,
-        );
-        z += zs;
-    }
-    let os = grid_step(o1 - o0, 10.0);
-    let mut o = (o0 / os).ceil() * os;
-    while o < o1 {
-        let x = to_screen([o, z0]).x;
-        painter.line_segment(
-            [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-            egui::Stroke::new(
-                if o.abs() < 1e-9 { 1.5 } else { 1.0 },
-                if o.abs() < 1e-9 {
-                    egui::Color32::from_rgb(70, 90, 120)
-                } else {
-                    grid_col
-                },
-            ),
-        );
-        painter.text(
-            egui::pos2(x + 2.0, rect.max.y - 4.0),
-            egui::Align2::LEFT_BOTTOM,
-            format!("{o:+.0}"),
-            egui::FontId::proportional(10.0),
-            label_col,
-        );
-        o += os;
-    }
-    // The corridor's edges (the cut's width).
-    for side in [-width, width] {
-        let x = to_screen([side, z0]).x;
-        painter.extend(egui::Shape::dashed_line(
-            &[egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 100, 75)),
-            6.0,
-            4.0,
-        ));
-    }
-    // LiDAR points (classes hidden left out), one per pixel and colour.
-    view.lidar_dots.clear();
-    let mut dotted = crate::profile::PixelSet::new(rect);
-    for (p, c, q) in &slab.lidar {
-        if model.hidden_classes.contains(c) {
-            continue;
-        }
-        let Some(col) = crate::scene::class_color(&model.scheme, *c) else {
-            continue;
-        };
-        let s = to_screen(*p);
-        if rect.contains(s) && dotted.insert(s) {
-            painter.circle_filled(s, 1.2, egui::Color32::from_rgb(col[0], col[1], col[2]));
-            view.lidar_dots.push((s, (*q, *c)));
-        }
-    }
-    // The ground.
-    for run in &slab.ground {
-        let pts = crate::plan::thin_px(run.iter().map(|p| to_screen(*p)));
-        painter.add(egui::Shape::line(
-            pts,
-            egui::Stroke::new(1.8, egui::Color32::from_rgb(170, 140, 100)),
-        ));
-    }
-    // The lines on the ground beside the line (when shown): where they
-    // cross the plane, a mark on the ground.
-    if let Some(drawn) = cx.ground_lines {
-        let [r, g, b] = model.ground_lines.color;
-        let col = egui::Color32::from_rgb(r, g, b);
-        for l in &drawn.lines {
-            for run in &l.runs {
-                for p in crossings(&plane, run, width) {
-                    let s = to_screen(p);
-                    painter.line_segment(
-                        [s + egui::vec2(0.0, -10.0), s + egui::vec2(0.0, 4.0)],
-                        egui::Stroke::new(2.0, col),
-                    );
-                }
-            }
-        }
-    }
-    // The structures.
-    for s in &view.contents.structures {
-        let selected = matches!(selection, Selection::Structure(id) if *id == s.id);
-        let col = if selected {
-            egui::Color32::WHITE
-        } else {
-            egui::Color32::from_gray(190)
-        };
-        for l in &s.lines {
-            painter.add(egui::Shape::line(
-                l.iter().map(|p| to_screen(*p)).collect(),
-                egui::Stroke::new(if selected { 2.0 } else { 1.2 }, col),
-            ));
-        }
-        for l in &s.strings {
-            painter.add(egui::Shape::line(
-                l.iter().map(|p| to_screen(*p)).collect(),
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(150, 190, 230)),
-            ));
-        }
-        for j in &s.joints {
-            painter.circle_filled(to_screen(*j), 2.0, egui::Color32::from_gray(150));
-        }
-        for (label, p) in &s.points {
-            let q = to_screen(*p);
-            painter.rect_filled(
-                egui::Rect::from_center_size(q, egui::vec2(5.0, 5.0)),
-                0.0,
-                egui::Color32::from_rgb(230, 200, 90),
-            );
-            if frame.scale < 0.15 {
-                painter.text(
-                    q + egui::vec2(4.0, -4.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    label,
-                    egui::FontId::proportional(9.5),
-                    egui::Color32::from_rgb(200, 180, 110),
-                );
-            }
-        }
-        let top = s
-            .lines
-            .iter()
-            .flatten()
-            .chain(s.points.iter().map(|p| &p.1))
-            .max_by(|a, b| a[1].total_cmp(&b[1]));
-        if let Some(t) = top {
-            painter.text(
-                to_screen(*t) + egui::vec2(0.0, -6.0),
-                egui::Align2::CENTER_BOTTOM,
-                &s.id,
-                egui::FontId::proportional(11.0),
-                col,
-            );
-        }
-    }
-    // The wires: their curves within the slab (faint), a marker where
-    // each crosses the plane with its label.
-    let mut labels: Vec<(egui::Pos2, String, egui::Color32)> = Vec::new();
-    for w in &view.contents.wires {
-        let selected = w.select == *selection;
-        let c = egui::Color32::from_rgb(w.color[0], w.color[1], w.color[2]);
-        let col = if selected { egui::Color32::WHITE } else { c };
-        for run in &w.curve {
-            painter.add(egui::Shape::line(
-                crate::plan::thin_px(run.iter().map(|p| to_screen(*p))),
-                egui::Stroke::new(if selected { 2.5 } else { 1.0 }, col.gamma_multiply(0.7)),
-            ));
-        }
-        for p in &w.crossings {
-            let q = to_screen(*p);
-            painter.circle_filled(q, if selected { 5.0 } else { 4.0 }, col);
-            painter.circle_stroke(q, 5.5, egui::Stroke::new(1.0, egui::Color32::BLACK));
-            labels.push((q, w.label.clone(), col));
-        }
-    }
-    // Their labels: each once where several copies meet (the spans on
-    // both sides of a clamp), moved down off another.
-    let mut taken: Vec<egui::Rect> = Vec::new();
-    let mut said: Vec<(String, egui::Pos2)> = Vec::new();
-    for (q, text, col) in labels {
-        if said.iter().any(|(t, p)| *t == text && p.distance(q) < 12.0) {
-            continue;
-        }
-        let galley = painter.layout_no_wrap(text.clone(), egui::FontId::proportional(10.5), col);
-        let size = galley.size();
-        let mut r = egui::Rect::from_min_size(q + egui::vec2(7.0, -2.0 - size.y), size);
-        for _ in 0..8 {
-            if taken.iter().any(|t| t.intersects(r)) {
-                r = r.translate(egui::vec2(0.0, size.y + 1.0));
-            } else {
-                break;
-            }
-        }
-        taken.push(r);
-        painter.galley(r.min, galley, col);
-        said.push((text, q));
-    }
-    // The title: where, depth, direction, case.
+    view.rect = Some(rect);
+    view.drawn_frame = Some(ui.ctx().cumulative_frame_nr());
+    let Some(camera) = view.view.camera else {
+        return used;
+    };
+    let painter = ui.painter_at(rect);
+    let size = [f64::from(rect.width()), f64::from(rect.height())];
+    paint_frame(&painter, rect, &camera, &plane, width, heights);
+    // The title: where, depth, direction, case; how it is looked at.
     let case_name = model
         .cases
-        .get(cx.case)
+        .get(case)
         .map_or_else(String::new, |c| format!(" — case {}", c.case.name));
     let at = match &view.spec.at {
         At::Structure(id) => format!(
@@ -1455,37 +1389,58 @@ fn view_ui(
             }
         ),
     };
-    painter.text(
+    let text = |at: egui::Pos2, s: String, size: f32, gray: u8| {
+        let galley = painter.layout_no_wrap(
+            s,
+            egui::FontId::proportional(size),
+            egui::Color32::from_gray(gray),
+        );
+        painter.rect_filled(
+            egui::Rect::from_min_size(at, galley.size()).expand(2.0),
+            2.0,
+            egui::Color32::from_black_alpha(150),
+        );
+        painter.galley(at, galley, egui::Color32::from_gray(gray));
+    };
+    text(
         rect.left_top() + egui::vec2(8.0, 6.0),
-        egui::Align2::LEFT_TOP,
         format!(
             "Cross-section at {at}, alignment {} — depth ±{depth:.1} m, width ±{width:.1} m, \
              looking ahead (bearing {:.0}°){case_name}",
             view.spec.alignment,
             plane.bearing_deg()
         ),
-        egui::FontId::proportional(11.0),
-        egui::Color32::from_gray(170),
+        11.5,
+        200,
     );
-    painter.text(
-        rect.left_top() + egui::vec2(8.0, 22.0),
-        egui::Align2::LEFT_TOP,
+    let how = if is_front(&camera, &plane) {
+        "Front view, looking ahead (increasing stations): left of the line ◀  ▶ right of the \
+         line; heights 1:1, orthographic"
+            .to_owned()
+    } else {
         format!(
-            "Seen looking ahead (increasing stations): left of the line ◀  ▶ right of the line; {}; \
-             ground: {}",
-            if view.exaggeration == 1.0 {
-                "heights 1:1".to_owned()
+            "Turned ({}): Home or Back to the cut view returns to the front view",
+            if camera.ortho {
+                "orthographic"
             } else {
-                format!("heights ×{}", view.exaggeration)
-            },
-            slab.ground_from
-        ),
-        egui::FontId::proportional(10.0),
-        egui::Color32::from_gray(130),
+                "perspective"
+            }
+        )
+    };
+    text(
+        rect.left_top() + egui::vec2(8.0, 24.0),
+        format!("{how}; ground: {}", slab.ground_from),
+        10.5,
+        170,
     );
-    // Hover readouts.
-    view.readout = response.hover_pos().map(|pos| {
-        let [offset, height] = frame.to_cut(pos);
+    // Hover readouts: where the pointer's ray meets the plane.
+    let pointer = ui
+        .input(|i| i.pointer.latest_pos())
+        .filter(|p| rect.contains(*p));
+    view.readout = pointer.and_then(|pos| {
+        let local = [f64::from(pos.x - rect.min.x), f64::from(pos.y - rect.min.y)];
+        let (a, d) = camera.ray(local, size)?;
+        let [offset, height] = on_plane(&plane, a, d)?;
         let nearest = view
             .contents
             .wires
@@ -1493,91 +1448,179 @@ fn view_ui(
             .flat_map(|w| w.crossings.iter().map(move |p| (w, p)))
             .map(|(w, p)| (w.label.clone(), (p[0] - offset).hypot(p[1] - height)))
             .min_by(|a, b| a.1.total_cmp(&b.1));
-        Readout {
+        Some(Readout {
             offset,
             height,
             above_ground: ground_at(&slab.ground, offset).map(|g| height - g),
             nearest,
-        }
+        })
     });
     if let Some(r) = &view.readout {
         let side = if r.offset < 0.0 { "left" } else { "right" };
-        let mut text = format!(
-            "offset {:.2} m {side}, height {:.2} m",
+        let mut s = format!(
+            "in the plane: offset {:.2} m {side}, height {:.2} m",
             r.offset.abs(),
             r.height
         );
         if let Some(g) = r.above_ground {
-            text += &format!(", {g:.2} m above the ground");
+            s += &format!(", {g:.2} m above the ground");
         }
         if let Some((label, d)) = &r.nearest {
-            text += &format!(", {d:.2} m to {label}");
+            s += &format!(", {d:.2} m to {label}");
         }
-        painter.text(
-            rect.left_bottom() + egui::vec2(8.0, -18.0),
-            egui::Align2::LEFT_BOTTOM,
-            text,
-            egui::FontId::proportional(11.0),
-            egui::Color32::from_gray(200),
+        text(rect.left_bottom() + egui::vec2(8.0, -22.0), s, 11.5, 220);
+    }
+    used
+}
+
+/// The heights from the ground to the top of a slab's content: lowest,
+/// highest (the LiDAR points when nothing else is there; 0–50 m when the
+/// slab is empty).
+fn heights(slab: &Slab, c: &Contents) -> [f64; 2] {
+    let mut zs: Vec<f64> = slab
+        .ground
+        .iter()
+        .flatten()
+        .chain(
+            c.wires
+                .iter()
+                .flat_map(|w| w.crossings.iter().chain(w.curve.iter().flatten())),
+        )
+        .chain(c.structures.iter().flat_map(|s| s.lines.iter().flatten()))
+        .map(|p| p[1])
+        .collect();
+    if zs.is_empty() {
+        zs = slab.lidar.iter().map(|p| p.0[1]).collect();
+    }
+    let (z0, z1) = zs
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), z| {
+            (a.min(*z), b.max(*z))
+        });
+    if z0.is_finite() {
+        [z0, z1]
+    } else {
+        [0.0, 50.0]
+    }
+}
+
+/// Draws over a cut's image: the slab's sides (its width either side of
+/// the line), the line's axis, the axes (offset, height, ahead) and a
+/// scale bar.
+fn paint_frame(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    camera: &Camera,
+    plane: &Plane,
+    width: f64,
+    heights: [f64; 2],
+) {
+    let size = [f64::from(rect.width()), f64::from(rect.height())];
+    let project = camera.projector(size);
+    let screen =
+        |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
+    let in_plane = |o: f64, z: f64| {
+        let p = plane.at(o);
+        [p[0], p[1], z]
+    };
+    // The width's edges and the axis, in the plane, from the ground to the
+    // top.
+    let [z0, z1] = heights;
+    let pad = (z1 - z0).max(5.0) * 0.08;
+    for (o, color) in [
+        (-width, egui::Color32::from_rgb(120, 100, 75)),
+        (width, egui::Color32::from_rgb(120, 100, 75)),
+        (0.0, egui::Color32::from_rgb(70, 90, 120)),
+    ] {
+        if let (Some(a), Some(b)) = (screen(in_plane(o, z0 - pad)), screen(in_plane(o, z1 + pad))) {
+            painter.extend(egui::Shape::dashed_line(
+                &[a, b],
+                egui::Stroke::new(1.0, color),
+                6.0,
+                4.0,
+            ));
+        }
+    }
+    // The axes: offset (right), height (up), ahead; drawn from a corner.
+    let origin = rect.right_bottom() + egui::vec2(-60.0, -46.0);
+    let t = camera.target;
+    if let Some(c) = screen(t) {
+        let r = plane.right();
+        for (dir, label, color) in [
+            (
+                [r[0], r[1], 0.0],
+                "offset",
+                egui::Color32::from_rgb(230, 90, 90),
+            ),
+            (
+                [0.0, 0.0, 1.0],
+                "height",
+                egui::Color32::from_rgb(90, 140, 255),
+            ),
+            (
+                [plane.ahead[0], plane.ahead[1], 0.0],
+                "ahead",
+                egui::Color32::from_rgb(90, 200, 110),
+            ),
+        ] {
+            let m = camera.metres_per_pixel(size[1]) * 30.0;
+            let Some(e) = screen([0, 1, 2].map(|k| t[k] + m * dir[k])) else {
+                continue;
+            };
+            let v = e - c;
+            let tip = origin + v;
+            if v.length() < 3.0 {
+                // Looking along it: a dot (into the view).
+                painter.circle_stroke(origin, 4.0, egui::Stroke::new(1.5, color));
+                painter.text(
+                    origin + egui::vec2(6.0, 6.0),
+                    egui::Align2::LEFT_TOP,
+                    label,
+                    egui::FontId::proportional(10.0),
+                    color,
+                );
+                continue;
+            }
+            painter.arrow(origin, v, egui::Stroke::new(2.0, color));
+            painter.text(
+                tip + v.normalized() * 6.0,
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(10.0),
+                color,
+            );
+        }
+    }
+    // The scale bar: at the target's distance (orthographic: anywhere).
+    let m = camera.metres_per_pixel(size[1]);
+    let len = scale_length(m, 120.0);
+    let px = (len / m) as f32;
+    let a = rect.left_bottom() + egui::vec2(10.0, -40.0);
+    let b = a + egui::vec2(px, 0.0);
+    let white = egui::Color32::from_gray(220);
+    painter.line_segment([a, b], egui::Stroke::new(2.0, white));
+    for x in [a, b] {
+        painter.line_segment(
+            [x + egui::vec2(0.0, -4.0), x + egui::vec2(0.0, 4.0)],
+            egui::Stroke::new(1.5, white),
         );
     }
-    // Picking: wires at their crossings and curves, structures along
-    // their lines, LiDAR dots.
-    let pick = |pos: egui::Pos2| -> Selection {
-        let mut best: Option<(f32, Selection)> = None;
-        let mut consider = |d: f32, s: Selection| {
-            let on = s.kind().is_some_and(|k| cx.snaps.on(k));
-            if on && d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
-                best = Some((d, s));
-            }
-        };
-        for w in &view.contents.wires {
-            let d = w
-                .crossings
-                .iter()
-                .map(|p| (to_screen(*p).distance(pos) - 3.0).max(0.0))
-                .chain(w.curve.iter().flat_map(|run| {
-                    run.windows(2)
-                        .map(|s| to_segment(pos, to_screen(s[0]), to_screen(s[1])) + 2.0)
-                }))
-                .fold(f32::INFINITY, f32::min);
-            consider(d, w.select.clone());
-        }
-        for s in &view.contents.structures {
-            let d = s
-                .lines
-                .iter()
-                .chain(&s.strings)
-                .flat_map(|run| {
-                    run.windows(2)
-                        .map(|w| to_segment(pos, to_screen(w[0]), to_screen(w[1])))
-                })
-                .fold(f32::INFINITY, f32::min);
-            // A wire over the structure it hangs on at about the same
-            // distance.
-            consider(d + 1.0, Selection::Structure(s.id.clone()));
-        }
-        if let Some((d, p)) = view
-            .lidar_dots
-            .iter()
-            .map(|(q, p)| (q.distance(pos), *p))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-        {
-            consider(d + 2.0, Selection::LidarPoint(p));
-        }
-        best.map_or(Selection::None, |b| b.1)
+    let label = if len >= 1.0 {
+        format!("{len:.0} m")
+    } else {
+        format!("{len} m")
     };
-    if response.clicked_by(buttons_select)
-        && let Some(pos) = response.interact_pointer_pos()
-    {
-        *selection = pick(pos);
-    }
-    if response.clicked_by(buttons_tool)
-        && let Some(pos) = response.interact_pointer_pos()
-    {
-        return Some(pick(pos));
-    }
-    None
+    painter.text(
+        b + egui::vec2(6.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        if camera.ortho {
+            label
+        } else {
+            format!("{label} (at the target)")
+        },
+        egui::FontId::proportional(10.5),
+        white,
+    );
 }
 
 /// The window that makes a cut (C, View › Cross-section…, a structure's
