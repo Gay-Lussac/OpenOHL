@@ -216,6 +216,9 @@ fn main() -> std::process::ExitCode {
     )
     .init();
     let args = Args::parse();
+    // The system fonts for sheet images, read once in the background (a
+    // second or so) so the first sheet preview does not wait for them.
+    ohl_drawing::png::load_fonts_in_background();
     let open = args.file.is_some();
     let sources = model::Sources {
         file: args.file.unwrap_or_default(),

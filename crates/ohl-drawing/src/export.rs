@@ -88,8 +88,18 @@ pub struct Export {
     /// Sheets of this format (split at structures), or one continuous
     /// drawing.
     pub page: Option<Page>,
+    /// Sheets of the optimised size and orientation instead
+    /// ([`crate::paper`]; it takes the place of `page`).
+    pub optimise: Option<crate::paper::Optimise>,
     /// Resolution of PNG images, dots per inch.
     pub dpi: f64,
+}
+
+impl Export {
+    /// Whether the export writes sheets (not one continuous drawing).
+    pub fn paged(&self) -> bool {
+        self.page.is_some() || self.optimise.is_some()
+    }
 }
 
 impl Default for Export {
@@ -97,6 +107,7 @@ impl Default for Export {
         Self {
             formats: vec![Format::Svg],
             page: None,
+            optimise: None,
             dpi: 150.0,
         }
     }
@@ -112,6 +123,8 @@ pub struct Written {
     /// Problems found (a span longer than the sheet, a profile taller than
     /// it, elevations overlapping, a lower PNG resolution).
     pub warnings: Vec<String>,
+    /// The optimised layout chosen ([`Export::optimise`]), in words.
+    pub paper: Option<String>,
 }
 
 /// `id` as part of a file name: characters other than letters, digits,
@@ -145,7 +158,7 @@ pub fn write_route(
     budget: &Budget,
 ) -> Result<Written, String> {
     crate::check_break_clearance(o.break_clearance)?;
-    if e.page.is_some()
+    if e.paged()
         && let Some(why) = o.template.missing_fields(&o.fields)
     {
         return Err(why);
@@ -159,13 +172,34 @@ pub fn write_route(
     } else {
         format!("{route}-profile")
     };
-    let drawings: Vec<crate::model::Drawing> = match &e.page {
-        None => {
+    let drawings: Vec<crate::model::Drawing> = match (&e.optimise, &e.page) {
+        (Some(opt), _) => {
+            let best =
+                crate::paper::best(d, o, opt).ok_or("no paper size to lay the sheets out on")?;
+            written.paper = Some(format!(
+                "{} ({}; {} warning(s), {:.2} m² of paper, {:.0} % filled)",
+                best.label,
+                best.sizes(),
+                best.warnings,
+                best.area,
+                best.fill * 100.0
+            ));
+            let sheets = crate::paper::draw(d, o, &best);
+            for s in &sheets {
+                for w in &s.warnings {
+                    written
+                        .warnings
+                        .push(format!("sheet {} ({}): {w}", s.number, s.page.name));
+                }
+            }
+            sheets.into_iter().map(|s| s.drawing).collect()
+        }
+        (None, None) => {
             let (drawing, _, warnings) = crate::layout::continuous(d, o);
             written.warnings.extend(warnings);
             vec![drawing]
         }
-        Some(page) => {
+        (None, Some(page)) => {
             let sheets = crate::sheets(d, o, page);
             for s in &sheets {
                 for w in &s.warnings {
@@ -176,9 +210,13 @@ pub fn write_route(
         }
     };
     written.sheets = drawings.len();
-    let name = |k: usize, ext: &str| match e.page {
-        None => format!("{stem}.{ext}"),
-        Some(_) => format!("{stem}-sheet-{:02}.{ext}", k + 1),
+    let paged = e.paged();
+    let name = |k: usize, ext: &str| {
+        if paged {
+            format!("{stem}-sheet-{:02}.{ext}", k + 1)
+        } else {
+            format!("{stem}.{ext}")
+        }
     };
     let mut put = |file: String, bytes: &[u8], run: &mut ohl_core::budget::Run| {
         run.step().map_err(|s| format!("export {s}"))?;
@@ -286,6 +324,7 @@ mod tests {
             formats: Format::ALL.to_vec(),
             page: page_format("A3"),
             dpi: 50.0,
+            ..Default::default()
         };
         let w = write_route(&d, &o, &e, &dir, &Budget::new().max_iterations(100)).unwrap();
         let names: Vec<String> = w
@@ -319,6 +358,7 @@ mod tests {
             formats: vec![Format::Svg, Format::Dxf],
             page: None,
             dpi: 50.0,
+            ..Default::default()
         };
         let w = write_route(&d, &profile, &e, &dir, &Budget::new()).unwrap();
         let names: Vec<_> = w.files.iter().map(|p| p.file_name().unwrap()).collect();

@@ -209,8 +209,18 @@ structure body) and O7 (the line and its structures solved together).
   vertical code, Terrain › Coordinate system › Define… or `ohl project
   apply`; line file 7, project schema 5) written by `{height_datum}`
   before the CRS's vertical part and `[if_empty]`.
+  *Follow-up 6, built 2026-10-22, in active development (not approved
+  yet)*: **paper size and orientation optimised** per route from the
+  ticked standard sizes (ISO A and B, long A sizes, ANSI, ARCH): fewest
+  warnings, then least paper, then fewest sheets; different sizes of one
+  standard on a route and the same paper on every route as ticks;
+  `--page optimised`, template `format = "optimised"`. The sheet preview
+  draws one sheet in the background, after the settings settle, with
+  route and sheet chosen in its window.
   Still open: font embedding, a title block editor in the app, an
-  orthophoto under the key map, DXF 2000 images.
+  orthophoto under the key map, DXF 2000 images; whether mixed sizes
+  should keep one sheet height (A3, A3x3, A3x4) — on a real line the
+  mix came out as five sizes (asked 2026-10-22).
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
@@ -240,6 +250,19 @@ structure body) and O7 (the line and its structures solved together).
   settings and shown by the sheet preview. Left: members with a
   `[[section]]` table of their own (no profile) stay lines (decided); no
   GPU instancing (the geometry is shared per type and moved on the CPU).
+- **U9. New project lines are full copies** (asked by the owner,
+  2026-10-22, not started): starting a project line (Versions) writes
+  every object of the line it starts from again under the new line's
+  name (`Session::create_line`), saved check reports included, so a new
+  branch takes time and room in proportion to the whole line, and is
+  loaded and shown as a line of its own. To do: a project line keeps
+  only what differs from the revision it starts from (objects changed,
+  added or deleted), reading the rest from that revision; creating one
+  then costs next to nothing, and opening and drawing it can share what
+  is unchanged with the line it came from (solved sections, drawing
+  data). Needs a project schema change (with reading of the old form)
+  and care with merging, deleting the source line and the per-line
+  settings.
 
 ## Proposed stages (to discuss)
 

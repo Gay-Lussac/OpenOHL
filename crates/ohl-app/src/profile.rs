@@ -575,7 +575,7 @@ impl ProfileView {
                     Some(ui.visuals().warn_fg_color),
                 );
             }
-            Some(Ok(p)) if p.page.is_none() => {
+            Some(Ok(p)) if p.paper.is_none() => {
                 ui.label(
                     egui::RichText::new(
                         "Sheet preview: the export writes one continuous drawing (no sheet \
@@ -603,7 +603,7 @@ impl ProfileView {
                             .any(|(_, id, _)| w.starts_with(&format!("route {id}: ")))
                     })
                     .collect();
-                let page = p.page.as_ref().map_or("", |p| p.name.as_str());
+                let page = p.paper.as_deref().unwrap_or("");
                 ui.label(
                     egui::RichText::new(format!(
                         "Sheet preview: {} sheet(s) {page}, {} warning(s) — as File › Export › \

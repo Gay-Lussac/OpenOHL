@@ -55,6 +55,7 @@ mod furniture;
 mod layout;
 pub mod model;
 mod outline;
+pub mod paper;
 pub mod pdf;
 pub mod png;
 pub mod style;
@@ -66,8 +67,8 @@ mod sheet_tests;
 
 pub use curves::ConductorClearance;
 pub use layout::{
-    ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet_layout,
-    sheets,
+    ElevationDrawing, Sheet, SheetLayout, elevations, plan_model, profile_model, sheet,
+    sheet_layout, sheets,
 };
 pub use table::{profile_csv, profile_xml};
 pub use template::{Revision, SheetFields, SheetTemplate};
@@ -1341,19 +1342,16 @@ impl Page {
     }
 }
 
-/// ISO 216 formats A0–A4 in landscape, or a custom `WIDTHxHEIGHT` in mm.
+/// A standard paper size ([`paper::PAPER_SIZES`]: ISO A and B, the
+/// elongated A sizes, ANSI, ARCH) in landscape, or a custom
+/// `WIDTHxHEIGHT` in mm.
 pub fn page_format(name: &str) -> Option<Page> {
-    let (w, h) = match name.to_ascii_uppercase().as_str() {
-        "A0" => (1189.0, 841.0),
-        "A1" => (841.0, 594.0),
-        "A2" => (594.0, 420.0),
-        "A3" => (420.0, 297.0),
-        "A4" => (297.0, 210.0),
-        other => {
-            let (w, h) = other.split_once('X')?;
-            (w.trim().parse().ok()?, h.trim().parse().ok()?)
-        }
-    };
+    if let Some(p) = paper::paper_size(name) {
+        return Some(p.page());
+    }
+    let upper = name.to_ascii_uppercase();
+    let (w, h) = upper.split_once('X')?;
+    let (w, h): (f64, f64) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
     (w > 50.0 && h > 50.0).then(|| Page {
         name: name.to_owned(),
         width: w,
@@ -2813,6 +2811,7 @@ pub(crate) mod tests {
             formats: vec![export::Format::Dxf],
             page: Some(page.clone()),
             dpi: 50.0,
+            ..Default::default()
         };
         let empty = Options {
             fields: SheetFields::default(),

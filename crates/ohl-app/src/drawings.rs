@@ -31,9 +31,22 @@ use crate::model::Model;
 use crate::sheet_ui::{PluginTemplates, SheetChoice};
 use crate::survey_io::Job;
 
-/// Sheet formats offered ("" = one continuous drawing, "template": the
-/// sheet template's).
-const PAGES: [&str; 7] = ["", "template", "A0", "A1", "A2", "A3", "A4"];
+/// The sheet choices other than a paper size ("" = one continuous
+/// drawing, "template": the sheet template's, "optimised": the size and
+/// orientation chosen from the ticked sizes).
+const SPECIAL_PAGES: [&str; 3] = ["", "template", "optimised"];
+
+/// Whether `page` is a sheet choice the window knows.
+fn known_page(page: &str) -> bool {
+    SPECIAL_PAGES.contains(&page) || ohl_drawing::page_format(page).is_some()
+}
+
+/// The orientations the optimiser may choose ([`DrawingsWindow::paper_orientation`]).
+const ORIENTATIONS: [(&str, &str); 3] = [
+    ("both", "landscape or portrait"),
+    ("landscape", "landscape only"),
+    ("portrait", "portrait only"),
+];
 
 /// The Export drawings window.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +57,20 @@ pub struct DrawingsWindow {
     pub formats: Vec<Format>,
     /// Sheet format, or "" for one continuous drawing.
     pub page: String,
+    /// The paper sizes offered and the optimiser's choice
+    /// ([`ohl_drawing::paper::PAPER_SIZES`] names).
+    pub paper_sizes: Vec<String>,
+    /// The optimiser may put a route's sheets on different sizes of one
+    /// standard.
+    pub mixed_sizes: bool,
+    /// The optimiser puts every route on the same paper.
+    pub same_paper: bool,
+    /// The orientations the optimiser may choose: `both`, `landscape`,
+    /// `portrait`.
+    pub paper_orientation: String,
+    /// The optimiser's candidates for the first route, as last compared
+    /// (lines of text, or why not).
+    pub paper_report: Option<Result<Vec<String>, String>>,
     /// Horizontal scale denominator.
     pub hscale: f64,
     /// Vertical scale denominator.
@@ -98,6 +125,11 @@ pub struct DrawingsWindow {
     pub plugin_templates: PluginTemplates,
     /// The sheet shown in the window's preview (none: no preview).
     pub sheet_preview: Option<usize>,
+    /// The sheet number the preview shows when ticked (kept while off).
+    pub preview_sheet: usize,
+    /// The route the sheet preview shows, by id (none: the first route
+    /// drawn).
+    pub preview_route: Option<String>,
     /// Output folder.
     pub out: Option<PathBuf>,
     /// Why it cannot start.
@@ -110,6 +142,11 @@ impl Default for DrawingsWindow {
             route: None,
             formats: vec![Format::Pdf],
             page: "A3".into(),
+            paper_sizes: ohl_drawing::paper::default_sizes(),
+            mixed_sizes: false,
+            same_paper: false,
+            paper_orientation: "both".into(),
+            paper_report: None,
             hscale: 2000.0,
             vscale: 200.0,
             range: false,
@@ -133,6 +170,8 @@ impl Default for DrawingsWindow {
             sheet: SheetChoice::default(),
             plugin_templates: Arc::default(),
             sheet_preview: None,
+            preview_sheet: 1,
+            preview_route: None,
             out: None,
             error: None,
         }
@@ -186,6 +225,14 @@ pub struct DrawingSettings {
     pub formats: Vec<String>,
     /// Sheet format, or "" for one continuous drawing.
     pub page: String,
+    /// The paper sizes ticked (offered, and the optimiser's choice).
+    pub paper_sizes: Vec<String>,
+    /// The optimiser may mix sizes of one standard on a route.
+    pub mixed_sizes: bool,
+    /// The optimiser puts every route on the same paper.
+    pub same_paper: bool,
+    /// The orientations the optimiser may choose.
+    pub paper_orientation: String,
     /// Horizontal scale denominator.
     pub hscale: f64,
     /// Vertical scale denominator.
@@ -251,6 +298,10 @@ impl DrawingSettings {
         Self {
             formats: w.formats.iter().map(|f| f.name().to_owned()).collect(),
             page: w.page.clone(),
+            paper_sizes: w.paper_sizes.clone(),
+            mixed_sizes: w.mixed_sizes,
+            same_paper: w.same_paper,
+            paper_orientation: w.paper_orientation.clone(),
             hscale: w.hscale,
             vscale: w.vscale,
             range: w.range,
@@ -293,10 +344,31 @@ impl DrawingSettings {
             .into_iter()
             .filter(|f| self.formats.iter().any(|n| n == f.name()))
             .collect();
-        w.page = if PAGES.contains(&self.page.as_str()) {
+        w.page = if known_page(&self.page) {
             self.page.clone()
         } else {
             d.page.clone()
+        };
+        let sizes: Vec<String> = self
+            .paper_sizes
+            .iter()
+            .filter(|n| ohl_drawing::page_format(n).is_some())
+            .cloned()
+            .collect();
+        w.paper_sizes = if sizes.is_empty() {
+            d.paper_sizes
+        } else {
+            sizes
+        };
+        w.mixed_sizes = self.mixed_sizes;
+        w.same_paper = self.same_paper;
+        w.paper_orientation = if ORIENTATIONS
+            .iter()
+            .any(|(k, _)| *k == self.paper_orientation)
+        {
+            self.paper_orientation.clone()
+        } else {
+            d.paper_orientation
         };
         w.hscale = ok(self.hscale, 10.0..=100_000.0, d.hscale);
         w.vscale = ok(self.vscale, 10.0..=100_000.0, d.vscale);
@@ -382,10 +454,31 @@ pub struct Drawings {
     /// The sheet previewed in the window: for what, the image (or why
     /// not), the sheets' count and warnings.
     sheet_image: Option<(SheetKey, Result<SheetImage, String>)>,
+    /// Settings changed since the sheet image: what, and since when (it
+    /// is drawn again once they settle, [`PREVIEW_SETTLE`]).
+    sheet_pending: Option<(SheetKey, std::time::Instant)>,
+    /// Likewise for the sheet preview over the views.
+    preview_pending: Option<(PreviewKey, std::time::Instant)>,
+    /// The sheet being drawn in the background: for what, and where its
+    /// pixels come.
+    sheet_job: Option<(
+        SheetKey,
+        std::sync::mpsc::Receiver<Result<SheetPixels, String>>,
+    )>,
 }
 
-/// What a sheet preview was made for.
-type SheetKey = (DrawingsWindow, usize, usize);
+/// A sheet previewed, for the tests: the route's sheet count, the
+/// sheet's warnings and its number.
+#[cfg(test)]
+pub type SheetPreviewed = (usize, Vec<String>, usize);
+
+/// What a sheet preview was made for: the settings (without the sheet
+/// and route shown), the case, the route and the sheet.
+type SheetKey = (DrawingsWindow, usize, Option<String>, usize);
+
+/// How long the settings must stay unchanged before a preview is drawn
+/// again (typing in a field draws once, not at every key).
+pub(crate) const PREVIEW_SETTLE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// A sheet drawn for the window.
 pub struct SheetImage {
@@ -393,8 +486,14 @@ pub struct SheetImage {
     pub texture: egui::TextureHandle,
     /// Its size, mm.
     pub size: [f64; 2],
-    /// How many sheets the first route has.
+    /// How many sheets its route has.
     pub sheets: usize,
+    /// The sheet shown (1-based; the last when one past it was asked).
+    pub number: usize,
+    /// Its route.
+    pub route: String,
+    /// The routes the export draws (to choose from).
+    pub routes: Vec<String>,
     /// The sheet's warnings.
     pub warnings: Vec<String>,
 }
@@ -434,8 +533,9 @@ pub struct PreviewRoute {
 /// The export's sheets, as File › Export › Drawings… would write them now.
 #[derive(Debug, Clone)]
 pub struct Preview {
-    /// The sheet format (none: the export writes one continuous drawing).
-    pub page: Option<ohl_drawing::Page>,
+    /// The sheets' paper in words (none: the export writes one continuous
+    /// drawing).
+    pub paper: Option<String>,
     /// The sheets of every alignment.
     pub routes: Vec<PreviewRoute>,
     /// The sheets have a plan above the profile.
@@ -477,13 +577,25 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
     };
     let input = Input::prepare(model, case, &every, PathBuf::new())?;
     let options = input.route_options();
+    let export = input.common_export(&options)?;
     let mut routes = Vec::new();
-    if let Some(page) = &input.export.page {
+    let mut papers = Vec::new();
+    if export.paged() {
         for route in &input.routes {
             let d = input.drawing(route)?;
+            let sheets = match (&export.optimise, &export.page) {
+                (Some(opt), _) => {
+                    let best = ohl_drawing::paper::best(&d, &options, opt)
+                        .ok_or("no paper size to lay the sheets out on")?;
+                    papers.push(format!("{}: {}", route.id, best.sizes()));
+                    best.layout
+                }
+                (None, Some(page)) => ohl_drawing::sheet_layout(&d, &options, page),
+                (None, None) => Vec::new(),
+            };
             routes.push(PreviewRoute {
                 id: route.id.clone(),
-                sheets: ohl_drawing::sheet_layout(&d, &options, page),
+                sheets,
                 elevations: ohl_drawing::elevations(&d, &options),
                 curves: ohl_drawing::curves::curves(
                     &d,
@@ -496,8 +608,13 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
             });
         }
     }
+    let paper = match (&export.optimise, &export.page) {
+        (Some(_), _) => Some(format!("optimised ({})", papers.join("; "))),
+        (None, Some(p)) => Some(p.name.clone()),
+        (None, None) => None,
+    };
     Ok(Preview {
-        page: input.export.page.clone(),
+        paper,
         routes,
         plan: options.plan,
         line_width: options.plan_half_width,
@@ -523,6 +640,8 @@ pub struct Input {
     pub range: Option<[f64; 2]>,
     /// Formats and sheets.
     pub export: Export,
+    /// With the optimised layout: one paper for every route.
+    pub same_paper: bool,
     /// Isoclearance lines on the plan.
     pub isoclearance: Option<Arc<IsoLines>>,
     /// Violation markers: point, label.
@@ -584,13 +703,22 @@ impl Input {
             return Err("the line has no route".into());
         }
         let template = crate::sheet_ui::resolve(model, &w.sheet.template, &w.plugin_templates)?;
+        let mut optimise = None;
         let page = match w.page.as_str() {
             "" => None,
+            "template" if template.optimise().is_some() => {
+                optimise = template.optimise();
+                None
+            }
             "template" => Some(
                 template
                     .page()
-                    .ok_or("the sheet template gives no page format: choose one (A0–A4)")?,
+                    .ok_or("the sheet template gives no page format: choose one")?,
             ),
+            "optimised" => {
+                optimise = Some(w.optimise()?);
+                None
+            }
             p => Some(ohl_drawing::page_format(p).ok_or("unknown sheet format")?),
         };
         let page = page.map(|p| if w.sheet.portrait { p.portrait() } else { p });
@@ -822,8 +950,10 @@ impl Input {
             export: Export {
                 formats: w.formats.clone(),
                 page,
+                optimise,
                 dpi: w.dpi,
             },
+            same_paper: w.same_paper,
             cases,
             isoclearance: w.isoclearance.clone(),
             lidar,
@@ -883,6 +1013,28 @@ impl Input {
         Ok(d)
     }
 
+    /// The export, with the optimised layout narrowed to one paper (or
+    /// one standard) for every route when [`Self::same_paper`] asks.
+    ///
+    /// Expected cost: the routes' drawing data and their candidates once
+    /// more (seconds for a long line).
+    pub fn common_export(&self, options: &ohl_drawing::Options) -> Result<Export, String> {
+        let mut export = self.export.clone();
+        if self.same_paper
+            && self.routes.len() > 1
+            && let Some(opt) = &self.export.optimise
+        {
+            let ds = self
+                .routes
+                .iter()
+                .map(|r| self.drawing(r))
+                .collect::<Result<Vec<_>, _>>()?;
+            let all: Vec<_> = ds.iter().map(|d| (d, options)).collect();
+            export.optimise = Some(ohl_drawing::paper::common_choice(&all, opt));
+        }
+        Ok(export)
+    }
+
     /// The options of each route's drawings (with the station range).
     pub fn route_options(&self) -> ohl_drawing::Options {
         ohl_drawing::Options {
@@ -902,15 +1054,18 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
         ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(30 * 60));
     let (mut files, mut warnings) = (0, Vec::new());
     let n = input.routes.len();
+    let options = input.route_options();
+    let export = input.common_export(&options)?;
     for (r, route) in input.routes.iter().enumerate() {
         report(
             format!("route {} ({} of {n})", route.id, r + 1),
             r as f32 / n as f32,
         );
         let d = input.drawing(route)?;
-        let options = input.route_options();
-        let written =
-            ohl_drawing::export::write_route(&d, &options, &input.export, &input.out, &budget)?;
+        let written = ohl_drawing::export::write_route(&d, &options, &export, &input.out, &budget)?;
+        if let Some(paper) = &written.paper {
+            warnings.push(format!("route {}: optimised layout {paper}", route.id));
+        }
         files += written.files.len();
         warnings.extend(
             written
@@ -932,42 +1087,175 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
     Ok(text)
 }
 
-/// Sheet `n` of the first route the export window `w` draws, on screen
-/// (about 1600 pixels wide), with the route's sheet count and the sheet's
-/// warnings.
-fn sheet_image(
-    ctx: &egui::Context,
-    model: &Model,
-    case: usize,
-    w: &DrawingsWindow,
-    n: usize,
-) -> Result<SheetImage, String> {
-    let input = Input::prepare(model, case, w, PathBuf::new())?;
-    let page = input
-        .export
-        .page
-        .clone()
-        .ok_or("one continuous drawing: choose a sheet format to preview a sheet")?;
-    let route = input.routes.first().ok_or("no route")?;
+/// The standard paper sizes as ticks, by standard: the sizes offered
+/// and those the optimiser may choose (at least one stays ticked).
+fn paper_sizes_ui(ui: &mut egui::Ui, ticked: &mut Vec<String>) {
+    use ohl_drawing::paper::{PAPER_SIZES, Standard};
+    for standard in [
+        Standard::IsoA,
+        Standard::IsoB,
+        Standard::Ansi,
+        Standard::Arch,
+    ] {
+        ui.label(egui::RichText::new(standard.name()).small().strong());
+        ui.horizontal_wrapped(|ui| {
+            for p in PAPER_SIZES.iter().filter(|p| p.standard == standard) {
+                let mut on = ticked.iter().any(|t| t == p.name);
+                let r = ui
+                    .checkbox(&mut on, p.name)
+                    .on_hover_text(format!("{:.0} × {:.0} mm", p.long, p.short));
+                if r.changed() {
+                    if on {
+                        ticked.push(p.name.to_owned());
+                    } else if ticked.len() > 1 {
+                        ticked.retain(|t| t != p.name);
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// A sheet drawn for the window as pixels (made in the background).
+struct SheetPixels {
+    /// Its size, mm.
+    size: [f64; 2],
+    /// How many sheets its route has.
+    sheets: usize,
+    /// The sheet shown (1-based).
+    number: usize,
+    /// Its route.
+    route: String,
+    /// The routes the export draws.
+    routes: Vec<String>,
+    /// The sheet's warnings.
+    warnings: Vec<String>,
+    /// Width and height, pixels.
+    px: [usize; 2],
+    /// RGBA, unmultiplied.
+    rgba: Vec<u8>,
+}
+
+impl SheetPixels {
+    /// On screen.
+    fn image(self, ctx: &egui::Context) -> SheetImage {
+        let image = egui::ColorImage::from_rgba_unmultiplied(self.px, &self.rgba);
+        SheetImage {
+            texture: ctx.load_texture("drawings-sheet-preview", image, Default::default()),
+            size: self.size,
+            sheets: self.sheets,
+            number: self.number,
+            route: self.route,
+            routes: self.routes,
+            warnings: self.warnings,
+        }
+    }
+}
+
+/// Sheet `n` of route `route` ([`DrawingsWindow::preview_route`], else the
+/// first `input` draws) as pixels (about 1600 pixels wide), with the
+/// route's sheet count and the sheet's warnings. A sheet past the route's
+/// last shows the last.
+///
+/// Expected cost: the route's drawing data and layout (well under a
+/// second), the sheet drawn (≈ 0.05 s) and rendered (≈ 1 s for a full
+/// A1 sheet); run in the background.
+fn sheet_pixels(input: &Input, route: Option<&str>, n: usize) -> Result<SheetPixels, String> {
+    if !input.export.paged() {
+        return Err("one continuous drawing: choose a sheet format to preview a sheet".into());
+    }
+    let options = input.route_options();
+    let export = input.common_export(&options)?;
+    let routes: Vec<String> = input.routes.iter().map(|r| r.id.clone()).collect();
+    let route = route
+        .and_then(|id| input.routes.iter().find(|r| r.id == id))
+        .or(input.routes.first())
+        .ok_or("no route")?;
     let d = input.drawing(route)?;
-    let sheets = ohl_drawing::sheets(&d, &input.route_options(), &page);
-    let count = sheets.len();
-    let sheet = sheets
-        .into_iter()
-        .nth(n.saturating_sub(1))
-        .ok_or_else(|| format!("route {} has {count} sheet(s)", route.id))?;
+    // Laid out, then only the sheet shown drawn.
+    let (count, draw): (usize, Box<dyn Fn(usize) -> Option<ohl_drawing::Sheet>>) =
+        match (&export.optimise, &export.page) {
+            (Some(opt), _) => {
+                let best = ohl_drawing::paper::best(&d, &options, opt)
+                    .ok_or("no paper size to lay the sheets out on")?;
+                let (d, options) = (&d, &options);
+                (
+                    best.sheets(),
+                    Box::new(move |k| ohl_drawing::paper::draw_one(d, options, &best, k)),
+                )
+            }
+            (None, Some(page)) => {
+                let count = ohl_drawing::sheet_layout(&d, &options, page).len();
+                let (d, options, page) = (&d, &options, page.clone());
+                (
+                    count,
+                    Box::new(move |k| ohl_drawing::sheet(d, options, &page, k)),
+                )
+            }
+            (None, None) => (0, Box::new(|_| None)),
+        };
+    let number = n.clamp(1, count.max(1));
+    let sheet = draw(number).ok_or_else(|| format!("route {} has no sheet", route.id))?;
+    let page = sheet.page.clone();
     let dpi = 1600.0 / (page.width / 25.4);
     let (wpx, hpx, rgba) = ohl_drawing::png::render_rgba(&sheet.drawing, dpi, 4.0e6)?;
-    let image = egui::ColorImage::from_rgba_unmultiplied([wpx as usize, hpx as usize], &rgba);
-    Ok(SheetImage {
-        texture: ctx.load_texture("drawings-sheet-preview", image, Default::default()),
+    Ok(SheetPixels {
         size: [page.width, page.height],
         sheets: count,
+        number,
+        route: route.id.clone(),
+        routes,
         warnings: sheet.warnings,
+        px: [wpx as usize, hpx as usize],
+        rgba,
     })
 }
 
 impl DrawingsWindow {
+    /// The optimiser of the window's ticked sizes, orientations and
+    /// mixing.
+    pub fn optimise(&self) -> Result<ohl_drawing::paper::Optimise, String> {
+        let mut o = ohl_drawing::paper::Optimise::from_names(&self.paper_sizes, self.mixed_sizes)?;
+        match self.paper_orientation.as_str() {
+            "landscape" => o.portrait = false,
+            "portrait" => o.landscape = false,
+            _ => {}
+        }
+        Ok(o)
+    }
+
+    /// The optimiser's candidates for the first route the window draws,
+    /// best first, as lines of text.
+    ///
+    /// Expected cost: the route's drawing data and one layout per size,
+    /// orientation and (mixed) standard: under a second for most routes,
+    /// seconds for a long one.
+    fn compare_papers(&self, model: &Model, case: usize) -> Result<Vec<String>, String> {
+        let input = Input::prepare(model, case, self, PathBuf::new())?;
+        let opt = match &input.export.optimise {
+            Some(o) => o.clone(),
+            None => self.optimise()?,
+        };
+        let route = input.routes.first().ok_or("no route")?;
+        let d = input.drawing(route)?;
+        let options = input.route_options();
+        let lines = ohl_drawing::paper::candidates(&d, &options, &opt)
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}: {} sheet(s) ({}), {} warning(s), {:.2} m², {:.0} % filled",
+                    c.label,
+                    c.sheets(),
+                    c.sizes(),
+                    c.warnings,
+                    c.area,
+                    c.fill * 100.0
+                )
+            })
+            .collect();
+        Ok(lines)
+    }
+
     /// The window; `Some(job)` once started.
     pub fn ui(
         &mut self,
@@ -1049,32 +1337,126 @@ impl DrawingsWindow {
                             .ok()
                             .and_then(|t| t.page())
                             .map(|p| format!("the template's: {}", p.name));
-                        ui.horizontal(|ui| {
-                            egui::ComboBox::from_id_salt("drawings-page")
-                                .selected_text(match self.page.as_str() {
-                                    "" => "one continuous drawing".to_owned(),
-                                    "template" => template_page
-                                        .clone()
-                                        .unwrap_or("the template's (none: choose one)".into()),
-                                    p => p.to_owned(),
-                                })
-                                .show_ui(ui, |ui| {
-                                    for p in PAGES {
-                                        let text = match p {
-                                            "" => "one continuous drawing".to_owned(),
-                                            "template" => match &template_page {
-                                                Some(t) => format!("{t}, split at structures"),
-                                                None => continue,
-                                            },
-                                            p => format!("{p}, split at structures"),
-                                        };
-                                        ui.selectable_value(&mut self.page, p.to_owned(), text);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                let fixed = |p: &str| format!("{p}, split at structures");
+                                egui::ComboBox::from_id_salt("drawings-page")
+                                    .selected_text(match self.page.as_str() {
+                                        "" => "one continuous drawing".to_owned(),
+                                        "template" => template_page
+                                            .clone()
+                                            .unwrap_or("the template's (none: choose one)".into()),
+                                        "optimised" => "optimised from the ticked sizes".to_owned(),
+                                        p => p.to_owned(),
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.page,
+                                            String::new(),
+                                            "one continuous drawing",
+                                        );
+                                        if let Some(t) = &template_page {
+                                            ui.selectable_value(
+                                                &mut self.page,
+                                                "template".into(),
+                                                fixed(t),
+                                            );
+                                        }
+                                        ui.selectable_value(
+                                            &mut self.page,
+                                            "optimised".into(),
+                                            "optimised: size and orientation from the ticked sizes",
+                                        );
+                                        for p in self.paper_sizes.clone() {
+                                            ui.selectable_value(&mut self.page, p.clone(), fixed(&p));
+                                        }
+                                    });
+                                if self.page != "optimised" {
+                                    ui.add_enabled(
+                                        !self.page.is_empty(),
+                                        egui::Checkbox::new(&mut self.sheet.portrait, "portrait"),
+                                    );
+                                }
+                            });
+                            if self.page == "optimised" {
+                                ui.horizontal(|ui| {
+                                    egui::ComboBox::from_id_salt("drawings-orientation")
+                                        .selected_text(
+                                            ORIENTATIONS
+                                                .iter()
+                                                .find(|(k, _)| *k == self.paper_orientation)
+                                                .map_or("landscape or portrait", |(_, t)| *t),
+                                        )
+                                        .show_ui(ui, |ui| {
+                                            for (k, t) in ORIENTATIONS {
+                                                ui.selectable_value(
+                                                    &mut self.paper_orientation,
+                                                    k.to_owned(),
+                                                    t,
+                                                );
+                                            }
+                                        });
+                                    ui.checkbox(&mut self.mixed_sizes, "different sizes allowed")
+                                        .on_hover_text(
+                                            "A route's sheets may take different sizes of one \
+                                             standard (e.g. A3 and A4), to use less paper",
+                                        );
+                                    ui.add_enabled(
+                                        self.route.is_none() && routes.len() > 1,
+                                        egui::Checkbox::new(
+                                            &mut self.same_paper,
+                                            "same paper on every route",
+                                        ),
+                                    );
+                                });
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Chosen per route: the fewest warnings, then the least \
+                                         paper (fuller sheets), then the fewest sheets. The \
+                                         scales stay as set.",
+                                    )
+                                    .small()
+                                    .weak(),
+                                );
+                                ui.horizontal(|ui| {
+                                    if ui
+                                        .button("Compare sizes")
+                                        .on_hover_text(
+                                            "Every candidate for the first route drawn, best first",
+                                        )
+                                        .clicked()
+                                    {
+                                        self.paper_report = Some(self.compare_papers(model, case));
+                                    }
+                                    if self.paper_report.is_some() && ui.button("Hide").clicked() {
+                                        self.paper_report = None;
                                     }
                                 });
-                            ui.add_enabled(
-                                !self.page.is_empty(),
-                                egui::Checkbox::new(&mut self.sheet.portrait, "portrait"),
-                            );
+                                match &self.paper_report {
+                                    Some(Ok(lines)) => {
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("drawings-paper-report")
+                                            .max_height(120.0)
+                                            .show(ui, |ui| {
+                                                for l in lines {
+                                                    ui.label(egui::RichText::new(l).small());
+                                                }
+                                            });
+                                    }
+                                    Some(Err(e)) => {
+                                        crate::menu::error_label(ui, e);
+                                    }
+                                    None => {}
+                                }
+                            }
+                            egui::CollapsingHeader::new(format!(
+                                "Paper sizes ({} ticked)",
+                                self.paper_sizes.len()
+                            ))
+                            .id_salt("drawings-paper-sizes")
+                            .show(ui, |ui| {
+                                paper_sizes_ui(ui, &mut self.paper_sizes);
+                            });
                         });
                         ui.end_row();
 
@@ -1311,9 +1693,13 @@ impl DrawingsWindow {
                 ui.horizontal(|ui| {
                     let mut on = self.sheet_preview.is_some();
                     ui.checkbox(&mut on, "Preview sheet")
-                        .on_hover_text("One sheet as the export draws it, in a window of its own");
-                    let mut n = self.sheet_preview.unwrap_or(1);
-                    ui.add_enabled(on, egui::DragValue::new(&mut n).range(1..=999));
+                        .on_hover_text(
+                            "One sheet as the export draws it, in a window of its own (its \
+                             route and sheet chosen there too)",
+                        );
+                    let mut n = self.sheet_preview.unwrap_or(self.preview_sheet).max(1);
+                    ui.add(egui::DragValue::new(&mut n).range(1..=999).prefix("sheet "));
+                    self.preview_sheet = n;
                     self.sheet_preview = on.then_some(n);
                 });
                 ui.checkbox(&mut self.profile_only, "the profile alone (no plan)");
@@ -1612,6 +1998,11 @@ impl Drawings {
 
     /// The window (if open) and the job's window, each frame.
     pub fn show(&mut self, ctx: &egui::Context, model: &mut Model, case: usize) {
+        // The sheet preview over the views is drawn again once the
+        // settings settle: a frame then.
+        if self.preview_pending.is_some() {
+            ctx.request_repaint_after(PREVIEW_SETTLE);
+        }
         // The plugins' templates, once read.
         if let Some(rx) = &self.template_job
             && let Ok(list) = rx.try_recv()
@@ -1690,83 +2081,179 @@ impl Drawings {
     }
 
     /// The window of the sheet previewed (when asked): drawn by the
-    /// export's own code, again when a setting or the case changes.
+    /// export's own code, again when a setting or the case changes (once
+    /// the settings have stayed unchanged for [`PREVIEW_SETTLE`]; another
+    /// sheet or route at once). The window chooses the route and steps
+    /// through the sheets.
     fn sheet_window(&mut self, ctx: &egui::Context, model: &Model, case: usize) {
         let Some(w) = &mut self.window else {
             self.sheet_image = None;
+            self.sheet_pending = None;
+            self.sheet_job = None;
             return;
         };
         let Some(n) = w.sheet_preview else {
             self.sheet_image = None;
+            self.sheet_pending = None;
+            self.sheet_job = None;
             return;
         };
-        let key: SheetKey = (
-            DrawingsWindow {
-                formats: Vec::new(),
-                dpi: 0.0,
-                out: None,
-                error: None,
-                sheet_preview: None,
-                ..w.clone()
-            },
-            case,
-            n,
-        );
-        if self.sheet_image.as_ref().is_none_or(|(k, _)| *k != key) {
-            let made = sheet_image(ctx, model, case, &key.0, n);
-            self.sheet_image = Some((key, made));
+        let settings = DrawingsWindow {
+            formats: Vec::new(),
+            dpi: 0.0,
+            out: None,
+            error: None,
+            sheet_preview: None,
+            preview_sheet: 1,
+            preview_route: None,
+            paper_report: None,
+            ..w.clone()
+        };
+        let key: SheetKey = (settings, case, w.preview_route.clone(), n);
+        let current = self.sheet_image.as_ref().map(|(k, _)| k);
+        if current != Some(&key) {
+            // Only the sheet or the route: at once; other settings: once
+            // they settle.
+            let navigation = current.is_some_and(|k| k.0 == key.0 && k.1 == key.1);
+            let settled = match &self.sheet_pending {
+                Some((k, since)) if *k == key => since.elapsed() >= PREVIEW_SETTLE,
+                _ => false,
+            };
+            let running = self.sheet_job.as_ref().is_some_and(|(k, _)| *k == key);
+            if running {
+            } else if current.is_none() || navigation || settled {
+                // Prepared here (the model's data, cheap), drawn and
+                // rendered in the background.
+                self.sheet_pending = None;
+                match Input::prepare(model, case, &key.0, PathBuf::new()) {
+                    Err(e) => self.sheet_image = Some((key, Err(e))),
+                    Ok(input) => {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let (route, ctx2) = (key.2.clone(), ctx.clone());
+                        std::thread::spawn(move || {
+                            let _ = tx.send(sheet_pixels(&input, route.as_deref(), n));
+                            ctx2.request_repaint();
+                        });
+                        self.sheet_job = Some((key, rx));
+                    }
+                }
+            } else {
+                if self.sheet_pending.as_ref().is_none_or(|(k, _)| *k != key) {
+                    self.sheet_pending = Some((key, std::time::Instant::now()));
+                }
+                ctx.request_repaint_after(PREVIEW_SETTLE);
+            }
         }
+        // The sheet drawn in the background, once there.
+        if let Some((k, rx)) = &self.sheet_job {
+            match rx.try_recv() {
+                Ok(made) => {
+                    let k = k.clone();
+                    self.sheet_image = Some((k, made.map(|p| p.image(ctx))));
+                    self.sheet_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.sheet_job = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        let waiting = self.sheet_pending.is_some() || self.sheet_job.is_some();
         let mut open = true;
+        let (mut number, mut route) = (n, w.preview_route.clone());
         egui::Window::new("Sheet preview")
             .open(&mut open)
             .default_size([900.0, 680.0])
-            .show(ctx, |ui| match self.sheet_image.as_ref().map(|(_, r)| r) {
-                Some(Ok(img)) => {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Sheet {n} of {} ({:.0} × {:.0} mm), as the export draws it",
-                            img.sheets, img.size[0], img.size[1]
-                        ))
-                        .small(),
-                    );
-                    egui::ScrollArea::vertical()
-                        .id_salt("sheet-preview-warnings")
-                        .max_height(70.0)
-                        .show(ui, |ui| {
-                            for x in &img.warnings {
-                                ui.label(egui::RichText::new(format!("⚠ {x}")).small());
-                            }
-                        });
-                    let avail = ui.available_width().max(200.0);
-                    let k = avail / img.size[0] as f32;
-                    egui::ScrollArea::both()
-                        .id_salt("sheet-preview-image")
-                        .show(ui, |ui| {
-                            ui.image(egui::load::SizedTexture::new(
-                                img.texture.id(),
-                                [avail, img.size[1] as f32 * k],
-                            ));
-                        });
-                    ui.add_space(0.0);
+            .show(ctx, |ui| {
+                let image = self.sheet_image.as_ref().and_then(|(_, r)| r.as_ref().ok());
+                ui.horizontal(|ui| {
+                    if let Some(img) = image
+                        && img.routes.len() > 1
+                    {
+                        ui.label("Route");
+                        egui::ComboBox::from_id_salt("sheet-preview-route")
+                            .selected_text(img.route.clone())
+                            .show_ui(ui, |ui| {
+                                for r in &img.routes {
+                                    if ui.selectable_label(*r == img.route, r).clicked() {
+                                        route = Some(r.clone());
+                                        number = 1;
+                                    }
+                                }
+                            });
+                    }
+                    let count = image.map_or(1, |i| i.sheets.max(1));
+                    let shown = image.map_or(n, |i| i.number);
+                    if ui.add_enabled(shown > 1, egui::Button::new("◀")).clicked() {
+                        number = shown - 1;
+                    }
+                    ui.label(format!("Sheet {shown} of {count}"));
+                    if ui
+                        .add_enabled(shown < count, egui::Button::new("▶"))
+                        .clicked()
+                    {
+                        number = shown + 1;
+                    }
+                    if waiting {
+                        ui.label(egui::RichText::new("updating…").small().weak());
+                    }
+                });
+                match self.sheet_image.as_ref().map(|(_, r)| r) {
+                    Some(Ok(img)) => {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{:.0} × {:.0} mm, as the export draws it",
+                                img.size[0], img.size[1]
+                            ))
+                            .small(),
+                        );
+                        egui::ScrollArea::vertical()
+                            .id_salt("sheet-preview-warnings")
+                            .max_height(70.0)
+                            .show(ui, |ui| {
+                                for x in &img.warnings {
+                                    ui.label(egui::RichText::new(format!("⚠ {x}")).small());
+                                }
+                            });
+                        let avail = ui.available_width().max(200.0);
+                        let k = avail / img.size[0] as f32;
+                        egui::ScrollArea::both()
+                            .id_salt("sheet-preview-image")
+                            .show(ui, |ui| {
+                                ui.image(egui::load::SizedTexture::new(
+                                    img.texture.id(),
+                                    [avail, img.size[1] as f32 * k],
+                                ));
+                            });
+                    }
+                    Some(Err(e)) => {
+                        crate::menu::error_label(ui, e);
+                    }
+                    None => {}
                 }
-                Some(Err(e)) => {
-                    crate::menu::error_label(ui, e);
-                }
-                None => {}
             });
         if !open {
             w.sheet_preview = None;
+        } else if number != n || route != w.preview_route {
+            w.sheet_preview = Some(number);
+            w.preview_sheet = number;
+            w.preview_route = route;
         }
     }
 
     /// The sheet previewed in the window, if any: its route's sheet count
     /// and its warnings, or why it could not be drawn.
+    /// (The sheets' count, the warnings, the sheet shown.)
     #[cfg(test)]
-    pub fn sheet_previewed(&self) -> Option<Result<(usize, Vec<String>), String>> {
+    pub fn sheet_previewed(&self) -> Option<Result<SheetPreviewed, String>> {
         self.sheet_image.as_ref().map(|(_, r)| match r {
-            Ok(i) => Ok((i.sheets, i.warnings.clone())),
+            Ok(i) => Ok((i.sheets, i.warnings.clone(), i.number)),
             Err(e) => Err(e.clone()),
         })
+    }
+
+    /// Whether a sheet preview is being drawn (in the background).
+    #[cfg(test)]
+    pub fn sheet_drawing(&self) -> bool {
+        self.sheet_job.is_some() || self.sheet_pending.is_some()
     }
 
     /// Reads the sheet templates of the plugins `dirs` (name, folder) in
@@ -1834,7 +2321,9 @@ impl Drawings {
         if !self.preview_on {
             return None;
         }
-        // Only what shapes the sheets (not the folder, formats, message).
+        // Only what shapes the sheets (not the folder, formats, message,
+        // the sheet previewed, the fields' values written on them).
+        let s = self.settings();
         let key: PreviewKey = (
             DrawingsWindow {
                 route: None,
@@ -1842,13 +2331,31 @@ impl Drawings {
                 dpi: 0.0,
                 out: None,
                 error: None,
-                ..self.settings().clone()
+                paper_report: None,
+                sheet_preview: None,
+                preview_sheet: 1,
+                preview_route: None,
+                sheet: crate::sheet_ui::SheetChoice {
+                    fields: Default::default(),
+                    ..s.sheet.clone()
+                },
+                ..s.clone()
             },
             case,
         );
         if self.preview.as_ref().is_none_or(|(k, _)| *k != key) {
-            let made = preview(model, case, &key.0);
-            self.preview = Some((key, made));
+            // Drawn at once the first time, else once the settings settle.
+            let settled = match &self.preview_pending {
+                Some((k, since)) if *k == key => since.elapsed() >= PREVIEW_SETTLE,
+                _ => false,
+            };
+            if self.preview.is_none() || settled {
+                let made = preview(model, case, &key.0);
+                self.preview = Some((key, made));
+                self.preview_pending = None;
+            } else if self.preview_pending.as_ref().is_none_or(|(k, _)| *k != key) {
+                self.preview_pending = Some((key, std::time::Instant::now()));
+            }
         }
         self.preview.as_ref().map(|(_, p)| p)
     }

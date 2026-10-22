@@ -15654,6 +15654,9 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
     // The settings change (A4, window closed: those it had): the
     // preview follows.
     harness.state_mut().ready().unwrap().drawings.last.page = "A4".into();
+    // (Drawn again once the settings have settled.)
+    harness.run_steps(1);
+    std::thread::sleep(crate::drawings::PREVIEW_SETTLE);
     harness.run_steps(3);
     let a4 = harness
         .state_mut()
@@ -15696,6 +15699,8 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
         .unwrap()
         .page = String::new();
     harness.state_mut().show_tab(crate::app::Tab::Profile);
+    harness.run_steps(1);
+    std::thread::sleep(crate::drawings::PREVIEW_SETTLE);
     harness.run_steps(3);
     assert!(
         harness
@@ -15861,10 +15866,30 @@ fn drawings_take_a_sheet_template_its_fields_and_versions() {
     let mut d = crate::drawings::Drawings::default();
     w.sheet_preview = Some(1);
     d.window = Some(w);
-    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| d.show(ui.ctx(), &mut m, 0));
-    out.textures_delta.clear();
-    let (sheets, warnings) = d.sheet_previewed().unwrap().unwrap();
+    // Drawn in the background: frames until it is there (exit clause: a
+    // minute).
+    let shown = |d: &mut crate::drawings::Drawings, m: &mut model::Model| {
+        let start = std::time::Instant::now();
+        loop {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| d.show(ui.ctx(), m, 0));
+            out.textures_delta.clear();
+            if !d.sheet_drawing() {
+                break d.sheet_previewed().unwrap().unwrap();
+            }
+            assert!(
+                start.elapsed().as_secs() < 60,
+                "the sheet preview took over a minute"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    let (sheets, warnings, number) = shown(&mut d, &mut m);
     assert!(sheets >= 1, "{warnings:?}");
+    assert_eq!(number, 1);
+    // A sheet past the route's last: the last shown (not an empty window).
+    d.window.as_mut().unwrap().sheet_preview = Some(99);
+    let (again, _, number) = shown(&mut d, &mut m);
+    assert_eq!((again, number), (sheets, sheets));
 }
 
 /// The drawing settings are kept in the project, per project line: a
