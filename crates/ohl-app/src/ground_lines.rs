@@ -2,24 +2,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! View › **Lines on the ground beside the line**: a line on each side of
-//! each alignment, on the ground, a given distance away from the line —
-//! from its outermost conductor (the default) or from its axis (the
-//! alignment). The conductors are those of a set of weather cases chosen
+//! View › **Lines on the ground beside the line**: lines on the ground a
+//! given distance away from the line, round **every span** of it — every
+//! section of every route and branch, and the spans to structures beside
+//! the alignments (a substation gantry, a portal, a tap) — measured from
+//! its outermost conductor (the default) or from its axis (the
+//! alignments). The conductors are those of a set of weather cases chosen
 //! in the menu (by default the case shown): the plan envelope over every
 //! case chosen, each with its wind's blowout from **both** sides when it
 //! has wind (the side the views do not show solved here, in the
 //! background: [`GroundLines::frame`]), the jumpers' solved positions
 //! counting as conductors, so the lines go on round the structures.
 //!
-//! In plan the line on a side is the outer edge of the band within the
-//! distance of the conductors (or of the axis): along each span, across
-//! its chord, the point farthest out on that side that is still within
-//! the distance of a wire of that span ([`offset_side`]); around an
-//! angle structure the cross direction turns in steps (a round outer
-//! corner); the loop a sharp inner corner makes is cut off where the
-//! line crosses itself ([`without_loops`]): the outer envelope, never
-//! crossing itself. It is draped on the ground ([`drape_counted`]): the active
+//! In plan the lines are the outline of the band within the distance of
+//! the conductors (or of the axes), the line taken as a graph of its
+//! spans ([`Graph`], [`outline`]): along each span, across its own chord,
+//! the point farthest out on each side that is still within the distance
+//! of a wire of that span; round the outer corner of an angle structure
+//! in steps; closed round an end (the outline of its wires' ends widened
+//! by the distance); joined at the structures, whatever lies within the
+//! distance of another span cut off ([`clip`]) and the pieces joined
+//! where they cut each other off ([`stitch`]), the loops where a line
+//! still crosses itself cut off ([`without_loops_tagged`]): the outer
+//! envelope, never crossing itself — over every route drawn, or each
+//! route its own ([`RouteLines`]). It is draped on the ground
+//! ([`drape_tagged`]): the active
 //! terrain surface (TIN), else the ground built from the LiDAR ground
 //! classes of the whole corridor (not the points drawn: the ground the
 //! checks use, [`crate::model::Model::ground`]), at every edge of its
@@ -39,7 +46,7 @@
 //! ([`Settings`], remembered per project on this computer with the other
 //! view choices).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -64,6 +71,21 @@ pub enum From {
     Axis,
 }
 
+/// How the lines of several routes are drawn.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteLines {
+    /// One envelope over every route ticked: where two routes run side by
+    /// side or cross, each side line is the outer edge of both.
+    #[default]
+    Envelope,
+    /// Each route its own lines (crossing those of another route where
+    /// they run side by side).
+    Each,
+}
+
 /// This user's choices (View › Lines on the ground beside the line),
 /// remembered per project on this computer ([`crate::model::ViewPrefs`]).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -77,6 +99,8 @@ pub struct Settings {
     pub from: From,
     /// Routes left out (none: every route; a new route is drawn).
     pub hidden_routes: BTreeSet<String>,
+    /// One envelope over the routes drawn, or each route its own lines.
+    pub route_lines: RouteLines,
     /// Colour.
     pub color: [u8; 3],
     /// Width, pixels.
@@ -108,6 +132,7 @@ impl Default for Settings {
             distance: DEFAULT_DISTANCE,
             from: From::OutermostConductor,
             hidden_routes: BTreeSet::new(),
+            route_lines: RouteLines::Envelope,
             color: COLORS[0],
             width: 2.0,
             dashed: false,
@@ -131,6 +156,7 @@ impl Settings {
         self.distance.to_bits().hash(h);
         self.from.hash(h);
         self.hidden_routes.hash(h);
+        self.route_lines.hash(h);
         self.lidar_corridor.map(f64::to_bits).hash(h);
     }
 
@@ -251,21 +277,18 @@ pub enum Side {
     Right,
 }
 
-/// One line on the ground: the alignment, its route, the side, its
-/// pieces (broken where it leaves the ground or no wire is within the
-/// distance), project coordinates.
+/// The lines on the ground round a route (or round every route drawn):
+/// its pieces (closed round a part of the line; broken where they leave
+/// the ground or no wire is within the distance), project coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroundLine {
-    /// The route.
+    /// The route (empty: the envelope over every route drawn).
     pub route: String,
-    /// The alignment.
-    pub alignment: String,
-    /// Its side.
-    pub side: Side,
     /// The pieces, on the ground.
     pub runs: Vec<Vec<[f64; 3]>>,
-    /// The alignment's axis (for the profile's stations).
-    pub axis: Vec<[f64; 3]>,
+    /// For each point of each piece, the half span it lies beside
+    /// ([`Piece::tags`]; what that is: [`Drawn::beside`]).
+    pub tags: Vec<Vec<u32>>,
 }
 
 /// Where the heights come from.
@@ -355,8 +378,15 @@ fn no_lidar_ground(model: &Model) -> Option<String> {
 /// The lines of one set of weather cases.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Drawn {
-    /// Each alignment's two lines.
+    /// The lines (one per route, or one round every route drawn).
     pub lines: Vec<GroundLine>,
+    /// By tag ([`GroundLine::tags`]): the alignment and its side a point
+    /// lies beside (none: round an end, or beside a span away from the
+    /// alignments).
+    pub beside: Vec<Option<(String, Side)>>,
+    /// The alignments' axes, by id (for the profile's stations and the
+    /// heights without a ground).
+    pub axes: Vec<(String, Vec<[f64; 3]>)>,
     /// Where the heights come from.
     pub ground: Ground,
     /// The stretches of the lines with no ground under them (beyond the
@@ -868,6 +898,8 @@ pub fn compute_on(
     };
     let mut out = Drawn {
         lines: Vec::new(),
+        beside: Vec::new(),
+        axes: Vec::new(),
         ground: match wide {
             Some((g, _)) => Ground::Lidar(g.points().len()),
             None => Ground::of(model),
@@ -896,51 +928,56 @@ pub fn compute_on(
     } else {
         Vec::new()
     };
-    for view in line.alignment_views() {
-        if settings.hidden_routes.contains(&view.route) {
-            continue;
-        }
-        let axis = view.centreline(line);
-        if axis.len() < 2 {
-            continue;
-        }
-        let chain = match settings.from {
-            From::Axis => Chain::along(&axis),
-            From::OutermostConductor => {
-                let run: Vec<&String> = view.run().collect();
-                let chain = Chain::of_wires(line, &solutions, &run);
-                if chain.spans.iter().all(Vec::is_empty) {
-                    out.notes.push(format!(
-                        "alignment {}: no wire solved in the weather cases chosen",
-                        view.id
-                    ));
-                    continue;
-                }
-                chain
+    let views = line.alignment_views();
+    out.axes = views
+        .iter()
+        .map(|v| (v.id.clone(), v.centreline(line)))
+        .filter(|(_, a)| a.len() > 1)
+        .collect();
+    let graph = match settings.from {
+        From::Axis => Graph::of_axes(&views),
+        From::OutermostConductor => {
+            let g = Graph::of_wires(line, &solutions, &views);
+            if g.edges.is_empty() {
+                out.notes
+                    .push("no wire solved in the weather cases chosen".into());
             }
-        };
-        for side in [Side::Left, Side::Right] {
-            let mut runs = Vec::new();
-            for piece in offset_side(&chain, d, side) {
-                let piece = without_loops(&piece);
-                if let Some((c, chords)) = &reach {
-                    for p in piece.iter().filter(|p| !c.contains(p[0], p[1])) {
-                        farthest = farthest.max(beyond(chords, *p));
-                    }
-                }
-                let (draped, gaps) = drape_counted(&piece, ground, &axis);
-                runs.extend(draped);
-                out.gaps += gaps;
-                planned = true;
-            }
-            out.lines.push(GroundLine {
-                route: view.route.clone(),
-                alignment: view.id.clone(),
-                side,
-                runs,
-                axis: axis.clone(),
-            });
+            g
         }
+    };
+    out.beside = graph
+        .edges
+        .iter()
+        .flat_map(|e| {
+            [false, true].map(|back| {
+                e.along.as_ref().map(|(id, ahead)| {
+                    let side = if *ahead != back {
+                        Side::Left
+                    } else {
+                        Side::Right
+                    };
+                    (id.clone(), side)
+                })
+            })
+        })
+        .collect();
+    let axes: Vec<&[[f64; 3]]> = out.axes.iter().map(|(_, a)| a.as_slice()).collect();
+    for (route, edges) in groups(&graph, settings) {
+        let mut runs = Vec::new();
+        let mut tags = Vec::new();
+        for piece in outline(&graph, &edges, d) {
+            if let Some((c, chords)) = &reach {
+                for p in piece.points.iter().filter(|p| !c.contains(p[0], p[1])) {
+                    farthest = farthest.max(beyond(chords, *p));
+                }
+            }
+            let (draped, t, gaps) = drape_tagged(&piece.points, &piece.tags, ground, &axes);
+            runs.extend(draped);
+            tags.extend(t);
+            out.gaps += gaps;
+            planned = true;
+        }
+        out.lines.push(GroundLine { route, runs, tags });
     }
     let on_ground = out.lines.iter().any(|l| !l.runs.is_empty());
     match out.ground {
@@ -975,6 +1012,33 @@ pub fn compute_on(
         && farthest > 0.0
     {
         out.notes.push(beyond_note(w, farthest));
+    }
+    out
+}
+
+/// The spans of `graph` drawn, as `settings` group them: (the route,
+/// its spans) for each route drawn ([`RouteLines::Each`]: a span on
+/// several routes with the first of them drawn), or ("", every span
+/// drawn) ([`RouteLines::Envelope`]). A span is drawn when it is on no
+/// route or on a route not left out.
+fn groups(graph: &Graph, settings: &Settings) -> Vec<(String, Vec<usize>)> {
+    let hidden = &settings.hidden_routes;
+    let shown = |e: &Edge| e.routes.iter().find(|r| !hidden.contains(*r)).cloned();
+    let mut out: Vec<(String, Vec<usize>)> = Vec::new();
+    for (k, e) in graph.edges.iter().enumerate() {
+        let route = match shown(e) {
+            Some(r) => r,
+            None if e.routes.is_empty() => String::new(),
+            None => continue,
+        };
+        let key = match settings.route_lines {
+            RouteLines::Envelope => String::new(),
+            RouteLines::Each => route,
+        };
+        match out.iter_mut().find(|g| g.0 == key) {
+            Some(g) => g.1.push(k),
+            None => out.push((key, vec![k])),
+        }
     }
     out
 }
@@ -1035,18 +1099,36 @@ pub fn beyond_note(w: f64, farthest: f64) -> String {
 /// A segment in plan.
 pub type Seg = [[f64; 2]; 2];
 
-/// What the lines are measured from, along an alignment: its points (the
-/// structures of its run, or the alignment's own points), between each
-/// two the segments of what lies in that span, at each point those of
+/// What the lines are measured from: the line as a graph in plan — its
+/// nodes (the structures, or the alignments' points), its edges (every
+/// span between two of them, each with what lies in it) and at each node
 /// what is held there (the jumpers).
 #[derive(Debug, Clone, Default)]
-pub struct Chain {
-    /// The points, in plan.
-    pub points: Vec<[f64; 2]>,
-    /// Between points k and k + 1.
-    pub spans: Vec<Vec<Seg>>,
-    /// At point k.
+pub struct Graph {
+    /// The nodes, in plan.
+    pub nodes: Vec<[f64; 2]>,
+    /// The edges (spans).
+    pub edges: Vec<Edge>,
+    /// At node k: what it holds (jumpers), segments in plan.
     pub joints: Vec<Vec<Seg>>,
+}
+
+/// One span of the [`Graph`].
+#[derive(Debug, Clone, Default)]
+pub struct Edge {
+    /// Its first node.
+    pub a: usize,
+    /// Its second node.
+    pub b: usize,
+    /// What lies in it (every wire of every case, each subconductor; from
+    /// the axis: its chord), segments in plan.
+    pub sources: Vec<Seg>,
+    /// The routes it is on (both its ends' routes; none in common: either's).
+    pub routes: Vec<String>,
+    /// The alignment it runs along (its ends follow each other on it), and
+    /// whether `a` to `b` is ahead (increasing stations); none: a span
+    /// away from the alignments (to a structure beside the line).
+    pub along: Option<(String, bool)>,
 }
 
 /// The segments of a polyline in plan (a single point: a segment of no
@@ -1060,33 +1142,99 @@ fn segments(points: &[[f64; 3]], out: &mut Vec<Seg>) {
     }
 }
 
-impl Chain {
-    /// The alignment `axis` itself.
-    pub fn along(axis: &[[f64; 3]]) -> Self {
-        let points: Vec<[f64; 2]> = axis.iter().map(|p| [p[0], p[1]]).collect();
-        let spans = points.windows(2).map(|w| vec![[w[0], w[1]]]).collect();
+impl Graph {
+    /// A path through `points` (k to k + 1 holding `spans[k]`, `joints[k]`
+    /// held at point k), along an alignment "a", ahead (tests).
+    #[cfg(test)]
+    pub fn path(points: Vec<[f64; 2]>, spans: Vec<Vec<Seg>>, joints: Vec<Vec<Seg>>) -> Self {
+        let edges = spans
+            .into_iter()
+            .enumerate()
+            .map(|(k, sources)| Edge {
+                a: k,
+                b: k + 1,
+                sources,
+                routes: Vec::new(),
+                along: Some(("a".into(), true)),
+            })
+            .collect();
+        let mut joints = joints;
+        joints.resize(points.len(), Vec::new());
         Self {
-            joints: vec![Vec::new(); points.len()],
-            points,
-            spans,
+            nodes: points,
+            edges,
+            joints,
         }
     }
 
-    /// The wires of `solutions` along the structures `run` (in order):
-    /// between each two, every wire of a span between them (each
-    /// subconductor of a bundle); at each, the jumpers with an end there.
-    pub fn of_wires(line: &ohl_line::Line, solutions: &[&Solved], run: &[&String]) -> Self {
-        let mut points = Vec::new();
-        let mut at = std::collections::HashMap::new();
-        for id in run {
-            if let Some(s) = line.structure(id) {
-                at.insert(id.as_str(), points.len());
-                points.push([s.position[0], s.position[1]]);
+    /// The node of key `key` at `at` (made when new).
+    fn node(&mut self, ids: &mut HashMap<String, usize>, key: &str, at: [f64; 2]) -> usize {
+        *ids.entry(key.to_owned()).or_insert_with(|| {
+            self.nodes.push(at);
+            self.joints.push(Vec::new());
+            self.nodes.len() - 1
+        })
+    }
+
+    /// The edge between nodes `a` and `b` (made when new, from `a` to `b`).
+    fn edge(&mut self, ids: &mut HashMap<(usize, usize), usize>, a: usize, b: usize) -> usize {
+        *ids.entry((a.min(b), a.max(b))).or_insert_with(|| {
+            self.edges.push(Edge {
+                a,
+                b,
+                ..Edge::default()
+            });
+            self.edges.len() - 1
+        })
+    }
+
+    /// The alignments `views` themselves: their points the nodes (a point
+    /// shared by two alignments, one node), each leg an edge holding its
+    /// chord.
+    pub fn of_axes(views: &[ohl_line::route::AlignmentView]) -> Self {
+        let mut g = Self::default();
+        let (mut nodes, mut edges) = (HashMap::new(), HashMap::new());
+        for v in views {
+            let ks: Vec<usize> = v
+                .alignment
+                .iter()
+                .map(|p| g.node(&mut nodes, &p.id, [p.position[0], p.position[1]]))
+                .collect();
+            for w in ks.windows(2) {
+                if w[0] == w[1] {
+                    continue;
+                }
+                let e = g.edge(&mut edges, w[0], w[1]);
+                let (a, b) = (g.nodes[w[0]], g.nodes[w[1]]);
+                let edge = &mut g.edges[e];
+                if edge.sources.is_empty() {
+                    edge.sources.push([a, b]);
+                }
+                if !edge.routes.contains(&v.route) {
+                    edge.routes.push(v.route.clone());
+                }
+                if edge.along.is_none() {
+                    edge.along = Some((v.id.clone(), edge.a == w[0]));
+                }
             }
         }
-        let n = points.len();
-        let mut spans = vec![Vec::new(); n.saturating_sub(1)];
-        let mut joints = vec![Vec::new(); n];
+        g
+    }
+
+    /// The wires of `solutions`: every span of every section (between
+    /// two different structures, one edge however many sections and
+    /// cases it holds: each wire, each subconductor of a bundle), the
+    /// jumpers at the structures they end at (a jumper on a tap in a span:
+    /// with that span's wires). The edges' routes and alignments from
+    /// `line`'s alignments `views`.
+    pub fn of_wires(
+        line: &ohl_line::Line,
+        solutions: &[&Solved],
+        views: &[ohl_line::route::AlignmentView],
+    ) -> Self {
+        let mut g = Self::default();
+        let (mut nodes, mut edges) = (HashMap::new(), HashMap::new());
+        let at = |id: &str| line.structure(id).map(|s| [s.position[0], s.position[1]]);
         for s in solutions {
             for shape in &s.shapes {
                 let Some(section) = line.sections.iter().find(|x| x.id == shape.section) else {
@@ -1097,16 +1245,17 @@ impl Chain {
                     else {
                         continue;
                     };
-                    let (Some(&i), Some(&j)) =
-                        (at.get(a.structure.as_str()), at.get(b.structure.as_str()))
-                    else {
+                    let (Some(pa), Some(pb)) = (at(&a.structure), at(&b.structure)) else {
                         continue;
                     };
-                    // Consecutive structures of the run only.
-                    if i.abs_diff(j) != 1 {
-                        continue;
-                    }
-                    let out = &mut spans[i.min(j)];
+                    let i = g.node(&mut nodes, &a.structure, pa);
+                    let j = g.node(&mut nodes, &b.structure, pb);
+                    let out = if i == j {
+                        &mut g.joints[i]
+                    } else {
+                        let e = g.edge(&mut edges, i, j);
+                        &mut g.edges[e].sources
+                    };
                     match s.bundles.spans.get(&(shape.section.clone(), k)) {
                         Some(subs) if !subs.is_empty() => {
                             for sub in subs {
@@ -1117,32 +1266,83 @@ impl Chain {
                     }
                 }
             }
+        }
+        for s in solutions {
             for j in &s.jumpers {
                 let Some(def) = line.jumpers.iter().find(|x| x.id == j.jumper) else {
                     continue;
                 };
-                let end = |e: &ohl_line::JumperEnd| match e {
-                    ohl_line::JumperEnd::Wire(p) => at.get(p.structure.as_str()).copied(),
-                    ohl_line::JumperEnd::Tap { .. } => None,
-                };
-                let Some(k) = end(&def.from).or_else(|| end(&def.to)) else {
-                    continue;
-                };
+                let mut segs = Vec::new();
                 match s.bundles.jumpers.get(&j.jumper) {
                     Some(subs) if !subs.is_empty() => {
                         for sub in subs {
-                            segments(sub, &mut joints[k]);
+                            segments(sub, &mut segs);
                         }
                     }
-                    _ => segments(&j.points, &mut joints[k]),
+                    _ => segments(&j.points, &mut segs),
+                }
+                for end in [&def.from, &def.to] {
+                    let ids = line.end_structures(end);
+                    let ks: Vec<usize> =
+                        ids.iter().filter_map(|id| nodes.get(id).copied()).collect();
+                    match (end, ks.as_slice()) {
+                        // A tap in a span: with its wires.
+                        (ohl_line::JumperEnd::Tap { .. }, [a, b]) if a != b => {
+                            if let Some(&e) = edges.get(&((*a).min(*b), (*a).max(*b))) {
+                                g.edges[e].sources.extend_from_slice(&segs);
+                            }
+                        }
+                        (_, [k]) => g.joints[*k].extend_from_slice(&segs),
+                        _ => {}
+                    }
                 }
             }
         }
-        Self {
-            points,
-            spans,
-            joints,
+        // Routes and alignments.
+        let routes = line.structure_routes();
+        let ids: Vec<&String> = {
+            let mut v: Vec<(&String, &usize)> = nodes.iter().collect();
+            v.sort_by_key(|x| *x.1);
+            v.into_iter().map(|x| x.0).collect()
+        };
+        for e in &mut g.edges {
+            let (a, b) = (ids[e.a], ids[e.b]);
+            let none = Vec::new();
+            let (ra, rb) = (
+                routes.get(a).unwrap_or(&none),
+                routes.get(b).unwrap_or(&none),
+            );
+            let both: Vec<String> = ra.iter().filter(|r| rb.contains(r)).cloned().collect();
+            e.routes = if both.is_empty() {
+                let mut all: Vec<String> = ra.iter().chain(rb).cloned().collect();
+                all.sort();
+                all.dedup();
+                all
+            } else {
+                both
+            };
+            e.along = views.iter().find(|v| v.consecutive(a, b)).map(|v| {
+                let pos = |id: &str| v.structures.iter().position(|s| s == id);
+                (v.id.clone(), pos(a) < pos(b))
+            });
         }
+        g
+    }
+
+    /// Every source of `edges` and their nodes' joints.
+    fn sources_of(&self, edges: &[usize]) -> Vec<Seg> {
+        let mut nodes = BTreeSet::new();
+        let mut out = Vec::new();
+        for &e in edges {
+            let edge = &self.edges[e];
+            out.extend_from_slice(&edge.sources);
+            nodes.insert(edge.a);
+            nodes.insert(edge.b);
+        }
+        for k in nodes {
+            out.extend_from_slice(&self.joints[k]);
+        }
+        out
     }
 }
 
@@ -1162,8 +1362,7 @@ fn len(a: [f64; 2]) -> f64 {
     a[0].hypot(a[1])
 }
 
-/// Distance in plan from `p` to the segment `s` (tests).
-#[cfg(test)]
+/// Distance in plan from `p` to the segment `s`.
 fn point_segment(p: [f64; 2], s: [[f64; 2]; 2]) -> f64 {
     let e = sub(s[1], s[0]);
     let l2 = dot(e, e);
@@ -1298,124 +1497,582 @@ fn reach<'a>(
         .reduce(f64::max)
 }
 
-/// The plan line on `side` of `chain`, `d` out from what it holds: along
-/// each span, across its chord (every [`STEP`] at most), the farthest
-/// point out within `d` of the span's wires (the outer edge of the band
-/// within `d` of them; when every wire lies on the other side, nearer
-/// than the axis); at each point where the chain turns away from that
-/// side, the cross direction turns about it in steps of at most 5°
-/// (a round outer corner, from the wires of both spans and the jumpers
-/// there). Its pieces, broken where a span holds nothing. At a turn
-/// towards that side the two spans' lines meet crossing
-/// ([`without_loops`] cuts the loop off).
-pub fn offset_side(chain: &Chain, d: f64, side: Side) -> Vec<Vec<[f64; 2]>> {
-    // Left of the direction u is (−u_y, u_x).
-    let normal = |u: [f64; 2]| match side {
-        Side::Left => [-u[1], u[0]],
-        Side::Right => [u[1], -u[0]],
-    };
-    let mut pieces: Vec<Vec<[f64; 2]>> = Vec::new();
-    let mut current: Vec<[f64; 2]> = Vec::new();
-    let mut put = |p: Option<[f64; 2]>, current: &mut Vec<[f64; 2]>| match p {
-        Some(p) => {
-            if current
-                .last()
-                .is_none_or(|q| (q[0] - p[0]).hypot(q[1] - p[1]) > 1e-6)
-            {
-                current.push(p);
-            }
-        }
-        None => {
-            if current.len() > 1 {
-                pieces.push(std::mem::take(current));
-            } else {
-                current.clear();
-            }
-        }
-    };
-    let pts = &chain.points;
-    let none: Vec<Seg> = Vec::new();
-    let joint = |k: usize| chain.joints.get(k).unwrap_or(&none);
-    // The spans with a length: (k, direction, length).
-    let chords: Vec<(usize, [f64; 2], f64)> = (0..pts.len().saturating_sub(1))
-        .filter_map(|k| {
-            let e = sub(pts[k + 1], pts[k]);
-            let l = len(e);
-            (l > 1e-9).then(|| (k, [e[0] / l, e[1] / l], l))
-        })
-        .collect();
-    for (c, &(k, u, length)) in chords.iter().enumerate() {
-        let span = chain.spans.get(k).unwrap_or(&none);
-        if span.is_empty() {
-            put(None, &mut current);
-            continue;
-        }
-        let n = normal(u);
-        let a = pts[k];
-        let binned = Binned::new(
-            a,
-            u,
-            length,
-            span.iter().chain(joint(k)).chain(joint(k + 1)),
-            d,
-        );
-        let steps = ((length / STEP).ceil() as usize).max(1);
-        for i in 0..=steps {
-            let s = length * i as f64 / steps as f64;
-            let p0 = [a[0] + u[0] * s, a[1] + u[1] * s];
-            let t = reach(p0, n, binned.at(s), d);
-            put(
-                t.map(|t| [p0[0] + n[0] * t, p0[1] + n[1] * t]),
-                &mut current,
-            );
-        }
-        // The turn at its end, on the outer side only.
-        let Some(&(k1, u1, _)) = chords.get(c + 1) else {
-            continue;
-        };
-        let next = chain.spans.get(k1).unwrap_or(&none);
-        if next.is_empty() {
-            continue;
-        }
-        let n1 = normal(u1);
-        let turn = cross(n, n1).atan2(dot(n, n1));
-        let outer = match side {
-            Side::Left => turn < 0.0,
-            Side::Right => turn > 0.0,
-        };
-        if !outer {
-            continue;
-        }
-        let v = pts[k + 1];
-        let around: Vec<&Seg> = span
-            .iter()
-            .chain(next)
-            .chain((k + 1..=k1).flat_map(joint))
-            .collect();
-        let parts = ((turn.abs().to_degrees() / FAN_STEP_DEG).ceil() as usize).max(1);
-        for j in 1..parts {
-            let ang = turn * j as f64 / parts as f64;
-            let (cs, sn) = (ang.cos(), ang.sin());
-            let dir = [n[0] * cs - n[1] * sn, n[0] * sn + n[1] * cs];
-            let t = reach(v, dir, around.iter().copied(), d);
-            put(
-                t.map(|t| [v[0] + dir[0] * t, v[1] + dir[1] * t]),
-                &mut current,
-            );
-        }
-    }
-    put(None, &mut current);
-    pieces
+/// The tag of a point of a line beside no alignment (round a structure at
+/// an end, or beside a span away from the alignments).
+pub const NO_SIDE: u32 = u32::MAX;
+
+/// A piece of a line in plan: its points, each point's tag (the half
+/// span it lies beside: `2·edge` on the left of the edge from `a` to `b`,
+/// `2·edge + 1` on its right; [`NO_SIDE`] round an end), and whether it
+/// is closed (its last point its first).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Piece {
+    /// The points.
+    pub points: Vec<[f64; 2]>,
+    /// Each point's tag.
+    pub tags: Vec<u32>,
+    /// Closed: round a whole part of the line.
+    pub closed: bool,
 }
 
-/// `line` without the loops it makes where it crosses itself (the inner
-/// side of a sharp angle): from each piece, the next crossing farthest
-/// along is joined directly. The result never crosses itself.
-pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
+/// The direction of half span `h` (`2·edge`: from `a` to `b`; + 1: back)
+/// in `graph`: (from, to).
+fn ends(graph: &Graph, h: usize) -> (usize, usize) {
+    let e = &graph.edges[h / 2];
+    if h.is_multiple_of(2) {
+        (e.a, e.b)
+    } else {
+        (e.b, e.a)
+    }
+}
+
+/// The lines round the spans `edges` of `graph`, `d` out from what they
+/// hold: the outline of the band within `d` of every wire and jumper,
+/// on both sides of every span, joined at the structures, closed round
+/// the ends.
+///
+/// Each span's sides (left looking from `a` to `b`, and back), across
+/// its chord every [`STEP`] at most: the farthest point out within `d`
+/// of its wires (and the jumpers at its ends; [`farthest_within`]). The
+/// sides are followed round the graph as its faces are, in turn about
+/// each structure (the next span clockwise): where the line turns away
+/// from its side the cross direction turns about the structure in steps
+/// of at most 5° (a round outer corner, from the wires of both spans and
+/// the jumpers there); at an end (a structure with one span) the line
+/// goes on round it from one side to the other, 180° in steps of 5°, at
+/// `d` beyond the wires and jumpers ending there (their points within
+/// `d` along the span of the farthest towards the end: the outline of
+/// their convex hull widened by `d` — round about a single wire's end,
+/// straight across between several; a span's first or last points with
+/// no wire within `d` left out there); a structure only holding
+/// jumpers, all round. Whatever lies within `d` of a wire or jumper of
+/// `edges` (beyond a tolerance of 0.2 % of `d`: an inner corner, a
+/// branch, another part of the line beside or across) is cut off
+/// ([`clip`]), the pieces left joined end to start where they cut each
+/// other off ([`stitch`]), and any loop a line still makes cut off
+/// ([`without_loops_tagged`]): the outer envelope. Pieces stay open
+/// where a span holds no wire within `d` of its chord.
+pub fn outline(graph: &Graph, edges: &[usize], d: f64) -> Vec<Piece> {
+    let mut joints = graph.joints.clone();
+    // The spans with a length (others: what they hold, at their node).
+    let mut used = Vec::new();
+    let mut touched = BTreeSet::new();
+    for &e in edges {
+        let edge = &graph.edges[e];
+        touched.insert(edge.a);
+        touched.insert(edge.b);
+        if edge.sources.is_empty() {
+            continue;
+        }
+        let (a, b) = (graph.nodes[edge.a], graph.nodes[edge.b]);
+        if len(sub(b, a)) > 1e-9 {
+            used.push(e);
+        } else {
+            joints[edge.a].extend_from_slice(&edge.sources);
+        }
+    }
+    // The half spans out of each node, by angle (anticlockwise).
+    let mut out: Vec<Vec<(f64, usize)>> = vec![Vec::new(); graph.nodes.len()];
+    for &e in &used {
+        for h in [2 * e, 2 * e + 1] {
+            let (i, j) = ends(graph, h);
+            let u = sub(graph.nodes[j], graph.nodes[i]);
+            out[i].push((u[1].atan2(u[0]), h));
+        }
+    }
+    for o in &mut out {
+        o.sort_by(|x, y| x.0.total_cmp(&y.0));
+    }
+    // After half span h (into its end v): the next one clockwise about v
+    // from h back.
+    let next = |h: usize| {
+        let (_, v) = ends(graph, h);
+        let o = &out[v];
+        let back = h ^ 1;
+        let i = o.iter().position(|x| x.1 == back).expect("back out of v");
+        o[(i + o.len() - 1) % o.len()].1
+    };
+    let dir = |h: usize| {
+        let (i, j) = ends(graph, h);
+        let u = sub(graph.nodes[j], graph.nodes[i]);
+        let l = len(u);
+        [u[0] / l, u[1] / l]
+    };
+    let left = |u: [f64; 2]| [-u[1], u[0]];
+    let sources = |h: usize| -> &Vec<Seg> { &graph.edges[h / 2].sources };
+    let mut pieces = Vec::new();
+    let mut seen = vec![false; 2 * graph.edges.len()];
+    for &e0 in &used {
+        for h0 in [2 * e0, 2 * e0 + 1] {
+            if seen[h0] {
+                continue;
+            }
+            // One face: its points, None where it breaks.
+            let mut raw: Vec<Option<([f64; 2], u32)>> = Vec::new();
+            let mut h = h0;
+            // Coming round an end: the span's first points with no wire
+            // within d left out (the end's outline joins its first).
+            let mut after_end = out[ends(graph, h0).0].len() == 1;
+            loop {
+                seen[h] = true;
+                let (i, j) = ends(graph, h);
+                let (a, v) = (graph.nodes[i], graph.nodes[j]);
+                let u = dir(h);
+                let n = left(u);
+                let length = len(sub(v, a));
+                let binned = Binned::new(
+                    a,
+                    u,
+                    length,
+                    sources(h).iter().chain(&joints[i]).chain(&joints[j]),
+                    d,
+                );
+                let steps = ((length / STEP).ceil() as usize).max(1);
+                let begun = raw.len();
+                for k in 0..=steps {
+                    let s = length * k as f64 / steps as f64;
+                    let p0 = [a[0] + u[0] * s, a[1] + u[1] * s];
+                    let t = reach(p0, n, binned.at(s), d);
+                    if t.is_none() && after_end && raw.len() == begun {
+                        continue;
+                    }
+                    raw.push(t.map(|t| ([p0[0] + n[0] * t, p0[1] + n[1] * t], h as u32)));
+                }
+                let h1 = next(h);
+                after_end = h1 == h ^ 1;
+                if after_end {
+                    // Its last points with no wire within d left out too.
+                    while raw.len() > begun && raw.last() == Some(&None) {
+                        raw.pop();
+                    }
+                    // An end: round it, 180° clockwise, about what reaches
+                    // farthest towards it (within d of the farthest).
+                    let all: Vec<[f64; 2]> = sources(h)
+                        .iter()
+                        .chain(&joints[j])
+                        .flatten()
+                        .copied()
+                        .collect();
+                    let reach = all
+                        .iter()
+                        .map(|q| dot(sub(*q, v), u))
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    let near: Vec<[f64; 2]> = all
+                        .into_iter()
+                        .filter(|q| dot(sub(*q, v), u) >= reach - d)
+                        .collect();
+                    if near.is_empty() {
+                        raw.push(None);
+                    }
+                    let parts = (180.0 / FAN_STEP_DEG).ceil() as usize;
+                    for k in 1..parts {
+                        let ang = -std::f64::consts::PI * k as f64 / parts as f64;
+                        if let Some(p) = support(&near, rotate(n, ang), d) {
+                            raw.push(Some((p, NO_SIDE)));
+                        }
+                    }
+                } else {
+                    let n1 = left(dir(h1));
+                    let turn = cross(n, n1).atan2(dot(n, n1));
+                    if turn < 0.0 {
+                        // Away from this side: round the outer corner.
+                        let around: Vec<&Seg> = sources(h)
+                            .iter()
+                            .chain(sources(h1))
+                            .chain(&joints[j])
+                            .collect();
+                        let parts =
+                            ((turn.abs().to_degrees() / FAN_STEP_DEG).ceil() as usize).max(1);
+                        for k in 1..parts {
+                            let r = rotate(n, turn * k as f64 / parts as f64);
+                            let t = reach(v, r, around.iter().copied(), d);
+                            raw.push(t.map(|t| ([v[0] + r[0] * t, v[1] + r[1] * t], h as u32)));
+                        }
+                    }
+                }
+                h = h1;
+                if h == h0 {
+                    break;
+                }
+            }
+            pieces.extend(face_pieces(raw));
+        }
+    }
+    // Structures holding jumpers only: all round.
+    for k in touched {
+        if !out[k].is_empty() || joints[k].is_empty() {
+            continue;
+        }
+        let near: Vec<[f64; 2]> = joints[k].iter().flatten().copied().collect();
+        let parts = (360.0 / FAN_STEP_DEG).ceil() as usize;
+        let mut points: Vec<[f64; 2]> = (0..parts)
+            .filter_map(|i| {
+                let ang = -std::f64::consts::TAU * i as f64 / parts as f64;
+                support(&near, rotate([0.0, 1.0], ang), d)
+            })
+            .collect();
+        if points.len() > 2 {
+            points.push(points[0]);
+            pieces.push(Piece {
+                tags: vec![NO_SIDE; points.len()],
+                points,
+                closed: true,
+            });
+        }
+    }
+    let all = graph.sources_of(edges);
+    let near = Near::new(&all, d);
+    let tol = 0.002 * d + 1e-6;
+    let clipped = pieces
+        .iter()
+        .flat_map(|p| clip(p, |q| near.inside(q, d - tol)))
+        .collect();
+    stitch(clipped, (0.5 * d).clamp(0.05, 1.0))
+        .into_iter()
+        .map(|p| {
+            let (points, tags) = without_loops_tagged(&p.points, &p.tags);
+            Piece {
+                closed: p.closed && points.first() == points.last(),
+                points,
+                tags,
+            }
+        })
+        .collect()
+}
+
+/// `v` turned by `ang` (radians, anticlockwise).
+fn rotate(v: [f64; 2], ang: f64) -> [f64; 2] {
+    let (s, c) = ang.sin_cos();
+    [v[0] * c - v[1] * s, v[0] * s + v[1] * c]
+}
+
+/// The point `d` beyond the farthest of `points` in direction `dir` (a
+/// unit vector): on the outline of their convex hull widened by `d`.
+fn support(points: &[[f64; 2]], dir: [f64; 2], d: f64) -> Option<[f64; 2]> {
+    let q = points
+        .iter()
+        .max_by(|a, b| dot(**a, dir).total_cmp(&dot(**b, dir)))?;
+    Some([q[0] + dir[0] * d, q[1] + dir[1] * d])
+}
+
+/// The points of one face round the graph (closed, None where it
+/// breaks) as pieces without loops: one closed piece when unbroken
+/// (begun at its leftmost point, on the outer envelope), else a piece
+/// between each two breaks.
+fn face_pieces(raw: Vec<Option<([f64; 2], u32)>>) -> Vec<Piece> {
+    let mut runs: Vec<Vec<([f64; 2], u32)>> = Vec::new();
+    let closed = raw.iter().all(Option::is_some);
+    if closed {
+        let mut pts: Vec<([f64; 2], u32)> = raw.into_iter().flatten().collect();
+        let first = pts
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                a.1.0[0]
+                    .total_cmp(&b.1.0[0])
+                    .then(a.1.0[1].total_cmp(&b.1.0[1]))
+            })
+            .map_or(0, |x| x.0);
+        pts.rotate_left(first);
+        if let Some(&p) = pts.first() {
+            pts.push(p);
+        }
+        runs.push(pts);
+    } else {
+        let start = raw.iter().position(Option::is_none).unwrap_or(0);
+        let mut current = Vec::new();
+        for p in raw[start..].iter().chain(&raw[..start]) {
+            match p {
+                Some(p) => current.push(*p),
+                None => runs.push(std::mem::take(&mut current)),
+            }
+        }
+        runs.push(current);
+    }
+    runs.into_iter()
+        .filter_map(|run| {
+            let mut points: Vec<[f64; 2]> = Vec::with_capacity(run.len());
+            let mut tags = Vec::with_capacity(run.len());
+            for (p, t) in run {
+                if points
+                    .last()
+                    .is_none_or(|q: &[f64; 2]| (q[0] - p[0]).hypot(q[1] - p[1]) > 1e-6)
+                {
+                    points.push(p);
+                    tags.push(t);
+                }
+            }
+            if closed && points.len() > 1 {
+                // The first point again at the end, removed as a repeat
+                // when the face is a single point.
+                let p = points[0];
+                if points.last() != Some(&p) {
+                    points.push(p);
+                    tags.push(tags[0]);
+                }
+            }
+            (points.len() > 1).then(|| Piece {
+                closed: closed && points.len() > 3 && points.first() == points.last(),
+                points,
+                tags,
+            })
+        })
+        .collect()
+}
+
+/// Segments by cells of a grid, for the distance to the nearest.
+struct Near<'a> {
+    segs: &'a [Seg],
+    cell: f64,
+    grid: HashMap<(i64, i64), Vec<u32>>,
+}
+
+impl<'a> Near<'a> {
+    /// `segs`, for distances up to about `d`.
+    fn new(segs: &'a [Seg], d: f64) -> Self {
+        let cell = d.max(2.0);
+        let mut grid: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
+        for (k, s) in segs.iter().enumerate() {
+            let c0 = Self::cell_of(cell, s[0]);
+            let c1 = Self::cell_of(cell, s[1]);
+            for i in c0.0.min(c1.0)..=c0.0.max(c1.0) {
+                for j in c0.1.min(c1.1)..=c0.1.max(c1.1) {
+                    grid.entry((i, j)).or_default().push(k as u32);
+                }
+            }
+        }
+        Self { segs, cell, grid }
+    }
+
+    fn cell_of(cell: f64, p: [f64; 2]) -> (i64, i64) {
+        ((p[0] / cell).floor() as i64, (p[1] / cell).floor() as i64)
+    }
+
+    /// Whether `p` lies nearer than `r` (at most about the `d` given) to a
+    /// segment.
+    fn inside(&self, p: [f64; 2], r: f64) -> bool {
+        if r <= 0.0 {
+            return false;
+        }
+        let lo = Self::cell_of(self.cell, [p[0] - r, p[1] - r]);
+        let hi = Self::cell_of(self.cell, [p[0] + r, p[1] + r]);
+        for i in lo.0..=hi.0 {
+            for j in lo.1..=hi.1 {
+                for &k in self.grid.get(&(i, j)).map_or(&[][..], Vec::as_slice) {
+                    if point_segment(p, self.segs[k as usize]) < r {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+/// `piece` without what lies `inside`: the pieces left, each cut where
+/// it goes in (found within a micrometre along the segment), the cut
+/// points tagged as the segment's start.
+fn clip(piece: &Piece, inside: impl Fn([f64; 2]) -> bool) -> Vec<Piece> {
+    let pts = &piece.points;
+    let mut ins: Vec<bool> = pts.iter().map(|p| inside(*p)).collect();
+    if !ins.iter().any(|x| *x) {
+        return vec![piece.clone()];
+    }
+    if piece.closed {
+        let n = ins.len();
+        ins[n - 1] = ins[0];
+    }
+    if ins.iter().all(|x| *x) {
+        return Vec::new();
+    }
+    // Where along a → b (a outside, b inside) it goes in.
+    let cut = |a: [f64; 2], b: [f64; 2]| {
+        let (mut lo, mut hi) = (0.0, 1.0);
+        let l = len(sub(b, a));
+        while (hi - lo) * l > 1e-6 {
+            let m = (lo + hi) / 2.0;
+            if inside([a[0] + (b[0] - a[0]) * m, a[1] + (b[1] - a[1]) * m]) {
+                hi = m;
+            } else {
+                lo = m;
+            }
+        }
+        [a[0] + (b[0] - a[0]) * lo, a[1] + (b[1] - a[1]) * lo]
+    };
+    // A closed piece: begun at a point inside.
+    let order: Vec<usize> = if piece.closed {
+        let first = ins.iter().position(|x| *x).unwrap_or(0);
+        let n = pts.len() - 1;
+        (0..=n).map(|k| (first + k) % n).collect()
+    } else {
+        (0..pts.len()).collect()
+    };
+    let mut out = Vec::new();
+    let mut current = Piece::default();
+    for w in order.windows(2) {
+        let (i, j) = (w[0], w[1]);
+        match (ins[i], ins[j]) {
+            (false, false) => {
+                if current.points.is_empty() {
+                    current.points.push(pts[i]);
+                    current.tags.push(piece.tags[i]);
+                }
+                current.points.push(pts[j]);
+                current.tags.push(piece.tags[j]);
+            }
+            (false, true) => {
+                if current.points.is_empty() {
+                    current.points.push(pts[i]);
+                    current.tags.push(piece.tags[i]);
+                }
+                current.points.push(cut(pts[i], pts[j]));
+                current.tags.push(piece.tags[i]);
+                out.push(std::mem::take(&mut current));
+            }
+            (true, false) => {
+                current.points.push(cut(pts[j], pts[i]));
+                current.tags.push(piece.tags[i]);
+                current.points.push(pts[j]);
+                current.tags.push(piece.tags[j]);
+            }
+            (true, true) => {}
+        }
+    }
+    out.push(current);
+    for p in &mut out {
+        let mut keep = Vec::with_capacity(p.points.len());
+        let mut tags = Vec::with_capacity(p.points.len());
+        for (q, t) in p.points.iter().zip(&p.tags) {
+            if keep
+                .last()
+                .is_none_or(|r: &[f64; 2]| (r[0] - q[0]).hypot(r[1] - q[1]) > 1e-9)
+            {
+                keep.push(*q);
+                tags.push(*t);
+            }
+        }
+        p.points = keep;
+        p.tags = tags;
+    }
+    out.retain(|p| p.points.len() > 1);
+    out
+}
+
+/// Where the line through `a0`, `a1` meets the line through `b0`, `b1`
+/// (none: parallel).
+fn meet(a0: [f64; 2], a1: [f64; 2], b0: [f64; 2], b1: [f64; 2]) -> Option<[f64; 2]> {
+    let (r, q) = (sub(a1, a0), sub(b1, b0));
+    let den = cross(r, q);
+    if den.abs() < 1e-12 * (len(r) * len(q)).max(1e-300) {
+        return None;
+    }
+    let t = cross(sub(b0, a0), q) / den;
+    Some([a0[0] + r[0] * t, a0[1] + r[1] * t])
+}
+
+/// Joins the end of `p` (its last segment) to `q` (its first segment
+/// from `q[0]`; `tags` its points' tags): where the two segments' lines
+/// meet when that is within `within` of both ends (two lines that cut
+/// each other off, joined where they cross: no step back and forth),
+/// else straight across.
+fn join(p: &mut Piece, q: &[[f64; 2]], tags: &[u32], within: f64) {
+    let end = *p.points.last().expect("a piece has points");
+    let start = q[0];
+    let n = p.points.len();
+    let x = (n > 1 && q.len() > 1)
+        .then(|| meet(p.points[n - 2], end, start, q[1]))
+        .flatten()
+        .filter(|x| len(sub(*x, end)) <= within && len(sub(*x, start)) <= within);
+    match x {
+        Some(x) => {
+            *p.points.last_mut().expect("a piece has points") = x;
+            p.points.extend_from_slice(&q[1..]);
+            p.tags.extend_from_slice(&tags[1..]);
+        }
+        None => {
+            let skip = usize::from(start == end);
+            p.points.extend_from_slice(&q[skip..]);
+            p.tags.extend_from_slice(&tags[skip..]);
+        }
+    }
+}
+
+/// `pieces` joined where one ends within `within` of where another
+/// begins (in the order found; [`join`]), closed where a piece comes back
+/// to its start.
+fn stitch(mut pieces: Vec<Piece>, within: f64) -> Vec<Piece> {
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) <= within;
+    let mut done = Vec::new();
+    while let Some(mut p) = pieces.pop() {
+        if p.closed {
+            done.push(p);
+            continue;
+        }
+        loop {
+            let end = *p.points.last().expect("a piece has points");
+            if p.points.len() > 3 && near(end, p.points[0]) {
+                // Joined to its own start, which is then left out: it
+                // begins and ends at its second point.
+                let (head, tags) = (p.points[..2].to_vec(), p.tags[..2].to_vec());
+                join(&mut p, &head, &tags, within);
+                p.points.remove(0);
+                p.tags.remove(0);
+                p.closed = true;
+                break;
+            }
+            // The nearest start.
+            let Some(k) = pieces
+                .iter()
+                .enumerate()
+                .filter(|(_, q)| !q.closed && near(end, q.points[0]))
+                .min_by(|a, b| {
+                    len(sub(a.1.points[0], end)).total_cmp(&len(sub(b.1.points[0], end)))
+                })
+                .map(|x| x.0)
+            else {
+                break;
+            };
+            let q = pieces.swap_remove(k);
+            join(&mut p, &q.points, &q.tags, within);
+        }
+        done.push(p);
+    }
+    done
+}
+
+/// `line` without the loops it makes where it crosses itself: from each
+/// segment, the next crossing farthest along is joined directly, so the
+/// result never crosses itself; each point keeping its tag (a crossing
+/// point takes the tag of the segment the line goes on along). A closed
+/// `line` (its last point its first) stays closed.
+pub fn without_loops_tagged(line: &[[f64; 2]], tags: &[u32]) -> (Vec<[f64; 2]>, Vec<u32>) {
+    // Repeated points out (segments of no length).
+    let (line, tags) = {
+        let mut points: Vec<[f64; 2]> = Vec::with_capacity(line.len());
+        let mut kept = Vec::with_capacity(line.len());
+        for (k, p) in line.iter().enumerate() {
+            let last = k + 1 == line.len();
+            match points.last_mut() {
+                Some(q) if (q[0] - p[0]).hypot(q[1] - p[1]) < 1e-9 => {
+                    // The last point kept exactly (a closed line's end).
+                    if last {
+                        *q = *p;
+                    }
+                }
+                _ => {
+                    points.push(*p);
+                    kept.push(tags[k]);
+                }
+            }
+        }
+        (points, kept)
+    };
+    let (line, tags) = (&line[..], &tags[..]);
     let n = line.len();
     if n < 4 {
-        return line.to_vec();
+        return (line.to_vec(), tags.to_vec());
     }
+    let closed = line[0] == line[n - 1];
     // A grid of the segments.
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
     let mut total = 0.0;
@@ -1437,7 +2094,7 @@ pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
             (((p[1] - lo[1]) / cell) as usize).min(rows - 1),
         )
     };
-    let mut grid: std::collections::HashMap<(usize, usize), Vec<usize>> = Default::default();
+    let mut grid: HashMap<(usize, usize), Vec<usize>> = Default::default();
     for k in 0..n - 1 {
         let (a, b) = (cell_of(line[k]), cell_of(line[k + 1]));
         for i in a.0.min(b.0)..=a.0.max(b.0) {
@@ -1447,6 +2104,7 @@ pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
         }
     }
     let mut out = vec![line[0]];
+    let mut out_tags = vec![tags[0]];
     let mut k = 0;
     let mut start = line[0];
     while k < n - 1 {
@@ -1459,8 +2117,17 @@ pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
                     if m < k + 2 || best.is_some_and(|x| x.0 >= m) {
                         continue;
                     }
+                    // A closed line's last segment meets its first at
+                    // the start: not a crossing.
+                    if closed && k == 0 && m == n - 2 {
+                        continue;
+                    }
                     let other = [line[m], line[m + 1]];
                     if let Some(t) = crossing(seg, other) {
+                        // Nor anything touching it there.
+                        if closed && k == 0 && t < 1e-12 {
+                            continue;
+                        }
                         let x = [
                             seg[0][0] + (seg[1][0] - seg[0][0]) * t,
                             seg[0][1] + (seg[1][1] - seg[0][1]) * t,
@@ -1473,18 +2140,31 @@ pub fn without_loops(line: &[[f64; 2]]) -> Vec<[f64; 2]> {
         match best {
             Some((m, _, x)) => {
                 out.push(x);
+                out_tags.push(tags[m]);
                 start = x;
                 k = m;
             }
             None => {
                 out.push(line[k + 1]);
+                out_tags.push(tags[k + 1]);
                 k += 1;
                 start = line[k];
             }
         }
     }
-    out.dedup_by(|a, b| (a[0] - b[0]).hypot(a[1] - b[1]) < 1e-9);
-    out
+    // Repeats out.
+    let mut points: Vec<[f64; 2]> = Vec::with_capacity(out.len());
+    let mut kept = Vec::with_capacity(out.len());
+    for (p, t) in out.into_iter().zip(out_tags) {
+        if points
+            .last()
+            .is_none_or(|q: &[f64; 2]| (q[0] - p[0]).hypot(q[1] - p[1]) >= 1e-9)
+        {
+            points.push(p);
+            kept.push(t);
+        }
+    }
+    (points, kept)
 }
 
 /// [`drape_counted`] without the gaps (tests).
@@ -1493,18 +2173,35 @@ pub fn drape(plan: &[[f64; 2]], ground: Option<&Terrain>, axis: &[[f64; 3]]) -> 
     drape_counted(plan, ground, axis).0
 }
 
-/// `plan` on the ground: on `ground`, a point where it crosses each edge
-/// of its triangles (the ground is flat between them), broken where it
-/// leaves the surface; without one, every [`STEP`] at the height of the
-/// alignment `axis` (its points' heights, linear along it) where it is
-/// beside it. With the number of stretches of `plan` that have no ground
-/// under them (each counted once, however many segments it spans; none
-/// without a ground).
+/// [`drape_tagged`] along the alignment `axis` (tests).
+#[cfg(test)]
 pub fn drape_counted(
     plan: &[[f64; 2]],
     ground: Option<&Terrain>,
     axis: &[[f64; 3]],
 ) -> (Vec<Vec<[f64; 3]>>, usize) {
+    let (runs, _, gaps) = drape_tagged(plan, &vec![NO_SIDE; plan.len()], ground, &[axis]);
+    (runs, gaps)
+}
+
+/// Pieces on the ground, each point's tag, and the stretches without
+/// ground ([`drape_tagged`]).
+pub type Draped = (Vec<Vec<[f64; 3]>>, Vec<Vec<u32>>, usize);
+
+/// `plan` on the ground: on `ground`, a point where it crosses each edge
+/// of its triangles (the ground is flat between them), broken where it
+/// leaves the surface; without one, every [`STEP`] at the height of the
+/// nearest of the alignments `axes` (its points' heights, linear along
+/// it) where it is beside it. Each point with the tag of the point of
+/// `plan` its segment begins at; with the number of stretches of `plan`
+/// that have no ground under them (each counted once, however many
+/// segments it spans; none without a ground).
+pub fn drape_tagged(
+    plan: &[[f64; 2]],
+    tags: &[u32],
+    ground: Option<&Terrain>,
+    axes: &[&[[f64; 3]]],
+) -> Draped {
     let mut gaps = 0;
     // In a stretch without ground (counted already).
     let mut off = false;
@@ -1514,26 +2211,35 @@ pub fn drape_counted(
             *off = true;
         }
     };
-    let mut runs: Vec<Vec<[f64; 3]>> = Vec::new();
-    let mut current: Vec<[f64; 3]> = Vec::new();
-    let flush = |current: &mut Vec<[f64; 3]>, runs: &mut Vec<Vec<[f64; 3]>>| {
-        if current.len() > 1 {
+    type Run = (Vec<[f64; 3]>, Vec<u32>);
+    let mut runs: Vec<Run> = Vec::new();
+    let mut current: Run = (Vec::new(), Vec::new());
+    let flush = |current: &mut Run, runs: &mut Vec<Run>| {
+        if current.0.len() > 1 {
             runs.push(std::mem::take(current));
         } else {
-            current.clear();
+            current.0.clear();
+            current.1.clear();
         }
     };
-    let push = |current: &mut Vec<[f64; 3]>, p: [f64; 3]| {
+    let push = |current: &mut Run, p: [f64; 3], tag: u32| {
         if current
+            .0
             .last()
             .is_none_or(|q| (q[0] - p[0]).hypot(q[1] - p[1]) > 1e-9)
         {
-            current.push(p);
+            current.0.push(p);
+            current.1.push(tag);
         }
     };
     match ground {
         Some(g) => {
-            for w in plan.windows(2) {
+            for (k, w) in plan.windows(2).enumerate() {
+                // A repeated point: nothing between.
+                if len(sub(w[1], w[0])) < 1e-9 {
+                    continue;
+                }
+                let tag = tags[k];
                 let pieces = g.profile(w[0], w[1]);
                 if pieces.is_empty() {
                     flush(&mut current, &mut runs);
@@ -1547,7 +2253,7 @@ pub fn drape_counted(
                         miss(&mut off);
                     }
                     for p in run {
-                        push(&mut current, p.point);
+                        push(&mut current, p.point, tag);
                     }
                     if !run.is_empty() {
                         off = false;
@@ -1564,8 +2270,7 @@ pub fn drape_counted(
             }
         }
         None => {
-            let height = |p: [f64; 2]| axis_height(axis, p);
-            for w in plan.windows(2) {
+            for (k, w) in plan.windows(2).enumerate() {
                 let l = len(sub(w[1], w[0]));
                 let steps = ((l / STEP).ceil() as usize).max(1);
                 for i in 0..=steps {
@@ -1574,13 +2279,30 @@ pub fn drape_counted(
                         w[0][0] + (w[1][0] - w[0][0]) * f,
                         w[0][1] + (w[1][1] - w[0][1]) * f,
                     ];
-                    push(&mut current, [p[0], p[1], height(p)]);
+                    push(&mut current, [p[0], p[1], axes_height(axes, p)], tags[k]);
                 }
             }
         }
     }
     flush(&mut current, &mut runs);
-    (runs, gaps)
+    let (points, tags) = runs.into_iter().unzip();
+    (points, tags, gaps)
+}
+
+/// The height at `p` of the nearest of the alignments `axes`
+/// ([`axis_height`]; none: 0).
+fn axes_height(axes: &[&[[f64; 3]]], p: [f64; 2]) -> f64 {
+    axes.iter()
+        .filter(|a| !a.is_empty())
+        .map(|a| {
+            let near = a
+                .windows(2)
+                .map(|w| point_segment(p, [[w[0][0], w[0][1]], [w[1][0], w[1][1]]]))
+                .fold(f64::INFINITY, f64::min);
+            (near, axis_height(a, p))
+        })
+        .min_by(|x, y| x.0.total_cmp(&y.0))
+        .map_or(0.0, |x| x.1)
 }
 
 /// The height of the alignment `axis` at the station of `p` (linear
@@ -1656,35 +2378,103 @@ pub fn paint_plan(
 }
 
 /// The lines along the profile of an alignment drawn from station `at`:
-/// (side, pieces of (station, height)) — points beside the axis only.
+/// (side, pieces of (station, height)) — the points beside its spans
+/// (by their tags, [`Drawn::beside`]) and beside its axis (not beyond its
+/// ends).
 pub fn along(drawn: &Drawn, alignment: &str, at: f64) -> Vec<(Side, Vec<Vec<[f64; 2]>>)> {
-    let mut out = Vec::new();
-    for l in drawn.lines.iter().filter(|l| l.alignment == alignment) {
-        let mut pieces = Vec::new();
-        for run in &l.runs {
-            let mut piece: Vec<[f64; 2]> = Vec::new();
-            for p in run {
-                let (st, off) = ohl_line::route::project(&l.axis, *p);
-                let back = ohl_line::route::point_at(&l.axis, st, off);
-                if (back[0] - p[0]).hypot(back[1] - p[1]) < 0.5 {
-                    piece.push([at + st, p[2]]);
-                } else if piece.len() > 1 {
-                    pieces.push(std::mem::take(&mut piece));
-                } else {
-                    piece.clear();
-                }
-            }
-            if piece.len() > 1 {
-                pieces.push(piece);
+    let Some((_, axis)) = drawn.axes.iter().find(|(id, _)| id == alignment) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(Side, Vec<Vec<[f64; 2]>>)> = Vec::new();
+    let mut flush = |side: Option<Side>, piece: &mut Vec<[f64; 2]>| {
+        if let Some(side) = side
+            && piece.len() > 1
+        {
+            match out.iter_mut().find(|x| x.0 == side) {
+                Some(x) => x.1.push(std::mem::take(piece)),
+                None => out.push((side, vec![std::mem::take(piece)])),
             }
         }
-        out.push((l.side, pieces));
+        piece.clear();
+    };
+    for l in &drawn.lines {
+        for (run, tags) in l.runs.iter().zip(&l.tags) {
+            let mut side: Option<Side> = None;
+            let mut piece: Vec<[f64; 2]> = Vec::new();
+            for (p, tag) in run.iter().zip(tags) {
+                let here = drawn
+                    .side_of(*tag)
+                    .filter(|(id, _)| *id == alignment)
+                    .map(|x| x.1)
+                    .filter(|_| {
+                        let (st, off) = ohl_line::route::project(axis, *p);
+                        let back = ohl_line::route::point_at(axis, st, off);
+                        (back[0] - p[0]).hypot(back[1] - p[1]) < 0.5
+                    });
+                if here != side {
+                    flush(side, &mut piece);
+                    side = here;
+                }
+                if here.is_some() {
+                    let (st, _) = ohl_line::route::project(axis, *p);
+                    piece.push([at + st, p[2]]);
+                }
+            }
+            flush(side, &mut piece);
+        }
     }
     out
 }
 
-/// The menu (View › Lines on the ground beside the line), `cases` the
-/// weather cases' names, `shown` the case shown, `model_corridor` the
+impl Drawn {
+    /// The alignment and side the point of tag `tag` lies beside (none:
+    /// round an end, or beside a span away from the alignments).
+    pub fn side_of(&self, tag: u32) -> Option<(&str, Side)> {
+        self.beside
+            .get(tag as usize)?
+            .as_ref()
+            .map(|(id, side)| (id.as_str(), *side))
+    }
+
+    /// The points of the lines beside the alignment `alignment` on
+    /// `side`, in plan and on the ground (tests).
+    #[cfg(test)]
+    pub fn beside_points<'a>(
+        &'a self,
+        alignment: &'a str,
+        side: Side,
+    ) -> impl Iterator<Item = [f64; 3]> + 'a {
+        self.lines.iter().flat_map(move |l| {
+            l.runs
+                .iter()
+                .zip(&l.tags)
+                .flat_map(|(r, t)| r.iter().zip(t))
+                .filter(move |(_, t)| self.side_of(**t) == Some((alignment, side)))
+                .map(|(p, _)| *p)
+        })
+    }
+}
+
+/// Every route and branch of `line` (id, name): its routes in order,
+/// then those only its structures give (no name).
+pub fn routes(line: &ohl_line::Line) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = line
+        .routes
+        .iter()
+        .map(|r| (r.id.clone(), r.name.clone()))
+        .collect();
+    let more: BTreeSet<String> = line.structure_routes().into_values().flatten().collect();
+    for r in more {
+        if !out.iter().any(|x| x.0 == r) {
+            out.push((r, String::new()));
+        }
+    }
+    out
+}
+
+/// The menu (View › Lines on the ground beside the line), `routes` every
+/// route and branch of the line (id, name), `cases` the weather cases'
+/// names, `shown` the case shown, `model_corridor` the
 /// model's LiDAR corridor (m): whether the settings changed. `build` set when **Build a terrain surface from the LiDAR…**
 /// is clicked (offered when neither a surface nor the LiDAR ground lies
 /// under the lines and there is a point cloud, [`Drawn::offer_build`]).
@@ -1692,7 +2482,7 @@ pub fn along(drawn: &Drawn, alignment: &str, at: f64) -> Vec<(Side, Vec<Vec<[f64
 pub fn menu(
     ui: &mut egui::Ui,
     settings: &mut Settings,
-    routes: &[String],
+    routes: &[(String, String)],
     cases: &[String],
     shown: usize,
     model_corridor: f64,
@@ -1739,18 +2529,50 @@ pub fn menu(
     if settings.from == From::OutermostConductor {
         cases_menu(ui, settings, cases, shown);
     }
-    if routes.len() > 1 {
-        ui.label(egui::RichText::new("Routes").small().weak());
-        for r in routes {
-            let mut on = !settings.hidden_routes.contains(r);
-            if ui.checkbox(&mut on, r).changed() {
-                if on {
-                    settings.hidden_routes.remove(r);
-                } else {
-                    settings.hidden_routes.insert(r.clone());
+    if !routes.is_empty() {
+        ui.label(
+            egui::RichText::new("Routes and branches (the lines round those ticked)")
+                .small()
+                .weak(),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("ground-lines-routes")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                for (id, name) in routes {
+                    let mut on = !settings.hidden_routes.contains(id);
+                    let text = if name.is_empty() || name == id {
+                        id.clone()
+                    } else {
+                        format!("{name} ({id})")
+                    };
+                    if ui.checkbox(&mut on, text).changed() {
+                        if on {
+                            settings.hidden_routes.remove(id);
+                        } else {
+                            settings.hidden_routes.insert(id.clone());
+                        }
+                    }
                 }
-            }
-        }
+            });
+        ui.radio_value(
+            &mut settings.route_lines,
+            RouteLines::Envelope,
+            "One envelope for all routes",
+        )
+        .on_hover_text(
+            "Where routes run side by side or cross, each side line is the outer edge of all \
+             the routes ticked: the lines never run inside another route's band",
+        );
+        ui.radio_value(
+            &mut settings.route_lines,
+            RouteLines::Each,
+            "Each route its own lines",
+        )
+        .on_hover_text(
+            "Each route ticked has its own closed lines, whatever lies beside it: where routes \
+             run side by side or cross, their lines cross",
+        );
     }
     ui.label(egui::RichText::new("Style").small().weak());
     ui.horizontal(|ui| {
@@ -1950,120 +2772,153 @@ mod tests {
     }
 
     /// One span from `a` to `b` holding `wires`.
-    fn span(a: [f64; 2], b: [f64; 2], wires: &[Seg]) -> Chain {
-        Chain {
-            points: vec![a, b],
-            spans: vec![wires.to_vec()],
-            joints: vec![Vec::new(); 2],
-        }
+    fn span(a: [f64; 2], b: [f64; 2], wires: &[Seg]) -> Graph {
+        Graph::path(vec![a, b], vec![wires.to_vec()], Vec::new())
     }
 
-    /// The axis as its own chain.
-    fn axis_chain(axis: &[[f64; 2]]) -> Chain {
-        let a: Vec<[f64; 3]> = axis.iter().map(|p| [p[0], p[1], 0.0]).collect();
-        Chain::along(&a)
+    /// The axis as its own graph (each leg holding its chord).
+    fn axis_graph(axis: &[[f64; 2]]) -> Graph {
+        let spans = axis.windows(2).map(|w| vec![[w[0], w[1]]]).collect();
+        Graph::path(axis.to_vec(), spans, Vec::new())
     }
 
+    /// The outline round every span of `g`.
+    fn all(g: &Graph, d: f64) -> Vec<Piece> {
+        let edges: Vec<usize> = (0..g.edges.len()).collect();
+        outline(g, &edges, d)
+    }
+
+    /// No two segments of `line` cross (a closed line's first and last
+    /// meet at its start).
     fn assert_simple(line: &[[f64; 2]], what: &str) {
-        for i in 0..line.len() - 1 {
-            for j in i + 2..line.len() - 1 {
+        let n = line.len();
+        let closed = line[0] == line[n - 1];
+        for i in 0..n - 1 {
+            for j in i + 2..n - 1 {
+                if closed && i == 0 && j == n - 2 {
+                    continue;
+                }
                 let c = crossing([line[i], line[i + 1]], [line[j], line[j + 1]]);
                 assert!(c.is_none(), "{what}: {i} × {j}");
             }
         }
     }
 
+    /// The nearest of `sources` to `p`, m.
+    fn nearest(sources: &[Seg], p: [f64; 2]) -> f64 {
+        sources
+            .iter()
+            .map(|s| point_segment(p, *s))
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// The points of `piece` of tag `tag`.
+    fn tagged(piece: &Piece, tag: u32) -> Vec<[f64; 2]> {
+        piece
+            .points
+            .iter()
+            .zip(&piece.tags)
+            .filter(|(_, t)| **t == tag)
+            .map(|(p, _)| *p)
+            .collect()
+    }
+
     /// Hand check: a straight span along x from 0 to 300 m, its wire 5 m
-    /// left of the axis (y = 5); 10 m away: the left line at y = 5 + 10 =
-    /// 15, the right one at y = 5 − 10 = −5 (the outermost conductor on
-    /// the right is the same wire); with a second wire 5 m right of the
-    /// axis, ±15 m. On flat ground at 400 m, the lines at 400 m.
+    /// left of the axis (y = 5); 10 m away: the left line (tag 0) at
+    /// y = 5 + 10 = 15, the right one (tag 1: the left of the span back)
+    /// at y = 5 − 10 = −5 (the outermost conductor on the right is the
+    /// same wire), every 2 m: 151 points each; round each end a half
+    /// circle of 10 m about the wire's end (x < 0 and x > 300), so the
+    /// line is closed, every point 10 m from the wire. With a second
+    /// wire 5 m right of the axis, ±15 m. On flat ground at 400 m, the
+    /// lines at 400 m.
     #[test]
-    fn a_straight_span_gives_lines_at_the_distance_from_its_wire() {
+    fn a_straight_span_gives_a_closed_line_at_the_distance_from_its_wire() {
         let wire = [[[0.0, 5.0], [300.0, 5.0]]];
-        let chain = span([0.0, 0.0], [300.0, 0.0], &wire);
-        let g = flat(400.0);
-        let axis3 = [[0.0, 0.0, 400.0], [300.0, 0.0, 400.0]];
-        for (side, y) in [(Side::Left, 15.0), (Side::Right, -5.0)] {
-            let pieces = offset_side(&chain, 10.0, side);
-            assert_eq!(pieces.len(), 1);
-            let line = without_loops(&pieces[0]);
-            assert!(line[0][0].abs() < 1e-9 && (line.last().unwrap()[0] - 300.0).abs() < 1e-9);
-            for p in &line {
-                assert!((p[1] - y).abs() < 1e-9, "{side:?}: {p:?}");
-            }
-            // Every 2 m.
-            assert_eq!(line.len(), 151);
-            let draped = drape(&line, Some(&g), &axis3);
-            assert_eq!(draped.len(), 1);
-            for p in &draped[0] {
-                assert!((p[2] - 400.0).abs() < 1e-9 && (p[1] - y).abs() < 1e-9);
+        let g = span([0.0, 0.0], [300.0, 0.0], &wire);
+        let pieces = all(&g, 10.0);
+        assert_eq!(pieces.len(), 1);
+        let line = &pieces[0];
+        assert!(line.closed && line.points[0] == *line.points.last().unwrap());
+        assert_simple(&line.points, "span");
+        for (tag, y) in [(0, 15.0), (1, -5.0)] {
+            let side = tagged(line, tag);
+            assert_eq!(side.len(), 151, "tag {tag}");
+            for p in &side {
+                assert!((p[1] - y).abs() < 1e-9, "{tag}: {p:?}");
             }
         }
+        let ends = tagged(line, NO_SIDE);
+        assert!(ends.iter().any(|p| p[0] < -9.99) && ends.iter().any(|p| p[0] > 309.99));
+        for p in &line.points {
+            assert!((nearest(&wire, *p) - 10.0).abs() < 1e-9, "{p:?}");
+        }
+        let axis3 = [[0.0, 0.0, 400.0], [300.0, 0.0, 400.0]];
+        let draped = drape(&line.points, Some(&flat(400.0)), &axis3);
+        assert_eq!(draped.len(), 1);
+        assert!(draped[0].iter().all(|p| (p[2] - 400.0).abs() < 1e-9));
         let wires = [[[0.0, 5.0], [300.0, 5.0]], [[0.0, -5.0], [300.0, -5.0]]];
-        let chain = span([0.0, 0.0], [300.0, 0.0], &wires);
-        let left = offset_side(&chain, 10.0, Side::Left);
-        let right = offset_side(&chain, 10.0, Side::Right);
-        assert!(left[0].iter().all(|p| (p[1] - 15.0).abs() < 1e-9));
-        assert!(right[0].iter().all(|p| (p[1] + 15.0).abs() < 1e-9));
+        let line = &all(&span([0.0, 0.0], [300.0, 0.0], &wires), 10.0)[0];
+        assert!(tagged(line, 0).iter().all(|p| (p[1] - 15.0).abs() < 1e-9));
+        assert!(tagged(line, 1).iter().all(|p| (p[1] + 15.0).abs() < 1e-9));
     }
 
-    /// From the axis: ±d.
+    /// From the axis: ±d, round the ends.
     #[test]
     fn from_the_axis_the_lines_are_at_the_distance() {
-        let chain = axis_chain(&[[0.0, 0.0], [100.0, 0.0]]);
-        let l = offset_side(&chain, 7.5, Side::Left);
-        let r = offset_side(&chain, 7.5, Side::Right);
-        assert!(l[0].iter().all(|p| (p[1] - 7.5).abs() < 1e-9));
-        assert!(r[0].iter().all(|p| (p[1] + 7.5).abs() < 1e-9));
+        let line = &all(&axis_graph(&[[0.0, 0.0], [100.0, 0.0]]), 7.5)[0];
+        assert!(tagged(line, 0).iter().all(|p| (p[1] - 7.5).abs() < 1e-9));
+        assert!(tagged(line, 1).iter().all(|p| (p[1] + 7.5).abs() < 1e-9));
+        let axis = [[[0.0, 0.0], [100.0, 0.0]]];
+        assert!(
+            line.points
+                .iter()
+                .all(|p| (nearest(&axis, *p) - 7.5).abs() < 1e-9)
+        );
     }
 
-    /// A sharp angle (a 120° turn to the left): no line crosses itself;
-    /// every point is `d` from the source (on the band's edge, none
-    /// nearer); the outer corner round about the angle point, the inner
-    /// one where the two sides meet.
+    /// A sharp angle (a 120° turn to the left): the line, closed round
+    /// both ends, crosses itself nowhere; every point is `d` from the
+    /// source (on the band's edge, none nearer); the outer corner round
+    /// about the angle point, the inner one where the two sides meet.
     #[test]
     fn an_angle_gives_no_self_intersection() {
         let axis = [[0.0, 0.0], [200.0, 0.0], [100.0, 173.205]];
         let src: Vec<Seg> = axis.windows(2).map(|w| [w[0], w[1]]).collect();
         let d = 20.0;
-        let chain = axis_chain(&axis);
-        for side in [Side::Left, Side::Right] {
-            let pieces = offset_side(&chain, d, side);
-            assert_eq!(pieces.len(), 1, "{side:?}");
-            let raw = &pieces[0];
-            let line = without_loops(raw);
-            assert_simple(&line, &format!("{side:?}"));
-            for p in &line {
-                let near = src
-                    .iter()
-                    .map(|s| point_segment(*p, *s))
-                    .fold(f64::INFINITY, f64::min);
-                assert!((near - d).abs() < 1e-6, "{side:?}: {p:?} at {near}");
-            }
-            if side == Side::Left {
-                // The inner side: the loop cut off where the two lines
-                // cross, d from both legs: on the bisector of the 60°
-                // between them, d / sin 30° = 40 m from the angle point,
-                // i.e. x = 200 − 20·√3 = 165.36, y = 20.
-                assert!(line.len() < raw.len(), "the inner loop cut");
-                let x = 200.0 - 20.0 * 3f64.sqrt();
-                assert!(
-                    line.iter()
-                        .any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - 20.0).abs() < 1e-6),
-                    "{line:?}"
-                );
-            } else {
-                assert_eq!(line.len(), raw.len());
-                let around = line
-                    .iter()
-                    .filter(|p| ((p[0] - 200.0).hypot(p[1]) - d).abs() < 1e-6)
-                    .count();
-                // 120° in steps of 5°: 23 points between the two legs'
-                // ends, and those ends.
-                assert!(around >= 25, "{around}");
-            }
+        let pieces = all(&axis_graph(&axis), d);
+        assert_eq!(pieces.len(), 1);
+        let line = &pieces[0];
+        assert!(line.closed);
+        assert_simple(&line.points, "angle");
+        for p in &line.points {
+            let near = nearest(&src, *p);
+            assert!((near - d).abs() < 1e-6, "{p:?} at {near}");
         }
+        // The inner side (the left: tags 0 and 2): the loop cut off where
+        // the two lines cross, d from both legs: on the bisector of the
+        // 60° between them, d / sin 30° = 40 m from the angle point,
+        // i.e. x = 200 − 20·√3 = 165.36, y = 20.
+        let x = 200.0 - 20.0 * 3f64.sqrt();
+        assert!(
+            line.points
+                .iter()
+                .any(|p| (p[0] - x).abs() < 1e-3 && (p[1] - 20.0).abs() < 1e-6),
+            "{:?}",
+            line.points
+        );
+        // The outer side: 120° in steps of 5° about the angle point, 23
+        // points between the two legs' ends, and those ends.
+        let around = line
+            .points
+            .iter()
+            .filter(|p| {
+                ((p[0] - 200.0).hypot(p[1]) - d).abs() < 1e-6 && p[1] < 0.0 || {
+                    ((p[0] - 200.0).hypot(p[1]) - d).abs() < 1e-6 && p[0] > 200.0
+                }
+            })
+            .count();
+        assert!(around >= 25, "{around}");
     }
 
     /// Blowout: the wire swung out 3.2 m mid-span moves the lines by as
@@ -2073,21 +2928,21 @@ mod tests {
         let still = [[[0.0, 5.0], [150.0, 5.0]], [[150.0, 5.0], [300.0, 5.0]]];
         // Swung to the left: 5 m at the clamps, 8.2 m in the middle.
         let blown = [[[0.0, 5.0], [150.0, 8.2]], [[150.0, 8.2], [300.0, 5.0]]];
-        let at_mid = |src: &[Seg], side| {
-            let p = offset_side(&span([0.0, 0.0], [300.0, 0.0], src), 10.0, side);
-            p[0].iter()
+        let at_mid = |src: &[Seg], tag| {
+            let pieces = all(&span([0.0, 0.0], [300.0, 0.0], src), 10.0);
+            tagged(&pieces[0], tag)
+                .into_iter()
                 .find(|q| (q[0] - 150.0).abs() < 1e-9)
-                .copied()
                 .unwrap()[1]
         };
-        assert!((at_mid(&still, Side::Left) - 15.0).abs() < 1e-9);
-        assert!((at_mid(&still, Side::Right) + 5.0).abs() < 1e-9);
+        assert!((at_mid(&still, 0) - 15.0).abs() < 1e-9);
+        assert!((at_mid(&still, 1) + 5.0).abs() < 1e-9);
         // 8.2 + 10.
-        assert!((at_mid(&blown, Side::Left) - 18.2).abs() < 1e-9);
+        assert!((at_mid(&blown, 0) - 18.2).abs() < 1e-9);
         // The right side: the same wire, blown away from it: 8.2 − 10 =
         // −1.8; the bands of the two pieces, meeting at an angle of
         // 2 × 1.2°, reach 2.5 mm beyond it there.
-        assert!((at_mid(&blown, Side::Right) + 1.8).abs() < 0.005);
+        assert!((at_mid(&blown, 1) + 1.8).abs() < 0.005);
     }
 
     /// Two spans at an angle structure (a 30° turn to the right) with a
@@ -2116,26 +2971,207 @@ mod tests {
             spans[0].push([off(a, n1, o), at_b]);
             spans[1].push([at_b, off(c, n2, o)]);
         }
-        let chain = Chain {
-            points: vec![a, b, c],
-            spans,
-            joints: vec![Vec::new(); 3],
-        };
-        for side in [Side::Left, Side::Right] {
-            let pieces = offset_side(&chain, 10.0, side);
-            assert_eq!(pieces.len(), 1);
-            let line = without_loops(&pieces[0]);
-            assert_simple(&line, &format!("{side:?}"));
-            for p in &line {
-                let near = chain
-                    .spans
-                    .iter()
-                    .flatten()
-                    .map(|s| point_segment(*p, *s))
-                    .fold(f64::INFINITY, f64::min);
-                assert!((near - 10.0).abs() < 1e-6, "{side:?}: {p:?} at {near}");
-            }
+        let all_wires: Vec<Seg> = spans.iter().flatten().copied().collect();
+        let g = Graph::path(vec![a, b, c], spans, Vec::new());
+        let pieces = all(&g, 10.0);
+        assert_eq!(pieces.len(), 1);
+        assert_simple(&pieces[0].points, "angle structure");
+        for p in &pieces[0].points {
+            let near = nearest(&all_wires, *p);
+            assert!((near - 10.0).abs() < 1e-6, "{p:?} at {near}");
         }
+    }
+
+    /// A span holding nothing: the parts on either side each closed
+    /// round their ends.
+    #[test]
+    fn a_span_without_wires_parts_the_line() {
+        let w = |y0: f64, x0: f64, x1: f64| [[x0, y0], [x1, y0]];
+        let g = Graph::path(
+            vec![[0.0, 0.0], [100.0, 0.0], [200.0, 0.0], [300.0, 0.0]],
+            vec![
+                vec![w(5.0, 0.0, 100.0)],
+                Vec::new(),
+                vec![w(5.0, 200.0, 300.0)],
+            ],
+            Vec::new(),
+        );
+        let pieces = all(&g, 10.0);
+        assert_eq!(pieces.len(), 2);
+        assert!(pieces.iter().all(|p| p.closed));
+    }
+
+    /// A tap: three spans from one structure at (0, 0) — west, east and
+    /// north, 100 m each, their chords the sources — 10 m away: one
+    /// closed line round all three, no gap; the two inner corners cut
+    /// where the sides meet, at (±10, 10); the south side straight
+    /// through at y = −10; every point 10 m from the nearest span; round
+    /// ends 10 m beyond each end.
+    #[test]
+    fn a_tap_gives_one_closed_line_without_gaps() {
+        let o = [0.0, 0.0];
+        let ends = [[-100.0, 0.0], [100.0, 0.0], [0.0, 100.0]];
+        let mut g = Graph {
+            nodes: vec![o, ends[0], ends[1], ends[2]],
+            joints: vec![Vec::new(); 4],
+            ..Graph::default()
+        };
+        for (k, e) in ends.iter().enumerate() {
+            g.edges.push(Edge {
+                a: 0,
+                b: k + 1,
+                sources: vec![[o, *e]],
+                ..Edge::default()
+            });
+        }
+        let src: Vec<Seg> = ends.iter().map(|e| [o, *e]).collect();
+        let pieces = all(&g, 10.0);
+        assert_eq!(pieces.len(), 1, "{pieces:?}");
+        let line = &pieces[0];
+        assert!(line.closed);
+        assert_simple(&line.points, "tap");
+        for p in &line.points {
+            assert!((nearest(&src, *p) - 10.0).abs() < 1e-6, "{p:?}");
+        }
+        for x in [-10.0, 10.0] {
+            assert!(
+                line.points
+                    .iter()
+                    .any(|p| (p[0] - x).abs() < 1e-6 && (p[1] - 10.0).abs() < 1e-6),
+                "inner corner at ({x}, 10)"
+            );
+        }
+        assert!(
+            line.points
+                .iter()
+                .any(|p| p[0].abs() < 1e-6 && (p[1] + 10.0).abs() < 1e-9)
+        );
+        for (e, beyond) in ends.iter().zip([[-110.0, 0.0], [110.0, 0.0], [0.0, 110.0]]) {
+            let _ = e;
+            assert!(
+                line.points
+                    .iter()
+                    .any(|p| (p[0] - beyond[0]).hypot(p[1] - beyond[1]) < 0.5),
+                "round the end at {beyond:?}"
+            );
+        }
+    }
+
+    /// The round end at a structure with a wide arm (a gantry): two wires
+    /// ending 8 m either side of the span's axis, 3 m away: the line goes
+    /// round the end at 3 m beyond the wires' ends (straight across
+    /// between them, the outline of their hull), right up to the gantry,
+    /// closed.
+    #[test]
+    fn the_line_closes_round_a_wide_end() {
+        let wires = [[[0.0, 8.0], [200.0, 8.0]], [[0.0, -8.0], [200.0, -8.0]]];
+        let g = span([0.0, 0.0], [200.0, 0.0], &wires);
+        let line = &all(&g, 3.0)[0];
+        assert!(line.closed);
+        let ahead: Vec<[f64; 2]> = tagged(line, NO_SIDE)
+            .into_iter()
+            .filter(|p| p[0] > 200.0)
+            .collect();
+        // Straight across the end, 3 m beyond it, from one wire's end to
+        // the other's.
+        let across = line.points.windows(2).any(|w| {
+            w.iter().all(|p| (p[0] - 203.0).abs() < 0.05) && w[0][1] > 7.9 && w[1][1] < -7.9
+        });
+        assert!(across, "{ahead:?}");
+        for p in &line.points {
+            assert!(nearest(&wires, *p) > 3.0 - 1e-9, "{p:?}");
+        }
+    }
+
+    /// Two routes side by side, 12 m apart, not joined, 10 m away: one
+    /// envelope over both — a single closed line, no point of it within
+    /// 10 m of either route's wires (the lines between them gone) — or
+    /// each its own: two closed lines, each crossing into the other's
+    /// band. The routes as `groups` makes them: one group of every span
+    /// drawn, or one per route; a route left out not drawn; a span on no
+    /// route always drawn.
+    #[test]
+    fn the_envelope_over_two_routes_side_by_side() {
+        let mut g = Graph {
+            nodes: vec![
+                [0.0, 0.0],
+                [200.0, 0.0],
+                [0.0, 12.0],
+                [200.0, 12.0],
+                [0.0, -50.0],
+                [100.0, -50.0],
+            ],
+            joints: vec![Vec::new(); 6],
+            ..Graph::default()
+        };
+        for (k, (a, b, route)) in [(0, 1, "r1"), (2, 3, "r2"), (4, 5, "")]
+            .into_iter()
+            .enumerate()
+        {
+            g.edges.push(Edge {
+                a,
+                b,
+                sources: vec![[g.nodes[a], g.nodes[b]]],
+                routes: if route.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![route.to_owned()]
+                },
+                along: Some((format!("a{k}"), true)),
+            });
+        }
+        let both: Vec<Seg> = vec![g.edges[0].sources[0], g.edges[1].sources[0]];
+        let envelope = outline(&g, &[0, 1], 10.0);
+        assert_eq!(envelope.len(), 1, "{envelope:?}");
+        assert!(envelope[0].closed);
+        assert_simple(&envelope[0].points, "envelope");
+        for p in &envelope[0].points {
+            let near = nearest(&both, *p);
+            assert!(near > 10.0 - 0.02 - 1e-6, "{p:?} at {near}");
+        }
+        // Outside: y = −10 and y = 22.
+        assert!(
+            envelope[0]
+                .points
+                .iter()
+                .any(|p| (p[1] + 10.0).abs() < 1e-9)
+        );
+        assert!(
+            envelope[0]
+                .points
+                .iter()
+                .any(|p| (p[1] - 22.0).abs() < 1e-9)
+        );
+        assert!(
+            !envelope[0]
+                .points
+                .iter()
+                .any(|p| (p[1] - 2.0).abs() < 1e-6 && p[0] > 20.0 && p[0] < 180.0)
+        );
+        for e in [0, 1] {
+            let own = outline(&g, &[e], 10.0);
+            assert_eq!(own.len(), 1);
+            assert!(own[0].closed);
+            let other = [g.edges[1 - e].sources[0]];
+            assert!(own[0].points.iter().any(|p| nearest(&other, *p) < 5.0));
+        }
+        // Grouped by the settings.
+        let mut s = Settings::default();
+        assert_eq!(groups(&g, &s), vec![(String::new(), vec![0, 1, 2])]);
+        s.route_lines = RouteLines::Each;
+        assert_eq!(
+            groups(&g, &s),
+            vec![
+                ("r1".into(), vec![0]),
+                ("r2".into(), vec![1]),
+                (String::new(), vec![2])
+            ]
+        );
+        s.hidden_routes.insert("r2".into());
+        assert_eq!(
+            groups(&g, &s),
+            vec![("r1".into(), vec![0]), (String::new(), vec![2])]
+        );
     }
 
     /// Draped on a TIN: every point's height is the surface's there; a
@@ -2210,21 +3246,5 @@ mod tests {
         let back: Settings = serde_json::from_str(&text).unwrap();
         assert_eq!(back.cases, ["b".to_owned()].into());
         assert!(back.shown_case);
-    }
-
-    /// A span holding nothing breaks the line.
-    #[test]
-    fn a_span_without_wires_breaks_the_line() {
-        let w = |y0: f64, x0: f64, x1: f64| [[x0, y0], [x1, y0]];
-        let chain = Chain {
-            points: vec![[0.0, 0.0], [100.0, 0.0], [200.0, 0.0], [300.0, 0.0]],
-            spans: vec![
-                vec![w(5.0, 0.0, 100.0)],
-                Vec::new(),
-                vec![w(5.0, 200.0, 300.0)],
-            ],
-            joints: vec![Vec::new(); 4],
-        };
-        assert_eq!(offset_side(&chain, 10.0, Side::Left).len(), 2);
     }
 }
