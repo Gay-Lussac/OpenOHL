@@ -85,6 +85,12 @@ The example is small; on a real project of a few hundred spans with a corridor s
 
 Picking (a click) stays exact: it uses the full model, not what the levels draw (some 6 ms on the real project, 0.05 ms on the example).
 
+**2026-10-22, a real project with lattice towers and two DXF drawings** (private data; 76 structures of thousands of members each, 45 000 drawing entities; the same benchmark): the 3D view's frames took 7 ms plus 14 ms tessellating 175 000 shapes, a click 3.1 s. Found and changed:
+
+- **Click (picking)**: the rigid links' candidates listed every placed structure's joints, each joint looked up by building the type's whole joint list again (quadratic in the joints: a lattice type has thousands). Now `rigid_links` places no joints for a structure without a linked point at an offset (the usual case), `placed_joints` lists the joints once, and `StructureType::joints` finds the linked ones by a set. 3.1 s → 25 ms.
+- **Profile** (under the 3D view, drawn every frame): every structure of the route drawn with every member, off the screen too. Now only those within the stretch shown; under 80 px tall on the screen, a structure of more than 40 bars is drawn as its mast and an arm out to each point (its bars blur into one shape there; display only); the corridor's dots one mesh instead of a circle each.
+- Result per frame, 3D view: 7 ms + 14 ms tessellating 175 000 shapes → 0.9–1.0 ms + 1.7 ms, 8 000 shapes; plan view: 7.5–9.1 ms + 15–17 ms → 1.4–3.1 ms + 1.9–4.2 ms.
+
 ### What is drawn at which distance
 
 Display only: calculations, checks and picking always use the full model; nothing here changes a computed number (`ohl validate benchmarks` and the CLI's wire, span, load and usage outputs are identical before and after these changes). The distances of each layer's levels are the Level of detail table's (per user; defaults in `lod::LodRow::default_for`), what each level keeps is fixed (`scene::structures`, `scene::wires`, constants `lod::DASH_SCALE` and `lod::BODY_DOT_PX`):
@@ -99,7 +105,7 @@ Display only: calculations, checks and picking always use the full model; nothin
 | Drawings (DXF) | every vertex (300 m) | simplified to 0.2 m (2 km) | 1.5 m (10 km) |
 | 3D labels | sags, section labels, points', strings', wire points' labels within the label distance (1.5 km) | | structures' names at any distance, placed first |
 
-Plan: what is in view, half-pixel thinning, structures' names at every zoom (overlapping ones left out, the first in line order and the selected one kept). Profile: one survey dot per pixel, half-pixel thinning, shapes kept while the view stands still.
+Plan: what is in view, half-pixel thinning, structures' names at every zoom (overlapping ones left out, the first in line order and the selected one kept). Profile: one survey dot per pixel (all dots one mesh), half-pixel thinning, shapes kept while the view stands still; only the structures within the stretch shown, those under 80 px tall with more than 40 bars as their mast and arms.
 
 ### Repaints
 

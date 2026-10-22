@@ -47,15 +47,19 @@ pub struct PlacedJoint {
 /// orientation, height adjustment and extension): what the Link tool
 /// offers and draws.
 pub fn placed_joints(t: &StructureType, s: &Structure) -> Vec<PlacedJoint> {
-    let ext = s.extension.as_deref();
+    // The type's joints listed once, lifted by the extension
+    // ([`StructureType::joint_local`] for each).
+    let Ok(dz) = t.lift(s.extension.as_deref()) else {
+        return Vec::new();
+    };
     t.joints()
         .into_iter()
-        .filter_map(|j| {
-            let local = t.joint_local(&j.id, ext)?;
-            Some(PlacedJoint {
-                position: to_global(feet(s), s.orientation_deg, local),
+        .map(|j| {
+            let p = j.position;
+            PlacedJoint {
+                position: to_global(feet(s), s.orientation_deg, [p[0], p[1], p[2] + dz]),
                 joint: j,
-            })
+            }
         })
         .collect()
 }
@@ -82,6 +86,15 @@ pub struct RigidLink {
 /// every linked attachment point with an offset (none drawn for a point
 /// on its joint).
 pub fn rigid_links(t: &StructureType, s: &Structure) -> Vec<RigidLink> {
+    // Most structures have none: no joints placed then (a lattice type
+    // has thousands).
+    if !s
+        .points
+        .iter()
+        .any(|p| p.is_linked() && p.offset != [0.0; 3])
+    {
+        return Vec::new();
+    }
     let joints = placed_joints(t, s);
     s.points
         .iter()
