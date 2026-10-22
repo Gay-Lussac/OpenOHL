@@ -426,6 +426,16 @@ pub struct OtherLine {
     pub cases: Vec<Solved>,
     /// Display colour.
     pub color: [u8; 3],
+    /// When it was shown (counted up over the session, [`next_serial`]):
+    /// another serial, another line or solution (what the lines on the
+    /// ground solved for it are kept by).
+    pub serial: u64,
+}
+
+/// A number not given before in this session (counted up).
+pub fn next_serial() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Colours of the other project lines, in turn.
@@ -1747,6 +1757,7 @@ impl Model {
             line,
             cases,
             color,
+            serial: next_serial(),
         });
         Ok(format!(
             "project line \"{name}\" shown, solved in {} weather cases in {:.1?}{}",

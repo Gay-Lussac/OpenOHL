@@ -281,8 +281,9 @@ fn assert_no_self_crossing(d: &ground_lines::Drawn) {
     }
 }
 
-/// Several weather cases, both wind sides: everyday and high wind chosen
-/// (the case shown not), the views showing the wind from the right only,
+/// Several weather cases, both wind sides: everyday and high wind
+/// displayed (View › Display weather cases), the views showing the wind
+/// from the right only,
 /// so the wind from the left is solved for the lines
 /// ([`ground_lines::other_sides_now`]). At the middle of the first span
 /// each line is 10 m beyond the outermost conductor on its side over the
@@ -299,15 +300,15 @@ fn assert_no_self_crossing(d: &ground_lines::Drawn) {
 /// between the wires' ends there); no line crosses itself.
 #[test]
 fn the_envelope_over_several_cases_and_both_wind_sides() {
-    let m = example();
+    let mut m = example();
     let (still, windy) = (case(&m, "everyday"), case(&m, "high wind"));
     let settings = Settings {
         on: true,
-        shown_case: false,
-        cases: ["everyday", "high wind"].map(String::from).into(),
         ..Settings::default()
     };
-    let chosen = settings.chosen_in(&m, 0);
+    // The two displayed: the lines take those (owner, 2026-10-22).
+    m.shown_cases = vec![windy, still];
+    let chosen = ground_lines::Displayed::of(&m, windy).cases();
     assert_eq!(chosen, vec![still.min(windy), still.max(windy)]);
     let others = ground_lines::other_sides_now(&m, &chosen);
     assert_eq!(
@@ -761,9 +762,15 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
     assert!(!first.lines.is_empty());
     assert!(r.view3d.ground_lines.is_some() && r.plan.ground_lines.is_some());
     assert_eq!(r.ground_lines.made, 1);
-    // Another case shown (windy: its wind from the left solved for the
-    // lines in the background, then taken: made once or twice).
-    r.case = windy;
+    // The menu says what it takes: the cases displayed.
+    assert!(
+        h.query_by_label_contains("Weather cases: as displayed (")
+            .is_some()
+    );
+    // Another case displayed (windy: its wind from the left solved for
+    // the lines in the background, then taken: made once or twice).
+    let r = h.state_mut().ready().unwrap();
+    r.show_cases(vec![windy]);
     settle(&mut h);
     let r = h.state_mut().ready().unwrap();
     let second = r.ground_lines.drawn.clone().unwrap();
@@ -781,7 +788,7 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
     let here = ground_lines::compute(&r.model, &[windy], &both, &r.model.ground_lines);
     assert_eq!(here.lines, second.lines);
     // Back: kept, not made again.
-    r.case = 0;
+    r.show_cases(vec![0]);
     h.run();
     let r = h.state_mut().ready().unwrap();
     assert!(std::sync::Arc::ptr_eq(
@@ -789,69 +796,26 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
         &first
     ));
     assert_eq!(r.ground_lines.made, made);
-    // None: no case, no lines, said; the menu stays open.
-    h.get_by_label("None").click();
-    h.run();
-    assert!(h.query_by_label("Show the lines").is_some());
-    let r = h.state_mut().ready().unwrap();
-    let g = &r.model.ground_lines;
-    assert!(!g.shown_case && g.cases.is_empty());
-    let none = r.ground_lines.drawn.clone().unwrap();
-    assert!(none.lines.is_empty());
-    assert!(
-        none.notes
-            .iter()
-            .any(|n| n.contains("no weather case chosen"))
-    );
-    // A case by name: high wind, whatever case is shown.
-    h.get_by_label("high wind").click();
+    // Every case displayed: made for this set; on the example high wind
+    // from both sides holds every other case's conductors inside its
+    // envelope along the spans: the same lines there (round the ends the
+    // clamps of every case count).
+    let all: Vec<usize> = (0..r.model.cases.len()).collect();
+    r.show_cases(all);
     settle(&mut h);
     let r = h.state_mut().ready().unwrap();
-    assert_eq!(
-        r.model.view_prefs().ground_lines.cases,
-        ["high wind".to_owned()].into()
-    );
-    let named = r.ground_lines.drawn.clone().unwrap();
-    assert_eq!(named.lines, second.lines);
-    let made = r.ground_lines.made;
-    r.case = windy;
-    h.run();
-    let r = h.state_mut().ready().unwrap();
-    assert!(std::sync::Arc::ptr_eq(
-        r.ground_lines.drawn.as_ref().unwrap(),
-        &named
-    ));
-    assert_eq!(r.ground_lines.made, made, "keyed by the set of cases");
-    r.case = 0;
-    // All: every case.
-    h.get_by_label("All").click();
-    settle(&mut h);
-    let r = h.state_mut().ready().unwrap();
-    let names: std::collections::BTreeSet<String> =
-        r.model.cases.iter().map(|c| c.case.name.clone()).collect();
-    assert_eq!(r.model.ground_lines.cases, names);
     let every = r.ground_lines.drawn.clone().unwrap();
-    // Made for this set; on the example high wind from both sides holds
-    // every other case's conductors inside its envelope along the spans:
-    // the same lines there (round the ends the clamps of every case
-    // count).
     assert!(r.ground_lines.made > made);
-    assert!(!std::sync::Arc::ptr_eq(&every, &named));
+    assert!(!std::sync::Arc::ptr_eq(&every, &second));
     let chord = first_chord(&r.model);
     for side in [Side::Left, Side::Right] {
         let (a, b) = (
             line_at_middle(&every, side, chord),
-            line_at_middle(&named, side, chord),
+            line_at_middle(&second, side, chord),
         );
         assert!((a.0 - b.0).abs() < 1e-9, "{side:?}: {a:?} {b:?}");
     }
     assert!(every.notes.is_empty(), "{:?}", every.notes);
-    // The case shown again (and the names kept).
-    h.get_by_label_contains("The case shown").click();
-    h.run();
-    let r = h.state_mut().ready().unwrap();
-    assert!(r.model.ground_lines.shown_case);
-    assert!(r.model.view_prefs().ground_lines.shown_case);
     // Unticked: gone.
     h.get_by_label("Show the lines").click();
     h.run();
@@ -935,10 +899,11 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
         on: true,
         distance: 15.0,
         profile: true,
-        cases: ["everyday", "glaze ice"].map(String::from).into(),
         ..Settings::default()
     };
     let windy = case(&model, "high wind");
+    // Displayed: high wind, everyday and glaze ice.
+    model.shown_cases = vec![windy, case(&model, "everyday"), case(&model, "glaze ice")];
     let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 1000.0));
     if gpu {
         builder = builder.wgpu();
@@ -948,7 +913,10 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
     h.run_steps(4);
     settle(&mut h);
     let r = h.state_mut().ready().unwrap();
-    assert_eq!(r.model.ground_lines.chosen_in(&r.model, windy).len(), 3);
+    assert_eq!(
+        ground_lines::Displayed::of(&r.model, windy).cases().len(),
+        3
+    );
     let [left, right] = h.state_mut().ready().unwrap().profile.ground_profiles();
     assert!(left > 0 && right > 0, "{left} {right}");
     let dir = ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| gpu);
@@ -1457,7 +1425,7 @@ fn a_wider_corridor_covers_lines_at_100_m_and_the_checks_keep_their_ground() {
         ..Settings::default()
     };
     let mut lines = ground_lines::GroundLines::default();
-    lines.frame(&m, 0, &settings, None);
+    lines.frame(&m, 0, &settings, false, None);
     let narrow = lines.drawn.clone().unwrap();
     assert_eq!(narrow.ground, ground_lines::Ground::Lidar(in_corridor));
     assert_eq!(narrow.corridor, Some(60.0));
@@ -1480,7 +1448,7 @@ fn a_wider_corridor_covers_lines_at_100_m_and_the_checks_keep_their_ground() {
     assert_eq!(lines.wide_built, 0);
     // Widened.
     settings.lidar_corridor = Some(120.0);
-    lines.frame(&m, 0, &settings, None);
+    lines.frame(&m, 0, &settings, false, None);
     let wide = lines.drawn.clone().unwrap();
     assert_eq!(lines.wide_built, 1);
     assert_eq!(wide.corridor, Some(120.0));
@@ -1500,10 +1468,10 @@ fn a_wider_corridor_covers_lines_at_100_m_and_the_checks_keep_their_ground() {
     assert!(std::sync::Arc::ptr_eq(&m.ground_for_checks().unwrap(), &g));
     // Kept by width.
     settings.lidar_corridor = None;
-    lines.frame(&m, 0, &settings, None);
+    lines.frame(&m, 0, &settings, false, None);
     assert_eq!(**lines.drawn.as_ref().unwrap(), *narrow);
     settings.lidar_corridor = Some(120.0);
-    lines.frame(&m, 0, &settings, None);
+    lines.frame(&m, 0, &settings, false, None);
     assert_eq!(lines.wide_built, 1);
     assert_eq!(**lines.drawn.as_ref().unwrap(), *wide);
 }
@@ -1525,7 +1493,7 @@ fn the_widest_corridor_is_enforced_with_the_message() {
     assert_eq!(settings.corridor(&m), ground_lines::MAX_CORRIDOR);
     assert_eq!(settings.wider(&m), Some(200.0));
     let mut lines = ground_lines::GroundLines::default();
-    lines.frame(&m, 0, &settings, None);
+    lines.frame(&m, 0, &settings, false, None);
     let d = lines.drawn.clone().unwrap();
     assert_eq!(d.corridor, Some(200.0));
     let note = d
@@ -1569,6 +1537,113 @@ fn the_corridor_is_remembered_with_the_view_settings() {
     assert_eq!(back, s);
     let old: Settings = serde_json::from_str(r#"{"on": true, "distance": 25.0}"#).unwrap();
     assert_eq!(old.lidar_corridor, None);
+    // Cases of their own (before 2026-10-22): read, taken as displayed.
+    let old: Settings = serde_json::from_str(
+        r#"{"on": true, "shown_case": false, "cases": ["high wind"], "distance": 12.0}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        old,
+        Settings {
+            on: true,
+            distance: 12.0,
+            ..Settings::default()
+        }
+    );
+}
+
+/// A project line displayed (the "Other project lines" layer shown) adds
+/// its envelope: an invented variant of the example line, every structure
+/// 40 m to the left of the first span — its lines reach 40 m farther out
+/// than the working line's; with the layer hidden it does not count (the
+/// lines as without it). With each route its own lines, the variant has
+/// lines of its own ("variant: route"); its wind sides solved as the
+/// working line's.
+#[test]
+fn a_displayed_project_line_adds_its_envelope_a_hidden_one_does_not() {
+    let mut m = example();
+    let (a, b) = first_chord(&m);
+    let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let n = [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
+    let mut variant = m.line.clone();
+    for s in &mut variant.structures {
+        let p = s.position;
+        *s = s.moved_to([p[0] + 40.0 * n[0], p[1] + 40.0 * n[1], p[2]]);
+    }
+    for p in &mut variant.alignment_points {
+        p.position[0] += 40.0 * n[0];
+        p.position[1] += 40.0 * n[1];
+    }
+    let cases: Vec<model::Solved> = m
+        .cases
+        .iter()
+        .map(|c| model::Solved::new(&variant, &m.library, c.case.clone()))
+        .collect();
+    m.other_lines.push(model::OtherLine {
+        name: "variant".into(),
+        line: variant,
+        cases,
+        color: [200, 100, 200],
+        serial: model::next_serial(),
+    });
+    let mut settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    // How far the lines reach to the left of the first chord, over its
+    // middle fifth (within 100 m of it).
+    let reach = |d: &ground_lines::Drawn| -> f64 {
+        d.lines
+            .iter()
+            .flat_map(|x| x.runs.iter().flatten())
+            .filter_map(|p| {
+                let along = (p[0] - a[0]) * (b[0] - a[0]) / l + (p[1] - a[1]) * (b[1] - a[1]) / l;
+                let off = (p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1];
+                ((0.4 * l..=0.6 * l).contains(&along) && off.abs() < 100.0).then_some(off)
+            })
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let mut lines = ground_lines::GroundLines::default();
+    lines.frame(&m, 0, &settings, false, None);
+    let hidden = lines.drawn.clone().unwrap();
+    assert!(hidden.notes.is_empty(), "{:?}", hidden.notes);
+    let alone = ground_lines::compute(&m, &[0], &[], &settings);
+    assert_eq!(
+        hidden.lines, alone.lines,
+        "the hidden variant does not count"
+    );
+    lines.frame(&m, 0, &settings, true, None);
+    let shown = lines.drawn.clone().unwrap();
+    assert!(shown.notes.is_empty(), "{:?}", shown.notes);
+    let (r0, r1) = (reach(&hidden), reach(&shown));
+    assert!((r1 - r0 - 40.0).abs() < 1.0, "{r0} {r1}");
+    assert!(shown.lines.iter().all(|x| x.route.is_empty()));
+    // Hidden again: as without it (kept, not made again).
+    let made = lines.made;
+    lines.frame(&m, 0, &settings, false, None);
+    assert!(std::sync::Arc::ptr_eq(
+        lines.drawn.as_ref().unwrap(),
+        &hidden
+    ));
+    assert_eq!(lines.made, made);
+    // Each its own: the variant's lines apart.
+    settings.route_lines = ground_lines::RouteLines::Each;
+    lines.frame(&m, 0, &settings, true, None);
+    let each = lines.drawn.clone().unwrap();
+    assert!(
+        each.lines.iter().any(|x| x.route.starts_with("variant"))
+            && each.lines.iter().any(|x| !x.route.starts_with("variant")),
+        "{:?}",
+        each.lines.iter().map(|x| &x.route).collect::<Vec<_>>()
+    );
+    // A windy case displayed: the variant's other wind side solved too.
+    let windy = case(&m, "high wind");
+    m.shown_cases = vec![windy];
+    settings.route_lines = ground_lines::RouteLines::Envelope;
+    lines.frame(&m, windy, &settings, true, None);
+    let blown = lines.drawn.clone().unwrap();
+    assert!(blown.notes.is_empty(), "{:?}", blown.notes);
+    assert!(reach(&blown) > r1, "{} {r1}", reach(&blown));
 }
 
 /// In the menu: the field **LiDAR corridor ±** (the model's, 60 m, by

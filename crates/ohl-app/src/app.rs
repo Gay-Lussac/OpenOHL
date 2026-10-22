@@ -3207,12 +3207,8 @@ impl Ready {
     pub fn solving_frame(&mut self, ctx: &egui::Context) {
         let mut need = self.model.shown(self.case);
         need.push(self.case);
+        // (The lines on the ground take the cases displayed: these.)
         need.extend(self.model.display_cases.values().flatten().copied());
-        // The weather cases the lines on the ground are measured from.
-        let g = &self.model.ground_lines;
-        if g.on && g.from == crate::ground_lines::From::OutermostConductor {
-            need.extend(g.chosen_in(&self.model, self.case));
-        }
         self.model.want(need, ctx);
         let done = self.model.poll_solving();
         if !done.is_empty() {
@@ -3223,16 +3219,21 @@ impl Ready {
     }
 
     /// Every frame: the lines on the ground beside the line round the
-    /// weather cases chosen (View › Lines on the ground beside the line),
-    /// made when the cases, the line, its solutions, the ground or the
-    /// settings change, handed to the views. Display only. The other
-    /// wind side of a windy case is solved in the background (`ctx`
-    /// repainted when done; none: now).
+    /// weather cases displayed and the project lines displayed (the layer
+    /// "Other project lines" shown; View › Lines on the ground beside the
+    /// line), made when the cases, the line, its solutions, the project
+    /// lines, the ground or the settings change, handed to the views.
+    /// Display only. The other wind side of a windy case is solved in the
+    /// background (`ctx` repainted when done; none: now).
     pub fn ground_lines_frame(&mut self, ctx: Option<&egui::Context>) {
-        if self
-            .ground_lines
-            .frame(&self.model, self.case, &self.model.ground_lines, ctx)
-        {
+        let projects = self.visible.contains(&Layer::OtherLines);
+        if self.ground_lines.frame(
+            &self.model,
+            self.case,
+            &self.model.ground_lines,
+            projects,
+            ctx,
+        ) {
             self.view3d.ground_lines = self.ground_lines.drawn.clone();
             self.plan.ground_lines = self.ground_lines.drawn.clone();
             self.view3d.dirty.insert(Layer::GroundLines);
@@ -7891,14 +7892,26 @@ fn menus(
         // Ticks keep it open; this user's, remembered with the project.
         crate::menu::options_menu(ui, "Lines on the ground beside the line", |ui| {
             let routes = crate::ground_lines::routes(&r.model.line);
-            let cases: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+            // The weather cases and project lines the lines take: those
+            // displayed (owner, 2026-10-22).
+            let displayed = crate::ground_lines::Displayed::of(&r.model, r.case)
+                .cases()
+                .iter()
+                .filter_map(|&k| r.model.cases.get(k).map(|c| c.case.name.clone()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let projects: Vec<String> = if r.visible.contains(&Layer::OtherLines) {
+                r.model.other_lines.iter().map(|o| o.name.clone()).collect()
+            } else {
+                Vec::new()
+            };
             let mut build = false;
             crate::ground_lines::menu(
                 ui,
                 &mut r.model.ground_lines,
                 &routes,
-                &cases,
-                r.case,
+                &displayed,
+                &projects,
                 r.model.sources.corridor,
                 r.ground_lines.drawn.as_deref(),
                 &mut build,
