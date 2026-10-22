@@ -50,7 +50,7 @@ built-in look).
 | Table | Keys | What |
 |---|---|---|
 | (top) | `format`, `version`, `name`, `description` | header |
-| `[page]` | `format` (A0–A4), `orientation` (`landscape`, `portrait`), `width` + `height` (a long format instead), `margin = { left, top, right, bottom }` | the sheet; a wide left margin is the binding edge |
+| `[page]` | `format` (a standard paper size: `A0`–`A4`, `A3x3` …, `B1`–`B4`, `ANSI D`, `ARCH E` …; `WIDTHxHEIGHT`; or `"optimised"`), `orientation` (`landscape`, `portrait`; with `"optimised"` the only one allowed, none: both), `sizes` and `mixed` (with `"optimised"`: the sizes it chooses from, default A0–A4, and different sizes of one standard on a route's sheets — [Paper size and orientation](drawings.md#paper-size-and-orientation)), `width` + `height` (a long format instead), `margin = { left, top, right, bottom }` | the sheet; a wide left margin is the binding edge |
 | `[frame]` | `border = [{ inset, width }, …]`, `padding` | the frame's lines, the room inside them |
 | `[text]` | `font` (`Helvetica` only for now), `size`, `colour` | the labels' and the title block's texts |
 | `[layout]` | `order` (`["plan", "profile", "bands"]` or the plan last), `gap`, `plan_height` (`"auto"` or at least a length), `beyond_match` (`"none"` or `"faded"`), `axis_room`, `station_labels`, `plan_title`, `profile_title` (default `"Plan"`, `"Profile"`; `""` none) | the panels |

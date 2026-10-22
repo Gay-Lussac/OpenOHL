@@ -208,10 +208,19 @@ impl Default for Margins {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PageSpec {
-    /// A0–A4 (none: the export's format).
+    /// A standard paper size ([`crate::paper::PAPER_SIZES`]: `A1`,
+    /// `A3x3`, `B2`, `ANSI D`, `ARCH E` …), `WIDTHxHEIGHT` in mm, or
+    /// `"optimised"`: the size and orientation chosen per route from
+    /// `sizes` ([`crate::paper`]). None: the export's format.
     pub format: Option<String>,
-    /// `"landscape"` (default) or `"portrait"`.
+    /// `"landscape"` (default) or `"portrait"`; with `"optimised"` the
+    /// one orientation allowed (none: both).
     pub orientation: Option<String>,
+    /// With `"optimised"`: the sizes it may choose from (default A0–A4).
+    pub sizes: Option<Vec<String>>,
+    /// With `"optimised"`: different sizes of one standard on the sheets
+    /// of a route (default no).
+    pub mixed: Option<bool>,
     /// A width of its own (with `height`, instead of a format): a long
     /// format, e.g. 1189 × 420 mm.
     pub width: Option<Mm>,
@@ -1613,9 +1622,19 @@ impl SheetTemplate {
     fn check(&self) -> Result<(), String> {
         let p = &self.page;
         if let Some(f) = &p.format
+            && f != "optimised"
             && crate::page_format(f).is_none()
         {
-            return Err(format!("page format \"{f}\": A0–A4"));
+            return Err(format!(
+                "page format \"{f}\": a standard paper size (A0–A4, A3x3, B2, ANSI D, \
+                 ARCH E …), WIDTHxHEIGHT in mm, or \"optimised\""
+            ));
+        }
+        if (p.sizes.is_some() || p.mixed.is_some()) && p.format.as_deref() != Some("optimised") {
+            return Err("page: sizes and mixed go with format = \"optimised\"".into());
+        }
+        if let Some(s) = &p.sizes {
+            crate::paper::Optimise::from_names(s, false).map_err(|e| format!("page: {e}"))?;
         }
         if let Some(o) = &p.orientation
             && o != "landscape"
@@ -1931,7 +1950,25 @@ impl SheetTemplate {
         Ok(())
     }
 
-    /// The page the template asks for (none: the export's).
+    /// The optimised layout the template asks for (`format =
+    /// "optimised"`).
+    pub fn optimise(&self) -> Option<crate::paper::Optimise> {
+        let p = &self.page;
+        if p.format.as_deref() != Some("optimised") {
+            return None;
+        }
+        let sizes = p.sizes.clone().unwrap_or_else(crate::paper::default_sizes);
+        let mut o = crate::paper::Optimise::from_names(&sizes, p.mixed.unwrap_or(false)).ok()?;
+        match p.orientation.as_deref() {
+            Some("landscape") => o.portrait = false,
+            Some("portrait") => o.landscape = false,
+            _ => {}
+        }
+        Some(o)
+    }
+
+    /// The page the template asks for (none: the export's, or
+    /// [`Self::optimise`]).
     pub fn page(&self) -> Option<crate::Page> {
         let p = &self.page;
         let mut page = match (&p.format, p.width, p.height) {
@@ -2190,6 +2227,8 @@ mod tests {
             |body: &str| SheetTemplate::parse(&format!("{head}{body}"), None, &[]).unwrap_err();
         assert!(bad("colour = 1").contains("unknown field"));
         assert!(bad("[page]\nformat = \"B7\"").contains("A0–A4"));
+        assert!(bad("[page]\nsizes = [\"A3\"]").contains("optimised"));
+        assert!(bad("[page]\nformat = \"optimised\"\nsizes = [\"Q9\"]").contains("Q9"));
         assert!(bad("[layers]\nOHL_NOTHING = { width = \"1 mm\" }").contains("no layer"));
         assert!(
             bad("[title_block]\ncolumns = [\"*\"]\nrows = [\"10 mm\"]\n[[title_block.cell]]\nat = [0, 0]\ntext = \"{nothing}\"")

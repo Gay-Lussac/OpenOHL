@@ -37,7 +37,8 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--from`, `--to` | station range, in metres (`250`) or `km+m` (`0+250`); default the whole route |
 | `--hscale`, `--vscale` | horizontal and vertical scale, `1:2000` or `2000` (defaults 1:2000 and 1:200); the exaggeration is their ratio |
 | `--plan-scale` | the plan across the line (default the horizontal scale) |
-| `--page` | sheets `A0`–`A4` (landscape) or `WIDTHxHEIGHT` in mm; without it one continuous drawing |
+| `--page` | sheets of a standard paper size (landscape): ISO `A0`–`A4`, the long A sizes `A3x3` …, `B1`–`B4`, `"ANSI A"`–`"ANSI E"`, `"ARCH A"`–`"ARCH E"`; `WIDTHxHEIGHT` in mm; or `optimised` ([Paper size and orientation](#paper-size-and-orientation)); without it one continuous drawing |
+| `--paper-sizes`, `--mixed-sizes`, `--same-paper` | with `--page optimised`: the sizes it may choose from (comma-separated, default `A0,A1,A2,A3,A4`), different sizes of one standard on a route's sheets, the same paper on every route |
 | `--break-clearance MM` | clearance on paper between a sheet break and what is drawn of every other structure, 0 to 20 mm (default 2; see [Sheets](#sheets)) |
 | `--plan-width M` | the **line width** (also `--line-width`): half width of the plan (default 40 m), what is drawn along the line (see [Line width](#line-width)) |
 | `--profile-only` | the profile alone, without the plan |
@@ -50,7 +51,7 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--elevation-labels` | written at each elevation: `number`, `type`, `height`, `string_length` (comma-separated) |
 | `--sheet-template NAME` | the [sheet template](sheet-templates.md): `default`, a `.ohlsheet` file, the project's or the library folder's by name, or `PLUGIN/PRESET` (with `--plugin DIR`); its page unless `--page` |
 | `--field KEY=VALUE`, `--fields FILE`, `--revision "A;DATE;TEXT;BY;CHECKED"` | the template's values and the revision table |
-| `--orientation` | `landscape` or `portrait` |
+| `--orientation` | `landscape` or `portrait` (with `--page optimised`: the only one allowed; default both) |
 | `--version LINE=ROLE[:LABEL]` | another version of the line drawn with it in a role (a project line of a project file, or a line file; repeatable) |
 | `--role ROLE` | the role of the line itself (its style) |
 | `--corridor-width M` | the corridor's edges at ± M in the plan and the key map, the ground along them in the profile |
@@ -228,6 +229,35 @@ anyway and reported as a warning: change the scales or the format.
 - A **structure at a sheet's end** is drawn whole on both sheets (its
   drawing reaches past the match line), its name inside the panel.
 
+### Paper size and orientation
+
+`--page optimised` (the export window's **optimised from the ticked
+sizes**; a template's `format = "optimised"`) chooses the paper size and
+orientation per route. Every allowed size in each allowed orientation is
+laid out exactly as the export would (the scales are never changed), and
+the layout kept is the one with
+
+1. the fewest warnings (a span longer than the sheet, a datum step or
+   structure tops cut, elevations overlapping, a sheet that runs on),
+2. then the least paper (the sum of the sheets' areas: fuller sheets),
+3. then the fewest sheets, then the smallest sheet.
+
+With **different sizes allowed** (`--mixed-sizes`), a route's sheets may
+take different sizes of one standard (ISO A with its long sizes, ISO B,
+ANSI, ARCH) in one orientation — a short last sheet on a smaller size:
+the breaks and the sizes are chosen together. With **the same paper on
+every route** (`--same-paper`), one size (or one standard, mixed) is
+chosen for all routes together. The export reports the choice per route
+(`optimised layout A2 landscape (A2 ×4; 0 warning(s), 1.00 m² of paper,
+86 % filled)`); in the export window **Compare sizes** lists every
+candidate for the first route, best first.
+
+The sizes offered — and those the optimiser may choose from — are ticked
+in the window's **Paper sizes** list (ISO A0–A4 by default; the long A
+sizes `A3x3` … `A0x3`, ISO B1–B4, ANSI A–E, ARCH A–E1). The ISO A and B
+sizes are those of ISO 216, the long A sizes as listed for ISO 5457 /
+IS 10711, the ANSI and ARCH sizes from their inch sizes.
+
 **Where a sheet may end.** A match line never falls at, or cuts
 through, a structure drawn on the sheet:
 
@@ -365,7 +395,11 @@ A simple, open format for the same numbers (version 1):
 (Built-in, Project, Library or a plugin's; **Load file…** keeps a
 `.ohlsheet` in the project, **Save as file…** writes the one chosen),
 route (or every route), formats, sheets (one continuous drawing, the
-template's format, or A0–A4 split at structures; **portrait**),
+template's format, **optimised from the ticked sizes** — with the
+orientations allowed, **different sizes allowed**, **same paper on every
+route** and **Compare sizes** — or a ticked size split at structures;
+**portrait**; the **Paper sizes** list, see [Paper size and
+orientation](#paper-size-and-orientation)),
 horizontal and vertical scale, **line width** (± m, the plan's half
 width: the same setting as the Profile page's **line width ±**, see
 [Line width](#line-width)), **sheet breaks** (the break clearance, mm on
@@ -379,7 +413,11 @@ below; base offset in mm; rotation), PNG resolution; then the template's
 **versions of the line** (other project lines in their roles, the line's
 own role), **more of the template** (corridor, lines below the lowest
 conductor, band rows, elevation scale and labels), **Preview sheet** (one
-sheet drawn by the export in a window of its own, with its warnings), the
+sheet drawn by the export in a window of its own, with its warnings; its
+number chosen before or after ticking, the route and the sheet chosen
+in the preview window too, ◀ ▶; drawn in the background, the window
+usable meanwhile, and again only once the settings have stayed unchanged
+for half a second — typing a value draws once, not at every key), the
 violations of the last clearance check as markers, the profile alone,
 the other solved weather cases (dashed, each from its own solution), and
 the output folder. A window taller than the screen scrolls.

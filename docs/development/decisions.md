@@ -10,6 +10,28 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+**Sheets: paper size and orientation optimised (owner, 2026-10-22)**
+
+- A sheet choice **optimised** picks size and orientation per route from
+  the sizes ticked (a list of standard sizes: ISO A0–A4 by default, the
+  long A sizes, ISO B, ANSI, ARCH, checked against a published list).
+  Ranking: fewest warnings, then least paper (fuller sheets), then fewest
+  sheets, then the smallest sheet. The scales are never changed.
+- **Different sizes** on one route (a tick): only sizes of one standard,
+  one orientation; breaks and sizes chosen together (dynamic programming
+  over the places a sheet may end, the profile's fit estimated from
+  heights joined stretch by stretch, the chosen sheets then laid out in
+  full and ranked with the others).
+- **Same paper on every route** (a tick): one size, or one standard
+  when mixed, best over the routes together.
+- Templates may ask for it (`[page] format = "optimised"`, `sizes`,
+  `mixed`); the command line has `--page optimised`, `--paper-sizes`,
+  `--mixed-sizes`, `--same-paper`.
+- The sheet preview draws only the sheet shown, in the background, and
+  again only once the settings have settled for 0.5 s; its window
+  chooses the route and steps through the sheets; a number past the last
+  shows the last.
+
 - **A rule preset may hold only wire tension rules** (2026-10-22): the
   host accepts a plugin preset with `[[tension_rule]]` tables and no
   `[[rule]]` (as for `[vegetation]`), so a design-code plugin can offer

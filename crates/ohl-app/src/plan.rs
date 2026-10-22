@@ -128,7 +128,7 @@ fn paint_sheets(
         }
         Some(Ok(p)) => p,
     };
-    if p.page.is_none() {
+    if p.paper.is_none() {
         note("Sheet preview: the export writes one continuous drawing".into());
         return 0;
     }

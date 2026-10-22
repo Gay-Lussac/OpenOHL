@@ -98,6 +98,15 @@ pub(crate) const LABEL_ROOM_MM: f64 = 7.0;
 /// lowest point, markers) and everything (the whole wires, the structures
 /// and their drawings), m; infinite when there is nothing.
 pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2], [f64; 2]) {
+    let (essential, lows, full) = heights_split(d, o, a, b);
+    joined(essential, lows.iter().copied(), full)
+}
+
+/// What [`heights`] joins: the essential range without the wires, each
+/// wire's lowest height (infinite: none within), and the full range of
+/// what is not essential. Each is a minimum or a maximum over the
+/// stations, so the ranges of stretches side by side join exactly.
+fn heights_split(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2], Vec<f64>, [f64; 2]) {
     let mut essential = [f64::INFINITY, f64::NEG_INFINITY];
     let within = |s: f64| s >= a - 1e-6 && s <= b + 1e-6;
     let see = |r: &mut [f64; 2], s: f64, z: f64| {
@@ -118,20 +127,21 @@ pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2
     }
     // Of each wire its lowest point within the range (what the ground
     // clearance is about); the whole wire with the structures.
-    for w in &d.wires {
-        let lowest = w
-            .points
-            .iter()
-            .filter(|p| within(p[0]))
-            .min_by(|a, b| a[2].total_cmp(&b[2]));
-        if let Some(p) = lowest {
-            see(&mut essential, p[0], p[2]);
-        }
-    }
+    let lows = d
+        .wires
+        .iter()
+        .map(|w| {
+            w.points
+                .iter()
+                .filter(|p| within(p[0]) && p[2].is_finite())
+                .map(|p| p[2])
+                .fold(f64::INFINITY, f64::min)
+        })
+        .collect();
     for (p, _) in &d.markers {
         see(&mut essential, p[0], p[2]);
     }
-    let mut full = essential;
+    let mut full = [f64::INFINITY, f64::NEG_INFINITY];
     // The ground along the corridor's edges: seen when it fits (the
     // LiDAR points are not: they are clipped at the panel).
     for p in d.corridor_ground.iter().flat_map(|(_, r)| r).flatten() {
@@ -157,7 +167,72 @@ pub(crate) fn heights(d: &RouteDrawing, o: &Options, a: f64, b: f64) -> ([f64; 2
             see(&mut full, m.station, p[2]);
         }
     }
+    (essential, lows, full)
+}
+
+/// [`heights`] from the parts of [`heights_split`].
+fn joined(
+    mut essential: [f64; 2],
+    lows: impl Iterator<Item = f64>,
+    rest: [f64; 2],
+) -> ([f64; 2], [f64; 2]) {
+    for z in lows.filter(|z| z.is_finite()) {
+        essential[0] = essential[0].min(z);
+        essential[1] = essential[1].max(z);
+    }
+    let full = [essential[0].min(rest[0]), essential[1].max(rest[1])];
     (essential, full)
+}
+
+/// The heights of each stretch between neighbouring stops, to join
+/// those of a sheet quickly ([`StretchHeights::warnings`]).
+pub(crate) struct StretchHeights {
+    parts: Vec<([f64; 2], Vec<f64>, [f64; 2])>,
+}
+
+impl StretchHeights {
+    pub(crate) fn new(d: &RouteDrawing, o: &Options, stations: &[Stop]) -> Self {
+        Self {
+            parts: stations
+                .windows(2)
+                .map(|w| heights_split(d, o, w[0].station, w[1].station))
+                .collect(),
+        }
+    }
+
+    /// [`heights`] from stop `i` to stop `j` (joined, exactly).
+    pub(crate) fn between(&self, i: usize, j: usize) -> ([f64; 2], [f64; 2]) {
+        let parts = &self.parts[i..j];
+        let mut essential = [f64::INFINITY, f64::NEG_INFINITY];
+        let mut rest = [f64::INFINITY, f64::NEG_INFINITY];
+        let wires = parts.first().map_or(0, |p| p.1.len());
+        let mut lows = vec![f64::INFINITY; wires];
+        for (e, l, r) in parts {
+            essential = [essential[0].min(e[0]), essential[1].max(e[1])];
+            rest = [rest[0].min(r[0]), rest[1].max(r[1])];
+            for (a, b) in lows.iter_mut().zip(l) {
+                *a = a.min(*b);
+            }
+        }
+        joined(essential, lows.into_iter(), rest)
+    }
+
+    /// The profile warnings [`fit`] gives a sheet from stop `i` to stop
+    /// `j` in a panel `avail` mm tall, estimated: none when everything
+    /// fits, one when the ground and the wires' lowest points fit (the
+    /// tops cut), two when they do not (the datum stepped).
+    pub(crate) fn warnings(&self, o: &Options, i: usize, j: usize, avail: f64) -> usize {
+        let v = 1000.0 / o.vertical_scale;
+        let room = (avail / v).max(1e-3);
+        let (essential, full) = self.between(i, j);
+        if !full[0].is_finite() || full[1] + LABEL_ROOM_MM / v - full[0] <= room + 1e-9 {
+            0
+        } else if !essential[0].is_finite() || essential[1] - essential[0] <= room + 1e-9 {
+            1
+        } else {
+            2
+        }
+    }
 }
 
 /// Height range of what lies between stations `s0` and `s1`, rounded to
@@ -2028,6 +2103,8 @@ pub struct Sheet {
     /// Where the sheet starts and ends: a structure, a free alignment
     /// point, or the station where a station range starts or ends.
     pub structures: (String, String),
+    /// Its page.
+    pub page: Page,
     /// The sheet.
     pub drawing: Drawing,
     /// Problems: a span longer than the sheet, a profile taller than it.
@@ -2043,8 +2120,8 @@ impl Sheet {
 
 /// A place a sheet may start or end: a structure, a free alignment
 /// point, or the end of a station range.
-struct Stop {
-    station: f64,
+pub(crate) struct Stop {
+    pub(crate) station: f64,
     label: String,
     /// Why no sheet may break here (`None`: a free break).
     blocked: Option<String>,
@@ -2167,6 +2244,9 @@ pub struct SheetLayout {
     /// Problems: no free break within reach (the sheet runs on), a span
     /// longer than the sheet, a profile taller than it.
     pub warnings: Vec<String>,
+    /// The sheet's page (the same on every sheet unless the layout was
+    /// optimised with different sizes allowed).
+    pub page: Page,
     /// The profile's parts, each with its height range (more than one
     /// where the datum is stepped).
     parts: Vec<Part>,
@@ -2204,6 +2284,16 @@ pub(crate) struct Paper {
 }
 
 impl Paper {
+    /// Metres of route a sheet holds at the horizontal scale.
+    pub(crate) fn usable_m(&self) -> f64 {
+        self.usable / self.h
+    }
+
+    /// Height of the profile panel, mm.
+    pub(crate) fn available_mm(&self) -> f64 {
+        self.available
+    }
+
     /// The frame of a sheet from `s0` to `s1` with its profile's `parts`.
     fn frame(&self, o: &Options, s0: f64, s1: f64, parts: Vec<Part>) -> Frame {
         Frame {
@@ -2375,88 +2465,161 @@ pub fn sheet_layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayo
 
 /// [`sheet_layout`] of `d`, what is drawn of the route.
 fn layout(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<SheetLayout> {
+    sheet_layout_on(d, o, &route_stops(d, o), page)
+}
+
+/// The sheets of `page` over `stations` of `d` (what is drawn): as
+/// [`sheet_layout`].
+pub(crate) fn sheet_layout_on(
+    d: &RouteDrawing,
+    o: &Options,
+    stations: &[Stop],
+    page: &Page,
+) -> Vec<SheetLayout> {
     let paper = Paper::new(d, o, page);
-    let (h, usable) = (paper.h, paper.usable);
-    let reach = usable / h; // metres per sheet
+    let plan: Vec<_> = greedy(stations, paper.usable_m())
+        .into_iter()
+        .map(|r| (r, page.clone()))
+        .collect();
+    layout_planned(d, o, stations, &plan)
+}
+
+/// Where sheets of the route `d` (what is drawn) may start and end: the
+/// stops at the options' break clearance (the same on every page).
+pub(crate) fn route_stops(d: &RouteDrawing, o: &Options) -> Vec<Stop> {
+    let h = 1000.0 / o.horizontal_scale;
     let clearance =
         crate::check_break_clearance(o.break_clearance).unwrap_or(crate::BREAK_CLEARANCE_MM);
-    let stations = stops(d, o, clearance / h);
-    // Break points: greedy, whole spans per sheet, at free stops only.
+    stops(d, o, clearance / h)
+}
+
+/// Whether a sheet may end at stop `k` (the last always).
+pub(crate) fn can_break(stations: &[Stop], k: usize) -> bool {
+    k + 1 == stations.len() || stations[k].blocked.is_none()
+}
+
+/// The stops where a sheet starting at stop `i` may end: every free one
+/// within `reach` m, or, when none is, the first free one after (the
+/// sheet runs on, warned).
+pub(crate) fn ends(stations: &[Stop], i: usize, reach: f64) -> Vec<usize> {
     let last = stations.len().saturating_sub(1);
-    let can_break = |k: usize| k == last || stations[k].blocked.is_none();
+    let within: Vec<usize> = (i + 1..=last)
+        .take_while(|&k| stations[k].station - stations[i].station <= reach + 1e-9)
+        .filter(|&k| can_break(stations, k))
+        .collect();
+    if within.is_empty() {
+        (i + 1..=last)
+            .find(|&k| can_break(stations, k))
+            .into_iter()
+            .collect()
+    } else {
+        within
+    }
+}
+
+/// Break points: greedy, whole spans per sheet, at free stops only.
+fn greedy(stations: &[Stop], reach: f64) -> Vec<(usize, usize)> {
+    let last = stations.len().saturating_sub(1);
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < last {
-        let fits = |k: &usize| stations[*k].station - stations[i].station <= reach + 1e-9;
-        let j = (i + 1..=last)
-            .filter(|&k| can_break(k))
-            .take_while(fits)
-            .last()
-            .or_else(|| (i + 1..=last).find(|&k| can_break(k)))
-            .unwrap_or(last);
+        let j = ends(stations, i, reach).last().copied().unwrap_or(last);
         ranges.push((i, j));
         i = j;
     }
     if ranges.is_empty() && !stations.is_empty() {
         ranges.push((0, 0));
     }
-    let what = if o.plan { "span" } else { "stretch" };
-    let curves = curve_warnings(d, o);
     ranges
-        .iter()
+}
+
+/// The sheets of `plan` (each sheet's first and last stop of
+/// `stations`, and its page), numbered in order.
+pub(crate) fn layout_planned(
+    d: &RouteDrawing,
+    o: &Options,
+    stations: &[Stop],
+    plan: &[((usize, usize), Page)],
+) -> Vec<SheetLayout> {
+    let curves = curve_warnings(d, o);
+    let mut papers: Vec<(Page, Paper)> = Vec::new();
+    plan.iter()
         .enumerate()
-        .map(|(k, &(a, b))| {
-            let (s0, s1) = (stations[a].station, stations[b].station);
-            let mut warnings = Vec::new();
-            // Structures within the sheet's reach where it could not break.
-            let skipped: Vec<&str> = stations
-                .get(a + 1..b)
-                .unwrap_or_default()
-                .iter()
-                .filter(|s| s.station - s0 <= reach + 1e-9)
-                .filter_map(|s| s.blocked.as_deref())
-                .collect();
-            if (s1 - s0) * h > usable + 1e-6 && !skipped.is_empty() {
-                warnings.push(format!(
-                    "no free sheet break within the {reach:.0} m the sheet holds at 1:{} ({}): \
-                     the sheet runs on to {} ({:.0} m), drawn anyway",
-                    o.horizontal_scale,
-                    skipped.join("; "),
-                    stations[b].label,
-                    s1 - s0
-                ));
-            } else if (s1 - s0) * h > usable + 1e-6 {
-                warnings.push(format!(
-                    "{what} {}–{} ({:.0} m) is longer than the sheet holds at 1:{} ({:.0} m)",
-                    stations[a].label,
-                    stations[b].label,
-                    s1 - s0,
-                    o.horizontal_scale,
-                    reach
-                ));
+        .map(|(k, ((a, b), page))| {
+            if !papers.iter().any(|(p, _)| p == page) {
+                papers.push((page.clone(), Paper::new(d, o, page)));
             }
-            let (parts, fitted) = fit(d, o, s0, s1, paper.available);
-            warnings.extend(fitted);
-            // Elevations overlapping each other or the profile.
-            warnings.extend(elevation_warnings(
-                d,
-                o,
-                &paper.frame(o, s0, s1, parts.clone()),
-            ));
+            let paper = &papers.iter().find(|(p, _)| p == page).expect("added").1;
+            let mut sl = sheet_at(d, o, stations, (*a, *b), page, paper);
+            sl.number = k + 1;
             if k == 0 {
-                warnings.extend(curves.iter().cloned());
+                sl.warnings.extend(curves.iter().cloned());
             }
-            SheetLayout {
-                number: k + 1,
-                from: s0,
-                to: s1,
-                reach,
-                structures: (stations[a].label.clone(), stations[b].label.clone()),
-                warnings,
-                parts,
-            }
+            sl
         })
         .collect()
+}
+
+/// The sheet from stop `a` to stop `b` on `page` (numbered 1, without
+/// the route's curve warnings).
+pub(crate) fn sheet_at(
+    d: &RouteDrawing,
+    o: &Options,
+    stations: &[Stop],
+    (a, b): (usize, usize),
+    page: &Page,
+    paper: &Paper,
+) -> SheetLayout {
+    let (h, usable) = (paper.h, paper.usable);
+    let reach = usable / h; // metres per sheet
+    let what = if o.plan { "span" } else { "stretch" };
+    let (s0, s1) = (stations[a].station, stations[b].station);
+    let mut warnings = Vec::new();
+    // Structures within the sheet's reach where it could not break.
+    let skipped: Vec<&str> = stations
+        .get(a + 1..b)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| s.station - s0 <= reach + 1e-9)
+        .filter_map(|s| s.blocked.as_deref())
+        .collect();
+    if (s1 - s0) * h > usable + 1e-6 && !skipped.is_empty() {
+        warnings.push(format!(
+            "no free sheet break within the {reach:.0} m the sheet holds at 1:{} ({}): \
+             the sheet runs on to {} ({:.0} m), drawn anyway",
+            o.horizontal_scale,
+            skipped.join("; "),
+            stations[b].label,
+            s1 - s0
+        ));
+    } else if (s1 - s0) * h > usable + 1e-6 {
+        warnings.push(format!(
+            "{what} {}–{} ({:.0} m) is longer than the sheet holds at 1:{} ({:.0} m)",
+            stations[a].label,
+            stations[b].label,
+            s1 - s0,
+            o.horizontal_scale,
+            reach
+        ));
+    }
+    let (parts, fitted) = fit(d, o, s0, s1, paper.available);
+    warnings.extend(fitted);
+    // Elevations overlapping each other or the profile.
+    warnings.extend(elevation_warnings(
+        d,
+        o,
+        &paper.frame(o, s0, s1, parts.clone()),
+    ));
+    SheetLayout {
+        number: 1,
+        from: s0,
+        to: s1,
+        reach,
+        structures: (stations[a].label.clone(), stations[b].label.clone()),
+        warnings,
+        page: page.clone(),
+        parts,
+    }
 }
 
 /// The structures at a sheet's ends as its title names them: a station
@@ -2582,13 +2745,48 @@ fn sheet_values(
 /// legend, key map, scale bars, north arrows, band rows).
 pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     let d = &d.shown(o.plan_half_width);
-    let paper = Paper::new(d, o, page);
-    let layout = layout(d, o, page);
+    draw_sheets(d, o, layout(d, o, page))
+}
+
+/// The sheets of `layout` (of `d`, what is drawn), each on its page.
+pub(crate) fn draw_sheets(d: &RouteDrawing, o: &Options, layout: Vec<SheetLayout>) -> Vec<Sheet> {
+    draw_some(d, o, layout, None)
+}
+
+/// Sheet `number` (1-based) of the route split as [`sheet_layout`] says,
+/// drawn alone (the others are laid out, not drawn): what [`sheets`]
+/// draws as that sheet. None: no such sheet.
+pub fn sheet(d: &RouteDrawing, o: &Options, page: &Page, number: usize) -> Option<Sheet> {
+    let d = &d.shown(o.plan_half_width);
+    draw_some(d, o, layout(d, o, page), Some(number)).pop()
+}
+
+/// Sheet `number` of `layout` (of route `d`, not yet [`RouteDrawing::shown`]).
+pub(crate) fn sheet_of(
+    d: &RouteDrawing,
+    o: &Options,
+    layout: Vec<SheetLayout>,
+    number: usize,
+) -> Option<Sheet> {
+    let d = &d.shown(o.plan_half_width);
+    draw_some(d, o, layout, Some(number)).pop()
+}
+
+/// The sheets of `layout`, or only sheet `only` (1-based).
+fn draw_some(
+    d: &RouteDrawing,
+    o: &Options,
+    layout: Vec<SheetLayout>,
+    only: Option<usize>,
+) -> Vec<Sheet> {
     let n = layout.len();
     let t = &o.template;
     layout
         .into_iter()
+        .filter(|sl| only.is_none_or(|k| sl.number == k))
         .map(|sl| {
+            let page = &sl.page.clone();
+            let paper = Paper::new(d, o, page);
             let (s0, s1) = (sl.from, sl.to);
             let f = paper.frame(o, s0, s1, sl.parts.clone());
             let values = sheet_values(d, o, page, &sl, n);
@@ -2716,6 +2914,7 @@ pub fn sheets(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 from: s0,
                 to: s1,
                 structures: sl.structures,
+                page: sl.page,
                 drawing,
                 warnings,
             }

@@ -385,10 +385,25 @@ struct LineArgs {
     /// horizontal scale).
     #[arg(long, value_parser = scale)]
     plan_scale: Option<f64>,
-    /// Split the drawings over sheets of this format, at structures: A0, A1,
-    /// A2, A3, A4 (landscape) or WIDTHxHEIGHT in mm.
+    /// Split the drawings over sheets of this format, at structures: a
+    /// standard paper size (A0–A4, A3x3 …, B1–B4, "ANSI A"–"ANSI E",
+    /// "ARCH A"–"ARCH E"; landscape), WIDTHxHEIGHT in mm, or `optimised`:
+    /// the size and orientation with the fewest warnings and the least
+    /// paper, from --paper-sizes.
     #[arg(long)]
     page: Option<String>,
+    /// With --page optimised: the sizes it may choose from, comma-separated
+    /// (default A0,A1,A2,A3,A4).
+    #[arg(long, value_delimiter = ',')]
+    paper_sizes: Vec<String>,
+    /// With --page optimised: different sizes of one standard on a route's
+    /// sheets (a short sheet on a smaller size).
+    #[arg(long)]
+    mixed_sizes: bool,
+    /// With --page optimised: the same paper (or, with --mixed-sizes, the
+    /// same standard and orientation) on every route.
+    #[arg(long)]
+    same_paper: bool,
     /// Clearance on paper, mm, between a sheet break and what is drawn of
     /// every other structure (0 to 20).
     #[arg(long, default_value_t = ohl_drawing::BREAK_CLEARANCE_MM, value_parser = break_clearance)]
@@ -415,7 +430,8 @@ struct LineArgs {
     /// (repeatable, oldest first).
     #[arg(long)]
     revision: Vec<String>,
-    /// Orientation of the sheets: landscape or portrait.
+    /// Orientation of the sheets: landscape or portrait (with --page
+    /// optimised: the only one allowed; default both).
     #[arg(long, value_parser = ["landscape", "portrait"])]
     orientation: Option<String>,
     /// Corridor on the sheets: its edges at ± this many metres from the
@@ -626,6 +642,7 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
         export: ohl_drawing::export::Export {
             formats,
             page: None, // from --page, read with the other drawing options
+            optimise: None,
             dpi: args.dpi,
         },
         from: args.from,
@@ -1537,6 +1554,9 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         fields,
         revision,
         orientation,
+        paper_sizes,
+        mixed_sizes,
+        same_paper,
         corridor_width,
         sheet_lidar_classes,
         versions,
@@ -2049,9 +2069,36 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 Some(t) => sheet_run::resolve(t, Some(file), plugin)?,
                 None => ohl_drawing::SheetTemplate::builtin(),
             });
-            let page = match page {
+            // The optimised layout (--page optimised, or the template's).
+            let mut optimise = match page.as_deref() {
+                Some("optimised") => {
+                    let names = if paper_sizes.is_empty() {
+                        ohl_drawing::paper::default_sizes()
+                    } else {
+                        paper_sizes.clone()
+                    };
+                    Some(ohl_drawing::paper::Optimise::from_names(
+                        &names,
+                        *mixed_sizes,
+                    )?)
+                }
+                None if sheet_template.is_some() => template.optimise(),
+                _ => None,
+            };
+            if let Some(o) = &mut optimise {
+                match orientation.as_deref() {
+                    Some("landscape") => o.portrait = false,
+                    Some("portrait") => o.landscape = false,
+                    _ => {}
+                }
+            }
+            let page = match page.as_deref() {
+                Some("optimised") => None,
                 Some(name) => Some(ohl_drawing::page_format(name).ok_or_else(|| {
-                    format!("unknown page format \"{name}\" (A0–A4 or WIDTHxHEIGHT in mm)")
+                    format!(
+                        "unknown page format \"{name}\" (a standard paper size such as A1, \
+                         A3x3, B2, \"ANSI D\", WIDTHxHEIGHT in mm, or optimised)"
+                    )
                 })?),
                 None if sheet_template.is_some() => template.page(),
                 None => None,
@@ -2196,8 +2243,9 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 );
                 other_versions.push((name, role, label, vline, solved));
             }
-            let target = ohl_drawing::export::Export {
+            let mut target = ohl_drawing::export::Export {
                 page: page.clone(),
+                optimise: optimise.clone(),
                 ..spec.export.clone()
             };
             // Isoclearance lines: once for every route of the drawing.
@@ -2254,6 +2302,9 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     return Err(format!("no route \"{id}\" (routes: {})", ids.join(", ")));
                 }
             }
+            // Every route built first: one paper for all of them may
+            // depend on each.
+            let mut built = Vec::new();
             for route in routes
                 .iter()
                 .filter(|r| spec.routes.is_empty() || spec.routes.contains(&r.id))
@@ -2319,14 +2370,25 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         .then(|| [spec.from.unwrap_or(0.0), spec.to.unwrap_or(d.length)]),
                     ..options.clone()
                 };
+                built.push((route, d, options));
+            }
+            if *same_paper && let Some(opt) = &optimise {
+                let all: Vec<_> = built.iter().map(|(_, d, o)| (d, o)).collect();
+                let common = ohl_drawing::paper::common_choice(&all, opt);
+                target.optimise = Some(common);
+            }
+            for (route, d, options) in &built {
                 // Exit clause: an hour per route (minutes are expected for
                 // hundreds of PNG sheets).
                 let budget = ohl_core::budget::Budget::new()
                     .time_limit(std::time::Duration::from_secs(3600));
                 let written =
-                    ohl_drawing::export::write_route(&d, &options, &target, &spec.out, &budget)?;
+                    ohl_drawing::export::write_route(d, options, &target, &spec.out, &budget)?;
                 for w in &written.warnings {
                     println!("  warning: {w}");
+                }
+                if let Some(paper) = &written.paper {
+                    println!("  route {}: optimised layout {paper}", route.id);
                 }
                 if let Some(page) = &page {
                     println!(

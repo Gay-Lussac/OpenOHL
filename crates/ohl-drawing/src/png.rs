@@ -54,6 +54,14 @@ fn fonts() -> Arc<usvg::fontdb::Database> {
         .clone()
 }
 
+/// Reads the system fonts for the images in a thread of its own (they are
+/// read once, on first use; this lets a program do it ahead).
+pub fn load_fonts_in_background() {
+    std::thread::spawn(|| {
+        let _ = fonts();
+    });
+}
+
 /// `svg` drawn at `px_per_mm` (lowered to stay within `max_pixels`), with
 /// the scale used.
 pub(crate) fn rasterize(
