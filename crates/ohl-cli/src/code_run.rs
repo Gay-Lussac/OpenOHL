@@ -207,6 +207,7 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
             ohl_clearance::rules::PresetCheck::Vertical,
             ohl_clearance::rules::PresetCheck::Radial,
             ohl_clearance::rules::PresetCheck::Vegetation,
+            ohl_clearance::rules::PresetCheck::Tension,
         ]
         .into_iter()
         .filter(|c| p.rules.is_for(*c))
@@ -222,6 +223,19 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
                 parts.push(format!("radial {v}"));
             }
             println!("  {}: {}", r.name, parts.join("; "));
+        }
+        for t in &p.rules.tension_rules {
+            println!(
+                "  {}: tension at most {} × RTS ({:?}){}",
+                t.name,
+                t.factor,
+                t.measure,
+                if t.cases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — cases {}", t.cases.join(", "))
+                }
+            );
         }
         if let Some(v) = &p.rules.vegetation {
             let mut parts = Vec::new();
