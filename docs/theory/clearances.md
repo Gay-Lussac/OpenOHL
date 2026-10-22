@@ -19,6 +19,52 @@ Every clearance is to the conductor's surface ([Clearance](../user-guide/terrain
 - **Radial**: the shortest 3D distance from the wire (each subconductor
   of a bundle).
 
+### The vertical: straight below, drawn vertical (2026-10-22)
+
+The owner's decision of 2026-10-22: a vertical rule checks only the
+targets straight under (over) the wire, within the zone's width, and
+measures and draws only vertically. As built (checked against the code,
+`checks::PointCheck`, `checks::ground_check`, `zone_arc::ArcPointCheck`;
+test `the_vertical_checks_only_the_band_and_is_drawn_vertical`):
+
+- **Which targets.** A LiDAR point counts when its plan position lies
+  within \( w \) of the wire's polyline in plan (the nearest point of a
+  piece in plan, `geometry::over_in_plan`); the ground: the highest ground
+  within \( w \) across each piece (its crossings under the piece and
+  under its two edges, and the TIN's vertices between). A target farther
+  than \( w \) in plan is **left out entirely**: no sloped or 3D
+  distance is taken for it. Rule 10 m, \( w = 1 \) m: a point 0.9 m
+  beside the wire is checked, one 1.1 m beside it is not, however near it
+  is in 3D.
+- **The distance.** The wire's height over the target at the target's
+  plan position (the wire interpolated along the piece at the point
+  nearest in plan): \( z_{	ext{wire}} - z_{	ext{target}} \) for a
+  target below (to the lowest subconductor of a bundle, less the
+  conductor's radius), above: the reverse. With a depth \( d \) the
+  wire is taken \( m\,d/2 \) lower (the wire's lowest point over the
+  slice, above); a depth of 0 gives exactly the height over the point.
+- **With the swing arc** the width is taken across the **swung** wire's
+  plan position: the band's points within \( w \) across the line of
+  the target (and within \( d/2 \) along it) count, each position of the
+  band where it is in plan, not the still-air wire's; the distance is
+  vertical as well — the height of the band's lowest such point over the
+  target ([The vertical distance to the arc](#the-vertical-distance-to-the-arc)).
+- **The drawing.** Every vertical violation, and the lowest reported, is
+  drawn as a **vertical** segment from the target straight up (down) to
+  the wire's height at that plan position — the same \( x, y \) at both
+  ends, also for a target at the band's edge (`checks::Hit::drawn`,
+  `zone::ZoneFinding::drawn`): in the 3D view, the cross-section panel,
+  the plan (the mark at the target's plan position) and the profile. The
+  value listed is the vertical distance. Radial rules keep their radial
+  segment, from the wire point found to the target.
+
+What differed before: the measure was already vertical and the band
+already in plan (the numbers do not change); only the drawing ran from
+the target to the wire point found — beside the target by up to \( w \)
+— so a point at the band's edge was drawn slanting (1 m sideways on a
+default zone), and the profile drew no clearance marks. The reports'
+CSV keep the wire point found (its coordinates, the swing arc's angle).
+
 Each rule gives the wires' voltage, its weather cases, the distance to
 keep (one, by voltage, or base + per kV) and its targets; each span's
 lowest clearance over every wind position of the rule's cases is

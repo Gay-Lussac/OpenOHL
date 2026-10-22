@@ -876,7 +876,11 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   d are the distance from the axis less `Wire::allowance` — the
   subconductor's `surface_radius` (half the iced diameter in the case,
   `WeatherCase::iced_diameter`) and the `polyline_error` bound — of each
-  wire (`Hit::wire` stays the axis point). Both come from the solve:
+  wire (`Hit::wire` stays the axis point; what is drawn is
+  `Hit::drawn(vertical)` / `ZoneFinding::drawn(measure)`: since
+  2026-10-22 a vertical clearance from the target straight up to the
+  wire's height, `checks::vertical_mark`, the same x and y at both ends;
+  `clearance::Finding::at` in the app holds that point). Both come from the solve:
   `SpanShape` and `JumperShape` (`ohl-line`) carry `surface_radius` and
   `polyline_error` (`ohl_line::solve::polyline_error`: the largest
   sagitta of a piece on a circle of radius H/w; 0 for a rigid or stiff

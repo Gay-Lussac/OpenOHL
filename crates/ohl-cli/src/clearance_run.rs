@@ -191,14 +191,14 @@ fn lowest<'a>(results: impl Iterator<Item = &'a WireResult> + Clone) -> String {
 }
 
 fn marker(extras: &mut ViewerExtras, rule: &Rule, label: String, r: &WireResult) {
-    let worst = [r.vertical, r.radial]
+    // A vertical clearance's mark straight above (below) its target, at
+    // the wire's height (owner, 2026-10-22).
+    let worst = [(r.vertical, true), (r.radial, false)]
         .into_iter()
-        .flatten()
-        .min_by(|x, y| x.distance.total_cmp(&y.distance));
-    if let Some(h) = worst {
-        extras
-            .markers
-            .push((h.wire, format!("{}: {label}", rule.name)));
+        .filter_map(|(h, v)| h.map(|h| (h.drawn(v).0, h.distance)))
+        .min_by(|x, y| x.1.total_cmp(&y.1));
+    if let Some((at, _)) = worst {
+        extras.markers.push((at, format!("{}: {label}", rule.name)));
     }
 }
 

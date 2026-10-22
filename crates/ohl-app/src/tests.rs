@@ -1634,6 +1634,19 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             assert_eq!(rep.zone.findings.len(), spans);
             assert!(rep.zone.findings.iter().all(|f| f.class.is_none()));
             assert_eq!(r.view3d.marks.len(), spans);
+            // Drawn vertical (owner, 2026-10-22): each mark from the
+            // ground point straight up to the wire's height — the same x
+            // and y at both ends, in the 3D view (and so the cross-section
+            // panel), the plan and the profile.
+            for ((top, ground), f) in r.view3d.marks.iter().zip(&rep.zone.findings) {
+                assert_eq!([top[0], top[1]], [ground[0], ground[1]]);
+                assert_eq!(*ground, f.target);
+                assert_eq!(top[2], f.wire[2]);
+                assert!(top[2] > ground[2]);
+            }
+            assert_eq!(r.profile.marks, r.view3d.marks);
+            let plan: Vec<[f64; 3]> = r.view3d.marks.iter().map(|m| m.0).collect();
+            assert_eq!(r.plan.marks, plan);
             let f = &rep.zone.findings[0];
             break Selection::Span {
                 section: f.section.clone(),

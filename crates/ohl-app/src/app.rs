@@ -7104,6 +7104,7 @@ fn clearance_frame(ctx: &egui::Context, r: &mut Ready, tab_open: bool) {
         let f = if shown { r.clearances.findings() } else { &[] };
         r.view3d.marks = f.iter().map(|f| (f.at, f.target)).collect();
         r.plan.marks = f.iter().map(|f| f.at).collect();
+        r.profile.marks.clone_from(&r.view3d.marks);
         r.view3d.dirty.insert(Layer::Clearances);
     }
     r.clearances_drawn = Some(shown);
@@ -7219,11 +7220,13 @@ pub(crate) fn clearance_zone_out(
         // Its window closed: its violations off the views.
         r.plan.marks.clear();
         r.view3d.marks.clear();
+        r.profile.marks.clear();
         r.view3d.dirty.insert(Layer::Clearances);
     }
     if let Some(marks) = out.marks {
         r.marks_from = MarksFrom::Zone(measure);
         r.plan.marks = marks.iter().map(|m| m.0).collect();
+        r.profile.marks.clone_from(&marks);
         r.view3d.marks = marks;
         r.view3d.dirty.insert(Layer::Clearances);
     }

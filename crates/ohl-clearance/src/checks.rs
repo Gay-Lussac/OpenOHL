@@ -442,6 +442,29 @@ pub struct Hit {
     pub class: Option<u8>,
 }
 
+impl Hit {
+    /// The segment drawn for this clearance: (its end at the wire, its end
+    /// at the target). Radial: from the wire point found to the target.
+    /// Vertical (owner, 2026-10-22): straight up or down from the target
+    /// to the wire's height at the target's plan position — the same x and
+    /// y at both ends, also for a target at the edge of the zone's width,
+    /// never to the wire point beside it ([`vertical_mark`]).
+    pub fn drawn(&self, vertical: bool) -> (P3, P3) {
+        if vertical {
+            (vertical_mark(self.wire, self.target), self.target)
+        } else {
+            (self.wire, self.target)
+        }
+    }
+}
+
+/// The wire's end of a vertical clearance's mark: the point at the height
+/// of the wire point `wire` found over (under) the target, straight above
+/// (below) `target` — the vertical is drawn vertical (owner, 2026-10-22).
+pub fn vertical_mark(wire: P3, target: P3) -> P3 {
+    [target[0], target[1], wire[2]]
+}
+
 /// Results of one rule for one wire (or one pair of wires).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WireResult {
@@ -1794,6 +1817,72 @@ mod tests {
         let expected = sampled_floor(expected, 0.4);
         assert!((radial - expected).abs() < 1e-6, "{radial} vs {expected}");
         assert!(res.radial_violations > 0 && res.vertical_violations == 0);
+    }
+
+    /// The vertical (owner, 2026-10-22): only targets whose plan position
+    /// lies within the band of the wire count, the distance is the wire's
+    /// height over the target at that plan position, and it is drawn
+    /// vertical — straight up from the target, also at the band's edge.
+    #[test]
+    fn the_vertical_checks_only_the_band_and_is_drawn_vertical() {
+        // A wire rising from 20 m to 30 m over 100 m along x: 25 m at
+        // x = 50. Band 1 m, no depth, 10 m to keep.
+        let wire = straight("S", "L1", [0.0, 0.0, 20.0], [100.0, 0.0, 30.0]);
+        let v = rule(
+            "[[rule]]\nname = \"v\"\ntarget = \"points\"\nclasses = [5]\nvertical = 10.0\n\
+             vertical_band = \"1 m\"\nvertical_depth = \"0 m\"",
+        );
+        let set = WireSet::new(vec![wire.clone()], 20.0);
+        // 0.9 m beside the wire, 18 m up: checked, 25 − 18 = 7 m.
+        let mut pc = PointCheck::new(&v, &[5], &set);
+        pc.visit(&set, 50.0, 0.9, 18.0, 5);
+        let hit = pc.results[0].vertical.expect("within the band");
+        assert!((hit.distance - 7.0).abs() < 1e-9, "{hit:?}");
+        assert_eq!(pc.results[0].vertical_violations, 1);
+        // Drawn vertical: the same x and y at both ends, from the point up
+        // to the wire's height there (not to the wire point 0.9 m beside).
+        let (top, bottom) = hit.drawn(true);
+        assert_eq!([top[0], top[1]], [50.0, 0.9]);
+        assert_eq!(bottom, [50.0, 0.9, 18.0]);
+        assert!((top[2] - 25.0).abs() < 1e-9);
+        // Radially it stays the 3D segment to the wire point.
+        assert_eq!(hit.drawn(false).0, hit.wire);
+        // 1.1 m beside it, even nearer below the wire: ignored entirely
+        // (no sloped or 3D distance).
+        let mut pc = PointCheck::new(&v, &[5], &set);
+        pc.visit(&set, 50.0, 1.1, 24.0, 5);
+        pc.visit(&set, 50.0, -1.1, 24.0, 5);
+        assert!(pc.results[0].vertical.is_none());
+        assert_eq!(pc.results[0].vertical_violations, 0);
+        // The ground: a plane rising 1 m per metre to the left (+y): the
+        // highest ground within the band is at its edge, y = 1 m, z = 1 m;
+        // beyond it (higher) is not counted.
+        let mut points = Vec::new();
+        for i in 0..=20 {
+            for j in -20..=20 {
+                let y = j as f64 * 0.5;
+                points.push(SurveyPoint {
+                    x: i as f64 * 5.0,
+                    y,
+                    z: y,
+                    code: String::new(),
+                    line: String::new(),
+                });
+            }
+        }
+        let terrain = Terrain::from_points(&points, None).unwrap();
+        let g = rule(
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 30.0\n\
+             vertical_band = \"1 m\"\nvertical_depth = \"0 m\"",
+        );
+        let res = &ground_check(&g, std::slice::from_ref(&wire), &terrain)[0];
+        let hit = res.vertical.unwrap();
+        // The lowest: at the wire's start, 20 m over ground 1 m high.
+        assert!((hit.distance - 19.0).abs() < 1e-9, "{hit:?}");
+        assert!((hit.target[1] - 1.0).abs() < 1e-9, "{hit:?}");
+        let (top, bottom) = hit.drawn(true);
+        assert_eq!([top[0], top[1]], [bottom[0], bottom[1]]);
+        assert!((top[2] - bottom[2] - 19.0).abs() < 1e-9);
     }
 
     #[test]

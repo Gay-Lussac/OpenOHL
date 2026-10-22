@@ -219,9 +219,12 @@ impl ZoneWindow {
         // Nothing drawn yet and nothing to draw: leave the views alone.
         let first = self.drawn.is_none();
         self.drawn = Some(key);
+        // A vertical clearance drawn vertical, from the target straight up
+        // (down) to the wire's height (owner, 2026-10-22).
+        let measure = self.zone.measure;
         match report {
             Some(r) => Some(Some(
-                r.zone.findings.iter().map(|f| (f.wire, f.target)).collect(),
+                r.zone.findings.iter().map(|f| f.drawn(measure)).collect(),
             )),
             None if first => None,
             None => Some(None),
