@@ -62,6 +62,13 @@ pub struct ProfileView {
     vegetation_along: Option<VegetationAlong>,
     /// counted up when another report is shown.
     vegetation_serial: u64,
+    /// The clearances below a requirement (the Clearances tab, the
+    /// Vertical and Radial clearances windows), as in the 3D view: (the
+    /// end at the wire, the end at the target); a vertical one has the
+    /// same x and y at both ends, so it is drawn vertical here too ...
+    pub marks: Vec<([f64; 3], [f64; 3])>,
+    /// ... dimmed while out of date.
+    pub marks_stale: bool,
     /// A box or lasso being drawn to select LiDAR points
     /// ([`crate::area`]).
     pub area: Option<crate::area::AreaDrag>,
@@ -788,6 +795,27 @@ impl ProfileView {
                         }
                     }
                 }
+            }
+        }
+        // The clearances below a requirement within the line width: each
+        // end at its own station (a vertical one: one station, a vertical
+        // stroke from the target up to the wire's height).
+        if !self.marks.is_empty() {
+            let c =
+                crate::revision::dimmed32(egui::Color32::from_rgb(255, 60, 50), self.marks_stale);
+            let target =
+                crate::revision::dimmed32(egui::Color32::from_rgb(255, 160, 60), self.marks_stale);
+            for (at, to) in &self.marks {
+                let (sa, oa) = ohl_line::route::project(&d.centreline, *at);
+                let (st, ot) = ohl_line::route::project(&d.centreline, *to);
+                let within = |s: f64, o: f64| o.abs() <= depth && s >= s0 && s <= s1;
+                if !(within(sa, oa) || within(st, ot)) {
+                    continue;
+                }
+                let (a, b) = (to_screen(sa, at[2]), to_screen(st, to[2]));
+                painter.line_segment([a, b], egui::Stroke::new(2.0, c));
+                painter.circle_filled(a, 3.5, c);
+                painter.circle_filled(b, 2.5, target);
             }
         }
         let visible = |p: &[f64; 2]| p[0] >= s0 - (s1 - s0) && p[0] <= s1 + (s1 - s0);

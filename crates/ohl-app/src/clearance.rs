@@ -38,7 +38,8 @@ pub struct Finding {
     pub distance: f64,
     /// Clearance required, m.
     pub required: f64,
-    /// Point on the wire.
+    /// Point on the wire; for a vertical clearance the point at the
+    /// wire's height straight above (below) the target (drawn vertical).
     pub at: [f64; 3],
     /// Point on the target (ground, LiDAR point, other wire).
     pub target: [f64; 3],
@@ -101,6 +102,9 @@ fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut V
         if let (Some(h), Some(req)) = (hit, required)
             && h.distance < req
         {
+            // A vertical clearance drawn vertical: its wire end straight
+            // above (below) the target (owner, 2026-10-22).
+            let (at, target) = h.drawn(measure == "vertical");
             out.push(Finding {
                 rule: rule.name.clone(),
                 measure,
@@ -108,8 +112,8 @@ fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut V
                 other: b.map(wire_selection),
                 distance: h.distance,
                 required: req,
-                at: h.wire,
-                target: h.target,
+                at,
+                target,
                 class: h.class,
                 count: count.max(1),
             });

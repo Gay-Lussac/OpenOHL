@@ -10,6 +10,30 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **Vertical clearances: only straight below, drawn vertically**
+  (owner, 2026-10-22: "When working with the vertical distance, it
+  should only check the points vertically under the line within a given
+  width in the parameters. [...] When drawing the results that are too
+  short, it should also only be vertical, even at the 1 m mark.").
+  Built, in active development (not approved yet).
+  - **Checked against the code, unchanged:** a vertical rule takes only
+    the points (and the ground) whose plan position lies within ± the
+    width of the wire (`vertical_band`); the distance is the wire's
+    height over the target at that plan position, interpolated along the
+    piece (with a depth: the wire's lowest over the slice); targets
+    beyond the width are left out entirely, no sloped or 3D distance.
+    With the swing band the width is taken across the swung wire's plan
+    position, the distance vertical. No number changes.
+  - **Changed: the drawing.** Every vertical violation and the lowest
+    reported is drawn as a vertical segment from the target straight up
+    (down) to the wire's height at its plan position (`Hit::drawn`,
+    `ZoneFinding::drawn`): the 3D view, the cross-section panel, the
+    plan (the mark at the target's plan position), the profile (which
+    now draws the clearance marks too) and `ohl line`'s viewer markers.
+    Before, the segment ran to the wire point found, up to the width
+    beside the target. Radial rules unchanged. The CSV reports keep the
+    wire point found.
+
 - **The cross-section view is a 3D panel** (owner request of
   2026-10-22: "For the cut with C, I would like it to be a 3D object
   still, that I can move around in. It just has to show in 2D at first.

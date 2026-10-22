@@ -295,6 +295,7 @@ pub fn frame(r: &mut crate::app::Ready) {
     if r.view3d.marks_stale != marks {
         r.view3d.marks_stale = marks;
         r.plan.marks_stale = marks;
+        r.profile.marks_stale = marks;
         r.view3d.dirty.insert(Layer::Clearances);
     }
     r.model.usage_out_of_date =

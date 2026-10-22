@@ -640,6 +640,19 @@ pub struct ZoneFinding {
 }
 
 impl ZoneFinding {
+    /// The segment drawn for it in a check of `measure`: (its end at the
+    /// wire, its end at the target) — vertically straight above (below)
+    /// the target ([`crate::checks::Hit::drawn`]).
+    pub fn drawn(&self, measure: Measure) -> ([f64; 3], [f64; 3]) {
+        match measure {
+            Measure::Vertical => (
+                crate::checks::vertical_mark(self.wire, self.target),
+                self.target,
+            ),
+            Measure::Radial => (self.wire, self.target),
+        }
+    }
+
     /// Where the wire is: "high wind, 600 of 600 Pa from the left",
     /// "high wind, swing arc at 23° to the right".
     pub fn position(&self, states: &[WindState]) -> String {
