@@ -1884,17 +1884,19 @@ points and danger trees, `[[r, g, b], [r, g, b]]`) and `ground_lines`
 (View › Lines on the ground beside the line, `crate::ground_lines`:
 `on`, `distance` m, `from` `outermost_conductor` | `axis`,
 `hidden_routes`, `color` `[r, g, b]`, `width` px, `dashed`, `profile`;
-since 2026-10-21 `shown_case` (bool, default true: the case shown counts)
-and `cases` (weather case names ticked besides; a name no longer among
-the cases skipped), and `lidar_corridor` (m from the spans' chords, or
+since 2026-10-21 `shown_case` and `cases` (cases ticked of their own:
+**no longer read since 2026-10-22**, the lines take the weather cases
+displayed, `ground_lines::Displayed`, and the project lines displayed,
+`ground_lines::ProjectLine`; old files read unchanged), and `lidar_corridor` (m from the spans' chords, or
 null: the model's corridor; taken at most 200 m; wider than the model's:
 a LiDAR ground of the lines' own, built in the app and kept per width,
 never the model's ground the checks use); since 2026-10-22 `route_lines`
-(`envelope`, the default: one envelope over the routes drawn | `each`:
-each route its own lines) — every field optional, settings remembered before
+(`envelope`, the default: one envelope over the routes drawn and, since
+2026-10-22, the project lines displayed | `each`: each route and project
+line its own lines) — every field optional, settings remembered before
 read with the case shown; left out while all are the defaults). The
 lines themselves are display only: made in the app per set of weather
-cases (the plan envelope over each case chosen, both wind sides, the
+cases (the plan envelope over each case displayed, both wind sides, the
 jumpers counting as conductors; the wind side the views do not show
 solved for them in the background, `ground_lines::GroundLines`), since
 2026-10-22 round every span of the line as a graph

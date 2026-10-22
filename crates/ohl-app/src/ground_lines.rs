@@ -7,12 +7,17 @@
 //! section of every route and branch, and the spans to structures beside
 //! the alignments (a substation gantry, a portal, a tap) — measured from
 //! its outermost conductor (the default) or from its axis (the
-//! alignments). The conductors are those of a set of weather cases chosen
-//! in the menu (by default the case shown): the plan envelope over every
-//! case chosen, each with its wind's blowout from **both** sides when it
-//! has wind (the side the views do not show solved here, in the
-//! background: [`GroundLines::frame`]), the jumpers' solved positions
-//! counting as conductors, so the lines go on round the structures.
+//! alignments). The conductors are those of the weather cases
+//! **displayed** (owner, 2026-10-22: View › Display weather cases, each
+//! section in its own display cases where the Sections table gives them,
+//! [`Displayed`]): the plan envelope over every case displayed, each with
+//! its wind's blowout from **both** sides when it has wind (the side the
+//! views do not show solved here, in the background:
+//! [`GroundLines::frame`]), the jumpers' solved positions counting as
+//! conductors, so the lines go on round the structures — and, with the
+//! "Other project lines" layer shown, those of the **project lines
+//! displayed** next to the working line, each as it is shown (its sections
+//! in the same display cases, both wind sides; [`ProjectLine`]).
 //!
 //! In plan the lines are the outline of the band within the distance of
 //! the conductors (or of the axes), the line taken as a graph of its
@@ -24,8 +29,9 @@
 //! distance of another span cut off ([`clip`]) and the pieces joined
 //! where they cut each other off ([`stitch`]), the loops where a line
 //! still crosses itself cut off ([`without_loops_tagged`]): the outer
-//! envelope, never crossing itself — over every route drawn, or each
-//! route its own ([`RouteLines`]). It is draped on the ground
+//! envelope, never crossing itself — over every route drawn and every
+//! project line displayed, or each route and project line its own
+//! ([`RouteLines`], [`Graph::add`]). It is draped on the ground
 //! ([`drape_tagged`]): the active
 //! terrain surface (TIN), else the ground built from the LiDAR ground
 //! classes of the whole corridor (not the points drawn: the ground the
@@ -40,7 +46,7 @@
 //! every 2 m — and the menu offers to build a terrain surface from the
 //! LiDAR when there is a point cloud ([`Drawn::offer_build`]).
 //!
-//! Display only: kept per set of weather cases and made again when the
+//! Display only: kept per set of weather cases (and project lines) and made again when the
 //! line, the solutions, the ground or the settings change; never written
 //! to a result or the project. The settings are this user's
 //! ([`Settings`], remembered per project on this computer with the other
@@ -62,9 +68,9 @@ use crate::model::{Model, Solved};
 )]
 #[serde(rename_all = "snake_case")]
 pub enum From {
-    /// The outermost conductor of the weather cases chosen, in plan (with
-    /// its blowout from both sides): every point of every wire and jumper
-    /// in those cases.
+    /// The outermost conductor of the weather cases displayed, in plan
+    /// (with its blowout from both sides): every point of every wire and
+    /// jumper in those cases.
     #[default]
     OutermostConductor,
     /// The line's axis: the alignment.
@@ -77,12 +83,13 @@ pub enum From {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum RouteLines {
-    /// One envelope over every route ticked: where two routes run side by
-    /// side or cross, each side line is the outer edge of both.
+    /// One envelope over every route ticked and every project line
+    /// displayed: where two routes (or lines) run side by side or cross,
+    /// each side line is the outer edge of both.
     #[default]
     Envelope,
-    /// Each route its own lines (crossing those of another route where
-    /// they run side by side).
+    /// Each route, and each project line displayed, its own lines
+    /// (crossing those of another where they run side by side).
     Each,
 }
 
@@ -110,12 +117,6 @@ pub struct Settings {
     /// Also in the profile: the ground along each line (right near,
     /// left far).
     pub profile: bool,
-    /// The weather case shown counts (followed as another is shown; the
-    /// default).
-    pub shown_case: bool,
-    /// Weather cases chosen by name, besides (a name no longer among the
-    /// cases is skipped).
-    pub cases: BTreeSet<String>,
     /// The half width of the LiDAR ground the lines are draped on, m from
     /// the spans' chords (as the model's corridor, `--corridor`); none:
     /// the model's corridor, its ground. Wider: a ground of its own for
@@ -137,8 +138,6 @@ impl Default for Settings {
             width: 2.0,
             dashed: false,
             profile: false,
-            shown_case: true,
-            cases: BTreeSet::new(),
             lidar_corridor: None,
         }
     }
@@ -151,29 +150,13 @@ impl Settings {
     }
 
     /// A hash of what the geometry depends on (not the style; the cases
-    /// chosen are hashed by index in [`key`]).
+    /// displayed are hashed by index in [`key`]).
     fn geometry_key(&self, h: &mut impl Hasher) {
         self.distance.to_bits().hash(h);
         self.from.hash(h);
         self.hidden_routes.hash(h);
         self.route_lines.hash(h);
         self.lidar_corridor.map(f64::to_bits).hash(h);
-    }
-
-    /// The weather cases chosen, by index into `names` (the model's cases
-    /// in order), `shown` the case shown: in order, each once.
-    pub fn chosen<'a>(&self, names: impl IntoIterator<Item = &'a str>, shown: usize) -> Vec<usize> {
-        names
-            .into_iter()
-            .enumerate()
-            .filter(|(k, name)| (self.shown_case && *k == shown) || self.cases.contains(*name))
-            .map(|(k, _)| k)
-            .collect()
-    }
-
-    /// The weather cases chosen in `model`, `shown` the case shown.
-    pub fn chosen_in(&self, model: &Model, shown: usize) -> Vec<usize> {
-        self.chosen(model.cases.iter().map(|c| c.case.name.as_str()), shown)
     }
 
     /// The LiDAR corridor of the lines, m: the one chosen (at most
@@ -197,6 +180,96 @@ impl Settings {
     }
 }
 
+/// The weather cases the lines are made from: those **displayed** (owner,
+/// 2026-10-22; View › Display weather cases, [`Model::shown`]; a section
+/// drawn in its own display cases, [`Model::section_cases`], in those),
+/// indices into the model's cases. Old settings that chose cases of
+/// their own (`shown_case`, `cases`) are read as displayed: those fields
+/// are no longer read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct Displayed {
+    /// The cases shown for the whole line: the jumpers', and every
+    /// section's without cases of its own.
+    pub line: Vec<usize>,
+    /// The sections drawn in cases of their own.
+    pub sections: std::collections::BTreeMap<String, Vec<usize>>,
+}
+
+impl Displayed {
+    /// What `model` displays, `shown` the case shown.
+    pub fn of(model: &Model, shown: usize) -> Self {
+        let line = model.shown(shown);
+        let mut ids: BTreeSet<&str> = model.line.sections.iter().map(|s| s.id.as_str()).collect();
+        ids.extend(model.display_cases.keys().map(String::as_str));
+        let sections = ids
+            .into_iter()
+            .filter_map(|id| {
+                let own = model.section_cases(id, shown);
+                (own != line).then(|| (id.to_owned(), own))
+            })
+            .collect();
+        Self { line, sections }
+    }
+
+    /// The cases `cases` for every section and jumper.
+    pub fn all(cases: &[usize]) -> Self {
+        Self {
+            line: cases.to_vec(),
+            sections: Default::default(),
+        }
+    }
+
+    /// Every case displayed anywhere, in order, each once.
+    pub fn cases(&self) -> Vec<usize> {
+        let all: BTreeSet<usize> = self
+            .line
+            .iter()
+            .chain(self.sections.values().flatten())
+            .copied()
+            .collect();
+        all.into_iter().collect()
+    }
+
+    /// Whether the spans of section `section` (of any line displayed, by
+    /// id as the views take it) count in case `k`; `None`: the jumpers.
+    pub fn counts(&self, section: Option<&str>, k: usize) -> bool {
+        section
+            .and_then(|id| self.sections.get(id))
+            .unwrap_or(&self.line)
+            .contains(&k)
+    }
+}
+
+/// A project line displayed next to the working line (the "Other project
+/// lines" layer shown, [`crate::model::OtherLine`]), as the lines take it.
+#[derive(Debug, Clone, Copy)]
+pub struct ProjectLine<'a> {
+    /// Its name.
+    pub name: &'a str,
+    /// The line.
+    pub line: &'a ohl_line::Line,
+    /// Solved in each of the model's weather cases (the same order).
+    pub cases: &'a [Solved],
+    /// When it was shown ([`crate::model::OtherLine::serial`]).
+    pub serial: u64,
+}
+
+impl<'a> ProjectLine<'a> {
+    /// The project lines `model` displays.
+    pub fn of(model: &'a Model) -> Vec<Self> {
+        model
+            .other_lines
+            .iter()
+            .map(|o| Self {
+                name: &o.name,
+                line: &o.line,
+                cases: &o.cases,
+                serial: o.serial,
+            })
+            .collect()
+    }
+}
+
 /// Whether `case` has wind (then both its sides count).
 fn windy(case: &WeatherCase) -> bool {
     case.wind_pressure.si() > 0.0
@@ -215,10 +288,15 @@ pub fn other_side(case: &WeatherCase) -> WeatherCase {
 /// The windy weather cases chosen whose other wind side the model does
 /// not hold (the views show one side): (index, that side's case).
 pub fn other_sides_wanted(model: &Model, chosen: &[usize]) -> Vec<(usize, WeatherCase)> {
+    sides_wanted(&model.cases, chosen)
+}
+
+/// [`other_sides_wanted`] of a line solved in `cases`.
+fn sides_wanted(cases: &[Solved], chosen: &[usize]) -> Vec<(usize, WeatherCase)> {
     chosen
         .iter()
         .filter_map(|&k| {
-            let c = model.cases.get(k)?;
+            let c = cases.get(k)?;
             (c.ready && windy(&c.case) && c.mirror.is_none()).then(|| (k, other_side(&c.case)))
         })
         .collect()
@@ -405,15 +483,19 @@ pub struct Drawn {
     pub notes: Vec<String>,
 }
 
-/// The other wind side of a windy weather case chosen, solved here when
+/// The other wind side of a windy weather case displayed, solved here when
 /// the views show one side only.
 #[derive(Debug)]
 struct Other {
+    /// Of the working line (none) or of a project line displayed (its
+    /// name).
+    line: Option<String>,
     /// The weather case's index.
     case: usize,
     /// The case solved (its wind from the other side).
     weather: WeatherCase,
-    /// The line's version it is solved for.
+    /// The line's version it is solved for (a project line: when it was
+    /// shown, [`crate::model::OtherLine::serial`]).
     version: u64,
     /// Solving, or solved.
     state: OtherState,
@@ -507,9 +589,11 @@ pub struct GroundLines {
 const CACHED: usize = 8;
 
 impl GroundLines {
-    /// Every frame: the lines of the weather cases `settings` choose
-    /// (`shown` the case shown) as they say (made when not kept yet).
-    /// The other wind side of a windy case chosen that the model does not
+    /// Every frame: the lines of the weather cases displayed (`shown` the
+    /// case shown, [`Displayed::of`]) and, with `project_lines` (the
+    /// "Other project lines" layer shown), of the project lines displayed,
+    /// as `settings` say (made when not kept yet). The other wind side of
+    /// a windy case displayed that the model (a project line) does not
     /// hold is solved in the background (`ctx` repainted when done; none:
     /// solved now); until then the lines take what is solved and say what
     /// is not. Whether the views must draw them again.
@@ -518,6 +602,7 @@ impl GroundLines {
         model: &Model,
         shown: usize,
         settings: &Settings,
+        project_lines: bool,
         ctx: Option<&egui::Context>,
     ) -> bool {
         if !settings.on {
@@ -526,20 +611,38 @@ impl GroundLines {
             self.style = None;
             return changed;
         }
-        let chosen = settings.chosen_in(model, shown);
+        let displayed = Displayed::of(model, shown);
+        let chosen = displayed.cases();
+        let projects = if project_lines {
+            ProjectLine::of(model)
+        } else {
+            Vec::new()
+        };
         if settings.from == From::OutermostConductor {
-            self.solve_others(model, &chosen, ctx);
+            self.solve_others(model, &chosen, &projects, ctx);
         }
-        let others: Vec<(usize, Arc<Solved>)> = self
-            .others
-            .iter()
-            .filter_map(|o| match &o.state {
-                OtherState::Done(s) => Some((o.case, s.clone())),
-                OtherState::Solving(_) => None,
-            })
-            .collect();
+        let done = |line: Option<&str>| -> Vec<(usize, Arc<Solved>)> {
+            self.others
+                .iter()
+                .filter(|o| o.line.as_deref() == line)
+                .filter_map(|o| match &o.state {
+                    OtherState::Done(s) => Some((o.case, s.clone())),
+                    OtherState::Solving(_) => None,
+                })
+                .collect()
+        };
+        let others = done(None);
+        let project_others: Vec<Vec<(usize, Arc<Solved>)>> =
+            projects.iter().map(|p| done(Some(p.name))).collect();
         let wide = self.wide_ground(model, settings, ctx);
-        let mut key = key(model, &chosen, &others, settings);
+        let mut key = key(
+            model,
+            &displayed,
+            &others,
+            &projects,
+            &project_others,
+            settings,
+        );
         {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             key.hash(&mut h);
@@ -563,7 +666,15 @@ impl GroundLines {
                     WideNow::Ready(g, w) => Some((&**g, *w)),
                     _ => None,
                 };
-                let mut d = compute_on(model, &chosen, &others, settings, on);
+                let mut d = compute_on(
+                    model,
+                    &displayed,
+                    &others,
+                    &projects,
+                    &project_others,
+                    settings,
+                    on,
+                );
                 let mc = model.sources.corridor;
                 match &wide {
                     WideNow::Building(w) => d.notes.push(format!(
@@ -578,10 +689,17 @@ impl GroundLines {
                 }
                 for o in &self.others {
                     if matches!(o.state, OtherState::Solving(_)) {
-                        d.notes.push(format!(
-                            "weather case {}: the wind from the other side is being solved",
-                            o.weather.name
-                        ));
+                        d.notes.push(match &o.line {
+                            None => format!(
+                                "weather case {}: the wind from the other side is being solved",
+                                o.weather.name
+                            ),
+                            Some(name) => format!(
+                                "project line {name}, weather case {}: the wind from the other \
+                                 side is being solved",
+                                o.weather.name
+                            ),
+                        });
                     }
                 }
                 let d = Arc::new(d);
@@ -608,42 +726,79 @@ impl GroundLines {
         changed
     }
 
-    /// The other wind sides wanted for `chosen`: kept when solved for this
-    /// line, started otherwise (in the background with `ctx`, else now);
-    /// those finished taken; those no longer wanted dropped.
-    fn solve_others(&mut self, model: &Model, chosen: &[usize], ctx: Option<&egui::Context>) {
-        let wanted = other_sides_wanted(model, chosen);
-        let version = model.line_version;
+    /// The other wind sides wanted for `chosen`, of the working line and
+    /// of the project lines `projects`: kept when solved for that line
+    /// (its version), started otherwise (in the background with `ctx`,
+    /// else now); those finished taken; those no longer wanted dropped.
+    fn solve_others(
+        &mut self,
+        model: &Model,
+        chosen: &[usize],
+        projects: &[ProjectLine<'_>],
+        ctx: Option<&egui::Context>,
+    ) {
+        // (the line's name, the line, its version, the sides wanted).
+        type Wanted<'a> = (
+            Option<&'a str>,
+            &'a ohl_line::Line,
+            u64,
+            Vec<(usize, WeatherCase)>,
+        );
+        let mut lines: Vec<Wanted<'_>> = vec![(
+            None,
+            &model.line,
+            model.line_version,
+            other_sides_wanted(model, chosen),
+        )];
+        for p in projects {
+            lines.push((
+                Some(p.name),
+                p.line,
+                p.serial,
+                sides_wanted(p.cases, chosen),
+            ));
+        }
         self.others.retain(|o| {
-            o.version == version && wanted.iter().any(|(k, w)| *k == o.case && *w == o.weather)
+            lines.iter().any(|(name, _, version, wanted)| {
+                o.line.as_deref() == *name
+                    && o.version == *version
+                    && wanted.iter().any(|(k, w)| *k == o.case && *w == o.weather)
+            })
         });
-        for (k, weather) in wanted {
-            if self.others.iter().any(|o| o.case == k) {
-                continue;
-            }
-            let state = match ctx {
-                Some(ctx) => {
-                    let (line, library) = (model.line.clone(), model.library.clone());
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    let (ctx, case) = (ctx.clone(), weather.clone());
-                    std::thread::spawn(move || {
-                        let _ = tx.send(Solved::new(&line, &library, case));
-                        ctx.request_repaint();
-                    });
-                    OtherState::Solving(rx)
+        for (name, line, version, wanted) in &lines {
+            for (k, weather) in wanted {
+                if self
+                    .others
+                    .iter()
+                    .any(|o| o.line.as_deref() == *name && o.case == *k)
+                {
+                    continue;
                 }
-                None => OtherState::Done(Arc::new(Solved::new(
-                    &model.line,
-                    &model.library,
-                    weather.clone(),
-                ))),
-            };
-            self.others.push(Other {
-                case: k,
-                weather,
-                version,
-                state,
-            });
+                let state = match ctx {
+                    Some(ctx) => {
+                        let (line, library) = ((*line).clone(), model.library.clone());
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let (ctx, case) = (ctx.clone(), weather.clone());
+                        std::thread::spawn(move || {
+                            let _ = tx.send(Solved::new(&line, &library, case));
+                            ctx.request_repaint();
+                        });
+                        OtherState::Solving(rx)
+                    }
+                    None => OtherState::Done(Arc::new(Solved::new(
+                        line,
+                        &model.library,
+                        weather.clone(),
+                    ))),
+                };
+                self.others.push(Other {
+                    line: name.map(str::to_owned),
+                    case: *k,
+                    weather: weather.clone(),
+                    version: *version,
+                    state,
+                });
+            }
         }
         for o in &mut self.others {
             if let OtherState::Solving(rx) = &o.state {
@@ -652,11 +807,20 @@ impl GroundLines {
                     Err(std::sync::mpsc::TryRecvError::Empty) => {}
                     // The thread stopped without one: solved now.
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        o.state = OtherState::Done(Arc::new(Solved::new(
-                            &model.line,
-                            &model.library,
-                            o.weather.clone(),
-                        )));
+                        let line = match &o.line {
+                            None => Some(&model.line),
+                            Some(name) => projects
+                                .iter()
+                                .find(|p| p.name == name.as_str())
+                                .map(|p| p.line),
+                        };
+                        if let Some(line) = line {
+                            o.state = OtherState::Done(Arc::new(Solved::new(
+                                line,
+                                &model.library,
+                                o.weather.clone(),
+                            )));
+                        }
                     }
                 }
             }
@@ -779,19 +943,23 @@ impl GroundLines {
     }
 }
 
-/// What the lines of the cases `chosen` are made from: the settings'
+/// What the lines of the cases `displayed` are made from: the settings'
 /// geometry, the line (its version, the alignments), the solutions of
 /// the cases (their clamps and low points, both wind sides, the other
-/// sides `others` solved here), the ground.
+/// sides `others` solved here), the project lines displayed (`projects`,
+/// when each was shown, their solutions and other sides
+/// `project_others`), the ground.
 fn key(
     model: &Model,
-    chosen: &[usize],
+    displayed: &Displayed,
     others: &[(usize, Arc<Solved>)],
+    projects: &[ProjectLine<'_>],
+    project_others: &[Vec<(usize, Arc<Solved>)>],
     settings: &Settings,
 ) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     settings.geometry_key(&mut h);
-    chosen.hash(&mut h);
+    displayed.hash(&mut h);
     model.line_version.hash(&mut h);
     for p in &model.line.alignment_points {
         (&p.id, p.position.map(f64::to_bits)).hash(&mut h);
@@ -799,12 +967,20 @@ fn key(
     for a in &model.line.alignments {
         (&a.id, &a.route, &a.points).hash(&mut h);
     }
+    for p in projects {
+        (p.name, p.serial).hash(&mut h);
+    }
     if settings.from == From::OutermostConductor {
-        for &k in chosen {
+        let chosen = displayed.cases();
+        for &k in &chosen {
             model.cases.get(k).map(|c| c.ready).hash(&mut h);
         }
-        let (solutions, _) = solutions(model, chosen, others);
-        for s in solutions {
+        let mut all = solutions(&model.cases, &chosen, others, None).0;
+        for (p, o) in projects.iter().zip(project_others) {
+            all.extend(solutions(p.cases, &chosen, o, Some(p.name)).0);
+        }
+        for (k, s) in all {
+            k.hash(&mut h);
             (s.ready, s.case.wind_from == WindSide::Left).hash(&mut h);
             for shape in &s.shapes {
                 shape.section.hash(&mut h);
@@ -834,35 +1010,49 @@ fn key(
     h.finish()
 }
 
-/// The solutions the lines of the cases `chosen` are measured from: each
-/// case solved (both its wind sides when the model holds them) and the
-/// other wind sides in `others` (by case index); with the cases not
-/// solved yet, in words.
+/// The solutions of a line solved in `cases` (the model's, or a project
+/// line's: `name`) the lines of the cases `chosen` are measured from:
+/// each case solved (both its wind sides when it holds them) and the
+/// other wind sides in `others` (by case index), each with its case's
+/// index; with the cases not solved yet, in words.
 pub fn solutions<'a>(
-    model: &'a Model,
+    cases: &'a [Solved],
     chosen: &[usize],
     others: &'a [(usize, Arc<Solved>)],
-) -> (Vec<&'a Solved>, Vec<String>) {
+    name: Option<&str>,
+) -> (Vec<(usize, &'a Solved)>, Vec<String>) {
     let mut out = Vec::new();
     let mut notes = Vec::new();
     for &k in chosen {
-        let Some(c) = model.cases.get(k) else {
+        let Some(c) = cases.get(k) else {
             continue;
         };
         if !c.ready {
-            notes.push(format!(
-                "weather case {}: not solved yet (taken when it is)",
-                c.case.name
-            ));
+            notes.push(match name {
+                None => format!(
+                    "weather case {}: not solved yet (taken when it is)",
+                    c.case.name
+                ),
+                Some(name) => format!(
+                    "project line {name}, weather case {}: not solved yet (taken when it is)",
+                    c.case.name
+                ),
+            });
             continue;
         }
-        out.extend(c.drawn());
-        out.extend(others.iter().filter(|(j, _)| *j == k).map(|(_, s)| &**s));
+        out.extend(c.drawn().map(|s| (k, s)));
+        out.extend(
+            others
+                .iter()
+                .filter(|(j, _)| *j == k)
+                .map(|(_, s)| (k, &**s)),
+        );
     }
     (out, notes)
 }
 
-/// [`compute_on`] on the model's ground (tests).
+/// [`compute_on`] of the cases `chosen` for every section, without
+/// project lines, on the model's ground (tests).
 #[cfg(test)]
 pub fn compute(
     model: &Model,
@@ -870,20 +1060,36 @@ pub fn compute(
     others: &[(usize, Arc<Solved>)],
     settings: &Settings,
 ) -> Drawn {
-    compute_on(model, chosen, others, settings, None)
+    compute_on(
+        model,
+        &Displayed::all(chosen),
+        others,
+        &[],
+        &[],
+        settings,
+        None,
+    )
 }
 
-/// The lines of the weather cases `chosen` (indices into the model's
-/// cases; `others`: the other wind side of windy ones the model does not
-/// hold, solved by [`GroundLines::frame`]): for each alignment of the
-/// routes drawn, its two sides, draped on the ground — from the
-/// outermost conductor, the plan envelope over every solution. The
-/// ground: `wide` when given (a LiDAR ground of the lines' own and its
-/// half width, m), else the model's.
+/// The lines of the weather cases `displayed` (indices into the model's
+/// cases, per section; `others`: the other wind side of windy ones the
+/// model does not hold, solved by [`GroundLines::frame`]) and of the
+/// project lines displayed (`projects`, each in the same cases, with its
+/// other wind sides `project_others`): for each alignment of the routes
+/// drawn, its two sides, draped on the ground — from the outermost
+/// conductor, the plan envelope over every solution. With
+/// [`RouteLines::Envelope`] the project lines' spans join the envelope (a
+/// span on the same two structure places as one of the line's, one span
+/// of both); with [`RouteLines::Each`] each project line has its own
+/// lines. The ground: `wide` when given (a LiDAR ground of the lines' own
+/// and its half width, m), else the model's.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_on(
     model: &Model,
-    chosen: &[usize],
+    displayed: &Displayed,
     others: &[(usize, Arc<Solved>)],
+    projects: &[ProjectLine<'_>],
+    project_others: &[Vec<(usize, Arc<Solved>)>],
     settings: &Settings,
     wide: Option<(&Terrain, f64)>,
 ) -> Drawn {
@@ -916,35 +1122,46 @@ pub fn compute_on(
     // Some line made in plan (to drape).
     let mut planned = false;
     let d = settings.distance.clamp(0.0, MAX_DISTANCE);
-    let solutions = if settings.from == From::OutermostConductor {
-        if chosen.is_empty() {
-            out.notes
-                .push("no weather case chosen: nothing to measure from".into());
-            return out;
+    let chosen = displayed.cases();
+    if settings.from == From::OutermostConductor && chosen.is_empty() {
+        out.notes
+            .push("no weather case displayed: nothing to measure from".into());
+        return out;
+    }
+    let keep = |section: Option<&str>, k: usize| displayed.counts(section, k);
+    // The graph of a line: its axes, or its wires in the cases displayed.
+    let mut graph_of = |line: &ohl_line::Line,
+                        cases: &[Solved],
+                        others: &[(usize, Arc<Solved>)],
+                        name: Option<&str>,
+                        views: &[ohl_line::route::AlignmentView]|
+     -> Graph {
+        match settings.from {
+            From::Axis => Graph::of_axes(views),
+            From::OutermostConductor => {
+                let (s, notes) = solutions(cases, &chosen, others, name);
+                out.notes.extend(notes);
+                Graph::of_wires_in(line, &s, views, &keep)
+            }
         }
-        let (s, notes) = solutions(model, chosen, others);
-        out.notes.extend(notes);
-        s
-    } else {
-        Vec::new()
     };
     let views = line.alignment_views();
+    let mut graph = graph_of(line, &model.cases, others, None, &views);
+    let envelope = settings.route_lines == RouteLines::Envelope;
+    for (p, o) in projects.iter().zip(project_others) {
+        let views = p.line.alignment_views();
+        let g = graph_of(p.line, p.cases, o, Some(p.name), &views);
+        graph.add(g, envelope, p.name);
+    }
+    if settings.from == From::OutermostConductor && graph.edges.is_empty() {
+        out.notes
+            .push("no wire solved in the weather cases displayed".into());
+    }
     out.axes = views
         .iter()
         .map(|v| (v.id.clone(), v.centreline(line)))
         .filter(|(_, a)| a.len() > 1)
         .collect();
-    let graph = match settings.from {
-        From::Axis => Graph::of_axes(&views),
-        From::OutermostConductor => {
-            let g = Graph::of_wires(line, &solutions, &views);
-            if g.edges.is_empty() {
-                out.notes
-                    .push("no wire solved in the weather cases chosen".into());
-            }
-            g
-        }
-    };
     out.beside = graph
         .edges
         .iter()
@@ -1232,14 +1449,31 @@ impl Graph {
         solutions: &[&Solved],
         views: &[ohl_line::route::AlignmentView],
     ) -> Self {
+        let all: Vec<(usize, &Solved)> = solutions.iter().map(|s| (0, *s)).collect();
+        Self::of_wires_in(line, &all, views, &|_, _| true)
+    }
+
+    /// [`Graph::of_wires`] of `solutions` each with its case's index,
+    /// taking a section's spans only where `keep(Some(section), case)`
+    /// and the jumpers only where `keep(None, case)` (the cases displayed,
+    /// [`Displayed::counts`]).
+    pub fn of_wires_in(
+        line: &ohl_line::Line,
+        solutions: &[(usize, &Solved)],
+        views: &[ohl_line::route::AlignmentView],
+        keep: &dyn Fn(Option<&str>, usize) -> bool,
+    ) -> Self {
         let mut g = Self::default();
         let (mut nodes, mut edges) = (HashMap::new(), HashMap::new());
         let at = |id: &str| line.structure(id).map(|s| [s.position[0], s.position[1]]);
-        for s in solutions {
+        for &(k, s) in solutions {
             for shape in &s.shapes {
                 let Some(section) = line.sections.iter().find(|x| x.id == shape.section) else {
                     continue;
                 };
+                if !keep(Some(&shape.section), k) {
+                    continue;
+                }
                 for (k, span) in shape.spans.iter().enumerate() {
                     let (Some(a), Some(b)) = (section.points.get(k), section.points.get(k + 1))
                     else {
@@ -1267,7 +1501,10 @@ impl Graph {
                 }
             }
         }
-        for s in solutions {
+        for &(k, s) in solutions {
+            if !keep(None, k) {
+                continue;
+            }
             for j in &s.jumpers {
                 let Some(def) = line.jumpers.iter().find(|x| x.id == j.jumper) else {
                     continue;
@@ -1327,6 +1564,92 @@ impl Graph {
             });
         }
         g
+    }
+
+    /// Adds `other`, the graph of a project line displayed (`name`): with
+    /// `envelope`, its nodes at the place of one of this graph's (within
+    /// 1 mm in plan) taken as that node and a span between two such nodes
+    /// added to the edge there, its wires with this one's (one span of
+    /// both: one envelope), its routes added as they are; else every node
+    /// and span its own, its routes named "`name`: route" (`name` without
+    /// one) and away from the alignments (its lines are its own, not along
+    /// the working line's alignments in the profile).
+    pub fn add(&mut self, other: Graph, envelope: bool, name: &str) {
+        let place = |p: [f64; 2]| {
+            (
+                (p[0] * 1000.0).round() as i64,
+                (p[1] * 1000.0).round() as i64,
+            )
+        };
+        let mut here: HashMap<(i64, i64), usize> = HashMap::new();
+        if envelope {
+            for (k, p) in self.nodes.iter().enumerate() {
+                here.entry(place(*p)).or_insert(k);
+            }
+        }
+        let map: Vec<usize> = other
+            .nodes
+            .iter()
+            .zip(other.joints)
+            .map(|(p, joints)| {
+                let k = match here.get(&place(*p)) {
+                    Some(&k) => k,
+                    None => {
+                        self.nodes.push(*p);
+                        self.joints.push(Vec::new());
+                        let k = self.nodes.len() - 1;
+                        if envelope {
+                            here.insert(place(*p), k);
+                        }
+                        k
+                    }
+                };
+                self.joints[k].extend(joints);
+                k
+            })
+            .collect();
+        let mut spans: HashMap<(usize, usize), usize> = HashMap::new();
+        if envelope {
+            for (k, e) in self.edges.iter().enumerate() {
+                spans.entry((e.a.min(e.b), e.a.max(e.b))).or_insert(k);
+            }
+        }
+        for e in other.edges {
+            let (a, b) = (map[e.a], map[e.b]);
+            let routes: Vec<String> = if envelope {
+                e.routes
+            } else if e.routes.is_empty() {
+                vec![name.to_owned()]
+            } else {
+                e.routes.iter().map(|r| format!("{name}: {r}")).collect()
+            };
+            match spans.get(&(a.min(b), a.max(b))) {
+                Some(&k) => {
+                    let edge = &mut self.edges[k];
+                    edge.sources.extend(e.sources);
+                    for r in routes {
+                        if !edge.routes.contains(&r) {
+                            edge.routes.push(r);
+                        }
+                    }
+                    if edge.along.is_none() {
+                        edge.along = e.along;
+                    }
+                }
+                None => {
+                    self.edges.push(Edge {
+                        a,
+                        b,
+                        sources: e.sources,
+                        routes,
+                        along: e.along.filter(|_| envelope),
+                    });
+                    if envelope {
+                        spans.insert((a.min(b), a.max(b)), self.edges.len() - 1);
+                    }
+                }
+            }
+        }
     }
 
     /// Every source of `edges` and their nodes' joints.
@@ -2483,8 +2806,8 @@ pub fn menu(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     routes: &[(String, String)],
-    cases: &[String],
-    shown: usize,
+    displayed: &str,
+    projects: &[String],
     model_corridor: f64,
     drawn: Option<&Drawn>,
     build: &mut bool,
@@ -2492,8 +2815,8 @@ pub fn menu(
     let before = settings.clone();
     ui.label(
         egui::RichText::new(
-            "A line each side of the line, on the ground, round the weather cases chosen \
-             (yours only; display only)",
+            "A line each side of the line, on the ground, round the weather cases and the \
+             project lines displayed (yours only; display only)",
         )
         .small()
         .weak(),
@@ -2517,9 +2840,10 @@ pub fn menu(
         "the outermost conductor (with its blowout)",
     )
     .on_hover_text(
-        "In plan, every point of every wire and jumper in the weather cases chosen — swung \
+        "In plan, every point of every wire and jumper in the weather cases displayed — swung \
          out by the wind from either side when a case has wind — on each side its own \
-         outermost conductor: the envelope over all of them",
+         outermost conductor: the envelope over all of them, and over the project lines \
+         displayed",
     );
     ui.radio_value(
         &mut settings.from,
@@ -2527,8 +2851,31 @@ pub fn menu(
         "the line's axis (alignment)",
     );
     if settings.from == From::OutermostConductor {
-        cases_menu(ui, settings, cases, shown);
+        ui.label(
+            egui::RichText::new(format!(
+                "Weather cases: as displayed ({displayed}), both wind sides"
+            ))
+            .small()
+            .weak(),
+        )
+        .on_hover_text(
+            "The weather cases the views display (View › Display weather cases; a section \
+             drawn in cases of its own, in those): change them there",
+        );
     }
+    ui.label(
+        egui::RichText::new(if projects.is_empty() {
+            "Project lines: none displayed (Versions menu, layer Other project lines)".to_owned()
+        } else {
+            format!("Project lines: as displayed ({})", projects.join(", "))
+        })
+        .small()
+        .weak(),
+    )
+    .on_hover_text(
+        "The project lines shown next to the line (Versions menu) count while the layer \
+         \"Other project lines\" is shown, each as it is drawn",
+    );
     if !routes.is_empty() {
         ui.label(
             egui::RichText::new("Routes and branches (the lines round those ticked)")
@@ -2555,23 +2902,26 @@ pub fn menu(
                     }
                 }
             });
+    }
+    if !routes.is_empty() || !projects.is_empty() {
         ui.radio_value(
             &mut settings.route_lines,
             RouteLines::Envelope,
-            "One envelope for all routes",
+            "One envelope for all routes and project lines",
         )
         .on_hover_text(
-            "Where routes run side by side or cross, each side line is the outer edge of all \
-             the routes ticked: the lines never run inside another route's band",
+            "Where routes or project lines run side by side or cross, each side line is the \
+             outer edge of all the routes ticked and the project lines displayed: the lines \
+             never run inside another's band",
         );
         ui.radio_value(
             &mut settings.route_lines,
             RouteLines::Each,
-            "Each route its own lines",
+            "Each route and project line its own lines",
         )
         .on_hover_text(
-            "Each route ticked has its own closed lines, whatever lies beside it: where routes \
-             run side by side or cross, their lines cross",
+            "Each route ticked and each project line displayed has its own closed lines, \
+             whatever lies beside it: where they run side by side or cross, their lines cross",
         );
     }
     ui.label(egui::RichText::new("Style").small().weak());
@@ -2708,51 +3058,6 @@ pub const CORRIDOR_HOVER: &str = "Half width of the LiDAR ground the lines are d
     the model's ground at 60 m, about a second per km to build (measured on synthetic clouds \
     of 5 and 12 million points) — while a line's corridor survey rarely holds ground points \
     farther out.";
-
-/// The weather cases measured from (ticks): All, None, the case shown,
-/// then each case by name.
-fn cases_menu(ui: &mut egui::Ui, settings: &mut Settings, cases: &[String], shown: usize) {
-    ui.label(
-        egui::RichText::new("Weather cases (the envelope over those ticked, both wind sides)")
-            .small()
-            .weak(),
-    );
-    ui.horizontal(|ui| {
-        if ui
-            .small_button("All")
-            .on_hover_text("Every weather case")
-            .clicked()
-        {
-            settings.cases = cases.iter().cloned().collect();
-        }
-        if ui
-            .small_button("None")
-            .on_hover_text("No weather case: no lines")
-            .clicked()
-        {
-            settings.shown_case = false;
-            settings.cases.clear();
-        }
-    });
-    let name = cases.get(shown).map_or("", String::as_str);
-    ui.checkbox(&mut settings.shown_case, format!("The case shown ({name})"))
-        .on_hover_text("Follows the weather case shown as another is shown");
-    egui::ScrollArea::vertical()
-        .id_salt("ground-lines-cases")
-        .max_height(200.0)
-        .show(ui, |ui| {
-            for c in cases {
-                let mut on = settings.cases.contains(c);
-                if ui.checkbox(&mut on, c).changed() {
-                    if on {
-                        settings.cases.insert(c.clone());
-                    } else {
-                        settings.cases.remove(c);
-                    }
-                }
-            }
-        });
-}
 
 #[cfg(test)]
 mod tests {
@@ -3219,32 +3524,18 @@ mod tests {
         }
     }
 
-    /// The weather cases chosen: the case shown by default (following it);
-    /// names besides, each case once, in the cases' order; none at all
-    /// after None. Settings remembered before the choice read with the
-    /// case shown; the choice is written and read back.
+    /// The cases displayed (owner, 2026-10-22): the line's for every
+    /// section and the jumpers, a section's own where it has them; each
+    /// case once, in order.
     #[test]
-    fn the_cases_chosen() {
-        let names = ["a", "b", "c", "d"];
-        let mut s = Settings::default();
-        assert_eq!(s.chosen(names, 2), vec![2]);
-        assert_eq!(s.chosen(names, 0), vec![0]);
-        s.cases = ["d", "c", "gone"].map(String::from).into();
-        assert_eq!(s.chosen(names, 2), vec![2, 3]);
-        assert_eq!(s.chosen(names, 0), vec![0, 2, 3]);
-        s.shown_case = false;
-        assert_eq!(s.chosen(names, 0), vec![2, 3]);
-        s.cases.clear();
-        assert!(s.chosen(names, 0).is_empty());
-        let old: Settings = serde_json::from_str(r#"{"on": true, "distance": 12.0}"#).unwrap();
-        assert!(old.shown_case && old.cases.is_empty() && old.on);
-        let text = serde_json::to_string(&Settings {
-            cases: ["b".to_owned()].into(),
-            ..Settings::default()
-        })
-        .unwrap();
-        let back: Settings = serde_json::from_str(&text).unwrap();
-        assert_eq!(back.cases, ["b".to_owned()].into());
-        assert!(back.shown_case);
+    fn the_cases_displayed() {
+        let mut d = Displayed::all(&[2, 0]);
+        assert_eq!(d.cases(), vec![0, 2]);
+        assert!(d.counts(Some("S1"), 2) && d.counts(None, 0));
+        assert!(!d.counts(Some("S1"), 1));
+        d.sections.insert("S2".into(), vec![1, 3]);
+        assert_eq!(d.cases(), vec![0, 1, 2, 3]);
+        assert!(d.counts(Some("S2"), 3) && !d.counts(Some("S2"), 2));
+        assert!(d.counts(Some("S1"), 2) && !d.counts(None, 1));
     }
 }

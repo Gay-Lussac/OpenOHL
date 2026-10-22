@@ -10,6 +10,23 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **Lines on the ground: the weather cases and project lines displayed**
+  (owner, 2026-10-22: "Only the displayed weather cases and project
+  lines."). Built, in active development (not approved yet).
+  - The lines take the weather cases the views display (View › Display
+    weather cases; a section drawn in its own display cases, in those),
+    both wind sides, instead of a case set of their own: the menu's case
+    ticks are gone (it names the cases displayed); old settings with
+    `shown_case` / `cases` are read as displayed.
+  - The project lines displayed (the "Other project lines" layer shown)
+    count, each as drawn (same display cases, both wind sides, their
+    other wind side solved in the background as the working line's);
+    a hidden one does not.
+  - The envelope option is now "one envelope for all routes and project
+    lines": a project line's span between the same two structure places
+    as one of the line's is one span with both their wires; "each its
+    own" gives every project line its own lines (not in the profile).
+
 - **Vertical clearances: only straight below, drawn vertically**
   (owner, 2026-10-22: "When working with the vertical distance, it
   should only check the points vertically under the line within a given
