@@ -1128,7 +1128,10 @@ members and poles) is built per chunk apart from the levels
 `LodSettings::solids` (its own rule, `LodSettings::solids_rule`; default
 `lod::DEFAULT_SOLIDS_DISTANCE`, 400 m), saved per user under the storage
 key `lod-solids` (a number of metres; settings saved before it read the
-default). `selection::pole_at` picks a structure by its pole's outline
+default). The table's rows are saved under `lod` (JSON, a `LodRow` per
+layer key: `render_distance`, `from`, `detail`); a row equal to a former
+default of its layer (`LodRow::former_default`; the Drawings row before
+2026-10-22) reads as the current default. `selection::pole_at` picks a structure by its pole's outline
 on the screen.
 
 **Drawing options** (`ohl_drawing::Options`; the app stores them in `DrawingSettings`, below):

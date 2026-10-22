@@ -133,7 +133,12 @@ impl LodRow {
             Layer::Ground | Layer::Surfaces => (30_000.0, [1_500.0, 5_000.0], [8.0, 32.0]),
             Layer::Points => (3_000.0, [500.0, 1_500.0], [25.0, 5.0]),
             Layer::Structures => (50_000.0, [2_000.0, 8_000.0], [0.0, 0.0]),
-            Layer::Drawings => (10_000.0, [1_000.0, 4_000.0], [0.5, 2.0]),
+            // About a pixel's error where each level begins (a pixel of a
+            // 1000 px high view is ~0.8 m a kilometre away): a drawing's
+            // small details (boundary marks, text drawn as lines) are
+            // most of its vertices and under a pixel from a few hundred
+            // metres (docs/development/performance.md, "DXF drawings").
+            Layer::Drawings => (10_000.0, [300.0, 2_000.0], [0.2, 1.5]),
             _ => (50_000.0, [1_500.0, 6_000.0], [16.0, 5.0]),
         };
         Self {
@@ -141,6 +146,21 @@ impl LodRow {
             from,
             detail,
         }
+    }
+
+    /// Whether this is a former default of `layer`: a row saved before
+    /// the default changed, given the new default when read.
+    fn former_default(layer: Layer, row: &LodRow) -> bool {
+        let former: &[LodRow] = match layer {
+            // Before 2026-10-22: level 1 from 1 km.
+            Layer::Drawings => &[LodRow {
+                render_distance: 10_000.0,
+                from: [1_000.0, 4_000.0],
+                detail: [0.5, 2.0],
+            }],
+            _ => &[],
+        };
+        former.contains(row)
     }
 
     /// Checks the values (distances increasing, details in range).
@@ -312,7 +332,9 @@ impl LodSettings {
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
         for layer in CHUNKED {
-            if let Some(row) = saved.get(key(layer)) {
+            if let Some(row) = saved.get(key(layer))
+                && !LodRow::former_default(layer, row)
+            {
                 let _ = s.set(layer, *row);
             }
         }
@@ -570,6 +592,30 @@ mod tests {
             ..s.points
         };
         assert!(tiny.check().is_err());
+    }
+
+    /// Rows saved with a former default read as the new default; rows
+    /// of the user's own are kept.
+    #[test]
+    fn former_defaults_give_way_to_the_new_ones() {
+        let old = LodRow {
+            render_distance: 10_000.0,
+            from: [1_000.0, 4_000.0],
+            detail: [0.5, 2.0],
+        };
+        let mut m = Memory::default();
+        let mut rows: BTreeMap<String, LodRow> = BTreeMap::new();
+        rows.insert("drawings".into(), old);
+        m.0.insert("lod".into(), serde_json::to_string(&rows).unwrap());
+        let s = LodSettings::load(&m);
+        assert_eq!(s.row(Layer::Drawings), LodRow::default_for(Layer::Drawings));
+        let own = LodRow {
+            from: [1_000.0, 5_000.0],
+            ..old
+        };
+        rows.insert("drawings".into(), own);
+        m.0.insert("lod".into(), serde_json::to_string(&rows).unwrap());
+        assert_eq!(LodSettings::load(&m).row(Layer::Drawings), own);
     }
 
     /// A storage in memory.

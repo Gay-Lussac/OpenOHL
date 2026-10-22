@@ -257,6 +257,19 @@ impl<K: Eq + Hash + Clone> ChunkSet<K> {
             .filter_map(|(k, c)| c.shown.filter(|l| c.lods[*l].is_some()).map(|l| (k, l)))
     }
 
+    /// Segments, points and triangles on the GPU, every level of every
+    /// chunk.
+    pub fn held(&self) -> [u64; 3] {
+        let mut n = [0u64; 3];
+        for g in self.chunks.values().flat_map(|c| c.lods.iter().flatten()) {
+            let c = g.counts();
+            n[0] += u64::from(c.0);
+            n[1] += u64::from(c.1);
+            n[2] += u64::from(c.2);
+        }
+        n
+    }
+
     /// Levels on the GPU, all chunks.
     pub fn built(&self) -> usize {
         self.chunks

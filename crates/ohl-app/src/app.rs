@@ -4171,14 +4171,17 @@ impl Ready {
         done
     }
 
-    /// After the line changed: the 3D layers of the line (not the ground
-    /// and the LiDAR points: an edit does not change them, and indexing
-    /// 5 million triangles took 0.3 s) and the profile again.
+    /// After the line changed: the 3D layers of the line (not the ground,
+    /// the LiDAR points and the DXF drawings: an edit does not change
+    /// them, and indexing 5 million triangles took 0.3 s, a drawing of 17
+    /// million vertices 0.4 s, its chunks then built again) and the
+    /// profile again. The drawings are marked when one is hidden or shown
+    /// ([`crate::backgrounds::menu`]); an import opens the project again.
     pub(crate) fn refresh_views(&mut self) {
         self.view3d.dirty.extend(
             Layer::ALL
                 .into_iter()
-                .filter(|l| !matches!(l, Layer::Ground | Layer::Points)),
+                .filter(|l| !matches!(l, Layer::Ground | Layer::Points | Layer::Drawings)),
         );
         self.profile.invalidate();
         self.xsections.invalidate();

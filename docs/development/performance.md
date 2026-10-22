@@ -35,6 +35,23 @@ Apple M-series, release, 1600 × 1000 window, median frame (other builds running
 
 Every view settled in 4 frames. The frame time does not depend on the distance here: a few lattice towers' solids are well within the 16 ms of a 60 Hz frame (the lines and the rest of the view cost the same at every distance). So the default is set by **what can be seen**, not by the frame time: at 1000 px for a 45° field of view a metre at distance *d* covers about 1200 / *d* px, so a single 60–100 mm angle is under a pixel beyond some 70–120 m (a lattice tower's many members together still read as a lit mass a few hundred metres off) and a pole of 300–700 mm is 1–2 px at 400 m. Beyond that the solids only add triangles, GPU memory and chunk builds (their number grows with the distance: 5 lattice towers at 2 km down a line of 400 m spans, many more on a line with short spans or several circuits side by side) for nothing seen, the lines drawn over them giving the shape. 400 m keeps the structure in front and its neighbour at usual spans (300–400 m) solid, where the profile and the pole's taper can be seen; the user raises it in the Level of detail page for close-up work along a line, or sets 0 for none. Display only: no computed number depends on it.
 
+### DXF drawings
+
+A drawing is indexed once into the 256 m chunks (lines cut where they cross tiles) and each chunk built at its level on the GPU when the view needs it, like the other chunked layers (`chunks::ChunkIndex`, `ohl_render::lod::ChunkSet`); its texts are written in the plan only. The benchmark `bench::drawing_benchmark` adds an invented drawing (`bench::large_drawing`) to the synthetic example — 28 km along the line, parcels of 40 m with a number each, 300 buildings, 600 boundary marks (circles of 73 points) and 300 points a km², contour lines 30 m apart with a vertex every 2 m — as a 1.2 km corridor (51 000 lines, 2.2 million vertices, 31 000 texts) and as a 9 km wide sheet (385 000 lines, 16.8 million vertices, 233 000 texts), and flies 10 km along it (the frame timed until the GPU has drawn it):
+
+```bash
+OHL_REQUIRE_GPU_TESTS=1 cargo test --release -p ohl-app drawing_benchmark -- --ignored --nocapture
+```
+
+Apple M-series, release, 1600 × 1000 window, 9 km sheet (median frame; segments drawn; what the chunks hold on the GPU after the flight):
+
+| Drawings row | 600 m from a structure | 80 m from a structure | flying 50 m a frame, 400 m behind | flying 100 m a frame, 2.5 km behind |
+|---|---|---|---|---|
+| former default (level 1 from 1 km at 0.5 m, level 2 from 4 km at 2 m) | 0.72 ms, 214 000 | 0.68 ms, 194 000 | 4.08 ms, 337 000, 61 MB | 4.71 ms, 268 000, 48 MB |
+| default (300 m at 0.2 m, 2 km at 1.5 m) | 0.66 ms, 143 000 | 0.64 ms, 138 000 | 3.73 ms, 274 000, 40 MB | 4.30 ms, 260 000, 23 MB |
+
+Indexing the sheet takes 0.4 s (0.05 s the corridor), building every chunk at level 0 0.15 s (0.04 ms a chunk), at level 1 0.3 s; the chunk plan 0.15 ms a frame. The CPU's share of a frame stays under 2 ms; the rest is the GPU drawing the segments, about 15 ns each, so the frame time follows the segments drawn. The new defaults err by about a pixel where each level begins (1200 / *d* px a metre: 0.2 m is 0.8 px at 300 m, 1.5 m 0.9 px at 2 km) and draw a fifth to a third fewer segments; a boundary mark of 73 points becomes 5 beyond 300 m. An edit of the line no longer indexes the drawings again (it did, with every built chunk dropped: 0.4 s for the sheet, then the chunks built again), nor does showing or hiding the whole layer.
+
 ## Frame benchmark (desktop application)
 
 The desktop window is drawn headless (egui_kittest with wgpu, as the GPU tests) with the 3D view at four distances (the whole line, 3 km, 600 m and 80 m from the middle structure) and the plan view at four zooms (the whole line, 3 km, 400 m and 60 m wide). For each view it settles (every chunk built, every point cloud node read), checks that an idle frame asks for no other one, then draws 20 frames while turning or panning a little (as a drag does) and reports the median and slowest frame, the time to tessellate the frame's shapes, the shapes, what the 3D view drew, the time of a click (picking) and the time of each phase (`crate::perf` spans: frame hooks, menus, each tab, 3D layers rebuilt, chunk plan and build, point stream, render, labels; plan wires and labels; …):
@@ -79,7 +96,7 @@ Display only: calculations, checks and picking always use the full model; nothin
 | Structures | members of levels 2 and 3 (else the stick drawing), arms, strings (2 km); members with a library profile and poles at levels 2 and 3 also as solids within the solids distance (400 m, its own setting) | shaft line, arms, strings (8 km) | shaft line (50 km) |
 | Wires, other cases, project lines | subconductors and yokes, clamps and bodies to their shape, bare points' marks, jumpers' support clamps, line codes in 1.5 m units (1.5 km) | one line per bundle, 16 points per span, dashes × 4, bodies as 4 px dots, spreads, spacers, arrows (6 km) | 5 points per span, dashes × 16 (50 km) |
 | Sections not solved | dashed red, 1.5 m units | dashes × 4 | dashes × 16 |
-| Drawings (DXF) | every vertex (1 km) | simplified to 0.5 m (4 km) | 2 m (10 km) |
+| Drawings (DXF) | every vertex (300 m) | simplified to 0.2 m (2 km) | 1.5 m (10 km) |
 | 3D labels | sags, section labels, points', strings', wire points' labels within the label distance (1.5 km) | | structures' names at any distance, placed first |
 
 Plan: what is in view, half-pixel thinning, structures' names at every zoom (overlapping ones left out, the first in line order and the selected one kept). Profile: one survey dot per pixel, half-pixel thinning, shapes kept while the view stands still.

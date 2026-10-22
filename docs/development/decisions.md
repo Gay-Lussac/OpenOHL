@@ -28,6 +28,26 @@ of Parts A, B and C).
 **Mixed paper sizes stay free (owner, 2026-10-22):** no rule keeping one
 sheet height — the goal is that the drawing fits.
 
+**DXF drawings in the 3D view: level of detail (2026-10-22)**
+
+- Asked whether a DXF background's level of detail is defined: it is.
+  Drawings are a chunked layer of the Level of detail table (indexed
+  once, built per 256 m chunk and level on the GPU, culled by frustum
+  and render distance, simplified by Douglas–Peucker at levels 1 and 2,
+  texts in the plan only); measured with an invented drawing of up to
+  16.8 million vertices (`bench::drawing_benchmark`), the 3D view's CPU
+  share of a frame stayed under 2 ms and the frame under 10 ms.
+- The Drawings row's defaults are now level 1 from 300 m at 0.2 m and
+  level 2 from 2 km at 1.5 m (were 1 km at 0.5 m and 4 km at 2 m): about
+  a pixel's error where each level begins; a fifth to a third fewer
+  segments drawn. Rows saved with the former defaults read as the new
+  ones (`LodRow::former_default`); values of the user's own are kept.
+- An edit of the line (`refresh_views`) and showing or hiding the whole
+  Drawings layer no longer index the drawings again (0.4 s for 16.8
+  million vertices, every built chunk dropped); hiding or showing one
+  drawing still does.
+- Display only: no computed number changes.
+
 **Sheets: paper size and orientation optimised (owner, 2026-10-22)**
 
 - A sheet choice **optimised** picks size and orientation per route from

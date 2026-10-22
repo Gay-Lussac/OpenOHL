@@ -28,6 +28,32 @@ pub struct LoadedDrawing {
     pub boxes: Vec<([f64; 2], [f64; 2])>,
 }
 
+impl LoadedDrawing {
+    /// `drawing` with the extent of each of its lines.
+    pub fn new(info: DrawingInfo, drawing: Drawing) -> Self {
+        let boxes = drawing
+            .lines
+            .iter()
+            .map(|l| {
+                l.points.iter().fold(
+                    ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]),
+                    |(lo, hi), p| {
+                        (
+                            [lo[0].min(p[0]), lo[1].min(p[1])],
+                            [hi[0].max(p[0]), hi[1].max(p[1])],
+                        )
+                    },
+                )
+            })
+            .collect();
+        Self {
+            info,
+            drawing: Arc::new(drawing),
+            boxes,
+        }
+    }
+}
+
 /// The backgrounds of the project.
 #[derive(Debug, Clone, Default)]
 pub struct Loaded {
@@ -85,28 +111,7 @@ pub fn load(file: &Path, log: &mut Vec<String>) -> Loaded {
     let mut drawings = Vec::new();
     for info in store.drawings().unwrap_or_default() {
         match store.drawing(&info.name) {
-            Ok(d) => {
-                let boxes = d
-                    .lines
-                    .iter()
-                    .map(|l| {
-                        l.points.iter().fold(
-                            ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]),
-                            |(lo, hi), p| {
-                                (
-                                    [lo[0].min(p[0]), lo[1].min(p[1])],
-                                    [hi[0].max(p[0]), hi[1].max(p[1])],
-                                )
-                            },
-                        )
-                    })
-                    .collect();
-                drawings.push(LoadedDrawing {
-                    info,
-                    drawing: Arc::new(d),
-                    boxes,
-                });
-            }
+            Ok(d) => drawings.push(LoadedDrawing::new(info, d)),
             Err(e) => log.push(format!("drawing {} not read: {e}", info.name)),
         }
     }
@@ -1006,12 +1011,13 @@ pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     let layer = |ui: &mut egui::Ui, layer: Layer, name: &str, r: &mut crate::app::Ready| {
         let mut on = r.visible.contains(&layer);
         if ui.checkbox(&mut on, name).changed() {
+            // Shown or hidden as it is: the 3D view keeps its chunks
+            // (indexing a large drawing again takes a while).
             if on {
                 r.visible.insert(layer);
             } else {
                 r.visible.remove(&layer);
             }
-            r.view3d.dirty.insert(layer);
         }
     };
     let layers = r.model.backgrounds.image_layers();

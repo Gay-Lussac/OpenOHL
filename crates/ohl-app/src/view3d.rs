@@ -333,6 +333,21 @@ impl View3d {
         n
     }
 
+    /// Segments, points and triangles the chunked layers hold on the GPU,
+    /// every level built (benchmark).
+    #[cfg(test)]
+    pub fn held_counts(&self) -> [u64; 3] {
+        let mut n = [0u64; 3];
+        for c in self.chunks.values() {
+            for h in [c.set.held(), c.near.held()] {
+                for k in 0..3 {
+                    n[k] += h[k];
+                }
+            }
+        }
+        n
+    }
+
     /// Chunks or nodes still to build or read (benchmark).
     #[cfg(test)]
     pub fn pending(&self) -> usize {
