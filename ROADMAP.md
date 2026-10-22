@@ -690,7 +690,7 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- 179 validation cases pass (47 textbook and CIGRE TB 324 cases added
+- 177 validation cases pass (47 textbook and CIGRE TB 324 cases added
   2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21; 1 on the jumpers' own band margin and 1 on the ice and wind per unstretched metre, 2026-10-21; 2026-10-22: 2 on the curves' range, 5 on tension criteria on the non-linear model, 3 on the sagging outputs, then the 9 Drake-like cross-check cases removed and 5 on both final states and the signed set on an invented cable, 2 more on the curves' range added); the private Swiss plugin and the importers of
   another program's files live outside the public code.
 

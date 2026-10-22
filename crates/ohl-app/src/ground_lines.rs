@@ -1439,12 +1439,8 @@ impl Graph {
         g
     }
 
-    /// The wires of `solutions`: every span of every section (between
-    /// two different structures, one edge however many sections and
-    /// cases it holds: each wire, each subconductor of a bundle), the
-    /// jumpers at the structures they end at (a jumper on a tap in a span:
-    /// with that span's wires). The edges' routes and alignments from
-    /// `line`'s alignments `views`.
+    /// [`Graph::of_wires_in`] of every span and jumper of `solutions`
+    /// (tests).
     #[cfg(test)]
     pub fn of_wires(
         line: &ohl_line::Line,
@@ -1455,10 +1451,15 @@ impl Graph {
         Self::of_wires_in(line, &all, views, &|_, _| true)
     }
 
-    /// [`Graph::of_wires`] of `solutions` each with its case's index,
-    /// taking a section's spans only where `keep(Some(section), case)`
-    /// and the jumpers only where `keep(None, case)` (the cases displayed,
-    /// [`Displayed::counts`]).
+    /// The wires of `solutions`, each with its case's index: every span
+    /// of every section (between two different structures, one edge
+    /// however many sections and cases it holds: each wire, each
+    /// subconductor of a bundle), the jumpers at the structures they end
+    /// at (a jumper on a tap in a span: with that span's wires) — a
+    /// section's spans only where `keep(Some(section), case)`, the
+    /// jumpers only where `keep(None, case)` (the cases displayed,
+    /// [`Displayed::counts`]). The edges' routes and alignments from
+    /// `line`'s alignments `views`.
     pub fn of_wires_in(
         line: &ohl_line::Line,
         solutions: &[(usize, &Solved)],
