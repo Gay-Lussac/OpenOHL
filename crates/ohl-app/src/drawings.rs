@@ -934,6 +934,9 @@ impl Input {
         if !s.elevation_labels.is_empty() {
             options.elevations.labels = ohl_drawing::ElevationLabels::parse(&s.elevation_labels)?;
         }
+        if let Some(stick) = s.elevation_stick {
+            options.elevations.stick = stick;
+        }
         Ok(Self {
             line: model.line.clone(),
             bodies: model.bodies.clone(),
@@ -1898,7 +1901,9 @@ fn sheet_sections(
                     ("number", "number"),
                     ("type", "type"),
                     ("height", "height"),
-                    ("string_length", "string length"),
+                    ("string_length", "vertical string length"),
+                    ("dimensions", "heights to and between the arms"),
+                    ("arm_heights", "arm heights"),
                 ] {
                     let mut on = s.elevation_labels.iter().any(|l| l == key);
                     if ui.checkbox(&mut on, text).changed() {
@@ -1909,6 +1914,17 @@ fn sheet_sections(
                     }
                 }
             });
+            let mut stick = s.elevation_stick.or(t.elevations.stick).unwrap_or(false);
+            if ui
+                .checkbox(&mut stick, "elevations as stick figures")
+                .on_hover_text(
+                    "The stick figure even where the full structure (members, a pole's \
+                     outline) exists: easier to read at a small scale",
+                )
+                .changed()
+            {
+                s.elevation_stick = Some(stick);
+            }
         });
 }
 

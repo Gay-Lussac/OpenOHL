@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+**Elevations as stick figures with their heights (owner, 2026-10-22)**
+
+- A tickable **stick figure** for the elevations, even where the full
+  structure exists (the lattice is unreadable at a sheet's scale): a
+  schematic one — mast, an arm out to each point, the strings — always,
+  since an imported line's stick drawing may hold the whole lattice.
+- Strings: only the **vertical (suspension)** strings' lengths are
+  written, per arm; no string labels otherwise.
+- Heights: base → first arm → between the arms → top as a chain on one
+  side; each arm's height **above the base** (owner's answer) on the
+  other, one line per arm with its strings' lengths.
+- Never over the structure or each other: columns clear of the figure,
+  texts pushed apart with a leader.
+- The ESTI 235 template of the private plugin ticks them all.
+
+**Mixed paper sizes stay free (owner, 2026-10-22):** no rule keeping one
+sheet height — the goal is that the drawing fits.
+
 **Sheets: paper size and orientation optimised (owner, 2026-10-22)**
 
 - A sheet choice **optimised** picks size and orientation per route from

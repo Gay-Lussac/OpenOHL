@@ -48,7 +48,8 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--elevation-offset` | from the line to the elevations' base, mm on paper (default 10) |
 | `--elevation-rotation` | angle between the line and the elevations' height, degrees (default 90: standing perpendicular to the line) |
 | `--elevation-scale` | the elevations' own scale (default the horizontal one) |
-| `--elevation-labels` | written at each elevation: `number`, `type`, `height`, `string_length` (comma-separated) |
+| `--elevation-labels` | written at each elevation: `number`, `type`, `height`, `string_length` (vertical strings), `dimensions` (base → arms → top), `arm_heights` (comma-separated) |
+| `--elevation-stick` | the elevations as schematic stick figures (mast, arms, strings) even where the full structure exists |
 | `--sheet-template NAME` | the [sheet template](sheet-templates.md): `default`, a `.ohlsheet` file, the project's or the library folder's by name, or `PLUGIN/PRESET` (with `--plugin DIR`); its page unless `--page` |
 | `--field KEY=VALUE`, `--fields FILE`, `--revision "A;DATE;TEXT;BY;CHECKED"` | the template's values and the revision table |
 | `--orientation` | `landscape` or `portrait` (with `--page optimised`: the only one allowed; default both) |
@@ -154,9 +155,27 @@ the sheet next to where it stands:
   and the arms to its attachment points), true shape at the
   **horizontal scale** (a 30 m structure is 15 mm tall at 1:2000) or at
   `--elevation-scale`;
+- as a **stick figure** on request (`--elevation-stick`, the template's
+  `stick = true`, **elevations as stick figures** in the export window):
+  a schematic figure — the mast from its base to its top, an arm out to
+  each of its points, its strings — even where its members, a pole's
+  outline or a stick drawing holding a whole lattice exist; easier to
+  read at a small scale;
 - on request its **labels** (`--elevation-labels`, the template's
-  `labels`): its number, type and height above its top, and beside each
-  **suspension string** its length (the model's strings);
+  `labels`): its number, type and height above its top (`number`,
+  `type`, `height`); a **chain of heights** on one side, base → first
+  arm → between the arms → top, with a tick at each level
+  (`dimensions`); and on the other side **one line per arm**: its height
+  above the base (`arm_heights`) followed by the length of the
+  **vertical (suspension) strings** hanging from it (`string_length`;
+  strain strings, lying along the line, are not written; lengths within
+  5 cm of each other as one range, `string 4.41–4.42 m`). The arms are
+  the levels of the structure's own points. The texts of a column are
+  never closer than 1.2 × their size: one that would be is moved down,
+  joined to its level by a thin leader; the chain and the arm lines
+  stand clear of the figure (2.5 and 1.5 mm out). Their words come from
+  the template (`[legend.labels]` `elevation_dimension`,
+  `elevation_arm`, `elevation_string`);
 - its **base** stands at the structure's station, `--elevation-offset`
   mm on paper (default 10 mm) above or below the line (the route's
   centreline in the plan);

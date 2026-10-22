@@ -63,7 +63,7 @@ built-in look).
 | `[corridor]` | `width`, `label` (`{width}`), `pen`, `near_side` (`"right"`, `"left"`), `near`, `far` (pens over `pen`), `profile` | the corridor's edges at ± `width` from the axis, and the ground along them in the profile ([below](#the-corridors-sides-and-the-centreline)) |
 | `[centreline]` | `pen`, `ground` | the axis in the plan; the ground on it in the profile (always solid) |
 | `[lidar]` | `profile`, `plan`, `classes = [2, 3, 5]`, `size`, `cell`, `[lidar.styles] "2" = { colour, size, label }` (a code, `"3-5"` or `"3,4"`) | LiDAR points as dots ([below](#lidar-points)) |
-| `[elevations]` | `place`, `offset`, `rotation`, `scale`, `labels` (`number`, `type`, `height`, `string_length`), `size`, `pen` | the structures' elevations on the plan |
+| `[elevations]` | `place`, `offset`, `rotation`, `scale`, `labels` (`number`, `type`, `height`, `string_length`, `dimensions`, `arm_heights`), `size`, `stick` (schematic stick figures), `pen` | the structures' elevations on the plan ([Elevations](drawings.md#elevations)); their words in `[legend.labels]`: `elevation_dimension`, `elevation_arm`, `elevation_string` |
 | `[line_styles]` | `by_kind`, `low_voltage_up_to_kv`, `kind_field`, `construction_field`, `cable_dash`, `[line_styles.kinds.hv|lv|telecom|earth] = { colour, width, dash, label }` | wires by kind |
 | `[roles.<role>]` | `label`, `width`, `weight`, `colour`, `dash`, `structure_colour`, `names` | a version of the line in that role |
 | `[conductor_clearance]` | `show`, `circuits`, `mode` (`"also"`, `"instead"`), `label` (`{distance}`, `{rule}`, `{circuit}`, `{case}`, `{voltage}`), `label_at` (`"auto"`: clear of structures, wires and ground; `"middle"`, `"start"`, `"end"`), `pen` | lines below the lowest conductor |

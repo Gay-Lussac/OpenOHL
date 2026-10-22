@@ -218,9 +218,12 @@ structure body) and O7 (the line and its structures solved together).
   draws one sheet in the background, after the settings settle, with
   route and sheet chosen in its window.
   Still open: font embedding, a title block editor in the app, an
-  orthophoto under the key map, DXF 2000 images; whether mixed sizes
-  should keep one sheet height (A3, A3x3, A3x4) — on a real line the
-  mix came out as five sizes (asked 2026-10-22).
+  orthophoto under the key map, DXF 2000 images. Mixed sizes stay free
+  (owner, 2026-10-22: the goal is that it fits). *Follow-up 7, built
+  2026-10-22, in active development (not approved yet)*: the elevations
+  as schematic **stick figures** on request, with a chain of heights
+  (base → arms → top), each arm's height above the base and its vertical
+  strings' lengths, placed clear of the figure and of each other.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
