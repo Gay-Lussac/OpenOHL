@@ -34,6 +34,7 @@ fn above(target: [f64; 3], distance: f64) -> Camera {
         pitch: 89f64.to_radians(),
         fov_y: 45f64.to_radians(),
         exaggeration: 1.0,
+        ortho: false,
     }
 }
 
