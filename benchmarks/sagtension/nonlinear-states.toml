@@ -1,0 +1,212 @@
+# Both final states, the governing one per case, and the signed permanent
+# set (2026-10-22) on an INVENTED test cable (not a real conductor, not taken
+# from any library or standard): the synthetic cable of nonlinear.toml with
+# its core's initial curve made steeper at zero strain (1950 MPa/%) than its
+# final modulus (1900 MPa/%) — so that the core's set after load is negative
+# — and a creep curve for the core; neither component takes compression.
+# These cases replace the Drake-like cross-check (removed 2026-10-22: its
+# curves came from a library's test data of unstated source).
+#
+# Level 300 m strung at H = 25 kN at 15 °C on the initial curve; own weight
+# 15.690640 N/m conserved; creep 15 °C bare; heaviest load 30 N/m at -10 °C.
+# Both final states are computed; per case the one giving the longer cable
+# (lower H) governs.
+#
+# Expected values: benchmarks/sagtension/reference_invented_states.py, an
+# independent re-implementation with other numerics (Illinois strain
+# inversion, Newton on each polynomial for the zero-tension strain, Simpson
+# integrals, a secant root on log H). Tolerance 1e-7 relative.
+
+# By hand: the stringing case on the initial curve gives back the known
+# tension, 25000 N.
+[[case]]
+id = "nlstate-001"
+title = "Invented cable (signed set), level 300 m strung at 25 kN at 15 °C: 15 °C bare (the stringing case): after load governs"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 25000, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 23579.68878, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 22680.49222, rel_tol = 1e-7 }
+expected.h_final_n = { value = 22680.49222, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+known_tension = "25 kN"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "15.690640 N/m"
+temperature = "15 °C"
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+
+[[case]]
+id = "nlstate-002"
+title = "Invented cable (signed set), level 300 m strung at 25 kN at 15 °C: 50 °C bare: after load governs"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 21968.37097, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 20345.21963, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 19782.82278, rel_tol = 1e-7 }
+expected.h_final_n = { value = 19782.82278, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+known_tension = "25 kN"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "15.690640 N/m"
+temperature = "50 °C"
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+
+# Hot, the outer strands carry less and the core more: the creep set of
+# the outer strands (0.098 %) and the core's (0.004 %) leave the cable longer
+# than the load set (outer 0.126 %, core -0.002 %): after creep governs.
+[[case]]
+id = "nlstate-003"
+title = "Invented cable (signed set), level 300 m strung at 25 kN at 15 °C: 80 °C bare: after creep governs (the governing state changes with temperature)"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 19957.21448, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 18575.0458, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 18758.45974, rel_tol = 1e-7 }
+expected.h_final_n = { value = 18575.0458, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+known_tension = "25 kN"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "15.690640 N/m"
+temperature = "80 °C"
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+
+# By hand (the signed set): the core's initial curve rises at 1950 MPa/% at
+# zero strain, more steeply than its final modulus (1900 MPa/%), so its set
+# e - P(e)/EA_f at the load-stretch point is negative (-0.0023 %). The final
+# line EA_f (e - e_p) passes through that point: reloaded to the same case
+# the cable is back on the initial curve, so after load equals initial
+# (load_final_over_initial = 1). A set clamped at zero would put the core's
+# final line under the initial curve there and the final tension below the
+# initial one.
+[[case]]
+id = "nlstate-004"
+title = "Invented cable (signed set), level 300 m strung at 25 kN at 15 °C: the load-stretch case (30 N/m, -10 °C): after load equals initial (the core's negative set), after creep governs"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 42243.55136, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 41954.90356, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 42243.55136, rel_tol = 1e-7 }
+expected.h_final_n = { value = 41954.90356, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.load_final_over_initial = { value = 1.0, abs_tol = 1e-6 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+known_tension = "25 kN"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "30 N/m"
+temperature = "-10 °C"
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+
+[[case]]
+id = "nlstate-005"
+title = "Invented cable (signed set), level 300 m strung at 25 kN at 15 °C: 25 N/m at -5 °C: after load governs"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 36951.29586, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 36672.34138, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 36036.48705, rel_tol = 1e-7 }
+expected.h_final_n = { value = 36036.48705, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+known_tension = "25 kN"
+span = "300 m"
+known_load = "15.690640 N/m"
+known_temperature = "15 °C"
+creep_load = "15.690640 N/m"
+creep_temperature = "15 °C"
+max_load = "30 N/m"
+max_temperature = "-10 °C"
+load = "25 N/m"
+temperature = "-5 °C"
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }

@@ -93,7 +93,7 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 | `creep` | no | list of numbers | none | Creep curve (typically 10-year). Omit for no creep (e.g. steel cores). |
 | `final_modulus` | yes | number | — | Unloading / reloading slope, in `stress_unit` per strain unit (per % if `strain = "percent"`), on the same `basis`. |
 | `max_compression` | no | number ≥ 0 | unlimited | Largest compressive stress carried, in `stress_unit`. Usually set with the wire type's `bimetallic_behavior` instead. |
-| `max_strain` | no | number > 0 | 1 % | Strain up to which the curves are valid, in strain units. The curves must rise up to it. A state beyond it (a component's strain at a span's most tensioned support) is warned about in the results — `ohl sagtension`, the app's warnings by weather case, the Sagging panel; the polynomial is still used there. |
+| `max_strain` | no | number > 0 | none | Strain up to which the curves are valid, in strain units. The curves must rise up to it (up to 1 % when not given). A state beyond it (a component's strain at a span's most tensioned support) is warned about in the results — `ohl sagtension`, the app's warnings by weather case, the Sagging panel; the polynomial is still used there. Not given: no range, **no warning** (2026-10-22, the owner's decision; there was a 1 % default before). |
 | `reference_temperature` | no | temperature: `°C`, `degC`, `K`, `°F`, `degF` | `"20 °C"` | Temperature of the curve tests. Both components must use the same. |
 
 ### How the curves are used

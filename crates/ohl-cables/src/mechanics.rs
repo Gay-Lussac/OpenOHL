@@ -33,9 +33,10 @@
 //!   one, so that the line passes through the point reached (below zero
 //!   strain the initial state is the final-modulus line from zero).
 //!
-//! Beyond the curves' validity (`max_strain`, default 1 %) the polynomial
-//! is still evaluated; [`Mechanics::beyond_range`] says when a state gets
-//! there, for the warnings of the results.
+//! Beyond the curves' validity (`max_strain`, when the cable gives one)
+//! the polynomial is still evaluated; [`Mechanics::beyond_range`] says
+//! when a state gets there, for the warnings of the results. Without a
+//! `max_strain` there is no range and no warning (owner, 2026-10-22).
 //!
 //! Components without curves are linear (\\( P = EA\,\varepsilon \\)) in every state.
 //! Coefficients are data supplied with the cable (see `docs/theory`); OpenOHL
@@ -98,7 +99,8 @@ pub struct StressStrainData {
     /// in `stress_unit`); none = unlimited.
     #[serde(default)]
     pub max_compression: Option<f64>,
-    /// Upper end of the curves' validity, in strain units (default 1 %).
+    /// Upper end of the curves' validity, in strain units; none: no range
+    /// given, no range warning (the curves must still rise up to 1 %).
     #[serde(default)]
     pub max_strain: Option<f64>,
     /// Temperature at which the curves were measured.
@@ -113,8 +115,9 @@ struct Curves {
     creep: Option<Vec<f64>>,
     final_stiffness: f64,
     max_compression: f64,
-    /// Upper end of the curves' validity, unit strain (mechanical).
-    max_strain: f64,
+    /// Upper end of the curves' validity, unit strain (mechanical); none:
+    /// not given (no range warning).
+    max_strain: Option<f64>,
 }
 
 fn poly(c: &[f64], x: f64) -> f64 {
@@ -408,7 +411,7 @@ impl Mechanics {
 
     /// The components whose mechanical strain at total strain `strain` and
     /// `temperature` lies beyond their curves' validity (`max_strain`,
-    /// default 1 %): label (`"outer"`, `"core"`), the strain and the
+    /// only where the cable gives one): label (`"outer"`, `"core"`), the strain and the
     /// limit (unit strain). Empty within the range, and for components
     /// without curves. The polynomial is evaluated beyond it all the same
     /// (no extrapolation is invented); the results warn.
@@ -416,11 +419,11 @@ impl Mechanics {
         self.mechanical_strains(strain, temperature)
             .zip(&self.components)
             .filter_map(|(e, c)| {
-                let curves = c.curves.as_ref()?;
-                (e > curves.max_strain).then_some(RangeExceeded {
+                let max_strain = c.curves.as_ref()?.max_strain?;
+                (e > max_strain).then_some(RangeExceeded {
                     component: c.label,
                     strain: e,
-                    max_strain: curves.max_strain,
+                    max_strain,
                 })
             })
             .collect()
@@ -526,12 +529,13 @@ fn convert(
             "the initial curve needs at least two coefficients".into(),
         ));
     }
-    // Default validity: 1 % strain, whatever unit the coefficients use (the
-    // default used to be applied before the unit conversion, i.e. 100 % strain
-    // for `strain = "unit"`).
-    let max_strain = data.max_strain.map_or(0.01, |m| m / strain_scale);
+    // The range given (none: no range warning, owner 2026-10-22). The
+    // curves must rise over it, or up to 1 % strain when none is given,
+    // whatever unit the coefficients use, or tension cannot be inverted.
+    let given = data.max_strain.map(|m| m / strain_scale);
+    let max_strain = given.unwrap_or(0.01);
     let curves = Curves {
-        max_strain,
+        max_strain: given,
         initial: to_load(&data.initial),
         creep: data.creep.as_deref().map(to_load),
         final_stiffness: stress * area * data.final_modulus * strain_scale,
@@ -749,15 +753,18 @@ mod tests {
     #[test]
     fn strains_beyond_the_curves_range_are_reported() {
         let m = Mechanics::from_cable(&cable()).unwrap();
-        // Outer valid to 0.9 %, core to the default 1 %.
+        // Outer valid to 0.9 %, the core without a range: never warned
+        // (owner, 2026-10-22: no 1 % default).
         assert!(m.beyond_range(0.005, t(20.0)).is_empty());
         let beyond = m.beyond_range(0.0095, t(20.0));
         assert_eq!(beyond.len(), 1);
         assert_eq!(beyond[0].component, "outer");
         assert!((beyond[0].max_strain - 0.009).abs() < 1e-15);
         assert!(beyond[0].to_string().contains("beyond its curves' range"));
-        // Cold: the mechanical strain is larger than the total.
-        assert_eq!(m.beyond_range(0.0095, t(-30.0)).len(), 2);
+        // Cold: the mechanical strain is larger than the total; the core
+        // (no range) at 2.4 % still not warned.
+        assert_eq!(m.beyond_range(0.0095, t(-30.0)).len(), 1);
+        assert_eq!(m.beyond_range(0.024, t(20.0)).len(), 1);
     }
 
     #[test]
