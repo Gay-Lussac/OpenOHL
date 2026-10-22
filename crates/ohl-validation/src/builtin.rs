@@ -37,6 +37,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(WireFeSpan));
     registry.register(Box::new(WireFePointLoad));
     registry.register(Box::new(Nonlinear));
+    registry.register(Box::new(NonlinearCriteria));
+    registry.register(Box::new(Sagging));
     registry.register(Box::new(ThermalSteady));
     registry.register(Box::new(SpottingLevel));
     registry.register(Box::new(StructureFe));
@@ -710,6 +712,210 @@ impl Calculation for WireFePointLoad {
             ("load_point_x_m", s.positions[1].x),
             ("load_point_z_m", s.positions[1].z),
         ]))
+    }
+}
+
+/// `sagtension.sagging`: the sagging outputs of a section of a linear wire.
+struct Sagging;
+
+impl Calculation for Sagging {
+    fn id(&self) -> &'static str {
+        "sagtension.sagging"
+    }
+
+    fn description(&self) -> &'static str {
+        "Sagging outputs of a tension section, linear wire (inputs: spans [{span, rise}], \
+         axial_stiffness, thermal_expansion, known_load (own weight), known_temperature, \
+         known_tension, optional temperature (sagging, default the known), waves (default 1), \
+         transit = {span (1-based), instrument_x, instrument_z, target_x}, clip_temperature); \
+         outputs per span i (from 0): sag_i_m, level_sag_i_m, inclined_correction_i_m, \
+         sag_per_k_i_m, stopwatch_i_s, dyno_left_i_n, dyno_right_i_n, clip_offset_i_m (at the \
+         structure after span i); h_n; transit_angle_deg, transit_tangent_x_m, \
+         transit_target_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_sagtension::sagging;
+
+        let spans = inputs
+            .get("spans")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"spans\" must be an array of tables")?
+            .iter()
+            .map(|v| {
+                let t = v.as_table().ok_or("each span must be a table")?;
+                Ok(SpanGeometry::inclined(
+                    quantity_input::<Length>(t, "span")?,
+                    quantity_input::<Length>(t, "rise")?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let cable = ElasticCable {
+            axial_stiffness: quantity_input::<Force>(inputs, "axial_stiffness")?,
+            thermal_expansion: float_input(inputs, "thermal_expansion")?,
+        };
+        let weight = quantity_input::<ForcePerLength>(inputs, "known_load")?;
+        let known_t = quantity_input::<Temperature>(inputs, "known_temperature")?;
+        let section = TensionSection::from_known_state(
+            spans.clone(),
+            cable,
+            LoadState::bare(weight, known_t),
+            quantity_input::<Force>(inputs, "known_tension")?,
+        )
+        .map_err(|e| e.to_string())?;
+        let budget = default_solver_budget();
+        let at = |t: Temperature| {
+            section
+                .solve(LoadState::bare(weight, t), &budget)
+                .map_err(|e| e.to_string())
+        };
+        let sag_t = if inputs.contains_key("temperature") {
+            quantity_input::<Temperature>(inputs, "temperature")?
+        } else {
+            known_t
+        };
+        let waves = if inputs.contains_key("waves") {
+            float_input(inputs, "waves")? as u32
+        } else {
+            1
+        };
+        let solved = at(sag_t)?;
+        let dt = 0.5;
+        let per_k = sagging::temperature_correction(
+            &at(Temperature::from_celsius(sag_t.celsius() - dt))?,
+            &at(Temperature::from_celsius(sag_t.celsius() + dt))?,
+            dt,
+        );
+        let mut out = outputs([("h_n", solved.horizontal_tension.newtons())]);
+        for (i, sp) in solved.spans.iter().enumerate() {
+            out.insert(format!("sag_{i}_m"), sp.sag().meters());
+            out.insert(format!("level_sag_{i}_m"), sagging::level_sag(sp).meters());
+            out.insert(
+                format!("inclined_correction_{i}_m"),
+                sagging::inclined_correction(sp).meters(),
+            );
+            out.insert(format!("sag_per_k_{i}_m"), per_k[i]);
+            out.insert(
+                format!("stopwatch_{i}_s"),
+                sagging::stopwatch_time(sp, waves),
+            );
+            out.insert(
+                format!("dyno_left_{i}_n"),
+                sagging::dynamometer(sp, true).newtons(),
+            );
+            out.insert(
+                format!("dyno_right_{i}_n"),
+                sagging::dynamometer(sp, false).newtons(),
+            );
+        }
+        if let Some(t) = inputs.get("transit").and_then(|v| v.as_table()) {
+            let k = float_input(t, "span")? as usize;
+            let sp = solved
+                .spans
+                .get(k.wrapping_sub(1))
+                .ok_or("transit: no such span")?;
+            let sight = sagging::angle_of_sight(
+                sp,
+                quantity_input::<Length>(t, "instrument_x")?,
+                quantity_input::<Length>(t, "instrument_z")?,
+                quantity_input::<Length>(t, "target_x")?,
+            )
+            .map_err(|e| e.to_string())?;
+            out.insert("transit_angle_deg".into(), sight.angle.to_degrees());
+            out.insert("transit_tangent_x_m".into(), sight.tangent_x.meters());
+            out.insert("transit_target_m".into(), sight.target_elevation.meters());
+        }
+        if inputs.contains_key("clip_temperature") {
+            let clip_t = quantity_input::<Temperature>(inputs, "clip_temperature")?;
+            let clipped = at(clip_t)?;
+            let offsets = sagging::clipping_offsets(
+                &section.span_unstressed_lengths(&solved, &LoadState::bare(weight, sag_t)),
+                &section.span_unstressed_lengths(&clipped, &LoadState::bare(weight, clip_t)),
+            );
+            for (i, o) in offsets.iter().enumerate() {
+                out.insert(format!("clip_offset_{i}_m"), *o);
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// `sagtension.nonlinear_criteria`: the stringing tension from tension
+/// criteria on the non-linear model, each in a condition.
+struct NonlinearCriteria;
+
+impl Calculation for NonlinearCriteria {
+    fn id(&self) -> &'static str {
+        "sagtension.nonlinear_criteria"
+    }
+
+    fn description(&self) -> &'static str {
+        "Governing stringing tension on the non-linear model (inputs: cable table, span, \
+         known_load, known_temperature (the reference state), creep_*, max_* (the cases of the \
+         permanent sets), criteria[] = {label, load, temperature, optional wind, condition \
+         (initial, creep, load), limit, value}); outputs reference_tension_n, governing_index, \
+         utilisation_i"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_cables::mechanics::Mechanics;
+        use ohl_sagtension::criteria::{
+            Condition, NonlinearCases, NonlinearCriterion, governing_tension_nonlinear,
+        };
+
+        let cable: ohl_cables::Cable = inputs
+            .get("cable")
+            .ok_or("missing input \"cable\"")?
+            .clone()
+            .try_into()
+            .map_err(|e| format!("input \"cable\": {e}"))?;
+        cable.validate().map_err(|e| e.to_string())?;
+        let mechanics = Mechanics::from_cable(&cable).map_err(|e| e.to_string())?;
+        let weight = own_weight(inputs, "known_load")?;
+        let state = |load: &str, temperature: &str| load_state(inputs, load, temperature, weight);
+        let cases = NonlinearCases {
+            reference: state("known_load", "known_temperature")?,
+            creep: state("creep_load", "creep_temperature")?,
+            max_load: state("max_load", "max_temperature")?,
+        };
+        let criteria = inputs
+            .get("criteria")
+            .and_then(|v| v.as_array())
+            .ok_or("input \"criteria\" must be an array of tables")?
+            .iter()
+            .map(|v| {
+                let t = v.as_table().ok_or("each criterion must be a table")?;
+                let condition = match string_input(t, "condition")? {
+                    "initial" => Condition::Initial,
+                    "creep" => Condition::AfterCreep,
+                    "load" => Condition::AfterLoad,
+                    other => return Err(format!("unknown condition \"{other}\"")),
+                };
+                Ok(NonlinearCriterion {
+                    criterion: criterion_input(t, weight)?,
+                    condition,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let result = governing_tension_nonlinear(
+            &[SpanGeometry::level(quantity_input::<Length>(
+                inputs, "span",
+            )?)],
+            &mechanics,
+            cable.rated_tensile_strength,
+            cases,
+            &criteria,
+            &default_criteria_budget(),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut out = outputs([
+            ("reference_tension_n", result.reference_tension.newtons()),
+            ("governing_index", result.governing as f64),
+        ]);
+        for (i, c) in result.criteria.iter().enumerate() {
+            out.insert(format!("utilisation_{i}"), c.utilisation);
+        }
+        Ok(out)
     }
 }
 

@@ -16,13 +16,16 @@
 //! levels have exit clauses.
 
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ohl_core::budget::{Budget, Stop};
 use ohl_core::units::{Force, Length};
 
+use ohl_cables::mechanics::{MaterialState, Mechanics};
+
 use crate::catenary::{SagTensionError, SpanGeometry, default_solver_budget};
 use crate::change_of_state::{ElasticCable, LoadState};
+use crate::nonlinear::{FinalCause, NonlinearSection, final_states};
 use crate::section::{SectionSolution, TensionSection};
 
 /// What a criterion limits.
@@ -67,19 +70,243 @@ pub struct TensionCriterion {
 impl TensionCriterion {
     /// Value of the limited quantity and the limit, in the same unit.
     fn measure(&self, solution: &SectionSolution, rts: Force) -> (f64, f64) {
-        let support = solution
-            .spans
-            .iter()
-            .map(|s| s.tension_left().max(s.tension_right()))
-            .fold(Force::ZERO, Force::max);
-        let h = solution.horizontal_tension;
-        match self.limit {
-            TensionLimit::SupportTensionRatio(r) => (support.si(), r * rts.si()),
-            TensionLimit::HorizontalTensionRatio(r) => (h.si(), r * rts.si()),
-            TensionLimit::HorizontalTension(max) => (h.si(), max.si()),
-            TensionLimit::CatenaryConstant(c) => ((h / self.state.load).si(), c.si()),
+        measure(self.limit, &self.state, solution, rts)
+    }
+}
+
+/// Value of the quantity `limit` limits in `solution` (of a section in
+/// `state`) and the limit, in the same unit.
+fn measure(
+    limit: TensionLimit,
+    state: &LoadState,
+    solution: &SectionSolution,
+    rts: Force,
+) -> (f64, f64) {
+    let support = solution
+        .spans
+        .iter()
+        .map(|s| s.tension_left().max(s.tension_right()))
+        .fold(Force::ZERO, Force::max);
+    let h = solution.horizontal_tension;
+    match limit {
+        TensionLimit::SupportTensionRatio(r) => (support.si(), r * rts.si()),
+        TensionLimit::HorizontalTensionRatio(r) => (h.si(), r * rts.si()),
+        TensionLimit::HorizontalTension(max) => (h.si(), max.si()),
+        TensionLimit::CatenaryConstant(c) => ((h / state.load).si(), c.si()),
+    }
+}
+
+/// The material state a criterion on the non-linear model applies in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Condition {
+    /// As strung, on the initial curve.
+    Initial,
+    /// Final, after creep (the creep curve's set at the creep case).
+    AfterCreep,
+    /// Final, after the heaviest load (the initial curve's set at the load
+    /// case).
+    AfterLoad,
+}
+
+impl fmt::Display for Condition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Initial => "initial",
+            Self::AfterCreep => "after creep",
+            Self::AfterLoad => "after load",
+        })
+    }
+}
+
+/// A limit applied in one load state and one condition of a cable with
+/// stress-strain curves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NonlinearCriterion {
+    /// The limit and its load state.
+    pub criterion: TensionCriterion,
+    /// The condition it applies in.
+    pub condition: Condition,
+}
+
+/// The cases a non-linear stringing depends on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NonlinearCases {
+    /// Where the stringing tension is given (the horizontal tension on the
+    /// initial curve).
+    pub reference: LoadState,
+    /// The creep case (the creep curve's set).
+    pub creep: LoadState,
+    /// The heaviest load case (the initial curve's set).
+    pub max_load: LoadState,
+}
+
+/// Passes of the check of the governing tension on the non-linear model
+/// ([`governing_tension_nonlinear`]); one is the usual, two when the
+/// permanent sets make a criterion turn round.
+pub const NONLINEAR_PASSES: usize = 10;
+
+/// [`governing_tension`] on the non-linear model: the stringing tension
+/// (horizontal, at `cases.reference`, on the initial curve) at which every
+/// criterion holds in its condition, one exactly at its limit.
+///
+/// Each trial stringing tension is a full calculation: the cable strung,
+/// both permanent sets from it ([`crate::nonlinear::final_states`]), each
+/// criterion's case solved in its condition. So the sets follow the
+/// stringing tension, and the governing criterion is found by
+/// **iteration**, not in a single pass: a bisection per criterion gives
+/// its largest stringing tension; the smallest of them is checked against
+/// every criterion, and when one is above its limit there (a set growing
+/// faster than the tension), its bisection runs again below it; at most
+/// [`NONLINEAR_PASSES`] passes.
+///
+/// Expected cost: per criterion ~40 bisection steps, each 3 non-linear
+/// section solves (~1 ms each for 10 spans).
+pub fn governing_tension_nonlinear(
+    spans: &[SpanGeometry],
+    mechanics: &Mechanics,
+    rated_tensile_strength: Force,
+    cases: NonlinearCases,
+    criteria: &[NonlinearCriterion],
+    budget: &Budget,
+) -> Result<Governing, SagTensionError> {
+    if criteria.is_empty() {
+        return Err(SagTensionError::InvalidInput(
+            "no tension criteria given".into(),
+        ));
+    }
+    let started = Instant::now();
+    let inner = default_solver_budget();
+    let solve_at =
+        |h_ref: f64, c: &NonlinearCriterion| -> Result<SectionSolution, SagTensionError> {
+            let section = NonlinearSection::from_known_state(
+                spans.to_vec(),
+                mechanics.clone(),
+                cases.reference,
+                Force::from_si(h_ref),
+                &MaterialState::Initial,
+            )?;
+            let material = match c.condition {
+                Condition::Initial => MaterialState::Initial,
+                condition => {
+                    let states = final_states(&section, cases.creep, cases.max_load, &inner)?;
+                    states
+                        .state(if condition == Condition::AfterCreep {
+                            FinalCause::Creep
+                        } else {
+                            FinalCause::Load
+                        })
+                        .clone()
+                }
+            };
+            section.solve(c.criterion.state, &material, &inner)
+        };
+    let excess = |h_ref: f64, c: &NonlinearCriterion| -> Result<f64, SagTensionError> {
+        match solve_at(h_ref, c) {
+            Ok(solution) => {
+                let (value, limit) = measure(
+                    c.criterion.limit,
+                    &c.criterion.state,
+                    &solution,
+                    rated_tensile_strength,
+                );
+                Ok(value / limit - 1.0)
+            }
+            Err(SagTensionError::TooSlack { .. }) => Ok(-1.0),
+            Err(other) => Err(other),
+        }
+    };
+    let mut run = budget.start();
+    // The largest stringing tension meeting criterion `c`, at most `cap`.
+    let mut largest = |c: &NonlinearCriterion, cap: f64| -> Result<f64, SagTensionError> {
+        let not_converged = |stop: Stop, lo: f64, hi: f64| SagTensionError::NotConverged {
+            problem: "governing tension (non-linear)",
+            stop,
+            detail: format!(
+                "criterion \"{}\" ({}, {}): reference tension bracket [{lo:.6e}, {hi:.6e}] N",
+                c.criterion.label, c.criterion.limit, c.condition
+            ),
+        };
+        let start = (0.1 * rated_tensile_strength.si()).min(cap);
+        let (mut lo, mut hi) = (start, start);
+        while excess(lo, c)? > 0.0 {
+            run.step().map_err(|stop| not_converged(stop, lo, hi))?;
+            lo /= 2.0;
+        }
+        while hi < cap && excess(hi, c)? <= 0.0 {
+            run.step().map_err(|stop| not_converged(stop, lo, hi))?;
+            hi = (2.0 * hi).min(cap);
+        }
+        if hi >= cap && excess(hi, c)? <= 0.0 {
+            return Ok(cap);
+        }
+        while hi - lo > 1e-10 * hi {
+            run.step().map_err(|stop| not_converged(stop, lo, hi))?;
+            let mid = 0.5 * (lo + hi);
+            if excess(mid, c)? > 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        Ok(lo)
+    };
+    let mut best: Option<(f64, usize)> = None;
+    for (index, c) in criteria.iter().enumerate() {
+        let h = largest(c, f64::INFINITY)?;
+        if best.is_none_or(|(b, _)| h < b) {
+            best = Some((h, index));
         }
     }
+    let (mut reference_tension, mut governing) = best.expect("criteria is not empty");
+    let mut pass = 1;
+    loop {
+        let mut worst: Option<(f64, usize)> = None;
+        for (index, c) in criteria.iter().enumerate() {
+            let e = excess(reference_tension, c)?;
+            if e > 1e-8 && worst.is_none_or(|(w, _)| e > w) {
+                worst = Some((e, index));
+            }
+        }
+        let Some((_, index)) = worst else { break };
+        if pass >= NONLINEAR_PASSES {
+            return Err(SagTensionError::NotConverged {
+                problem: "governing tension (non-linear)",
+                stop: Stop::IterationLimit {
+                    iterations: pass as u64,
+                    elapsed: started.elapsed(),
+                },
+                detail: format!(
+                    "criterion \"{}\" still above its limit at {reference_tension:.6e} N",
+                    criteria[index].criterion.label
+                ),
+            });
+        }
+        reference_tension = largest(&criteria[index], reference_tension)?;
+        governing = index;
+        pass += 1;
+    }
+    let results = criteria
+        .iter()
+        .map(|c| {
+            let solution = solve_at(reference_tension, c)?;
+            let (value, limit) = measure(
+                c.criterion.limit,
+                &c.criterion.state,
+                &solution,
+                rated_tensile_strength,
+            );
+            Ok(CriterionResult {
+                label: c.criterion.label.clone(),
+                utilisation: value / limit,
+                solution,
+            })
+        })
+        .collect::<Result<Vec<_>, SagTensionError>>()?;
+    Ok(Governing {
+        reference_tension: Force::from_si(reference_tension),
+        governing,
+        criteria: results,
+    })
 }
 
 /// Utilisation of one criterion at the governing stringing tension.
@@ -298,6 +525,78 @@ mod tests {
         let ice = &g.criteria[1].solution;
         let highest = ice.spans[1].tension_right();
         assert!((highest.kilonewtons() / (0.30 * 138.8) - g.criteria[1].utilisation).abs() < 1e-9);
+    }
+
+    fn synthetic() -> Mechanics {
+        let mut library = ohl_cables::Library::default();
+        library
+            .add_toml(
+                std::path::Path::new("synthetic.ohlw"),
+                include_str!("../tests/data/synthetic-cable.ohlw"),
+            )
+            .unwrap();
+        Mechanics::from_cable(library.get("synthetic").unwrap()).unwrap()
+    }
+
+    #[test]
+    fn nonlinear_criteria_in_each_condition() {
+        let bare = |c: f64| {
+            LoadState::bare(
+                ForcePerLength::from_newtons_per_meter(15.7),
+                Temperature::from_celsius(c),
+            )
+        };
+        let heavy = LoadState::loaded(
+            ForcePerLength::from_newtons_per_meter(15.7),
+            ForcePerLength::from_newtons_per_meter(14.3),
+            ForcePerLength::ZERO,
+            Temperature::from_celsius(-10.0),
+        );
+        let cases = NonlinearCases {
+            reference: bare(15.0),
+            creep: bare(15.0),
+            max_load: heavy,
+        };
+        let criterion = |limit, condition| NonlinearCriterion {
+            criterion: TensionCriterion {
+                label: format!("{condition}"),
+                state: bare(15.0),
+                limit,
+            },
+            condition,
+        };
+        let spans = [SpanGeometry::level(Length::from_meters(300.0))];
+        let run = |criteria: &[NonlinearCriterion]| {
+            governing_tension_nonlinear(
+                &spans,
+                &synthetic(),
+                Force::from_kilonewtons(140.0),
+                cases,
+                criteria,
+                &default_criteria_budget(),
+            )
+            .unwrap()
+        };
+        // At the reference case on the initial curve: the limit itself.
+        let limit = TensionLimit::HorizontalTension(Force::from_kilonewtons(25.0));
+        let g = run(&[criterion(limit, Condition::Initial)]);
+        assert!((g.reference_tension.kilonewtons() - 25.0).abs() < 1e-6);
+        // The same limit after creep or after load: a higher stringing
+        // tension (the final cable is longer), and every utilisation at
+        // most one with the governing at one.
+        let all = [
+            criterion(limit, Condition::Initial),
+            criterion(limit, Condition::AfterCreep),
+            criterion(limit, Condition::AfterLoad),
+        ];
+        let g = run(&all);
+        assert_eq!(g.governing, 0);
+        for c in &g.criteria {
+            assert!(c.utilisation <= 1.0 + 1e-8, "{} {}", c.label, c.utilisation);
+        }
+        let creep = run(&all[1..2]);
+        assert!(creep.reference_tension.kilonewtons() > 25.0 + 1.0);
+        assert!((creep.criteria[0].utilisation - 1.0).abs() < 1e-8);
     }
 
     #[test]

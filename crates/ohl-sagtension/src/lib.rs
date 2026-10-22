@@ -10,12 +10,15 @@
 //! - [`section`]: tension sections — ruling span and exact equal-H solution.
 //! - [`loaded`]: spans with additional point and distributed loads (segmented catenary).
 //! - [`nonlinear`]: non-linear stress-strain and creep; initial and final conditions.
+//! - [`sagging`]: sagging outputs (stopwatch, dynamometer, transit, sag corrections,
+//!   clipping offsets) from solved states.
 
 pub mod catenary;
 pub mod change_of_state;
 pub mod criteria;
 pub mod loaded;
 pub mod nonlinear;
+pub mod sagging;
 pub mod section;
 
 pub use catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};
