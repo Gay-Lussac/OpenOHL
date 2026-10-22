@@ -10,6 +10,47 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **The cross-section view is a 3D panel** (owner request of
+  2026-10-22: "For the cut with C, I would like it to be a 3D object
+  still, that I can move around in. It just has to show in 2D at first.
+  It should be a separate panel that contains only the data of the
+  cut, but everything should work the same as in 3D."). It **replaces
+  the 2D-only design of 2026-10-21** (zoom and pan, no rotation, drawn
+  with its own painter). Built, in active development (not approved
+  yet).
+  - **Unchanged:** how a cut is opened (C, the window, View menu, a
+    structure's menu, the profile's right-click), the plane's position
+    and orientation, depth ±10 m and width by default, ◀ ▶ ⏮ ⏭ , . to
+    move it, several cuts each in its own tab, the hover readouts
+    (offset, height, height above ground, distance to the nearest
+    conductor; now where the pointer's ray meets the plane).
+  - **The panel** is the 3D view of the line — the same renderer,
+    layers, weather cases, picking on every drawn copy, tools, drag
+    handles and control schemes — with a **clip box**: only what lies
+    within ± the depth and ± the width is drawn (the renderer discards
+    every fragment outside the box, so surfaces, wires and points are
+    cut exactly at its sides), culled (only the chunks and point nodes
+    meeting the box are built: a filtered chunk set, no data copied)
+    and picked. The indexes of the large layers are shared with the 3D
+    view (made once per change, not per panel).
+  - **Front view first:** orthographic (new in the renderer: the same
+    view height as the perspective view at the target, so zooming
+    works the same), looking ahead along the line, perpendicular to the
+    plane, level, 1:1, the whole width in view; "Back to the cut
+    view" and **Home** return to it; Orthographic / Perspective in the
+    panel's bar. Small axes, a scale bar and the station label are
+    drawn over it.
+  - **Moving the cut carries the camera** (its pose relative to the
+    plane; its height follows the ground at the plane, a choice made
+    here so stepping along a slope keeps the ground in view).
+  - **Exaggeration dropped** in the panel (the owner: not needed in
+    3D): heights are always 1:1. (The 2D view offered ×2–20.)
+  - **The main 3D view outlines every cut's slab** (light blue, its
+    name at a top corner); a click on an outline where nothing else is
+    picked brings the cut's panel to the front. Dragging the plane in
+    the 3D view (a gizmo) is not built.
+  - **Not yet** (follow-ups): export of the front view (SVG / PNG /
+    DXF), the swing band and the clearance circle, the gizmo.
 - **The non-linear model after the evaluation of a public-domain
   sag-tension library** (owner go-ahead of 2026-10-22 on its
   recommendations). Built, in active development (not approved yet).

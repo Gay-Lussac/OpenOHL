@@ -527,8 +527,9 @@ joined to the wire) and danger trees (an orange trunk from base to top, a
 line to the wire point it falls to) on their own layers in the 3D view
 and the plan, and in the profile within the line width; the isoclearance
 lines on their layer in the 3D view and the plan, and on the drawings'
-plan (layer OHL_ISOCLEARANCE). *Left for later:* the cross-section view
-(the application has no cross-section facility yet).
+plan (layer OHL_ISOCLEARANCE). *Left for later:* the check's points in the
+cross-section view (the application's cut panel does not show them
+yet).
 
 Since 2026-10-20 the check also keeps **every** grow-in and fall-in point
 found (with the position each was found against and a tree's base), not
