@@ -1,0 +1,25 @@
+# Example wire tension rules for the synthetic line (2026-10-22).
+# INVENTED factors for the example only — not a design code's or a
+# utility's values: take the factors from the regulation you work to.
+# The allowed tension is factor × the wire type's rated tensile strength
+# (RTS); `measure` is "max" (the tension at the span's most tensioned
+# support, the default) or "horizontal".
+#
+#   ohl tensions examples/synthetic-line/synthetic-line.ohl.json \
+#     --weather examples/synthetic-line/weather-cases.ohlwc \
+#     --rules examples/synthetic-line/tension-rules.ohlr
+format = "ohl-clearance-rules"
+version = 1
+name = "Synthetic example tension rules (invented factors)"
+checks = ["tension"]
+
+[[tension_rule]]
+name = "Iced (invented 0.45 RTS)"
+cases = ["glaze ice", "rime ice + wind"]
+factor = 0.45
+
+[[tension_rule]]
+name = "Everyday horizontal (invented 0.18 RTS)"
+cases = ["everyday"]
+factor = 0.18
+measure = "horizontal"

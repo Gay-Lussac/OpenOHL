@@ -212,6 +212,7 @@ impl Displayed {
     }
 
     /// The cases `cases` for every section and jumper.
+    #[cfg(test)]
     pub fn all(cases: &[usize]) -> Self {
         Self {
             line: cases.to_vec(),
@@ -1444,6 +1445,7 @@ impl Graph {
     /// jumpers at the structures they end at (a jumper on a tap in a span:
     /// with that span's wires). The edges' routes and alignments from
     /// `line`'s alignments `views`.
+    #[cfg(test)]
     pub fn of_wires(
         line: &ohl_line::Line,
         solutions: &[&Solved],

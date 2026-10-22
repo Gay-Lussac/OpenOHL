@@ -241,15 +241,26 @@ impl Plan {
             r.cases = self.entries(&r.cases);
             r.case_pairs = self.pairs(&r.case_pairs);
         }
+        for r in &mut set.tension_rules {
+            r.cases = self.entries(&r.cases);
+        }
     }
 
     /// A rule file's text with its rules naming the project's cases; the
     /// rest of the text (comments, order) as written.
     pub fn rules_text(&self, text: &str) -> Result<String, String> {
         let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
-        let Some(list) = doc.get_mut("rule").and_then(Item::as_array_of_tables_mut) else {
-            return Ok(text.to_owned());
-        };
+        // The clearance rules and (2026-10-22) the tension rules.
+        for key in ["rule", "tension_rule"] {
+            if let Some(list) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {
+                self.rename_tables(list);
+            }
+        }
+        Ok(doc.to_string())
+    }
+
+    /// [`Plan::rules_text`] of one array of tables.
+    fn rename_tables(&self, list: &mut toml_edit::ArrayOfTables) {
         let strings = |v: &Value| -> Option<Vec<String>> {
             v.as_array()?
                 .iter()
@@ -287,7 +298,6 @@ impl Plan {
                 }
             }
         }
-        Ok(doc.to_string())
     }
 
     /// A weather case file's text holding only the cases to create, under
@@ -377,7 +387,7 @@ impl Part {
             Part::Rules => true,
             Part::Check(PresetCheck::Vertical) => r.vertical.is_some(),
             Part::Check(PresetCheck::Radial) => r.radial.is_some(),
-            Part::Check(PresetCheck::Vegetation) => false,
+            Part::Check(PresetCheck::Vegetation | PresetCheck::Tension) => false,
         }
     }
 
@@ -420,6 +430,12 @@ impl Part {
                     .map(|c| c.name.clone())
                     .collect()
             }
+            // The tension check: the cases its tension rules name.
+            Part::Check(PresetCheck::Tension) => {
+                let named: Vec<&String> =
+                    rules.tension_rules.iter().flat_map(|r| &r.cases).collect();
+                matching(&named)
+            }
             _ => matching(&named_by(&|r| self.takes(r))),
         }
     }
@@ -430,7 +446,16 @@ impl Part {
     pub fn of_preset(self, p: &RulePresetChecked) -> Result<RulePresetChecked, String> {
         let mut doc: DocumentMut = p.rules_text.parse().map_err(|e| format!("{e}"))?;
         doc.remove("checks");
-        if self == Part::Check(PresetCheck::Vegetation) {
+        if self != Part::Rules && self != Part::Check(PresetCheck::Tension) {
+            // The tension rules are the tension check's only.
+            doc.remove("tension_rule");
+        }
+        if self == Part::Check(PresetCheck::Tension) {
+            // Its tension rules only (2026-10-22).
+            for key in ["rule", "check", "wind", "vegetation"] {
+                doc.remove(key);
+            }
+        } else if self == Part::Check(PresetCheck::Vegetation) {
             doc.remove("rule");
             doc.remove("check");
         } else {
@@ -820,6 +845,50 @@ case_pairs = [["ice by load", "Utility*"]]
             .as_ref()
             .map(|w| w.cases.iter().map(|c| c.name.clone()).collect())
             .unwrap_or_default()
+    }
+
+    /// The wire tension check (2026-10-22) takes only the tension rules of
+    /// a preset (invented factors) and the weather cases they name; the
+    /// clearance windows leave them out; the rule editor keeps them; a
+    /// preset without tension rules is not listed for it.
+    #[test]
+    fn the_tension_check_takes_only_the_tension_rules() {
+        let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"mixed\"\n\
+            checks = [\"vertical\", \"tension\"]\n\
+            [[rule]]\nname = \"ground\"\ntarget = \"ground\"\nvertical = \"7 m\"\ncases = [\"V hot\"]\n\
+            [[tension_rule]]\nname = \"iced, invented 0.4\"\ncases = [\"T ice\"]\nfactor = 0.4\n\
+            [[tension_rule]]\nname = \"everyday H, invented 0.2\"\ncases = [\"T ice\"]\nfactor = 0.2\n\
+            measure = \"horizontal\"\n"
+            .to_owned();
+        let weather = "format = \"ohl-weather-cases\"\nversion = 1\n\
+            [[case]]\nname = \"V hot\"\ntemperature = \"80 °C\"\n\
+            [[case]]\nname = \"T ice\"\ntemperature = \"-5 °C\"\nice_thickness = \"10 mm\"\n"
+            .to_owned();
+        let p = ohl_io::codes::check_rule_presets(
+            "code-t",
+            vec![ohl_plugins::RulePreset {
+                name: "mixed".into(),
+                description: "invented test values".into(),
+                rules,
+                weather_cases: weather,
+            }],
+        )
+        .unwrap()
+        .remove(0);
+        let tension = Part::Check(PresetCheck::Tension);
+        assert!(tension.lists(&p.rules));
+        let t = tension.of_preset(&p).unwrap();
+        assert!(t.rules.rules.is_empty());
+        assert_eq!(t.rules.tension_rules.len(), 2);
+        assert_eq!(t.rules.tension_rules[0].factor, 0.4);
+        assert_eq!(case_names(&t), ["T ice"]);
+        let v = Part::Check(PresetCheck::Vertical).of_preset(&p).unwrap();
+        assert_eq!(v.rules.rules.len(), 1);
+        assert!(v.rules.tension_rules.is_empty());
+        assert_eq!(case_names(&v), ["V hot"]);
+        let all = Part::Rules.of_preset(&p).unwrap();
+        assert_eq!(all.rules.tension_rules.len(), 2);
+        assert!(!tension.lists(&big_preset("").rules));
     }
 
     /// Each place takes only its part of a big combined preset: the

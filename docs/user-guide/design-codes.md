@@ -128,7 +128,8 @@ and the vegetation settings together. The previews group the rules by
 what they are to (the ground, LiDAR classes, the line's own wires, other
 lines) and give per rule the weather cases it uses. A preset's rule file
 may also say which checks it is for (`checks = ["vertical", "radial",
-"vegetation"]`) and the vegetation settings which cases they run in
+"vegetation", "tension"]`; `tension`: its `[[tension_rule]]` tables for
+the [wire tension check](desktop-app.md#wire-tensions), 2026-10-22) and the vegetation settings which cases they run in
 (`cases` under `[vegetation]`); see
 [Plugins](../development/plugins.md#presets-per-check).
 

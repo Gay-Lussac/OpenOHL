@@ -191,6 +191,49 @@ The clearance CSV holds each case's rows and then the envelope rows (`case = env
 
 Wires sharing an end point (adjacent spans, a jumper and the sections it joins) are connected and never checked against each other. Point rules are evaluated during the same LiDAR pass that collects the ground. [`examples/synthetic-line/clearance-rules.ohlr`](https://github.com/Gay-Lussac/OpenOHL/blob/main/examples/synthetic-line/clearance-rules.ohlr) and the crossing line `crossing-line.ohl.json` next to it show all wire rules on the synthetic model. Rule values come from the design code or the utility; the desktop clearance windows edit rules per LiDAR class, and design-code plugins may give rule files as clearance presets.
 
+### Wire tension rules (`[[tension_rule]]`)
+
+Since 2026-10-22 a rule file may hold **tension rules** for the wire
+tension check (Checks › [Wire tensions…](desktop-app.md#wire-tensions)
+and `ohl tensions`): optional `[[tension_rule]]` tables, beside or
+instead of the clearance rules. A file without them reads as before;
+`ohl line` and the clearance windows ignore them. A preset declares the
+check with `checks = ["tension"]` (or holds tension rules).
+
+```toml
+[[tension_rule]]
+name = "Iced (invented 0.45 RTS)"
+cases = ["glaze ice", "rime ice + wind"]   # optional; none: every case
+factor = 0.45                              # allowed = factor × RTS (> 0)
+measure = "max"                            # "max" (default) or "horizontal"
+targets = { wire_types = ["acsr-*"], systems = ["S1", "none"], circuits = ["North"] }  # optional; none: every wire
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | for the reports |
+| `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `factor` | the allowed tension as a factor of the wire type's rated tensile strength; above 0. **No factor is built in**: the example's are invented |
+| `measure` | `max`: the tension at the span's most tensioned support (default); `horizontal`: the horizontal tension |
+| `targets` | `wire_types` (ids, wildcards), `systems` (ids; `none`: the sections without a system), `circuits` (names); a wire counts when it is in every list given; none: every wire |
+
+**Without the window:**
+
+```sh
+ohl tensions examples/synthetic-line/synthetic-line.ohl.json \
+  --weather examples/synthetic-line/weather-cases.ohlwc \
+  --rules examples/synthetic-line/tension-rules.ohlr --csv tensions.csv
+```
+
+prints every span of every wire in each weather case of a rule — rule,
+case, section, span, tension, allowed, usage %, pass or FAIL — the
+largest usage first, and writes them as CSV with `--csv` (`rule, case,
+section, span, wire_type, measure, tension_n, rts_n, factor, allowed_n,
+usage_pct, status, x, y, z`, the point the most tensioned support). Exit
+status 0: every span within its allowed tension, 1: some above, 2: an
+error (a rule file without tension rules too). The example's rule file
+(`examples/synthetic-line/tension-rules.ohlr`) uses **invented** factors.
+
 ## Vertical and radial clearances without the window (`ohl zones`)
 
 `ohl zones` runs the check of the desktop

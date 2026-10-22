@@ -713,6 +713,8 @@ struct RawRules {
     checks: Vec<String>,
     #[serde(rename = "rule", default)]
     rules: Vec<RawRule>,
+    #[serde(rename = "tension_rule", default)]
+    tension_rules: Vec<crate::tension::RawTensionRule>,
 }
 
 #[derive(Deserialize)]
@@ -890,9 +892,14 @@ pub struct RuleSet {
     /// steps).
     pub vegetation: Option<VegetationPreset>,
     /// The checks a preset is for, as its file declares them (top-level
-    /// `checks = ["vertical", "radial", "vegetation"]`, optional); empty:
-    /// not declared, told from its content ([`RuleSet::is_for`]).
+    /// `checks = ["vertical", "radial", "vegetation", "tension"]`,
+    /// optional); empty: not declared, told from its content
+    /// ([`RuleSet::is_for`]).
     pub checks: Vec<PresetCheck>,
+    /// The wire tension check's rules (`[[tension_rule]]`, optional, since
+    /// 2026-10-22: [`crate::tension`]); a file without them reads as
+    /// before.
+    pub tension_rules: Vec<crate::tension::TensionRule>,
 }
 
 /// A check a rule file (a design code's preset) is for.
@@ -904,15 +911,18 @@ pub enum PresetCheck {
     Radial,
     /// The vegetation and danger-tree check (`[vegetation]`).
     Vegetation,
+    /// The wire tension check (`[[tension_rule]]`, 2026-10-22).
+    Tension,
 }
 
 impl PresetCheck {
-    /// `"vertical"`, `"radial"` or `"vegetation"`.
+    /// `"vertical"`, `"radial"`, `"vegetation"` or `"tension"`.
     pub fn as_str(self) -> &'static str {
         match self {
             PresetCheck::Vertical => "vertical",
             PresetCheck::Radial => "radial",
             PresetCheck::Vegetation => "vegetation",
+            PresetCheck::Tension => "tension",
         }
     }
 
@@ -922,8 +932,9 @@ impl PresetCheck {
             "vertical" => Ok(PresetCheck::Vertical),
             "radial" => Ok(PresetCheck::Radial),
             "vegetation" => Ok(PresetCheck::Vegetation),
+            "tension" => Ok(PresetCheck::Tension),
             other => Err(format!(
-                "checks: \"{other}\" is not vertical, radial or vegetation"
+                "checks: \"{other}\" is not vertical, radial, vegetation or tension"
             )),
         }
     }
@@ -1371,6 +1382,11 @@ impl RuleSet {
             .iter()
             .map(|c| PresetCheck::parse(c))
             .collect::<Result<Vec<_>, _>>()?;
+        let tension_rules = raw
+            .tension_rules
+            .into_iter()
+            .map(crate::tension::RawTensionRule::resolve)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: raw.name,
             rules,
@@ -1378,6 +1394,7 @@ impl RuleSet {
             check,
             vegetation,
             checks,
+            tension_rules,
         })
     }
 
@@ -1412,6 +1429,7 @@ impl RuleSet {
             check: None,
             vegetation: None,
             checks: Vec::new(),
+            tension_rules: Vec::new(),
         }
     }
 
@@ -1427,6 +1445,7 @@ impl RuleSet {
             PresetCheck::Vertical => self.rules.iter().any(|r| r.vertical.is_some()),
             PresetCheck::Radial => self.rules.iter().any(|r| r.radial.is_some()),
             PresetCheck::Vegetation => self.vegetation.is_some(),
+            PresetCheck::Tension => !self.tension_rules.is_empty(),
         }
     }
 
@@ -1487,6 +1506,9 @@ impl RuleSet {
             t.push_str(&v.to_toml());
         }
         for r in &self.rules {
+            t.push_str(&r.to_toml());
+        }
+        for r in &self.tension_rules {
             t.push_str(&r.to_toml());
         }
         t

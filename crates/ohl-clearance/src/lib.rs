@@ -43,6 +43,7 @@ pub mod phase_distance;
 pub mod positions;
 pub mod rules;
 pub mod safety_volume;
+pub mod tension;
 pub mod vegetation;
 pub mod wirefit;
 pub mod zone;

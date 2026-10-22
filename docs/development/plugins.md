@@ -354,12 +354,14 @@ with its own cases) plus a `[vegetation]` table.
 - **Which places list it**: the vegetation panel those with a
   `[vegetation]` table; the Vertical clearances window those with a rule
   with a vertical distance; the Radial window those with a radial one;
-  the rule editor every preset. A rule file may **declare** its checks
+  the Wire tensions window (2026-10-22) those with `[[tension_rule]]`
+  tables, taking only those and the weather cases they name; the rule
+  editor every preset. A rule file may **declare** its checks
   instead, at the top level (optional, additive; files without it are
   classified by content as above):
 
   ```toml
-  checks = ["vertical", "radial", "vegetation"]
+  checks = ["vertical", "radial", "vegetation", "tension"]
   ```
 
   (`ohl_clearance::rules::PresetCheck`, `RuleSet::checks`,

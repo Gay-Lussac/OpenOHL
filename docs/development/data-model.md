@@ -888,6 +888,24 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   jumper). The radial ground clearance is the samples' shortest
   distance lowered by `checks::sampled_floor`. Until 2026-10 every
   clearance was to the axis, without these.
+- **Tension rules** (2026-10-22, additive): a rule file (`.ohlr`) may
+  hold optional `[[tension_rule]]` tables — `name`, `cases` (patterns;
+  none: every case), `factor` (> 0: the allowed tension is factor × the
+  wire type's RTS), `measure` (`max`, the default: the tension at the
+  span's most tensioned support, `SpanShape::max_tension`; or
+  `horizontal`), `targets` (`{ wire_types, systems, circuits }`, each
+  optional; none: every wire) — read as `RuleSet::tension_rules`
+  (`ohl_clearance::tension::TensionRule`), written back by
+  `RuleSet::to_toml`; files without them read unchanged. `checks` may
+  name `"tension"` (`PresetCheck::Tension`). The check
+  (`tension::check`) gives `TensionReport` rows (rule, case, section,
+  span, wire type, tension, RTS, allowed, usage, the marked point), its
+  CSV `rule, case, section, span, wire_type, measure, tension_n, rts_n,
+  factor, allowed_n, usage_pct, status, x, y, z`. The app keeps the
+  window's rules in `<model>.tension-rules.ohlr` among the project's
+  clearance rules. Since 2026-10-22 too, a span above its wire's RTS
+  adds a warning to `SectionShape::flags` (`solve::rts_flags`,
+  `solve::above_rts`).
 - **Requirements** (`ohl_clearance::rules::Requirement`): `vertical` /
   `radial` are a distance (`"7 m"`, `Fixed`), a table
   (`{ by_voltage = [[up to kV, "m"], …] }`, `ByVoltage`: voltages ≥ 0
