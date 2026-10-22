@@ -6,14 +6,17 @@
 //! moved with the mouse and the keyboard as the chosen control scheme
 //! says ([`Controls`]), and picking.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use eframe::egui;
 use eframe::egui_wgpu;
 use ohl_core::grid::Tile;
 use ohl_pointcloud::octree::NodeCache;
 use ohl_render::lod::{ChunkSet, Frustum};
-use ohl_render::{Camera, GpuScene, Renderer};
+use ohl_render::{Camera, Clip, GpuScene, Renderer};
 
 use crate::controls::{Controls, Drag};
 use crate::model::Model;
@@ -43,7 +46,7 @@ pub struct View3d {
     /// under the point budget.
     points: Option<Streamed>,
     /// Layers to rebuild before the next frame.
-    pub dirty: HashSet<Layer>,
+    pub dirty: Dirty,
     texture: Option<egui::TextureId>,
     /// The mouse is captured (first person).
     pub captured: bool,
@@ -103,11 +106,136 @@ pub struct View3d {
     /// changes (a frame for another panel, the mouse moved elsewhere,
     /// shows the same image).
     image_key: Option<u64>,
+    /// Only what lies in this box is drawn, culled and picked (a cut's
+    /// panel, [`crate::xsection`]); none: everything.
+    pub clip: Option<Clip>,
+    /// The chunk indexes, shared by the views of one line (the main view
+    /// and the cuts' panels index a layer once).
+    pub indexes: SharedIndexes,
+    /// The slabs of the cuts open, outlined (the main view): set by the
+    /// application each frame.
+    pub cut_outlines: Vec<CutOutline>,
+    /// The cut whose outline the last click picked; taken by the app
+    /// (its panel comes to the front).
+    pub picked_cut: Option<u32>,
+}
+
+/// A cut's slab outlined in the main 3D view: its tab's number, its
+/// box's eight corners (the four of [`Clip::corners`] at the bottom, then
+/// at the top), its label.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CutOutline {
+    /// The cut's tab number.
+    pub id: u32,
+    /// The box's corners: bottom four, then top four.
+    pub corners: [[f64; 3]; 8],
+    /// Its label ("Cut T3").
+    pub label: String,
+}
+
+impl CutOutline {
+    /// The box's twelve edges.
+    pub fn edges(&self) -> impl Iterator<Item = ([f64; 3], [f64; 3])> + '_ {
+        let c = &self.corners;
+        (0..4).flat_map(move |k| {
+            let n = (k + 1) % 4;
+            [(c[k], c[n]), (c[4 + k], c[4 + n]), (c[k], c[4 + k])]
+        })
+    }
+}
+
+/// Chunk indexes shared by views: by layer, the index, the weather case
+/// and the layer's change count it was made for ([`Dirty`]).
+pub type SharedIndexes = Rc<RefCell<HashMap<Layer, (u64, usize, Arc<crate::chunks::ChunkIndex>)>>>;
+
+thread_local! {
+    /// How often each layer was marked for rebuilding (this thread's
+    /// views): an index made at one count is current until the next.
+    static CHANGES: RefCell<HashMap<Layer, u64>> = RefCell::new(HashMap::new());
+}
+
+/// How often `layer` was marked for rebuilding.
+fn changes(layer: Layer) -> u64 {
+    CHANGES.with(|c| c.borrow().get(&layer).copied().unwrap_or(0))
+}
+
+/// The layers a view rebuilds before its next frame. Every layer marked
+/// is also noted in a log the application hands on to the cuts' panels
+/// ([`Dirty::take_log`], [`Dirty::receive`]).
+#[derive(Debug, Default, Clone)]
+pub struct Dirty {
+    set: HashSet<Layer>,
+    log: HashSet<Layer>,
+}
+
+impl Dirty {
+    /// Marks `layer` (its content changed): rebuilt before the next frame.
+    pub fn insert(&mut self, layer: Layer) -> bool {
+        CHANGES.with(|c| *c.borrow_mut().entry(layer).or_default() += 1);
+        self.log.insert(layer);
+        self.set.insert(layer)
+    }
+
+    /// Marks every layer of `layers`.
+    pub fn extend(&mut self, layers: impl IntoIterator<Item = Layer>) {
+        for l in layers {
+            self.insert(l);
+        }
+    }
+
+    /// Marks `layers` handed on from another view (no new change).
+    pub fn receive(&mut self, layers: impl IntoIterator<Item = Layer>) {
+        self.set.extend(layers);
+    }
+
+    /// The layers marked since the last call (to hand on).
+    pub fn take_log(&mut self) -> HashSet<Layer> {
+        std::mem::take(&mut self.log)
+    }
+
+    /// Whether `layer` is marked.
+    #[cfg(test)]
+    pub fn contains(&self, layer: &Layer) -> bool {
+        self.set.contains(layer)
+    }
+
+    /// Whether nothing is marked.
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
+    }
+
+    /// Unmarks every layer.
+    #[cfg(test)]
+    pub fn clear(&mut self) {
+        self.set.clear();
+    }
+
+    /// The layers marked, unmarked.
+    pub fn drain(&mut self) -> impl Iterator<Item = Layer> + '_ {
+        self.set.drain()
+    }
+}
+
+/// `camera`'s projector for a view of `size` that shows only what lies in
+/// `clip`: points outside it are not projected (not picked, not
+/// labelled).
+pub fn clipped_projector(
+    camera: &Camera,
+    size: [f64; 2],
+    clip: Option<Clip>,
+) -> impl Fn([f64; 3]) -> Option<([f64; 2], f64)> {
+    let project = camera.projector(size);
+    move |p| {
+        if clip.is_some_and(|c| !c.contains(p)) {
+            return None;
+        }
+        project(p)
+    }
 }
 
 /// A layer drawn in chunks.
 struct Chunked {
-    index: crate::chunks::ChunkIndex,
+    index: Arc<crate::chunks::ChunkIndex>,
     set: ChunkSet<Tile>,
     /// Its member and pole solids, by chunk, drawn within the solids
     /// distance ([`crate::lod::LodSettings::solids`]): level 0 only.
@@ -138,6 +266,22 @@ struct Node {
     gpu: GpuScene,
     points: crate::octree::NodePoints,
 }
+
+/// The distance from `p` to segment `a`–`b` (points).
+fn to_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+    let ab = b - a;
+    let len2 = ab.length_sq();
+    let t = if len2 > 0.0 {
+        ((p - a).dot(ab) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    p.distance(a + t * ab)
+}
+
+/// Points along each edge of a cut's outline (long edges are drawn
+/// between their points in front of the eye).
+const OUTLINE_SAMPLES: u32 = 24;
 
 /// Time for building chunks in one frame (the nearest first; the rest in
 /// the next frames).
@@ -289,7 +433,7 @@ impl View3d {
         at: [f64; 2],
         radius: f64,
     ) -> (Selection, Option<usize>) {
-        let project = camera.projector(size);
+        let project = clipped_projector(camera, size, self.clip);
         let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
         selection::pick_shown(model, case, snaps, at, radius, &project, &lidar)
     }
@@ -542,6 +686,101 @@ impl View3d {
         self.dirty.extend(Layer::ALL);
     }
 
+    /// The point cloud streamed by node read again (its classes or
+    /// colours changed in another view), without marking a change.
+    pub fn forget_stream(&mut self) {
+        self.points = None;
+    }
+
+    /// Sets the camera (kept: not fitted to the line again).
+    pub fn set_camera(&mut self, camera: Camera) {
+        self.camera = Some(camera);
+        self.fitted_on_line = true;
+    }
+
+    /// The index of chunked `layer` in `case`: the shared one when made
+    /// since the layer last changed, else made now (and shared).
+    fn index(
+        indexes: &SharedIndexes,
+        model: &Model,
+        layer: Layer,
+        case: usize,
+    ) -> Arc<crate::chunks::ChunkIndex> {
+        let now = changes(layer);
+        if let Some((n, c, index)) = indexes.borrow().get(&layer)
+            && *n == now
+            && *c == case
+        {
+            return index.clone();
+        }
+        let index = Arc::new(crate::chunks::ChunkIndex::new(model, layer, case));
+        indexes
+            .borrow_mut()
+            .insert(layer, (now, case, index.clone()));
+        index
+    }
+
+    /// Draws the outlines of the cuts' slabs (main view): thin, dashed at
+    /// the top, the label at a top corner.
+    fn paint_outlines(
+        outlines: &[CutOutline],
+        painter: &egui::Painter,
+        screen: impl Fn([f64; 3]) -> Option<egui::Pos2>,
+    ) {
+        let col = egui::Color32::from_rgb(120, 200, 255);
+        for o in outlines {
+            for (a, b) in o.edges() {
+                let pts: Vec<egui::Pos2> = (0..=OUTLINE_SAMPLES)
+                    .filter_map(|n| {
+                        let t = f64::from(n) / f64::from(OUTLINE_SAMPLES);
+                        screen([0, 1, 2].map(|k| a[k] + t * (b[k] - a[k])))
+                    })
+                    .collect();
+                if pts.len() > 1 {
+                    painter.add(egui::Shape::line(pts, egui::Stroke::new(1.5, col)));
+                }
+            }
+            if let Some(p) = screen(o.corners[4]) {
+                painter.text(
+                    p + egui::vec2(4.0, -4.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    &o.label,
+                    egui::FontId::proportional(12.0),
+                    col,
+                );
+            }
+        }
+    }
+
+    /// The cut whose outline passes within `radius` points of `at`.
+    fn outline_at(
+        outlines: &[CutOutline],
+        at: [f64; 2],
+        radius: f64,
+        project: impl Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    ) -> Option<u32> {
+        let at = egui::pos2(at[0] as f32, at[1] as f32);
+        let mut best: Option<(f32, u32)> = None;
+        for o in outlines {
+            for (a, b) in o.edges() {
+                let pts: Vec<egui::Pos2> = (0..=OUTLINE_SAMPLES)
+                    .filter_map(|n| {
+                        let t = f64::from(n) / f64::from(OUTLINE_SAMPLES);
+                        project([0, 1, 2].map(|k| a[k] + t * (b[k] - a[k])))
+                            .map(|(q, _)| egui::pos2(q[0] as f32, q[1] as f32))
+                    })
+                    .collect();
+                for w in pts.windows(2) {
+                    let d = to_segment(at, w[0], w[1]);
+                    if d <= radius as f32 && best.is_none_or(|b| d < b.0) {
+                        best = Some((d, o.id));
+                    }
+                }
+            }
+        }
+        best.map(|b| b.1)
+    }
+
     /// Shows the view.
     #[allow(clippy::too_many_arguments)]
     pub fn ui(
@@ -568,7 +807,11 @@ impl View3d {
         self.rect = Some(rect);
         self.drawn = true;
         // The first structures of a line that had none: fitted to them.
-        if self.camera.is_some() && !self.fitted_on_line && !model.line.structures.is_empty() {
+        if self.camera.is_some()
+            && !self.fitted_on_line
+            && self.clip.is_none()
+            && !model.line.structures.is_empty()
+        {
             self.camera = None;
         }
         let fitted_on_line = &mut self.fitted_on_line;
@@ -617,8 +860,9 @@ impl View3d {
             (Some(t), false) => crate::handles::spots(model, &t.structure),
             _ => Vec::new(),
         };
+        let clip = self.clip;
         let still = *camera;
-        let project_handle = still.projector(size);
+        let project_handle = clipped_projector(&still, size, clip);
         let on_handle = |at: [f64; 2], skip: Option<&ohl_structure_edit::Handle>| {
             spots
                 .iter()
@@ -926,7 +1170,7 @@ impl View3d {
         // The Link tool: the joint under the pointer (the crosshair in
         // first person); the tool click on one links the point there.
         if let Some(link) = self.link.as_mut() {
-            let project = camera.projector(size);
+            let project = clipped_projector(camera, size, clip);
             let at = if self.captured {
                 Some(centre)
             } else {
@@ -950,7 +1194,7 @@ impl View3d {
         let lidar = Self::lidar_shown(&self.points, &self.chunks, model, visible);
         if let Some(area) = area_done {
             let started = std::time::Instant::now();
-            let project = camera.projector(size);
+            let project = clipped_projector(camera, size, clip);
             let (points, total) = selection::lidar_in_area(
                 model,
                 &lidar,
@@ -964,11 +1208,13 @@ impl View3d {
             self.area_picked = Some((points, total, took));
         }
         let used = use_at.map(|at| {
-            let project = camera.projector(size);
+            let project = clipped_projector(camera, size, clip);
             let target = selection::pick_shown(model, case, snaps, at, radius, &project, &lidar).0;
+            // In a cut's panel: only ground within its slab.
             let ground = camera
                 .ray(at, size)
-                .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]));
+                .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]))
+                .filter(|p| clip.is_none_or(|c| c.contains(*p)));
             log::info!(
                 "3D view: tool click (mouse captured: {}) on {}",
                 self.captured,
@@ -983,10 +1229,14 @@ impl View3d {
         });
         if let Some((at, double)) = pick_at {
             let cam = *camera;
-            let project = cam.projector(size);
+            let project = clipped_projector(&cam, size, clip);
             let started = std::time::Instant::now();
             let (picked, picked_case) =
                 selection::pick_shown(model, case, snaps, at, radius, &project, &lidar);
+            // Nothing there but a cut's outline: its panel comes forward.
+            if picked == Selection::None {
+                self.picked_cut = Self::outline_at(&self.cut_outlines, at, radius, &project);
+            }
             self.picked_case = Some(picked_case);
             self.picked_member = match &picked {
                 Selection::Structure(id) => {
@@ -1046,7 +1296,7 @@ impl View3d {
             }
             if crate::lod::CHUNKED.contains(&layer) {
                 // Indexed now, built by chunk as the view needs them.
-                let index = crate::chunks::ChunkIndex::new(model, layer, case);
+                let index = Self::index(&self.indexes, model, layer, case);
                 let mut set = ChunkSet::default();
                 set.reset(index.keys());
                 let mut near = ChunkSet::default();
@@ -1085,7 +1335,7 @@ impl View3d {
         // nearest first within the frame's budget.
         let planning = crate::perf::span("3d chunk plan");
         let aspect = f64::from(rect.width()) / f64::from(rect.height().max(1.0));
-        let frustum = Frustum::new(camera, aspect);
+        let frustum = Frustum::new(camera, aspect).clipped(clip);
         let mut wanted = Vec::new();
         for layer in crate::lod::CHUNKED {
             let Some(c) = self.chunks.get_mut(&layer) else {
@@ -1176,6 +1426,7 @@ impl View3d {
         drop(streaming);
         let rendering = crate::perf::span("3d render");
         let renderer = self.renderer.get_or_insert_with(|| Renderer::new(device));
+        renderer.set_clip(clip);
         let ppp = ui.ctx().pixels_per_point();
         let px = [
             (rect.width() * ppp).round().max(1.0) as u32,
@@ -1212,7 +1463,19 @@ impl View3d {
             ]
             .map(f64::to_bits)
             .hash(&mut h);
-            (px, self.generation).hash(&mut h);
+            (px, self.generation, c.ortho).hash(&mut h);
+            clip.map(|c| {
+                [
+                    c.origin[0],
+                    c.origin[1],
+                    c.ahead[0],
+                    c.ahead[1],
+                    c.depth,
+                    c.width,
+                ]
+                .map(f64::to_bits)
+            })
+            .hash(&mut h);
             for g in &layers {
                 (std::ptr::from_ref::<GpuScene>(*g) as usize, g.counts()).hash(&mut h);
             }
@@ -1272,7 +1535,7 @@ impl View3d {
         let labels = crate::perf::span("3d labels");
         // Section labels and sags, structures' names and the other
         // labels (Sections and Structures › Display options).
-        let project = camera.projector(size);
+        let project = clipped_projector(camera, size, clip);
         let screen =
             |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));
         let eye = camera.eye();
@@ -1335,9 +1598,16 @@ impl View3d {
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
+        // The cuts' slabs (outlined in the main view).
+        if !self.cut_outlines.is_empty() {
+            let whole = camera.projector(size);
+            Self::paint_outlines(&self.cut_outlines, &painter, |p| {
+                whole(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32))
+            });
+        }
         // Label of the selection.
         if let Some(f) = selection.focus(model, case)
-            && let Some((q, _)) = camera.project(f, size)
+            && let Some((q, _)) = project(f)
         {
             painter.text(
                 rect.min + egui::vec2(q[0] as f32 + 10.0, q[1] as f32 - 10.0),

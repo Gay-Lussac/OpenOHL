@@ -1328,6 +1328,10 @@ impl TabViewer for Viewer<'_> {
                 if let Some(joint) = r.view3d.link.as_mut().and_then(|l| l.clicked.take()) {
                     r.link_to_joint(&joint);
                 }
+                // A cut's outline clicked: its panel in front.
+                if let Some(id) = r.view3d.picked_cut.take() {
+                    r.open_page = Some((Tab::CrossSection(id), None));
+                }
                 used
             }
             Tab::Plan => r.plan.ui(
@@ -1364,25 +1368,47 @@ impl TabViewer for Viewer<'_> {
                     })
             }
             Tab::CrossSection(id) => {
-                // The lines on the ground beside the line, as the profile
-                // draws them (their layer ticked).
-                let ground_lines = r.profile.ground_lines.clone();
-                r.xsections
-                    .ui(
-                        *id,
-                        ui,
-                        &r.model,
-                        r.case,
-                        &mut r.selection,
-                        &snaps,
-                        buttons,
-                        ground_lines.as_deref(),
-                    )
-                    .map(|target| crate::selection::Use {
-                        target,
-                        at: None,
-                        on: None,
-                    })
+                // A 3D view of the slab: the main view's layers, controls
+                // and tools.
+                let link = r.link_overlay();
+                let used = r.xsections.ui(
+                    *id,
+                    ui,
+                    crate::xsection::PanelCtx {
+                        rs: self.rs,
+                        model: &r.model,
+                        case: r.case,
+                        selection: &mut r.selection,
+                        visible: &r.visible,
+                        snaps: &snaps,
+                        lod: self.lod,
+                        select_held,
+                        main: &mut r.view3d,
+                        link,
+                    },
+                );
+                // What its view did, as the main view's.
+                if let Some(v) = r.xsections.views.get_mut(id) {
+                    let view = &mut v.view;
+                    if let Some(c) = view.picked_case.take() {
+                        r.view3d.picked_case = Some(c);
+                    }
+                    if let Some(m) = view.picked_member.take() {
+                        r.view3d.picked_member = Some(m);
+                    }
+                    if let Some(a) = view.area_picked.take() {
+                        r.view3d.area_picked = Some(a);
+                    }
+                    let done = view.handles.done.take();
+                    let joint = view.link.as_mut().and_then(|l| l.clicked.take());
+                    if let Some(done) = done {
+                        r.handle_done(done);
+                    }
+                    if let Some(joint) = joint {
+                        r.link_to_joint(&joint);
+                    }
+                }
+                used
             }
             Tab::Properties => {
                 let editable = r.model.can_edit().is_ok();
@@ -4543,6 +4569,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         if r.view3d.captured {
             crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
         }
+        r.xsections.free_mouse(ctx);
         if !r.chain.is_empty() {
             r.cancel_string_wire();
         }
@@ -4551,9 +4578,12 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.menu_open = menu;
-    if std::mem::take(&mut r.release_mouse) && r.view3d.captured {
-        log::info!("a page opened from the 3D view: the mouse is freed");
-        crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+    if std::mem::take(&mut r.release_mouse) {
+        if r.view3d.captured {
+            log::info!("a page opened from the 3D view: the mouse is freed");
+            crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+        }
+        r.xsections.free_mouse(ctx);
     }
     r.popup_fresh = r.popup_opened == Some(ctx.cumulative_frame_nr());
     let open = r.goto.is_some()
@@ -4588,6 +4618,7 @@ fn popups(ctx: &egui::Context, r: &mut Ready) {
         if r.view3d.captured {
             crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
         }
+        r.xsections.free_mouse(ctx);
     }
     r.popup_open = open;
 }
@@ -4689,10 +4720,18 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
     // is taken: a second Escape frees the mouse). (The section window
     // opened by Enter: [`editor_window`].)
     // A handle being dragged in the 3D view: Escape gives the drag up.
-    if r.view3d.handles.drag.is_some()
+    let cut_drag = r
+        .xsections
+        .views
+        .values()
+        .any(|v| v.view.handles.drag.is_some());
+    if (r.view3d.handles.drag.is_some() || cut_drag)
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         r.view3d.handles.cancel();
+        for v in r.xsections.views.values_mut() {
+            v.view.handles.cancel();
+        }
         r.status = Some(("drag cancelled: nothing changed".into(), false));
     }
     let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
@@ -4820,6 +4859,9 @@ fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
             r.inventory = !r.inventory;
             if r.inventory && r.view3d.captured {
                 crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
+            }
+            if r.inventory {
+                r.xsections.free_mouse(ctx);
             }
         }
         if let Some(k) = slot {
@@ -5034,9 +5076,17 @@ fn tool_windows(ctx: &egui::Context, r: &mut Ready, rs: Option<&eframe::egui_wgp
     let shown = r.view3d.drawn;
     r.view3d.drawn = false;
     r.plan.drawn = None;
-    if shown || r.inventory {
-        let at = match (shown, r.view3d.rect) {
-            (true, Some(v)) => v.center_bottom(),
+    // Else at the bottom of a cut's panel shown.
+    let mut cut_rect = None;
+    for v in r.xsections.views.values_mut() {
+        if std::mem::take(&mut v.view.drawn) && cut_rect.is_none() {
+            cut_rect = v.view.rect;
+        }
+    }
+    if shown || cut_rect.is_some() || r.inventory {
+        let at = match (shown, r.view3d.rect, cut_rect) {
+            (true, Some(v), _) => v.center_bottom(),
+            (false, _, Some(c)) => c.center_bottom(),
             _ => ctx.content_rect().center_bottom(),
         };
         crate::tools::hotbar_ui(
@@ -5393,12 +5443,19 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     controls_grid(ui, "controls-profile", &rows);
                 }
                 ControlsPage::CrossSection => {
-                    let mut rows = vec![
-                        row("drag (any button)", "pan (across and up and down)"),
-                        row("scroll", "zoom at the pointer"),
-                    ];
+                    let mut rows = vec![row(
+                        "drags, scroll, keys",
+                        "as in the 3D view (its control scheme: the 3D page)",
+                    )];
                     rows.extend(clicks);
-                    rows.push(row(select_double, "fit the whole width"));
+                    rows.push(row(
+                        "Home, Back to the cut view",
+                        "the front view: looking ahead, orthographic, 1:1",
+                    ));
+                    rows.push(row(
+                        "Orthographic / Perspective",
+                        "the projection (it opens orthographic)",
+                    ));
                     rows.push(row(
                         ", (comma)",
                         "move the cut one step back along the line",
@@ -5406,7 +5463,10 @@ fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     rows.push(row(". (full stop)", "move the cut one step ahead"));
                     rows.push(row("⏮ ⏭", "move the cut to the structure before / after"));
                     rows.push(row("C", "another cut (a window)"));
-                    rows.push(row("—", "no rotation: the view always looks ahead"));
+                    rows.push(row(
+                        "click its outline in the 3D view",
+                        "its panel to the front",
+                    ));
                     controls_grid(ui, "controls-xsection", &rows);
                 }
             }
@@ -7813,7 +7873,7 @@ fn menus(
         if ui
             .button("Cross-section… (C)")
             .on_hover_text(
-                "A 2D cut across the line at a station or a structure, in a tab of its own",
+                "A cut across the line at a station or a structure: a 3D panel of its own, holding only the slab",
             )
             .clicked()
         {
@@ -8341,6 +8401,7 @@ fn run_command(
             if r.view3d.captured {
                 crate::view3d::View3d::set_captured(&mut r.view3d.captured, ctx, false);
             }
+            r.xsections.free_mouse(ctx);
         }
         Command::RunChecks => {
             r.clearances.stale = true;
@@ -8985,6 +9046,10 @@ impl eframe::App for App {
                 let dock = &self.dock;
                 ready.view3d.handles.target = ready.handle_target(|t| dock.find_tab(t).is_some());
                 ready.ground_lines_frame(Some(&ctx));
+                // The cuts' panels: what the main view rebuilds, rebuilt;
+                // their slabs outlined in the main view.
+                ready.xsections.hand_on(&mut ready.view3d);
+                ready.view3d.cut_outlines = ready.xsections.outlines();
                 let _dock = crate::perf::span("dock");
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE)
@@ -9006,6 +9071,11 @@ impl eframe::App for App {
                     });
                 for (tab, place) in std::mem::take(&mut ready.dock_moves) {
                     move_page(&mut self.dock, tab, place);
+                }
+                // Changes made while the pages were drawn: the cuts' panels
+                // follow in the next frame.
+                if ready.xsections.hand_on(&mut ready.view3d) {
+                    ctx.request_repaint();
                 }
             }
         }
