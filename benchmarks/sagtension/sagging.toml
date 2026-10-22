@@ -1,0 +1,140 @@
+# Sagging outputs (2026-10-22): post-processing of the solved section, no
+# engine change. Linear wire of reference_change_of_state.py: EA = 34.64 MN,
+# alpha = 18.9e-6 /K, own weight 15.97 N/m (conserved, owner decision
+# 2026-10-21); strung at H = 28 kN at 15 °C; sagged at 15 °C (the stringing
+# state itself).
+#
+# Expected values: benchmarks/sagtension/reference_sagging.py (the section by
+# numerical integrals and a secant root; the stopwatch by Gauss-Legendre in
+# the arc parameter, the transit by Newton, the sag per kelvin by its own
+# central difference). Hand derivations below each case. Tolerance 1e-7
+# relative, 1e-7 m on the small differences (corrections, offsets).
+
+# sag-001, by hand (level 300 m):
+#   the span carries q = 15.97 / k with k = 1 + Tmean/EA = 1.000809:
+#   q = 15.9571 N/m, C = H/q = 1754.7 m;
+#   sag D = C (cosh(S/2C) - 1) = 6.4152 m (parabola qS²/8H = 6.4113 m).
+#   Stopwatch, 3 waves: the field formula t = 2n sqrt(8D/g) = 13.7258 s;
+#   exact 13.7301 s (+0.03 %: the wave runs faster where the tension is
+#   higher). The public-domain library's form, 2nL / sqrt(gH/q) with the
+#   arc length and H throughout, gives 13.738 s (+0.06 %).
+#   Dynamometer: T = H + q y above the low point: 28000 + 15.9571 x 6.4152
+#   = 28102.37 N at both ends.
+#   Transit 3 m below the left support, target at the right one (parabola):
+#   sqrt(a) + sqrt(b) = 2 sqrt(D) gives b = (2 x 2.53283 - 1.73205)² =
+#   11.1130 m (exact 11.1140 m); tangent at x = S sqrt(a/4D) = 102.58 m
+#   (102.547 m); slope 8Dx/S² - 4D/S = -0.027042, -1.5492°.
+#   Sag per kelvin (parabola, linear wire): from L = S + 8D²/3S and
+#   dL = S (alpha dt + dT/EA), T ~ qS²/8D:
+#   dD/dt = S alpha / (16D/3S + qS³/(8D² EA)) = 0.00567 / (0.114048 +
+#   0.037779) = 0.037345 m/K (exact 0.037429, -0.2 %).
+[[case]]
+id = "sag-001"
+title = "Sagging, level 300 m at 28 kN: stopwatch (3 waves), dynamometer, transit 3 m below, sag per kelvin"
+calculation = "sagtension.sagging"
+reference = "Independent numerics (benchmarks/sagtension/reference_sagging.py) + hand derivations (notes)"
+max_seconds = 2.0
+expected.h_n = { value = 28000, rel_tol = 1e-9 }
+expected.sag_0_m = { value = 6.415234396, rel_tol = 1e-7 }
+expected.level_sag_0_m = { value = 6.415234396, rel_tol = 1e-7 }
+expected.inclined_correction_0_m = { value = 0.0, abs_tol = 1e-7 }
+expected.sag_per_k_0_m = { value = 0.03742939632, rel_tol = 1e-6 }
+expected.stopwatch_0_s = { value = 13.73011848, rel_tol = 1e-7 }
+expected.dyno_left_0_n = { value = 28102.36845, rel_tol = 1e-7 }
+expected.dyno_right_0_n = { value = 28102.36845, rel_tol = 1e-7 }
+expected.transit_angle_deg = { value = -1.549281355, rel_tol = 1e-7 }
+expected.transit_tangent_x_m = { value = 102.5468508, rel_tol = 1e-7 }
+expected.transit_target_m = { value = -11.11399586, rel_tol = 1e-7 }
+
+[case.inputs]
+spans = [{ span = "300 m", rise = "0 m" }]
+axial_stiffness = "34640 kN"
+thermal_expansion = 18.9e-6
+known_load = "15.97 N/m"
+known_temperature = "15 °C"
+known_tension = "28 kN"
+waves = 3
+transit = { span = 1, instrument_x = "0 m", instrument_z = "-3 m", target_x = "300 m" }
+
+# sag-002, by hand (300 m, +50 m):
+#   Dynamometer: the ends differ by q h exactly: 28887.98957 - 28090.14419
+#   = 797.845 N = 50 m x 15.9569 N/m (the load per stretched metre).
+#   Inclined correction (sag where the wire is parallel to the chord minus
+#   the level-span sag of the same S, H, q): about D_level (1/cos theta - 1)
+#   = 6.41516 x (1 / 0.986394 - 1) = 0.08849 m (exact 0.08831 m).
+#   Transit 3 m below the left support, target on the right one: the
+#   parabola's sqrt(a) + sqrt(b) = 2 sqrt(D) with D = 6.50347 m gives
+#   b = 11.3456 m, the target at 50 - 11.3456 = 38.654 m (exact 38.679 m).
+[[case]]
+id = "sag-002"
+title = "Sagging, inclined 300 m +50 m at 28 kN: dynamometer at both ends, inclined-span correction, transit"
+calculation = "sagtension.sagging"
+reference = "Independent numerics (benchmarks/sagtension/reference_sagging.py) + hand derivations (notes)"
+max_seconds = 2.0
+expected.sag_0_m = { value = 6.503473592, rel_tol = 1e-7 }
+expected.level_sag_0_m = { value = 6.41516258, rel_tol = 1e-7 }
+expected.inclined_correction_0_m = { value = 0.0883110118, abs_tol = 1e-7 }
+expected.sag_per_k_0_m = { value = 0.03859223949, rel_tol = 1e-6 }
+expected.stopwatch_0_s = { value = 4.608023741, rel_tol = 1e-7 }
+expected.dyno_left_0_n = { value = 28090.14419, rel_tol = 1e-7 }
+expected.dyno_right_0_n = { value = 28887.98957, rel_tol = 1e-7 }
+expected.transit_angle_deg = { value = 7.909480156, rel_tol = 1e-7 }
+expected.transit_tangent_x_m = { value = 102.2407994, rel_tol = 1e-7 }
+expected.transit_target_m = { value = 38.67903496, rel_tol = 1e-7 }
+
+[case.inputs]
+spans = [{ span = "300 m", rise = "50 m" }]
+axial_stiffness = "34640 kN"
+thermal_expansion = 18.9e-6
+known_load = "15.97 N/m"
+known_temperature = "15 °C"
+known_tension = "28 kN"
+transit = { span = 1, instrument_x = "0 m", instrument_z = "-3 m", target_x = "300 m" }
+
+# sag-003, a section 200 m (+30 m), 350 m (-10 m), 250 m (+20 m), sagged in
+# the blocks at 15 °C and clipped in at 35 °C. In the engine's
+# in-the-blocks model (one H through the section) the cable rolls between
+# the two temperatures: each span's share of the unstressed length changes
+# with its length (a long span takes more slack as H falls, about
+# q²S³ dH / 12H³ per span). Clipped at 35 °C, the clamp points are where
+# the 15 °C shares put them: offsets 0.0307 m at the first suspension
+# structure (into the 350 m span), -0.0180 m at the second, and zero at the
+# far dead-end by construction (the shares add up to the section's length:
+# hand check). Clipped at the sagging temperature the offsets are zero (the
+# engine's model). Sheave friction and the equal support tension across
+# sheaves are not modelled (decision log 2026-10-22).
+[[case]]
+id = "sag-003"
+title = "Sagging, section 200/350/250 m inclined: sags, corrections, sag per kelvin, clipping offsets (sagged at 15 °C, clipped at 35 °C)"
+calculation = "sagtension.sagging"
+reference = "Independent numerics (benchmarks/sagtension/reference_sagging.py) + hand checks (notes)"
+max_seconds = 2.0
+expected.h_n = { value = 28000, rel_tol = 1e-9 }
+expected.sag_0_m = { value = 2.882084775, rel_tol = 1e-7 }
+expected.sag_1_m = { value = 8.73731515, rel_tol = 1e-7 }
+expected.sag_2_m = { value = 4.46839555, rel_tol = 1e-7 }
+expected.inclined_correction_0_m = { value = 0.03185809393, abs_tol = 1e-7 }
+expected.inclined_correction_1_m = { value = 0.003554245279, abs_tol = 1e-7 }
+expected.inclined_correction_2_m = { value = 0.01421064875, abs_tol = 1e-7 }
+expected.sag_per_k_0_m = { value = 0.01788820932, rel_tol = 1e-6 }
+expected.sag_per_k_1_m = { value = 0.05429074531, rel_tol = 1e-6 }
+expected.sag_per_k_2_m = { value = 0.02774250471, rel_tol = 1e-6 }
+expected.stopwatch_1_s = { value = 5.341745836, rel_tol = 1e-7 }
+expected.dyno_left_1_n = { value = 28230.59578, rel_tol = 1e-7 }
+expected.dyno_right_1_n = { value = 28071.02503, rel_tol = 1e-7 }
+expected.clip_offset_0_m = { value = 0.03068001708, abs_tol = 1e-7 }
+expected.clip_offset_1_m = { value = -0.01803872796, abs_tol = 1e-7 }
+expected.clip_offset_2_m = { value = 0.0, abs_tol = 1e-9 }
+
+[case.inputs]
+spans = [
+    { span = "200 m", rise = "30 m" },
+    { span = "350 m", rise = "-10 m" },
+    { span = "250 m", rise = "20 m" },
+]
+axial_stiffness = "34640 kN"
+thermal_expansion = 18.9e-6
+known_load = "15.97 N/m"
+known_temperature = "15 °C"
+known_tension = "28 kN"
+clip_temperature = "35 °C"
