@@ -10,6 +10,11 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **A rule preset may hold only wire tension rules** (2026-10-22): the
+  host accepts a plugin preset with `[[tension_rule]]` tables and no
+  `[[rule]]` (as for `[vegetation]`), so a design-code plugin can offer
+  presets of the wire tension check alone.
+
 - **A rule-based wire tension check** (owner, 2026-10-22: the maximum
   allowed load on wires). Built, in active development (not approved
   yet).

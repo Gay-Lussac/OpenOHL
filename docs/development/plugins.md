@@ -291,6 +291,11 @@ only; see [Presets per check](#presets-per-check)).
 Hosts before 2026-10-20 refuse a preset without rules; plugins built
 before load unchanged and give none. What a plugin returns, per preset:
 
+A **preset of the wire tension check** holds only `[[tension_rule]]`
+tables (and `checks = ["tension"]`), each naming the weather cases it
+applies to, given in the preset's `weather-cases` (2026-10-22: accepted
+without any `[[rule]]`; hosts before refuse it).
+
 - `name`, `description` (the source of its values, shown in the
   dropdown's hover and the preview);
 - `rules`: a rule file's text (`format = "ohl-clearance-rules"`,
