@@ -27,7 +27,15 @@
 //! - `Creep`: the creep curve, used to find the permanent set after creep;
 //! - `Final { permanent }`: \\( P_k = \min(EA_{f,k}(\varepsilon_k - \varepsilon_{p,k}),
 //!   \mathrm{initial}_k(\varepsilon_k)) \\) — elastic along the final modulus from the
-//!   permanent set, and back onto the initial curve if loaded beyond.
+//!   permanent set, and back onto the initial curve if loaded beyond. The
+//!   set is signed: a component whose initial curve rises more steeply
+//!   than its final modulus (some steel cores) has a slightly negative
+//!   one, so that the line passes through the point reached (below zero
+//!   strain the initial state is the final-modulus line from zero).
+//!
+//! Beyond the curves' validity (`max_strain`, default 1 %) the polynomial
+//! is still evaluated; [`Mechanics::beyond_range`] says when a state gets
+//! there, for the warnings of the results.
 //!
 //! Components without curves are linear (\\( P = EA\,\varepsilon \\)) in every state.
 //! Coefficients are data supplied with the cable (see `docs/theory`); OpenOHL
@@ -105,6 +113,8 @@ struct Curves {
     creep: Option<Vec<f64>>,
     final_stiffness: f64,
     max_compression: f64,
+    /// Upper end of the curves' validity, unit strain (mechanical).
+    max_strain: f64,
 }
 
 fn poly(c: &[f64], x: f64) -> f64 {
@@ -119,8 +129,33 @@ fn poly_derivative(c: &[f64], x: f64) -> f64 {
         .fold(0.0, |acc, (k, &a)| acc * x + k as f64 * a)
 }
 
+/// A component strained beyond its curves' validity
+/// ([`Mechanics::beyond_range`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RangeExceeded {
+    /// `"outer"` or `"core"`.
+    pub component: &'static str,
+    /// Its mechanical strain, unit strain.
+    pub strain: f64,
+    /// The curves' validity limit, unit strain.
+    pub max_strain: f64,
+}
+
+impl std::fmt::Display for RangeExceeded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} strain {:.4} % beyond its curves' range ({:.4} %): the polynomial is extrapolated",
+            self.component,
+            self.strain * 100.0,
+            self.max_strain * 100.0
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ComponentMechanics {
+    label: &'static str,
     thermal_expansion: f64,
     linear_stiffness: f64,
     curves: Option<Curves>,
@@ -174,13 +209,18 @@ impl ComponentMechanics {
                 }
             }
             MaterialState::Final { permanent } => {
-                let p = permanent[index];
-                let line = elastic_from(p);
-                if strain >= 0.0 {
-                    line.min(poly(&c.initial, strain))
+                // The final-modulus line from the (signed) set, never
+                // above the initial state (the initial curve, the final
+                // modulus from zero below zero strain): a set below zero
+                // (an initial curve steeper than the final modulus) leaves
+                // the low end on the initial state, continuous at zero.
+                let line = elastic_from(permanent[index]);
+                let envelope = if strain >= 0.0 {
+                    poly(&c.initial, strain)
                 } else {
-                    line
-                }
+                    elastic_from(0.0)
+                };
+                line.min(envelope)
             }
         };
         load.max(-self.max_compression)
@@ -221,6 +261,7 @@ impl Mechanics {
                 max_compression = max_compression.min(outer_limit);
             }
             components.push(ComponentMechanics {
+                label,
                 thermal_expansion: component.thermal_expansion,
                 linear_stiffness: component.axial_stiffness().si(),
                 curves,
@@ -290,9 +331,13 @@ impl Mechanics {
 
     /// Total strain at which the cable carries `tension` at `temperature`.
     ///
-    /// Tension increases with strain (the core is never limited in
-    /// compression), so the strain is found by bracketing and bisection;
-    /// 200 halvings is a fixed exit clause (far more than the ~55 needed).
+    /// Tension increases with strain, so the strain is found by bracketing
+    /// and bisection; 200 halvings is a fixed exit clause (far more than
+    /// the ~55 needed). Where the tension stays at the target over a range
+    /// of strain — zero tension when every component is limited in
+    /// compression and all are slack — the strain is the range's upper
+    /// end, where the cable starts to carry tension (2026-10-22: before,
+    /// the bracket's lower end, an arbitrary −0.1 % for a zero tension).
     pub fn strain(
         &self,
         tension: Force,
@@ -303,7 +348,7 @@ impl Mechanics {
         let f = |e: f64| self.tension(e, temperature, state).si() - target;
         let (mut lo, mut hi) = (-1e-3, 1e-3);
         let mut guard = 0;
-        while f(lo) > 0.0 || f(hi) < 0.0 {
+        while f(lo) > 0.0 || f(hi) <= 0.0 {
             guard += 1;
             if guard > 60 {
                 return Err(CableError::Invalid {
@@ -316,13 +361,13 @@ impl Mechanics {
             if f(lo) > 0.0 {
                 lo *= 2.0;
             }
-            if f(hi) < 0.0 {
+            if f(hi) <= 0.0 {
                 hi *= 2.0;
             }
         }
         for _ in 0..200 {
             let mid = 0.5 * (lo + hi);
-            if f(mid) < 0.0 {
+            if f(mid) <= 0.0 {
                 lo = mid;
             } else {
                 hi = mid;
@@ -350,10 +395,35 @@ impl Mechanics {
             .enumerate()
             .map(|(k, (e, c))| match &c.curves {
                 None => 0.0,
-                Some(curves) => (e - c.load(e, curve, k) / curves.final_stiffness).max(0.0),
+                // Signed: the final-modulus line through the point
+                // reached (2026-10-22; clamped at zero before, which put
+                // the line under the initial curve at that very point when
+                // the initial curve rises more steeply than the final
+                // modulus).
+                Some(curves) => e - c.load(e, curve, k) / curves.final_stiffness,
             })
             .collect();
         Ok(MaterialState::Final { permanent })
+    }
+
+    /// The components whose mechanical strain at total strain `strain` and
+    /// `temperature` lies beyond their curves' validity (`max_strain`,
+    /// default 1 %): label (`"outer"`, `"core"`), the strain and the
+    /// limit (unit strain). Empty within the range, and for components
+    /// without curves. The polynomial is evaluated beyond it all the same
+    /// (no extrapolation is invented); the results warn.
+    pub fn beyond_range(&self, strain: f64, temperature: Temperature) -> Vec<RangeExceeded> {
+        self.mechanical_strains(strain, temperature)
+            .zip(&self.components)
+            .filter_map(|(e, c)| {
+                let curves = c.curves.as_ref()?;
+                (e > curves.max_strain).then_some(RangeExceeded {
+                    component: c.label,
+                    strain: e,
+                    max_strain: curves.max_strain,
+                })
+            })
+            .collect()
     }
 
     /// Of two final states, the one that leaves the cable longer (larger
@@ -456,7 +526,12 @@ fn convert(
             "the initial curve needs at least two coefficients".into(),
         ));
     }
+    // Default validity: 1 % strain, whatever unit the coefficients use (the
+    // default used to be applied before the unit conversion, i.e. 100 % strain
+    // for `strain = "unit"`).
+    let max_strain = data.max_strain.map_or(0.01, |m| m / strain_scale);
     let curves = Curves {
+        max_strain,
         initial: to_load(&data.initial),
         creep: data.creep.as_deref().map(to_load),
         final_stiffness: stress * area * data.final_modulus * strain_scale,
@@ -469,10 +544,6 @@ fn convert(
     }
     // Curves must rise over their validity range, or tension cannot be
     // inverted to strain.
-    // Default validity: 1 % strain, whatever unit the coefficients use (the
-    // default used to be applied before the unit conversion, i.e. 100 % strain
-    // for `strain = "unit"`).
-    let max_strain = data.max_strain.map_or(0.01, |m| m / strain_scale);
     for (name, c) in [
         ("initial", Some(&curves.initial)),
         ("creep", curves.creep.as_ref()),
@@ -618,6 +689,75 @@ mod tests {
             )
             .unwrap();
         assert!(longer == after_creep || longer == after_load);
+    }
+
+    #[test]
+    fn a_core_steeper_than_its_final_modulus_gets_a_negative_set() {
+        // Core initial slope 2000 MPa/% > final 1900: P(e) > EA_f e near
+        // zero, so the set e - P/EA_f is negative (2026-10-22: it was
+        // clamped at zero, and the final line passed under the point
+        // reached).
+        let text = SYNTHETIC.replace(
+            "initial = [0.0, 1800.0, -120.0, 30.0, -5.0]",
+            "initial = [0.0, 2000.0, -120.0, 30.0, -5.0]",
+        );
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.ohlw"), &text).unwrap();
+        let m = Mechanics::from_cable(library.get("synthetic").unwrap()).unwrap();
+        let (load, cold) = (Force::from_kilonewtons(60.0), t(-10.0));
+        let state = m
+            .permanent_set(load, cold, &MaterialState::Initial)
+            .unwrap();
+        let MaterialState::Final { permanent } = &state else {
+            panic!("{state:?}")
+        };
+        assert!(permanent[1] < 0.0, "{permanent:?}");
+        // Reloaded to the load that left the set: the same strain (so the
+        // final tension equals the initial at the heaviest case).
+        let e_max = m.strain(load, cold, &MaterialState::Initial).unwrap();
+        let e_reload = m.strain(load, cold, &state).unwrap();
+        assert!((e_max - e_reload).abs() < 1e-12, "{e_max} vs {e_reload}");
+        // Never above the initial state, and continuous at zero strain.
+        for k in -20..=40 {
+            let e = k as f64 * 1e-4;
+            let fin = m.tension(e, t(20.0), &state).newtons();
+            let ini = m.tension(e, t(20.0), &MaterialState::Initial).newtons();
+            assert!(fin <= ini + 1e-9, "{e}: {fin} > {ini}");
+        }
+        let at = |e: f64| m.tension(e, t(20.0), &state).newtons();
+        assert!((at(1e-12) - at(-1e-12)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn zero_tension_strain_of_a_slack_cable_is_where_it_starts_to_carry() {
+        // Both components without compression: zero tension over a range
+        // of strain; the strain is its upper end (the outer strands, whose
+        // curve starts at zero, start to carry at zero mechanical strain).
+        let text = SYNTHETIC.replace(
+            "final_modulus = 1900.0",
+            "final_modulus = 1900.0\n        max_compression = 0.0",
+        );
+        let mut library = Library::default();
+        library.add_toml(Path::new("t.ohlw"), &text).unwrap();
+        let m = Mechanics::from_cable(library.get("synthetic").unwrap()).unwrap();
+        let hot = t(60.0);
+        let e0 = m.strain(Force::ZERO, hot, &MaterialState::Initial).unwrap();
+        // The core (11.5e-6 /K) starts first: at 40 K, 0.046 %.
+        assert!((e0 - 11.5e-6 * 40.0).abs() < 1e-12, "{e0}");
+    }
+
+    #[test]
+    fn strains_beyond_the_curves_range_are_reported() {
+        let m = Mechanics::from_cable(&cable()).unwrap();
+        // Outer valid to 0.9 %, core to the default 1 %.
+        assert!(m.beyond_range(0.005, t(20.0)).is_empty());
+        let beyond = m.beyond_range(0.0095, t(20.0));
+        assert_eq!(beyond.len(), 1);
+        assert_eq!(beyond[0].component, "outer");
+        assert!((beyond[0].max_strain - 0.009).abs() < 1e-15);
+        assert!(beyond[0].to_string().contains("beyond its curves' range"));
+        // Cold: the mechanical strain is larger than the total.
+        assert_eq!(m.beyond_range(0.0095, t(-30.0)).len(), 2);
     }
 
     #[test]

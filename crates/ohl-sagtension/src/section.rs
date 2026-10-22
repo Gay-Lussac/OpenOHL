@@ -117,6 +117,25 @@ impl TensionSection {
         Ok((solved, total))
     }
 
+    /// Each span's unstressed length (at the reference temperature, m) in
+    /// a solution of the section in `state`: its length over its stretch
+    /// \\( e^{\alpha (t - t_0)} (1 + \bar T_i/EA) \\). They add up to the
+    /// section's unstressed length.
+    pub fn span_unstressed_lengths(
+        &self,
+        solution: &SectionSolution,
+        state: &LoadState,
+    ) -> Vec<f64> {
+        let thermal = (self.cable.thermal_expansion
+            * (state.temperature - self.reference_temperature).kelvin())
+        .exp();
+        solution
+            .spans
+            .iter()
+            .map(|s| s.length().si() / (thermal * (1.0 + mean_strain(s, self.cable))))
+            .collect()
+    }
+
     /// Solves the section at a load and temperature.
     ///
     /// Expected cost: ~60 bisection steps × one catenary per span (about

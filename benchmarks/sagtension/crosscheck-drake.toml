@@ -1,0 +1,425 @@
+# Cross-check of the non-linear (shell/core) model on a Drake-like cable
+# against an independent implementation, with the conventions matched.
+#
+# THE CURVES: from a public-domain library's test data (its test fixture
+# names the cable "ACSR Drake"; the source of the curves is not stated).
+# They are test input only: not CIGRE TB 324 data, not a manufacturer's.
+# Degree-4 polynomials in psi on the total area, strain in %, at 70 °F;
+# final moduli 64000 (shell) and 37000 (core) psi/%; the validity limits
+# converted from the library's load limits to strains (0.91298 % and
+# 0.650017 %); neither component takes compression (the library: core
+# compression modulus 0, shell taken as 0 too). The component areas split
+# the total 468.6442 mm² arbitrarily (no effect: total-area basis).
+# The core's initial curve rises more steeply at zero strain (38629
+# psi/%) than its final modulus (37000): its permanent set is negative,
+# -0.003 % (the case of the 2026-10-22 fix, decision log).
+#
+# Span: level 1200 ft (365.76 m), strung at H = 6000 lbf (26689.33 N) at
+# 60 °F on the initial curve; own weight 1.094 lb/ft (15.96573 N/m),
+# conserved (owner decision 2026-10-21). Creep: 60 °F, bare, on the creep
+# curve. Heaviest load: 0.5 in ice, 8 psf, 0 °F (36.865 N/m, wind 20.509
+# N/m). Final states: both computed; per case the one giving the longer
+# cable (lower H) governs (2026-10-22): after load at 32-120 °F and with
+# the 1 in / no-wind ice, after creep from 167 °F up and at the
+# load-stretch case itself.
+#
+# FIRST REFERENCE (the expected values): benchmarks/sagtension/
+# reference_crosscheck.py, an independent re-implementation with other
+# numerics (Illinois strain inversion, Newton on each polynomial for the
+# zero-tension strain, Simpson integrals, a secant root on log H). It
+# agrees with the code to 1e-10. Tolerance 1e-7 relative.
+#
+# SECOND REFERENCE: the public-domain library's own sag-tension run on the
+# same inputs (a scratch driver; its code is not copied). Its conventions
+# differ, and the differences are explained:
+#  1. its own weight is a constant load per metre of stretched cable in
+#     every state (the spans get heavier as they stretch): emulated inside
+#     it by a negative "ice" adjusting each state's weight, iterated; the
+#     raw values differ by up to 0.2 % (250 °F);
+#  2. its length update is first order, L(1 + d_eps), not L0 (1 + eps): about
+#     L d_eps eps, 0.01-0.02 % of H on this span;
+#  3. its mean tension samples 101 points (2e-6) and its tolerances are
+#     0.01 lbf;
+#  4. it shifts a curve that does not start at zero load along the strain
+#     axis; here the polynomial is used from zero strain with the
+#     compression cap of zero: the same curve where the load is positive.
+# With 1 emulated, the remainder is -0.004 to +0.022 % (items 2-3).
+#
+# Before 2026-10-22 this code gave, at the load-stretch case, a final
+# 53983.13 N against an initial 54059.11 N (-0.14 %): the core's negative
+# set was clamped at zero, so the final line lay under the initial curve
+# at the very point it starts from. Every case's previous value is in its
+# notes.
+
+# Second reference, weight convention emulated: initial 26689.330 N, after load
+# 24726.163 N, after creep 24820.737 N (raw: 26689.3, 24737.1, 24829.4 N).
+# Expected minus it: -0.000 %, +0.006 %, +0.006 %.
+# Before 2026-10-22: initial 26689.330 N, final (after load) 24690.265 N.
+[[case]]
+id = "xdrake-001"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 60 °F (15.6 °C), bare: the stringing case"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 26689.32969, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 24822.21872, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 24727.59293, rel_tol = 1e-7 }
+expected.h_final_n = { value = 24727.59293, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "15.555555556 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 28217.388 N, after load
+# 26176.167 N, after creep 26285.455 N (raw: 28210.1, 26179.6, 26286.2 N).
+# Expected minus it: -0.004 %, +0.001 %, +0.001 %.
+# Before 2026-10-22: initial 28218.665 N, final (after load) 26135.759 N.
+[[case]]
+id = "xdrake-002"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 32 °F (0 °C), bare"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 28216.27564, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 26285.70695, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 26176.37036, rel_tol = 1e-7 }
+expected.h_final_n = { value = 26176.37036, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "0.000000000 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 23971.686 N, after load
+# 22213.324 N, after creep 22284.737 N (raw: 23985.6, 22238.1, 22307.7 N).
+# Expected minus it: +0.009 %, +0.014 %, +0.014 %.
+# Before 2026-10-22: initial 23970.125 N, final (after load) 22184.663 N.
+[[case]]
+id = "xdrake-003"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 120 °F (48.9 °C), bare"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 23973.81535, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 22287.96775, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 22216.50176, rel_tol = 1e-7 }
+expected.h_final_n = { value = 22216.50176, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "48.888888889 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 22259.612 N, after load
+# 20848.864 N, after creep 20790.024 N (raw: 22283.0, 20876.9, 20818.3 N).
+# Expected minus it: +0.014 %, +0.018 %, +0.018 %.
+# Before 2026-10-22: initial 22257.256 N, final (after load) 20796.065 N.
+[[case]]
+id = "xdrake-004"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 167 °F (75 °C), bare: after creep governs"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 22262.83784, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 20793.71559, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 20852.5182, rel_tol = 1e-7 }
+expected.h_final_n = { value = 20793.71559, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "75.000000000 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 20880.559 N, after load
+# 20145.907 N, after creep 20091.656 N (raw: 20911.9, 20178.0, 20124.0 N).
+# Expected minus it: +0.019 %, +0.020 %, +0.020 %.
+# Before 2026-10-22: initial 20877.674 N, final (after load) 20096.806 N.
+[[case]]
+id = "xdrake-005"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 212 °F (100 °C), bare"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 20884.50899, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 20095.65096, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 20149.86974, rel_tol = 1e-7 }
+expected.h_final_n = { value = 20095.65096, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "100.000000000 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 19873.689 N, after load
+# 19594.721 N, after creep 19543.978 N (raw: 19911.2, 19630.1, 19579.6 N).
+# Expected minus it: +0.022 %, +0.021 %, +0.022 %.
+# Before 2026-10-22: initial 19870.488 N, final (after load) 19548.458 N.
+[[case]]
+id = "xdrake-006"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 250 °F (121.1 °C), bare"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 19878.07881, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 19548.18977, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 19598.90449, rel_tol = 1e-7 }
+expected.h_final_n = { value = 19548.18977, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "15.965729813 N/m"
+temperature = "121.111111111 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 54039.660 N, after load
+# 54039.670 N, after creep 53950.787 N (raw: 54030.6, 54030.6, 53941.8 N).
+# Expected minus it: +0.010 %, +0.010 %, +0.010 %.
+# Before 2026-10-22: initial 54059.115 N, final (after load) 53983.131 N.
+[[case]]
+id = "xdrake-007"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 0.5 in ice, 8 psf, 0 °F: the load-stretch case, after load equals initial"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 54044.88377, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 53956.06252, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 54044.88377, rel_tol = 1e-7 }
+expected.h_final_n = { value = 53956.06252, rel_tol = 1e-7 }
+expected.final_cause = { value = 0, abs_tol = 0.0 }
+expected.load_final_over_initial = { value = 1.0, abs_tol = 1e-6 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "36.865347248 N/m"
+wind = "20.509298261 N/m"
+temperature = "-17.777777778 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 76165.818 N, after load
+# 76165.822 N, after creep 76165.821 N (raw: 76167.3, 76167.3, 76167.3 N).
+# Expected minus it: +0.018 %, +0.018 %, +0.018 %.
+# Before 2026-10-22: initial 76194.295 N, final (after load) 76194.295 N.
+[[case]]
+id = "xdrake-008"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 1 in ice, 8 psf, 0 °F: heavier than the load-stretch case"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 76179.86862, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 76179.86862, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 76179.86862, rel_tol = 1e-7 }
+expected.h_final_n = { value = 76179.86862, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "62.259841953 N/m"
+wind = "30.238566886 N/m"
+temperature = "-17.777777778 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+
+# Second reference, weight convention emulated: initial 47657.002 N, after load
+# 46924.672 N, after creep 47080.762 N (raw: 47649.5, 46919.9, 47072.4 N).
+# Expected minus it: +0.006 %, +0.007 %, +0.007 %.
+# Before 2026-10-22: initial 47670.521 N, final (after load) 46881.706 N.
+[[case]]
+id = "xdrake-009"
+title = "Drake-like cable, level 365.76 m strung at 26689.33 N (6000 lbf) at 60 °F: 0.5 in ice, no wind, 0 °F"
+calculation = "sagtension.nonlinear"
+reference = "Independent re-implementation (benchmarks/sagtension/reference_crosscheck.py); second reference: a public-domain library's own run, conventions matched (notes)"
+max_seconds = 5.0
+expected.h_initial_n = { value = 47659.78324, rel_tol = 1e-7 }
+expected.h_final_creep_n = { value = 47083.92706, rel_tol = 1e-7 }
+expected.h_final_load_n = { value = 46927.73656, rel_tol = 1e-7 }
+expected.h_final_n = { value = 46927.73656, rel_tol = 1e-7 }
+expected.final_cause = { value = 1, abs_tol = 0.0 }
+expected.beyond_range = { value = 0.0, abs_tol = 0.0 }
+
+[case.inputs]
+span = "365.76 m"
+known_tension = "26689.329692 N"
+known_load = "15.965729813 N/m"
+known_temperature = "15.555555556 °C"
+creep_load = "15.965729813 N/m"
+creep_temperature = "15.555555556 °C"
+max_load = "36.865347248 N/m"
+max_wind = "20.509298261 N/m"
+max_temperature = "-17.777777778 °C"
+load = "30.633682647 N/m"
+temperature = "-17.777777778 °C"
+
+[case.inputs.cable]
+id = "drake-like"
+name = "Drake-like test cable"
+kind = "acsr"
+source = "curves from a public-domain library's test data, source not stated; test input only, not CIGRE TB 324 data"
+diameter = "28.1432 mm"
+mass_per_length = "1.628051354 kg/m"
+rated_tensile_strength = "140118.981 N"
+outer = { area = "400 mm²", modulus = "60 GPa", thermal_expansion = 2.304e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-1213, 44308.1, -14004.4, -37618, 30676], creep = [-544.8, 21426.8, -18842.2, 5495, 0], final_modulus = 64000.0, max_compression = 0.0, max_strain = 0.912980, reference_temperature = "21.111111 °C" } }
+core = { area = "68.6442 mm²", modulus = "190 GPa", thermal_expansion = 1.152e-05, stress_strain = { stress_unit = "psi", basis = "total", initial = [-69.3, 38629, 3998.1, -45713, 27892], creep = [47.1, 36211.3, 12201.4, -72392, 46338], final_modulus = 37000.0, max_compression = 0.0, max_strain = 0.650017, reference_temperature = "21.111111 °C" } }
+

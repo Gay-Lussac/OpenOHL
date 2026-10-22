@@ -81,7 +81,8 @@ def permanent(T, t, state):
     perms = []
     for c in COMPONENTS:
         em = e - c[1] * (t - T_REF)
-        perms.append(max(em - load(c, em, state) / (c[4] * 1e6 * c[0] * 100.0), 0.0))
+        # Signed (2026-10-22; was clamped at zero, never active here).
+        perms.append(em - load(c, em, state) / (c[4] * 1e6 * c[0] * 100.0))
     return tuple(perms)
 
 
