@@ -84,6 +84,85 @@ of Parts A, B and C).
   - **CIGRE TB 324 Table 3** stays a note in the validation page (the
     test curves reproduce it to 0.05–0.06 %), not a case, until the
     owner confirms the curves from an admissible source.
+- **Lines on the ground beside the line round every span** (owner
+  request: "The lines on the ground on the side seem to not go to the
+  substations properly and do not show for lines outside the main
+  alignment"). Built, in active development (not approved yet). What
+  was missing: the lines were made per alignment, between structures
+  following each other on it, so the spans to a structure away from the
+  alignment (a substation gantry, a portal beside the line) had none,
+  and the lines of a route and of its branch were separate lines,
+  ending at the tap. Now:
+  - **Every span** of the line, as a graph (`ground_lines::Graph`):
+    every span of every section between two structures (once, however
+    many sections and weather cases hold it), on every route and
+    branch, the spans to structures away from the alignments included,
+    each in its **own direction**; from the axis, every leg of every
+    alignment. The jumpers count at the structures they end at; a
+    jumper on a tap in a span, with that span.
+  - **Joined at the structures**, the sides followed from span to span
+    round each structure (the next span clockwise), the jumpers
+    included as before: round outer corners in 5° steps; at inner
+    corners and taps the lines cut each other off where they meet — no
+    gap at the tap.
+  - **Closed round the ends**, decided here: a **round end**, not a
+    square one — at a structure with one span (the last tower, a
+    portal, a substation gantry) the line goes right up to it and round
+    it, the distance beyond the ends of the wires and jumpers there (the
+    outline of their ends' convex hull widened by the distance: round
+    about a single wire's end, straight across between several). The
+    owner wanted continuity, hence a closed outline; a square end at the
+    structure would leave the distance round the wires' ends unkept.
+    Where a span's first or last stretch has no wire within the
+    distance of its chord, the end's outline joins the first point that
+    has.
+  - **Routes side by side or crossing**: a new choice in the menu, **One
+    envelope for all routes** (the default: whatever lies within the
+    distance of another route's wires is cut off, so each side line is
+    the outer envelope of the routes ticked) or **Each route its own
+    lines**. The route ticks list every route and branch of the line
+    (and any route only its structures give), always. A span is drawn
+    when it is on a route ticked or on none. View setting
+    `ground_lines.route_lines` (`envelope` | `each`; older settings read
+    as `envelope`).
+  - **Tolerances** (display only, no computed result changes): a point
+    is cut off when it lies nearer than the distance less 0.2 % of it
+    to a wire of another span (so the line's own crossings, a few
+    millimetres inside at worst, stay); pieces are joined where their
+    end and the next start lie within half the distance (at least 5 cm,
+    at most 1 m), at the crossing of their last and first segments.
+  - **The profile** takes the points beside each alignment by the side
+    of the span they lie beside (tagged), not by their projection
+    alone; the points round an end or beside a span away from the
+    alignments are in no profile.
+  - Unchanged: the LiDAR corridor, the set of weather cases (both wind
+    sides), the draping and the gaps; the other project lines are still
+    not taken into account. Tests: the branch (S3) gets its lines on
+    both sides; a span to a gantry beside the branch's end gets them
+    and the line closes round the gantry; no gap at the tap T3; the
+    envelope option (synthetic and on the example);
+    `ground_lines_tests.rs`, `ground_lines.rs`.
+
+- **Orthophotos: JPEG-compressed YCbCr GeoTIFFs read** (owner report:
+  importing GeoTIFFs written by GDAL with `COMPRESS=JPEG
+  PHOTOMETRIC=YCBCR` failed with "Unhandled TIFF color type YCbCr(8)").
+  Built, in active development (not approved yet). The `tiff` crate
+  (0.11, already a dependency, its default `jpeg` feature) decodes
+  JPEG strips and tiles with their `JPEGTables`, but gives the samples
+  in YCbCr, which the `image` crate's TIFF reader refuses; a TIFF the
+  `image` crate does not read is now read with the `tiff` crate
+  directly (`ohl_background::tiff_image`) and turned into RGB as JPEG
+  (JFIF, BT.601 full range) defines it. **No new dependency**, no
+  external converter needed. Grey, RGB and RGBA of 8 or 16 bits are
+  read that way too. Any other variant (a palette, CMYK, Lab, floating
+  point, more bands…) is refused with a message naming it — colour,
+  bits, sample format, compression, strips or tiles — and the
+  workaround (convert to JPEG with a world file, or to a plain RGB
+  TIFF with `gdal_translate`). Tested with small TIFFs written in the
+  test as GDAL writes them (abbreviated JPEG streams, tables in
+  `JPEGTables`, no JFIF marker), tiled and in strips, with GeoTIFF tags
+  and with a world file only, and a plain RGB deflate TIFF: their
+  places and the colours of each block (within 6 levels after JPEG).
 
 ## 2026-10-21
 
