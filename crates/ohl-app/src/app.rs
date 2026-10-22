@@ -7827,7 +7827,7 @@ fn menus(
         crate::menu::options_menu(ui, "Sheet preview", |ui| r.drawings.preview_menu(ui));
         // Ticks keep it open; this user's, remembered with the project.
         crate::menu::options_menu(ui, "Lines on the ground beside the line", |ui| {
-            let routes: Vec<String> = r.model.line.routes.iter().map(|x| x.id.clone()).collect();
+            let routes = crate::ground_lines::routes(&r.model.line);
             let cases: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
             let mut build = false;
             crate::ground_lines::menu(

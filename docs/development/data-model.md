@@ -1885,12 +1885,21 @@ and `cases` (weather case names ticked besides; a name no longer among
 the cases skipped), and `lidar_corridor` (m from the spans' chords, or
 null: the model's corridor; taken at most 200 m; wider than the model's:
 a LiDAR ground of the lines' own, built in the app and kept per width,
-never the model's ground the checks use) — every field optional, settings remembered before
+never the model's ground the checks use); since 2026-10-22 `route_lines`
+(`envelope`, the default: one envelope over the routes drawn | `each`:
+each route its own lines) — every field optional, settings remembered before
 read with the case shown; left out while all are the defaults). The
 lines themselves are display only: made in the app per set of weather
 cases (the plan envelope over each case chosen, both wind sides, the
 jumpers counting as conductors; the wind side the views do not show
-solved for them in the background, `ground_lines::GroundLines`), draped
+solved for them in the background, `ground_lines::GroundLines`), since
+2026-10-22 round every span of the line as a graph
+(`ground_lines::Graph`: every section's spans between two structures,
+those to structures away from the alignments included, the jumpers at
+their structures or, on a tap, with their span), closed round its ends;
+each point tagged with the span side it lies beside
+(`GroundLine::tags`, `Drawn::beside`: an alignment and its side, or
+none) for the profile; draped
 on the model's ground (`Model::ground`: the active surface, else the
 ground built from the LiDAR ground classes of the corridor, else the
 alignment's heights; `ground_lines::Ground`), never stored.

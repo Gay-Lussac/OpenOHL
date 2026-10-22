@@ -96,16 +96,20 @@ fn outermost_of(solved: &model::Solved, (a, b): ([f64; 2], [f64; 2])) -> (f64, f
     (most, least)
 }
 
-/// The line on `side` where it crosses the perpendicular at the middle
-/// of the chord: its offset to the left, and its height.
+/// The line on `side` of the first alignment where it crosses the
+/// perpendicular at the middle of the chord: its offset to the left, and
+/// its height.
 fn line_at_middle(d: &ground_lines::Drawn, side: Side, (a, b): ([f64; 2], [f64; 2])) -> (f64, f64) {
     let l = (b[0] - a[0]).hypot(b[1] - a[1]);
     let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
     let n = [-u[1], u[0]];
     let mid = l / 2.0;
-    let line = d.lines.iter().find(|x| x.side == side).unwrap();
-    for run in &line.runs {
-        for w in run.windows(2) {
+    let first = d.axes[0].0.as_str();
+    for (run, tags) in d.lines.iter().flat_map(|x| x.runs.iter().zip(&x.tags)) {
+        for (w, t) in run.windows(2).zip(tags) {
+            if d.side_of(*t) != Some((first, side)) {
+                continue;
+            }
             let along = |p: [f64; 3]| (p[0] - a[0]) * u[0] + (p[1] - a[1]) * u[1];
             let (s0, s1) = (along(w[0]), along(w[1]));
             if (s0 - mid) * (s1 - mid) <= 0.0 && s0 != s1 {
@@ -148,8 +152,9 @@ fn the_lines_follow_the_outermost_conductor_and_lie_on_the_ground() {
         );
         assert_eq!(d.ground.label(), "TIN (synthetic-survey.csv)");
         assert!(d.offer_build.is_none());
-        // Two lines per alignment.
-        assert_eq!(d.lines.len(), 2 * m.line.alignment_views().len());
+        // One envelope round every route.
+        assert_eq!(d.lines.len(), 1);
+        assert_eq!(d.lines[0].route, "");
         let (most, least) = outermost_at_middle(&m, k, chord);
         let (left, zl) = line_at_middle(&d, Side::Left, chord);
         let (right, zr) = line_at_middle(&d, Side::Right, chord);
@@ -197,11 +202,13 @@ fn from_the_axis_on_the_example() {
     for l in &d.lines {
         let mut n = 0;
         let mut exact = 0;
-        for run in &l.runs {
-            for p in run {
-                let near = l
-                    .axis
-                    .windows(2)
+        let mut beside = 0;
+        for (run, tags) in l.runs.iter().zip(&l.tags) {
+            for (p, tag) in run.iter().zip(tags) {
+                let near = d
+                    .axes
+                    .iter()
+                    .flat_map(|(_, a)| a.windows(2))
                     .map(|w| {
                         let e = [w[1][0] - w[0][0], w[1][1] - w[0][1]];
                         let q = [p[0] - w[0][0], p[1] - w[0][1]];
@@ -214,13 +221,19 @@ fn from_the_axis_on_the_example() {
                 if (near - 25.0).abs() < 1e-6 {
                     exact += 1;
                 }
-                // On its side (right of the direction positive).
-                let (_, off) = ohl_line::route::project(&l.axis, *p);
-                assert_eq!(off > 0.0, l.side == Side::Right, "{p:?}");
+                // On its side of its alignment (right of the direction
+                // positive).
+                if let Some((id, side)) = d.side_of(*tag) {
+                    let axis = &d.axes.iter().find(|a| a.0 == id).unwrap().1;
+                    let (_, off) = ohl_line::route::project(axis, *p);
+                    assert_eq!(off > 0.0, side == Side::Right, "{p:?}");
+                    beside += 1;
+                }
                 n += 1;
             }
         }
         assert!(n > 10 && exact * 10 > n * 9, "{exact} of {n}");
+        assert!(beside * 10 > n * 8, "{beside} of {n}");
     }
 }
 
@@ -259,9 +272,8 @@ fn assert_no_self_crossing(d: &ground_lines::Drawn) {
                 for j in i + 2..segs.len() {
                     assert!(
                         !cross(segs[i], segs[j]),
-                        "{} {:?}: segments {i} and {j} cross",
-                        l.alignment,
-                        l.side
+                        "{}: segments {i} and {j} cross",
+                        l.route
                     );
                 }
             }
@@ -283,7 +295,8 @@ fn assert_no_self_crossing(d: &ground_lines::Drawn) {
 /// — less only on the straight pieces between the line's points (every
 /// 2 m, 5° round a corner: 10 m · (1 − cos 2.5°) = 9.5 mm there), by
 /// 5 cm at most where a blown-out conductor curves sharply near its clamp
-/// — and never farther; no line crosses itself.
+/// — and never farther but round the ends of the line (straight across
+/// between the wires' ends there); no line crosses itself.
 #[test]
 fn the_envelope_over_several_cases_and_both_wind_sides() {
     let m = example();
@@ -338,32 +351,31 @@ fn the_envelope_over_several_cases_and_both_wind_sides() {
     // The band's outer edge, over every wire and jumper of the three.
     let solutions: Vec<&model::Solved> = all.to_vec();
     let (mut n, mut exact) = (0, 0);
-    for view in m.line.alignment_views() {
-        let run: Vec<&String> = view.run().collect();
-        let chain = ground_lines::Chain::of_wires(&m.line, &solutions, &run);
-        let sources: Vec<ground_lines::Seg> = chain
-            .spans
-            .iter()
-            .chain(&chain.joints)
-            .flatten()
-            .copied()
-            .collect();
-        for l in d.lines.iter().filter(|l| l.alignment == view.id) {
-            for p in l.runs.iter().flatten() {
-                let near = sources
-                    .iter()
-                    .map(|s| to_segment([p[0], p[1]], *s))
-                    .fold(f64::INFINITY, f64::min);
-                assert!(
-                    near > 10.0 - 0.05 && near < 10.0 + 1e-6,
-                    "{} {:?}: {p:?} at {near}",
-                    l.alignment,
-                    l.side
-                );
-                n += 1;
-                if (near - 10.0).abs() < 5e-3 {
-                    exact += 1;
-                }
+    let views = m.line.alignment_views();
+    let graph = ground_lines::Graph::of_wires(&m.line, &solutions, &views);
+    let sources: Vec<ground_lines::Seg> = graph
+        .edges
+        .iter()
+        .flat_map(|e| &e.sources)
+        .chain(graph.joints.iter().flatten())
+        .copied()
+        .collect();
+    for l in &d.lines {
+        for (p, tag) in l.runs.iter().flatten().zip(l.tags.iter().flatten()) {
+            let near = sources
+                .iter()
+                .map(|s| to_segment([p[0], p[1]], *s))
+                .fold(f64::INFINITY, f64::min);
+            // Round an end: straight across between the wires' ends,
+            // farther from the wires in between.
+            let end = d.side_of(*tag).is_none();
+            assert!(
+                near > 10.0 - 0.05 && (end || near < 10.0 + 1e-6),
+                "{p:?} at {near}"
+            );
+            n += 1;
+            if (near - 10.0).abs() < 5e-3 {
+                exact += 1;
             }
         }
     }
@@ -371,18 +383,29 @@ fn the_envelope_over_several_cases_and_both_wind_sides() {
     assert_no_self_crossing(&d);
 }
 
+/// The stations along alignment `id` of the points of `d` beside it on
+/// `side`.
+fn stations(d: &ground_lines::Drawn, id: &str, side: Side) -> Vec<f64> {
+    let axis = &d.axes.iter().find(|a| a.0 == id).unwrap().1;
+    d.beside_points(id, side)
+        .map(|p| ohl_line::route::project(axis, p).0)
+        .collect()
+}
+
 /// The jumpers count as conductors, so the lines go on round the
 /// structures. On the example the branch's conductor ends at the Y pylon
 /// T3 in a dead-end string (its wire point 6.5 m along the branch from
 /// the pylon's centre, on the branch's axis) and the jumper J-T3-branch
 /// joins it across the pylon to the main line's conductor. 2 m away in
-/// still air, the branch's lines reach back to T3 (their first point
-/// within 0.5 m of the branch's start, the jumper passing within 0.5 m
-/// of the axis there); without the jumper they would begin only where
-/// the conductor comes within 2 m of the cross line: 6.5 − 2 = 4.5 m
-/// along, at the next point every 2 m, beyond 4 m. T3 is also an angle
-/// tower of the main route (≈ 10°): its lines go on round it in one
-/// piece (from 20 m before to 20 m after it), and no line crosses
+/// still air, each route its own lines: the branch's go back to T3 and
+/// close round its end there, the jumper with it (their points beside
+/// the branch begin within 2.5 m of its start, where they meet the end's
+/// outline; the branch's line one closed run); without the jumper they
+/// would begin only where the conductor comes within 2 m of the cross
+/// line: 6.5 − 2 = 4.5 m along, at the next point every 2 m, beyond 4 m
+/// — the line then closes round the conductor's end. T3 is also
+/// an angle tower of the main route (≈ 10°): its lines go on round it
+/// (from 20 m before to 20 m after it) in one piece, and no line crosses
 /// itself.
 #[test]
 fn the_jumper_counts_at_the_dead_end_and_the_angle_tower() {
@@ -397,35 +420,45 @@ fn the_jumper_counts_at_the_dead_end_and_the_angle_tower() {
     let settings = Settings {
         on: true,
         distance: 2.0,
+        route_lines: ground_lines::RouteLines::Each,
         ..Settings::default()
     };
     let start = |d: &ground_lines::Drawn, side: Side| {
-        let l = d
-            .lines
-            .iter()
-            .find(|l| l.alignment == "branch" && l.side == side)
-            .unwrap();
-        l.runs
-            .iter()
-            .flatten()
-            .map(|p| ohl_line::route::project(&l.axis, *p).0)
+        stations(d, "branch", side)
+            .into_iter()
             .fold(f64::INFINITY, f64::min)
     };
     let d = ground_lines::compute(&m, &[still], &[], &settings);
+    assert_eq!(
+        d.lines.iter().map(|l| l.route.as_str()).collect::<Vec<_>>(),
+        ["main", "branch"]
+    );
     for side in [Side::Left, Side::Right] {
         let s = start(&d, side);
-        assert!(s < 0.5, "{side:?}: begins {s} m along the branch");
+        assert!(s < 2.5, "{side:?}: begins {s} m along the branch");
     }
-    // The main route at T3 (station 640 along it).
-    for l in d.lines.iter().filter(|l| l.alignment == "main") {
-        let through = l.runs.iter().any(|run| {
+    let branch = |d: &ground_lines::Drawn| {
+        let l = d.lines.iter().find(|l| l.route == "branch").unwrap();
+        l.runs
+            .iter()
+            .map(|r| r.first() == r.last())
+            .collect::<Vec<bool>>()
+    };
+    assert_eq!(branch(&d), [true], "closed round the branch");
+    // The main route at T3 (station 640 along it): one piece.
+    let main = d.lines.iter().find(|l| l.route == "main").unwrap();
+    let axis = &d.axes.iter().find(|a| a.0 == "main").unwrap().1;
+    for side in [Side::Left, Side::Right] {
+        let through = main.runs.iter().zip(&main.tags).any(|(run, tags)| {
             let st: Vec<f64> = run
                 .iter()
-                .map(|p| ohl_line::route::project(&l.axis, *p).0)
+                .zip(tags)
+                .filter(|(_, t)| d.side_of(**t) == Some(("main", side)))
+                .map(|(p, _)| ohl_line::route::project(axis, *p).0)
                 .collect();
             st.iter().any(|s| *s < 620.0) && st.iter().any(|s| *s > 660.0)
         });
-        assert!(through, "{:?}: broken at T3", l.side);
+        assert!(through, "{side:?}: broken at T3");
     }
     assert_no_self_crossing(&d);
     // Without the jumper.
@@ -437,6 +470,262 @@ fn the_jumper_counts_at_the_dead_end_and_the_angle_tower() {
         let s = start(&bare, side);
         assert!(s > 4.0, "{side:?}: begins {s} m along the branch");
     }
+    // Closed round the conductor's end there instead.
+    assert_eq!(branch(&bare), [true]);
+}
+
+/// The largest step between two points of a run of `d` within `r` m of
+/// `at` in plan (none there: 0), and the number of runs that come there.
+fn steps_near(d: &ground_lines::Drawn, at: [f64; 2], r: f64) -> (f64, usize) {
+    let near = |p: &[f64; 3]| (p[0] - at[0]).hypot(p[1] - at[1]) < r;
+    let mut worst: f64 = 0.0;
+    let mut runs = 0;
+    for run in d.lines.iter().flat_map(|l| &l.runs) {
+        if run.iter().any(near) {
+            runs += 1;
+        }
+        for w in run.windows(2) {
+            if near(&w[0]) || near(&w[1]) {
+                worst = worst.max((w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]));
+            }
+        }
+    }
+    (worst, runs)
+}
+
+/// The example line's branch (section S3, T3 to T7) gets its lines, on
+/// both sides, 10 m from its conductor; at the tap, the Y pylon T3, the
+/// lines of the main route and the branch are one: a single run round
+/// T3 with no step longer than 2.5 m within 60 m of it (no gap), beside
+/// both sides of both routes (the inner corners cut where they meet);
+/// at the branch's end T7 the line goes round the end, 10 m beyond the
+/// conductor's end, in one run.
+#[test]
+fn the_branch_gets_its_lines_with_no_gap_at_the_tap() {
+    let m = example();
+    let still = case(&m, "everyday");
+    let settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let d = ground_lines::compute(&m, &[still], &[], &settings);
+    assert!(d.notes.is_empty(), "{:?}", d.notes);
+    assert_eq!(d.lines.len(), 1);
+    // The branch's axis runs north from T3 (640, 0) to T7 (640, 560); its
+    // conductor on the axis: its left (west) side at x = 630, its right
+    // (east) at x = 650, along the branch beyond the tap's corner.
+    for (side, x) in [(Side::Left, 630.0), (Side::Right, 650.0)] {
+        let pts: Vec<[f64; 3]> = d.beside_points("branch", side).collect();
+        assert!(pts.len() > 200, "{side:?}: {}", pts.len());
+        let mid: Vec<&[f64; 3]> = pts.iter().filter(|p| p[1] > 50.0 && p[1] < 500.0).collect();
+        assert!(mid.len() > 150);
+        for p in mid {
+            assert!((p[0] - x).abs() < 0.05, "{side:?}: {p:?}");
+        }
+    }
+    let (worst, runs) = steps_near(&d, [640.0, 0.0], 60.0);
+    assert_eq!(runs, 1, "one run round the tap");
+    assert!(worst <= 2.5, "a step of {worst} m near the tap");
+    let line = &d.lines[0];
+    let k = line
+        .runs
+        .iter()
+        .position(|r| r.iter().any(|p| (p[0] - 640.0).hypot(p[1]) < 60.0))
+        .unwrap();
+    let seen: std::collections::BTreeSet<(String, bool)> = line.tags[k]
+        .iter()
+        .filter_map(|t| d.side_of(*t))
+        .map(|(id, side)| (id.to_owned(), side == Side::Left))
+        .collect();
+    for want in [
+        ("main", true),
+        ("main", false),
+        ("branch", true),
+        ("branch", false),
+    ] {
+        assert!(seen.contains(&(want.0.to_owned(), want.1)), "{want:?}");
+    }
+    // Round the end T7: a point 10 m beyond the conductor's end there
+    // (its wire point at (640, 555)): (640, 565).
+    let beyond = line
+        .runs
+        .iter()
+        .flatten()
+        .any(|p| (p[0] - 640.0).abs() < 0.5 && (p[1] - 565.0).abs() < 0.05);
+    assert!(beyond, "round the end at T7");
+    let (worst, runs) = steps_near(&d, [640.0, 560.0], 30.0);
+    assert_eq!(runs, 1);
+    assert!(worst <= 2.5, "{worst}");
+    assert_no_self_crossing(&d);
+}
+
+/// The example line with a substation gantry G beside the end of the
+/// branch, away from its alignment (50 m east of its end, 30 m on), on
+/// the branch's route by its own: a section S4 from T7 (a second wire
+/// point, 3 m east of its centre) to G (a wire point fixed 10 m up), and
+/// every case solved again.
+fn with_a_gantry() -> model::Model {
+    let mut m = example();
+    let line = &mut m.line;
+    let t7 = line.structures.iter_mut().find(|s| s.id == "T7").unwrap();
+    let mut w2 = t7.wires[0].clone();
+    w2.label = "W2".into();
+    w2.position = [643.0, 560.0, 515.0];
+    w2.set = Some(2);
+    t7.wires.push(w2);
+    let mut g = line.structure("T7").unwrap().clone();
+    g.id = "G".into();
+    g.position = [690.0, 590.0, 495.0];
+    g.points.clear();
+    g.strings.clear();
+    g.wires.truncate(1);
+    g.wires[0].label = "W1".into();
+    g.wires[0].position = [690.0, 590.0, 505.0];
+    g.wires[0].set = Some(1);
+    g.routes = vec!["branch".into()];
+    line.structures.push(g);
+    let mut s4 = line.sections.iter().find(|s| s.id == "S3").unwrap().clone();
+    s4.id = "S4".into();
+    s4.points = vec![
+        ohl_line::SectionPoint::new("T7", 2),
+        ohl_line::SectionPoint::new("G", 1),
+    ];
+    line.sections.push(s4);
+    for k in 0..m.cases.len() {
+        let case = m.cases[k].case.clone();
+        m.cases[k] = model::Solved::new(&m.line, &m.library, case);
+    }
+    m
+}
+
+/// A span to a structure away from the alignment (the gantry G beside
+/// the branch's end) gets its lines: the branch's alignment view holds G
+/// away from it; the span T7–G, along its own direction (not the
+/// alignment's), has a line each side 10 m from its conductor — at its
+/// middle, ±10 m across its chord — beside no alignment; the line goes
+/// right up to the gantry and round it, 10 m beyond the conductor's end
+/// straight ahead of the span: one run round T7 and G with no gap.
+#[test]
+fn a_span_to_a_structure_off_the_alignment_gets_its_lines() {
+    let m = with_a_gantry();
+    let views = m.line.alignment_views();
+    let branch = views.iter().find(|v| v.id == "branch").unwrap();
+    assert!(branch.is_away("G"), "{branch:?}");
+    let still = case(&m, "everyday");
+    assert!(m.cases[still].shapes.iter().any(|s| s.section == "S4"));
+    let settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let d = ground_lines::compute(&m, &[still], &[], &settings);
+    assert!(d.notes.is_empty(), "{:?}", d.notes);
+    // The span's chord from T7's wire W2 to G's W1, in plan.
+    let (a, b): ([f64; 2], [f64; 2]) = ([643.0, 560.0], [690.0, 590.0]);
+    let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+    let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+    let n = [-u[1], u[0]];
+    let across = |p: &[f64; 3]| (p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1];
+    let along = |p: &[f64; 3]| (p[0] - a[0]) * u[0] + (p[1] - a[1]) * u[1];
+    let pts: Vec<[f64; 3]> = d
+        .lines
+        .iter()
+        .flat_map(|x| x.runs.iter().flatten())
+        .copied()
+        .collect();
+    for side in [10.0, -10.0] {
+        let hit = pts
+            .iter()
+            .any(|p| (along(p) - l / 2.0).abs() < 1.5 && (across(p) - side).abs() < 0.1);
+        assert!(hit, "no line {side} m across the span's middle");
+    }
+    // Beside no alignment: those points have no side.
+    let away = d.lines.iter().any(|x| {
+        x.runs.iter().zip(&x.tags).any(|(r, t)| {
+            r.iter()
+                .zip(t)
+                .any(|(p, t)| (along(p) - l / 2.0).abs() < 1.5 && d.side_of(*t).is_none())
+        })
+    });
+    assert!(away);
+    // Round G: 10 m straight ahead of the conductor's end.
+    let ahead = pts
+        .iter()
+        .any(|p| (along(p) - (l + 10.0)).abs() < 0.05 && across(p).abs() < 0.5);
+    assert!(ahead, "round the gantry");
+    let (worst, runs) = steps_near(&d, [665.0, 575.0], 60.0);
+    assert_eq!(runs, 1);
+    assert!(worst <= 2.5, "{worst}");
+    assert_no_self_crossing(&d);
+}
+
+/// The envelope option on the example (10 m): one envelope for all
+/// routes — no point within 10 m (less 2 cm) of any conductor of either
+/// route — or each route its own lines: the main route's lines run
+/// through the branch's band at the tap (a point within 5 m of the
+/// branch's conductor), and the other way round. A route unticked: its
+/// lines gone. The route list holds every route and branch.
+#[test]
+fn one_envelope_for_all_routes_or_each_its_own() {
+    let m = example();
+    let still = case(&m, "everyday");
+    let mut settings = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let solved = &m.cases[still];
+    let views = m.line.alignment_views();
+    let graph = ground_lines::Graph::of_wires(&m.line, &[solved], &views);
+    let of = |route: &str| -> Vec<ground_lines::Seg> {
+        graph
+            .edges
+            .iter()
+            .filter(|e| e.routes.iter().any(|r| r == route))
+            .flat_map(|e| e.sources.iter().copied())
+            .collect()
+    };
+    let (main, branch) = (of("main"), of("branch"));
+    let near = |src: &[ground_lines::Seg], p: &[f64; 3]| {
+        src.iter()
+            .map(|s| to_segment([p[0], p[1]], *s))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let one = ground_lines::compute(&m, &[still], &[], &settings);
+    assert_eq!(one.lines.len(), 1);
+    for p in one.lines[0].runs.iter().flatten() {
+        let d = near(&main, p).min(near(&branch, p));
+        // Less only on the straight pieces between the line's points
+        // round a wire's end (every 2 m on a circle of 10 m: 5 cm).
+        assert!(d > 10.0 - 0.05, "{p:?} at {d}");
+    }
+    settings.route_lines = ground_lines::RouteLines::Each;
+    let each = ground_lines::compute(&m, &[still], &[], &settings);
+    assert_eq!(each.lines.len(), 2);
+    let line = |r: &str| each.lines.iter().find(|l| l.route == r).unwrap();
+    assert!(
+        line("main")
+            .runs
+            .iter()
+            .flatten()
+            .any(|p| near(&branch, p) < 5.0)
+    );
+    assert!(
+        line("branch")
+            .runs
+            .iter()
+            .flatten()
+            .any(|p| near(&main, p) < 5.0)
+    );
+    settings.hidden_routes.insert("branch".into());
+    let only = ground_lines::compute(&m, &[still], &[], &settings);
+    assert_eq!(only.lines.len(), 1);
+    assert_eq!(only.lines[0].route, "main");
+    assert_eq!(
+        ground_lines::routes(&m.line),
+        [
+            ("main".to_owned(), "Main route".to_owned()),
+            ("branch".to_owned(), "Branch from the Y pylon T3".to_owned())
+        ]
+    );
 }
 
 /// The option from View › Lines on the ground beside the line: ticked,
@@ -543,10 +832,19 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
     assert_eq!(r.model.ground_lines.cases, names);
     let every = r.ground_lines.drawn.clone().unwrap();
     // Made for this set; on the example high wind from both sides holds
-    // every other case's conductors inside its envelope: the same lines.
+    // every other case's conductors inside its envelope along the spans:
+    // the same lines there (round the ends the clamps of every case
+    // count).
     assert!(r.ground_lines.made > made);
     assert!(!std::sync::Arc::ptr_eq(&every, &named));
-    assert_eq!(every.lines, named.lines);
+    let chord = first_chord(&r.model);
+    for side in [Side::Left, Side::Right] {
+        let (a, b) = (
+            line_at_middle(&every, side, chord),
+            line_at_middle(&named, side, chord),
+        );
+        assert!((a.0 - b.0).abs() < 1e-9, "{side:?}: {a:?} {b:?}");
+    }
     assert!(every.notes.is_empty(), "{:?}", every.notes);
     // The case shown again (and the names kept).
     h.get_by_label_contains("The case shown").click();
@@ -685,6 +983,51 @@ fn the_profile_shows_both_sides_and_the_views_draw_them() {
         h.state_mut().ready().unwrap().profile.ground_profiles(),
         [0, 0]
     );
+}
+
+/// The lines round every span in the application, on the example with
+/// the gantry G beside the branch's end ([`with_a_gantry`]), 10 m from
+/// the conductors in still air: the plan draws them (one envelope round
+/// both routes). OHL_RENDER_PNG: images of the plan at the branch (from
+/// the tap T3 to its end) and at the end structure G.
+#[test]
+fn the_plan_draws_the_lines_round_the_branch_and_the_end_structure() {
+    let gpu = ohl_render::headless_device().is_ok();
+    assert!(
+        gpu || ohl_core::env::var_os("OHL_REQUIRE_GPU_TESTS").is_none(),
+        "no GPU"
+    );
+    let mut model = with_a_gantry();
+    let still = case(&model, "everyday");
+    model.ground_lines = Settings {
+        on: true,
+        ..Settings::default()
+    };
+    let mut builder = Harness::builder().with_size(egui::vec2(1400.0, 900.0));
+    if gpu {
+        builder = builder.wgpu();
+    }
+    let mut h = builder.build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.state_mut().ready().unwrap().case = still;
+    h.run_steps(4);
+    settle(&mut h);
+    h.state_mut().show_tab(crate::app::Tab::Plan);
+    let dir = ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| gpu);
+    for (name, centre, scale) in [
+        ("ground-lines-branch.png", [660.0, 300.0], 0.75),
+        ("ground-lines-end-structure.png", [668.0, 578.0], 7.0),
+    ] {
+        h.state_mut().ready().unwrap().plan.set_view(centre, scale);
+        h.run_steps(3);
+        let r = h.state_mut().ready().unwrap();
+        let drawn = r.plan.ground_lines.clone().expect("drawn in the plan");
+        assert_eq!(drawn.lines.len(), 1);
+        if let Some(dir) = &dir {
+            let image = h.render().unwrap();
+            let path = PathBuf::from(dir).join(name);
+            crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -879,7 +1222,7 @@ fn without_a_tin_the_lines_lie_on_the_lidar_ground() {
         // The alignment's heights are not the ground's here.
         let l = &d.lines[0];
         let plan: Vec<[f64; 2]> = l.runs[0].iter().map(|p| [p[0], p[1]]).collect();
-        let bare = ground_lines::drape(&plan, None, &l.axis);
+        let bare = ground_lines::drape(&plan, None, &d.axes[0].1);
         let apart = bare
             .iter()
             .flatten()
