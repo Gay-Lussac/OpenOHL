@@ -34,3 +34,7 @@ temperature = "75 °C"
 [final]
 creep_weather = "everyday"
 load_weather = "cold + ice"
+
+# Sagging outputs in the stringing state (initial curve) at 15 °C.
+[sagging]
+transit = [{ span = 2, below_back = "4 m" }]
