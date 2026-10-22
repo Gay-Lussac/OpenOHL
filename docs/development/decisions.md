@@ -8,6 +8,83 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-22
+
+- **The non-linear model after the evaluation of a public-domain
+  sag-tension library** (owner go-ahead of 2026-10-22 on its
+  recommendations). Built, in active development (not approved yet).
+  The library is used as a reference only; none of its code is copied.
+  - **Independent cross-check cases** (`crosscheck-drake.toml`,
+    `xdrake-001…009`): the shell/core model on a Drake-like cable whose
+    curves come from that library's test data, **source not stated**
+    (test input only, not CIGRE TB 324 data); expected values from an
+    independent re-implementation, the library's own run as a second
+    reference with the conventions matched (its own weight per
+    stretched metre emulated; its first-order length update, 101-point
+    mean and absolute tolerances explained): −0.004 to +0.022 %.
+  - **The permanent set is signed.** Each component's set
+    \\( e - P/EA_f \\) was clamped at zero; a component whose initial
+    curve is steeper than its final modulus (the Drake-like core) gets a
+    slightly negative one, so after load the final tension equals the
+    initial at the load-stretch case (−0.14 % before; checked to
+    \\( 10^{-6} \\), `xdrake-007`). Of the two equivalent forms (a signed
+    strain, or the stretch stored as a load as the library does) the
+    signed strain was kept: the final state, the FE model's stretch and
+    the reports carry a strain per component already. The final state is
+    \\( \min \\) (final-modulus line, initial state), continuous at zero
+    strain. No earlier case changed (the synthetic cable's sets are
+    positive).
+  - **A slack cable's strain at zero tension** (found by these cases):
+    when every component takes no compression, it is now where the
+    cable starts to carry tension, not the search bracket's lower end
+    (−0.1 %, which made such a cable's own weight per metre 0.1 % too
+    low). The Drake-like initial tensions moved by −0.03 to +0.04 %; no
+    earlier case changed beyond \\( 10^{-12} \\). A trial tension so slack
+    (the catenary parameter below half a span) that the stretch does not
+    settle now counts as too slack in the non-linear bracket instead of
+    stopping the solve.
+  - **Both final states; the governing one per weather case.** After
+    creep and after load are both solved and reported (validation
+    outputs, `ohl sagtension`); in each case the one leaving the wire
+    longer (the lower H, the larger sags) governs — before, the state
+    longer at the creep tension was used in every case (always "load" in
+    the cases run). With the Drake-like curves, after load governs up to
+    120 °F and after creep from 167 °F, and at the load-stretch case
+    itself (`xdrake-001…009`). A tie (\\( 10^{-9} \\)) goes to the load.
+    The line's Max Sag calculation already took the larger sag per case.
+  - **Tension criteria on the non-linear model**, each in a condition
+    (initial, after creep, after load): a wire with curves takes its
+    `ohl sagtension` criteria on its curves (`condition`, default
+    initial); each trial stringing tension recomputes both permanent
+    sets; the governing criterion is found by iteration (a bisection per
+    criterion, then all checked at the smallest, again while one is
+    above its limit; 10 passes at most), not in a single pass. A linear
+    wire refuses a condition after creep or load (no permanent set).
+    `nlcrit-001…005`.
+  - **Sagging outputs** (post-processing, no engine change):
+    stopwatch (the travel time along the catenary with its local
+    tension), dynamometer, transit angle of sight (the tangent from the
+    instrument; the target on the far support), the level-span sag and
+    the inclined-span correction, the sag per kelvin, and clipping
+    offsets when a section sagged in the blocks is clipped in at another
+    temperature (zero at the same temperature in the engine's model).
+    Each formula derived in the theory; `ohl sagtension` `[sagging]`; the
+    section window's **Sagging** panel; `sag-001…003`.
+  - **Not changed**: the in-the-blocks model (one horizontal tension
+    through the section). Equal support tension across sheaves, and
+    sheave friction, would be an engine change the owner has not
+    approved: **listed as a follow-up** (roadmap Part A).
+  - **Beyond the curves' range**: a state whose strain (at a span's most
+    tensioned support) passes a component's `max_strain` (optional, 1 %
+    when absent; files unchanged) is warned about — the validation
+    output `beyond_range`, `ohl sagtension`, the app's warnings by
+    weather case (ruling span and finite elements) and the Sagging
+    panel. The polynomial is still evaluated (no extrapolation is
+    invented). `nonlinear-003…004`.
+  - **CIGRE TB 324 Table 3** stays a note in the validation page (the
+    test curves reproduce it to 0.05–0.06 %), not a case, until the
+    owner confirms the curves from an admissible source.
+
 ## 2026-10-21
 
 - **A cross-section view** (owner request of 2026-10-21). Built, in

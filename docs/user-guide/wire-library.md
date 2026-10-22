@@ -93,13 +93,13 @@ Any number of coefficients (at least two) is accepted; published curves are usua
 | `creep` | no | list of numbers | none | Creep curve (typically 10-year). Omit for no creep (e.g. steel cores). |
 | `final_modulus` | yes | number | — | Unloading / reloading slope, in `stress_unit` per strain unit (per % if `strain = "percent"`), on the same `basis`. |
 | `max_compression` | no | number ≥ 0 | unlimited | Largest compressive stress carried, in `stress_unit`. Usually set with the wire type's `bimetallic_behavior` instead. |
-| `max_strain` | no | number > 0 | 1 % | Strain up to which the curves are valid, in strain units. The curves must rise up to it. |
+| `max_strain` | no | number > 0 | 1 % | Strain up to which the curves are valid, in strain units. The curves must rise up to it. A state beyond it (a component's strain at a span's most tensioned support) is warned about in the results — `ohl sagtension`, the app's warnings by weather case, the Sagging panel; the polynomial is still used there. |
 | `reference_temperature` | no | temperature: `°C`, `degC`, `K`, `°F`, `degF` | `"20 °C"` | Temperature of the curve tests. Both components must use the same. |
 
 ### How the curves are used
 
 - Both components stretch by the same amount; each one's thermal strain \\( \alpha_k (t - t_0) \\) is removed before its curve is applied; the wire tension is the sum of the component loads.
-- **Initial** state: loading along `initial`. **After creep**: from `creep`. **Final**: elastic along `final_modulus` from the permanent set left by creep or by the heaviest load, whichever is larger — see the [sag-tension theory](../theory/sagtension.md).
+- **Initial** state: loading along `initial`. **After creep**: from `creep`. **Final**: elastic along `final_modulus` from the permanent set left by creep or by the heaviest load (each component's set signed: a core whose initial curve is steeper than its final modulus gets a slightly negative one), whichever leaves the wire longer in each weather case — see the [sag-tension theory](../theory/sagtension.md#non-linear-stress-strain-and-creep).
 
 ### Converting a data sheet
 

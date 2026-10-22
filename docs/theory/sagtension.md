@@ -90,11 +90,13 @@ the ruling span refuses it.
 
 ## Tension criteria
 
-Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w \\)) apply in given load states. Raising the stringing tension raises the tension in every state, so each limit gives one maximum stringing tension; the governing one is the smallest. Nested bisection, exit clauses at both levels.
+Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w \\) with \\( w \\) the case's load per metre) apply in given load states. Raising the stringing tension raises the tension in every state, so each limit gives one maximum stringing tension; the governing one is the smallest. Nested bisection, exit clauses at both levels.
 
-**Simplification:** the criteria in `ohl sagtension` use the linear-elastic wire (no creep or permanent set from the stress-strain curves). For a wire whose final state is longer than its elastic one, the final tensions are lower and the sags larger than computed here. Exact: the criteria on the non-linear model in each state.
+**On the non-linear model** (2026-10-22). A wire with stress-strain curves takes its criteria on the non-linear model, each in a **condition**: *initial* (as strung), *after creep* or *after load*. The unknown is the stringing tension (horizontal, at the reference case, on the initial curve). Each trial stringing tension is a full calculation: the section strung, both permanent sets taken from it (the creep case on the creep curve, the heaviest load case on the initial curve), the criterion's case solved in its condition. The sets therefore follow the stringing tension, and the governing criterion is found **by iteration, not in one pass**: a bisection per criterion gives its largest stringing tension; the smallest is checked against every criterion; when one is above its limit there (a set that grows faster than the tension), its bisection runs again below it; at most 10 passes (an error names the criterion beyond that). Hand checks: a limit on the initial state at the reference case gives the limit itself (`nlcrit-001`); after load at the load-stretch case equals the initial state there (`nlcrit-003` = `nlcrit-004`).
 
-*Validation:* `criteria-001`.
+**Simplification:** a wire without curves (the linear models) takes its criteria on the linear-elastic wire, without creep or permanent set; a condition after creep or after load is refused for it. For a wire whose final state is longer than its elastic one, the final tensions are lower and the sags larger than computed here. Exact: the wire's curves, with the conditions above.
+
+*Validation:* `criteria-001`; `nlcrit-001…005` (the Drake-like cable, against an independent re-implementation).
 
 ## Weather loads
 
@@ -128,24 +130,74 @@ A section keeps one unstressed length (zero strain, curves' reference temperatur
 
 and span \\( i \\) carries \\( w (1 + \varepsilon_w)/(1 + \varepsilon_i) \\) per metre of its length ([the wire's own weight is conserved](#the-wires-own-weight-is-conserved)): thermal strain, creep and the permanent set add length, not weight. A linear model's creep stretch lengthens \\( L_0 \\) and lowers \\( 1 + \varepsilon_w \\) by the same factor.
 
-**Final condition.** The wire is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; the final state is the one leaving the wire longer, elastic along the final modulus (and back onto the initial curve if loaded beyond). "Longer" is compared at a working tension (the creep case's), and the permanent stretch passed to the FE model is measured at the stringing tension — not at zero tension, where outer strands that take no compression are slack and only the core's set would count (about half the stretch of the synthetic test wire). At the governing heaviest case, final and initial tensions are therefore equal — a consistency check used in the validation.
+**Final condition.** The wire is strung on its initial curve. The permanent set *after load* is computed from the heaviest load case on the initial curve, the permanent set *after creep* from the creep case on the creep curve; each final state is elastic along the final modulus from its set (and back onto the initial curve if loaded beyond). The permanent stretch passed to the FE model is measured at the stringing tension — not at zero tension, where outer strands that take no compression are slack and only the core's set would count (about half the stretch of the synthetic test wire).
 
-**Conservative:** the final state takes the larger of the two permanent sets (after creep, after the heaviest load), not their combination over time. The longer wire gives the larger sag: on the safe side for clearances (and a section's *Max Sag* calculation takes, per weather case, whichever of the two states sags more); for tensions the shorter wire of the initial state gives the higher values, and that state is solved on its own. Exact: a time-based history of loads and creep (not modelled).
+**The permanent set is signed** (2026-10-22). Component \\( k \\), brought to mechanical strain \\( e_k \\) and load \\( P_k \\) on its curve, keeps the set
+
+\\[ \varepsilon_{p,k} = e_k - \frac{P_k}{EA_{f,k}} \\]
+
+and in the final state carries \\( \min\big(EA_{f,k}(\varepsilon_k - \varepsilon_{p,k}),\\; P_{init,k}(\varepsilon_k)\big) \\), with \\( P_{init,k} \\) the initial state (the initial curve, and the final modulus from zero below zero strain). The line passes through the point reached, so reloaded to the tension of the set's own case the wire is back on the initial curve: **after load, final and initial tensions are equal at the load-stretch case** (a check used in the validation, `xdrake-007`, to \\( 10^{-6} \\)). A component whose initial curve rises more steeply than its final modulus near zero strain (some steel cores: \\( P_k(e) > EA_{f,k}\\, e \\)) gets a slightly **negative** set. Before 2026-10-22 the set was clamped at zero: the final line then lay under the initial curve at the very point it starts from, and the Drake-like cross-check case (its core 38629 psi/% initially against 37000 psi/% final, a set of −0.003 %) gave a final tension 0.14 % below the initial at the load-stretch case. Storing the stretch as a load (the line through the curve's point at that load) is the same line; the signed strain was kept because the final state, the FE model and the reports already carry a strain per component.
+
+**Both final states; the governing one per case** (2026-10-22). Both final states are solved in every weather case, and **the one leaving the wire longer in that case governs**: the lower horizontal tension, so the larger sags. Which one that is can change with the case: with the Drake-like test curves, after load governs from 32 °F to 120 °F and with heavy ice without the stretch case's wind, after creep from 167 °F up — and at the load-stretch case itself, where after load equals the initial state and the creep set is the larger (`xdrake-001…009`). A tie (within \\( 10^{-9} \\) of the tension, both states on the initial curve) goes to the load. One state for the whole section, where one is needed (the FE model's permanent stretch, the old single output), is the longer at the creep case's tension. The line's *Max Sag* calculation takes, per weather case, whichever of the two sags more — the same rule.
+
+**Conservative:** the final state takes, per weather case, the larger of the two permanent sets (after creep, after the heaviest load), not their combination over time. The longer wire gives the larger sag: on the safe side for clearances (a section's *Max Sag* calculation takes, per weather case, whichever of the two states sags more); for tensions the shorter wire of the initial state gives the higher values, and that state is solved on its own. Exact: a time-based history of loads and creep (not modelled).
+
+**The curves' range.** A stress-strain polynomial is valid up to its data's `max_strain` (optional; 1 % when not given; old files read unchanged). Beyond it OpenOHL still evaluates the polynomial — it does not invent an extrapolation — but the results **warn**: the sag-tension validation output `beyond_range`, `ohl sagtension` ("Warning: … beyond its curves' range"), the app's warnings per weather case (the ruling-span and finite-element solutions) and its Sagging panel. The check takes each span's most tensioned support, whose strain is a little higher than the mean tension's the length is computed from: it warns slightly early, on the safe side (`nonlinear-003…004`).
+
+**A slack cable's strain at zero tension** (2026-10-22). When every component is limited to no compression, a slack cable carries no tension over a range of strains; its strain at zero tension — the length that carries the own weight per metre — is the upper end of that range, where it starts to carry tension. It was the lower end of the search bracket before (−0.1 %, by accident), which made such a cable's own weight per metre 0.1 % too low; the Drake-like cross-check (both components without compression) moved by −0.03 % to +0.04 % in tension (initially at 250 °F, 19870.49 → 19878.08 N).
 
 **Simplification:** creep is the creep curve's (typically 10-year) set at one creep weather case. Creep goes on beyond the curve's period and depends on the tension history; the curve's period must match the line's life. Exact: a time-based creep law (not modelled).
 
 **Simplification:** the linear wire models of the [wire library](../user-guide/wire-library.md#wire-models) (`linear_creep_tension`, `linear_creep_temperature`) take creep as an equivalent temperature rise and have no permanent set after load. After a heavy ice or wind load the real wire is longer: sags are underestimated and tensions overestimated. Exact: the non-linear model with the wire's curves.
 
-Curves are wire type **data**: OpenOHL ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** wire (invented curves) against an independent re-implementation; comparison with published examples (CIGRE TB 324 etc.) is planned.
+Curves are wire type **data**: OpenOHL ships no manufacturer curves. The repository's non-linear validation cases use a **synthetic** wire (invented curves) and a **Drake-like** test cable whose curves come from a public-domain library's test data (source not stated: test input, not CIGRE TB 324 data), each against an independent re-implementation; the Drake-like cases are also cross-checked against that library's own run, the conventions matched (its own weight per stretched metre emulated, its first-order length update explained): −0.004 to +0.022 %. Comparison with published examples (CIGRE TB 324 etc.) waits for curves from an admissible source.
 
-*Validation:* `nonlinear-001…002`; `tbbim-001…002` (a linear bimetallic wire whose outer strands take no compression, below and above its knee point, 140.85 °C) ([Textbook and published cases](../validation/textbook.md)).
+*Validation:* `nonlinear-001…004`; `xdrake-001…009` (the Drake-like cable: both final states, the governing one per case, after load equal to initial at the load-stretch case); `tbbim-001…002` (a linear bimetallic wire whose outer strands take no compression, below and above its knee point, 140.85 °C) ([Textbook and published cases](../validation/textbook.md)).
 
 The finite-element model follows the same curves: each span's unstressed length is corrected until its length at the span's mean tension is the curves' length in the case's material state, see [Finite-element wire systems](wirefe.md#non-linear-stress-strain-in-the-elements).
 
+## Sagging outputs
+
+*2026-10-22.* What the stringing crew measures, from the states already solved — post-processing only, in `ohl_sagtension::sagging`; `ohl sagtension`'s `[sagging]` and the section window's **Sagging** panel ([Sagging outputs](../user-guide/sagging.md)). The section is in the blocks, initial state, bare, still air, at the conductor temperature of sagging. Each formula is derived here; the textbook formulas and a public-domain library are used only as cross-checks.
+
+**Stopwatch (return wave).** A transverse wave runs along a cable at \\( c = \sqrt{T/\mu} \\) (tension \\( T \\), mass per metre \\( \mu \\); from the wave equation of a string, \\( \mu\\,\partial^2 y/\partial t^2 = T\\,\partial^2 y/\partial s^2 \\)). Along the catenary \\( T = H\cosh u \\), \\( ds = \cosh u\\,dx \\), \\( u = (x - x_m)/C \\), and \\( \mu = q/g \\) with \\( q \\) the span's load per metre (the own weight spread over the stretched wire). A pulse struck at one support and seen back after \\( n \\) round trips takes
+
+\\[ t_n = 2n \int_0^L \frac{ds}{c} = 2n \sqrt{\frac{q}{gH}} \int_0^S \sqrt{\cosh\frac{x - x_m}{C}}\\,dx \\]
+
+(composite Simpson, 1024 intervals). For a taut level span (\\( T \approx H \\), \\( L \approx S \\), \\( D = qS^2/8H \\)) this is the field formula \\( t_n = 2n\sqrt{8D/g} \\), i.e. \\( D = g t_n^2/(32 n^2) \\): +0.03 % on the time at 300 m, 28 kN (`sag-001`). **Simplification:** the wave speed of a taut string, \\( \sqrt{T/\mu} \\): the cable's bending stiffness and the sag's coupling of transverse and longitudinal waves are left out, as in the field method. A public-domain library takes \\( H \\) for \\( T \\) along the whole arc (+0.06 % here, a slower wave).
+
+**Dynamometer.** It reads the tension along the wire at the clamp where it is inserted: \\( T_A = H\cosh(x_m/C) \\), \\( T_B = H\cosh((S - x_m)/C) \\); \\( T_B - T_A = qh \\) exactly (`sag-002`).
+
+**Transit (angle of sight).** An instrument at \\( (x_i, z_i) \\) in the span's plane (below the wire), the line of sight tangent to the wire at \\( x_t \\): the tangent \\( z = y(x_t) + y'(x_t)(x - x_t) \\) passes through the instrument when
+
+\\[ f(x_t) = y(x_t) + y'(x_t)(x_i - x_t) - z_i = 0, \qquad f'(x_t) = y''(x_t)(x_i - x_t) < 0 \quad (x_t > x_i) \\]
+
+so beyond the instrument there is one tangent point (bisection). The angle is \\( \arctan y'(x_t) \\); the target goes where the line meets the far support's vertical, \\( z_i + y'(x_t)(S - x_i) \\). Hand check, the parabola of a level span with the instrument \\( a \\) below one support and the target \\( b \\) below the other: \\( \sqrt a + \sqrt b = 2\sqrt D \\), tangent at \\( x_t = S\sqrt{a/4D} \\) (`sag-001`: the parabola 0.01 % off the exact catenary). An instrument above the wire, or a tangent beyond the far support, is refused with the reason.
+
+**Inclined-span correction.** A level-span sag chart gives \\( D_{level} = C(\cosh(S/2C) - 1) \\); the inclined span's sag (vertical, where the wire is parallel to the chord) is larger, about \\( D_{level}/\cos\theta \\) since the load is per metre of wire. The correction is the exact difference, \\( D - D_{level} \\) (`sag-002`: 0.0883 m on 300 m +50 m; \\( D_{level}(1/\cos\theta - 1) \\) gives 0.0885 m).
+
+**Stringing temperature.** The conductor is rarely at the chart's temperature; the sag per kelvin is the central difference of the section solved at \\( t \pm 0.5 \\) K (each solve exact). Hand check, the parabola of a linear wire: from \\( L = S + 8D^2/3S \\), \\( dL = S(\alpha\\,dt + dT/EA) \\) and \\( T \approx qS^2/8D \\),
+
+\\[ \frac{dD}{dt} = \frac{S\alpha}{16D/3S + qS^3/(8D^2 EA)} \\]
+
+(`sag-001`: 0.037345 m/K by the parabola, 0.037429 m/K exact).
+
+**Clipping offsets.** A section sagged in the blocks at one condition keeps, per span, the unstressed lengths \\( L_{0,j}^{sag} \\) of that state; clipped in at another (the conductor at another temperature), the wire has rolled through the blocks to \\( L_{0,j}^{clip} \\) — in the engine's in-the-blocks model, one horizontal tension through the section, a long span taking more slack as \\( H \\) falls (about \\( q^2 S^3\\,dH/12H^3 \\) per span). At structure \\( i \\) (after span \\( i \\)) the clamp point lies
+
+\\[ \delta_i = \sum_{j \le i} \left(L_{0,j}^{sag} - L_{0,j}^{clip}\right) \\]
+
+along the unstressed wire from the point at the block, positive into the span ahead; both sets add up to the section's unstressed length, so \\( \delta \\) is zero at the far dead-end (`sag-003`: +30.7 mm and −18.0 mm at the two suspension structures of 200/350/250 m, sagged at 15 °C, clipped at 35 °C). Clipped at the sagging temperature the offsets are zero in this model.
+
+**Simplification:** in the blocks the wire keeps one horizontal tension through the section (the engine's model, unchanged). Real sheaves pass the tension *along the wire* (equal support tension on both sides of a frictionless sheave, differing from equal \\( H \\) by about \\( q\\,\Delta h \\) per inclined span) and have friction; on inclined spans that gives sag corrections and clipping offsets of a few millimetres even at the sagging temperature, which this model does not give. Exact: a sheave model of the in-the-blocks state (a follow-up; an engine change not approved yet).
+
+**Simplification:** the clipping offsets are given along the unstressed wire; along the stretched wire they are \\( 1 + \varepsilon \\) (about \\( 10^{-3} \\)) longer — micrometres.
+
+*Validation:* `sag-001…003` (hand derivations above and an independent reference with other numerics: Gauss–Legendre in the arc parameter, Newton for the tangent).
+
 ## Not yet included
 
-- Tension criteria in `ohl sagtension` still use the linear-elastic wire.
 - Time-based creep models.
+- A sheave model in the blocks (equal support tension across frictionless sheaves, sheave friction): sag corrections and clipping offsets at the sagging temperature.
 - Validation of the non-linear method against published cases: waits for published reference data (no tables typed from memory); see the roadmap (open point O11).
 
 Results must be verified by a qualified engineer.
