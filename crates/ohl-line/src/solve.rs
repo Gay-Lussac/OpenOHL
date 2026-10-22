@@ -1998,7 +1998,7 @@ fn load_magnitude(case: &WeatherCase, cable: &Cable) -> f64 {
 /// `case` as a sag-tension load state: the resultant per metre, of which
 /// the cable's own weight (conserved by the sag-tension solvers, per metre
 /// of the cable as strung) and the wind.
-fn load_state(case: &WeatherCase, cable: &Cable) -> ohl_sagtension::LoadState {
+pub(crate) fn load_state(case: &WeatherCase, cable: &Cable) -> ohl_sagtension::LoadState {
     use ohl_core::units::ForcePerLength;
     let load = case.wire_load(cable.diameter, cable.weight());
     ohl_sagtension::LoadState {
@@ -2022,7 +2022,7 @@ type Strung = (
 /// the clamps hanging in still air at the stringing temperature), the
 /// stringing state and the horizontal tension then (the mean of the
 /// spans', from the finite-element model).
-fn strung(
+pub(crate) fn strung(
     line: &Line,
     section: &Section,
     cable: &Cable,
@@ -2257,6 +2257,13 @@ fn solve_rs(
     let solved = ns
         .solve(load_state(case, cable), &material, budget)
         .map_err(st)?;
+    // States beyond the stress-strain curves' range (2026-10-22).
+    let flags: Vec<String> = ns
+        .range_warnings(&solved, &load_state(case, cable), &material)
+        .map_err(st)?
+        .into_iter()
+        .map(|w| format!("stress-strain {w}"))
+        .collect();
     let h = solved.horizontal_tension.si();
     let mut out = Vec::with_capacity(spans.len());
     for (k, sol) in solved.spans.iter().enumerate() {
@@ -2310,7 +2317,7 @@ fn solve_rs(
         iterations: 0,
         estimated_weights: vec![None; n],
         attachment_loads: Vec::new(),
-        flags: Vec::new(),
+        flags,
         pulls: Vec::new(),
         nodes: Vec::new(),
         span_points: Vec::new(),
@@ -2675,6 +2682,21 @@ fn solve_fe(
             }
         })
         .collect();
+    // States beyond the stress-strain curves' range (2026-10-22): the
+    // strain at each span's largest tension, in the case's material state.
+    if let Some(m) = &curves {
+        use ohl_cables::mechanics::MaterialState;
+        use ohl_core::units::{Force, Temperature};
+        let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
+        for (k, span) in spans.iter().enumerate() {
+            let at = Temperature::from_celsius(cases.of(k).temperature.celsius());
+            if let Ok(e) = m.strain(Force::from_si(span.max_tension), at, &material) {
+                for r in m.beyond_range(e, at) {
+                    flags.push(format!("span {}: stress-strain {r}", k + 1));
+                }
+            }
+        }
+    }
     Ok(SectionShape {
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),

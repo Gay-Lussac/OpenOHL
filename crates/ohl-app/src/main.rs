@@ -73,6 +73,7 @@ mod requirement_ui;
 mod revision;
 mod rule_editor;
 mod safety_volume;
+mod sagging_panel;
 mod scene;
 mod selection;
 mod sheet_ui;

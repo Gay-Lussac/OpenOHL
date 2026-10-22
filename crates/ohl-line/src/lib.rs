@@ -42,6 +42,7 @@ pub mod links;
 pub mod objects;
 mod rod;
 pub mod route;
+pub mod sagging;
 pub mod solve;
 
 pub use objects::{
