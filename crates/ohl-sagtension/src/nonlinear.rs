@@ -141,6 +141,15 @@ impl NonlinearSection {
             }) {
                 Ok(x) => x,
                 Err(SagTensionError::TooSlack { .. }) => return Ok(None),
+                // A trial far too slack (the catenary parameter below half
+                // the span: a sag over a quarter of it) whose stretch does
+                // not settle (strains far beyond any curve) is too slack,
+                // not an error: the bracket moves on.
+                Err(SagTensionError::InvalidInput(_))
+                    if 2.0 * h < state.load.si() * g.span.si() =>
+                {
+                    return Ok(None);
+                }
                 Err(e) => return Err(e),
             };
             total += solution.length().si() / stretch / (1.0 + self.weight_strain);
@@ -217,6 +226,54 @@ impl NonlinearSection {
         })
     }
 
+    /// Each span's unstressed length (zero strain, the curves' reference
+    /// temperature, m) in a solution of the section in `state` with the
+    /// material in `material`: its length over \\( 1 + \varepsilon_i \\). They
+    /// add up to the section's unstressed length.
+    pub fn span_unstressed_lengths(
+        &self,
+        solution: &SectionSolution,
+        state: &LoadState,
+        material: &MaterialState,
+    ) -> Result<Vec<f64>, SagTensionError> {
+        solution
+            .spans
+            .iter()
+            .map(|s| {
+                let strain = self
+                    .mechanics
+                    .strain(Force::from_si(mean_tension(s)), state.temperature, material)
+                    .map_err(cable_error)?;
+                Ok(s.length().si() / (1.0 + strain))
+            })
+            .collect()
+    }
+
+    /// Warnings for a solution in `state`: the components strained beyond
+    /// their curves' validity (`max_strain`), at the most tensioned
+    /// support of each span (the strain the polynomial is evaluated at is
+    /// the mean tension's, a little lower: warning from the support's is on
+    /// the safe side). One line per span and component, empty within range.
+    pub fn range_warnings(
+        &self,
+        solution: &SectionSolution,
+        state: &LoadState,
+        material: &MaterialState,
+    ) -> Result<Vec<String>, SagTensionError> {
+        let mut out = Vec::new();
+        for (k, s) in solution.spans.iter().enumerate() {
+            let t = s.tension_left().max(s.tension_right());
+            let strain = self
+                .mechanics
+                .strain(t, state.temperature, material)
+                .map_err(cable_error)?;
+            for r in self.mechanics.beyond_range(strain, state.temperature) {
+                out.push(format!("span {}: {r}", k + 1));
+            }
+        }
+        Ok(out)
+    }
+
     /// Length-weighted mean tension of the section in a solution, N.
     pub fn section_mean_tension(solution: &SectionSolution) -> f64 {
         let (weighted, length) = solution.spans.iter().fold((0.0, 0.0), |(w, l), s| {
@@ -227,15 +284,128 @@ impl NonlinearSection {
     }
 }
 
+/// Both final material states of a strung section, and the one that
+/// leaves the cable longer at the creep (working) tension.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinalStates {
+    /// The permanent set after creep (the creep curve at the creep case).
+    pub after_creep: MaterialState,
+    /// The permanent set after the heaviest load (the initial curve at the
+    /// load case).
+    pub after_load: MaterialState,
+    /// Which leaves the cable longer at the creep case's tension (one
+    /// state for the whole section, as [`final_condition`] gives it).
+    pub longer: FinalCause,
+}
+
+impl FinalStates {
+    /// The material state of a cause.
+    pub fn state(&self, cause: FinalCause) -> &MaterialState {
+        match cause {
+            FinalCause::Creep => &self.after_creep,
+            FinalCause::Load => &self.after_load,
+        }
+    }
+}
+
+/// The final state of one weather case: both solutions and the governing
+/// one ([`governing_final`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinalCase {
+    /// The section after creep.
+    pub after_creep: SectionSolution,
+    /// The section after the heaviest load.
+    pub after_load: SectionSolution,
+    /// The governing one: the longer cable in this case (the lower
+    /// horizontal tension, so the larger sags).
+    pub governing: FinalCause,
+}
+
+impl FinalCase {
+    /// The governing solution.
+    pub fn solution(&self) -> &SectionSolution {
+        match self.governing {
+            FinalCause::Creep => &self.after_creep,
+            FinalCause::Load => &self.after_load,
+        }
+    }
+}
+
+/// Both final states of a strung section: the permanent sets after creep
+/// (`creep` state on the creep curve) and after the heaviest load
+/// (`max_load` state on the initial curve), and the longer of the two at
+/// the creep tension.
+pub fn final_states(
+    section: &NonlinearSection,
+    creep: LoadState,
+    max_load: LoadState,
+    budget: &Budget,
+) -> Result<FinalStates, SagTensionError> {
+    let (after_creep, after_load, longer) = sets(section, creep, max_load, budget)?;
+    Ok(FinalStates {
+        after_creep,
+        after_load,
+        longer,
+    })
+}
+
+/// The final state of the section in weather case `state`
+/// (2026-10-22): both final states solved, and the one that leaves the
+/// cable longer **in this case** governs — the lower horizontal tension,
+/// so the larger sags. Which one that is can change with the case (with
+/// some curves creep governs when hot, load when cold). A tie (within
+/// \\( 10^{-9} \\) of the tension: both on the initial curve, at the
+/// heaviest case) is given to the load.
+pub fn governing_final(
+    section: &NonlinearSection,
+    states: &FinalStates,
+    state: LoadState,
+    budget: &Budget,
+) -> Result<FinalCase, SagTensionError> {
+    let after_creep = section.solve(state, &states.after_creep, budget)?;
+    let after_load = section.solve(state, &states.after_load, budget)?;
+    let (hc, hl) = (
+        after_creep.horizontal_tension.si(),
+        after_load.horizontal_tension.si(),
+    );
+    let governing = if hc < hl * (1.0 - 1e-9) {
+        FinalCause::Creep
+    } else {
+        FinalCause::Load
+    };
+    Ok(FinalCase {
+        after_creep,
+        after_load,
+        governing,
+    })
+}
+
 /// Final material state of a strung section: the longer of the permanent
 /// sets after creep (`creep` state on the creep curve) and after the heaviest
-/// load (`max_load` state on the initial curve).
+/// load (`max_load` state on the initial curve), compared at the creep
+/// tension (one state for every case; [`governing_final`] chooses per
+/// case).
 pub fn final_condition(
     section: &NonlinearSection,
     creep: LoadState,
     max_load: LoadState,
     budget: &Budget,
 ) -> Result<(MaterialState, FinalCause), SagTensionError> {
+    let (after_creep, after_load, cause) = sets(section, creep, max_load, budget)?;
+    Ok(match cause {
+        FinalCause::Creep => (after_creep, cause),
+        FinalCause::Load => (after_load, cause),
+    })
+}
+
+/// The permanent sets after creep and after load, and which is longer at
+/// the creep tension.
+fn sets(
+    section: &NonlinearSection,
+    creep: LoadState,
+    max_load: LoadState,
+    budget: &Budget,
+) -> Result<(MaterialState, MaterialState, FinalCause), SagTensionError> {
     let m = &section.mechanics;
     let loaded = section.solve(max_load, &MaterialState::Initial, budget)?;
     let after_load = m
@@ -252,14 +422,14 @@ pub fn final_condition(
         .permanent_set(working, creep.temperature, &MaterialState::Creep)
         .map_err(cable_error)?;
     let longer = m
-        .longer(after_creep.clone(), after_load, working)
+        .longer(after_creep.clone(), after_load.clone(), working)
         .map_err(cable_error)?;
     let cause = if longer == after_creep {
         FinalCause::Creep
     } else {
         FinalCause::Load
     };
-    Ok((longer, cause))
+    Ok((after_creep, after_load, cause))
 }
 
 #[cfg(test)]

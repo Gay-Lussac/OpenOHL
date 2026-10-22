@@ -722,13 +722,20 @@ impl Calculation for Nonlinear {
     }
 
     fn description(&self) -> &'static str {
-        "Level span with non-linear stress-strain/creep: initial and final (inputs: cable table, span, \
-         known_*, creep_*, max_*, load, temperature)"
+        "Level span with non-linear stress-strain/creep: initial and both final states \
+         (inputs: cable table, span, known_*, creep_*, max_*, load, temperature, optional \
+         wind / max_wind); outputs h_initial_n, h_final_n and final_cause (the governing final \
+         state in this case: 1 after load, 0 after creep), h_final_creep_n, h_final_load_n, \
+         the sags, final_cause_global (the longer at the creep tension), \
+         load_final_over_initial and beyond_range \
+         (the number of warnings: a state beyond the curves' max_strain)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
         use ohl_cables::mechanics::{MaterialState, Mechanics};
-        use ohl_sagtension::nonlinear::{FinalCause, NonlinearSection, final_condition};
+        use ohl_sagtension::nonlinear::{
+            FinalCause, NonlinearSection, final_states, governing_final,
+        };
 
         let cable: ohl_cables::Cable = inputs
             .get("cable")
@@ -739,6 +746,8 @@ impl Calculation for Nonlinear {
         cable.validate().map_err(|e| e.to_string())?;
         let mechanics = Mechanics::from_cable(&cable).map_err(|e| e.to_string())?;
         let weight = own_weight(inputs, "known_load")?;
+        // The wind of each state: `known_wind`, `creep_wind`, `max_wind`,
+        // `wind` (optional).
         let state = |load: &str, temperature: &str| load_state(inputs, load, temperature, weight);
         let budget = default_solver_budget();
         let section = NonlinearSection::from_known_state(
@@ -751,7 +760,7 @@ impl Calculation for Nonlinear {
             &MaterialState::Initial,
         )
         .map_err(|e| e.to_string())?;
-        let (final_state, cause) = final_condition(
+        let states = final_states(
             &section,
             state("creep_load", "creep_temperature")?,
             state("max_load", "max_temperature")?,
@@ -762,18 +771,43 @@ impl Calculation for Nonlinear {
         let initial = section
             .solve(target, &MaterialState::Initial, &budget)
             .map_err(|e| e.to_string())?;
-        let final_ = section
-            .solve(target, &final_state, &budget)
-            .map_err(|e| e.to_string())?;
+        let fin = governing_final(&section, &states, target, &budget).map_err(|e| e.to_string())?;
+        let mut warnings = section
+            .range_warnings(&initial, &target, &MaterialState::Initial)
+            .map_err(|e| e.to_string())?
+            .len();
+        for (solution, cause) in [
+            (&fin.after_creep, FinalCause::Creep),
+            (&fin.after_load, FinalCause::Load),
+        ] {
+            warnings += section
+                .range_warnings(solution, &target, states.state(cause))
+                .map_err(|e| e.to_string())?
+                .len();
+        }
+        let cause = |c: FinalCause| if c == FinalCause::Load { 1.0 } else { 0.0 };
         Ok(outputs([
             ("h_initial_n", initial.horizontal_tension.newtons()),
-            ("h_final_n", final_.horizontal_tension.newtons()),
+            ("h_final_n", fin.solution().horizontal_tension.newtons()),
             ("sag_initial_m", initial.spans[0].sag().meters()),
-            ("sag_final_m", final_.spans[0].sag().meters()),
+            ("sag_final_m", fin.solution().spans[0].sag().meters()),
+            ("final_cause", cause(fin.governing)),
+            ("final_cause_global", cause(states.longer)),
             (
-                "final_cause",
-                if cause == FinalCause::Load { 1.0 } else { 0.0 },
+                "h_final_creep_n",
+                fin.after_creep.horizontal_tension.newtons(),
             ),
+            (
+                "h_final_load_n",
+                fin.after_load.horizontal_tension.newtons(),
+            ),
+            ("sag_final_creep_m", fin.after_creep.spans[0].sag().meters()),
+            ("sag_final_load_m", fin.after_load.spans[0].sag().meters()),
+            (
+                "load_final_over_initial",
+                fin.after_load.horizontal_tension / initial.horizontal_tension,
+            ),
+            ("beyond_range", warnings as f64),
         ]))
     }
 }
