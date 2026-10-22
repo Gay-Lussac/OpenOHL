@@ -116,6 +116,89 @@ by hand and by the reference.
 | tbbim-001 | 60 °C, both components in tension | composite modulus and expansion + reference | \\( 10^{-7} \\) |
 | tbbim-002 | 150 °C, the core alone | core-only strain + reference | \\( 10^{-7} \\) |
 
+### Non-linear model: a Drake-like cross-check (`benchmarks/sagtension/crosscheck-drake.toml`)
+
+*2026-10-22.* The non-linear (shell/core) model on a **Drake-like** test
+cable. **Its curves come from a public-domain library's test data; the
+source of the curves is not stated there.** They are test input only — not
+CIGRE TB 324 data, not a manufacturer's (degree-4 polynomials in psi on the
+total area, % strain, at 70 °F; final moduli 64000 and 37000 psi/%; neither
+component takes compression). Level 1200 ft (365.76 m), strung at 6000 lbf
+(26689.33 N) at 60 °F; creep at 60 °F bare; the heaviest load 0.5 in ice,
+8 psf, 0 °F.
+
+Two references:
+
+- **First** (the expected values): an independent re-implementation,
+  `benchmarks/sagtension/reference_crosscheck.py` (Illinois strain
+  inversion, Newton on each polynomial for the zero-tension strain,
+  Simpson integrals, a secant root on log H). It agrees with the code to
+  \\( 10^{-10} \\); tolerance \\( 10^{-7} \\).
+- **Second** (in the case notes): that library's own sag-tension run on
+  the same inputs (a scratch driver; none of its code is copied). Its
+  conventions are matched or explained: its spans carry a constant load
+  per stretched metre (emulated inside it, the raw values up to 0.2 %
+  apart), its length update is first order (\\( L(1 + \Delta\varepsilon) \\),
+  about \\( L\\,\Delta\varepsilon\\,\varepsilon \\): 0.01–0.02 % of H here), its
+  mean tension samples 101 points, its tolerances are 0.01 lbf, and it
+  shifts a curve that does not start at zero load along the strain axis
+  (here the same curve where the load is positive). With the weight
+  convention emulated, the code minus the library is −0.004 % to +0.022 %.
+
+| Case | What | Tolerance |
+|---|---|---|
+| xdrake-001…003 | 60, 32, 120 °F bare: after load governs | \\( 10^{-7} \\) |
+| xdrake-004…006 | 167, 212, 250 °F bare: **after creep governs** (the governing state changes with temperature) | \\( 10^{-7} \\) |
+| xdrake-007 | the load-stretch case: **after load equals initial** (`load_final_over_initial` = 1 to \\( 10^{-6} \\), the core's negative set); after creep governs there | \\( 10^{-7} \\), \\( 10^{-6} \\) |
+| xdrake-008 | 1 in ice, 8 psf: heavier, all three states on the initial curve | \\( 10^{-7} \\) |
+| xdrake-009 | 0.5 in ice without wind: after load governs | \\( 10^{-7} \\) |
+
+Each case has H initially, after creep, after load, the governing final
+state and its cause, and checks that no state is beyond the curves'
+range. **These cases changed the code** (decision log 2026-10-22): the
+core's permanent set was clamped at zero, so at the load-stretch case the
+final tension was 53983.13 N against an initial 54059.11 N (−0.14 %); and
+the strain at zero tension of a cable whose components all take no
+compression was the search bracket's end. With both fixed the final after
+load equals the initial there (54044.88 N), and the library agrees to
+0.010 %. Every case's previous value is in its notes.
+
+### Curves' range (`benchmarks/sagtension/nonlinear-range.toml`)
+
+| Case | What | Source | Tolerance |
+|---|---|---|---|
+| nonlinear-003 | the synthetic cable, its outer curves valid to 0.2 %: at the max load case the outer strands reach 0.224 % at the supports — a warning in each of the three states | hand: the support tension's strain minus the thermal strain | exact count |
+| nonlinear-004 | the same at 75 °C: 0.061 %, no warning | the same | exact count |
+
+### Tension criteria on the non-linear model (`benchmarks/sagtension/nonlinear-criteria.toml`)
+
+The Drake-like cable and cases above; criteria each in a condition
+(initial, after creep, after load); the stringing tension found with the
+permanent sets recomputed at every trial and the governing criterion by
+iteration. Expected values from `reference_crosscheck.py`'s own bisection.
+
+| Case | What | Hand check | Tolerance |
+|---|---|---|---|
+| nlcrit-001 | H initial at the reference case ≤ 26689.33 N | the limit itself | \\( 10^{-7} \\) |
+| nlcrit-002 | H after creep at 60 °F ≤ 18 % RTS | — | \\( 10^{-7} \\) |
+| nlcrit-003 | support after load at the heavy case ≤ 40 % RTS | equals nlcrit-004 (after load = initial there) | \\( 10^{-7} \\) |
+| nlcrit-004 | support initial at the heavy case ≤ 40 % RTS | — | \\( 10^{-7} \\) |
+| nlcrit-005 | four criteria, three conditions: after creep governs (21975.9 N), the others below their limits | proportion from xdrake-001 (an overestimate, the set grows with the tension) | \\( 10^{-7} \\), \\( 10^{-6} \\) on utilisations |
+
+### Sagging outputs (`benchmarks/sagtension/sagging.toml`)
+
+A linear wire (EA 34.64 MN, 18.9·10⁻⁶/K, 15.97 N/m) strung at 28 kN at
+15 °C. Expected values from `benchmarks/sagtension/reference_sagging.py`
+(other numerics: Gauss–Legendre in the arc parameter for the stopwatch,
+Newton for the tangent, its own central difference); the hand derivations
+are in the case notes and the [theory](../theory/sagtension.md#sagging-outputs).
+
+| Case | What | Hand check | Tolerance |
+|---|---|---|---|
+| sag-001 | level 300 m: stopwatch (3 waves), dynamometer, transit 3 m below, sag per kelvin | \\( t = 2n\sqrt{8D/g} \\) (+0.03 %); \\( T = H + qy \\); \\( \sqrt a + \sqrt b = 2\sqrt D \\); the parabola's \\( dD/dt \\) (−0.2 %) | \\( 10^{-7} \\) |
+| sag-002 | 300 m +50 m: dynamometer at both ends, inclined correction, transit | \\( T_B - T_A = qh \\) exactly; \\( D_{level}(1/\cos\theta - 1) \\) | \\( 10^{-7} \\) |
+| sag-003 | 200/350/250 m inclined, sagged at 15 °C, clipped in at 35 °C: clipping offsets | zero at the far dead-end; zero when clipped at the sagging temperature | \\( 10^{-7} \\) m |
+
 ### Ice and wind (`benchmarks/weather/textbook-ice-wind.toml`)
 
 | Case | What | Source | Tolerance |
@@ -182,7 +265,16 @@ Two cases need a word:
   24670 N): the brochure's own linear Drake data (sec. 5.2.3–5.2.4) give
   19703 N and 23560 N (7 % and 4.5 % lower); the elongation model behind the
   table is not stated, so its inputs are incomplete. The tilt of the
-  string that follows depends on these tensions.
+  string that follows depends on these tensions. **A lead, kept as a
+  note** (2026-10-22): on the initial curve of the Drake-like test curves
+  above (a public-domain library's test data, source not stated), the
+  non-linear model gives 21167.3 N and 24656.4 N (−0.05 % and −0.06 %);
+  that library itself 21190.7 N and 24685.5 N (+0.06 %), the printed
+  values lying between the two own-weight conventions. This suggests an
+  initial-curve model on Aluminum Association-type Drake curves behind
+  the table. It becomes a case only once the owner confirms the curves
+  from an admissible source (the brochure's own, or published data); the
+  Table 4 and Fig. 15 cases would then follow from these tensions.
 - *Table 4* (sec. 3.2, p. 27): the stringing tension of the two spans is
   not given (the dead-end tensions at 100 °C, 17.1 and 19.9 kN, are not
   those of Table 3).
@@ -254,9 +346,20 @@ Two cases need a word:
   the elastic wire's weight per unstressed metre (tb324-011: 5 mm less
   sag than the inextensible catenary at 28 kN).
 
+- **The non-linear model** (2026-10-22, the Drake-like cross-check
+  above): a core whose initial curve is steeper than its final modulus
+  had its permanent set clamped at zero, so after load the final tension
+  was not the initial at the load-stretch case (−0.14 %); the set is now
+  signed. A slack cable's zero-tension strain (every component without
+  compression) was the search bracket's end; it is now where the cable
+  starts to carry tension (−0.03 % to +0.04 % on the cases' initial tensions).
+  Neither changed any earlier case (the synthetic cable's sets are
+  positive and its core takes compression).
+
 ## Not covered yet
 
 Time-based creep (not modelled), non-linear stress-strain against
-published curves (none provided), thermal ratings against a published
-TB 601 example (none provided yet), and bundles and jumpers by textbook
-cases.
+published curves (none provided; the Drake-like cross-check uses test
+curves of unstated source), thermal ratings against a published TB 601
+example (none provided yet), a sheave model of the in-the-blocks state,
+and bundles and jumpers by textbook cases.

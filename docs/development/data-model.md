@@ -747,6 +747,25 @@ wire types' mass at 20 °C). The app's wire library editor raises a file to 2
 when one of its wire types gives the field (`LibraryPage::save`); without it a
 file keeps its version.
 
+**Stress-strain curves and the sag-tension job** (2026-10-22). A
+component's `stress_strain.max_strain` (optional, strain units; 1 % when
+absent — unchanged) now also says where the results warn: a state beyond
+it is flagged (`Mechanics::beyond_range`, `NonlinearSection::range_warnings`,
+`SectionShape::flags`), the polynomial still evaluated. The wire format is
+unchanged. `MaterialState::Final { permanent }` holds a **signed** set per
+component (it was never below zero before). The `ohl sagtension` job file
+(no format id; read by `crates/ohl-cli/src/sagtension_job.rs`) takes two
+optional additions, old jobs read unchanged: `[[criterion]] condition`
+(`initial` default, `creep`, `load`; a wire with curves then takes its
+criteria on the non-linear model, a linear wire refuses the last two) and
+a `[sagging]` table (`temperature`, `waves`, `clip_temperature`,
+`[[sagging.transit]]` with `span`, `below_back`, `from_back`) —
+[Sagging outputs](../user-guide/sagging.md). Validation calculations:
+`sagtension.nonlinear` gives both final states (`h_final_creep_n`,
+`h_final_load_n`), `final_cause` per case (and the old global one as
+`final_cause_global`), `load_final_over_initial` and `beyond_range`;
+new `sagtension.nonlinear_criteria` and `sagtension.sagging`.
+
 Other data files: structure models `.ohlfe` (`ohl-structure-model`,
 version 2: the member kind `tension`; version 3: a member's `bending` and
 `check`) and

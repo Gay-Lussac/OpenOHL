@@ -89,7 +89,7 @@ cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml
 cargo run -p ohl-cli -- sagtension examples/sagtension/drake-section.toml --units us --csv chart.csv
 ```
 
-The job file names the wire type (from the `.ohlw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units.
+The job file names the wire type (from the `.ohlw` wire libraries in `libraries/cables/` — see [Wire library files](wire-library.md)), the spans (horizontal length and rise), the weather cases (temperature, radial ice, wind pressure), and either a fixed stringing tension or tension criteria. The report gives the ruling span, the governing stringing tension with the utilisation of every criterion, the tension and sag in each weather case, and a stringing chart; `--csv` exports the chart in SI units. A wire type with stress-strain curves adds, per weather case, the tension initially, after creep and after load with the governing final state, and takes the criteria on its curves, each with a `condition` (`initial`, `creep` or `load`); a `[sagging]` table adds the crew's [sagging outputs](sagging.md).
 
 ## Python
 
