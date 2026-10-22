@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **Always warn above the wire's strength** (owner, 2026-10-22). Any
+  solved state where a span's tension at its most tensioned support
+  exceeds the wire type's RTS gives a warning: in the line's solvers
+  (ruling span and finite elements, `SectionShape::flags`: the Model
+  panel's warnings, the Sections table's "above RTS", `ohl line`) and in
+  `ohl sagtension` (each weather case; initial and both final states on
+  the non-linear model). Independent of the range warnings. Built, in
+  active development (not approved yet).
+
 - **Sag-tension follow-ups** (owner, 2026-10-22). Built, in active
   development (not approved yet).
   - **Range warnings only where the cable gives a range**: without a

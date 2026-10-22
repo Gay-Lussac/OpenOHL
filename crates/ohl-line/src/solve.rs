@@ -2258,7 +2258,7 @@ fn solve_rs(
         .solve(load_state(case, cable), &material, budget)
         .map_err(st)?;
     // States beyond the stress-strain curves' range (2026-10-22).
-    let flags: Vec<String> = ns
+    let mut flags: Vec<String> = ns
         .range_warnings(&solved, &load_state(case, cable), &material)
         .map_err(st)?
         .into_iter()
@@ -2308,6 +2308,8 @@ fn solve_rs(
             surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
         });
     }
+    // Above the wire's strength (owner, 2026-10-22).
+    flags.extend(rts_flags(&out, cable));
     let n = clamps.len();
     Ok(SectionShape {
         section: section.id.clone(),
@@ -2323,6 +2325,43 @@ fn solve_rs(
         span_points: Vec::new(),
         spacers: Vec::new(),
     })
+}
+
+/// Whether a span of `shape` exceeds its wire's rated tensile strength
+/// (its warning, [`rts_flags`]).
+pub fn above_rts(shape: &SectionShape) -> bool {
+    shape.flags.iter().any(|f| f.contains(RTS_WARNING))
+}
+
+/// What the warnings above the wire's strength say ([`rts_flags`]).
+pub const RTS_WARNING: &str = "exceeds the wire's rated tensile strength";
+
+/// The warnings of the spans whose tension at their most tensioned
+/// support (`SpanShape::max_tension`, per wire) exceeds the wire type's
+/// rated tensile strength (owner, 2026-10-22: always warned, whatever the
+/// range warnings do), in every solver — "span 2: tension 41.20 kN at
+/// the most tensioned support exceeds the wire's rated tensile strength
+/// (RTS 40.00 kN, 103.0 %)". Nothing for a wire type without an RTS (0).
+pub fn rts_flags(spans: &[SpanShape], cable: &Cable) -> Vec<String> {
+    let rts = cable.rated_tensile_strength.si();
+    if rts.is_nan() || rts <= 0.0 {
+        return Vec::new();
+    }
+    spans
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.max_tension > rts)
+        .map(|(k, s)| {
+            format!(
+                "span {}: tension {:.2} kN at the most tensioned support exceeds the wire's \
+                 rated tensile strength (RTS {:.2} kN, {:.1} %)",
+                k + 1,
+                s.max_tension / 1000.0,
+                rts / 1000.0,
+                100.0 * s.max_tension / rts
+            )
+        })
+        .collect()
 }
 
 /// The factor on the cable's own weight that makes its load per metre in
@@ -2697,6 +2736,8 @@ fn solve_fe(
             }
         }
     }
+    // Above the wire's strength (owner, 2026-10-22).
+    flags.extend(rts_flags(&spans, cable));
     Ok(SectionShape {
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
@@ -4130,6 +4171,57 @@ mod tests {
         let after = solve(&clipped, 0.0);
         let along = (v(after.clamps[1]) - v(before.clamps[1])).x;
         assert!(along < -0.05, "pulled towards the loaded span: {along} m");
+    }
+
+    /// Above the wire's strength (owner, 2026-10-22): a span whose tension
+    /// at its most tensioned support exceeds the wire type's RTS is warned
+    /// about, by finite elements and by the ruling span; the same section
+    /// with the real RTS is not.
+    #[test]
+    fn a_tension_above_the_rts_is_warned_in_every_solver() {
+        let mut lib = library();
+        // An invented weak copy of the example's wire: RTS 5 kN.
+        lib.add_toml(
+            Path::new("weak.ohlw"),
+            "format = \"ohl-wire\"\nversion = 1\n[[cable]]\nid = \"weak\"\nname = \"weak\"\n\
+             kind = \"acsr\"\ndiameter = \"1.108 in\"\nmass_per_length = \"1.094 lbm/ft\"\n\
+             rated_tensile_strength = \"5 kN\"\n\
+             outer = { area = \"0.6245 in²\", modulus = \"55 GPa\", thermal_expansion = 23.0e-6, strands = 26 }\n\
+             core = { area = \"0.1017 in²\", modulus = \"190 GPa\", thermal_expansion = 11.5e-6, strands = 7 }\n",
+        )
+        .unwrap();
+        let still = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let line = crate::tests::example();
+        let strong = solve_line(&line, &lib, &still).remove(0).unwrap();
+        assert!(!above_rts(&strong), "{:?}", strong.flags);
+        for rs in [false, true] {
+            let mut weak = line.clone();
+            weak.sections[0].cable = "weak".into();
+            if rs {
+                weak.sections[0].calculation = crate::condition::Calculation::INITIAL_RS;
+            }
+            let shape = solve_line(&weak, &lib, &still).remove(0).unwrap();
+            assert!(above_rts(&shape), "rs {rs}: {:?}", shape.flags);
+            let over: Vec<&String> = shape
+                .flags
+                .iter()
+                .filter(|f| f.contains(RTS_WARNING))
+                .collect();
+            // Every span is above 5 kN.
+            assert_eq!(over.len(), shape.spans.len(), "{over:?}");
+            let t = shape.spans[0].max_tension;
+            assert!(t > 5000.0);
+            assert!(
+                over[0].starts_with(&format!("span 1: tension {:.2} kN", t / 1000.0)),
+                "{}",
+                over[0]
+            );
+            assert!(
+                over[0].contains(&format!("{:.1} %", t / 50.0)),
+                "{}",
+                over[0]
+            );
+        }
     }
 
     /// A string's limits (not checked) come with its solved force and
