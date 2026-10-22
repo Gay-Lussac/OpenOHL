@@ -10,6 +10,27 @@ of Parts A, B and C).
 
 ## 2026-10-22
 
+- **A rule-based wire tension check** (owner, 2026-10-22: the maximum
+  allowed load on wires). Built, in active development (not approved
+  yet).
+  - Checks › **Wire tensions…** (Run footer, explanations, plugin
+    presets) and `ohl tensions` (CSV with `--csv`; exit status 1 when a
+    span fails). Rules: targets (wire types, systems, circuits, or
+    all), weather cases, a **factor of the RTS** (allowed = factor ×
+    RTS), and per rule the tension compared: the **maximum** at the
+    span's most tensioned support (default) or the **horizontal**.
+  - Stored in the rule file format as optional `[[tension_rule]]`
+    tables (additive; old files read unchanged); a preset may carry
+    them, with `checks = ["tension"]`, and the window takes only those.
+  - Results: every span and wire per case — tension, allowed, usage,
+    pass or fail — sorted by usage; the failures (else the worst)
+    marked in the views at the most tensioned support while the window
+    is open.
+  - **No factor of any code or utility in the public code or
+    examples**: the example (`examples/synthetic-line/tension-rules.ohlr`)
+    uses invented factors, labelled. The greyed "Tension limits (to
+    come)" menu entry is replaced by it.
+
 - **Always warn above the wire's strength** (owner, 2026-10-22). Any
   solved state where a span's tension at its most tensioned support
   exceeds the wire type's RTS gives a warning: in the line's solvers

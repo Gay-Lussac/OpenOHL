@@ -24,6 +24,7 @@ mod sheet_run;
 mod structure_app_run;
 mod structure_fe;
 mod surface;
+mod tensions_run;
 mod thermal_run;
 mod versions;
 mod zones_run;
@@ -109,6 +110,12 @@ enum Command {
     /// (blowouts, wind steps, swing arc), one closed mesh per wire or
     /// circuit, written as georeferenced DXF (+ .prj), IFC4 and KML/KMZ.
     SafetyVolume(Box<safety_run::SafetyArgs>),
+    /// The wire tension check: every span of every wire in each weather
+    /// case of the `[[tension_rule]]` tables of a rule file — tension
+    /// (maximum at the most tensioned support, or horizontal), allowed
+    /// (factor × RTS), usage, pass or fail. Exit status 0: all within,
+    /// 1: some above, 2: an error.
+    Tensions(Box<tensions_run::TensionsArgs>),
     /// Galloping ellipses and blowout against the right of way.
     Clearance {
         #[command(subcommand)]
@@ -850,6 +857,14 @@ fn main() -> ExitCode {
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
         Some(Command::Line(args)) => line(&args, None),
         Some(Command::Zones(args)) => zones_run::command(&args),
+        Some(Command::Tensions(args)) => match tensions_run::run(&args) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
         Some(Command::SafetyVolume(args)) => report(safety_run::run(*args)),
         Some(Command::Bom(args)) => report(cost_run::bom(&args)),
         Some(Command::Spot(args)) => report(cost_run::spot(&args)),

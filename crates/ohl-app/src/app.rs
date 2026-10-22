@@ -157,6 +157,9 @@ pub enum MarksFrom {
     Clearances,
     /// A vertical or radial clearance window.
     Zone(ohl_clearance::Measure),
+    /// The wire tension check (its spans above the allowed tension, else
+    /// the worst, at their most tensioned support).
+    Tensions,
 }
 
 /// What is shown once the model is loaded.
@@ -300,6 +303,8 @@ pub struct Ready {
     pub pylon_builder: Option<crate::pylon_builder::PylonBuilder>,
     /// Checks › Galloping ellipses.
     pub galloping: crate::galloping::GallopingWindow,
+    /// Checks › Wire tensions (2026-10-22).
+    pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
     /// Checks › Performed checks: the library of saved reports.
@@ -462,6 +467,7 @@ impl Ready {
             spot: Default::default(),
             pylon_builder: None,
             galloping: Default::default(),
+            wire_tensions: Default::default(),
             phase_distance: Default::default(),
             check_library: Default::default(),
             vegetation: Default::default(),
@@ -7182,6 +7188,40 @@ impl Ready {
     }
 }
 
+/// What the Wire tensions window asks: go to a span, its preset's
+/// weather cases added, its marks drawn (the spans above their allowed
+/// tension, else the worst; at the most tensioned support) or taken off.
+pub(crate) fn wire_tensions_out(r: &mut Ready, out: crate::wire_tensions::Out) {
+    if let Some(target) = out.go {
+        r.go_to(target);
+    }
+    if let Some((plugin, p)) = out.plugin_preset
+        && let Some(wc) = &p.weather
+        && let Err(e) = crate::rule_editor::preset_cases(r, &plugin, &p.name, &p.weather_text, wc)
+    {
+        r.status = Some((
+            format!("preset {plugin} {}: weather cases: {e}", p.name),
+            true,
+        ));
+    }
+    if let Some(marks) = out.marks {
+        if marks.is_empty() {
+            if r.marks_from == MarksFrom::Tensions {
+                r.plan.marks.clear();
+                r.view3d.marks.clear();
+                r.profile.marks.clear();
+                r.view3d.dirty.insert(Layer::Clearances);
+            }
+        } else {
+            r.marks_from = MarksFrom::Tensions;
+            r.plan.marks.clone_from(&marks);
+            r.view3d.marks = marks.iter().map(|p| (*p, *p)).collect();
+            r.profile.marks.clone_from(&r.view3d.marks);
+            r.view3d.dirty.insert(Layer::Clearances);
+        }
+    }
+}
+
 pub(crate) fn clearance_zone_out(
     r: &mut Ready,
     measure: ohl_clearance::Measure,
@@ -8221,6 +8261,17 @@ fn menus(
             r.galloping.show(&r.model, r.case);
             ui.close();
         }
+        if ui
+            .button("Wire tensions…")
+            .on_hover_text(
+                "The tension of every span against the largest a rule allows: a factor of the \
+                 wire type's rated tensile strength, per weather case",
+            )
+            .clicked()
+        {
+            r.wire_tensions.show(&r.model);
+            ui.close();
+        }
         // The checks of the check plugins in use, in their own submenus
         // (none without them).
         let checks: Vec<(Vec<String>, ohl_io::checks::PluginCheck)> = r
@@ -8263,7 +8314,6 @@ fn menus(
             ui.close();
         }
         ui.separator();
-        ui.add_enabled(false, egui::Button::new("Tension limits (to come)"));
         ui.add_enabled(false, egui::Button::new("String swing (to come)"));
     });
     // A tick menu (the option below): ticking it keeps the menu open;
@@ -8906,6 +8956,7 @@ impl eframe::App for App {
                     || ready.safety_volume.open
                     || ready.vertical_clearances.open
                     || ready.radial_clearances.open
+                    || ready.wire_tensions.open
                 {
                     crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
                 }
@@ -8975,6 +9026,11 @@ impl eframe::App for App {
                 ] {
                     clearance_zone_out(ready, measure, out);
                 }
+                let out =
+                    ready
+                        .wire_tensions
+                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
+                wire_tensions_out(ready, out);
                 // Layers drawn from results out of date: dimmed.
                 crate::revision::frame(ready);
                 if let Some(mut w) = ready.class_window.take() {

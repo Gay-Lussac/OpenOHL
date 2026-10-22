@@ -94,6 +94,7 @@ mod vegetation;
 mod versions;
 mod view3d;
 mod wire_style;
+mod wire_tensions;
 mod wirefit;
 mod working_tree;
 mod xsection;
