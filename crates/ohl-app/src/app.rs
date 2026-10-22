@@ -8467,6 +8467,42 @@ fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 }
             });
         }
+        // Warnings of the solved sections (2026-10-22: a state beyond the
+        // stress-strain curves' range; strings beyond their compression),
+        // each a link like the failures; a long list scrolls.
+        for (k, c) in r.model.cases.iter().enumerate() {
+            let notes: Vec<(&str, &str)> = c
+                .shapes
+                .iter()
+                .flat_map(|s| s.flags.iter().map(|f| (s.section.as_str(), f.as_str())))
+                .collect();
+            if notes.is_empty() {
+                continue;
+            }
+            egui::CollapsingHeader::new(
+                egui::RichText::new(format!("{}: {} warnings", c.case.name, notes.len()))
+                    .color(ui.visuals().warn_fg_color),
+            )
+            .id_salt(("warnings", k))
+            .default_open(notes.len() <= 10)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt(("warnings-scroll", k))
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for (id, f) in &notes {
+                            if ui
+                                .link(egui::RichText::new(*id).small())
+                                .on_hover_text(*f)
+                                .clicked()
+                            {
+                                clicked = Some((k, (*id).to_owned()));
+                            }
+                            ui.label(egui::RichText::new(*f).small().weak());
+                        }
+                    });
+            });
+        }
         if let Some((k, id)) = clicked {
             r.go_to_failure(k, &id);
         }

@@ -4599,6 +4599,10 @@ fn section_ui(ui: &mut egui::Ui, f: &mut SectionForm, model: &Model, case: usize
     if let Some(n) = &f.note {
         ui.colored_label(ui.visuals().warn_fg_color, n);
     }
+    if !f.new {
+        ui.separator();
+        crate::sagging_panel::ui(ui, model, &f.id, f.stringing.temperature());
+    }
     ui.separator();
     ui.label(format!("{} points:", f.points.len()));
     let text: Vec<String> = f
