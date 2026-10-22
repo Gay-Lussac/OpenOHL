@@ -128,9 +128,13 @@ impl RulePresetChecked {
             return Err(bad("name", "empty".into()));
         }
         let rules = RuleSet::parse(&p.rules).map_err(|e| bad("rules", e))?;
-        // A preset of the vegetation check ([vegetation]) may hold no rule.
-        if rules.rules.is_empty() && rules.vegetation.is_none() {
-            return Err(bad("rules", "no rule (and no [vegetation])".into()));
+        // A preset of the vegetation check ([vegetation]) or of the wire
+        // tension check ([[tension_rule]]) may hold no clearance rule.
+        if rules.rules.is_empty() && rules.vegetation.is_none() && rules.tension_rules.is_empty() {
+            return Err(bad(
+                "rules",
+                "no rule (and no [vegetation] or [[tension_rule]])".into(),
+            ));
         }
         let weather = if p.weather_cases.trim().is_empty() {
             None
@@ -1076,6 +1080,11 @@ mod tests {
         assert!(e.contains("no weather case \"hot\""), "{e}");
         let e = check_rule_presets("code", vec![preset("e", "", "")]).unwrap_err();
         assert!(e.contains("no rule"), "{e}");
+        // A preset of the wire tension check alone: accepted, its case given.
+        let tension = "[[tension_rule]]\nname = \"Iced\"\ncases = [\"iced\"]\nfactor = 0.5\n";
+        let iced = "format = \"ohl-weather-cases\"\nversion = 1\nname = \"W\"\n\n[[case]]\nname = \"iced\"\ntemperature = \"0 °C\"\nice_load = \"20 N/m\"\n";
+        let only_tension = check_rule_presets("code", vec![preset("t", tension, iced)]).unwrap();
+        assert_eq!(only_tension[0].rules.tension_rules.len(), 1);
         let e = check_rule_presets(
             "code",
             vec![preset("g", ground, ""), preset("g", ground, "")],
