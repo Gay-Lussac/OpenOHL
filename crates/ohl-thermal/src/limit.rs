@@ -210,6 +210,9 @@ impl Search<'_, '_> {
                 voltages: &self.voltages,
                 other_voltages: &[],
                 ground: self.targets.ground,
+                // (A ground rule naming a surface of its own is skipped
+                // here: no ground.)
+                surfaces: &[],
                 point_classes: &self.classes,
                 points,
                 other_wires: &[],

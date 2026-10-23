@@ -387,6 +387,7 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
             other_lines: &[],
             structures: &structures,
             insulators: &insulators,
+            project: None,
         },
     )?;
     let mut feed = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {

@@ -222,6 +222,7 @@ fn closing_a_clearance_window_takes_its_marks_off() {
             distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
             ground: true,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         });

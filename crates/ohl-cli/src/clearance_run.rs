@@ -43,6 +43,9 @@ pub struct Options<'a> {
     pub other_lines: &'a [PathBuf],
     pub structures: &'a Path,
     pub insulators: &'a Path,
+    /// The project file the line is read from (its terrain surfaces, for
+    /// the ground rules naming one); none: a line file.
+    pub project: Option<&'a Path>,
 }
 
 /// What every weather case is checked against.
@@ -51,6 +54,8 @@ pub struct Prepared {
     scheme: ohl_lidar::ClassScheme,
     /// Terrain surface, if any.
     pub ground: Option<Terrain>,
+    /// The terrain surfaces the ground rules name, read from the project.
+    pub surfaces: Vec<(String, Terrain)>,
     /// Points of the point rules' classes: millimetres from `origin`, class.
     points: Vec<([i32; 3], u8)>,
     origin: [f64; 3],
@@ -367,10 +372,38 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
     for rule in &rules {
         rule.check_voltages(&voltages, &other_voltages)?;
     }
+    // The surfaces the ground rules name, from the project.
+    let mut surfaces: Vec<(String, Terrain)> = Vec::new();
+    for r in &rules {
+        let Some(n) = &r.surface else { continue };
+        if surfaces.iter().any(|(m, _)| m == n) {
+            continue;
+        }
+        let read = o
+            .project
+            .ok_or_else(|| "the surfaces are in a project file (.ohl)".to_owned())
+            .and_then(|p| ohl_session::Session::open(p).map_err(|e| e.to_string()))
+            .and_then(|s| s.surface(n).map_err(|e| e.to_string()))
+            .and_then(|(points, triangles)| {
+                Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())
+            });
+        match read {
+            Ok(t) => {
+                println!(
+                    "surface {n} (rule \"{}\"): {} triangles",
+                    r.name,
+                    t.num_triangles()
+                );
+                surfaces.push((n.clone(), t));
+            }
+            Err(e) => println!("  note: rule \"{}\": surface {n} not read: {e}", r.name),
+        }
+    }
     Ok(Prepared {
         rules,
         scheme,
         ground,
+        surfaces,
         points,
         origin,
         point_classes,
@@ -524,6 +557,8 @@ pub fn check(
         p.feed_points(visit);
         Ok(())
     };
+    let surfaces: Vec<(String, &Terrain)> =
+        p.surfaces.iter().map(|(n, t)| (n.clone(), t)).collect();
     let checks = ohl_clearance::check_case(
         rules,
         &case.name,
@@ -532,6 +567,7 @@ pub fn check(
             voltages: &p.voltages,
             other_voltages: &p.other_voltages,
             ground: p.ground.as_ref(),
+            surfaces: &surfaces,
             point_classes: &p.point_classes,
             points: Some(&mut points),
             other_wires: &other_wires,

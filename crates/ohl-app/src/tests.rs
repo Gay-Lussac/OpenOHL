@@ -1417,6 +1417,7 @@ fn clearance_input(m: &model::Model, rules: Vec<ohl_clearance::Rule>) -> crate::
         scheme: m.scheme.clone(),
         cloud: m.cloud.clone(),
         ground: m.ground.clone(),
+        surfaces: Default::default(),
         corridor: 60.0,
     }
 }
@@ -1616,6 +1617,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
             ground: true,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         });
@@ -1697,6 +1699,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             distance: ohl_clearance::Requirement::Fixed(100.0),
             classes: Vec::new(),
             ground: true,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         });

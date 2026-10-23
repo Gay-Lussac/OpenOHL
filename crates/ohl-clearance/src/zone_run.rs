@@ -95,6 +95,7 @@ pub fn run_zone_check(
     arc: Option<crate::positions::BandMargins>,
     points: Option<&PointReader>,
     ground: Option<&Terrain>,
+    surfaces: &[(String, &Terrain)],
     sections_scope: Option<&BTreeSet<String>>,
     budget: &Budget,
     done: &AtomicUsize,
@@ -200,6 +201,7 @@ pub fn run_zone_check(
         &arcs,
         ZoneTargets {
             ground,
+            surfaces,
             points: points.is_some().then_some(&mut feed as _),
         },
         budget,

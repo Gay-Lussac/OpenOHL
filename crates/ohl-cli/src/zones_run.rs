@@ -453,8 +453,26 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         ));
     }
 
-    // The targets.
-    let wants_ground = rules.iter().any(|r| r.ground);
+    // The targets: the ground of the rules naming no surface, and the
+    // surfaces the others name (read from the project).
+    let mut named: Vec<(String, Terrain)> = Vec::new();
+    for r in rules.iter().filter(|r| r.ground) {
+        if let Some(n) = &r.surface
+            && !named.iter().any(|(m, _)| m == n)
+        {
+            match session.as_ref() {
+                Some(s) => match stored_surface(s, n) {
+                    Ok(t) => named.push((n.clone(), t)),
+                    Err(e) => println!("  note: \"{}\": {e}", r.name),
+                },
+                None => println!(
+                    "  note: \"{}\": surface {n} — a project file holds the surfaces",
+                    r.name
+                ),
+            }
+        }
+    }
+    let wants_ground = rules.iter().any(|r| r.ground && r.surface.is_none());
     let wants_points = rules.iter().any(|r| !r.classes.is_empty());
     let ground = if wants_ground {
         ground_of(
@@ -499,6 +517,17 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             (None, false) => "not needed".into(),
         }
     );
+    if !named.is_empty() {
+        println!(
+            "surfaces named by rules: {}",
+            named
+                .iter()
+                .map(|(n, t)| format!("{n} ({} triangles)", t.num_triangles()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let surfaces: Vec<(String, &Terrain)> = named.iter().map(|(n, t)| (n.clone(), t)).collect();
     println!(
         "points: {}",
         match (&cloud, wants_points) {
@@ -527,6 +556,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         wind.arc.then_some(wind.margins()),
         cloud.is_some().then_some(&read as _),
         ground.as_ref().map(|(t, _)| t),
+        &surfaces,
         None,
         &budget,
         &done,

@@ -205,6 +205,7 @@ fn zones_by_a_rule_file_with_its_check() {
         None,
         Some(&read),
         Some(&ground),
+        &[],
         None,
         &Budget::new(),
         &AtomicUsize::new(0),

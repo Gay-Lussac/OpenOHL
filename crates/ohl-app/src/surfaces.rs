@@ -96,6 +96,16 @@ pub fn load(project: &Path, name: &str) -> Result<Terrain, String> {
     Terrain::from_mesh(points, triangles).map_err(|e| format!("{name}: {e}"))
 }
 
+/// The names of the project's terrain surfaces (TIN layers), sorted.
+pub fn names(model: &Model) -> Vec<String> {
+    session(model)
+        .and_then(|s| s.surfaces().ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.name)
+        .collect()
+}
+
 /// The project's session (editing, or kept read-only).
 fn session(model: &Model) -> Option<&ohl_session::Session> {
     match &model.editing {

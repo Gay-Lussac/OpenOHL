@@ -1843,6 +1843,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 other_lines: other_line,
                 structures: structure_dir,
                 insulators: insulator_dir,
+                project: (file.extension().and_then(|e| e.to_str()) == Some("ohl"))
+                    .then_some(file.as_path()),
             },
         )?;
         let mut clearance_rows = String::from(clearance_run::CSV_HEADER);
