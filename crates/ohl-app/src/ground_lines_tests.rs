@@ -1581,9 +1581,11 @@ fn a_displayed_project_line_adds_its_envelope_a_hidden_one_does_not() {
         .collect();
     m.other_lines.push(model::OtherLine {
         name: "variant".into(),
-        differs: model::Differences::between(&m.line, &variant),
+        differs: model::Differences::between_with(&m.line, &variant, &Default::default()),
         differs_for: m.line_version,
         solving: Vec::new(),
+        library: None,
+        cables_changed: Default::default(),
         line: variant,
         cases,
         color: [200, 100, 200],

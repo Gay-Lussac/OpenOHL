@@ -16171,3 +16171,65 @@ fn a_project_line_shown_shares_the_solutions_of_the_line_worked_on() {
     assert_eq!(part.sections.len(), o.differs.sections.len());
     assert!(part.sections.len() < o.line.sections.len());
 }
+
+/// A project line shown whose library files differ from the line worked
+/// on's is read and solved with its own (its library changes tracked with
+/// it): a wire type made heavier on it makes its sections on that type
+/// differ, solved with its data (as a full solve with its library).
+#[test]
+fn a_project_line_shown_uses_its_own_library_files() {
+    let mut m = synthetic_project("lines-own-library");
+    m.project_op(
+        "phase",
+        ohl_server::Op::CreateLine {
+            name: "phase 1".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap();
+    switch(&mut m, "phase 1");
+    let session = &mut m.editing.as_mut().unwrap().session;
+    let (file, text) = session
+        .library_files("cables")
+        .unwrap()
+        .into_iter()
+        .find(|(_, t)| t.contains("acsr-drake-26-7"))
+        .unwrap();
+    let heavier = text.replacen(
+        "mass_per_length = \"1.094 lbm/ft\"",
+        "mass_per_length = \"1.5 lbm/ft\"",
+        1,
+    );
+    assert_ne!(heavier, text);
+    session
+        .put_library_file("tester", "cables", &file, &heavier)
+        .unwrap();
+    switch(&mut m, "main");
+    let msg = m.show_line("phase 1").unwrap();
+    assert!(msg.contains("its own library files: wires"), "{msg}");
+    let o = &m.other_lines[0];
+    let on_drake: Vec<&String> = o
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.cable == "acsr-drake-26-7")
+        .map(|s| &s.id)
+        .collect();
+    assert!(!on_drake.is_empty());
+    assert!(on_drake.iter().all(|s| o.differs.sections.contains(*s)));
+    let own = o.library.clone().expect("its own wire library");
+    assert_ne!(own.get("acsr-drake-26-7"), m.library.get("acsr-drake-26-7"));
+    // Solved with its own data.
+    m.ensure_solved(0);
+    let ctx = egui::Context::default();
+    let start = std::time::Instant::now();
+    while !m.other_lines[0].cases[0].ready {
+        m.want_others(&[0], &ctx);
+        m.poll_others();
+        assert!(start.elapsed().as_secs() < 60, "not solved in a minute");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let o = &m.other_lines[0];
+    let full = model::Solved::new(&o.line, &own, m.cases[0].case.clone());
+    assert_eq!(o.cases[0].shapes, full.shapes);
+}

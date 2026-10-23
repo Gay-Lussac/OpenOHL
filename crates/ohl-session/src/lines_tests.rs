@@ -659,8 +659,9 @@ fn a_signed_zero_is_kept() {
     assert!(y == 0.0 && y.is_sign_negative());
 }
 
-/// A line made from a revision is that revision's line, without its
-/// library files (as before: tombstones for them).
+/// A line made from a revision is that revision's line with its library
+/// files (owner, 2026-10-23: they started without them before), and keeps
+/// nothing else; its library changes are its own rows.
 #[test]
 fn a_line_from_a_revision_keeps_nothing_else() {
     let (path, mut s) = project("delta-rev");
@@ -668,16 +669,30 @@ fn a_line_from_a_revision_keeps_nothing_else() {
         .unwrap();
     let rev = s.commit("ana", "first").unwrap();
     shift(&mut s, "ana", "T2", 1.0).unwrap();
+    s.put_library_file("ana", "cables", "a.ohlw", "a = 2")
+        .unwrap();
     s.create_line("ben", "old", &rev.id).unwrap();
-    assert_eq!(rows(&path, "old"), (0, 1));
+    assert_eq!(rows(&path, "old"), (0, 0));
     assert_eq!(
         s.line_named("old").unwrap(),
         &s.revision_state(&rev.id).unwrap().line().unwrap()
     );
+    // Its library files: the revision's (main has changed its own since).
+    assert_eq!(
+        s.line_library_files("old", "cables").unwrap(),
+        [("a.ohlw".to_owned(), "a = 1".to_owned())]
+    );
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        [("a.ohlw".to_owned(), "a = 2".to_owned())]
+    );
     let mut s = reopens_alike(&path, s);
     s.select_line("old").unwrap();
-    assert!(s.library_files("cables").unwrap().is_empty());
-    // The library file put again: a row, no longer a tombstone.
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        [("a.ohlw".to_owned(), "a = 1".to_owned())]
+    );
+    // A library change on it: a row of its own.
     s.put_library_file("ben", "cables", "a.ohlw", "a = 3")
         .unwrap();
     assert_eq!(rows(&path, "old"), (1, 0));

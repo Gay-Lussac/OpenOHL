@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Library files with every project line (owner, 2026-10-23)**
+
+- A line made from a revision, a tag or a bundle gets that revision's
+  library files too (it started without them before).
+- Library changes are tracked per line like its objects (commands, the
+  log, revisions, diffs; already so). A project line shown next to the
+  one worked on is now read and solved with **its own** library files
+  where they differ (wires; structure types and insulators: its
+  structures resolved with them): its sections on a wire type whose data
+  differ count as different and are solved with its data; the window
+  says which of its library files differ.
+
 **Project lines shown: shared solutions, only the differences drawn (owner, 2026-10-23)**
 
 - Measured on a real line: starting a project line costs 0.5 s in the
@@ -55,9 +67,8 @@ of Parts A, B and C).
   version 1 (they kept the source line's numbers; versions are not shown
   and undo judges by content). A line's spatial index rows are written
   when it is first worked on, not when it is started. Lines made from a
-  revision or a bundle still start without that revision's library
-  files, as before (kept as tombstones; whether they should have them is
-  an open question).
+  revision or a bundle start with that revision's library files (the
+  owner's answer, below).
 - In memory the lines share the JSON of the objects they hold alike.
   Measured on an invented line of 1 101 structures and 552 sections
   (2 770 objects, five library files of 200 kB): starting a line 67 ms →

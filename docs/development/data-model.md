@@ -1802,8 +1802,12 @@ place; on a real project 401 such rows, 1.6 kB, where whole copies took
 - **Versions**: objects read from the base are at version 1, so a new
   line's objects start again at version 1 (they kept the source line's
   before); conflicts of undo are judged by content, not by version.
-- **Lines made from a revision** (or a bundle's head) start, as before,
-  without that revision's library files (tombstones for them).
+- **Lines made from a revision** (or a bundle's head) start with that
+  revision's line **and library files** (owner, 2026-10-23; they started
+  without the library files before). A line's library files are read by
+  `Session::line_library_files` (the current line's by
+  `Session::library_files`); the app reads and solves a project line
+  shown with its own where they differ (`Model::line_libraries`).
 - **Memory**: an object's JSON is held once (`Arc`) by the lines that
   hold it alike (a line started shares its source's; lines read from the
   file are matched object by object, bit for bit).
