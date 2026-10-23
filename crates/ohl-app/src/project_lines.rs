@@ -289,6 +289,19 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready) {
             .small()
             .weak(),
     );
+    if ui
+        .checkbox(
+            &mut r.model.other_lines_whole,
+            "whole lines (else only what differs)",
+        )
+        .on_hover_text(
+            "Draw the project lines shown whole; by default only their sections, structures \
+             and jumpers that differ from the line worked on",
+        )
+        .changed()
+    {
+        r.view3d.dirty.insert(crate::scene::Layer::OtherLines);
+    }
     let mut toggle = None;
     for l in others {
         let mut on = r.model.other_lines.iter().any(|o| o.name == l.name);

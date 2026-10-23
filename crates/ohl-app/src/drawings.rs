@@ -1022,7 +1022,18 @@ impl Input {
                     .filter_map(|(name, _, _)| {
                         let k = model.cases.iter().position(|c| &c.case.name == name)?;
                         let c = o.cases.get(k)?;
-                        Some((name.clone(), c.shapes.clone(), c.jumpers.clone()))
+                        if c.ready {
+                            Some((name.clone(), c.shapes.clone(), c.jumpers.clone()))
+                        } else {
+                            // Not solved in that case yet (shown in
+                            // others): solved here.
+                            let s = crate::model::Solved::new(
+                                &o.line,
+                                &model.library,
+                                model.cases[k].case.clone(),
+                            );
+                            Some((name.clone(), s.shapes, s.jumpers))
+                        }
                     })
                     .collect(),
                 None => {

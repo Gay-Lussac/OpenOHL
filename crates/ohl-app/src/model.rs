@@ -422,14 +422,96 @@ pub struct OtherLine {
     pub name: String,
     /// The line (structure types resolved).
     pub line: Line,
-    /// Solved in each weather case of the model (same order).
+    /// Solved in each weather case of the model (same order): each case
+    /// when first wanted, in the background, from the line worked on's
+    /// solution with only the sections that differ solved again
+    /// ([`Model::want_others`]); pending until then.
     pub cases: Vec<Solved>,
+    /// What differs from the line worked on (as it was when last
+    /// compared, [`OtherLine::differs_for`]).
+    pub differs: Differences,
+    /// The worked-on line's version `differs` was made against.
+    pub differs_for: u64,
+    /// Cases being solved: (case, receiver).
+    pub solving: Vec<(usize, std::sync::mpsc::Receiver<Solved>)>,
     /// Display colour.
     pub color: [u8; 3],
     /// When it was shown (counted up over the session, [`next_serial`]):
     /// another serial, another line or solution (what the lines on the
     /// ground solved for it are kept by).
     pub serial: u64,
+}
+
+/// What a project line shown differs in from the line worked on.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Differences {
+    /// Its sections changed or added, or through a structure that is
+    /// (by id).
+    pub sections: std::collections::BTreeSet<String>,
+    /// Its structures changed or added (by id; types resolved).
+    pub structures: std::collections::BTreeSet<String>,
+    /// Its jumpers changed or added, or at a section that differs.
+    pub jumpers: std::collections::BTreeSet<String>,
+}
+
+impl Differences {
+    /// `line` with only what differs kept (its sections, structures and
+    /// jumpers that differ): what is drawn of a project line shown.
+    pub fn of_line(&self, line: &Line) -> Line {
+        let mut l = line.clone();
+        l.sections.retain(|s| self.sections.contains(&s.id));
+        l.structures.retain(|s| self.structures.contains(&s.id));
+        l.jumpers.retain(|j| self.jumpers.contains(&j.id));
+        l
+    }
+
+    /// What `other` differs in from `ours` (both resolved): compared
+    /// object by object, a section also when one of its structures
+    /// differs.
+    ///
+    /// Expected cost: one comparison per object (milliseconds for a few
+    /// thousand).
+    pub fn between(ours: &Line, other: &Line) -> Self {
+        let structures: std::collections::BTreeSet<String> = other
+            .structures
+            .iter()
+            .filter(|s| ours.structures.iter().find(|o| o.id == s.id) != Some(*s))
+            .map(|s| s.id.clone())
+            .collect();
+        let sections: std::collections::BTreeSet<String> = other
+            .sections
+            .iter()
+            .filter(|s| {
+                ours.sections.iter().find(|o| o.id == s.id) != Some(*s)
+                    || s.points.iter().any(|p| structures.contains(&p.structure))
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        let at_changed = |p: &ohl_line::SectionPoint| {
+            structures.contains(&p.structure)
+                || other
+                    .sections
+                    .iter()
+                    .any(|s| sections.contains(&s.id) && s.points.contains(p))
+        };
+        let jumpers = other
+            .jumpers
+            .iter()
+            .filter(|j| {
+                ours.jumpers.iter().find(|o| o.id == j.id) != Some(*j)
+                    || [&j.from, &j.to].into_iter().any(|e| match e {
+                        ohl_line::JumperEnd::Wire(p) => at_changed(p),
+                        _ => false,
+                    })
+            })
+            .map(|j| j.id.clone())
+            .collect();
+        Self {
+            sections,
+            structures,
+            jumpers,
+        }
+    }
 }
 
 /// A number not given before in this session (counted up).
@@ -543,6 +625,9 @@ pub struct Model {
     pub usage_out_of_date: bool,
     /// Project lines shown next to the line worked on (Versions menu).
     pub other_lines: Vec<OtherLine>,
+    /// The project lines shown drawn whole; else only what differs from
+    /// the line worked on (the default, 2026-10-23).
+    pub other_lines_whole: bool,
     /// Project lines another user changed since the last frame (server
     /// mode): those shown are read again; `""`: the line worked on was
     /// renamed or deleted (read again whole).
@@ -1385,6 +1470,66 @@ impl Model {
         }
     }
 
+    /// Solves the project lines shown in the weather cases `wanted` that
+    /// they are not solved in yet, each on its own thread: the line worked
+    /// on's solution in that case copied and only the sections that differ
+    /// solved again ([`SolvedLine::update`](ohl_line::incremental::SolvedLine::update));
+    /// a case the line worked on is not solved in yet waits for it. Their
+    /// differences are compared again when the line worked on changed.
+    ///
+    /// Expected cost: one section solve per differing section and case
+    /// (a new line: none), on background threads.
+    pub fn want_others(&mut self, wanted: &[usize], ctx: &eframe::egui::Context) {
+        for o in &mut self.other_lines {
+            if o.differs_for != self.line_version {
+                o.differs = Differences::between(&self.line, &o.line);
+                o.differs_for = self.line_version;
+            }
+            for &k in wanted {
+                let (Some(mine), Some(theirs)) = (self.cases.get(k), o.cases.get(k)) else {
+                    continue;
+                };
+                if theirs.ready || !mine.ready || o.solving.iter().any(|(j, _)| *j == k) {
+                    continue;
+                }
+                let mut live = mine.live.clone();
+                let (line, library, case) =
+                    (o.line.clone(), self.library.clone(), mine.case.clone());
+                let dirty: Vec<String> = o.differs.sections.iter().cloned().collect();
+                let (tx, rx) = std::sync::mpsc::channel();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    live.update(&line, &library, &dirty);
+                    let _ = tx.send(Solved::from_live(&line, case, live));
+                    ctx.request_repaint();
+                });
+                o.solving.push((k, rx));
+            }
+        }
+    }
+
+    /// Takes the project lines' cases solved in the background; whether
+    /// any arrived.
+    pub fn poll_others(&mut self) -> bool {
+        let mut any = false;
+        for o in &mut self.other_lines {
+            let mut keep = Vec::new();
+            for (k, rx) in std::mem::take(&mut o.solving) {
+                match rx.try_recv() {
+                    Ok(s) if k < o.cases.len() => {
+                        o.cases[k] = s;
+                        o.serial = next_serial();
+                        any = true;
+                    }
+                    Ok(_) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+                    Err(std::sync::mpsc::TryRecvError::Empty) => keep.push((k, rx)),
+                }
+            }
+            o.solving = keep;
+        }
+        any
+    }
+
     /// Takes the weather cases solved in the background; their names. A
     /// case solved from a line changed since is dropped (wanted again, it
     /// is solved again).
@@ -1766,35 +1911,34 @@ impl Model {
         };
         let weather: Vec<WeatherCase> = self.cases.iter().map(|c| c.case.clone()).collect();
         line.set_weather_cases(&weather);
-        let cases: Vec<Solved> = self
-            .cases
-            .iter()
-            .map(|c| Solved::new(&line, &self.library, c.case.clone()))
-            .collect();
+        // Solved case by case when wanted, in the background
+        // ([`Model::want_others`]).
+        let cases: Vec<Solved> = weather.into_iter().map(Solved::pending).collect();
+        let differs = Differences::between(&self.line, &line);
         // A colour no line shown has yet.
         let color = OTHER_COLORS
             .iter()
             .copied()
             .find(|c| self.other_lines.iter().all(|o| o.color != *c))
             .unwrap_or(OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()]);
-        let failed: usize = cases.iter().map(|c| c.failed.len()).sum();
+        let text = format!(
+            "project line \"{name}\" shown (read in {:.1?}): {} section(s), {} structure(s) \
+             differ from the line worked on; solving the cases shown",
+            started.elapsed(),
+            differs.sections.len(),
+            differs.structures.len()
+        );
         self.other_lines.push(OtherLine {
             name: name.to_owned(),
             line,
             cases,
             color,
             serial: next_serial(),
+            differs,
+            differs_for: self.line_version,
+            solving: Vec::new(),
         });
-        Ok(format!(
-            "project line \"{name}\" shown, solved in {} weather cases in {:.1?}{}",
-            self.cases.len(),
-            started.elapsed(),
-            if failed > 0 {
-                format!(" — {failed} sections or jumpers failed")
-            } else {
-                String::new()
-            }
-        ))
+        Ok(text)
     }
 
     /// The project line's library files written again as working copies
@@ -2325,6 +2469,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         usage_marks: Default::default(),
         usage_out_of_date: false,
         other_lines: Vec::new(),
+        other_lines_whole: false,
         lines_changed: Vec::new(),
         hidden_classes,
         class_counts,

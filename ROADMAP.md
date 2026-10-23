@@ -272,7 +272,10 @@ structure body) and O7 (the line and its structures solved together).
   thermal limit does not read them yet and skips such a rule (no
   ground).
 - **U9. New project lines are full copies** (asked by the owner,
-  2026-10-22, not started): starting a project line (Versions) writes
+  2026-10-22; *step 1 built 2026-10-23, in active development (not
+  approved yet)*: a line shown is solved per case displayed in the
+  background from the worked-on line's solutions, only what differs
+  solved again and drawn; step 2, the file, under way): starting a project line (Versions) writes
   every object of the line it starts from again under the new line's
   name (`Session::create_line`), saved check reports included, so a new
   branch takes time and room in proportion to the whole line, and is

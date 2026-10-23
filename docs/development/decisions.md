@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Project lines shown: shared solutions, only the differences drawn (owner, 2026-10-23)**
+
+- Measured on a real line: starting a project line costs 0.5 s in the
+  file; showing one solved it in every weather case of the project on
+  the window's thread (105 cases, about 20 s release, the window held).
+- Now a line shown is solved per weather case when that case is
+  displayed, in the background: the line worked on's solution in that
+  case copied and only the sections that differ solved again
+  (`SolvedLine::update`; the same result as a full solve, tested). A
+  section differs when it, or one of its structures (types resolved),
+  differs; jumpers when they or their end sections do.
+- Drawn: only what differs, by default (owner's choice), a tick for the
+  whole lines. The lines on the ground, the clearance checks and the
+  sheets take the whole line (a case not solved yet is solved for the
+  sheets).
+- Step 2 (owner: yes, after step 1): the project file keeps a new line
+  as its starting revision and what it changed (roadmap U9).
+
 **Sheets: cases per circuit, the stringing band, strings drawn (owner, 2026-10-23)**
 
 - Each circuit's wires are drawn in a weather case of their own: by

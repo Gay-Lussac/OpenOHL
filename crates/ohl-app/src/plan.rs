@@ -749,11 +749,15 @@ impl PlanView {
         // Other project lines, in their colours.
         for other in &model.other_lines {
             let col = color(other.color);
+            let whole = model.other_lines_whole;
+            let d = &other.differs;
             // As the working line: each section in its display cases,
             // jumpers in the cases shown.
             for (k, solved) in other.cases.iter().enumerate() {
                 for shape in &solved.shapes {
-                    if !model.section_cases(&shape.section, case).contains(&k) {
+                    if !model.section_cases(&shape.section, case).contains(&k)
+                        || !(whole || d.sections.contains(&shape.section))
+                    {
                         continue;
                     }
                     for span in shape.spans.iter().filter(|s| cull.sees(&s.points)) {
@@ -762,13 +766,23 @@ impl PlanView {
                     }
                 }
                 if model.shown(case).contains(&k) {
-                    for j in solved.jumpers.iter().filter(|j| cull.sees(&j.points)) {
+                    for j in solved
+                        .jumpers
+                        .iter()
+                        .filter(|j| whole || d.jumpers.contains(&j.jumper))
+                        .filter(|j| cull.sees(&j.points))
+                    {
                         let pts = on_screen(&j.points, to_screen);
                         painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, col)));
                     }
                 }
             }
-            for st in &other.line.structures {
+            for st in other
+                .line
+                .structures
+                .iter()
+                .filter(|s| whole || d.structures.contains(&s.id))
+            {
                 let p = to_screen(st.position);
                 if rect.expand(10.0).contains(p) {
                     painter.circle_stroke(p, 4.0, egui::Stroke::new(1.5, col));

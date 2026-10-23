@@ -3574,13 +3574,18 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         // Drawn exactly as the line worked on: every structure, string,
         // subconductor, yoke and jumper.
         r.model.other_lines.truncate(1);
-        let count = |l: crate::scene::Layer| {
-            crate::scene::layer(&r.model, l, 0, &Selection::None)
-                .counts()
-                .0
+        let count = |m: &model::Model, l: crate::scene::Layer| {
+            crate::scene::layer(m, l, 0, &Selection::None).counts().0
         };
-        let working = count(crate::scene::Layer::Structures) + count(crate::scene::Layer::Wires);
-        assert_eq!(count(crate::scene::Layer::OtherLines), working);
+        // Just started, it differs in nothing: nothing drawn of it.
+        assert_eq!(count(&r.model, crate::scene::Layer::OtherLines), 0);
+        // Whole lines asked for: drawn exactly as the line worked on (every
+        // structure, string, subconductor, yoke and jumper).
+        r.model.other_lines_whole = true;
+        let working = count(&r.model, crate::scene::Layer::Structures)
+            + count(&r.model, crate::scene::Layer::Wires);
+        assert_eq!(count(&r.model, crate::scene::Layer::OtherLines), working);
+        r.model.other_lines_whole = false;
     }
     // Work on phase 1: T7 deleted there only; undone there.
     {
@@ -16086,4 +16091,72 @@ fn each_circuit_is_drawn_in_its_own_weather_case() {
     w.sheet.circuit_cases.get_mut("").unwrap().drawn = Some("no such case".into());
     let e = crate::drawings::Input::new(&m, 0, &w).err().unwrap();
     assert!(e.contains("no such case"), "{e}");
+}
+
+/// A project line shown is solved from the line worked on's solutions,
+/// only what differs solved again, in the background: a line just
+/// started differs in nothing; one with a structure moved differs in it
+/// and its sections, and its solution in each case equals a full solve.
+#[test]
+fn a_project_line_shown_shares_the_solutions_of_the_line_worked_on() {
+    let mut m = synthetic_project("lines-shared");
+    m.project_op(
+        "phase",
+        ohl_server::Op::CreateLine {
+            name: "phase 1".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap();
+    m.show_line("phase 1").unwrap();
+    let o = &m.other_lines[0];
+    assert_eq!(o.differs, model::Differences::default());
+    assert!(o.cases.iter().all(|c| !c.ready), "solved when wanted only");
+    // Moved on phase 1: it differs there.
+    switch(&mut m, "phase 1");
+    let id = m.line.structures[1].id.clone();
+    let p = m.line.structure(&id).unwrap().position;
+    m.apply(
+        "shift",
+        ohl_session::Command::MoveStructure {
+            id: id.clone(),
+            position: [p[0] + 3.0, p[1], p[2]],
+        },
+    )
+    .unwrap();
+    switch(&mut m, "main");
+    m.other_lines.clear();
+    m.show_line("phase 1").unwrap();
+    let ctx = egui::Context::default();
+    let all: Vec<usize> = (0..m.cases.len()).collect();
+    for k in &all {
+        m.ensure_solved(*k);
+    }
+    m.want_others(&all, &ctx);
+    let start = std::time::Instant::now();
+    while m.other_lines[0].cases.iter().any(|c| !c.ready) {
+        m.poll_others();
+        assert!(start.elapsed().as_secs() < 60, "not solved in a minute");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let o = &m.other_lines[0];
+    assert!(o.differs.structures.contains(&id));
+    let through: Vec<&String> = o
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.points.iter().any(|p| p.structure == id))
+        .map(|s| &s.id)
+        .collect();
+    assert!(!through.is_empty());
+    assert!(through.iter().all(|s| o.differs.sections.contains(*s)));
+    for (k, c) in o.cases.iter().enumerate() {
+        let full = model::Solved::new(&o.line, &m.library, m.cases[k].case.clone());
+        assert_eq!(c.shapes, full.shapes, "{}", c.case.name);
+        assert_eq!(c.jumpers, full.jumpers, "{}", c.case.name);
+    }
+    // Drawn: only what differs, unless whole lines are asked for.
+    let part = o.differs.of_line(&o.line);
+    assert_eq!(part.sections.len(), o.differs.sections.len());
+    assert!(part.sections.len() < o.line.sections.len());
 }

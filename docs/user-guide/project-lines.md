@@ -16,10 +16,18 @@ changes *stage 1* only.
   nothing; it only changes what you edit. On a server, every user chooses
   their own line, independently of the others.
 - **Other lines can be shown next to it**, each in its colour, in the 3D
-  view (layer *Other project lines*) and the plan. They are drawn as the line
-  you work on is: structures, strings at their solved clamps, bundles and
-  jumpers, in the same weather cases. When someone else edits a line you
-  show, it is redrawn.
+  view (layer *Other project lines*) and the plan. By default only **what
+  differs** from the line you work on is drawn — its sections, structures
+  and jumpers that are changed or added (a section also when one of its
+  structures is); tick **whole lines** in the Versions menu to draw them
+  whole. They are drawn as the line you work on is: structures, strings at
+  their solved clamps, bundles and jumpers, in the same weather cases. A
+  line shown is solved only in the weather cases displayed, in the
+  background, from the solutions of the line you work on with only the
+  sections that differ solved again (2026-10-23; before, every weather case
+  of the project was solved at once, which held the window for a long
+  time). The lines on the ground and the sheets take it whole. When
+  someone else edits a line you show, it is redrawn.
 - **A new line is a copy.** It starts as the line it is made from is at that
   moment, including changes not yet committed. From then on the two are
   independent: a correction made later on the main line does **not** appear
@@ -52,6 +60,7 @@ The menu stays open while you tick lines to show.
 | **Bring in changes from another line…** | Brings what changed on another line (by default the main line) into yours. |
 | **Submit this line for review into the main line…** | When a stage is ready to go into the main line (greyed out on the main line itself). |
 | ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
+| ☐ **whole lines (else only what differs)** | Draw the lines shown whole; by default only what differs from the line you work on. |
 | **History…** | The operation log: who did what; admins reverse entries. |
 | **Revisions and branches…** | Revisions, branches, tags, diff, merge, reviews and edit rights (see [Versions, branches and reviews](versions.md#in-the-desktop-app)). |
 
