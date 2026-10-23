@@ -518,7 +518,9 @@ fn elevation_settings_are_kept_and_the_preview_shows_them() {
     let p = crate::drawings::preview(&m, 0, &w).unwrap();
     let main = p.route("main").unwrap();
     let t2 = main.elevations.iter().find(|e| e.id == "T2").unwrap();
-    assert_eq!(t2.lines.len(), 178);
+    // Its 178 members and its strings (drawn since 2026-10-23).
+    let strings = m.line.structure("T2").map_or(0, |s| s.strings.len());
+    assert_eq!(t2.lines.len(), 178 + strings);
     assert!(t2.leader.is_some());
     // Above the line: left of it (negative offsets), the base 10 mm on
     // paper away (20 m at 1:2000).
