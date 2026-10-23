@@ -334,9 +334,9 @@ structure body) and O7 (the line and its structures solved together).
   tombstones for those deleted; project schema 6, older projects read
   as they are, an older program refuses a newer project), so starting a
   line writes no object row and takes no room; the lines share in memory
-  the objects they hold alike (decision log, 2026-10-23). Left: lines
-  made from a revision or a bundle start without its library files, as
-  before — to decide whether they should have them.
+  the objects they hold alike (decision log, 2026-10-23). Lines made
+  from a revision or a bundle get its library files; a line shown is
+  read and solved with its own library files where they differ.
 
 ## Proposed stages (to discuss)
 

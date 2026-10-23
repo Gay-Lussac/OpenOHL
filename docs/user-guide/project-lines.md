@@ -26,7 +26,10 @@ changes *stage 1* only.
   background, from the solutions of the line you work on with only the
   sections that differ solved again (2026-10-23; before, every weather case
   of the project was solved at once, which held the window for a long
-  time). The lines on the ground and the sheets take it whole. When
+  time). Each line has its own library files (wires, structure types,
+  insulators, rules…), tracked with it like its objects; a line shown is
+  read and solved with its own where they differ from yours — the status
+  bar says which. The lines on the ground and the sheets take it whole. When
   someone else edits a line you show, it is redrawn.
 - **A new line is a copy.** It starts as the line it is made from is at that
   moment, including changes not yet committed. From then on the two are

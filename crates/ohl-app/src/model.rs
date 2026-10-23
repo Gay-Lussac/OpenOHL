@@ -434,12 +434,34 @@ pub struct OtherLine {
     pub differs_for: u64,
     /// Cases being solved: (case, receiver).
     pub solving: Vec<(usize, std::sync::mpsc::Receiver<Solved>)>,
+    /// Its own wire library, where its library files differ from the
+    /// line worked on's (none: the same; its structure types and
+    /// insulators, when they differ, resolved its structures already).
+    pub library: Option<ohl_cables::Library>,
+    /// The wire types whose data differ from the line worked on's (its
+    /// sections on them differ).
+    pub cables_changed: std::collections::BTreeSet<String>,
     /// Display colour.
     pub color: [u8; 3],
     /// When it was shown (counted up over the session, [`next_serial`]):
     /// another serial, another line or solution (what the lines on the
     /// ground solved for it are kept by).
     pub serial: u64,
+}
+
+/// A project line's own libraries, where its library files differ from
+/// the line worked on's ([`Model::line_libraries`]).
+#[derive(Debug, Default)]
+pub struct LineLibraries {
+    /// Its wire library.
+    pub cables: Option<ohl_cables::Library>,
+    /// Its structure types and insulators.
+    pub types: Option<(
+        ohl_structures::StructureLibrary,
+        ohl_structures::InsulatorLibrary,
+    )>,
+    /// Which differ, in words.
+    pub kinds: Vec<&'static str>,
 }
 
 /// What a project line shown differs in from the line worked on.
@@ -467,11 +489,16 @@ impl Differences {
 
     /// What `other` differs in from `ours` (both resolved): compared
     /// object by object, a section also when one of its structures
-    /// differs.
+    /// differs or its wire type is among `cables_changed` (its data differ
+    /// between the two lines' wire libraries).
     ///
     /// Expected cost: one comparison per object (milliseconds for a few
     /// thousand).
-    pub fn between(ours: &Line, other: &Line) -> Self {
+    pub fn between_with(
+        ours: &Line,
+        other: &Line,
+        cables_changed: &std::collections::BTreeSet<String>,
+    ) -> Self {
         let structures: std::collections::BTreeSet<String> = other
             .structures
             .iter()
@@ -484,6 +511,7 @@ impl Differences {
             .filter(|s| {
                 ours.sections.iter().find(|o| o.id == s.id) != Some(*s)
                     || s.points.iter().any(|p| structures.contains(&p.structure))
+                    || cables_changed.contains(&s.cable)
             })
             .map(|s| s.id.clone())
             .collect();
@@ -1482,7 +1510,7 @@ impl Model {
     pub fn want_others(&mut self, wanted: &[usize], ctx: &eframe::egui::Context) {
         for o in &mut self.other_lines {
             if o.differs_for != self.line_version {
-                o.differs = Differences::between(&self.line, &o.line);
+                o.differs = Differences::between_with(&self.line, &o.line, &o.cables_changed);
                 o.differs_for = self.line_version;
             }
             for &k in wanted {
@@ -1493,8 +1521,8 @@ impl Model {
                     continue;
                 }
                 let mut live = mine.live.clone();
-                let (line, library, case) =
-                    (o.line.clone(), self.library.clone(), mine.case.clone());
+                let library = o.library.clone().unwrap_or_else(|| self.library.clone());
+                let (line, case) = (o.line.clone(), mine.case.clone());
                 let dirty: Vec<String> = o.differs.sections.iter().cloned().collect();
                 let (tx, rx) = std::sync::mpsc::channel();
                 let ctx = ctx.clone();
@@ -1896,6 +1924,76 @@ impl Model {
         }
     }
 
+    /// The libraries of project line `name` where its library files
+    /// differ from the line worked on's: its wire library, its structure
+    /// types and insulators (written to a working folder of its own and
+    /// read), and which kinds differ.
+    ///
+    /// Expected cost: comparing the files' texts; reading the libraries
+    /// that differ (milliseconds to a second for many structure types).
+    pub fn line_libraries(&self, name: &str) -> Result<LineLibraries, String> {
+        let session = self.session().ok_or("open a project to show its lines")?;
+        let differ = |kind: &str| -> Result<Option<Vec<(String, String)>>, String> {
+            let theirs = session
+                .line_library_files(name, kind)
+                .map_err(|e| e.to_string())?;
+            let ours = session.library_files(kind).map_err(|e| e.to_string())?;
+            Ok((theirs != ours).then_some(theirs))
+        };
+        let folder: String = name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let work = library_workdir(&self.sources.file)
+            .with_extension("lines")
+            .join(folder);
+        let write = |kind: &str, files: &[(String, String)]| -> Result<PathBuf, String> {
+            let dir = work.join(kind);
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            for (n, t) in files {
+                std::fs::write(dir.join(n), t).map_err(|e| format!("{n}: {e}"))?;
+            }
+            Ok(dir)
+        };
+        let mut out = LineLibraries::default();
+        if let Some(files) = differ("cables")? {
+            let dir = write("cables", &files)?;
+            out.cables =
+                Some(ohl_cables::Library::load(&dir).map_err(|e| format!("{name}, wires: {e}"))?);
+            out.kinds.push("wires");
+        }
+        let (structures, insulators) = (differ("structures")?, differ("insulators")?);
+        if structures.is_some() || insulators.is_some() {
+            let sdir = match &structures {
+                Some(f) => write("structures", f)?,
+                None => structures_dir(&self.sources),
+            };
+            let idir = match &insulators {
+                Some(f) => write("insulators", f)?,
+                None => insulators_dir(&self.sources),
+            };
+            let s = ohl_structures::StructureLibrary::load_dir(&sdir)
+                .map_err(|e| format!("{name}, structure types: {e}"))?;
+            let i = ohl_structures::InsulatorLibrary::load_dir(&idir)
+                .map_err(|e| format!("{name}, insulators: {e}"))?;
+            out.types = Some((s, i));
+            if structures.is_some() {
+                out.kinds.push("structure types");
+            }
+            if insulators.is_some() {
+                out.kinds.push("insulators");
+            }
+        }
+        Ok(out)
+    }
+
     /// Shows project line `name` next to the line worked on (solved in
     /// every weather case).
     pub fn show_line(&mut self, name: &str) -> Result<String, String> {
@@ -1905,7 +2003,10 @@ impl Model {
         let started = Instant::now();
         let session = self.session().ok_or("open a project to show its lines")?;
         let stored = session.line_named(name).map_err(|e| e.to_string())?.clone();
-        let mut line = match &self.types {
+        // Its own libraries where its library files differ (tracked with
+        // it like its objects).
+        let own = self.line_libraries(name)?;
+        let mut line = match own.types.as_ref().or(self.types.as_ref()) {
             Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
             None => stored,
         };
@@ -1914,7 +2015,16 @@ impl Model {
         // Solved case by case when wanted, in the background
         // ([`Model::want_others`]).
         let cases: Vec<Solved> = weather.into_iter().map(Solved::pending).collect();
-        let differs = Differences::between(&self.line, &line);
+        let cables_changed: std::collections::BTreeSet<String> = match &own.cables {
+            Some(lib) => line
+                .sections
+                .iter()
+                .map(|s| s.cable.clone())
+                .filter(|c| lib.get(c) != self.library.get(c))
+                .collect(),
+            None => Default::default(),
+        };
+        let differs = Differences::between_with(&self.line, &line, &cables_changed);
         // A colour no line shown has yet.
         let color = OTHER_COLORS
             .iter()
@@ -1923,10 +2033,15 @@ impl Model {
             .unwrap_or(OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()]);
         let text = format!(
             "project line \"{name}\" shown (read in {:.1?}): {} section(s), {} structure(s) \
-             differ from the line worked on; solving the cases shown",
+             differ from the line worked on{}; solving the cases shown",
             started.elapsed(),
             differs.sections.len(),
-            differs.structures.len()
+            differs.structures.len(),
+            if own.kinds.is_empty() {
+                String::new()
+            } else {
+                format!(" (its own library files: {})", own.kinds.join(", "))
+            }
         );
         self.other_lines.push(OtherLine {
             name: name.to_owned(),
@@ -1937,6 +2052,8 @@ impl Model {
             differs,
             differs_for: self.line_version,
             solving: Vec::new(),
+            library: own.cables,
+            cables_changed,
         });
         Ok(text)
     }

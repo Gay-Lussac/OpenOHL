@@ -696,6 +696,33 @@ impl Session {
             .ok_or_else(|| refused(format!("no project line \"{name}\"")))
     }
 
+    /// The library files kept with project line `name` of one kind (as
+    /// [`Session::library_files`] gives the current line's): file name and
+    /// text, by name.
+    pub fn line_library_files(
+        &self,
+        name: &str,
+        kind: &str,
+    ) -> Result<Vec<(String, String)>, SessionError> {
+        if name == self.current {
+            return self.library_files(kind);
+        }
+        let state = self
+            .others
+            .get(name)
+            .ok_or_else(|| refused(format!("no project line \"{name}\"")))?;
+        let mut out: Vec<(String, String)> = state
+            .objects
+            .iter()
+            .filter(|((k, _), _)| *k == Kind::Library)
+            .filter_map(|(_, o)| crate::library_entry(&o.value))
+            .filter(|(k, _, _)| k == kind)
+            .map(|(_, n, t)| (n, t))
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
     /// Makes `name` the line the commands act on (nothing is changed:
     /// any user may look at any line).
     pub fn select_line(&mut self, name: &str) -> Result<(), SessionError> {
@@ -838,13 +865,10 @@ impl Session {
         } else {
             let rev = self.resolve_revision(from)?;
             let base = objects_of_state(self.revision_state(&rev)?);
-            // The revision's line, without its library files (as lines
-            // made from a revision always started).
-            let objects = base
-                .iter()
-                .filter(|(k, _)| k.0 != Kind::Library)
-                .map(|(k, o)| (k.clone(), o.clone()))
-                .collect();
+            // The revision's line with its library files (owner,
+            // 2026-10-23; lines made from a revision started without them
+            // before).
+            let objects = base.clone();
             (objects, Some((rev, base)))
         };
         let revision = base.as_ref().map(|(rev, _)| rev.clone());
