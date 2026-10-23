@@ -4,7 +4,8 @@
 
 //! Editing the model through the project's session: every change is a
 //! logged command ([`ohl_session::Command`]), undoable per user; after it
-//! only the sections it touched are re-solved, in every weather case.
+//! only the sections it touched are re-solved, in the weather cases shown
+//! or asked for lately (the others solved again when next wanted).
 //!
 //! While a structure is dragged the change is previewed without the
 //! session ([`Model::preview_move`]): the line is changed in memory and the
@@ -18,6 +19,10 @@ use ohl_line::{Line, Point};
 use ohl_session::{Applied, Command, Impact, SessionError};
 
 use crate::model::Model;
+
+/// How long a weather case asked for by a view stays brought up to date
+/// at once after an edit ([`Model::sync`]).
+const KEEP_LIVE: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Why an edit was not made.
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +70,7 @@ impl Model {
         };
         let mut line = match &self.types {
             Some((s, i)) => line
-                .resolve(s, i)
+                .resolve_with(s, i, Some(&self.resolve_cache))
                 .map_err(|e| EditError::Refused(e.to_string()))?,
             None => line,
         };
@@ -83,8 +88,8 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
-        // Library files may have changed (their hash is taken again).
-        self.revisions.libraries += 1;
+        // (Library files changed come as library objects: read again
+        // below, their hash taken again there.)
         // Points of the cloud changed: the points in memory follow, the
         // views read them again.
         if !applied.points.is_empty() {
@@ -115,17 +120,62 @@ impl Model {
         } else {
             &applied.sections
         };
-        let mut solved = 0;
-        for c in &mut self.cases {
-            solved += c.update(&line, &self.library, dirty);
+        // Whether a solution may change: sections, structures, jumpers,
+        // spacers or the routes (the wind's side) changed, or the solver's
+        // settings; else (a report, the structure loads chosen, …) the
+        // solutions stay as they are.
+        use ohl_session::Kind;
+        let solving = !dirty.is_empty()
+            || applied.objects.iter().any(|(k, _)| {
+                matches!(
+                    k,
+                    Kind::Structure
+                        | Kind::Section
+                        | Kind::Jumper
+                        | Kind::Spacer
+                        | Kind::Route
+                        | Kind::Alignment
+                        | Kind::AlignmentPoint
+                )
+            })
+            || line.solver != self.line.solver
+            || line.condition_cases != self.line.condition_cases;
+        // The cases the views asked for lately, shown or picked: at once;
+        // the others not solved any more, solved again from the new line
+        // when wanted (in the background, or by a check).
+        let now = Instant::now();
+        let live: std::collections::BTreeSet<usize> = self
+            .shown_cases
+            .iter()
+            .copied()
+            .chain(self.display_cases.values().flatten().copied())
+            .chain(self.selection_case)
+            .chain(
+                self.recently_wanted
+                    .iter()
+                    .filter(|(_, t)| now.duration_since(**t) < KEEP_LIVE)
+                    .map(|(k, _)| *k),
+            )
+            .collect();
+        let (mut solved, mut deferred) = (0, 0);
+        if solving {
+            for (k, c) in self.cases.iter_mut().enumerate() {
+                if live.contains(&k) {
+                    solved += c.update(&line, &self.library, dirty);
+                } else if c.ready {
+                    *c = crate::model::Solved::pending(c.case.clone());
+                    deferred += 1;
+                }
+            }
         }
         self.line = line;
         self.line_version += 1;
         Ok(format!(
-            "{what} (log entry {}): {} sections touched, {solved} re-solved over {} weather cases in {:.0?}",
+            "{what} (log entry {}): {} sections touched, {solved} re-solved over {} weather cases \
+             ({deferred} others to solve again when wanted) in {:.0?}",
             applied.seq,
             applied.sections.len(),
-            self.cases.len(),
+            self.cases.len() - deferred,
             started.elapsed()
         ))
     }

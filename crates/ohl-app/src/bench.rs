@@ -905,3 +905,160 @@ fn drawing_benchmark() {
         }
     }
 }
+
+/// The edit benchmark: one section's stringing changed (as the span
+/// tool or the section editor does) on `OHL_BENCH_FILE` (a copy: it is
+/// edited), with the shown cases solved, then with every case solved;
+/// the time of the whole edit and of its parts (one case's re-solve, all
+/// cases'). Ignored by default; prints a table.
+///
+/// ```bash
+/// OHL_BENCH_FILE=/path/to/copy.ohl cargo test --release -p ohl-app edit_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn edit_benchmark() {
+    let Some(mut m) = from_env() else {
+        eprintln!("edit benchmark: give OHL_BENCH_FILE");
+        return;
+    };
+    // A section in the middle with several spans.
+    let line = m.line.clone();
+    let section = line
+        .sections
+        .iter()
+        .filter(|s| s.points.len() > 3)
+        .nth(line.sections.len() / 4)
+        .or_else(|| line.sections.first())
+        .unwrap()
+        .clone();
+    let changed = |s: &ohl_line::Stringing, k: f64| match s {
+        ohl_line::Stringing::Tension {
+            horizontal_tension,
+            temperature,
+        } => ohl_line::Stringing::Tension {
+            horizontal_tension: horizontal_tension + k,
+            temperature: *temperature,
+        },
+        other => other.clone(),
+    };
+    let mut k = 0.0;
+    let mut edit = |m: &mut Model, label: &str| {
+        k += 1.0;
+        let solved = m.cases.iter().filter(|c| c.ready).count();
+        let command = ohl_session::Command::SetStringing {
+            section: section.id.clone(),
+            stringing: changed(&section.stringing, k),
+        };
+        let t = Instant::now();
+        let report = m.apply("bench", command).unwrap();
+        let whole = t.elapsed();
+        // One case's re-solve alone, and the jumpers' part of it.
+        let dirty = vec![section.id.clone()];
+        let first = m.cases.iter().position(|c| c.ready).unwrap();
+        let t = Instant::now();
+        m.cases[first].update(&m.line, &m.library, &dirty);
+        let one = t.elapsed();
+        let t = Instant::now();
+        m.cases[first].update(&m.line, &m.library, &[]);
+        let nothing = t.elapsed();
+        println!(
+            "{label}: {solved} cases solved; edit {whole:.1?} ({report}); one case's update \
+             {one:.1?}, of it with no section dirty (jumpers, shapes, bundles) {nothing:.1?}"
+        );
+    };
+    edit(&mut m, "shown cases");
+    edit(&mut m, "shown cases, again");
+    // More edits to profile them (OHL_BENCH_EDITS).
+    let more: usize = ohl_core::env::var("OHL_BENCH_EDITS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    for _ in 0..more {
+        edit(&mut m, "again");
+    }
+    // The results' revision (what the check pages compare): once per edit.
+    let t = Instant::now();
+    m.line_version += 1;
+    let _ = m.revision();
+    println!("the results' revision after an edit: {:.1?}", t.elapsed());
+    // The case brought up to date edit by edit against a full solve of
+    // the line as it is now: the largest difference of a clamp and of a
+    // jumper point, m.
+    {
+        let first = m.cases.iter().position(|c| c.ready).unwrap();
+        let c = &m.cases[first];
+        let full = crate::model::Solved::new(&m.line, &m.library, c.case.clone());
+        let mut clamp: f64 = 0.0;
+        let mut worst = Vec::new();
+        for (a, b) in c.shapes.iter().zip(&full.shapes) {
+            assert_eq!(a.section, b.section);
+            for (p, q) in a.clamps.iter().zip(&b.clamps) {
+                let d = (0..3).map(|i| (p[i] - q[i]).abs()).fold(0.0, f64::max);
+                clamp = clamp.max(d);
+                if d > 1e-3 {
+                    worst.push((d, a.section.clone()));
+                }
+            }
+        }
+        let mut jumper: f64 = 0.0;
+        for (a, b) in c.jumpers.iter().zip(&full.jumpers) {
+            for (p, q) in a.points.iter().zip(&b.points) {
+                jumper = jumper.max((0..3).map(|i| (p[i] - q[i]).abs()).fold(0.0, f64::max));
+            }
+        }
+        worst.sort_by(|a, b| b.0.total_cmp(&a.0));
+        worst.dedup_by(|a, b| a.1 == b.1);
+        println!(
+            "case {}: sections differing by more than 1 mm: {:?}",
+            c.case.name,
+            &worst[..worst.len().min(12)]
+        );
+        println!(
+            "incremental vs full solve: {} / {} sections, {} / {} jumpers; largest clamp \
+             difference {clamp:.2e} m, jumper point {jumper:.2e} m",
+            c.shapes.len(),
+            full.shapes.len(),
+            c.jumpers.len(),
+            full.jumpers.len()
+        );
+    }
+    // The jumpers' loads as an estimate and as their pull: one case
+    // solved, then updated with nothing changed and with the section.
+    for loads in [ohl_line::JumperLoads::Estimate, ohl_line::JumperLoads::Pull] {
+        let mut line = m.line.clone();
+        line.solver.jumper_loads = loads;
+        let first = m.cases.iter().position(|c| c.ready).unwrap();
+        let case = m.cases[first].case.clone();
+        let t = Instant::now();
+        let mut s = ohl_line::incremental::SolvedLine::solve(&line, &m.library, &case);
+        let solve = t.elapsed();
+        // (Repeated with OHL_BENCH_REPEAT, to profile it.)
+        let repeat: usize = ohl_core::env::var("OHL_BENCH_REPEAT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
+        let t = Instant::now();
+        for _ in 0..repeat {
+            s.update(&line, &m.library, &[]);
+        }
+        let nothing = t.elapsed() / repeat as u32;
+        let t = Instant::now();
+        s.update(&line, &m.library, std::slice::from_ref(&section.id));
+        let one = t.elapsed();
+        println!(
+            "jumper loads {loads:?}: whole case {solve:.1?}; update, nothing changed \
+             {nothing:.1?}; update, the section {one:.1?}"
+        );
+    }
+    // Every case solved (minutes on a real line): with OHL_BENCH_ALL.
+    if ohl_core::env::var_os("OHL_BENCH_ALL").is_none() {
+        return;
+    }
+    let t = Instant::now();
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    println!("every case solved in {:.1?}", t.elapsed());
+    edit(&mut m, "every case");
+}

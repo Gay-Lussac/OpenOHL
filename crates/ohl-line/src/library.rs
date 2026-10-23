@@ -298,12 +298,34 @@ impl Line {
         structures: &StructureLibrary,
         insulators: &InsulatorLibrary,
     ) -> Result<Line, LineError> {
+        self.resolve_with(structures, insulators, None)
+    }
+
+    /// [`Self::resolve`], each structure merged with its type kept in
+    /// `cache` and taken from it while the structure is as it was (the
+    /// cache belongs to these libraries: a new one with other libraries).
+    /// The same line as resolving it again.
+    pub fn resolve_with(
+        &self,
+        structures: &StructureLibrary,
+        insulators: &InsulatorLibrary,
+        cache: Option<&ResolveCache>,
+    ) -> Result<Line, LineError> {
         let invalid = |m: String| LineError::Invalid(m);
         let mut line = self.clone();
+        let mut kept = cache.and_then(|c| c.kept.lock().ok());
         for s in &mut line.structures {
             let Some(type_id) = &s.structure_type else {
                 continue;
             };
+            if let Some(m) = kept.as_deref()
+                && let Some((stored, merged)) = m.get(&s.id)
+                && stored == s
+            {
+                *s = merged.clone();
+                continue;
+            }
+            let stored = kept.is_some().then(|| s.clone());
             let t = structures.get(type_id).ok_or_else(|| {
                 invalid(format!(
                     "structure {}: type \"{type_id}\" not in the structure library",
@@ -416,7 +438,11 @@ impl Line {
             s.members = t
                 .place_stick(at, s.orientation_deg, s.extension.as_deref())
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+            if let (Some(m), Some(stored)) = (kept.as_deref_mut(), stored) {
+                m.insert(s.id.clone(), (stored, s.clone()));
+            }
         }
+        drop(kept);
 
         // Wind areas of library assemblies (a V's shared by its legs), for
         // strings without their own.
@@ -653,6 +679,14 @@ pub(crate) fn link_point(
         to_local([0.0; 3], rotation_deg, d)
     };
     p.joint = Some(id);
+}
+
+/// Structures merged with their types by [`Line::resolve_with`], kept by
+/// structure id with the structure as stored: one per pair of structure
+/// and insulator libraries.
+#[derive(Debug, Default)]
+pub struct ResolveCache {
+    kept: std::sync::Mutex<std::collections::HashMap<String, (crate::Structure, crate::Structure)>>,
 }
 
 #[cfg(test)]

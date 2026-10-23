@@ -459,6 +459,10 @@ pub struct Drawings {
     sheet_pending: Option<(SheetKey, std::time::Instant)>,
     /// Likewise for the sheet preview over the views.
     preview_pending: Option<(PreviewKey, std::time::Instant)>,
+    /// The line or its solutions changed since the preview over the views
+    /// was made (when last): it stays drawn and is made again once the
+    /// edits settle ([`PREVIEW_SETTLE`]).
+    preview_stale: Option<std::time::Instant>,
     /// The sheet being drawn in the background: for what, and where its
     /// pixels come.
     sheet_job: Option<(
@@ -2550,7 +2554,7 @@ impl Drawings {
         }
         // The sheet preview over the views is drawn again once the
         // settings settle: a frame then.
-        if self.preview_pending.is_some() {
+        if self.preview_pending.is_some() || self.preview_stale.is_some() {
             ctx.request_repaint_after(PREVIEW_SETTLE);
         }
         // The plugins' templates, once read.
@@ -2866,9 +2870,12 @@ impl Drawings {
         self.window.as_ref().unwrap_or(&self.last)
     }
 
-    /// Forgets the preview (after the line or the solved cases changed).
+    /// Marks the preview out of date (after the line or the solved cases
+    /// changed): it stays drawn and is made again once the edits settle.
     pub fn invalidate_preview(&mut self) {
-        self.preview = None;
+        if self.preview.is_some() {
+            self.preview_stale = Some(std::time::Instant::now());
+        }
     }
 
     /// The sheet preview when it is on: made again when the settings or
@@ -2899,7 +2906,18 @@ impl Drawings {
             },
             case,
         );
+        // The line changed: made again once the edits settle (the old one
+        // drawn meanwhile).
+        if let Some(since) = self.preview_stale
+            && self.preview.as_ref().is_some_and(|(k, _)| *k == key)
+            && since.elapsed() >= PREVIEW_SETTLE
+        {
+            let made = preview(model, case, &key.0);
+            self.preview = Some((key.clone(), made));
+            self.preview_stale = None;
+        }
         if self.preview.as_ref().is_none_or(|(k, _)| *k != key) {
+            self.preview_stale = None;
             // Drawn at once the first time, else once the settings settle.
             let settled = match &self.preview_pending {
                 Some((k, since)) if *k == key => since.elapsed() >= PREVIEW_SETTLE,

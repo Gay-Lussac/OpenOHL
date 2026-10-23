@@ -621,6 +621,9 @@ pub struct Model {
     /// The types' bodies as drawn (levels 2 and 3), shared by their
     /// structures ([`drawn_bodies`]); made again with the libraries.
     pub bodies: std::sync::Arc<ohl_structures_fe::drawn::Bodies>,
+    /// The structures merged with their types after the last edits, kept
+    /// for the next (with these libraries; a new one with others).
+    pub resolve_cache: ohl_line::library::ResolveCache,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
     /// The project's session when it is read-only for this user (a
@@ -644,6 +647,10 @@ pub struct Model {
     /// and it is not the one shown (highlighted in the views and the
     /// properties); `None`: the case shown.
     pub selection_case: Option<usize>,
+    /// When each weather case was last asked for by a view ([`Model::want`]):
+    /// those asked for lately are brought up to date at once after an edit,
+    /// the others solved again when next wanted ([`Model::sync`]).
+    pub recently_wanted: std::collections::BTreeMap<usize, std::time::Instant>,
     /// The structures coloured by usage in the plan and 3D views
     /// (Checks › Structure loads › Usage, Colour structures by usage); empty:
     /// not coloured.
@@ -1479,7 +1486,9 @@ impl Model {
     /// Solves the weather cases `wanted` that are not solved yet, in the
     /// background (one thread each); [`Model::poll_solving`] takes them.
     pub fn want(&mut self, wanted: impl IntoIterator<Item = usize>, ctx: &eframe::egui::Context) {
+        let now = std::time::Instant::now();
         for k in wanted {
+            self.recently_wanted.insert(k, now);
             let Some(c) = self.cases.get(k) else {
                 continue;
             };
@@ -2123,6 +2132,7 @@ impl Model {
         self.library = library;
         self.bodies = drawn_bodies(types.as_ref(), &self.sections_folder());
         self.types = types;
+        self.resolve_cache = Default::default();
         let failed: usize = self.cases.iter().map(|c| c.failed.len()).sum();
         for name in others {
             if let Err(e) = self.show_line(&name) {
@@ -2170,9 +2180,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         None => None,
     };
     let types = load_types(&sources, &line)?;
+    // The structures merged with their types kept for the first edits.
+    let resolve_cache = ohl_line::library::ResolveCache::default();
     if let Some((structures, insulators)) = &types {
         line = line
-            .resolve(structures, insulators)
+            .resolve_with(structures, insulators, Some(&resolve_cache))
             .map_err(|e| e.to_string())?;
         let dir = structures_dir(&sources);
         step(
@@ -2579,10 +2591,12 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         library,
         bodies,
         types,
+        resolve_cache,
         editing,
         display_cases: Default::default(),
         shown_cases: vec![0],
         selection_case: None,
+        recently_wanted: Default::default(),
         usage_marks: Default::default(),
         usage_out_of_date: false,
         other_lines: Vec::new(),
