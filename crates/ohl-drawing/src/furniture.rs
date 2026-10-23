@@ -987,7 +987,7 @@ pub(crate) fn bands(
         })
     };
     for b in &t.bands {
-        let h = b.height.0;
+        let h = band_height(t, b, d);
         let row = [f.left, y, f.width(), h];
         items.push(rect_path(Layer::Bands, row, pen.clone()));
         items.push(Item::Text(Text {
@@ -1150,48 +1150,47 @@ pub(crate) fn bands(
                 }
             }
             BandKind::Stringing => {
-                // Per tension section on the sheet (its part on the sheet):
-                // ticks at its ends, one line per circuit at its middle.
+                // One line per circuit; on it each tension section of the
+                // circuit (between its ends, ticked on that line) with its
+                // tension at its middle (its part on the sheet).
+                let circuits = stringing_circuits(d);
+                let n = circuits.len().max(1) as f64;
+                let step = h / n;
+                let text_size = size.min(step / 1.15);
                 for st in d
                     .stringing
                     .iter()
                     .filter(|st| st.to > f.s0 && st.from < f.s1)
                 {
                     let (a, b2) = (st.from.max(f.s0), st.to.min(f.s1));
-                    for s in [st.from, st.to] {
-                        if within(s) {
-                            let x = f.x(s);
-                            items.push(line(Layer::Bands, [x, y], [x, y + h], tick.clone()));
+                    for (circuit, lo, hi) in &st.tensions {
+                        let Some(k) = circuits.iter().position(|c| c == circuit) else {
+                            continue;
+                        };
+                        let (y0, y1) = (y + k as f64 * step, y + (k as f64 + 1.0) * step);
+                        for s in [st.from, st.to] {
+                            if within(s) {
+                                let x = f.x(s);
+                                items.push(line(Layer::Bands, [x, y0], [x, y1], tick.clone()));
+                            }
                         }
-                    }
-                    let lines: Vec<String> = st
-                        .tensions
-                        .iter()
-                        .map(|(circuit, lo, hi)| {
-                            let name = match circuit {
-                                Some(c) => c.clone(),
-                                None => t.legend.label("earth_wires", &[]),
-                            };
-                            let (lo, hi) = (lo / 1000.0, hi / 1000.0);
-                            let value = if hi - lo < 0.05 {
-                                format!("{hi:.1}")
-                            } else {
-                                format!("{lo:.1}–{hi:.1}")
-                            };
-                            t.legend
-                                .label("stringing", &[("circuit", &name), ("tension", &value)])
-                        })
-                        .collect();
-                    let n = lines.len().max(1) as f64;
-                    let step = (h / n).min(size * 1.25);
-                    let x = f.x(0.5 * (a + b2));
-                    for (k, text) in lines.into_iter().enumerate() {
-                        let yy = mid + (k as f64 - (n - 1.0) / 2.0) * step + 0.36 * size;
+                        let name = match circuit {
+                            Some(c) => c.clone(),
+                            None => t.legend.label("earth_wires", &[]),
+                        };
+                        let (lo, hi) = (lo / 1000.0, hi / 1000.0);
+                        let value = if hi - lo < 0.05 {
+                            format!("{hi:.1}")
+                        } else {
+                            format!("{lo:.1}–{hi:.1}")
+                        };
                         items.push(Item::Text(Text {
                             layer: Layer::Bands,
-                            at: [x, yy],
-                            text,
-                            size: size.min(step / 1.1),
+                            at: [f.x(0.5 * (a + b2)), 0.5 * (y0 + y1) + 0.36 * text_size],
+                            text: t
+                                .legend
+                                .label("stringing", &[("circuit", &name), ("tension", &value)]),
+                            size: text_size,
                             anchor: Anchor::Middle,
                             bold: false,
                             color,
@@ -1261,10 +1260,40 @@ pub(crate) fn structure_entry(format: &str, m: &crate::Mark, dec: usize) -> Vec<
 }
 
 /// The height of the template's band rows, mm (none when off).
-pub(crate) fn bands_height(t: &SheetTemplate, o: &Options) -> f64 {
+pub(crate) fn bands_height(t: &SheetTemplate, o: &Options, d: &RouteDrawing) -> f64 {
     if o.bands {
-        t.bands.iter().map(|b| b.height.0).sum()
+        t.bands.iter().map(|b| band_height(t, b, d)).sum()
     } else {
         0.0
     }
+}
+
+/// The circuits of the route's stringing tensions, one band line each:
+/// the systems by name, the earth wires (none) last.
+fn stringing_circuits(d: &RouteDrawing) -> Vec<Option<String>> {
+    let mut v: Vec<Option<String>> = d
+        .stringing
+        .iter()
+        .flat_map(|s| s.tensions.iter().map(|t| t.0.clone()))
+        .collect();
+    v.sort_by(|a, b| (a.is_none(), a).cmp(&(b.is_none(), b)));
+    v.dedup();
+    v
+}
+
+/// The height of band row `b`, mm: the template's; a `stringing` row at
+/// least as tall as the most circuits a tension section of the route has
+/// need, one line each (the same on every sheet of the route), so it fits
+/// a line of one circuit as well as one of many.
+pub(crate) fn band_height(
+    t: &SheetTemplate,
+    b: &crate::template::BandSpec,
+    d: &RouteDrawing,
+) -> f64 {
+    if b.kind != BandKind::Stringing {
+        return b.height.0;
+    }
+    let lines = stringing_circuits(d).len() as f64;
+    let size = t.text.size.0 * 0.8;
+    b.height.0.max(lines * size * 1.25 + 1.5)
 }

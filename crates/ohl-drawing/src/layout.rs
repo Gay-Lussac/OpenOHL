@@ -2638,7 +2638,7 @@ impl Paper {
         let plan_axis_in = above + extra / 2.0;
         let gap = t.layout.gap.0;
         let labels = if t.layout.station_labels { 8.0 } else { 2.0 };
-        let bands_h = furniture::bands_height(t, o);
+        let bands_h = furniture::bands_height(t, o, d);
         let area_top = inner[1] + 6.0;
         let bottom = lowest - pad;
         let (plan_top, prof_top, prof_bottom) = if !o.plan {
