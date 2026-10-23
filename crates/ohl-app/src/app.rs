@@ -3215,6 +3215,12 @@ impl Ready {
         need.push(self.case);
         // (The lines on the ground take the cases displayed: these.)
         need.extend(self.model.display_cases.values().flatten().copied());
+        // The project lines shown, in the same cases (from the line worked
+        // on's solutions, only what differs solved again).
+        self.model.want_others(&need, ctx);
+        if self.model.poll_others() {
+            self.view3d.dirty.insert(crate::scene::Layer::OtherLines);
+        }
         self.model.want(need, ctx);
         let done = self.model.poll_solving();
         if !done.is_empty() {

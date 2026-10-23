@@ -626,6 +626,11 @@ pub fn wires(
             if shown != model.section_cases(&shape.section, case).contains(&k) {
                 continue;
             }
+            // Only the sections of `line` (a project line shown: what
+            // differs from the line worked on).
+            if tint.is_some() && !line.sections.iter().any(|s| s.id == shape.section) {
+                continue;
+            }
             let style = styles.section(&shape.section);
             let col = tint.unwrap_or(style.color);
             let faded = scope
@@ -716,7 +721,12 @@ pub fn wires(
                 out.push(Prim::new(x.ends[0], x.ends.to_vec(), rgba(col, alpha), 4.0).at(0, 1));
             }
         }
-        for j in solved.jumpers.iter().filter(|_| this_case) {
+        for j in solved
+            .jumpers
+            .iter()
+            .filter(|_| this_case)
+            .filter(|j| tint.is_none() || line.jumpers.iter().any(|x| x.id == j.jumper))
+        {
             let (_, lines) = jumper_lines(line, j, &solved.bundles);
             let style = styles.jumper(&j.jumper);
             let col = tint.unwrap_or(style.color);
@@ -780,6 +790,7 @@ pub fn wires(
             .iter()
             .zip(&solved.bundles.yoke_sections)
             .filter(|(_, sec)| shown == model.section_cases(sec, case).contains(&k))
+            .filter(|(_, sec)| tint.is_none() || line.sections.iter().any(|s| &s.id == *sec))
             .map(|(y, _)| y)
         {
             let mut ring = y.clone();
@@ -1351,10 +1362,19 @@ pub fn prims(model: &Model, layer: Layer, case: usize) -> Vec<Prim> {
             // Each project line shown drawn as the working line is (strings
             // to their solved clamps, bundles, yokes, jumpers), in the same
             // weather cases, in its colour.
+            // Only what differs from the line worked on, unless the
+            // whole lines are asked for.
             for other in &model.other_lines {
                 let tint = Some(other.color);
-                structures(&mut out, model, &other.line, &other.cases, case, tint);
-                wires(&mut out, model, &other.line, &other.cases, case, true, tint);
+                let part;
+                let line = if model.other_lines_whole {
+                    &other.line
+                } else {
+                    part = other.differs.of_line(&other.line);
+                    &part
+                };
+                structures(&mut out, model, line, &other.cases, case, tint);
+                wires(&mut out, model, line, &other.cases, case, true, tint);
             }
         }
         _ => {}
