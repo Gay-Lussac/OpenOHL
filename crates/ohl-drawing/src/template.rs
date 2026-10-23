@@ -439,11 +439,15 @@ pub enum BandKind {
     GroundClearance,
     /// A value the user gives per sheet (`field`).
     Text,
+    /// The stringing tension of each tension section (between two strain
+    /// structures): each circuit's conductors and the earth wires, kN
+    /// per subconductor, in the stringing weather case.
+    Stringing,
 }
 
 impl BandKind {
     /// Every kind, as written.
-    pub const ALL: [(Self, &'static str); 9] = [
+    pub const ALL: [(Self, &'static str); 10] = [
         (Self::Structures, "structures"),
         (Self::Stations, "stations"),
         (Self::GroundHeight, "ground_height"),
@@ -453,6 +457,7 @@ impl BandKind {
         (Self::LowestWireHeight, "lowest_wire_height"),
         (Self::GroundClearance, "ground_clearance"),
         (Self::Text, "text"),
+        (Self::Stringing, "stringing"),
     ];
 }
 
@@ -584,7 +589,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 20] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 22] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -627,6 +632,14 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 20] = [
     ("elevation_string", "string {length} m", &["length"]),
     ("elevation_arm", "{height} m", &["height"]),
     ("elevation_dimension", "{length} m", &["length"]),
+    // The stringing band's words: a circuit's tension, the earth wires'
+    // name.
+    (
+        "stringing",
+        "{circuit}: {tension} kN",
+        &["circuit", "tension"],
+    ),
+    ("earth_wires", "earth wires", &[]),
 ];
 
 impl LegendSpec {
@@ -1000,6 +1013,43 @@ pub struct RoleSpec {
     pub names: Option<bool>,
 }
 
+/// `[cases]`: the weather case each kind of wire is drawn in, and the
+/// stringing case of the `stringing` band, by default (the export may
+/// choose per circuit). Each a weather case's name, or a temperature
+/// (`"80 °C"`): the project's case at that temperature without wind or
+/// ice ([`CasesSpec::pick`]). None: the case shown.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CasesSpec {
+    /// The phase conductors' (every circuit's).
+    pub conductors: Option<String>,
+    /// The earth wires'.
+    pub earth_wires: Option<String>,
+    /// The stringing tension's (the `stringing` band).
+    pub stringing: Option<String>,
+}
+
+impl CasesSpec {
+    /// Which of `cases` (name, temperature °C, still air without ice)
+    /// `choice` names: the case of that name, else, when `choice` is a
+    /// temperature, the first still case without ice at it (within
+    /// 0.05 °C). None: none matches.
+    pub fn pick(choice: &str, cases: &[(String, f64, bool)]) -> Option<usize> {
+        let choice = choice.trim();
+        if let Some(k) = cases.iter().position(|c| c.0 == choice) {
+            return Some(k);
+        }
+        let t: f64 = choice
+            .trim_end_matches("°C")
+            .trim_end_matches("C")
+            .trim_end_matches('°')
+            .trim()
+            .parse()
+            .ok()?;
+        cases.iter().position(|c| c.2 && (c.1 - t).abs() < 0.05)
+    }
+}
+
 /// `[conductor_clearance]`: lines below the lowest conductor, lowered by
 /// the ground clearance the project's rules require for the circuit.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -1349,6 +1399,9 @@ pub struct SheetTemplate {
     /// Lines below the lowest conductor.
     #[serde(default)]
     pub conductor_clearance: ConductorClearanceSpec,
+    /// The weather cases drawn and of the stringing band, by default.
+    #[serde(default)]
+    pub cases: CasesSpec,
     /// The title block.
     #[serde(default)]
     pub title_block: TitleBlockSpec,

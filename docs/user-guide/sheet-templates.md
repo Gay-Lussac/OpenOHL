@@ -56,6 +56,7 @@ built-in look).
 | `[layout]` | `order` (`["plan", "profile", "bands"]` or the plan last), `gap`, `plan_height` (`"auto"` or at least a length), `beyond_match` (`"none"` or `"faded"`), `axis_room`, `station_labels`, `plan_title`, `profile_title` (default `"Plan"`, `"Profile"`; `""` none) | the panels |
 | `[layers]` | `OHL_GROUND = { width, colour, dash }` … any layer | pens by layer |
 | `[[band]]` | `kind`, `height`, `label`, `every`, `field`, `decimals`, `format` (structures rows) | rows under the profile ([below](#band-rows)) |
+| `[cases]` | `conductors`, `earth_wires`, `stringing`: a weather case's name or a temperature | the cases drawn and of the stringing band ([below](#weather-cases-cases)) |
 | `[north_arrow]` | `place` (`"plan"`, `"off"`), `size` | one per straight stretch at the plan's top edge |
 | `[scale_bar]` | `place` (`"bottom"`, `"plan"`, `"profile"`, `"off"`), `lengths = ["100 m", "10 m"]` | graphic scales along and up |
 | `[legend]` | `place` (`"above_title_block"`, `"bottom"`, `"off"`), `title`, `width`, `height`, `column_width`, `size`, `[legend.labels]` ([below](#the-templates-words)) | made from what each sheet draws |
@@ -156,8 +157,36 @@ structures and every `every`), `span_length`, `structure_height`,
 `line_angle` (at the alignment's alignment points), `lowest_wire_height` (the
 solid case's lowest wire in each span), `ground_clearance` (only from a
 clearance check's results; empty otherwise, for now always empty in the
-app), `text` (a field of the user, per sheet). The export window and
+app), `text` (a field of the user, per sheet), `stringing` (since
+2026-10-23: for each tension section — between a section's two end
+structures — on the sheet, one line per circuit with its conductors'
+horizontal tension in the stringing case, and one for the earth wires,
+kN per subconductor, the lowest and highest of its spans as a range,
+`380 kV …: 36.6–38.4 kN`; ticks at the sections' ends; the stringing
+case from `[cases]` or the export window, none chosen: empty; its words
+`[legend.labels]` `stringing` and `earth_wires`). The export window and
 `--no-bands` switch them off.
+
+## Weather cases (`[cases]`)
+
+Since 2026-10-23 a template may give the weather cases the sheets draw
+and the stringing tension's, by default:
+
+```toml
+[cases]
+conductors = "80 °C"    # every circuit's phase conductors (the largest sag)
+earth_wires = "10 °C"   # the earth wires
+stringing = "10 °C"     # the stringing band's tension
+```
+
+Each is a weather case's name, or a temperature: the project's first
+case at that temperature with no wind and no ice. None given: the case
+shown (the stringing band empty). The export window's **Weather cases
+per circuit** chooses, per circuit (each system, and the earth wires),
+the case drawn and the stringing case over these. Each wire is drawn in
+its circuit's case, the jumpers in their circuit's (that of the
+section at their first end). `ohl drawing` takes them among the cases
+given with `--case` (one missing is an error naming it).
 
 A `structures` row writes its `format` for each structure (default
 `"{name} {type}"`): `{name}`, `{type}` (its type and extension),

@@ -43,6 +43,18 @@ pub struct VersionChoice {
     pub label: String,
 }
 
+/// The weather cases of one circuit on the sheets (none: the
+/// template's, else the case shown).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CircuitCases {
+    /// The case its wires are drawn in (a name or a temperature, as the
+    /// template's `[cases]`).
+    pub drawn: Option<String>,
+    /// The case of its stringing tension (the `stringing` band).
+    pub stringing: Option<String>,
+}
+
 /// The sheet template and what goes with it, as the export window and the
 /// drawing settings keep them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,6 +87,11 @@ pub struct SheetChoice {
     /// The LiDAR classes drawn, codes comma separated (none: the
     /// template's `[lidar] classes`).
     pub lidar_classes: Option<String>,
+    /// The weather cases per circuit (its system's name; "": the earth
+    /// wires): drawn and of the stringing band, over the template's
+    /// `[cases]` (2026-10-23).
+    #[serde(default)]
+    pub circuit_cases: std::collections::BTreeMap<String, CircuitCases>,
 }
 
 /// LiDAR class codes written `2, 3, 5` (empty: none).
@@ -104,6 +121,7 @@ impl Default for SheetChoice {
             elevation_labels: Vec::new(),
             elevation_stick: None,
             lidar_classes: None,
+            circuit_cases: Default::default(),
         }
     }
 }

@@ -2307,6 +2307,61 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         .collect::<Vec<_>>()
                 }
             };
+            // The template's weather cases (`[cases]`): each kind of
+            // wire drawn in its own, and the stringing band's, among the
+            // cases solved (--case).
+            let listed: Vec<(String, f64, bool)> = solved_cases
+                .iter()
+                .map(|(c, _, _)| {
+                    (
+                        c.name.clone(),
+                        c.temperature.celsius(),
+                        c.wind_pressure.si() == 0.0
+                            && c.ice_thickness.si() == 0.0
+                            && c.ice_load.is_none(),
+                    )
+                })
+                .collect();
+            let pick = |choice: &Option<String>, what: &str| -> Result<Option<usize>, String> {
+                match choice {
+                    None => Ok(None),
+                    Some(c) => ohl_drawing::template::CasesSpec::pick(c, &listed)
+                        .map(Some)
+                        .ok_or_else(|| {
+                            format!(
+                                "the sheet template's {what} case \"{c}\" is not among the \
+                                 cases solved: add it with --case"
+                            )
+                        }),
+                }
+            };
+            let tc = &template.cases;
+            let (k_cond, k_earth, k_string) = (
+                pick(&tc.conductors, "conductors'")?,
+                pick(&tc.earth_wires, "earth wires'")?,
+                pick(&tc.stringing, "stringing")?,
+            );
+            let mut shapes = shapes.clone();
+            if k_cond.is_some() || k_earth.is_some() {
+                for s in &mut shapes {
+                    let earth = line
+                        .sections
+                        .iter()
+                        .find(|x| x.id == s.section)
+                        .is_some_and(|x| x.system.is_none());
+                    let k = if earth { k_earth } else { k_cond };
+                    if let Some(k) = k
+                        && let Some(other) =
+                            solved_cases[k].1.iter().find(|x| x.section == s.section)
+                    {
+                        *s = other.clone();
+                    }
+                }
+            }
+            let jumpers = match k_cond {
+                Some(k) => solved_cases[k].2.clone(),
+                None => extras.jumpers.clone(),
+            };
             let routes = line.alignment_views();
             for id in &spec.routes {
                 if !routes.iter().any(|r| &r.id == id) {
@@ -2325,11 +2380,14 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     &line,
                     route,
                     &shapes,
-                    &extras.jumpers,
+                    &jumpers,
                     ground,
                     &extras.markers,
                     &options,
                 )?;
+                if let Some(k) = k_string {
+                    d.set_stringing(&line, &solved_cases[k].1, &solved_cases[k].0.name);
+                }
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
                 d.set_case(&first_case.name);

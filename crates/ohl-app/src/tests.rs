@@ -16041,3 +16041,49 @@ fn the_drawing_settings_are_kept_in_the_project_per_line() {
     );
     assert_eq!(w.formats, [ohl_drawing::export::Format::Svg]);
 }
+
+/// Each circuit drawn in a weather case of its own: the earth wires in
+/// another case than the one shown take that case's shapes; a stringing
+/// case gives the stringing band its sections; a case no name or
+/// temperature matches is an error naming it.
+#[test]
+fn each_circuit_is_drawn_in_its_own_weather_case() {
+    let m = synthetic();
+    assert!(m.cases.len() >= 2 && m.cases.iter().all(|c| c.ready));
+    let other = &m.cases[1];
+    let earth: Vec<&str> = m
+        .line
+        .sections
+        .iter()
+        .filter(|s| s.system.is_none())
+        .map(|s| s.id.as_str())
+        .collect();
+    assert!(!earth.is_empty());
+    let mut w = crate::drawings::DrawingsWindow {
+        route: Some(0),
+        out: Some(std::env::temp_dir()),
+        ..Default::default()
+    };
+    w.sheet.circuit_cases.insert(
+        String::new(),
+        crate::sheet_ui::CircuitCases {
+            drawn: Some(other.case.name.clone()),
+            stringing: Some(other.case.name.clone()),
+        },
+    );
+    let input = crate::drawings::Input::new(&m, 0, &w).unwrap();
+    let (name, shapes, _) = &input.cases[0];
+    assert!(name.contains(&other.case.name), "{name}");
+    for id in &earth {
+        let drawn = shapes.iter().find(|s| s.section == *id).unwrap();
+        let want = other.shapes.iter().find(|s| s.section == *id).unwrap();
+        assert_eq!(drawn, want, "{id}");
+    }
+    let (case, stringing) = input.stringing.as_ref().unwrap();
+    assert_eq!(case, &other.case.name);
+    assert_eq!(stringing.len(), earth.len());
+    // No such case: refused, named.
+    w.sheet.circuit_cases.get_mut("").unwrap().drawn = Some("no such case".into());
+    let e = crate::drawings::Input::new(&m, 0, &w).err().unwrap();
+    assert!(e.contains("no such case"), "{e}");
+}
