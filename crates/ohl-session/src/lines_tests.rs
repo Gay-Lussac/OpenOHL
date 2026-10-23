@@ -534,7 +534,17 @@ fn new_lines_keep_only_their_differences() {
         crate::lines::line_base(&s.conn, "phase 1").unwrap(),
         Some(start.clone())
     );
-    assert_eq!(rows(&path, "phase 1"), (2, 0), "the two library files");
+    // The two library files: their places only (no JSON).
+    assert_eq!(rows(&path, "phase 1"), (0, 0));
+    let places: i64 = rusqlite::Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM model_object WHERE line = 'phase 1' AND gone = 2 AND json = 'null'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(places, 2, "the two library files' places");
     assert_eq!(
         rows_of(&path, "spatial_index", "phase 1"),
         0,
