@@ -621,7 +621,7 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
     })
 }
 
-/// The key of a section's circuit for [`CircuitCases`]: its system's
+/// The key of a section's circuit for [`crate::sheet_ui::CircuitCases`]: its system's
 /// name, "" for the earth wires (no system).
 pub fn circuit_key(section: &ohl_line::Section) -> String {
     section.system.clone().unwrap_or_default()
