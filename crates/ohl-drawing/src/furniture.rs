@@ -430,6 +430,148 @@ pub(crate) fn revisions_height(t: &SheetTemplate) -> f64 {
     t.revisions.row_height.0 * (t.revisions.rows as f64 + 1.0)
 }
 
+/// Draws the stringing table into `r`: a heading row, then one row per
+/// tension section of route `d` on the sheet (from `s0` to `s1`) and
+/// circuit, along the route, the earth wires last in each section. More
+/// rows than the template keeps: the last row says how many are left
+/// out, and a warning says so.
+pub(crate) fn stringing_table(
+    items: &mut Vec<Item>,
+    t: &SheetTemplate,
+    r: Rect,
+    values: &Values,
+    d: &RouteDrawing,
+    s0: f64,
+    s1: f64,
+) -> Vec<String> {
+    let spec = &t.stringing_table;
+    let color = Color::hex_or_black(&t.text.colour);
+    let pen = t.pen(Layer::Stringing, Pen::new(Color::BLACK, 0.25));
+    let h = spec.row_height.0;
+    let size = spec.size.0;
+    let mut rows: Vec<[String; 5]> = Vec::new();
+    for st in d.stringing.iter().filter(|st| st.to > s0 && st.from < s1) {
+        for (circuit, lo, hi) in &st.tensions {
+            let name = match circuit {
+                Some(c) => c.clone(),
+                None => t.legend.label("earth_wires", &[]),
+            };
+            rows.push([
+                st.from_structure.clone(),
+                st.to_structure.clone(),
+                name,
+                tension_text(*lo, *hi),
+                st.case.clone(),
+            ]);
+        }
+    }
+    let mut warnings = Vec::new();
+    let room = spec.rows.max(1);
+    let left_out = rows.len().saturating_sub(room);
+    if left_out > 0 {
+        // The last row kept says how many follow.
+        rows.truncate(room - 1);
+        warnings.push(format!(
+            "the stringing table holds {room} rows: {} of the sheet's rows left out \
+             (more `rows` in the template's [stringing_table])",
+            left_out + 1
+        ));
+    }
+    // Framed down to the last row written (the room is kept on every
+    // sheet, the lines only where there are rows).
+    let shown = rows.len() + usize::from(left_out > 0);
+    let r = [r[0], r[1], r[2], h * (shown as f64 + 1.0)];
+    items.push(rect_path(Layer::Stringing, r, pen.clone()));
+    let get = |row: &[String; 5], n: &str, f: &str| match crate::template::STRINGING_FIELDS
+        .iter()
+        .position(|k| *k == n)
+    {
+        Some(k) => Some(row[k].clone()),
+        None => values.get(n, f),
+    };
+    let mut x = r[0];
+    for (c, col) in spec.columns.iter().enumerate() {
+        let w = col.width.0.min(r[0] + r[2] - x);
+        if w <= 1.0 {
+            break;
+        }
+        if c > 0 {
+            items.push(line(
+                Layer::Stringing,
+                [x, r[1]],
+                [x, r[1] + r[3]],
+                pen.clone(),
+            ));
+        }
+        let (s, title) = fit_line(&col.title, size, true, w - 2.0);
+        items.push(text_on(
+            Layer::Stringing,
+            [x + 1.0, r[1] + h / 2.0 + 0.36 * s],
+            s,
+            Anchor::Start,
+            true,
+            color,
+            &title,
+        ));
+        for (k, row) in rows.iter().enumerate() {
+            let y = r[1] + h * (k as f64 + 1.0);
+            let text = fill(&col.value, &|n, f| get(row, n, f));
+            let (s, text) = fit_line(&text, size, false, w - 2.0);
+            items.push(text_on(
+                Layer::Stringing,
+                [x + 1.0, y + h / 2.0 + 0.36 * s],
+                s,
+                Anchor::Start,
+                false,
+                color,
+                &text,
+            ));
+        }
+        x += w;
+    }
+    if left_out > 0 && !spec.columns.is_empty() {
+        let y = r[1] + h * (rows.len() as f64 + 1.0);
+        let text = format!("… +{}", left_out + 1);
+        let (s, text) = fit_line(&text, size, false, r[2] - 2.0);
+        items.push(text_on(
+            Layer::Stringing,
+            [r[0] + 1.0, y + h / 2.0 + 0.36 * s],
+            s,
+            Anchor::Start,
+            false,
+            color,
+            &text,
+        ));
+    }
+    for k in 1..=shown {
+        let y = r[1] + h * k as f64;
+        items.push(line(
+            Layer::Stringing,
+            [r[0], y],
+            [r[0] + r[2], y],
+            pen.clone(),
+        ));
+    }
+    warnings
+}
+
+/// The height of the stringing table, mm.
+pub(crate) fn stringing_table_height(t: &SheetTemplate) -> f64 {
+    let st = &t.stringing_table;
+    st.row_height.0 * (st.rows.max(1) as f64 + 1.0)
+}
+
+/// A tension range `lo`–`hi`, N, as the band and the table write it: kN
+/// with one decimal, one value when they round alike.
+fn tension_text(lo: f64, hi: f64) -> String {
+    let (lo, hi) = (lo / 1000.0, hi / 1000.0);
+    if hi - lo < 0.05 {
+        format!("{hi:.1}")
+    } else {
+        format!("{lo:.1}–{hi:.1}")
+    }
+}
+
 /// Draws the template's notes, placed from the frame `inner`'s edges.
 /// Each note is broken to its width, at most to the frame's padding on
 /// the right. Returns the rectangle each note covers.
@@ -1178,12 +1320,7 @@ pub(crate) fn bands(
                             Some(c) => c.clone(),
                             None => t.legend.label("earth_wires", &[]),
                         };
-                        let (lo, hi) = (lo / 1000.0, hi / 1000.0);
-                        let value = if hi - lo < 0.05 {
-                            format!("{hi:.1}")
-                        } else {
-                            format!("{lo:.1}–{hi:.1}")
-                        };
+                        let value = tension_text(*lo, *hi);
                         items.push(Item::Text(Text {
                             layer: Layer::Bands,
                             at: [f.x(0.5 * (a + b2)), 0.5 * (y0 + y1) + 0.36 * text_size],

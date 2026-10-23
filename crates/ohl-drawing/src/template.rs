@@ -1437,6 +1437,66 @@ impl Default for RevisionSpec {
     }
 }
 
+/// A column of the stringing table.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StringingColumn {
+    /// Its heading.
+    pub title: String,
+    /// Its width.
+    pub width: Mm,
+    /// What it shows: `{st.from}`, `{st.to}` (the tension section's end
+    /// structures, along the route), `{st.circuit}` (the earth wires: the
+    /// legend's `earth_wires` word), `{st.tension}` (kN, the lowest–highest
+    /// of its spans), `{st.case}` (the stringing weather case), and the
+    /// sheet's fields.
+    pub value: String,
+}
+
+/// `[stringing_table]`: the tension sections on the sheet, one row per
+/// section and circuit (the earth wires last), with the stringing tension
+/// in the stringing case (ESTI 235, 2.2.2 a).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StringingTableSpec {
+    /// `"above_title_block"`, `"bottom"` (in the bottom row beside the
+    /// title block, after the key map) or `"off"` (default).
+    #[serde(default = "off")]
+    pub place: String,
+    /// Rows under the heading: the room kept on every sheet (more rows
+    /// than this: the last says how many are left out, with a warning).
+    #[serde(default = "eight_rows")]
+    pub rows: usize,
+    /// Height of a row.
+    #[serde(default = "five")]
+    pub row_height: Mm,
+    /// Its columns.
+    #[serde(default)]
+    pub columns: Vec<StringingColumn>,
+    /// Size of its texts.
+    #[serde(default = "small")]
+    pub size: Mm,
+}
+
+fn eight_rows() -> usize {
+    8
+}
+
+impl Default for StringingTableSpec {
+    fn default() -> Self {
+        Self {
+            place: off(),
+            rows: eight_rows(),
+            row_height: five(),
+            columns: Vec::new(),
+            size: small(),
+        }
+    }
+}
+
+/// The fields of a stringing table row.
+pub const STRINGING_FIELDS: [&str; 5] = ["st.from", "st.to", "st.circuit", "st.tension", "st.case"];
+
 /// `[[note]]`: a free text on the sheet.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1573,6 +1633,9 @@ pub struct SheetTemplate {
     /// The revision table.
     #[serde(default)]
     pub revisions: RevisionSpec,
+    /// The stringing table.
+    #[serde(default)]
+    pub stringing_table: StringingTableSpec,
     /// Free texts.
     #[serde(default, rename = "note")]
     pub notes: Vec<NoteSpec>,
@@ -1925,6 +1988,11 @@ impl SheetTemplate {
                 &self.revisions.place,
                 &["above_title_block", "off"][..],
             ),
+            (
+                "stringing_table",
+                &self.stringing_table.place,
+                &["above_title_block", "bottom", "off"][..],
+            ),
         ] {
             if !allowed.contains(&place.as_str()) {
                 return Err(format!(
@@ -2078,6 +2146,17 @@ impl SheetTemplate {
                         "revisions column \"{}\": unknown field {{{name}}} (give {})",
                         c.title,
                         REVISION_FIELDS.join(", ")
+                    ));
+                }
+            }
+        }
+        for c in &self.stringing_table.columns {
+            for (name, _) in placeholders(&c.value)? {
+                if !STRINGING_FIELDS.contains(&name.as_str()) && !self.known(&name) {
+                    return Err(format!(
+                        "stringing_table column \"{}\": unknown field {{{name}}} (give {})",
+                        c.title,
+                        STRINGING_FIELDS.join(", ")
                     ));
                 }
             }
