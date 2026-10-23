@@ -125,7 +125,11 @@ Each section is solved at other temperatures in the base weather case
 (`--weather` and `--case`; still air without them) and checked by the
 **ground and point rules** of `--rules` (and `--clearance` as a vertical
 ground rule) that apply to that case, against `--terrain`, `--lidar` or
-`--pointcloud` — the same options as `ohl line`. The result per section:
+`--pointcloud` — the same options as `ohl line`. A ground rule naming a
+terrain surface of the project (`surface = "name"`, see
+[Terrain](terrain.md)) is checked against that surface, read from the
+project file the line comes from; a name the project does not hold
+stops the search with an error. The result per section:
 
 - the limiting temperature (to `--tolerance`, 0.5 °C) with the governing
   span, rule and clearance just above it;

@@ -387,15 +387,22 @@ fn clearance_limit(a: &LimitArgs) -> Result<(), String> {
             other_lines: &[],
             structures: &structures,
             insulators: &insulators,
-            project: None,
+            // Its terrain surfaces, for the ground rules naming one.
+            project: crate::project::is_project(&a.file).then_some(a.file.as_path()),
         },
     )?;
+    let surfaces: Vec<(String, &ohl_terrain::Terrain)> = prepared
+        .surfaces
+        .iter()
+        .map(|(n, t)| (n.clone(), t))
+        .collect();
     let mut feed = |_: &[u8], visit: &mut dyn FnMut(f64, f64, f64, u8)| {
         prepared.feed_points(visit);
         Ok(())
     };
     let mut targets = Targets {
         ground: prepared.ground.as_ref(),
+        surfaces: &surfaces,
         point_classes: prepared.point_classes(),
         points: Some(&mut feed),
     };
@@ -601,6 +608,51 @@ mod tests {
         assert_eq!((s2[5], s2[6]), ("2", "vertical"));
         let amps: f64 = s2[9].parse().unwrap();
         assert!((500.0..2000.0).contains(&amps), "{amps}");
+    }
+
+    #[test]
+    fn a_surface_a_line_file_cannot_hold_is_reported() {
+        // A ground rule naming a terrain surface, the line read from a line
+        // file (no project, so no surfaces): refused, not passed.
+        let ex = root().join("examples/synthetic-line");
+        let rules =
+            std::env::temp_dir().join(format!("ohl-thermal-surface-{}.ohlr", std::process::id()));
+        std::fs::write(
+            &rules,
+            "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"t\"\n\n\
+             [[rule]]\nname = \"Ground\"\ntarget = \"ground\"\nvertical = \"5 m\"\n\
+             surface = \"design TIN\"\n",
+        )
+        .unwrap();
+        let r = clearance_limit(&LimitArgs {
+            file: ex.join("synthetic-line.ohl.json"),
+            library: Some(root().join("libraries/cables")),
+            structures: None,
+            insulators: Some(root().join("libraries/insulators")),
+            weather: None,
+            case: None,
+            ambient: None,
+            ambient_case: Vec::new(),
+            method: "cigre601".into(),
+            rules: Some(rules.clone()),
+            clearance: None,
+            terrain: Some(ex.join("synthetic-survey.csv")),
+            lidar: None,
+            pointcloud: None,
+            lidar_classes: None,
+            ground_role: "ground".into(),
+            corridor: 60.0,
+            max_edge: 50.0,
+            thin: None,
+            min_temp: 0.0,
+            max_temp: 120.0,
+            step: 10.0,
+            tolerance: 0.5,
+            csv: None,
+        });
+        let _ = std::fs::remove_file(&rules);
+        let e = r.unwrap_err();
+        assert!(e.contains("design TIN") && e.contains("Ground"), "{e}");
     }
 
     #[test]

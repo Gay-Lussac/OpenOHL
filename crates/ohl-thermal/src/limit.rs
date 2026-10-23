@@ -147,8 +147,11 @@ pub struct SectionLimit {
 
 /// What the wires are checked against.
 pub struct Targets<'a> {
-    /// The ground surface.
+    /// The ground surface (of the ground rules naming none).
     pub ground: Option<&'a Terrain>,
+    /// The terrain surfaces the ground rules name ([`Rule::surface`]),
+    /// by name (as [`CaseTargets::surfaces`]).
+    pub surfaces: &'a [(String, &'a Terrain)],
     /// Classes of each point rule, by rule index (as
     /// [`CaseTargets::point_classes`]).
     pub point_classes: &'a [Vec<u8>],
@@ -210,9 +213,7 @@ impl Search<'_, '_> {
                 voltages: &self.voltages,
                 other_voltages: &[],
                 ground: self.targets.ground,
-                // (A ground rule naming a surface of its own is skipped
-                // here: no ground.)
-                surfaces: &[],
+                surfaces: self.targets.surfaces,
                 point_classes: &self.classes,
                 points,
                 other_wires: &[],
@@ -307,8 +308,9 @@ impl Search<'_, '_> {
 /// The clearance-limited temperature of every section of `line`: solved in
 /// weather case `base` at other temperatures, checked by the ground and
 /// point `rules` that apply to `base`. `progress` hears (sections done,
-/// sections). Fails when no such rule applies or none could be checked
-/// (no ground, no points); a section that cannot be solved, or the budget
+/// sections). Fails when no such rule applies, a ground rule names a
+/// surface `targets` does not hold, or none could be checked (no ground,
+/// no points); a section that cannot be solved, or the budget
 /// running out, gives that section (and those after it) an error.
 #[allow(clippy::too_many_arguments)]
 pub fn clearance_limits(
@@ -328,6 +330,18 @@ pub fn clearance_limits(
             "no ground or point clearance rule applies to weather case \"{}\"",
             base.name
         ));
+    }
+    // A ground rule naming a surface not given would be skipped (no
+    // ground) and the limit found without it: refused instead.
+    for r in &rules {
+        if let (Target::Ground, Some(name)) = (&r.target, &r.surface)
+            && !targets.surfaces.iter().any(|(n, _)| n == name)
+        {
+            return Err(format!(
+                "ground rule \"{}\": no terrain surface \"{name}\" (the project holds none of that name, or it could not be read)",
+                r.name
+            ));
+        }
     }
     let voltages = ohl_clearance::voltages_of(line)?;
     for r in &rules {
@@ -385,6 +399,7 @@ mod tests {
         let rules = RuleSet::ground(required).rules;
         let mut targets = Targets {
             ground: Some(&terrain),
+            surfaces: &[],
             point_classes: &[],
             points: None,
         };
@@ -459,6 +474,7 @@ mod tests {
         let base = WeatherCase::still("hot", Temperature::from_celsius(15.0));
         let mut targets = Targets {
             ground: None,
+            surfaces: &[],
             point_classes: &[],
             points: None,
         };
@@ -491,5 +507,58 @@ mod tests {
         )
         .unwrap();
         assert!(out.iter().any(|s| s.result.is_err()));
+    }
+
+    #[test]
+    fn a_ground_rule_checks_the_surface_it_names() {
+        let (line, library, terrain) = example();
+        // The example's survey surface raised by 1 m.
+        let raised = Terrain::from_mesh(
+            terrain
+                .points()
+                .iter()
+                .map(|p| [p[0], p[1], p[2] + 1.0])
+                .collect(),
+            terrain.triangles().to_vec(),
+        )
+        .unwrap();
+        let options = LimitOptions::default();
+        let base = WeatherCase::still("hot", Temperature::from_celsius(15.0));
+        let budget = default_budget(&options, line.sections.len());
+        let named = [("raised TIN".to_owned(), &raised)];
+        let s2 = |surface: Option<&str>| {
+            let mut rules = RuleSet::ground(5.0).rules;
+            rules[0].surface = surface.map(str::to_owned);
+            let mut targets = Targets {
+                ground: Some(&terrain),
+                surfaces: &named,
+                point_classes: &[],
+                points: None,
+            };
+            clearance_limits(
+                &line,
+                &library,
+                &base,
+                &rules,
+                &mut targets,
+                &options,
+                &budget,
+                &mut |_, _| {},
+            )
+            .map(|out| out.into_iter().find(|s| s.section == "S2").unwrap())
+        };
+        let Ok(Limit::At(default)) = s2(None).unwrap().result else {
+            panic!("default surface");
+        };
+        let own = s2(Some("raised TIN")).unwrap();
+        let Ok(Limit::At(t)) = own.result else {
+            panic!("{own:?}");
+        };
+        // 1 m less clearance: a lower limit.
+        assert!(t < default - options.tolerance, "{t} {default}");
+        assert!(own.governing.unwrap().clearance < 5.0);
+        // A name the surfaces do not hold is reported, not passed.
+        let e = s2(Some("no such TIN")).unwrap_err();
+        assert!(e.contains("no such TIN"), "{e}");
     }
 }
