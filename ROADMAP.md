@@ -342,6 +342,13 @@ structure body) and O7 (the line and its structures solved together).
   settings and shown by the sheet preview. Left: members with a
   `[[section]]` table of their own (no profile) stay lines (decided); no
   GPU instancing (the geometry is shared per type and moved on the CPU).
+- **U11. Jumpers' pull: a case brought up to date edit by edit against a
+  full solve** (found 2026-10-24 with the edit benchmark): on a real line
+  two sections with taut jumpers and their pull have clamps up to 0.17 m
+  apart at −20 °C between the two (the same before the speed work of
+  2026-10-24). To find out whether the pull's iteration stops before it
+  settles or settles where it starts, and to make both give the same
+  answer (the full solve's, or the better converged one).
 - **U10. Named TIN layers in the thermal limit** (2026-10-23; built
   2026-10-23, in active development, not approved yet): clearance rules
   may name a terrain surface of their own (the clearance windows, the

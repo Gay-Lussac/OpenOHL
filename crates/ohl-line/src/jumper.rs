@@ -51,6 +51,47 @@ use crate::rod::{Rod, RodHold, RodShape, RodString};
 use crate::solve::{SectionShape, p, v, wire_load_in_line_wind};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
+/// Lengths of a still-air jumper for its sag between two points, kept by
+/// their exact inputs (an estimate made again after every edit, the same
+/// every time).
+static SAG_LENGTHS: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<[u64; 12], Option<f64>>>,
+> = std::sync::OnceLock::new();
+
+/// [`length_for_sag`] (200 iterations at most), kept in [`SAG_LENGTHS`]
+/// by its inputs bit for bit: the same length as solving it again.
+fn sag_length(props: CableProperties, a: Point, b: Point, sag: f64) -> Option<f64> {
+    let key = [
+        props.unstressed_length.to_bits(),
+        props.axial_stiffness.to_bits(),
+        props.load.x.to_bits(),
+        props.load.y.to_bits(),
+        props.load.z.to_bits(),
+        a[0].to_bits(),
+        a[1].to_bits(),
+        a[2].to_bits(),
+        b[0].to_bits(),
+        b[1].to_bits(),
+        b[2].to_bits(),
+        sag.to_bits(),
+    ];
+    let lengths = SAG_LENGTHS.get_or_init(Default::default);
+    if let Ok(m) = lengths.lock()
+        && let Some((_, l)) = m.get_key_value(&key)
+    {
+        return *l;
+    }
+    let budget = Budget::new().max_iterations(200);
+    let l = length_for_sag(props, v(a), v(b), sag, &budget).ok();
+    if let Ok(mut m) = lengths.lock() {
+        if m.len() >= MAX_CUTS {
+            m.clear();
+        }
+        m.insert(key, l);
+    }
+    l
+}
+
 /// The estimated load each jumper hangs on its ends in weather case
 /// `case` (the whole bundle's, N, as a force vector), by section point:
 /// the weight, ice and wind (across the line from the case's side, as on
@@ -69,6 +110,11 @@ pub fn end_loads<'a>(
 ) -> crate::solve::JumperLoadMap {
     use crate::solve::LoadAt;
     let mut out = crate::solve::JumperLoadMap::new();
+    if line.jumpers.is_empty() {
+        return out;
+    }
+    // The routes, once for every jumper (their direction).
+    let views = line.alignment_views();
     // Jumpers hanging on other jumpers first (their loads go on those).
     let order: Vec<usize> = match line.jumper_order() {
         Ok(levels) => levels.into_iter().rev().flatten().collect(),
@@ -95,8 +141,7 @@ pub fn end_loads<'a>(
                 axial_stiffness: c.axial_stiffness().si(),
                 load: Vector3::new(0.0, 0.0, -c.weight().si()),
             };
-            let budget = Budget::new().max_iterations(200);
-            length_for_sag(props, v(a), v(b), sag, &budget).ok()
+            sag_length(props, a, b, sag)
         };
         let length = match (j.length, j.sag) {
             _ if j.rigid => chord,
@@ -109,7 +154,7 @@ pub fn end_loads<'a>(
         // Per metre: its weight, ice and the wind across the line at its
         // middle (as the jumper is solved).
         let d = v(b) - v(a);
-        let along = line.direction_at([0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])]);
+        let along = line.direction_at_in(&views, [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])]);
         let q = wire_load_in_line_wind(case, c, d, along);
         let bundle = f64::from(line.jumper_bundle(j).count.max(1));
         // The supports' places along it, from `from`.
@@ -1673,6 +1718,25 @@ pub fn solve_jumpers_with(
     shapes: &[SectionShape],
     loads: &crate::solve::JumperLoadMap,
 ) -> Vec<Result<JumperShape, LineError>> {
+    solve_jumpers_memo(line, library, case, shapes, loads, None)
+}
+
+/// [`solve_jumpers_with`], each jumper's solution kept in `memo` (when
+/// given) and taken from it while nothing it depends on changed.
+pub(crate) fn solve_jumpers_memo(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    loads: &crate::solve::JumperLoadMap,
+    memo: Option<&crate::incremental::JumperMemo>,
+) -> Vec<Result<JumperShape, LineError>> {
+    let global = memo.map(|_| {
+        (
+            crate::incremental::JumperMemo::global(line, case),
+            line.alignment_views(),
+        )
+    });
     let levels = line
         .jumper_order()
         .unwrap_or_else(|_| vec![(0..line.jumpers.len()).collect()]);
@@ -1696,7 +1760,12 @@ pub fn solve_jumpers_with(
                     })
                     .collect(),
             };
-            solve_one_jumper_in(line, library, case, shapes, jumper, &context)
+            match (memo, &global) {
+                (Some(m), Some((g, views))) => {
+                    m.solve(line, library, case, shapes, jumper, &context, g, views)
+                }
+                _ => solve_one_jumper_in(line, library, case, shapes, jumper, &context),
+            }
         });
         for (&k, r) in level.iter().zip(solved) {
             if let Ok(s) = &r {

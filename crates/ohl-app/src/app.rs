@@ -4184,13 +4184,25 @@ impl Ready {
     /// profile again. The drawings are marked when one is hidden or shown
     /// ([`crate::backgrounds::menu`]); an import opens the project again.
     pub(crate) fn refresh_views(&mut self) {
-        self.view3d.dirty.extend(
-            Layer::ALL
-                .into_iter()
-                .filter(|l| !matches!(l, Layer::Ground | Layer::Points | Layer::Drawings)),
-        );
+        // Not what an edit of the line leaves as it is: the terrain, the
+        // points, the backgrounds, and the check results (marked when
+        // they go out of date, `revision`); the cut panels' slabs hold the
+        // points and the ground only (made again when those change).
+        self.view3d.dirty.extend(Layer::ALL.into_iter().filter(|l| {
+            !matches!(
+                l,
+                Layer::Ground
+                    | Layer::Surfaces
+                    | Layer::Points
+                    | Layer::Drawings
+                    | Layer::Orthophotos
+                    | Layer::GrowIn
+                    | Layer::FallIn
+                    | Layer::Isoclearance
+                    | Layer::SafetyVolume
+            )
+        }));
         self.profile.invalidate();
-        self.xsections.invalidate();
         self.drawings.invalidate_preview();
     }
 
@@ -9068,6 +9080,7 @@ impl eframe::App for App {
                             }
                         }
                         ready.view3d.recolor_points();
+                        ready.xsections.invalidate();
                         ready.refresh_views();
                     }
                     if open {
@@ -9097,6 +9110,7 @@ impl eframe::App for App {
                     ready.view3d.dirty.insert(Layer::Ground);
                     ready.view3d.dirty.insert(Layer::Surfaces);
                     ready.clearances.stale = true;
+                    ready.xsections.invalidate();
                     ready.refresh_views();
                 }
                 let editable = ready.model.can_edit().map_err(|e| e.to_string());

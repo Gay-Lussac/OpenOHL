@@ -2939,19 +2939,35 @@ pub fn needs_pull(line: &Line) -> bool {
 /// (its cut length short of their distance, within 0.5 %): its pull is
 /// then put back on them whatever the jumper option ([`jumper_pull`]).
 pub fn may_be_taut(line: &Line, results: &[Result<SectionShape, LineError>]) -> bool {
-    let shapes: Vec<&SectionShape> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    if !line.jumpers.iter().any(|j| j.length.is_some() && !j.rigid) {
+        return false;
+    }
+    // Each section point's clamp: from the first solved section holding
+    // it (its first place there), as a search through them would find it.
+    let mut sections: std::collections::HashMap<&str, &Section> = Default::default();
+    for s in &line.sections {
+        sections.entry(s.id.as_str()).or_insert(s);
+    }
+    let mut clamps: std::collections::HashMap<&crate::SectionPoint, Vector3<f64>> =
+        Default::default();
+    for s in results.iter().filter_map(|r| r.as_ref().ok()) {
+        let Some(sec) = sections.get(s.section.as_str()) else {
+            continue;
+        };
+        for (k, q) in sec.points.iter().enumerate() {
+            if sec.points[..k].contains(q) {
+                continue;
+            }
+            if let Some(c) = s.clamps.get(k) {
+                clamps.entry(q).or_insert_with(|| v(*c));
+            }
+        }
+    }
     line.jumpers.iter().any(|j| {
         let Some(length) = j.length.filter(|_| !j.rigid) else {
             return false;
         };
-        let at = |e: &crate::JumperEnd| {
-            let p = e.point()?;
-            shapes.iter().find_map(|s| {
-                let sec = line.sections.iter().find(|x| x.id == s.section)?;
-                let k = sec.points.iter().position(|q| q == p)?;
-                s.clamps.get(k).map(|c| v(*c))
-            })
-        };
+        let at = |e: &crate::JumperEnd| e.point().and_then(|p| clamps.get(p).copied());
         match (at(&j.from), at(&j.to)) {
             (Some(a), Some(b)) => (b - a).norm() > 0.995 * length,
             _ => false,
@@ -3016,8 +3032,25 @@ pub fn jumper_pull(
     case: &WeatherCase,
     budget: &Budget,
     estimate: &JumperLoadMap,
+    used: JumperLoadMap,
+    results: &mut [Result<SectionShape, LineError>],
+) -> JumperLoadMap {
+    jumper_pull_with(line, library, case, budget, estimate, used, results, None)
+}
+
+/// [`jumper_pull`], the jumpers' solutions kept in `memo` (when given)
+/// and taken from it while nothing they depend on changed (the same
+/// result).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn jumper_pull_with(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    estimate: &JumperLoadMap,
     mut used: JumperLoadMap,
     results: &mut [Result<SectionShape, LineError>],
+    memo: Option<&crate::incremental::JumperMemo>,
 ) -> JumperLoadMap {
     if line.jumpers.is_empty() {
         return used;
@@ -3036,7 +3069,7 @@ pub fn jumper_pull(
             .iter()
             .filter_map(|r| r.as_ref().ok().cloned())
             .collect();
-        let solved = crate::jumper::solve_jumpers_with(line, library, case, &shapes, &used);
+        let solved = crate::jumper::solve_jumpers_memo(line, library, case, &shapes, &used, memo);
         // The pull on each clamp or tap: the sum of its jumpers', where all
         // of them solved; else the estimate. Clamps pulled with the jumper
         // pull option, taps with the full loop.

@@ -489,6 +489,29 @@ impl Line {
             .collect()
     }
 
+    /// The alignment points by id (the first of an id, as
+    /// [`Self::alignment_point`] finds it): for many lookups at once.
+    fn point_index(&self) -> std::collections::HashMap<&str, &AlignmentPoint> {
+        let mut index = std::collections::HashMap::with_capacity(self.alignment_points.len());
+        for p in &self.alignment_points {
+            index.entry(p.id.as_str()).or_insert(p);
+        }
+        index
+    }
+
+    /// [`Self::points_of`] with the points looked up in `index`
+    /// ([`Self::point_index`]).
+    fn points_of_in(
+        alignment: &Alignment,
+        index: &std::collections::HashMap<&str, &AlignmentPoint>,
+    ) -> Vec<AlignmentPoint> {
+        alignment
+            .points
+            .iter()
+            .filter_map(|id| index.get(id.as_str()).map(|p| (*p).clone()))
+            .collect()
+    }
+
     /// The alignments point `id` is on, in the line's order.
     pub fn point_alignments(&self, id: &str) -> Vec<String> {
         self.alignments
@@ -653,11 +676,12 @@ impl Line {
     /// Every alignment with the structures on it, in the line's order.
     pub fn alignment_views(&self) -> Vec<AlignmentView> {
         let near = self.near_alignments();
+        let index = self.point_index();
         self.alignments
             .iter()
             .enumerate()
             .map(|(k, a)| {
-                let points = self.points_of(a);
+                let points = Self::points_of_in(a, &index);
                 let pts = positions(&points);
                 let mut on: Vec<(f64, String)> = self
                     .structures
@@ -701,19 +725,26 @@ impl Line {
             .iter()
             .filter_map(|p| Some((p.id.as_str(), p.structure.as_deref()?)))
             .collect();
+        let index = self.point_index();
         let lines: Vec<Vec<Point>> = self
             .alignments
             .iter()
-            .map(|a| positions(&self.points_of(a)))
+            .map(|a| positions(&Self::points_of_in(a, &index)))
+            .collect();
+        // The structures tied to a point of each alignment.
+        let tied_on: Vec<std::collections::HashSet<&str>> = self
+            .alignments
+            .iter()
+            .map(|a| {
+                a.points
+                    .iter()
+                    .filter_map(|p| tied.get(p.as_str()).copied())
+                    .collect()
+            })
             .collect();
         for s in &self.structures {
             let mut ks: Vec<usize> = (0..self.alignments.len())
-                .filter(|&k| {
-                    self.alignments[k]
-                        .points
-                        .iter()
-                        .any(|p| tied.get(p.as_str()) == Some(&s.id.as_str()))
-                })
+                .filter(|&k| tied_on[k].contains(s.id.as_str()))
                 .collect();
             if !s.routes.is_empty() {
                 for r in &s.routes {
@@ -1039,6 +1070,12 @@ impl Line {
         self.nearest_on_routes(at).map(|n| n.2)
     }
 
+    /// [`Self::direction_at`] on the routes `views` ([`Self::alignment_views`]
+    /// made once for many points).
+    pub fn direction_at_in(&self, views: &[AlignmentView], at: [f64; 2]) -> Option<[f64; 2]> {
+        self.nearest_on(views, at).map(|n| n.2)
+    }
+
     /// Where `at` (plan) is along the line: the route nearest to it (its
     /// index in [`Line::alignment_views`]) and the distance along that
     /// route's centreline (from its start) of the point nearest to it.
@@ -1049,8 +1086,13 @@ impl Line {
     /// The nearest segment of the routes' centrelines: route index,
     /// distance along it, unit direction.
     fn nearest_on_routes(&self, at: [f64; 2]) -> Option<OnRoute> {
+        self.nearest_on(&self.alignment_views(), at)
+    }
+
+    /// [`Self::nearest_on_routes`] on the routes `views`.
+    fn nearest_on(&self, views: &[AlignmentView], at: [f64; 2]) -> Option<OnRoute> {
         let mut best: Option<(f64, OnRoute)> = None;
-        for (k, r) in self.alignment_views().iter().enumerate() {
+        for (k, r) in views.iter().enumerate() {
             let mut run = 0.0;
             for w in r.centreline(self).windows(2) {
                 let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);

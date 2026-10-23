@@ -399,7 +399,10 @@ impl Model {
                         case
                     })
                     .collect();
-                let mut l = self.line.clone();
+                // The line as stored (its structures' types are in the
+                // library files, hashed with them below): the same
+                // content as the line resolved, much less to write out.
+                let mut l = self.stored_line().unwrap_or(&self.line).clone();
                 l.set_weather_cases(&cases);
                 // Said on its own (Revision::loads_per).
                 l.solver.loads_per = ohl_line::LoadsPer::default();

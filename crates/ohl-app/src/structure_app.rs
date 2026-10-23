@@ -1114,27 +1114,36 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                 .filter(|n| !names.contains(n))
                 .cloned()
                 .collect();
-            for name in names.iter().chain(&gone) {
-                let mut on = choice.sends_load_case(name);
-                let text = if gone.contains(name) {
-                    format!("{name} (not in the load cases)")
-                } else {
-                    name.clone()
-                };
-                if ui.checkbox(&mut on, text).changed() {
-                    let mut list: Vec<String> =
-                        choice.load_cases.clone().unwrap_or_else(|| names.clone());
-                    list.retain(|n| n != name);
-                    if on {
-                        list.push(name.clone());
+            // Each list scrolls in a box of its own (the menu keeps its
+            // height however many cases there are).
+            egui::ScrollArea::vertical()
+                .id_salt("loads-load-cases")
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for name in names.iter().chain(&gone) {
+                        let mut on = choice.sends_load_case(name);
+                        let text = if gone.contains(name) {
+                            format!("{name} (not in the load cases)")
+                        } else {
+                            name.clone()
+                        };
+                        if ui.checkbox(&mut on, text).changed() {
+                            let mut list: Vec<String> =
+                                choice.load_cases.clone().unwrap_or_else(|| names.clone());
+                            list.retain(|n| n != name);
+                            if on {
+                                list.push(name.clone());
+                            }
+                            // In the file's order; every one of them: all.
+                            list.sort_by_key(|n| {
+                                names.iter().position(|x| x == n).unwrap_or(usize::MAX)
+                            });
+                            choice.load_cases = (!names.iter().all(|n| list.contains(n))
+                                || list.len() != names.len())
+                            .then_some(list);
+                        }
                     }
-                    // In the file's order; every one of them: all.
-                    list.sort_by_key(|n| names.iter().position(|x| x == n).unwrap_or(usize::MAX));
-                    choice.load_cases = (!names.iter().all(|n| list.contains(n))
-                        || list.len() != names.len())
-                    .then_some(list);
-                }
-            }
+                });
             ui.separator();
             ui.label(egui::RichText::new("Weather cases (all factors 1)").strong());
             if ui.button("none").clicked() {
@@ -1147,23 +1156,28 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                 .filter(|n| !weather.contains(n))
                 .cloned()
                 .collect();
-            for name in weather.iter().chain(&gone) {
-                let mut on = choice.weather_cases.contains(name);
-                let text = if gone.contains(name) {
-                    format!("{name} (not in the weather cases)")
-                } else {
-                    name.clone()
-                };
-                if ui.checkbox(&mut on, text).changed() {
-                    choice.weather_cases.retain(|n| n != name);
-                    if on {
-                        choice.weather_cases.push(name.clone());
-                        choice.weather_cases.sort_by_key(|n| {
-                            weather.iter().position(|x| x == n).unwrap_or(usize::MAX)
-                        });
+            egui::ScrollArea::vertical()
+                .id_salt("loads-weather-cases")
+                .max_height(260.0)
+                .show(ui, |ui| {
+                    for name in weather.iter().chain(&gone) {
+                        let mut on = choice.weather_cases.contains(name);
+                        let text = if gone.contains(name) {
+                            format!("{name} (not in the weather cases)")
+                        } else {
+                            name.clone()
+                        };
+                        if ui.checkbox(&mut on, text).changed() {
+                            choice.weather_cases.retain(|n| n != name);
+                            if on {
+                                choice.weather_cases.push(name.clone());
+                                choice.weather_cases.sort_by_key(|n| {
+                                    weather.iter().position(|x| x == n).unwrap_or(usize::MAX)
+                                });
+                            }
+                        }
                     }
-                }
-            }
+                });
             if names.is_empty() && choice.weather_cases.is_empty() {
                 ui.label(
                     egui::RichText::new(

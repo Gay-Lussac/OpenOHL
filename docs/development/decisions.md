@@ -8,6 +8,24 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-24
+
+**Edits stay fast (owner, 2026-10-24)**
+
+- The owner: visuals and edits must stay snappy, with the calculations'
+  speed and accuracy the priority from the start. A span edit on a real
+  line took 1.9 s (139 s with every weather case solved); now about 90 ms
+  ([performance](performance.md), edit benchmark). Every result is the
+  same as before: solutions kept and taken back only while what they are
+  computed from is unchanged.
+- After an edit the weather cases shown, drawn per section, picked or
+  asked for by a view in the last 2 s are brought up to date at once; the
+  others are no longer kept solved and are solved again from the line
+  when next wanted (in the background for a view, before a check), like
+  a case never shown.
+- The menu of the loads sent to the structures keeps its height: its
+  load cases and weather cases each scroll in a box of their own.
+
 ## 2026-10-23
 
 **Key map and plan backgrounds (owner, 2026-10-23)**

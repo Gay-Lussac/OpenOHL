@@ -681,13 +681,24 @@ fn edits_go_through_the_session_and_re_solve_what_they_touch() {
             },
         )
         .unwrap();
-    // T6 is on the branch only: S3 touched, re-solved in the 5 cases.
+    // T6 is on the branch only: S3 touched, re-solved in the case shown;
+    // the 4 others (not shown, not wanted lately) to solve again when
+    // wanted, then as a full solve.
     assert!(
-        report.contains("1 sections touched, 5 re-solved"),
+        report.contains("1 sections touched, 1 re-solved")
+            && report.contains("4 others to solve again when wanted"),
         "{report}"
     );
     assert_eq!(m.line.structure("T6").unwrap().position[0], p[0] + 4.0);
+    assert_eq!(m.cases.iter().filter(|c| c.ready).count(), 1);
     assert_solved_fully(&m);
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    assert_solved_fully(&m);
+    // Cases wanted lately by a view are brought up to date at once.
+    let now = std::time::Instant::now();
+    m.recently_wanted = (0..m.cases.len()).map(|k| (k, now)).collect();
     m.undo().unwrap();
     assert_eq!(m.line.structure("T6").unwrap().position, p);
     assert_solved_fully(&m);
@@ -2120,6 +2131,10 @@ fn structures_strings_and_wires_are_added_edited_and_deleted() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.editor.is_none(), "{:?}", r.status);
+        // (The cases not drawn are solved again when wanted.)
+        for k in 0..r.model.cases.len() {
+            r.model.ensure_solved(k);
+        }
         for c in &r.model.cases {
             assert!(
                 c.shapes.iter().any(|s| s.section == "S4"),

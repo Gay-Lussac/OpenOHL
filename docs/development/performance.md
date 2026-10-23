@@ -111,6 +111,59 @@ Plan: what is in view, half-pixel thinning, structures' names at every zoom (ove
 
 An idle window asks for no frame. Only these ask for frames while they run: a camera key held (every frame), chunks or point cloud nodes still to build or read (every frame, 50 ms), a structure file open in the structure application (its file looked at twice a second), solving in the background, jobs and servers (their own intervals).
 
+## Edit benchmark (desktop application)
+
+`bench::edit_benchmark` changes one section's stringing (as the span tool
+and the section editor do) on a copy of a project and times the edit, one
+weather case's update with and without a section to re-solve, the
+jumpers' loads as an estimate and as their pull, the results' revision,
+and compares the case brought up to date edit by edit with a full solve:
+
+```bash
+OHL_BENCH_FILE=/path/to/copy.ohl cargo test --release -p ohl-app edit_benchmark -- --ignored --nocapture
+# OHL_BENCH_ALL=1: also with every case solved (minutes); OHL_BENCH_EDITS=N,
+# OHL_BENCH_REPEAT=N: more edits or updates, to profile them
+```
+
+A real line (about 70 structures, 554 sections, 518 jumpers, 105
+weather cases, jumpers' pull), Apple M-series, release, 2026-10-24:
+
+| | before | after |
+|---|---|---|
+| one edit, the case shown solved | 1.9 s | 90 ms |
+| one edit, every case solved | 139 s | 90 ms (the others solved again when wanted) |
+| one case's update, nothing to re-solve, pull | 1.6 s | 70 ms |
+| the same, estimated jumper loads | 0.4 s | 15 ms |
+| the results' revision after an edit (a check page open) | 134 ms | 67 ms |
+
+What it took, every result the same as before (the solver's tests and a
+full solve compared): each jumper's solution kept per weather case with
+everything it is solved from and taken back while that is unchanged
+(`ohl_line::incremental::JumperMemo`, in the pull's passes too); the
+routes made once per update instead of once per jumper (`Line::direction_at_in`,
+the alignment points and the structures tied to them indexed:
+`Line::alignment_views` was quadratic in the alignment points); the
+jumpers' sagged lengths of the estimate kept by their exact inputs; the
+taut-jumper test with the clamps indexed; the structures merged with their
+types kept while a structure is unchanged (`Line::resolve_with`,
+`ResolveCache`, two thirds of an edit); after an edit only the cases
+shown, drawn per section, picked or asked for by a view in the last 2 s
+brought up to date at once, the others not solved any more (solved
+again from the line when wanted, as a case never shown is); an edit that
+changes no solution (a report, the loads sent to the structures) not
+solving anything; the line hashed as stored for the results' revision;
+the 3D layers of the terrain, backgrounds and check results and the cut
+panels' slabs no longer made again after an edit; the sheet preview over
+the views redrawn once the edits settle (500 ms), the old one shown
+meanwhile.
+
+The comparison with a full solve shows two sections on a real line whose
+clamps differ by up to 0.17 m between the case brought up to date edit by
+edit and a full solve (−20 °C, taut jumpers with their pull); the same
+without the kept jumper solutions, so it comes from the pull's
+iteration (different starting points), not from the speed work — on the
+roadmap to look into.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

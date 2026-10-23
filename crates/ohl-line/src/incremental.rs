@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashSet};
 use ohl_weather::WeatherCase;
 use ohl_wirefe::default_fe_budget;
 
-use crate::jumper::{JumperShape, in_parallel, solve_one_jumper};
+use crate::jumper::{JumperShape, in_parallel};
 use crate::solve::SectionShape;
 use crate::{Jumper, Line, LineError, Section, Structure};
 
@@ -50,6 +50,136 @@ pub struct SolvedLine {
     /// estimate, or their last pull): a section whose jumpers load it
     /// otherwise now is solved again.
     jumper_weights: crate::solve::JumperLoadMap,
+    /// Each jumper's last solution with everything it was solved from:
+    /// solved again only when one of them changed.
+    memo: JumperMemo,
+}
+
+/// Jumper solutions of one weather case kept between solves (the passes
+/// of the jumpers' pull, the updates after edits): a jumper is solved
+/// again only when something its solution depends on changed — its
+/// inputs ([`JumperInputs`]), the solved shapes of the sections at its
+/// ends and of those its taps hang on, the points of the jumpers its taps
+/// hang on, the loads on its points, the cables, the line's solver,
+/// creep and bimetallic settings and the weather case. Equal inputs,
+/// equal solution: the result is the one a new solve gives.
+#[derive(Debug, Default)]
+pub(crate) struct JumperMemo {
+    kept: std::sync::RwLock<std::collections::HashMap<String, Kept>>,
+}
+
+impl Clone for JumperMemo {
+    fn clone(&self) -> Self {
+        Self {
+            kept: std::sync::RwLock::new(self.kept.read().map(|m| m.clone()).unwrap_or_default()),
+        }
+    }
+}
+
+/// A jumper's solution with what it was solved from.
+type Kept = (JumperKey, Result<JumperShape, LineError>);
+
+/// Everything a jumper's solution is computed from.
+#[derive(Debug, Clone, PartialEq)]
+struct JumperKey {
+    inputs: JumperInputs,
+    shapes: Vec<Option<SectionShape>>,
+    taps: Vec<Option<crate::Point>>,
+    loads: Vec<(String, [f64; 3])>,
+    cables: Vec<Option<ohl_cables::Cable>>,
+    global: String,
+}
+
+impl JumperMemo {
+    /// What every jumper of `line` in `case` depends on alike.
+    pub(crate) fn global(line: &Line, case: &WeatherCase) -> String {
+        format!(
+            "{:?}",
+            (
+                &line.solver,
+                &line.creep_stretch,
+                &line.bimetallic,
+                &line.condition_cases,
+                case
+            )
+        )
+    }
+
+    /// Jumper `jumper` solved as [`crate::jumper::solve_one_jumper_in`]
+    /// solves it, or its kept solution when nothing it depends on changed
+    /// (`global`: [`Self::global`]; `views`: the line's routes,
+    /// [`Line::alignment_views`]).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn solve(
+        &self,
+        line: &Line,
+        library: &ohl_cables::Library,
+        case: &WeatherCase,
+        shapes: &[SectionShape],
+        jumper: &Jumper,
+        context: &crate::jumper::TapContext,
+        global: &str,
+        views: &[crate::route::AlignmentView],
+    ) -> Result<JumperShape, LineError> {
+        let taps = || {
+            jumper.taps().filter_map(|t| match t {
+                crate::Tap::Jumper { jumper, point } => Some(
+                    context
+                        .points
+                        .get(&(jumper.clone(), point.clone()))
+                        .copied(),
+                ),
+                crate::Tap::Span(_) => None,
+            })
+        };
+        let shape_of = |id: &str| shapes.iter().find(|x| x.section == id);
+        // Kept: compared in place (nothing copied).
+        let same = |k: &JumperKey| {
+            k.global == global
+                && k.loads == context.loads
+                && k.inputs.matches(line, jumper, views)
+                && k.shapes.len() == k.inputs.sections.len()
+                && k.inputs
+                    .sections
+                    .iter()
+                    .zip(&k.shapes)
+                    .all(|(s, kept)| kept.as_ref() == shape_of(&s.id))
+                && k.taps.iter().copied().eq(taps())
+                && k.cables
+                    .iter()
+                    .map(Option::as_ref)
+                    .eq(std::iter::once(&jumper.cable)
+                        .chain(k.inputs.sections.iter().map(|s| &s.cable))
+                        .map(|c| library.get(c)))
+        };
+        if let Ok(m) = self.kept.read()
+            && let Some((k, r)) = m.get(&jumper.id)
+            && same(k)
+        {
+            return r.clone();
+        }
+        let inputs = JumperInputs::of(line, jumper, views);
+        let key = JumperKey {
+            shapes: inputs
+                .sections
+                .iter()
+                .map(|s| shape_of(&s.id).cloned())
+                .collect(),
+            taps: taps().collect(),
+            loads: context.loads.clone(),
+            cables: std::iter::once(&jumper.cable)
+                .chain(inputs.sections.iter().map(|s| &s.cable))
+                .map(|c| library.get(c).cloned())
+                .collect(),
+            global: global.to_owned(),
+            inputs,
+        };
+        let r = crate::jumper::solve_one_jumper_in(line, library, case, shapes, jumper, context);
+        if let Ok(mut m) = self.kept.write() {
+            m.insert(jumper.id.clone(), (key, r.clone()));
+        }
+        r
+    }
 }
 
 /// What a jumper's solution depends on: itself, the sections at its ends,
@@ -64,43 +194,70 @@ struct JumperInputs {
 }
 
 impl JumperInputs {
-    fn of(line: &Line, jumper: &Jumper) -> Self {
-        let ends = |p: &crate::SectionPoint| jumper.is_at(p);
+    /// Its inputs, the line's direction found on the routes `views`
+    /// ([`Line::alignment_views`], made once for every jumper).
+    fn of(line: &Line, jumper: &Jumper, views: &[crate::route::AlignmentView]) -> Self {
+        Self {
+            jumper: jumper.clone(),
+            sections: Self::sections_of(line, jumper).cloned().collect(),
+            structures: Self::structures_of(line, jumper).cloned().collect(),
+            direction: Self::direction_of(line, jumper, views),
+        }
+    }
+
+    /// Whether these are `jumper`'s inputs in `line` now (as [`Self::of`]
+    /// would make them, compared without copying them).
+    fn matches(&self, line: &Line, jumper: &Jumper, views: &[crate::route::AlignmentView]) -> bool {
+        self.jumper == *jumper
+            && self.sections.iter().eq(Self::sections_of(line, jumper))
+            && self.structures.iter().eq(Self::structures_of(line, jumper))
+            && self.direction == Self::direction_of(line, jumper, views)
+    }
+
+    /// The sections at its ends and those its taps hang on.
+    fn sections_of<'a>(line: &'a Line, jumper: &'a Jumper) -> impl Iterator<Item = &'a Section> {
         // The sections its taps hang on (and so the jumpers too).
         let hosts: Vec<String> = jumper
             .taps()
             .filter_map(|t| line.tap_section(t, 0).map(|s| s.id.clone()))
             .collect();
-        Self {
-            jumper: jumper.clone(),
-            sections: line
-                .sections
-                .iter()
-                .filter(|s| s.points.iter().any(ends) || hosts.contains(&s.id))
-                .cloned()
-                .collect(),
-            structures: line
-                .structures
-                .iter()
-                .filter(|s| {
-                    jumper.points().any(|p| p.structure == s.id)
-                        || jumper
-                            .supports()
-                            .iter()
-                            .any(|c| c.structure_id(jumper) == s.id)
-                })
-                .cloned()
-                .collect(),
-            direction: match (
-                jumper.from.point().and_then(|p| line.wire_point(p)),
-                jumper.to.point().and_then(|p| line.wire_point(p)),
-            ) {
-                (Some(a), Some(b)) => line.direction_at([
+        line.sections
+            .iter()
+            .filter(move |s| s.points.iter().any(|p| jumper.is_at(p)) || hosts.contains(&s.id))
+    }
+
+    /// The structures it hangs on.
+    fn structures_of<'a>(
+        line: &'a Line,
+        jumper: &'a Jumper,
+    ) -> impl Iterator<Item = &'a Structure> {
+        line.structures.iter().filter(move |s| {
+            jumper.points().any(|p| p.structure == s.id)
+                || jumper
+                    .supports()
+                    .iter()
+                    .any(|c| c.structure_id(jumper) == s.id)
+        })
+    }
+
+    /// The line's direction at its middle.
+    fn direction_of(
+        line: &Line,
+        jumper: &Jumper,
+        views: &[crate::route::AlignmentView],
+    ) -> Option<[f64; 2]> {
+        match (
+            jumper.from.point().and_then(|p| line.wire_point(p)),
+            jumper.to.point().and_then(|p| line.wire_point(p)),
+        ) {
+            (Some(a), Some(b)) => line.direction_at_in(
+                views,
+                [
                     0.5 * (a.position[0] + b.position[0]),
                     0.5 * (a.position[1] + b.position[1]),
-                ]),
-                _ => None,
-            },
+                ],
+            ),
+            _ => None,
         }
     }
 }
@@ -140,6 +297,7 @@ impl SolvedLine {
             jumpers: BTreeMap::new(),
             jumper_inputs: BTreeMap::new(),
             jumper_weights: BTreeMap::new(),
+            memo: JumperMemo::default(),
         }
     }
 
@@ -151,6 +309,7 @@ impl SolvedLine {
             jumpers: BTreeMap::new(),
             jumper_inputs: BTreeMap::new(),
             jumper_weights: BTreeMap::new(),
+            memo: JumperMemo::default(),
         };
         let all: Vec<String> = line.sections.iter().map(|s| s.id.clone()).collect();
         solved.update(line, library, &all);
@@ -308,7 +467,7 @@ impl SolvedLine {
             .collect();
         if pull || crate::solve::may_be_taut(line, &results) {
             let before = results.clone();
-            weights = crate::solve::jumper_pull(
+            weights = crate::solve::jumper_pull_with(
                 line,
                 library,
                 &self.case,
@@ -316,6 +475,7 @@ impl SolvedLine {
                 &estimate,
                 weights,
                 &mut results,
+                Some(&self.memo),
             );
             for (k, (now, was)) in results.into_iter().zip(before).enumerate() {
                 if now != was {
@@ -333,9 +493,15 @@ impl SolvedLine {
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut stale: Vec<&Jumper> = Vec::new();
+        let views = line.alignment_views();
+        let mut before = std::mem::take(&mut self.jumper_inputs);
         for j in &line.jumpers {
-            let now = JumperInputs::of(line, j);
-            let kept = self.jumper_inputs.get(&j.id) == Some(&now)
+            // The inputs kept when they are still these (no copy made).
+            let (now, same) = match before.remove(&j.id) {
+                Some(b) if b.matches(line, j, &views) => (b, true),
+                _ => (JumperInputs::of(line, j, &views), false),
+            };
+            let kept = same
                 && !now
                     .sections
                     .iter()
@@ -354,18 +520,30 @@ impl SolvedLine {
         let case = &self.case;
         let taps = line.jumpers.iter().any(crate::Jumper::on_tap);
         if taps {
-            let all = crate::jumper::solve_jumpers_with(
+            let all = crate::jumper::solve_jumpers_memo(
                 line,
                 library,
                 case,
                 &shapes,
                 &self.jumper_weights,
+                Some(&self.memo),
             );
             update.jumpers = all.len();
             jumpers = line.jumpers.iter().map(|j| j.id.clone()).zip(all).collect();
         } else {
+            let global = JumperMemo::global(line, case);
+            let memo = &self.memo;
             let solved = in_parallel(&stale, |j| {
-                solve_one_jumper(line, library, case, &shapes, j)
+                memo.solve(
+                    line,
+                    library,
+                    case,
+                    &shapes,
+                    j,
+                    &crate::jumper::TapContext::default(),
+                    &global,
+                    &views,
+                )
             });
             update.jumpers = stale.len();
             for (j, r) in stale.iter().zip(solved) {
