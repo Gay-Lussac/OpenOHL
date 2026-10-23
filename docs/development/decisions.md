@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Vegetation: the swing arc kept (owner, 2026-10-23)**
+
+- Measured on a real line against another program's report: wind
+  stepped every 10 Pa matches it within about 2 cm (median), the swing
+  arc without its band margin is 0.07 m more conservative, with the
+  0.15 m margin 0.21 m; the steps take about five times as long. The
+  owner keeps the swing arc with its margin (the more conservative) in
+  the vegetation preset; the steps stay a choice in the window.
+
 **Falling trees measured to the subconductors (owner, 2026-10-23)**
 
 - Compared with another program's report on a real line, the
