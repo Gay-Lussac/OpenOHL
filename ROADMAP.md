@@ -317,21 +317,18 @@ structure body) and O7 (the line and its structures solved together).
   thermal limit does not read them yet and skips such a rule (no
   ground).
 - **U9. New project lines are full copies** (asked by the owner,
-  2026-10-22; *step 1 built 2026-10-23, in active development (not
-  approved yet)*: a line shown is solved per case displayed in the
-  background from the worked-on line's solutions, only what differs
-  solved again and drawn; step 2, the file, under way): starting a project line (Versions) writes
-  every object of the line it starts from again under the new line's
-  name (`Session::create_line`), saved check reports included, so a new
-  branch takes time and room in proportion to the whole line, and is
-  loaded and shown as a line of its own. To do: a project line keeps
-  only what differs from the revision it starts from (objects changed,
-  added or deleted), reading the rest from that revision; creating one
-  then costs next to nothing, and opening and drawing it can share what
-  is unchanged with the line it came from (solved sections, drawing
-  data). Needs a project schema change (with reading of the old form)
-  and care with merging, deleting the source line and the per-line
-  settings.
+  2026-10-22; built 2026-10-23 in two steps, in active development, not
+  approved yet). Step 1: a project line shown is solved per weather case
+  displayed, in the background, from the worked-on line's solutions with
+  only the sections that differ solved again, and only what differs is
+  drawn (a tick draws the whole lines). Step 2: a project line started now keeps the revision it starts from as
+  its base and only what it changes since (objects changed or added,
+  tombstones for those deleted; project schema 6, older projects read
+  as they are, an older program refuses a newer project), so starting a
+  line writes no object row and takes no room; the lines share in memory
+  the objects they hold alike (decision log, 2026-10-23). Left: lines
+  made from a revision or a bundle start without its library files, as
+  before — to decide whether they should have them.
 
 ## Proposed stages (to discuss)
 

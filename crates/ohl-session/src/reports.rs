@@ -278,7 +278,7 @@ impl Session {
         self.objects
             .iter()
             .filter(|((k, _), _)| *k == Kind::Report)
-            .filter_map(|(_, o)| serde_json::from_value(o.value.clone()).ok())
+            .filter_map(|(_, o)| serde_json::from_value((*o.value).clone()).ok())
             .collect()
     }
 
@@ -286,7 +286,7 @@ impl Session {
     pub fn report(&self, id: &str) -> Option<CheckReport> {
         self.objects
             .get(&(Kind::Report, id.to_owned()))
-            .and_then(|o| serde_json::from_value(o.value.clone()).ok())
+            .and_then(|o| serde_json::from_value((*o.value).clone()).ok())
     }
 
     /// The time now, UTC (`YYYY-MM-DDTHH:MM:SSZ`).

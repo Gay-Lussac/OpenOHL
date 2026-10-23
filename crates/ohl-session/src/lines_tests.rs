@@ -457,3 +457,280 @@ fn library_files_are_each_lines() {
         vec![("a.ohlw".to_owned(), "x = 1".to_owned())]
     );
 }
+
+/// A line as the session holds it: its objects (place, version, JSON)
+/// and line.
+type Held = (BTreeMap<(Kind, String), Object>, Line);
+
+/// Every line as the session holds it.
+fn held(s: &Session) -> BTreeMap<String, Held> {
+    let mut out: BTreeMap<_, _> = s
+        .others
+        .iter()
+        .map(|(name, l)| (name.clone(), (l.objects.clone(), l.line.clone())))
+        .collect();
+    out.insert(s.current.clone(), (s.objects.clone(), s.line.clone()));
+    out
+}
+
+/// Opened again, the project holds every line exactly as before.
+fn reopens_alike(path: &Path, s: Session) -> Session {
+    let before = held(&s);
+    let current = s.current_line().to_owned();
+    drop(s);
+    let mut s = Session::open(path).unwrap();
+    s.select_line(&current).unwrap();
+    assert_eq!(held(&s), before);
+    s
+}
+
+/// Rows of `model_object` of line `line`: objects and tombstones.
+fn rows(path: &Path, line: &str) -> (i64, i64) {
+    let c = rusqlite::Connection::open(path).unwrap();
+    let count = |gone: bool| -> i64 {
+        c.query_row(
+            "SELECT count(*) FROM model_object WHERE line = ?1 AND gone = ?2",
+            rusqlite::params![line, gone],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    (count(false), count(true))
+}
+
+/// Rows of `table` of line `line`, whatever its columns.
+fn rows_of(path: &Path, table: &str, line: &str) -> i64 {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row(
+            &format!("SELECT count(*) FROM {table} WHERE line = ?1"),
+            [line],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// A new line keeps only what differs from the revision it starts from:
+/// nothing when it starts (but library files placed otherwise among the
+/// objects); its edits, deletions (tombstones) and undos on their own;
+/// the line it came from renamed and deleted, the line brought up to
+/// date, rolled back, carried as a bundle — every time read back exactly.
+#[test]
+fn new_lines_keep_only_their_differences() {
+    let (path, mut s) = project("delta");
+    // Library files put out of name order: placed otherwise than a
+    // revision keeps them.
+    s.put_library_file("ana", "cables", "b.ohlw", "b = 1")
+        .unwrap();
+    s.put_library_file("ana", "cables", "a.ohlw", "a = 1")
+        .unwrap();
+    shift(&mut s, "ana", "T2", 1.0).unwrap();
+    let main_rows = rows(&path, "main");
+    s.create_line("ben", "phase 1", "main").unwrap();
+    // The start recorded on main; the line's base is that revision.
+    let start = s.branch_revision("main").unwrap().unwrap();
+    assert_eq!(s.branch_revision("phase 1").unwrap(), Some(start.clone()));
+    assert_eq!(
+        crate::lines::line_base(&s.conn, "phase 1").unwrap(),
+        Some(start.clone())
+    );
+    assert_eq!(rows(&path, "phase 1"), (2, 0), "the two library files");
+    assert_eq!(
+        rows_of(&path, "spatial_index", "phase 1"),
+        0,
+        "indexed when worked on"
+    );
+    assert_eq!(rows(&path, "main"), main_rows, "main as it was");
+    assert_eq!(s.line_named("phase 1").unwrap(), s.line());
+    let mut s = reopens_alike(&path, s);
+    // Worked on: its index written, its edits its own.
+    s.select_line("phase 1").unwrap();
+    assert_eq!(
+        rows_of(&path, "spatial_index", "phase 1"),
+        rows_of(&path, "spatial_index", "main")
+    );
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![
+            ("a.ohlw".to_owned(), "a = 1".to_owned()),
+            ("b.ohlw".to_owned(), "b = 1".to_owned())
+        ]
+    );
+    let x0 = x(&s, "main", "T3");
+    shift(&mut s, "ben", "T3", 5.0).unwrap();
+    s.apply(
+        "ben",
+        Command::Delete {
+            kind: Kind::Jumper,
+            id: "J-T3-branch".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(rows(&path, "phase 1").1, 1, "a tombstone");
+    assert!(s.line().jumpers.is_empty());
+    assert_eq!(s.line_named("main").unwrap().jumpers.len(), 1);
+    assert_eq!(x(&s, "main", "T3"), x0);
+    let mut s = reopens_alike(&path, s);
+    assert!(s.line().jumpers.is_empty(), "still deleted");
+    // Undone: the jumper back, no tombstone.
+    s.undo("ben").unwrap();
+    assert_eq!(rows(&path, "phase 1").1, 0);
+    let mut s = reopens_alike(&path, s);
+    assert_eq!(s.line().jumpers.len(), 1);
+    s.redo("ben").unwrap();
+    // Main edited: the phase does not follow.
+    s.select_line("main").unwrap();
+    shift(&mut s, "cara", "T5", -2.0).unwrap();
+    s.put_library_file("ana", "cables", "a.ohlw", "a = 2")
+        .unwrap();
+    assert_eq!(x(&s, "phase 1", "T3"), x0 + 5.0);
+    let mut s = reopens_alike(&path, s);
+    s.select_line("phase 1").unwrap();
+    assert_eq!(s.library_files("cables").unwrap()[0].1, "a = 1");
+    // A line from the phase (its uncommitted work recorded first); the
+    // phase renamed, then deleted: the line made from it keeps its state.
+    s.create_line("cara", "phase 2", "phase 1").unwrap();
+    assert_eq!(s.line_named("phase 2").unwrap(), s.line());
+    s.select_line("main").unwrap();
+    s.rename_line("ben", "phase 1", "phase 1b").unwrap();
+    let mut s = reopens_alike(&path, s);
+    let phase1 = s.line_named("phase 1b").unwrap().clone();
+    s.delete_line("ben", "phase 1b").unwrap();
+    assert_eq!(rows(&path, "phase 1b"), (0, 0));
+    let mut s = reopens_alike(&path, s);
+    assert_eq!(s.line_named("phase 2").unwrap(), &phase1);
+    // Main's changes brought in (a merge), then rolled back.
+    s.select_line("phase 2").unwrap();
+    s.bring_in("cara", "main", &Choices::new()).unwrap();
+    assert_eq!(x(&s, "phase 2", "T5"), x(&s, "main", "T5"));
+    assert_eq!(s.library_files("cables").unwrap()[0].1, "a = 2");
+    let mut s = reopens_alike(&path, s);
+    s.roll_back_line("ana", "phase 2", &start).unwrap();
+    assert_eq!(x(&s, "phase 2", "T3"), x0);
+    let mut s = reopens_alike(&path, s);
+    // Carried as a bundle into a line of its own.
+    let bundle = s.export_bundle("phase 2").unwrap();
+    s.select_line("main").unwrap();
+    s.import_bundle("cara", &bundle, Some("carried")).unwrap();
+    assert_eq!(
+        crate::lines::line_base(&s.conn, "carried").unwrap(),
+        Some(bundle.head.clone())
+    );
+    let s = reopens_alike(&path, s);
+    assert_eq!(x(&s, "carried", "T3"), x0);
+}
+
+/// A line whose state differs from its last revision only by the sign of
+/// a zero (equal as values, not as text: nothing to commit) starts from
+/// that revision with the differing object as a row of its own.
+#[test]
+fn a_signed_zero_is_kept() {
+    let (path, mut s) = project("delta-zero");
+    let p = s.line().structure("T2").unwrap().position;
+    let mv = |y: f64| Command::MoveStructure {
+        id: "T2".into(),
+        position: [p[0], y, p[2]],
+    };
+    s.apply("ana", mv(0.0)).unwrap();
+    s.commit("ana", "at zero").unwrap();
+    s.apply("ana", mv(-0.0)).unwrap();
+    assert!(s.status().unwrap().changes.is_empty(), "nothing to commit");
+    assert!(s.has_uncommitted("main").unwrap(), "though not its text");
+    s.create_line("ben", "phase 1", "main").unwrap();
+    assert_eq!(rows(&path, "phase 1"), (1, 0), "T2 with -0.0");
+    let s = reopens_alike(&path, s);
+    let y = s
+        .line_named("phase 1")
+        .unwrap()
+        .structure("T2")
+        .unwrap()
+        .position[1];
+    assert!(y == 0.0 && y.is_sign_negative());
+}
+
+/// A line made from a revision is that revision's line, without its
+/// library files (as before: tombstones for them).
+#[test]
+fn a_line_from_a_revision_keeps_nothing_else() {
+    let (path, mut s) = project("delta-rev");
+    s.put_library_file("ana", "cables", "a.ohlw", "a = 1")
+        .unwrap();
+    let rev = s.commit("ana", "first").unwrap();
+    shift(&mut s, "ana", "T2", 1.0).unwrap();
+    s.create_line("ben", "old", &rev.id).unwrap();
+    assert_eq!(rows(&path, "old"), (0, 1));
+    assert_eq!(
+        s.line_named("old").unwrap(),
+        &s.revision_state(&rev.id).unwrap().line().unwrap()
+    );
+    let mut s = reopens_alike(&path, s);
+    s.select_line("old").unwrap();
+    assert!(s.library_files("cables").unwrap().is_empty());
+    // The library file put again: a row, no longer a tombstone.
+    s.put_library_file("ben", "cables", "a.ohlw", "a = 3")
+        .unwrap();
+    assert_eq!(rows(&path, "old"), (1, 0));
+    reopens_alike(&path, s);
+}
+
+/// A project of schema 5 with a line kept as a full copy opens and
+/// works: its lines read as they are (nothing rewritten, versions kept),
+/// an object deleted from a full copy leaves no tombstone, and a line made
+/// from one keeps only its differences.
+#[test]
+fn full_copy_lines_of_older_files_open_and_work() {
+    let (path, s) = project("full-copies");
+    let main = s.line().clone();
+    drop(s);
+    {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        c.execute_batch(
+            "ALTER TABLE model_object DROP COLUMN gone;
+             ALTER TABLE vc_ref DROP COLUMN base;
+             INSERT INTO model_object (line, kind, id, ord, version, json)
+                 SELECT 'copy', kind, id, ord, version + 2, json FROM model_object WHERE line = 'main';
+             INSERT INTO vc_ref (name, kind, revision, user, note) VALUES ('copy', 'branch', NULL, 'ben', 'from main');
+             UPDATE ols_meta SET value = '5' WHERE key = 'session_schema';",
+        )
+        .unwrap();
+    }
+    let before = rows_of(&path, "model_object", "copy");
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line_named("copy").unwrap(), &main);
+    assert_eq!(
+        rows_of(&path, "model_object", "copy"),
+        before,
+        "nothing rewritten"
+    );
+    assert_eq!(crate::lines::line_base(&s.conn, "copy").unwrap(), None);
+    assert_eq!(
+        s.others["copy"].objects[&(Kind::Structure, "T2".to_owned())].version,
+        3,
+        "versions as stored"
+    );
+    s.select_line("copy").unwrap();
+    s.apply(
+        "ben",
+        Command::Delete {
+            kind: Kind::Jumper,
+            id: "J-T3-branch".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(rows(&path, "copy"), (before - 1, 0), "no tombstone");
+    s.create_line("ben", "from the copy", "copy").unwrap();
+    assert_eq!(rows(&path, "from the copy"), (0, 0));
+    let s = reopens_alike(&path, s);
+    assert!(s.line_named("from the copy").unwrap().jumpers.is_empty());
+    let schema: String = rusqlite::Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT value FROM ols_meta WHERE key = 'session_schema'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(schema, SCHEMA_VERSION.to_string());
+}
