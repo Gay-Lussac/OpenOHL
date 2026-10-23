@@ -759,6 +759,8 @@ pub struct Input {
     /// The project's drawings drawn under the plan: name, drawing (none
     /// unless the template or the window asks).
     pub plan_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
+    /// The project's drawings drawn under the key map (none unless asked).
+    pub key_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
     /// The project file whose orthophotos are drawn under the plan and
     /// the image layers (none: every one); none unless asked.
     pub plan_photo: Option<(PathBuf, Option<Vec<String>>)>,
@@ -1175,6 +1177,8 @@ impl Input {
         // background).
         options.background_drawings = s.background_drawings;
         options.background_photo = s.background_photo;
+        options.key_map_drawings = s.key_map_drawings;
+        options.key_map_photo = s.key_map_photo;
         let chosen = options.plan_drawings();
         let plan_drawings = model
             .backgrounds
@@ -1183,13 +1187,30 @@ impl Input {
             .filter(|d| chosen.takes(&d.info.name))
             .map(|d| (d.info.name.clone(), d.drawing.clone()))
             .collect();
+        // The key map's: every drawing of the project, north up.
+        let key_drawings = if options.key_map_drawings_on() {
+            model
+                .backgrounds
+                .drawings
+                .iter()
+                .map(|d| (d.info.name.clone(), d.drawing.clone()))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let photos = options.plan_photos();
-        let plan_photo = (photos.on() && !model.backgrounds.images.is_empty()).then(|| {
-            (
-                model.sources.file.clone(),
-                photos.names().map(<[String]>::to_vec),
-            )
-        });
+        let key_photo = options.key_map_photo_on();
+        let plan_photo =
+            ((photos.on() || key_photo) && !model.backgrounds.images.is_empty()).then(|| {
+                (
+                    model.sources.file.clone(),
+                    // The plan's layers; the key map's alone: every one.
+                    photos
+                        .on()
+                        .then(|| photos.names().map(<[String]>::to_vec))
+                        .flatten(),
+                )
+            });
         Ok(Self {
             line: model.line.clone(),
             bodies: model.bodies.clone(),
@@ -1215,6 +1236,7 @@ impl Input {
             lidar,
             stringing,
             plan_drawings,
+            key_drawings,
             plan_photo,
             photo_source: PhotoSource::new(),
             out,
@@ -1252,6 +1274,9 @@ impl Input {
         let mut d = self.drawing(route)?;
         for (name, drawing) in &self.plan_drawings {
             d.add_background_drawing(name, drawing, self.options.background_half_width());
+        }
+        for (name, drawing) in &self.key_drawings {
+            d.add_key_map_drawing(name, drawing);
         }
         if let Some((name, source)) = self.photo() {
             d.set_photo(name, Some(source.clone()));
@@ -2234,6 +2259,44 @@ fn plan_background_ui(
         }
         if loaded.images.is_empty() {
             ui.weak("(the project has none)");
+        }
+    });
+    // The key map's (north up, the whole drawings and orthophotos around
+    // the route).
+    let k = &t.key_map;
+    let keyed = k.place != "off";
+    ui.horizontal(|ui| {
+        let mut on = s.key_map_drawings.unwrap_or(k.drawings);
+        let r = ui
+            .add_enabled(
+                keyed && !loaded.drawings.is_empty(),
+                egui::Checkbox::new(&mut on, "the project's drawings under the key map"),
+            )
+            .on_hover_text(
+                "Its DXF drawings (Terrain › Backgrounds) around the route, north up, thin, \
+                 under the route in the small map (the template's [key_map] drawings)",
+            );
+        if r.changed() {
+            s.key_map_drawings = Some(on);
+        }
+    });
+    ui.horizontal(|ui| {
+        let mut on = s.key_map_photo.unwrap_or(k.orthophoto);
+        let r = ui
+            .add_enabled(
+                keyed && !loaded.images.is_empty(),
+                egui::Checkbox::new(&mut on, "the project's orthophotos under the key map"),
+            )
+            .on_hover_text(format!(
+                "Its orthophotos (Terrain › Backgrounds) around the route, north up, under a \
+                 {:.0} % white veil (the template's [key_map] orthophoto, veil); SVG, PDF and PNG",
+                k.veil * 100.0
+            ));
+        if r.changed() {
+            s.key_map_photo = Some(on);
+        }
+        if !keyed {
+            ui.weak("(the template has no key map)");
         }
     });
 }

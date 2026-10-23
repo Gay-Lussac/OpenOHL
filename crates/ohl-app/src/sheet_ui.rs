@@ -98,6 +98,12 @@ pub struct SheetChoice {
     /// The project's orthophotos under the plan, on or off (none: as the
     /// template's `[plan_background] orthophoto` says).
     pub background_photo: Option<bool>,
+    /// The project's drawings under the key map, on or off (none: as the
+    /// template's `[key_map] drawings` says; 2026-10-23).
+    pub key_map_drawings: Option<bool>,
+    /// The project's orthophotos under the key map, on or off (none: as
+    /// the template's `[key_map] orthophoto` says; 2026-10-23).
+    pub key_map_photo: Option<bool>,
 }
 
 /// LiDAR class codes written `2, 3, 5` (empty: none).
@@ -130,6 +136,8 @@ impl Default for SheetChoice {
             circuit_cases: Default::default(),
             background_drawings: None,
             background_photo: None,
+            key_map_drawings: None,
+            key_map_photo: None,
         }
     }
 }

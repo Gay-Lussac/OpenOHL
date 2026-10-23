@@ -491,3 +491,113 @@ fn the_template_keys_are_checked() {
     assert_eq!(plain.plan_drawings(), Choice::All);
     assert_eq!(Options::default().plan_photos(), Choice::Off);
 }
+
+/// With a corridor the plan's backgrounds stop at its edges (the area
+/// shown), not at the panel's.
+#[test]
+fn the_backgrounds_stop_at_the_corridor() {
+    let o = Options {
+        template: template_with("[plan_background]\northophoto = true\nveil = 0\ndpi = 50"),
+        corridor: Some(20.0),
+        ..Options::default()
+    };
+    let mut d = main_route(&o);
+    d.set_photo("Ortho", Some(Arc::new(Gradient)));
+    let s = sheets(&d, &o, &page_format("A3").unwrap());
+    let sheet = &s[1].drawing;
+    let (rect, _) = plan_frame(&sheet.items);
+    let img = sheet
+        .flat()
+        .into_iter()
+        .find_map(|(i, _)| match i {
+            Item::Image(x) if x.layer == Layer::BackgroundPhoto => Some(x.clone()),
+            _ => None,
+        })
+        .expect("the orthophoto");
+    // ±20 m at 1:2000 across: 20 mm high, inside the panel.
+    let across = 1000.0 / o.plan_offset_scale.unwrap_or(o.horizontal_scale);
+    assert!((img.height - 40.0 * across).abs() < 1e-6, "{}", img.height);
+    assert!(img.height < rect[3]);
+    assert!(img.at[1] > rect[1] && img.at[1] + img.height < rect[1] + rect[3]);
+}
+
+/// The key map: the project's drawings and orthophotos under it north up
+/// when asked (none by default), the sheet's box in its own pen, the
+/// structures' names apart from each other and inside the map.
+#[test]
+fn the_key_map_has_backgrounds_a_box_and_names_apart() {
+    let key = "[key_map]\nplace = \"bottom\"\nwidth = \"110 mm\"\nheight = \"70 mm\"\n\
+               structures = true\nbox = { colour = \"#e00000\", width = \"0.35 mm\" }\n";
+    let on = Options {
+        template: template_with(&format!(
+            "{key}drawings = true\northophoto = true\nveil = 0"
+        )),
+        ..Options::default()
+    };
+    let off = Options {
+        template: template_with(key),
+        ..Options::default()
+    };
+    let mut d = main_route(&on);
+    d.add_key_map_drawing("survey", &survey());
+    d.set_photo("Ortho", Some(Arc::new(Gradient)));
+    // The far line (5 km away) and the hidden layer left out.
+    assert_eq!(d.key_background[0].lines.len(), 4);
+    let key_items = |o: &Options| {
+        let s = sheets(&d, o, &page_format("A1").unwrap());
+        s[0].drawing
+            .flat()
+            .into_iter()
+            .filter(|(i, _)| match i {
+                Item::Path(p) => p.layer == Layer::KeyMap,
+                Item::Image(x) => x.layer == Layer::KeyMap,
+                Item::Text(t) => t.layer == Layer::KeyMap,
+                _ => false,
+            })
+            .map(|(i, _)| i.clone())
+            .collect::<Vec<_>>()
+    };
+    let with = key_items(&on);
+    let without = key_items(&off);
+    let images = |v: &[Item]| v.iter().filter(|i| matches!(i, Item::Image(_))).count();
+    assert_eq!(images(&with), 1);
+    assert_eq!(images(&without), 0);
+    let paths = |v: &[Item]| v.iter().filter(|i| matches!(i, Item::Path(_))).count();
+    assert!(paths(&with) > paths(&without));
+    // The box in its pen.
+    assert!(without.iter().any(|i| matches!(i, Item::Path(p)
+        if p.pen.color == crate::model::Color(0xe0, 0, 0) && (p.pen.width - 0.35).abs() < 1e-9)));
+    // Names: some, none overlapping another.
+    let boxes: Vec<[f64; 4]> = without
+        .iter()
+        .filter_map(|i| match i {
+            Item::Text(t) if t.text.starts_with('T') => {
+                let w = 0.6 * t.size * t.text.chars().count() as f64;
+                let x0 = if t.anchor == crate::model::Anchor::End {
+                    t.at[0] - w
+                } else {
+                    t.at[0]
+                };
+                Some([x0, t.at[1] - t.size, x0 + w, t.at[1]])
+            }
+            _ => None,
+        })
+        .collect();
+    let ids: Vec<&str> = d.structures.iter().map(|m| m.id.as_str()).collect();
+    let texts: Vec<&str> = without
+        .iter()
+        .filter_map(|i| match i {
+            Item::Text(t) => Some(t.text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(!boxes.is_empty(), "{ids:?} {texts:?}");
+    for (i, a) in boxes.iter().enumerate() {
+        for b in &boxes[i + 1..] {
+            assert!(
+                a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3],
+                "{a:?} {b:?}"
+            );
+        }
+    }
+}

@@ -300,7 +300,19 @@ structure body) and O7 (the line and its structures solved together).
   `OHL_BACKGROUND_DRAWINGS`, the orthophoto resampled per sheet under a
   white veil on `OHL_BACKGROUND_PHOTO`; SVG, PDF, PNG; not in DXF R12),
   chosen by the sheet template (`[plan_background]`), the export
-  window's ticks and `ohl drawing --plan-drawings --plan-orthophoto`.
+  window's ticks and `ohl drawing --plan-drawings --plan-orthophoto`;
+  since 2026-10-23 cut at the corridor's edges (the area shown) where
+  the sheet draws a corridor. *Follow-up 10, built 2026-10-23, in active
+  development (not approved yet)*: the **key map** with the project's
+  drawings and orthophotos under it, north up (template `[key_map]
+  drawings`, `orthophoto`, `veil`; the export window's ticks; `ohl
+  drawing --key-map-drawings --key-map-orthophoto`), the sheet's box in a
+  pen of its own (`box`), the structures' names thinned so that none
+  touches another, the route, the box's edges or the map's edge.
+  **Still to come (owner, 2026-10-23):** background maps imported into
+  the project (one or many), each shown on the plan view only or
+  switched on other views and the sheets (the key map, the plan);
+  later links to public map services.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane

@@ -728,6 +728,25 @@ pub struct KeyMapSpec {
     /// The sheet's stretch: its pen.
     #[serde(default)]
     pub highlight: PenSpec,
+    /// The box around the sheet's stretch: its pen (`box`; none given:
+    /// the highlight's colour, 0.2 mm).
+    #[serde(default, rename = "box")]
+    pub sheet_box: PenSpec,
+    /// The project's drawings (DXF) under it, north up (the export may
+    /// switch them).
+    #[serde(default)]
+    pub drawings: bool,
+    /// The project's orthophotos under it, north up (the export may
+    /// switch them).
+    #[serde(default)]
+    pub orthophoto: bool,
+    /// The white veil over its orthophotos, 0 to 1.
+    #[serde(default = "key_veil")]
+    pub veil: f64,
+}
+
+fn key_veil() -> f64 {
+    0.4
 }
 
 fn key_width() -> Mm {
@@ -751,6 +770,10 @@ impl Default for KeyMapSpec {
             north_arrow: true,
             corridor: true,
             highlight: PenSpec::default(),
+            sheet_box: PenSpec::default(),
+            drawings: false,
+            orthophoto: false,
+            veil: key_veil(),
         }
     }
 }
@@ -2202,6 +2225,10 @@ impl SheetTemplate {
         self.corridor.far.check("corridor.far")?;
         self.centreline.pen.check("centreline.pen")?;
         self.plan_background.check()?;
+        self.key_map.sheet_box.check("key_map.box")?;
+        if !(0.0..=1.0).contains(&self.key_map.veil) {
+            return Err("key_map.veil: from 0 (none) to 1 (white)".into());
+        }
         if !["auto", "middle", "start", "end"].contains(&self.conductor_clearance.label_at.as_str())
         {
             return Err(format!(

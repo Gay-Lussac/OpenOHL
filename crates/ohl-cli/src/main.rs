@@ -482,6 +482,14 @@ struct LineArgs {
     /// (default: the template's `[plan_background] dpi`, 200).
     #[arg(long)]
     plan_background_dpi: Option<f64>,
+    /// The project's drawings (DXF) under the sheets' key map, north up
+    /// (default: the template's `[key_map] drawings`).
+    #[arg(long)]
+    key_map_drawings: bool,
+    /// The project's orthophotos under the sheets' key map, north up
+    /// (default: the template's `[key_map] orthophoto`).
+    #[arg(long)]
+    key_map_orthophoto: bool,
     /// The project file (.ohl) whose drawings and orthophotos go under the
     /// plan (default: the line's, when it is a project file).
     #[arg(long)]
@@ -1602,6 +1610,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         plan_orthophoto,
         no_plan_backgrounds,
         plan_background_dpi,
+        key_map_drawings,
+        key_map_orthophoto,
         backgrounds,
         export,
         export_options,
@@ -2254,6 +2264,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     photos: plan_orthophoto.as_deref(),
                     off: *no_plan_backgrounds,
                     dpi: *plan_background_dpi,
+                    key_drawings: *key_map_drawings,
+                    key_photo: *key_map_orthophoto,
                 },
                 backgrounds
                     .as_deref()

@@ -903,6 +903,19 @@ fn plan_content(d: &RouteDrawing, o: &Options, f: &Frame) -> (Vec<Item>, Vec<Ite
     (plan, ends, names)
 }
 
+/// The part of plan rectangle `r` (paper, mm) the backgrounds fill: with
+/// a corridor, only between its edges (the area shown, "Bereich"), else
+/// the whole rectangle.
+fn background_rect(o: &Options, f: &Frame, r: [f64; 4]) -> [f64; 4] {
+    let Some(w) = o.corridor.filter(|w| *w > 0.0) else {
+        return r;
+    };
+    let (a, b) = (f.plan_y(w), f.plan_y(-w));
+    let top = a.min(b).max(r[1]);
+    let bottom = a.max(b).min(r[1] + r[3]);
+    [r[0], top, r[2], (bottom - top).max(0.0)]
+}
+
 /// Grids, panels and content of one frame, clipped to its panels (the
 /// structures at a sheet's ends drawn whole; with `beyond_match = "faded"`
 /// the next sheet's content faded to the paper's edge); the structures'
@@ -914,7 +927,7 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     // The plan's backgrounds (the project's orthophotos and drawings, when
     // asked for) under everything else.
     if f.plan {
-        let rect = [f.left, f.plan_top, f.width(), f.plan_h];
+        let rect = background_rect(o, f, [f.left, f.plan_top, f.width(), f.plan_h]);
         let mut under: Vec<Item> = crate::background::photo_item(d, o, f, rect)
             .into_iter()
             .collect();
@@ -1083,7 +1096,8 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
             let (more, more_ends, _) = plan_content(d, o, f);
             // (The drawings under it; the orthophoto ends at the match
             // line.)
-            let mut all = crate::background::drawing_items(d, o, f, beyond(plan_rect));
+            let mut all =
+                crate::background::drawing_items(d, o, f, background_rect(o, f, beyond(plan_rect)));
             all.extend(more);
             all.extend(more_ends);
             items.push(Item::Clip(Clip {

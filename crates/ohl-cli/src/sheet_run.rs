@@ -400,6 +400,9 @@ pub struct BackgroundArgs<'a> {
     pub photos: Option<&'a [String]>,
     pub off: bool,
     pub dpi: Option<f64>,
+    /// The key map's drawings and orthophotos asked for.
+    pub key_drawings: bool,
+    pub key_photo: bool,
 }
 
 /// The project's drawings and orthophotos read for the plan.
@@ -407,6 +410,8 @@ pub struct BackgroundArgs<'a> {
 pub struct PlanBackgrounds {
     /// The drawings: name, drawing.
     pub drawings: Vec<(String, ohl_background::Drawing)>,
+    /// The key map's drawings (every one of the project): name, drawing.
+    pub key_drawings: Vec<(String, ohl_background::Drawing)>,
     /// The orthophotos: their layers in words, where they are read.
     pub photo: Option<(
         String,
@@ -420,6 +425,9 @@ impl PlanBackgrounds {
     pub fn apply(&self, d: &mut ohl_drawing::RouteDrawing, options: &ohl_drawing::Options) {
         for (name, drawing) in &self.drawings {
             d.add_background_drawing(name, drawing, options.background_half_width());
+        }
+        for (name, drawing) in &self.key_drawings {
+            d.add_key_map_drawing(name, drawing);
         }
         if let Some((name, source)) = &self.photo {
             d.set_photo(name, Some(source.clone()));
@@ -453,6 +461,12 @@ pub fn plan_backgrounds(
         options.background_drawings = Some(false);
         options.background_photo = Some(false);
     }
+    if args.key_drawings {
+        options.key_map_drawings = Some(true);
+    }
+    if args.key_photo {
+        options.key_map_photo = Some(true);
+    }
     // Names given: the template's choice replaced.
     let named = |n: &[String]| Choice::Named(n.iter().map(|s| s.trim().to_owned()).collect());
     let mut template = (*options.template).clone();
@@ -483,8 +497,9 @@ pub fn plan_backgrounds(
         options.template = std::sync::Arc::new(template);
     }
     let (drawings, photos) = (options.plan_drawings(), options.plan_photos());
+    let (key_drawings, key_photo) = (options.key_map_drawings_on(), options.key_map_photo_on());
     let mut out = PlanBackgrounds::default();
-    if !drawings.on() && !photos.on() {
+    if !drawings.on() && !photos.on() && !key_drawings && !key_photo {
         return Ok((options, out));
     }
     let Some(file) = file.filter(|f| crate::project::is_project(f) && f.is_file()) else {
@@ -494,6 +509,17 @@ pub fn plan_backgrounds(
         );
         return Ok((options, out));
     };
+    if key_drawings {
+        let store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
+        for info in store.drawings().map_err(|e| e.to_string())? {
+            let d = store.drawing(&info.name).map_err(|e| e.to_string())?;
+            out.key_drawings.push((info.name.clone(), d));
+        }
+        println!(
+            "key map backgrounds: {} drawing(s) under the key map",
+            out.key_drawings.len()
+        );
+    }
     if drawings.on() {
         let store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
         let infos = store.drawings().map_err(|e| e.to_string())?;
@@ -511,8 +537,9 @@ pub fn plan_backgrounds(
             out.drawings.len()
         );
     }
-    if photos.on() {
-        match ohl_background::Mosaic::open(file, photos.names()).map_err(|e| e.to_string())? {
+    if photos.on() || key_photo {
+        let layers = photos.on().then(|| photos.names()).flatten();
+        match ohl_background::Mosaic::open(file, layers).map_err(|e| e.to_string())? {
             Some(m) => {
                 let name = m.layers().join(", ");
                 println!(

@@ -109,6 +109,37 @@ pub struct PlanDrawing {
     pub texts: Vec<PlanText>,
 }
 
+/// One of the project's drawings around the route, for the key map: its
+/// lines in project coordinates (north up), thinned to the key map's
+/// scale.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct KeyMapDrawing {
+    /// Its name (the project's).
+    pub name: String,
+    /// Its lines: runs of (x, y), m, and their colour.
+    pub lines: Vec<(Vec<[f64; 2]>, Color)>,
+}
+
+/// The square around the route the key map's backgrounds are taken
+/// within: (lowest x, y; side, m) — centred on the route's box, 1.6 times
+/// its longer side (a key map wider than tall, or taller than wide,
+/// fitted to the route, shows that much around it).
+pub(crate) fn key_square(centre: &[Point]) -> Option<([f64; 2], f64)> {
+    if centre.len() < 2 {
+        return None;
+    }
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for p in centre {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    let side = 1.6 * (hi[0] - lo[0]).max(hi[1] - lo[1]).max(100.0);
+    let c = [0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1])];
+    Some(([c[0] - side / 2.0, c[1] - side / 2.0], side))
+}
+
 /// Where a point lies along `centre`: (station, offset), and whether it
 /// lies beside the centreline (taken back from there it is where it was:
 /// not beyond the ends, not in the wedge outside a bend).
@@ -266,6 +297,61 @@ impl RouteDrawing {
         }
         if !(out.lines.is_empty() && out.points.is_empty() && out.texts.is_empty()) {
             Arc::make_mut(&mut self.background).push(out);
+        }
+    }
+
+    /// Adds the project's drawing `drawing` named `name` under the key
+    /// map: its lines within the square around the route
+    /// ([`key_square`]), north up, each line's points closer than 1/3000
+    /// of the square to the last one kept left out (≈ 0.04 mm on a key
+    /// map 110 mm wide); what lies on layers switched off is left out.
+    ///
+    /// Cost: one pass over the drawing's points.
+    pub fn add_key_map_drawing(&mut self, name: &str, drawing: &ohl_background::Drawing) {
+        let Some((lo, side)) = key_square(&self.centreline) else {
+            return;
+        };
+        let hi = [lo[0] + side, lo[1] + side];
+        let tol = side / 3000.0;
+        let off = |layer: u32| drawing.layers.get(layer as usize).is_some_and(|l| l.off);
+        let mut out = KeyMapDrawing {
+            name: name.to_owned(),
+            lines: Vec::new(),
+        };
+        for l in &drawing.lines {
+            if off(l.layer) || l.points.len() < 2 {
+                continue;
+            }
+            let (mut a, mut b) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+            for p in &l.points {
+                for k in 0..2 {
+                    a[k] = a[k].min(p[k]);
+                    b[k] = b[k].max(p[k]);
+                }
+            }
+            if b[0] < lo[0] || a[0] > hi[0] || b[1] < lo[1] || a[1] > hi[1] {
+                continue;
+            }
+            let mut pts: Vec<[f64; 2]> = Vec::new();
+            for p in &l.points {
+                let q = [p[0], p[1]];
+                if pts
+                    .last()
+                    .is_none_or(|r: &[f64; 2]| (q[0] - r[0]).hypot(q[1] - r[1]) >= tol)
+                {
+                    pts.push(q);
+                }
+            }
+            if l.closed && pts.len() > 2 {
+                pts.push(pts[0]);
+            }
+            if pts.len() > 1 {
+                out.lines
+                    .push((pts, Color(l.color[0], l.color[1], l.color[2])));
+            }
+        }
+        if !out.lines.is_empty() {
+            Arc::make_mut(&mut self.key_background).push(out);
         }
     }
 
@@ -472,4 +558,121 @@ pub(crate) fn photo_item(d: &RouteDrawing, o: &Options, f: &Frame, rect: [f64; 4
         href: format!("data:image/jpeg;base64,{}", crate::base64(&jpeg)),
         pixels: Some([w as u32, h as u32]),
     }))
+}
+
+/// The key map's backgrounds in its rectangle `inner` (paper, mm), north
+/// up, the point (`cx`, `cy`) at its centre at `k` mm per m: the
+/// orthophotos (resampled at the plan's resolution, at most 150 dpi,
+/// under the template's `[key_map] veil`) and the project's drawings
+/// ([`RouteDrawing::key_background`], in the plan's pen); each when the
+/// options ask. Their legend entries are the plan's (not added again).
+///
+/// Cost: one photo read per pixel (a key map of 110 × 70 mm at 150 dpi:
+/// ≈ 0.27 million pixels) and the drawings' lines in it.
+pub(crate) fn key_map_items(
+    d: &RouteDrawing,
+    o: &Options,
+    inner: [f64; 4],
+    (cx, cy, k): (f64, f64, f64),
+) -> Vec<Item> {
+    let mut out = Vec::new();
+    let spec = &o.template.key_map;
+    if o.key_map_photo_on()
+        && let Some(photo) = &d.photo
+        && inner[2] > 0.0
+        && inner[3] > 0.0
+        && k > 0.0
+    {
+        let dpi = o
+            .background_dpi
+            .unwrap_or(o.template.plan_background.dpi)
+            .clamp(10.0, 150.0);
+        let px = dpi / 25.4;
+        let (w, h) = (
+            (inner[2] * px).ceil().max(1.0) as usize,
+            (inner[3] * px).ceil().max(1.0) as usize,
+        );
+        let metres_per_pixel = (inner[2] / w as f64) / k;
+        let mut points = Vec::with_capacity(w * h);
+        for j in 0..h {
+            let y = inner[1] + (j as f64 + 0.5) * inner[3] / h as f64;
+            let gy = cy - (y - (inner[1] + inner[3] / 2.0)) / k;
+            for i in 0..w {
+                let x = inner[0] + (i as f64 + 0.5) * inner[2] / w as f64;
+                points.push([cx + (x - (inner[0] + inner[2] / 2.0)) / k, gy]);
+            }
+        }
+        let mut colours = vec![None; points.len()];
+        photo.source.sample(&points, metres_per_pixel, &mut colours);
+        if colours.iter().any(Option::is_some) {
+            let veil = spec.veil;
+            let mut rgb = vec![255u8; w * h * 3];
+            for (q, c) in colours.iter().enumerate() {
+                if let Some(c) = c {
+                    for (ch, v) in c.iter().enumerate() {
+                        rgb[q * 3 + ch] =
+                            (f64::from(*v) * (1.0 - veil) + 255.0 * veil).round() as u8;
+                    }
+                }
+            }
+            let mut jpeg = Vec::new();
+            if image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut jpeg,
+                o.template.plan_background.quality,
+            )
+            .encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)
+            .is_ok()
+            {
+                out.push(Item::Image(Image {
+                    layer: Layer::KeyMap,
+                    at: [inner[0], inner[1]],
+                    width: inner[2],
+                    height: inner[3],
+                    href: format!("data:image/jpeg;base64,{}", crate::base64(&jpeg)),
+                    pixels: Some([w as u32, h as u32]),
+                }));
+            }
+        }
+    }
+    if o.key_map_drawings_on() && !d.key_background.is_empty() {
+        let pb = &o.template.plan_background;
+        let base = pb.pen.over(o.template.pen(
+            Layer::BackgroundDrawings,
+            Pen::new(Color(0x8c, 0x8c, 0x8c), 0.13),
+        ));
+        // Thinner than in the plan: the key map is small.
+        let base = Pen {
+            width: base.width * 0.6,
+            ..base
+        };
+        let paper = |p: &[f64; 2]| {
+            [
+                inner[0] + inner[2] / 2.0 + (p[0] - cx) * k,
+                inner[1] + inner[3] / 2.0 - (p[1] - cy) * k,
+            ]
+        };
+        for drawing in d.key_background.iter() {
+            for (line, color) in &drawing.lines {
+                let pts: Vec<[f64; 2]> = line.iter().map(paper).collect();
+                let pen = if pb.own_colours {
+                    Pen {
+                        color: on_paper(*color),
+                        ..base.clone()
+                    }
+                } else {
+                    base.clone()
+                };
+                for run in clip_polyline(&pts, inner) {
+                    out.push(Item::Path(Path {
+                        layer: Layer::KeyMap,
+                        points: run,
+                        closed: false,
+                        pen: pen.clone(),
+                        title: None,
+                    }));
+                }
+            }
+        }
+    }
+    out
 }
