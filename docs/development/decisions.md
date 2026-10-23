@@ -10,6 +10,21 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Wind perpendicular to each span kept (owner, 2026-10-23)**
+
+- Wind keeps acting horizontally and perpendicular to each span, at the
+  full pressure, wherever the span runs. Compared on a real line with
+  another program, short steep spans leaving the line at an angle gave
+  results there that depend on the side the wind comes from (up to
+  13 % in tension on the same span), here none: that program appears
+  to blow perpendicular to the line, so part of its wind acts along
+  such a span. Perpendicular to each span is the larger transverse
+  load on every span (conservative); the owner keeps it.
+- On those spans (about 1 cm of slack) the tensions here were also
+  higher under ice, as if the other program's wire were 5–6 mm
+  longer; an analytical catenary between the clamps solved here gave
+  the same unstressed lengths to 0.1 mm, so the solver is unchanged.
+
 **Vegetation: the swing arc kept (owner, 2026-10-23)**
 
 - Measured on a real line against another program's report: wind
