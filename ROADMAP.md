@@ -149,8 +149,17 @@ export a whole set of plans in one go, each kind with templates (built
 in, and as plugin presets — a utility's own templates in its plugin).
 Proposed (to discuss; nothing built yet):
 
-1. **Situation plan** — the plan alone, at an overview scale (e.g.
-   1:5000 to 1:25 000; the template's), the line drawn on a background:
+1. **Route plan and situation plans** — the plan alone, the line drawn
+   on a background, at two scales (owner, 2026-10-23):
+   - the **route plan** (overview of the whole route) at 1:5000 to
+     1:25 000, as needed to see it, with the municipal boundaries and,
+     where the template asks, protection zones, waters, protected areas
+     and infrastructure (from layers the user loads);
+   - **situation plans** (the same, local) at 1:500 to 1:2000, with the
+     parcel boundaries within 50 m each side of the line and the parcel
+     numbers (from the cadastral survey loaded as a drawing);
+   - both with a complete legend, the scale written and drawn, a north
+     arrow;
    - the line's axis, its structures (numbered), the corridor, the other
      lines and project lines in their roles, crossings marked; legend,
      north arrow, scale bar, title block from the sheet template;
@@ -193,8 +202,11 @@ Proposed (to discuss; nothing built yet):
 > text "from mast to mast", the plan showing where the line changes.
 > Background map of the situation plans: for now a map the user loads
 > into the project; later links to public services (API).
-> **Owner:** (to answer) Scales of the situation plan; the plans of a set
-> and their naming.
+> **Owner:** (2026-10-23) Route plan (full route) between 1:5000 and
+> 1:25 000 depending on what needs to be seen; situation plans the same
+> but smaller, 1:500 to 1:2000, to show what is needed locally (as
+> described in the authority's directive for plan submissions).
+> **Owner:** (to answer) The plans of a set and their naming.
 
 *In Part B:* O6 (clearances from the strings and conductors to the
 structure body) and O7 (the line and its structures solved together).
