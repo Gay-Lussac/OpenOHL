@@ -123,8 +123,11 @@ pub struct CaseTargets<'a> {
     pub voltages: &'a [Option<Potential>],
     /// Potentials of the other lines' sections.
     pub other_voltages: &'a [Option<Potential>],
-    /// The ground surface.
+    /// The ground surface (of the ground rules naming none).
     pub ground: Option<&'a Terrain>,
+    /// The terrain surfaces the ground rules name ([`Rule::surface`]),
+    /// by name.
+    pub surfaces: &'a [(String, &'a Terrain)],
     /// Classes of each point rule, by rule index (others: ignored).
     pub point_classes: &'a [Vec<u8>],
     /// Feeds the points of the classes asked for to the visitor (called
@@ -134,6 +137,19 @@ pub struct CaseTargets<'a> {
         Option<&'a mut dyn FnMut(&[u8], &mut dyn FnMut(f64, f64, f64, u8)) -> Result<(), String>>,
     /// The other lines' wires in this weather case.
     pub other_wires: &'a [Wire],
+}
+
+/// The terrain surface of ground rule `rule`: the one it names, else the
+/// checks' own.
+fn ground_of<'a>(
+    rule: &Rule,
+    ground: Option<&'a Terrain>,
+    surfaces: &[(String, &'a Terrain)],
+) -> Option<&'a Terrain> {
+    match &rule.surface {
+        Some(name) => surfaces.iter().find(|(n, _)| n == name).map(|(_, t)| *t),
+        None => ground,
+    }
 }
 
 /// Checks the `wires` of weather case `case` by every rule that applies
@@ -162,7 +178,9 @@ pub fn check_case(
         } else {
             let parts = checked_parts(rule, wires);
             let skipped = match &rule.target {
-                Target::Ground if targets.ground.is_none() => Some(Skipped::NoGround),
+                Target::Ground if ground_of(rule, targets.ground, targets.surfaces).is_none() => {
+                    Some(Skipped::NoGround)
+                }
                 Target::Points { .. } if classes(k).is_empty() => Some(Skipped::NoClasses),
                 Target::Points { .. } if targets.points.is_none() => Some(Skipped::NoPoints),
                 Target::OtherLines if targets.other_wires.is_empty() => Some(Skipped::NoOtherLines),
@@ -224,7 +242,7 @@ pub fn check_case(
             Target::Ground => Outcome::Wires(ground_check(
                 rule,
                 &c.wires,
-                targets.ground.expect("checked above"),
+                ground_of(rule, targets.ground, targets.surfaces).expect("checked above"),
             )),
             Target::Points { .. } => {
                 Outcome::Wires(point_checks[n].take().expect("built above").results)

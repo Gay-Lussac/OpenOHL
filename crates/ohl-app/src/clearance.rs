@@ -82,6 +82,10 @@ pub struct Input {
     pub cloud: Option<String>,
     /// Ground surface.
     pub ground: Option<Arc<Terrain>>,
+    /// The terrain surfaces the ground rules name, held already, and the
+    /// project file and names of those to read
+    /// ([`crate::model::Model::held_surfaces`]).
+    pub surfaces: crate::model::NamedSurfaces,
     /// Half width of the corridor around the spans for points, m.
     pub corridor: f64,
 }
@@ -123,6 +127,9 @@ fn findings(rule: &Rule, a: &Wire, b: Option<&Wire>, r: &WireResult, out: &mut V
 
 /// Runs the check.
 pub fn run(input: &Input) -> Result<Report, String> {
+    let named = input.surfaces.read();
+    let surfaces: Vec<(String, &Terrain)> =
+        named.iter().map(|(n, t)| (n.clone(), t.as_ref())).collect();
     let started = Instant::now();
     let line = &input.line;
     let mut report = Report {
@@ -168,6 +175,7 @@ pub fn run(input: &Input) -> Result<Report, String> {
             voltages: &voltages,
             other_voltages: &[],
             ground: input.ground.as_deref(),
+            surfaces: &surfaces,
             point_classes: &point_classes,
             points: input.cloud.is_some().then_some(&mut feed as _),
             other_wires: &[],

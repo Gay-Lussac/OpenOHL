@@ -432,6 +432,10 @@ pub struct Rule {
     /// cut in slices of this depth, m (0: the wire straight above the
     /// target).
     pub vertical_depth: f64,
+    /// Ground rules: the terrain surface (TIN layer) checked, by name
+    /// (none: the surface the checks use, the project's check surface or
+    /// `--terrain`).
+    pub surface: Option<String>,
 }
 
 /// Which wires a rule checks.
@@ -631,6 +635,8 @@ struct RawRule {
     wires: Option<String>,
     #[serde(default)]
     vertical_depth: Option<Length>,
+    #[serde(default)]
+    surface: Option<String>,
 }
 
 /// A requirement as written in a file: a distance, a table by voltage or a
@@ -1256,6 +1262,13 @@ impl RuleSet {
                 {
                     return bad("classes and roles are for points rules");
                 }
+                let surface = r.surface.as_deref().map(str::trim).map(str::to_owned);
+                if surface.as_deref() == Some("") {
+                    return bad("surface: give the name of a terrain surface");
+                }
+                if surface.is_some() && target != Target::Ground {
+                    return bad("surface is for ground rules (a terrain surface by name)");
+                }
                 let resolve =
                     |x: Option<RawRequirement>| x.map(RawRequirement::resolve).transpose();
                 let (vertical, radial) = match (resolve(r.vertical), resolve(r.radial)) {
@@ -1322,6 +1335,7 @@ impl RuleSet {
                     voltages: r.voltages,
                     wires: r.wires.as_deref().map_or(Ok(Wires::Both), Wires::parse)?,
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
+                    surface,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -1424,6 +1438,7 @@ impl RuleSet {
                 voltages: Vec::new(),
                 wires: Wires::Both,
                 vertical_depth: 0.0,
+                surface: None,
             }],
             wind: None,
             check: None,
@@ -1581,6 +1596,9 @@ impl Rule {
             } => t.push_str("include_same_phase = true\n"),
             _ => {}
         }
+        if let Some(s) = &self.surface {
+            let _ = writeln!(t, "surface = {}", quoted(s));
+        }
         for (key, r) in [("vertical", &self.vertical), ("radial", &self.radial)] {
             if let Some(r) = r {
                 let _ = writeln!(t, "{key} = {}", r.to_toml());
@@ -1732,6 +1750,33 @@ mod tests {
         assert_eq!(mine.wind.unwrap().step, 25.0);
         let from_line = RuleDefaults::from(&ohl_line::Defaults::default());
         assert_eq!(from_line, RuleDefaults::default());
+    }
+
+    /// A ground rule may name a terrain surface (a TIN layer): kept when
+    /// written and read again; refused on another target, or empty.
+    #[test]
+    fn a_ground_rule_names_its_surface() {
+        let head = "format = \"ohl-clearance-rules\"\nname = \"t\"\n[[rule]]\nname = \"g\"\n";
+        let set = RuleSet::parse(&format!(
+            "{head}target = \"ground\"\nsurface = \"TIN 2024\"\nvertical = 7\n"
+        ))
+        .unwrap();
+        assert_eq!(set.rules[0].surface.as_deref(), Some("TIN 2024"));
+        let again = RuleSet::parse(&set.to_toml()).unwrap();
+        assert_eq!(again, set);
+        let none = RuleSet::parse(&format!("{head}target = \"ground\"\nvertical = 7\n")).unwrap();
+        assert_eq!(none.rules[0].surface, None);
+        assert!(!none.to_toml().contains("surface"));
+        let e = RuleSet::parse(&format!(
+            "{head}target = \"points\"\nclasses = [5]\nsurface = \"TIN\"\nvertical = 7\n"
+        ))
+        .unwrap_err();
+        assert!(e.contains("surface is for ground rules"), "{e}");
+        let e = RuleSet::parse(&format!(
+            "{head}target = \"ground\"\nsurface = \" \"\nvertical = 7\n"
+        ))
+        .unwrap_err();
+        assert!(e.contains("name of a terrain surface"), "{e}");
     }
 
     #[test]

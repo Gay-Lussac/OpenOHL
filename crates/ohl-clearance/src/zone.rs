@@ -134,6 +134,10 @@ pub struct ZoneRule {
     pub classes: Vec<u8>,
     /// The ground surface is a target too.
     pub ground: bool,
+    /// The terrain surface (TIN layer) of the ground, by name (none: the
+    /// surface the checks use: the project's check surface or
+    /// `--terrain`).
+    pub surface: Option<String>,
     /// The wires checked: the sections' spans, the jumpers or both.
     pub wires: Wires,
     /// Vertical: its own half width of the zone across the line, m
@@ -175,6 +179,9 @@ impl ZoneRule {
                 voltages: self.voltages.clone(),
                 wires: self.wires,
                 vertical_depth: if vertical { zone.depth } else { 0.0 },
+                surface: matches!(target, Target::Ground)
+                    .then(|| self.surface.clone())
+                    .flatten(),
                 target,
             }
         };
@@ -332,6 +339,7 @@ pub fn from_rule_set(
                 distance,
                 classes: classes.clone(),
                 ground: matches!(rule.target, Target::Ground),
+                surface: rule.surface.clone(),
                 wires: rule.wires,
                 width,
             };
@@ -356,12 +364,26 @@ pub fn from_rule_set(
                 && last.width == row.width
             {
                 last.ground = true;
+                last.surface = row.surface;
                 continue;
             }
             out.rules.push(row);
         }
     }
     out
+}
+
+/// The terrain surface of a ground rule naming `surface` (none: the
+/// checks' own, [`ZoneTargets::ground`]).
+fn ground_of<'a>(
+    surface: &Option<String>,
+    ground: Option<&'a Terrain>,
+    surfaces: &[(String, &'a Terrain)],
+) -> Option<&'a Terrain> {
+    match surface {
+        Some(name) => surfaces.iter().find(|(n, _)| n == name).map(|(_, t)| *t),
+        None => ground,
+    }
 }
 
 /// One state solved: one result per section, then per jumper.
@@ -702,8 +724,11 @@ pub struct ZoneReport {
 
 /// What a zone check runs against.
 pub struct ZoneTargets<'a> {
-    /// The ground surface.
+    /// The ground surface (of the rules naming none).
     pub ground: Option<&'a Terrain>,
+    /// The terrain surfaces the rules name ([`ZoneRule::surface`]), by
+    /// name.
+    pub surfaces: &'a [(String, &'a Terrain)],
     /// Feeds the points of the classes asked for to the visitor; `None`:
     /// no points.
     #[allow(clippy::type_complexity)]
@@ -895,8 +920,8 @@ pub fn check_zones(
         .map_err(|e| format!("checking the clearances {e}"))?;
     let vertical = zone.measure == Measure::Vertical;
     let mut findings: Vec<ZoneFinding> = Vec::new();
-    // The highest ground per cell, made once for every rule.
-    let mut top: Option<GroundMax> = None;
+    // The highest ground per cell, made once per surface for every rule.
+    let mut tops: Vec<(Option<String>, GroundMax)> = Vec::new();
     for p in &parts {
         // (result, state, group, arc index) of every wire and arc.
         type Entry = (WireResult, usize, usize, Option<usize>);
@@ -918,9 +943,16 @@ pub fn check_zones(
                 (all, Some(&check.group_violations))
             }
             (Target::Points { .. }, _) => continue,
-            _ => match targets.ground {
+            _ => match ground_of(&p.def.surface, targets.ground, targets.surfaces) {
                 Some(ground) => {
-                    let top = top.get_or_insert_with(|| GroundMax::new(ground));
+                    let k = match tops.iter().position(|(n, _)| *n == p.def.surface) {
+                        Some(k) => k,
+                        None => {
+                            tops.push((p.def.surface.clone(), GroundMax::new(ground)));
+                            tops.len() - 1
+                        }
+                    };
+                    let top = &tops[k].1;
                     let mut all: Vec<Entry> = ground_check_with(&p.def, &p.wires, ground, top)
                         .into_iter()
                         .zip(&p.meta)
@@ -936,9 +968,13 @@ pub fn check_zones(
                     (all, None)
                 }
                 None => {
-                    report
-                        .notes
-                        .push(format!("\"{}\": no terrain surface", rules[p.rule].name));
+                    report.notes.push(match &p.def.surface {
+                        Some(n) => format!(
+                            "\"{}\": no terrain surface \"{n}\" in the project",
+                            rules[p.rule].name
+                        ),
+                        None => format!("\"{}\": no terrain surface", rules[p.rule].name),
+                    });
                     continue;
                 }
             },
@@ -1184,6 +1220,7 @@ mod tests {
             distance: Requirement::Fixed(distance),
             classes: classes.to_vec(),
             ground: false,
+            surface: None,
             wires: Wires::Both,
             width: None,
         }
@@ -1234,6 +1271,7 @@ mod tests {
             &[],
             ZoneTargets {
                 ground: None,
+                surfaces: &[],
                 points: Some(&mut feed),
             },
             &budget,
@@ -1291,6 +1329,7 @@ mod tests {
                 None,
                 Some(&read),
                 None,
+                &[],
                 None,
                 &Budget::new(),
                 &AtomicUsize::new(0),
@@ -1372,6 +1411,7 @@ mod tests {
             &[],
             ZoneTargets {
                 ground: None,
+                surfaces: &[],
                 points: None,
             },
             &budget,
@@ -1681,6 +1721,7 @@ mod tests {
                 distance: Requirement::Fixed(4.5),
                 classes: vec![5, 6],
                 ground: true,
+                surface: None,
                 wires: Wires::Both,
                 width: None,
             },
@@ -1691,6 +1732,7 @@ mod tests {
                 distance: Requirement::Fixed(3.25),
                 classes: vec![2],
                 ground: false,
+                surface: None,
                 wires: Wires::Sections,
                 // Its own half width.
                 width: Some(4.0),
@@ -1702,6 +1744,7 @@ mod tests {
                 distance: Requirement::Fixed(2.0),
                 classes: Vec::new(),
                 ground: true,
+                surface: None,
                 wires: Wires::Jumpers,
                 width: None,
             },

@@ -7295,6 +7295,11 @@ fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     };
     let scope = m.scope();
     r.clearances.start(ctx, |rules| crate::clearance::Input {
+        // The surfaces the ground rules name (read on the check's thread).
+        surfaces: crate::model::NamedSurfaces::of(
+            m,
+            rules.iter().filter_map(|r| r.surface.clone()),
+        ),
         line: m.line.clone(),
         case: solved.case.name.clone(),
         // The route worked on only (View › Work on route).

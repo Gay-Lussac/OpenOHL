@@ -43,6 +43,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             distance: Requirement::Fixed(required),
             classes: Vec::new(),
             ground: true,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         },
@@ -53,6 +54,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             distance: Requirement::Fixed(required),
             classes: vec![5],
             ground: false,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         },
@@ -127,6 +129,7 @@ fn run_with(
         wind.arc.then_some(wind.margins()),
         Some(&read),
         Some(&terrain),
+        &[],
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
@@ -318,6 +321,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
             Some(wind.margins()),
             Some(&read),
             None,
+            &[],
             None,
             &Budget::new(),
             &AtomicUsize::new(0),
@@ -369,6 +373,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         }),
         Some(&read),
         None,
+        &[],
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
@@ -388,10 +393,81 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         }),
         Some(&read),
         None,
+        &[],
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
     )
     .unwrap_err();
     assert!(e.contains("jumper band margin"), "{e}");
+}
+
+/// A ground rule naming a terrain surface of its own (a TIN layer) is
+/// checked against it, the others against the checks' ground: the
+/// example's survey raised 5 m under one rule's name brings every span's
+/// lowest vertical clearance 5 m nearer; a name not given is noted, its
+/// rule not checked.
+#[test]
+fn a_ground_rule_checks_the_surface_it_names() {
+    let (line, library, terrain) = example();
+    let raised = Terrain::from_mesh(
+        terrain
+            .points()
+            .iter()
+            .map(|p| [p[0], p[1], p[2] + 5.0])
+            .collect(),
+        terrain.triangles().to_vec(),
+    )
+    .unwrap();
+    let wind = WindSteps::default();
+    let states = wind_states(&[windy()], |_| true, &wind);
+    let mut rules = rules(100.0);
+    rules.truncate(1);
+    let mut named = rules[0].clone();
+    named.name = "raised".into();
+    named.surface = Some("raised TIN".into());
+    let mut missing = rules[0].clone();
+    missing.name = "missing".into();
+    missing.surface = Some("no such TIN".into());
+    rules.push(named);
+    rules.push(missing);
+    let r = run_zone_check(
+        &line,
+        &library,
+        Zone::new(Measure::Vertical),
+        &Default::default(),
+        rules,
+        states,
+        None,
+        None,
+        Some(&terrain),
+        &[("raised TIN".to_owned(), &raised)],
+        None,
+        &Budget::new(),
+        &AtomicUsize::new(0),
+    )
+    .unwrap();
+    let all = lowest(&r);
+    let of = |rule: usize| -> Vec<(String, usize, f64)> {
+        all.iter()
+            .filter(|x| x.0.0 == rule)
+            .map(|x| (x.0.1.clone(), x.0.2, x.1))
+            .collect()
+    };
+    let (own, ground) = (of(1), of(0));
+    assert!(!ground.is_empty());
+    assert_eq!(own.len(), ground.len());
+    for (a, b) in own.iter().zip(&ground) {
+        assert_eq!((&a.0, a.1), (&b.0, b.1));
+        assert!((b.2 - a.2 - 5.0).abs() < 1e-6, "{a:?} {b:?}");
+    }
+    assert!(of(2).is_empty());
+    assert!(
+        r.zone
+            .notes
+            .iter()
+            .any(|n| n.contains("\"missing\"") && n.contains("no such TIN")),
+        "{:?}",
+        r.zone.notes
+    );
 }

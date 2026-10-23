@@ -170,6 +170,7 @@ fn rules() -> Vec<ZoneRule> {
             distance: Requirement::Fixed(7.0),
             classes: Vec::new(),
             ground: true,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         },
@@ -180,6 +181,7 @@ fn rules() -> Vec<ZoneRule> {
             distance: Requirement::Fixed(5.0),
             classes: vec![3, 4, 5],
             ground: false,
+            surface: None,
             wires: ohl_clearance::Wires::Sections,
             width: None,
         },
@@ -275,6 +277,7 @@ fn speed() {
                     &arcs,
                     ZoneTargets {
                         ground: Some(&terrain),
+                        surfaces: &[],
                         points: Some(&mut feed),
                     },
                     &budget,

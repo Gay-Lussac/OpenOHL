@@ -809,7 +809,11 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `cases` it applies to, `vertical_band` (zone width each side of the
   wire), `vertical_depth` (the area's depth along the line), `voltages`
   (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
-  `jumpers` or `both`).
+  `jumpers` or `both`); since 2026-10-23 a ground rule's `surface` (a
+  terrain surface of the project by name; none: the checks' surface;
+  `Rule::surface`, `ZoneRule::surface`; the checks take the named
+  surfaces as `ZoneTargets::surfaces` / `CaseTargets::surfaces`). Still
+  version 1: older files read the same.
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it) —

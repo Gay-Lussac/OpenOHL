@@ -8,6 +8,22 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-23
+
+**A TIN layer per clearance rule (owner, 2026-10-23)**
+
+- A rule of the Vertical and Radial clearances windows checks a terrain
+  surface, LiDAR classes, or both; the surface is now chosen per rule:
+  none, the surface of the checks (as before), or any TIN layer of the
+  project by name. In the rule file a ground rule's `surface = "name"`.
+- The named surfaces are read from the project when a check starts (the
+  one shown and the checks' surface shared), in the windows, the
+  Clearances page, `ohl zones` and `ohl line FILE.ohl --rules`; a name
+  the project does not hold is noted and the rule not checked (never
+  passed silently).
+- Not yet in the thermal limit: a rule naming a surface is skipped there
+  as having no ground.
+
 ## 2026-10-22
 
 **Elevations as stick figures with their heights (owner, 2026-10-22)**

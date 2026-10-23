@@ -253,6 +253,12 @@ structure body) and O7 (the line and its structures solved together).
   settings and shown by the sheet preview. Left: members with a
   `[[section]]` table of their own (no profile) stay lines (decided); no
   GPU instancing (the geometry is shared per type and moved on the CPU).
+- **U10. Named TIN layers in the thermal limit** (2026-10-23, not
+  started): clearance rules may name a terrain surface of their own
+  (built, in active development, not approved yet: the clearance
+  windows, the Clearances page, `ohl zones`, `ohl line --rules`); the
+  thermal limit does not read them yet and skips such a rule (no
+  ground).
 - **U9. New project lines are full copies** (asked by the owner,
   2026-10-22, not started): starting a project line (Versions) writes
   every object of the line it starts from again under the new line's

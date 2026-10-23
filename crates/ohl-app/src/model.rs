@@ -1282,6 +1282,32 @@ impl Model {
         }
     }
 
+    /// The terrain surfaces called `names` (the rules' own surfaces,
+    /// [`ohl_clearance::Rule::surface`]): those this model holds (the
+    /// surface shown, the checks' surface) shared, and the names of the
+    /// others, to read from the project file ([`surfaces_read`]).
+    pub fn held_surfaces(
+        &self,
+        names: &[String],
+    ) -> (Vec<(String, std::sync::Arc<Terrain>)>, Vec<String>) {
+        let mut held = Vec::new();
+        let mut missing = Vec::new();
+        for n in names {
+            let have = if self.surface_settings.active.as_ref() == Some(n) {
+                self.ground.clone()
+            } else if self.check_surface.as_ref() == Some(n) {
+                self.ground_for_checks()
+            } else {
+                None
+            };
+            match have {
+                Some(t) => held.push((n.clone(), t)),
+                None => missing.push(n.clone()),
+            }
+        }
+        (held, missing)
+    }
+
     /// Reads the surface of the checks when it is not read yet (a check
     /// needs it).
     pub fn ensure_check_ground(&mut self) {
@@ -2326,4 +2352,56 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         }
     }
     Ok(model)
+}
+
+/// The terrain surfaces a check needs by name: those held already, and
+/// the project file and the names of those to read on the check's thread
+/// ([`Model::held_surfaces`], [`surfaces_read`]).
+#[derive(Debug, Clone, Default)]
+pub struct NamedSurfaces {
+    /// Held: (name, surface).
+    pub held: Vec<(String, std::sync::Arc<Terrain>)>,
+    /// The project file.
+    pub file: std::path::PathBuf,
+    /// The names to read from it.
+    pub missing: Vec<String>,
+}
+
+impl NamedSurfaces {
+    /// Those of `model` that `names` call.
+    pub fn of(model: &Model, names: impl IntoIterator<Item = String>) -> Self {
+        let mut names: Vec<String> = names.into_iter().collect();
+        names.sort();
+        names.dedup();
+        let (held, missing) = model.held_surfaces(&names);
+        Self {
+            held,
+            file: model.sources.file.clone(),
+            missing,
+        }
+    }
+
+    /// All of them, the missing ones read ([`surfaces_read`]).
+    pub fn read(&self) -> Vec<(String, std::sync::Arc<Terrain>)> {
+        surfaces_read(&self.file, self.held.clone(), &self.missing)
+    }
+}
+
+/// The surfaces `held` and those called `missing` read from project
+/// `file` (one not read is left out: the check notes it as missing).
+///
+/// Expected cost: reading each missing surface from the project file
+/// (about a second per million triangles); run on a check's own thread.
+pub fn surfaces_read(
+    file: &std::path::Path,
+    mut held: Vec<(String, std::sync::Arc<Terrain>)>,
+    missing: &[String],
+) -> Vec<(String, std::sync::Arc<Terrain>)> {
+    for n in missing {
+        match crate::surfaces::load(file, n) {
+            Ok(t) => held.push((n.clone(), std::sync::Arc::new(t))),
+            Err(e) => log::warn!("terrain surface {n}: {e}"),
+        }
+    }
+    held
 }

@@ -158,6 +158,7 @@ pub fn first_rule() -> ZoneRule {
         distance: Requirement::Fixed(0.0),
         classes: Vec::new(),
         ground: true,
+        surface: None,
         wires: ohl_clearance::Wires::Both,
         width: None,
     }
@@ -169,7 +170,7 @@ pub fn not_ready(r: &ZoneRule) -> Option<String> {
         Some(format!("\"{}\": {p}", r.name))
     } else if !r.ground && r.classes.is_empty() {
         Some(format!(
-            "\"{}\": choose its targets (the ground or LiDAR classes)",
+            "\"{}\": choose its targets (a terrain surface and/or LiDAR classes)",
             r.name
         ))
     } else {
@@ -523,6 +524,14 @@ impl ZoneWindow {
         let library = model.library.clone();
         let cloud = model.cloud.clone();
         let ground = model.ground_for_checks();
+        // The surfaces the rules name (read on the check's thread).
+        let named = crate::model::NamedSurfaces::of(
+            model,
+            rules
+                .iter()
+                .filter(|r| r.ground)
+                .filter_map(|r| r.surface.clone()),
+        );
         let zone = self.zone;
         let check = self.check.clone();
         // The route worked on only (View › Work on route).
@@ -536,8 +545,10 @@ impl ZoneWindow {
         self.stamp.started(model.revision());
         self.rules_hash.0 = Some(self.settings_hash());
         std::thread::spawn(move || {
+            let surfaces = named.read();
             let r = run(
-                &line, &library, zone, &check, rules, states, arc, cloud, ground, scope, &d, &c,
+                &line, &library, zone, &check, rules, states, arc, cloud, ground, &surfaces, scope,
+                &d, &c,
             );
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -1210,7 +1221,7 @@ impl ZoneWindow {
                             }
                             self.dirty |= wires_ui(ui, (self.zone.measure, k), r);
                             self.dirty |=
-                                targets_ui(ui, (self.zone.measure, k), r, &classes, &model.scheme);
+                                targets_ui(ui, (self.zone.measure, k), r, &classes, model);
                             ui.horizontal(|ui| {
                                 if ui.small_button("Duplicate").clicked() {
                                     duplicate = Some(k);
@@ -1295,7 +1306,7 @@ impl ZoneWindow {
                         ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(200.0));
                         ui.end_row();
                         ui.label("What");
-                        targets_ui(ui, (measure, usize::MAX), d, &classes, &model.scheme);
+                        targets_ui(ui, (measure, usize::MAX), d, &classes, model);
                         ui.end_row();
                         // The distance first: whether a voltage means
                         // anything follows from it.
@@ -1547,10 +1558,15 @@ fn run(
     arc: Option<ohl_clearance::positions::BandMargins>,
     cloud: Option<String>,
     ground: Option<Arc<ohl_terrain::Terrain>>,
+    surfaces: &[(String, Arc<ohl_terrain::Terrain>)],
     scope: Option<std::collections::BTreeSet<String>>,
     done: &AtomicUsize,
     cancel: &CancelToken,
 ) -> Result<Report, String> {
+    let surfaces: Vec<(String, &ohl_terrain::Terrain)> = surfaces
+        .iter()
+        .map(|(n, t)| (n.clone(), t.as_ref()))
+        .collect();
     let budget = Budget::new()
         .time_limit(TIME_BUDGET)
         .cancel_token(cancel.clone());
@@ -1572,6 +1588,7 @@ fn run(
         arc,
         cloud.is_some().then_some(&read as _),
         ground.as_deref(),
+        &surfaces,
         scope.as_ref(),
         &budget,
         done,
@@ -1771,18 +1788,26 @@ fn wires_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule) -> bool {
     changed
 }
 
-/// The targets of a rule: LiDAR classes and the ground, ticked.
+/// The targets of a rule: a terrain surface (none, the checks' or a TIN
+/// layer by name) and LiDAR classes, either or both.
 fn targets_ui(
     ui: &mut egui::Ui,
     id: (Measure, usize),
     r: &mut ZoneRule,
     classes: &[(u8, String)],
-    scheme: &ohl_lidar::ClassScheme,
+    model: &Model,
 ) -> bool {
+    let scheme = &model.scheme;
     let mut changed = false;
     let mut parts: Vec<String> = r.classes.iter().map(u8::to_string).collect();
     if r.ground {
-        parts.insert(0, "ground".into());
+        parts.insert(
+            0,
+            match &r.surface {
+                Some(n) => format!("TIN {n}"),
+                None => "ground".into(),
+            },
+        );
     }
     let title = if parts.is_empty() {
         "choose…".to_owned()
@@ -1797,10 +1822,37 @@ fn targets_ui(
     };
     ui.push_id(("zone-targets", id.0.as_str(), id.1), |ui| {
         crate::menu::options_menu(ui, &title, |ui| {
-            changed |= ui
-                .checkbox(&mut r.ground, "Ground surface")
-                .on_hover_text("The terrain surface of the checks (Terrain menu)")
-                .changed();
+            ui.label(egui::RichText::new("Terrain surface (TIN)").small().weak());
+            let mut choice = (r.ground, r.surface.clone());
+            ui.radio_value(&mut choice, (false, None), "none");
+            let checks = match &model.check_surface {
+                Some(n) => format!("the surface of the checks ({n})"),
+                None => "the surface of the checks (the ground shown)".to_owned(),
+            };
+            ui.radio_value(&mut choice, (true, None), checks)
+                .on_hover_text("The project's surface for the checks (Terrain menu)");
+            let in_project = crate::surfaces::names(model);
+            let mut names = in_project.clone();
+            if let Some(n) = &r.surface
+                && !names.contains(n)
+            {
+                // Named by a rule file but not in the project: kept, said.
+                names.push(n.clone());
+            }
+            for n in names {
+                let known = in_project.contains(&n);
+                let text = if known {
+                    n.clone()
+                } else {
+                    format!("{n} (not in the project)")
+                };
+                ui.radio_value(&mut choice, (true, Some(n)), text)
+                    .on_hover_text("This TIN layer, whatever the surface of the checks");
+            }
+            if choice != (r.ground, r.surface.clone()) {
+                (r.ground, r.surface) = choice;
+                changed = true;
+            }
             ui.separator();
             ui.label(egui::RichText::new("LiDAR classes").small().weak());
             egui::ScrollArea::vertical()
