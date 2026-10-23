@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Falling trees measured to the subconductors (owner, 2026-10-23)**
+
+- Compared with another program's report on a real line, the
+  falling-tree margins of the same trees were 0.2–0.3 m more severe
+  here: the distance is measured to the outer surface of the
+  subconductors of the bundle (radius of a bundle of three at 0.4 m:
+  0.23 m), where the other program seems to measure to the bundle's
+  centre line. The owner: measuring to the conductors in the bundle is
+  right; no option to measure to the centre line, the core unchanged.
+
 **Library files with every project line (owner, 2026-10-23)**
 
 - A line made from a revision, a tag or a bundle gets that revision's
