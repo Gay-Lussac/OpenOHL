@@ -35,7 +35,10 @@
 //! **Lines kept as differences** (schema 6): a line started since keeps
 //! the revision it starts from as its **base** (`vc_ref.base`) and only
 //! what it changes in `model_object`: the objects it changed or added
-//! since, and a **tombstone** (`gone` = 1) for each one it deleted. Its
+//! since, a **tombstone** (`gone` = 1) for each one it deleted, and a
+//! **place** (`gone` = 2: no JSON) for an object of the base it holds
+//! unchanged at another place among its kind (library files listed in
+//! another order than the revision's). Its
 //! state is the base revision's (objects and library files) with its rows
 //! laid over it; revisions are never deleted, so a line keeps its base
 //! when the line it came from is deleted or renamed. A line without a
@@ -210,6 +213,38 @@ pub(crate) fn line_base(conn: &Connection, name: &str) -> Result<Option<String>,
         .flatten())
 }
 
+/// Writes the place of object `kind`/`id` of line `line`: its base's
+/// object, unchanged, at place `o.ord` (`gone` = 2, no JSON).
+pub(crate) fn write_place(
+    conn: &Connection,
+    line: &str,
+    kind: Kind,
+    id: &str,
+    o: &Object,
+) -> Result<(), SessionError> {
+    conn.prepare_cached(
+        "INSERT INTO model_object (line, kind, id, ord, version, json, gone) VALUES (?1, ?2, ?3, ?4, ?5, 'null', 2)
+         ON CONFLICT(line, kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version,
+             json = excluded.json, gone = excluded.gone",
+    )?
+    .execute(params![line, kind.as_str(), id, o.ord, o.version])?;
+    Ok(())
+}
+
+/// Per line, its base's objects at a place of their own: (place,
+/// version) by object.
+pub(crate) type Places = BTreeMap<String, BTreeMap<(Kind, String), (i64, i64)>>;
+
+/// One row a line kept as differences holds ([`overlay`]).
+pub(crate) enum Row<'a> {
+    /// An object changed or added.
+    Object(&'a Object),
+    /// An object of the base at another place.
+    Place(&'a Object),
+    /// An object of the base deleted.
+    Gone,
+}
+
 /// Writes object `kind`/`id` of line `line` (`None`: a tombstone, the
 /// object of its base deleted).
 pub(crate) fn write_row(
@@ -345,21 +380,22 @@ fn same_object(a: &Object, b: &Object) -> bool {
 }
 
 /// The rows a line based on `base` keeps to hold `objects`: the objects
-/// changed (place or JSON) or added (`Some`), and the objects of the base
-/// deleted (`None`: tombstones).
-fn overlay<'a>(
-    objects: &'a Objects,
-    base: &'a Objects,
-) -> Vec<(&'a (Kind, String), Option<&'a Object>)> {
+/// changed or added, those of the base held unchanged at another place
+/// (their place only), and those of the base deleted (tombstones).
+fn overlay<'a>(objects: &'a Objects, base: &'a Objects) -> Vec<(&'a (Kind, String), Row<'a>)> {
     let mut out = Vec::new();
     for (k, o) in objects {
-        if !base.get(k).is_some_and(|b| same_object(b, o)) {
-            out.push((k, Some(o)));
+        match base.get(k) {
+            Some(b) if same_object(b, o) => {}
+            Some(b) if Arc::ptr_eq(&b.value, &o.value) || same(&b.value, &o.value) => {
+                out.push((k, Row::Place(o)));
+            }
+            _ => out.push((k, Row::Object(o))),
         }
     }
     for k in base.keys() {
         if !objects.contains_key(k) {
-            out.push((k, None));
+            out.push((k, Row::Gone));
         }
     }
     out
@@ -456,6 +492,7 @@ impl Session {
         &mut self,
         mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>>,
         gone: BTreeMap<String, BTreeSet<(Kind, String)>>,
+        placed: Places,
     ) -> Result<(), SessionError> {
         // Frozen project lines of earlier files: editable lines now.
         // (Files made since schema 4 have no such table.)
@@ -515,6 +552,12 @@ impl Session {
             let mut objects = bases[&base].clone();
             for k in gone.get(&r.name).into_iter().flatten() {
                 objects.remove(k);
+            }
+            for (k, &(ord, version)) in placed.get(&r.name).into_iter().flatten() {
+                if let Some(o) = objects.get_mut(k) {
+                    o.ord = ord;
+                    o.version = version;
+                }
             }
             objects.extend(by_line.remove(&r.name).unwrap_or_default());
             by_line.insert(r.name.clone(), objects);
@@ -814,8 +857,12 @@ impl Session {
             // Only what differs from the base: nothing, or a few library
             // files placed otherwise.
             Some((_, base)) => {
-                for (k, o) in overlay(&objects, base) {
-                    write_row(&tx, &name, k.0, &k.1, o)?;
+                for (k, row) in overlay(&objects, base) {
+                    match row {
+                        Row::Object(o) => write_row(&tx, &name, k.0, &k.1, Some(o))?,
+                        Row::Place(o) => write_place(&tx, &name, k.0, &k.1, o)?,
+                        Row::Gone => write_row(&tx, &name, k.0, &k.1, None)?,
+                    }
                 }
             }
             None => write_objects(&tx, &name, &objects)?,

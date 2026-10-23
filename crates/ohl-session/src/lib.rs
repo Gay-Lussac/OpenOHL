@@ -1420,6 +1420,8 @@ impl Session {
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         // Tombstones of lines kept as differences ([`lines`]).
         let mut gone: BTreeMap<String, BTreeSet<(Kind, String)>> = BTreeMap::new();
+        // Their base's objects at a place of their own (`gone` = 2).
+        let mut placed: lines::Places = BTreeMap::new();
         {
             let mut stmt =
                 conn.prepare("SELECT line, kind, id, ord, version, json, gone FROM model_object")?;
@@ -1431,12 +1433,19 @@ impl Session {
                     r.get::<_, i64>(3)?,
                     r.get::<_, i64>(4)?,
                     r.get::<_, String>(5)?,
-                    r.get::<_, bool>(6)?,
+                    r.get::<_, i64>(6)?,
                 ))
             })?;
             for row in rows {
-                let (line, kind, id, ord, version, text, deleted) = row?;
-                if deleted {
+                let (line, kind, id, ord, version, text, gone_as) = row?;
+                if gone_as == 2 {
+                    placed
+                        .entry(line)
+                        .or_default()
+                        .insert((Kind::parse(&kind)?, id), (ord, version));
+                    continue;
+                }
+                if gone_as == 1 {
                     gone.entry(line)
                         .or_default()
                         .insert((Kind::parse(&kind)?, id));
@@ -1533,7 +1542,7 @@ impl Session {
             others: BTreeMap::new(),
             renamed: None,
         };
-        session.load_lines(by_line, gone)?;
+        session.load_lines(by_line, gone, placed)?;
         Ok(session)
     }
 
