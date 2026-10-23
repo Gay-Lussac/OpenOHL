@@ -72,6 +72,7 @@ built-in look).
 | `[title_block]` | `corner` (`bottom_right`, `bottom_left`), `width` (`"auto"`: across the frame), `columns` (a length, `"*"` the room left, `"logos"` the export's logos), `rows`, `line`, `grid` | a grid in a corner |
 | `[[title_block.cell]]` | `at = [row, column]`, `span`, `text`, `size`, `bold`, `align` (`left`, `centre`, `right`), `image` (an image's name, or `"{logos}"`) | its cells |
 | `[revisions]` | `place` (`"above_title_block"`, `"off"`), `rows`, `row_height`, `size`, `columns = [{ title, width, value }]` | the last revisions, newest at the top |
+| `[stringing_table]` | `place` (`"bottom"`: in the bottom row beside the title block, after the key map; `"above_title_block"`; `"off"`, the default), `rows` (8; the room kept on every sheet), `row_height`, `size`, `columns = [{ title, width, value }]` | the tension sections on the sheet, one row per section and circuit (the earth wires last), with their stringing tension; more rows than `rows`: the last says how many are left out, with a warning |
 | `[[note]]` | `at = [x, y]` (negative: from the right / bottom), `width`, `size`, `bold`, `text` | free texts |
 | `[[field]]` | `key`, `label`, `default`, `required`, `per_sheet` | values the user gives |
 | `[if_empty]` | `height_datum = "…"`, any field, `"*"` (every other) | what a field that comes out empty is written as |
@@ -94,7 +95,12 @@ Texts take placeholders `{name}` or `{name:format}`:
   `[[revision]]`);
 - **revision rows** (`[revisions]` columns): `rev.index`, `rev.date`,
   `rev.text`, `rev.by`, `rev.checked` — the rows kept with the drawing
-  settings, or `--revision "A;2026-10-20;first issue;AB;CD"`.
+  settings, or `--revision "A;2026-10-20;first issue;AB;CD"`;
+- **stringing rows** (`[stringing_table]` columns): `st.from`, `st.to`
+  (the tension section's end structures along the route),
+  `st.circuit` (the earth wires: the `earth_wires` word),
+  `st.tension` (kN, the lowest–highest of its spans), `st.case` (the
+  stringing case, `[cases] stringing`).
 
 Formats: `{sheet:03}` (zero padded), `{hscale:.0}` (decimals),
 `{date:%d.%m.%Y}`, `{from:km}` (`0+640.0`, the default) or `{from:m}`
@@ -367,7 +373,7 @@ in PDF, drawn in PNG, left out of DXF (said in the export's warnings).
 The title block, its filled fields, the revision table, the band rows,
 the legend, the key map, the corridor, the versions and the lines below
 the lowest conductor have their own DXF layers (`OHL_TITLE`,
-`OHL_TITLE_FIELDS`, `OHL_REVISIONS`, `OHL_BANDS`, `OHL_LEGEND`,
+`OHL_TITLE_FIELDS`, `OHL_REVISIONS`, `OHL_STRINGING`, `OHL_BANDS`, `OHL_LEGEND`,
 `OHL_KEY_MAP`, `OHL_CORRIDOR`, `OHL_VERSIONS`, `OHL_CONDUCTOR_CLEARANCE`,
 `OHL_LIDAR`, `OHL_BACKGROUND_DRAWINGS`; the ground along the corridor's edges on `OHL_GROUND_SIDE`).
 

@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**A stringing table on the sheets (owner, 2026-10-23)**
+
+- The owner asked for the list of tension sections with their stringing
+  tension on the sheet (ESTI 235, 2.2.2 a): a template table
+  `[stringing_table]`, one row per tension section on the sheet and
+  circuit (from structure, to structure, circuit, tension in kN, the
+  stringing case), the earth wires last. In the bottom row beside the
+  title block it keeps the profile's height (on a real line's A1 sheets
+  the profile was 44 mm lower with it above the title block). The room
+  is the same on every sheet; a sheet with more rows says so. The
+  stringing band stays a choice of the template.
+
 **Wind perpendicular to each span kept (owner, 2026-10-23)**
 
 - Wind keeps acting horizontally and perpendicular to each span, at the

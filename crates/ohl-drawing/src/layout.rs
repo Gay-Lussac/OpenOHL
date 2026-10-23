@@ -2503,8 +2503,10 @@ pub(crate) struct Paper {
     inner: furniture::Rect,
     /// The title block.
     pub(crate) title_block: furniture::Rect,
-    /// The revision table, the legend, the key map, the scale bars.
+    /// The revision table, the stringing table, the legend, the key map,
+    /// the scale bars.
     revisions: Option<furniture::Rect>,
+    stringing_table: Option<furniture::Rect>,
     legend: Option<furniture::Rect>,
     key_map: Option<furniture::Rect>,
     scale_bars: Option<furniture::Rect>,
@@ -2591,6 +2593,10 @@ impl Paper {
                 Some(t.revisions.columns.iter().map(|c| c.width.0).sum()),
             )
         });
+        let st = &t.stringing_table;
+        let st_w: f64 = st.columns.iter().map(|c| c.width.0).sum();
+        let mut stringing_table = (st.place == "above_title_block" && !st.columns.is_empty())
+            .then(|| stack(furniture::stringing_table_height(t), Some(st_w)));
         let legend_w = t.legend.width.map(|w| w.0);
         let mut legend =
             (t.legend.place == "above_title_block").then(|| stack(t.legend.height.0, legend_w));
@@ -2615,6 +2621,9 @@ impl Paper {
         };
         let key_map =
             (t.key_map.place == "bottom").then(|| place(t.key_map.width.0, t.key_map.height.0));
+        if st.place == "bottom" && !st.columns.is_empty() {
+            stringing_table = Some(place(st_w, furniture::stringing_table_height(t)));
+        }
         if t.legend.place == "bottom" {
             legend = Some(place(legend_w.unwrap_or(120.0), t.legend.height.0));
         }
@@ -2665,6 +2674,7 @@ impl Paper {
             inner,
             title_block,
             revisions,
+            stringing_table,
             legend,
             key_map,
             scale_bars,
@@ -3113,12 +3123,16 @@ fn draw_some(
             }
             let notes = furniture::notes(items, t, paper.inner, &values);
             let mut warnings = sl.warnings.clone();
+            if let Some(r) = paper.stringing_table {
+                warnings.extend(furniture::stringing_table(items, t, r, &values, d, s0, s1));
+            }
             // A note over the title block, the revisions, the legend, the
             // key map or the scale bars: said (the template places notes).
             for (k, n) in notes.iter().enumerate() {
                 for (what, r) in [
                     ("the title block", Some(paper.title_block)),
                     ("the revision table", paper.revisions),
+                    ("the stringing table", paper.stringing_table),
                     ("the legend", paper.legend),
                     ("the key map", paper.key_map),
                     ("the scale bars", paper.scale_bars),

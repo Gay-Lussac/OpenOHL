@@ -729,6 +729,10 @@ pub struct Stringing {
     pub from: f64,
     /// Its end.
     pub to: f64,
+    /// The structures at its start and its end (ids).
+    pub from_structure: String,
+    /// The structure at its end.
+    pub to_structure: String,
     /// Per circuit (its system's name; `None`: the earth wires): the
     /// lowest and highest horizontal tension of its wires' spans, N per
     /// subconductor.
@@ -1277,7 +1281,11 @@ impl RouteDrawing {
             let (Some(sa), Some(sb)) = (station(&a.structure), station(&b.structure)) else {
                 continue;
             };
-            let (from, to) = (sa.min(sb), sa.max(sb));
+            let ((from, from_structure), (to, to_structure)) = if sa <= sb {
+                ((sa, &a.structure), (sb, &b.structure))
+            } else {
+                ((sb, &b.structure), (sa, &a.structure))
+            };
             let hs = shape
                 .spans
                 .iter()
@@ -1299,6 +1307,8 @@ impl RouteDrawing {
                     out.push(Stringing {
                         from,
                         to,
+                        from_structure: from_structure.clone(),
+                        to_structure: to_structure.clone(),
                         tensions: Vec::new(),
                         case: case.to_owned(),
                     });
@@ -2245,6 +2255,75 @@ pub(crate) mod tests {
         assert_eq!(CasesSpec::pick("10 °C", &cases), Some(2));
         assert_eq!(CasesSpec::pick("10°C", &cases), Some(2));
         assert_eq!(CasesSpec::pick("80 °C", &cases), None);
+    }
+
+    /// The stringing table: one row per tension section on the sheet and
+    /// circuit, from its first structure along the route to its last,
+    /// with the tension in kN; in the bottom row or above the title block;
+    /// too few rows: the last says how many are left out, and a warning.
+    #[test]
+    fn the_stringing_table_lists_the_sections_on_the_sheet() {
+        let (line, shapes, ..) = solved();
+        let mut d = main_route(&Options::default());
+        d.set_stringing(&line, &shapes, "10 °C");
+        for s in &d.stringing {
+            let at = |id: &str| d.structures.iter().find(|m| m.id == id).unwrap().station;
+            assert!(at(&s.from_structure) < at(&s.to_structure), "{s:?}");
+        }
+        let first = d.stringing[0].clone();
+        let rows: usize = d.stringing.iter().map(|s| s.tensions.len()).sum();
+        let table = |place: &str, n: usize| {
+            let mut t = SheetTemplate::builtin();
+            t.stringing_table = toml::from_str(&format!(
+                "place = \"{place}\"\nrows = {n}\ncolumns = [{{ title = \"From\", width =                  \"20 mm\", value = \"{{st.from}}\" }}, {{ title = \"To\", width = \"20 mm\",                  value = \"{{st.to}}\" }}, {{ title = \"Tension\", width = \"30 mm\", value =                  \"{{st.tension}} kN at {{st.case}}\" }}]"
+            ))
+            .unwrap();
+            let o = Options {
+                template: Arc::new(t),
+                ..Options::default()
+            };
+            sheets(&d, &o, &page_format("A1").unwrap())
+        };
+        for place in ["bottom", "above_title_block"] {
+            let s = table(place, 40);
+            let svg: String = s.iter().map(Sheet::svg).collect();
+            assert!(
+                svg.contains(&format!(">{}<", first.from_structure)),
+                "{place}"
+            );
+            assert!(svg.contains(" kN at 10 °C<"), "{place}");
+            assert!(
+                s.iter()
+                    .all(|x| x.warnings.iter().all(|w| !w.contains("stringing table")))
+            );
+            let drawn = s
+                .iter()
+                .flat_map(|x| &x.drawing.items)
+                .filter(|i| matches!(i, crate::model::Item::Text(t) if t.layer == crate::model::Layer::Stringing))
+                .count();
+            // A heading per column, a text per row and column.
+            assert!(
+                drawn >= 3 * (rows + 1),
+                "{place}: {drawn} texts for {rows} rows"
+            );
+        }
+        if rows > 1 {
+            let s = table("bottom", 1);
+            assert!(
+                s.iter()
+                    .flat_map(|x| &x.warnings)
+                    .any(|w| w.contains("the stringing table holds 1 rows")),
+                "no warning"
+            );
+            assert!(s.iter().any(|x| x.svg().contains("… +")));
+        }
+        let err = SheetTemplate::parse(
+            "format = \"ohl-sheet-template\"\nversion = 1\n[stringing_table]\nplace =              \"bottom\"\ncolumns = [{ title = \"x\", width = \"9 mm\", value = \"{st.nothing}\" }]",
+            None,
+            &[],
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown field {st.nothing}"), "{err}");
     }
 
     fn warnings_of(d: &RouteDrawing, o: &Options) -> Vec<String> {

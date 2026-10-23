@@ -93,6 +93,9 @@ pub enum Layer {
     TitleImage,
     /// The revision table.
     Revisions,
+    /// The stringing table: the tension sections with their circuits'
+    /// stringing tensions ([`crate::template::StringingTableSpec`]).
+    Stringing,
     /// Band rows under the profile.
     Bands,
     /// The legend.
@@ -118,7 +121,7 @@ pub enum Layer {
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -139,6 +142,7 @@ impl Layer {
         Self::TitleFields,
         Self::TitleImage,
         Self::Revisions,
+        Self::Stringing,
         Self::Bands,
         Self::Legend,
         Self::KeyMap,
@@ -173,6 +177,7 @@ impl Layer {
             Self::TitleFields => "OHL_TITLE_FIELDS",
             Self::TitleImage => "OHL_TITLE_IMAGE",
             Self::Revisions => "OHL_REVISIONS",
+            Self::Stringing => "OHL_STRINGING",
             Self::Bands => "OHL_BANDS",
             Self::Legend => "OHL_LEGEND",
             Self::KeyMap => "OHL_KEY_MAP",
@@ -196,6 +201,7 @@ impl Layer {
             | Self::TitleFields
             | Self::TitleImage
             | Self::Revisions
+            | Self::Stringing
             | Self::Bands
             | Self::Legend
             | Self::KeyMap => Color::BLACK,
