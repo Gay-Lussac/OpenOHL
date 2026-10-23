@@ -1592,6 +1592,20 @@ fn profile_part(
                 title: Some(m.id.clone()),
             }));
         }
+        // Its strings: from where each hangs to its wire point, a little
+        // heavier than the members.
+        let string_pen = crate::style::structure_pen(&o.template, role, lp(o, own, "#333", 0.4));
+        for s in &m.strings {
+            out.push(path(
+                own,
+                vec![
+                    [f.x(s.top[0]), y(s.top[2])],
+                    [f.x(s.bottom[0]), y(s.bottom[2])],
+                ],
+                string_pen.clone(),
+                Some(format!("{} string {}", m.id, s.label)),
+            ));
+        }
     }
     for (w, role, label) in all_wires(d, o) {
         let layer = if label.is_some() {
@@ -1754,13 +1768,22 @@ fn elevations_of(d: &RouteDrawing, o: &Options) -> Vec<ElevationDrawing> {
                 f
             };
             let of = |l: &Vec<[f64; 3]>| l.iter().map(|p| [p[1] - m.offset, p[2]]).collect();
-            let figure: Vec<Vec<[f64; 2]>> = if e.stick {
+            let mut figure: Vec<Vec<[f64; 2]>> = if e.stick {
                 schematic()
             } else if m.members.is_empty() {
                 m.sticks.iter().map(of).collect()
             } else {
                 m.members.iter().map(of).collect()
             };
+            // Its strings (the schematic figure has them already).
+            if !e.stick {
+                figure.extend(m.strings.iter().map(|st| {
+                    vec![
+                        [st.top[1] - m.offset, st.top[2]],
+                        [st.bottom[1] - m.offset, st.bottom[2]],
+                    ]
+                }));
+            }
             let mut lines: Vec<(Vec<[f64; 2]>, bool)> = figure
                 .iter()
                 .map(|l| (l.iter().map(|p| at(p[0], p[1])).collect(), false))
