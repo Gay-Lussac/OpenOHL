@@ -2588,10 +2588,16 @@ impl Drawings {
         self.template_job = Some(crate::sheet_ui::read_plugins(dirs));
     }
 
-    /// Opens the window (with the settings it had when last closed).
+    /// Opens the window (with the settings it had when last closed); the
+    /// plugins' sheet templates read again (a template file changed since
+    /// is taken without restarting).
     pub fn open(&mut self) {
         if self.window.is_none() {
             self.window = Some(self.last.clone());
+            if !self.template_plugins.is_empty() {
+                self.template_job =
+                    Some(crate::sheet_ui::read_plugins(self.template_plugins.clone()));
+            }
         }
     }
 
