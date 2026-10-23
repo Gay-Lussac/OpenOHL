@@ -143,6 +143,51 @@ memory.
 > **Owner:** (2026-10-19) Add the evaluation of the conductor jump when the
 > ice drops suddenly.
 
+### O14. Situation plans, phase plans and plan sets exported at once
+Two kinds of drawing beside the plan-and-profile sheets, and a way to
+export a whole set of plans in one go, each kind with templates (built
+in, and as plugin presets — a utility's own templates in its plugin).
+Proposed (to discuss; nothing built yet):
+
+1. **Situation plan** — the plan alone, at an overview scale (e.g.
+   1:5000 to 1:25 000; the template's), the line drawn on a background:
+   - the line's axis, its structures (numbered), the corridor, the other
+     lines and project lines in their roles, crossings marked; legend,
+     north arrow, scale bar, title block from the sheet template;
+   - background: the project's orthophotos and DXF drawings (as under the
+     sheets' plan, 2026-10-23) and, if wanted, a background map from a
+     map service chosen in the template (which services, and whether the
+     program may fetch from one, to decide);
+   - laid out on sheets along the route (overlapping, a key of the
+     sheets), or one sheet of the whole line fitted to a paper size (the
+     paper optimisation of 2026-10-22).
+2. **Phase plan** — which conductor (circuit and phase) hangs where on
+   every structure along the line:
+   - a diagram along the line: one column per structure (number, type),
+     one row per wire position (arms, left and right; earth wires on
+     top), each wire marked with its circuit and phase in the phase
+     colours, transpositions shown where a phase changes position;
+   - the structures' heads (the elevations of 2026-10-22, schematic) with
+     their positions labelled, once per type or per structure;
+   - taken from the line as it is (sections, circuits, phases, wire
+     points): nothing typed twice.
+3. **Plan sets, exported at once** — a set names the drawings to make
+   (plan and profile, situation plan, phase plan, …), each with its
+   template, scales, routes and options; one command in the app (File ›
+   Export › Plan set…) and on the command line (`ohl drawing --set
+   FILE`) writes them all, named by a pattern (e.g.
+   `{project}-{kind}-{route}-{sheet}`), optionally as one PDF; a set can
+   be kept in the project and given by a plugin with its templates.
+4. **Plugin presets** — a plugin gives its situation-plan and phase-plan
+   templates and a plan set (sheet templates already come from plugins,
+   2026-10-20).
+
+> **Owner:** (2026-10-23) Set up a roadmap for situation plans and phase
+> plans; export them automatically too; templates in the plugin.
+> **Owner:** (to answer) Scales of the situation plan; a background map
+> from a service, and which; what the phase plan must show (the diagram,
+> the heads, both); the plans of a set and their naming.
+
 *In Part B:* O6 (clearances from the strings and conductors to the
 structure body) and O7 (the line and its structures solved together).
 *In Part C:* O9 (design-code loads, the broken-wire case of a section).
