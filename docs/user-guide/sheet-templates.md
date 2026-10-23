@@ -161,11 +161,14 @@ structures and every `every`), `span_length`, `structure_height`,
 solid case's lowest wire in each span), `ground_clearance` (only from a
 clearance check's results; empty otherwise, for now always empty in the
 app), `text` (a field of the user, per sheet), `stringing` (since
-2026-10-23: for each tension section — between a section's two end
-structures — on the sheet, one line per circuit with its conductors'
-horizontal tension in the stringing case, and one for the earth wires,
-kN per subconductor, the lowest and highest of its spans as a range,
-`380 kV …: 36.6–38.4 kN`; ticks at the sections' ends; the stringing
+2026-10-23: one line per circuit of the route — its systems by name,
+the earth wires last — and on it each of the circuit's tension sections
+(between a section's two end structures, ticked on that line) with its
+horizontal tension in the stringing case, kN per subconductor, the
+lowest and highest of its spans as a range, `380 kV …: 36.6–38.4 kN`;
+the row is at least as tall as its lines need, whatever the number of
+circuits (the template's `height` its minimum), the same on every sheet
+of a route; the stringing
 case from `[cases]` or the export window, none chosen: empty; its words
 `[legend.labels]` `stringing` and `earth_wires`). The export window and
 `--no-bands` switch them off.
