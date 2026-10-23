@@ -911,6 +911,18 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
     let (s0, s1) = (f.s0, f.s1);
     let grid = lp(o, Layer::Grid, "#ddd", 0.2);
     let prof_bottom = f.prof_top + f.prof_h;
+    // The plan's backgrounds (the project's orthophotos and drawings, when
+    // asked for) under everything else.
+    if f.plan {
+        let rect = [f.left, f.plan_top, f.width(), f.plan_h];
+        let mut under: Vec<Item> = crate::background::photo_item(d, o, f, rect)
+            .into_iter()
+            .collect();
+        under.extend(crate::background::drawing_items(d, o, f, rect));
+        if !under.is_empty() {
+            items.push(Item::Clip(Clip { rect, items: under }));
+        }
+    }
     // Station grid in both panels, labels under the profile (and its
     // bands).
     let s_step = nice_step((s1 - s0).max(1.0), (f.width() / 40.0).max(1.0));
@@ -1069,7 +1081,10 @@ fn draw(items: &mut Vec<Item>, d: &RouteDrawing, o: &Options, f: &Frame) {
         }
         if faded {
             let (more, more_ends, _) = plan_content(d, o, f);
-            let mut all = more;
+            // (The drawings under it; the orthophoto ends at the match
+            // line.)
+            let mut all = crate::background::drawing_items(d, o, f, beyond(plan_rect));
+            all.extend(more);
             all.extend(more_ends);
             items.push(Item::Clip(Clip {
                 rect: beyond(plan_rect),

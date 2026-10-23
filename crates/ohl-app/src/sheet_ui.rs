@@ -92,6 +92,12 @@ pub struct SheetChoice {
     /// `[cases]` (2026-10-23).
     #[serde(default)]
     pub circuit_cases: std::collections::BTreeMap<String, CircuitCases>,
+    /// The project's drawings (DXF) under the plan, on or off (none: as
+    /// the template's `[plan_background] drawings` says).
+    pub background_drawings: Option<bool>,
+    /// The project's orthophotos under the plan, on or off (none: as the
+    /// template's `[plan_background] orthophoto` says).
+    pub background_photo: Option<bool>,
 }
 
 /// LiDAR class codes written `2, 3, 5` (empty: none).
@@ -122,6 +128,8 @@ impl Default for SheetChoice {
             elevation_stick: None,
             lidar_classes: None,
             circuit_cases: Default::default(),
+            background_drawings: None,
+            background_photo: None,
         }
     }
 }

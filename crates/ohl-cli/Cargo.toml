@@ -44,6 +44,7 @@ ohl-lidar.workspace = true
 ohl-pointcloud.workspace = true
 ohl-session.workspace = true
 ohl-drawing.workspace = true
+ohl-background.workspace = true
 ohl-crs.workspace = true
 ohl-io.workspace = true
 ohl-bom.workspace = true
@@ -53,6 +54,10 @@ nalgebra.workspace = true
 serde.workspace = true
 toml.workspace = true
 clap.workspace = true
+
+[dev-dependencies]
+# An invented orthophoto for the tests of the plan's backgrounds.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [lints]
 workspace = true

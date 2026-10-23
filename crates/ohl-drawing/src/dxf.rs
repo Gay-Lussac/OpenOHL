@@ -161,6 +161,13 @@ pub fn write_counted(d: &Drawing) -> (String, usize) {
         hi = [hi[0].max(p[0]), hi[1].max(p[1])];
     };
     let mut images = 0;
+    let mut photos = 0;
+    let background = d.flat().iter().any(|(i, _)| match i {
+        Item::Path(p) => p.layer == Layer::BackgroundDrawings,
+        Item::Text(t) => t.layer == Layer::BackgroundDrawings,
+        Item::Circle(c) => c.layer == Layer::BackgroundDrawings,
+        _ => false,
+    });
     for (item, clip) in d.flat() {
         match item {
             Item::Path(p) => {
@@ -247,6 +254,8 @@ pub fn write_counted(d: &Drawing) -> (String, usize) {
                 e.point(10, at);
                 e.num(40, c.radius);
             }
+            // A photo (the plan's orthophoto): R12 has no images.
+            Item::Image(img) if img.pixels.is_some() => photos += 1,
             Item::Image(img) => {
                 match crate::outline::svg_outlines(&img.href, img.at, img.width, img.height) {
                     Some(lines) => {
@@ -289,6 +298,12 @@ pub fn write_counted(d: &Drawing) -> (String, usize) {
         w.pair(
             999,
             format!("{images} raster image(s) (logos) not written: R12 has no images"),
+        );
+    }
+    if photos > 0 {
+        w.pair(
+            999,
+            format!("{photos} orthophoto(s) of the plan not written: R12 has no images"),
         );
     }
     w.pair(0, "SECTION");
@@ -350,13 +365,23 @@ pub fn write_counted(d: &Drawing) -> (String, usize) {
     w.pair(0, "ENDTAB");
     w.pair(0, "TABLE");
     w.pair(2, "LAYER");
-    w.pair(70, Layer::ALL.len() + 1);
+    // The backgrounds' layers only when drawn (a drawing without them
+    // stays as before; the photo is never written).
+    let layers: Vec<Layer> = Layer::ALL
+        .into_iter()
+        .filter(|l| match l {
+            Layer::BackgroundPhoto => false,
+            Layer::BackgroundDrawings => background,
+            _ => true,
+        })
+        .collect();
+    w.pair(70, layers.len() + 1);
     w.pair(0, "LAYER");
     w.pair(2, "0");
     w.pair(70, 0);
     w.pair(62, 7);
     w.pair(6, "CONTINUOUS");
-    for layer in Layer::ALL {
+    for layer in layers {
         w.pair(0, "LAYER");
         w.pair(2, layer.name());
         w.pair(70, 0);
@@ -511,7 +536,11 @@ mod tests {
         let counts = entity_counts(&pairs);
         assert!(counts["POLYLINE"] > 10 && counts["TEXT"] > 10, "{counts:?}");
         assert_eq!(counts["POLYLINE"], counts["SEQEND"]);
-        for layer in Layer::ALL {
+        // Every layer but the backgrounds' (only when drawn).
+        for layer in Layer::ALL
+            .into_iter()
+            .filter(|l| !matches!(l, Layer::BackgroundDrawings | Layer::BackgroundPhoto))
+        {
             assert!(
                 pairs.iter().any(|(c, v)| *c == 2 && v == layer.name()),
                 "{}",

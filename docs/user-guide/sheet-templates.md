@@ -64,6 +64,7 @@ built-in look).
 | `[corridor]` | `width`, `label` (`{width}`), `pen`, `near_side` (`"right"`, `"left"`), `near`, `far` (pens over `pen`), `profile` | the corridor's edges at ± `width` from the axis, and the ground along them in the profile ([below](#the-corridors-sides-and-the-centreline)) |
 | `[centreline]` | `pen`, `ground` | the axis in the plan; the ground on it in the profile (always solid) |
 | `[lidar]` | `profile`, `plan`, `classes = [2, 3, 5]`, `size`, `cell`, `[lidar.styles] "2" = { colour, size, label }` (a code, `"3-5"` or `"3,4"`) | LiDAR points as dots ([below](#lidar-points)) |
+| `[plan_background]` | `drawings` (`true`, `false` or a list of names), `texts`, `points`, `own_colours`, `pen`, `orthophoto` (`true`, `false` or a list of image layers), `veil`, `dpi`, `quality` | the project's drawings and orthophotos under the plan ([below](#drawings-and-orthophotos-under-the-plan)) |
 | `[elevations]` | `place`, `offset`, `rotation`, `scale`, `labels` (`number`, `type`, `height`, `string_length`, `dimensions`, `arm_heights`), `size`, `stick` (schematic stick figures), `pen` | the structures' elevations on the plan ([Elevations](drawings.md#elevations)); their words in `[legend.labels]`: `elevation_dimension`, `elevation_arm`, `elevation_string` |
 | `[line_styles]` | `by_kind`, `low_voltage_up_to_kv`, `kind_field`, `construction_field`, `cable_dash`, `[line_styles.kinds.hv|lv|telecom|earth] = { colour, width, dash, label }` | wires by kind |
 | `[roles.<role>]` | `label`, `width`, `weight`, `colour`, `dash`, `structure_colour`, `names` | a version of the line in that role |
@@ -144,6 +145,8 @@ without):
 | `isoclearance` | isoclearance {level} | `{level}` |
 | `lidar` | {name} (LiDAR class {class}) | `{name}`, `{class}` (a code or a group's key) |
 | `version` | {label}: {words} | `{label}`, `{words}` |
+| `background_drawing` | drawing {name} | `{name}` (the drawing's name) |
+| `orthophoto` | orthophoto {name} | `{name}` (the image layers) |
 
 The panels' titles are `[layout] plan_title` and `profile_title`; the
 wires' words come from `[line_styles.kinds.*] label` and `[roles.*]
@@ -228,6 +231,81 @@ budget); `ohl drawing` reads them from `--lidar` or `--pointcloud`
 (the class scheme from `--lidar-classes`, else the one stored with the
 points, else ASPRS).
 
+## Drawings and orthophotos under the plan
+
+The project's backgrounds (Terrain › Backgrounds: DXF drawings and
+orthophotos kept in the project file) can be drawn under the plan,
+**straightened along the line** like everything else there: a point at
+station *s* and offset *o* from the axis is drawn at *s* along the sheet
+and *o* across it. They are display only; nothing computed depends on
+them, and the sheet breaks do not move.
+
+```toml
+[plan_background]
+drawings = true            # or ["cadastre", "survey"]; default false
+texts = false              # the drawings' texts
+points = false             # the drawings' points, as dots
+own_colours = false        # else every line in `pen`'s colour
+pen = { colour = "#8c8c8c", width = "0.13 mm" }
+orthophoto = true          # or ["Orthophoto 2024"] (image layers); default false
+veil = 0.6                 # white veil over the photo, 0 (none) to 1
+dpi = 200                  # the photo's resolution on paper, 50 to 600
+quality = 75               # its JPEG quality, 10 to 100
+```
+
+| Key | Default | What |
+|---|---|---|
+| `drawings` | `false` | the project's drawings: `true` every one, or a list of their names |
+| `texts` | `false` | their texts, at their letter height on the ground (at the sheet's scale along the line; left out below 0.5 mm, at most 10 mm), written along the sheet (not turned) |
+| `points` | `false` | their points, as dots of 0.5 mm |
+| `own_colours` | `false` | each line in the drawing's own colour (white drawn black); else every one in `pen`'s colour |
+| `pen` | 0.13 mm, `#8c8c8c` | the drawings' pen (with `own_colours`: its width and dash) |
+| `orthophoto` | `false` | the project's orthophotos: `true` every image layer, or a list of layers; where several cover a point, the last (by layer and name) is drawn |
+| `veil` | `0.6` | a white veil over the photo, so that the line stays readable: each colour mixed with that share of white |
+| `dpi` | `200` | the photo's resolution on paper |
+| `quality` | `75` | its JPEG quality |
+
+**Drawings.** Their lines are taken within three times the line width
+(or the corridor's half width, when wider) of the axis: each segment is
+cut into pieces of at most 2 m before it is straightened, so a long
+straight line beside a bend follows the bend on paper, and cut where it
+leaves that width. Lines on a layer switched off in the DXF are left
+out. On each sheet they are clipped to the plan panel and drawn on the
+layer `OHL_BACKGROUND_DRAWINGS` (SVG, DXF, PDF, PNG), under everything
+else; the legend lists each drawing. Not in the plan's model-space DXF
+(the drawing itself is already in project coordinates there).
+
+**Orthophotos.** Each sheet's plan panel is filled pixel by pixel at
+`dpi`: every pixel's station and offset is taken back to the ground
+(the centreline's segment at that station, the offset along its normal)
+and the photo read there, at the coarsest level of its pyramid that is
+not coarser than the pixel (bilinear between its pixels). The image is
+veiled, written as one JPEG and drawn under everything else on the
+layer `OHL_BACKGROUND_PHOTO`: embedded in SVG, as the JPEG itself in
+PDF, drawn in PNG. **DXF R12 has no images**: the DXF sheets leave it
+out, with a comment in the file and a warning of the export. An A1 plan
+panel of 800 × 150 mm at 200 dpi is about 15 million pixels; a sheet's
+photo has at most 40 million (a lower resolution beyond). The sheet
+preview of the export window draws it at 60 dpi.
+
+**At bends.** The plan is straightened segment by segment, the
+backgrounds exactly like the wires and the structures: on the outside
+of a bend a wedge of ground is not shown, on the inside a wedge is shown
+twice — the wider the panel and the sharper the bend, the larger. The
+axis and everything along it stay true.
+
+The export window's **More of the template** ticks *the project's
+drawings under the plan* and *the project's orthophotos under the plan*
+switch them on or off over the template (on: the names the template
+lists, else every one; kept in the drawing settings). On the command
+line: `--plan-drawings` and `--plan-orthophoto` (alone: the template's
+names, else every one; or `--plan-drawings cadastre,survey`,
+`--plan-orthophoto "Orthophoto 2024"`), `--no-plan-backgrounds`,
+`--plan-background-dpi 150`, and `--backgrounds FILE.ohl` for the
+project file to read them from (default: the line's, when it is a
+project file). Hiding a background in the views does not leave it out
+of the sheets.
+
 ## Versions of the line, kinds and roles
 
 Several versions of the line can be drawn on one sheet — the project
@@ -280,12 +358,15 @@ legend; `mode = "instead"` leaves out the line above the ground. See
 | PDF | embedded as images (SVG drawn at about 300 dpi), cropped to what they cover |
 | DXF R12 | SVG images as their **outlines** (layer `OHL_TITLE_IMAGE`); PNG and JPEG left out, said in the export's warnings (R12 has no images) |
 
+The orthophoto under the plan: embedded in SVG (JPEG), the JPEG itself
+in PDF, drawn in PNG, left out of DXF (said in the export's warnings).
+
 The title block, its filled fields, the revision table, the band rows,
 the legend, the key map, the corridor, the versions and the lines below
 the lowest conductor have their own DXF layers (`OHL_TITLE`,
 `OHL_TITLE_FIELDS`, `OHL_REVISIONS`, `OHL_BANDS`, `OHL_LEGEND`,
 `OHL_KEY_MAP`, `OHL_CORRIDOR`, `OHL_VERSIONS`, `OHL_CONDUCTOR_CLEARANCE`,
-`OHL_LIDAR`; the ground along the corridor's edges on `OHL_GROUND_SIDE`).
+`OHL_LIDAR`, `OHL_BACKGROUND_DRAWINGS`; the ground along the corridor's edges on `OHL_GROUND_SIDE`).
 
 ## What is not there yet
 
@@ -294,4 +375,6 @@ the lowest conductor have their own DXF layers (`OHL_TITLE`,
 - No title block editor in the app: the file is the editor (Save as
   file…, edit, Load file…).
 - The key map has no background image (orthophoto).
-- No DXF 2000 with image references (PNG/JPEG logos in DXF).
+- No DXF 2000 with image references (PNG/JPEG logos and the plan's
+  orthophoto in DXF).
+- The drawings' texts under the plan are not turned with the drawing.

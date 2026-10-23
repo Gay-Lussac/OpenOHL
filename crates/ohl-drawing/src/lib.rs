@@ -48,6 +48,7 @@ use ohl_line::solve::SectionShape;
 use ohl_line::{AlignmentView, Line, Point, Station};
 use ohl_terrain::Terrain;
 
+pub mod background;
 pub mod curves;
 pub mod dxf;
 pub mod export;
@@ -62,6 +63,8 @@ pub mod style;
 mod table;
 pub mod template;
 
+#[cfg(test)]
+mod background_tests;
 #[cfg(test)]
 mod sheet_tests;
 
@@ -138,9 +141,45 @@ pub struct Options {
     /// the legend's names, the dots' colours unless the template gives
     /// them.
     pub class_names: std::collections::BTreeMap<u8, (String, Option<[u8; 3]>)>,
+    /// The project's drawings under the plan switched on or off (none:
+    /// the template's `[plan_background] drawings`; on: the drawings it
+    /// names, else every one).
+    pub background_drawings: Option<bool>,
+    /// The project's orthophotos under the plan switched on or off (none:
+    /// the template's `[plan_background] orthophoto`; on: the layers it
+    /// names, else every one).
+    pub background_photo: Option<bool>,
+    /// The orthophoto's resolution on paper, dpi (none: the template's;
+    /// the sheet preview draws it coarser).
+    pub background_dpi: Option<f64>,
 }
 
 impl Options {
+    /// The project's drawings drawn under the plan: the export's switch
+    /// over the template's choice.
+    pub fn plan_drawings(&self) -> template::Choice {
+        let t = &self.template.plan_background.drawings;
+        self.background_drawings
+            .map_or_else(|| t.clone(), |on| t.switched(on))
+    }
+
+    /// The project's orthophotos (image layers) drawn under the plan: the
+    /// export's switch over the template's choice.
+    pub fn plan_photos(&self) -> template::Choice {
+        let t = &self.template.plan_background.orthophoto;
+        self.background_photo
+            .map_or_else(|| t.clone(), |on| t.switched(on))
+    }
+
+    /// The half width the project's drawings are taken within, m:
+    /// [`BACKGROUND_REACH`] times the line width or the corridor's half
+    /// width, whichever is wider (the plan panel may be taller than the
+    /// line width: the elevations' room, a fixed height); each sheet
+    /// clips them to its panel.
+    pub fn background_half_width(&self) -> f64 {
+        BACKGROUND_REACH * self.plan_half_width.max(self.corridor.unwrap_or(0.0))
+    }
+
     /// The LiDAR classes drawn: the export's, else the template's.
     pub fn lidar_class_list(&self) -> Vec<u8> {
         self.lidar_classes
@@ -220,6 +259,10 @@ pub fn today() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     format!("{:04}-{m:02}-{d:02}", if m <= 2 { y + 1 } else { y })
 }
+
+/// How far beside the axis the project's drawings are taken, in line
+/// widths ([`Options::background_half_width`]).
+pub const BACKGROUND_REACH: f64 = 3.0;
 
 /// Default clearance on paper, mm, between a sheet break and the drawing
 /// of any other structure ([`Options::break_clearance`]).
@@ -417,6 +460,9 @@ impl Default for Options {
             bands: true,
             lidar_classes: None,
             class_names: std::collections::BTreeMap::new(),
+            background_drawings: None,
+            background_photo: None,
+            background_dpi: None,
         }
     }
 }
@@ -733,6 +779,14 @@ pub struct RouteDrawing {
     /// The stringing tension of each tension section along the route
     /// ([`RouteDrawing::set_stringing`]), by station.
     pub stringing: Vec<Stringing>,
+    /// The project's drawings near the route, straightened along it
+    /// ([`RouteDrawing::add_background_drawing`]): drawn under the plan
+    /// when the options ask ([`Options::plan_drawings`]).
+    pub background: Arc<Vec<background::PlanDrawing>>,
+    /// The project's orthophotos, resampled along the route on each sheet
+    /// ([`RouteDrawing::set_photo`]) when the options ask
+    /// ([`Options::plan_photos`]).
+    pub photo: Option<background::PlanPhoto>,
 }
 
 impl RouteDrawing {
@@ -1046,6 +1100,8 @@ pub fn build(
         corridor_ground,
         lidar: Vec::new(),
         stringing: Vec::new(),
+        background: Arc::default(),
+        photo: None,
     })
 }
 

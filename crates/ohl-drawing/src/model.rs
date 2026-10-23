@@ -108,11 +108,17 @@ pub enum Layer {
     ConductorClearance,
     /// LiDAR points within the corridor, as dots (profile, plan).
     Lidar,
+    /// The project's drawings (DXF) under the plan, straightened along
+    /// the line ([`crate::template::PlanBackgroundSpec`]).
+    BackgroundDrawings,
+    /// The project's orthophotos under the plan, resampled along the line
+    /// (an image; not in DXF).
+    BackgroundPhoto,
 }
 
 impl Layer {
     /// Every layer.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 29] = [
         Self::Frame,
         Self::Title,
         Self::Logo,
@@ -140,6 +146,8 @@ impl Layer {
         Self::Versions,
         Self::ConductorClearance,
         Self::Lidar,
+        Self::BackgroundDrawings,
+        Self::BackgroundPhoto,
     ];
 
     /// Layer name in DXF.
@@ -172,6 +180,8 @@ impl Layer {
             Self::Versions => "OHL_VERSIONS",
             Self::ConductorClearance => "OHL_CONDUCTOR_CLEARANCE",
             Self::Lidar => "OHL_LIDAR",
+            Self::BackgroundDrawings => "OHL_BACKGROUND_DRAWINGS",
+            Self::BackgroundPhoto => "OHL_BACKGROUND_PHOTO",
         }
     }
 
@@ -191,7 +201,9 @@ impl Layer {
             | Self::KeyMap => Color::BLACK,
             Self::Corridor | Self::Versions => Color(0x6a, 0x6a, 0x6a),
             Self::ConductorClearance => Color(0xa0, 0x18, 0x18),
-            Self::Lidar => Color(0x80, 0x80, 0x80),
+            Self::Lidar | Self::BackgroundDrawings | Self::BackgroundPhoto => {
+                Color(0x80, 0x80, 0x80)
+            }
             Self::Members | Self::Elevations => Color(0x55, 0x55, 0x55),
             Self::Grid => Color(0xdd, 0xdd, 0xdd),
             Self::Panels => Color(0x88, 0x88, 0x88),
@@ -305,8 +317,8 @@ pub struct Circle {
     pub title: Option<String>,
 }
 
-/// An image (a logo), fitted into its box keeping its proportions, at the
-/// box's left.
+/// An image: a logo, fitted into its box keeping its proportions, at the
+/// box's left; or a photo of [`Image::pixels`], filling its box exactly.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Image {
     /// Layer.
@@ -319,6 +331,9 @@ pub struct Image {
     pub height: f64,
     /// The image as a data URI (SVG, PNG or JPEG).
     pub href: String,
+    /// A photo (a JPEG data URI) of this many pixels across and down,
+    /// stretched to fill its box (none: a logo, its proportions kept).
+    pub pixels: Option<[u32; 2]>,
 }
 
 /// Items drawn only inside a rectangle.
@@ -509,7 +524,10 @@ fn svg_item(out: &mut String, item: &Item, clips: &mut usize) {
             // layers: a class to select them by.
             let class = if matches!(
                 p.layer,
-                Layer::Members | Layer::Elevations | Layer::Isoclearance
+                Layer::Members
+                    | Layer::Elevations
+                    | Layer::Isoclearance
+                    | Layer::BackgroundDrawings
             ) {
                 format!(r#" class="{}""#, p.layer.name())
             } else {
@@ -595,6 +613,18 @@ fn svg_item(out: &mut String, item: &Item, clips: &mut usize) {
                 } else {
                     format!(">{title}</circle>")
                 }
+            );
+        }
+        Item::Image(i) if i.pixels.is_some() => {
+            let _ = writeln!(
+                out,
+                r#"<image x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" href="{}" preserveAspectRatio="none" class="{}"/>"#,
+                i.at[0],
+                i.at[1],
+                i.width,
+                i.height,
+                escape(&i.href),
+                i.layer.name()
             );
         }
         Item::Image(i) => {

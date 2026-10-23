@@ -12,7 +12,8 @@
 //!   `tiff` crate ([`tiff_image`]). ECW files are converted to
 //!   GeoTIFF first by an external converter the user installs
 //!   ([`convert_with`]); none is shipped (ECW decoding needs a licensed
-//!   SDK).
+//!   SDK). [`Mosaic`] reads them colour by colour at any point (the
+//!   sheets' plan resamples them along the line).
 //! - **Drawings** from DXF files ([`dxf`]): lines, polylines, circles,
 //!   texts… by layer, in their colours, at their own heights.
 //!
@@ -21,6 +22,7 @@
 
 pub mod dxf;
 pub mod georef;
+pub mod mosaic;
 pub mod tiff_image;
 
 use std::path::{Path, PathBuf};
@@ -31,6 +33,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 pub use dxf::Drawing;
 pub use georef::Georef;
+pub use mosaic::Mosaic;
 
 /// Moves points in place (e.g. an `ohl_crs::Transformation`).
 pub type Move<'a> = &'a dyn Fn(&mut [[f64; 3]]) -> Result<(), String>;

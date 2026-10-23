@@ -127,6 +127,8 @@ mod link_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]
+mod plan_background_tests;
+#[cfg(test)]
 mod revision_tests;
 #[cfg(test)]
 mod rule_editor_tests;

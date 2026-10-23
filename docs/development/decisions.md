@@ -45,6 +45,42 @@ of Parts A, B and C).
 - Not yet in the thermal limit: a rule naming a surface is skipped there
   as having no ground.
 
+**Drawings and orthophotos under the sheets' plan (owner request,
+2026-10-23; built, in active development, not approved yet)**
+
+- The project's DXF drawings and orthophotos can lie under the plan
+  panel of the sheets. The choice is the sheet template's
+  (`[plan_background] drawings`, `orthophoto`: `false`, `true` or a list
+  of names), so a template (a plugin's preset) can switch them on; the
+  export window's ticks and `ohl drawing --plan-drawings
+  --plan-orthophoto --no-plan-backgrounds` switch them over it. Off by
+  default: sheets without them are byte for byte as before.
+- **Straightened like everything else in the plan**: a point at station
+  *s* and offset *o* (projected onto the centreline as the wires and
+  structures are) is drawn at *s* along the sheet, *o* across it. Each
+  segment of a drawing is cut into pieces of at most 2 m first, so a long
+  straight line follows a bend on paper. At bends the outside wedge is
+  not shown and the inside one twice, as for the wires.
+- **Drawings**: taken within three times the line width (or the
+  corridor) of the axis, clipped to each sheet's plan panel, on the layer
+  `OHL_BACKGROUND_DRAWINGS`, under everything else; by default one grey
+  pen (0.13 mm `#8c8c8c`: the line stays readable), `own_colours = true`
+  keeps the DXF's colours (white drawn black). Texts and points off by
+  default (texts at their size on the ground, not turned: the drawing
+  model has no turned texts). Not in the plan's model-space DXF: the
+  drawing itself is already in project coordinates.
+- **Orthophotos**: resampled per sheet, pixel by pixel (the exact
+  inverse of the straightening, per column of pixels the centreline's
+  segment and normal), at `dpi` (default 200: an orthophoto of 0.25 m
+  at 1:2000 is about 200 dpi on paper), from the coarsest pyramid level
+  not coarser than a pixel, bilinear; a 60 % white veil by default;
+  written as one JPEG (quality 75) per sheet: embedded in SVG, the JPEG
+  itself in PDF, drawn in PNG. **DXF R12 has no images: the photo is
+  left out of the DXF sheets with a warning** (no external image
+  reference written: the DXF stays one self-contained file). At most 40
+  million pixels per sheet; the sheet preview draws it at 60 dpi.
+- Display only: no computed value and no sheet break depends on them.
+
 ## 2026-10-22
 
 **Elevations as stick figures with their heights (owner, 2026-10-22)**

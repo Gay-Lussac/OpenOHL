@@ -58,6 +58,7 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--corridor-width M` | the corridor's edges at ± M in the plan and the key map, the ground along them in the profile |
 | `--sheet-lidar-classes 2,3,5` | LiDAR classes drawn as dots where the template draws them (`[lidar]`), from `--lidar` or `--pointcloud`, within the corridor ([Sheet templates](sheet-templates.md#lidar-points)) |
 | `--conductor-clearance` | lines below the lowest conductor from the ground rules (`--rules`, `--clearance`) |
+| `--plan-drawings [NAMES]`, `--plan-orthophoto [LAYERS]` | the project's drawings (DXF) and orthophotos under the plan, straightened along the line (alone: the template's names, else every one; or the names, comma-separated); `--no-plan-backgrounds` neither, `--plan-background-dpi` the photo's resolution, `--backgrounds FILE.ohl` the project file holding them (default: the line's) — [Drawings and orthophotos under the plan](sheet-templates.md#drawings-and-orthophotos-under-the-plan) |
 | `--no-bands` | without the template's band rows |
 | `--out DIR` | output folder (created) |
 
@@ -203,6 +204,20 @@ on the other side or at another scale.
 elevation standing perpendicular to the line on the sheet (its height
 across the line), seen along the line (the crossarms across); the
 rotation is the angle between the line and the elevation's height.
+
+## Drawings and orthophotos under the plan
+
+The project's DXF drawings and orthophotos (Terrain › Backgrounds) can
+lie under the sheets' plan, **straightened along the line** like the
+wires and the structures: the drawings' lines on the layer
+`OHL_BACKGROUND_DRAWINGS`, the orthophoto resampled into each sheet's
+plan panel under a white veil on `OHL_BACKGROUND_PHOTO` (SVG, PDF, PNG;
+DXF R12 has no images and leaves it out, with a warning). The sheet
+template switches them on (`[plan_background]`, e.g. a plugin's preset);
+the export window's ticks and `--plan-drawings`, `--plan-orthophoto`
+switch them on or off over it. Display only: nothing computed and no
+sheet break depends on them. Every key, the resolution and what happens
+at bends: [Sheet templates](sheet-templates.md#drawings-and-orthophotos-under-the-plan).
 
 ## Isoclearance lines
 
@@ -430,7 +445,8 @@ below; base offset in mm; rotation), PNG resolution; then the template's
 **values** (required ones marked `*`, per-sheet values), the
 **revisions** (rows added, deleted, or the last version commit), the
 **versions of the line** (other project lines in their roles, the line's
-own role), **more of the template** (corridor, lines below the lowest
+own role), **more of the template** (corridor, LiDAR classes, the project's
+drawings and orthophotos under the plan, lines below the lowest
 conductor, band rows, elevation scale and labels), **Weather cases per
 circuit** (each circuit's case drawn and stringing case over the
 template's `[cases]`, see [Weather cases](sheet-templates.md#weather-cases-cases);
@@ -453,7 +469,9 @@ the route, without sheet breaks.
 sheet format, scales, line width, break clearance, station range,
 clearance line, the elevations, PNG resolution, the profile alone, the
 other cases, side profiles, plan scale, logos (their files), the sheet
-template chosen with its values, revisions and versions, and
+template chosen with its values, revisions and versions, the
+ticks of more of the template (the backgrounds under the plan among
+them), and
 the sheet preview on or off (not the route chosen nor the output folder,
 which belongs to the computer). They are written as they change (not
 while a value is being dragged or typed) and are there when the project
