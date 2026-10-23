@@ -431,7 +431,10 @@ below; base offset in mm; rotation), PNG resolution; then the template's
 **revisions** (rows added, deleted, or the last version commit), the
 **versions of the line** (other project lines in their roles, the line's
 own role), **more of the template** (corridor, lines below the lowest
-conductor, band rows, elevation scale and labels), **Preview sheet** (one
+conductor, band rows, elevation scale and labels), **Weather cases per
+circuit** (each circuit's case drawn and stringing case over the
+template's `[cases]`, see [Weather cases](sheet-templates.md#weather-cases-cases);
+a case not solved yet is solved, the sheets wait for it), **Preview sheet** (one
 sheet drawn by the export in a window of its own, with its warnings; its
 number chosen before or after ticking, the route and the sheet chosen
 in the preview window too, ◀ ▶; drawn in the background, the window

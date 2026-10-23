@@ -10,6 +10,27 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Sheets: cases per circuit, the stringing band, strings drawn (owner, 2026-10-23)**
+
+- Each circuit's wires are drawn in a weather case of their own: by
+  default the phase conductors at 80 °C (the largest sag) and the earth
+  wires at 10 °C (owner's answer), chosen per circuit in the export
+  window over the template's `[cases]` (a case's name or a
+  temperature).
+- The stringing tension (Montagezugspannung) is per tension section —
+  between two dead-ends, not per circuit (owner's correction) — in kN:
+  a `stringing` band row writes each circuit's and the earth wires'
+  horizontal tension (per subconductor, the lowest and highest of the
+  section's spans) in the stringing case (10 °C by default).
+- The strings are drawn on the structures in the profile and in the
+  elevations (all of them, also with the full structure).
+- The key map's structure names can be left out (`[key_map] structures
+  = false`; the ESTI template does). A background map under the key map,
+  chosen in the template, is for later (roadmap).
+- The ESTI template: role colours (project red, existing black, removal
+  yellow, other lines blue; the voltage kinds without colour words), the
+  cases above, the stringing band instead of a typed field.
+
 **A TIN layer per clearance rule (owner, 2026-10-23)**
 
 - A rule of the Vertical and Radial clearances windows checks a terrain

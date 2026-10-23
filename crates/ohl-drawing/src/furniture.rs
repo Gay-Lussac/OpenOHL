@@ -1147,6 +1147,56 @@ pub(crate) fn bands(
                     put(items, *s, format!("{c:.dec$}"), true);
                 }
             }
+            BandKind::Stringing => {
+                // Per tension section on the sheet (its part on the sheet):
+                // ticks at its ends, one line per circuit at its middle.
+                for st in d
+                    .stringing
+                    .iter()
+                    .filter(|st| st.to > f.s0 && st.from < f.s1)
+                {
+                    let (a, b2) = (st.from.max(f.s0), st.to.min(f.s1));
+                    for s in [st.from, st.to] {
+                        if within(s) {
+                            let x = f.x(s);
+                            items.push(line(Layer::Bands, [x, y], [x, y + h], tick.clone()));
+                        }
+                    }
+                    let lines: Vec<String> = st
+                        .tensions
+                        .iter()
+                        .map(|(circuit, lo, hi)| {
+                            let name = match circuit {
+                                Some(c) => c.clone(),
+                                None => t.legend.label("earth_wires", &[]),
+                            };
+                            let (lo, hi) = (lo / 1000.0, hi / 1000.0);
+                            let value = if hi - lo < 0.05 {
+                                format!("{hi:.1}")
+                            } else {
+                                format!("{lo:.1}–{hi:.1}")
+                            };
+                            t.legend
+                                .label("stringing", &[("circuit", &name), ("tension", &value)])
+                        })
+                        .collect();
+                    let n = lines.len().max(1) as f64;
+                    let step = (h / n).min(size * 1.25);
+                    let x = f.x(0.5 * (a + b2));
+                    for (k, text) in lines.into_iter().enumerate() {
+                        let yy = mid + (k as f64 - (n - 1.0) / 2.0) * step + 0.36 * size;
+                        items.push(Item::Text(Text {
+                            layer: Layer::Bands,
+                            at: [x, yy],
+                            text,
+                            size: size.min(step / 1.1),
+                            anchor: Anchor::Middle,
+                            bold: false,
+                            color,
+                        }));
+                    }
+                }
+            }
             BandKind::Text => {
                 let key = b.field.as_deref().unwrap_or("");
                 let value = o

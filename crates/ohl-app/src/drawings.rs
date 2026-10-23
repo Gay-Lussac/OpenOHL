@@ -621,6 +621,108 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
     })
 }
 
+/// The key of a section's circuit for [`CircuitCases`]: its system's
+/// name, "" for the earth wires (no system).
+pub fn circuit_key(section: &ohl_line::Section) -> String {
+    section.system.clone().unwrap_or_default()
+}
+
+/// The weather cases the sheets draw and take the stringing tension
+/// from, per circuit key ([`circuit_key`]): model case indices (none:
+/// the case shown, for the drawn ones; no stringing band data for the
+/// others).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SheetCases {
+    /// Drawn, per key.
+    pub drawn: std::collections::BTreeMap<String, Option<usize>>,
+    /// Stringing, per key.
+    pub stringing: std::collections::BTreeMap<String, Option<usize>>,
+}
+
+impl SheetCases {
+    /// The cases of `choice` (the window's, per circuit) over `template`'s
+    /// `[cases]` in `model`; an error names a choice no case matches.
+    pub fn of(
+        model: &Model,
+        template: &ohl_drawing::SheetTemplate,
+        choice: &std::collections::BTreeMap<String, crate::sheet_ui::CircuitCases>,
+    ) -> Result<Self, String> {
+        let cases: Vec<(String, f64, bool)> = model
+            .cases
+            .iter()
+            .map(|c| {
+                let w = &c.case;
+                (
+                    w.name.clone(),
+                    w.temperature.celsius(),
+                    w.wind_pressure.si() == 0.0
+                        && w.ice_thickness.si() == 0.0
+                        && w.ice_load.is_none(),
+                )
+            })
+            .collect();
+        let pick = |c: Option<&String>, what: &str| -> Result<Option<usize>, String> {
+            match c {
+                None => Ok(None),
+                Some(c) => ohl_drawing::template::CasesSpec::pick(c, &cases)
+                    .map(Some)
+                    .ok_or_else(|| {
+                        format!(
+                            "{what}: no weather case \"{c}\" in the project (a case's name, or a \
+                             temperature with a still case without ice at it)"
+                        )
+                    }),
+            }
+        };
+        let mut keys: Vec<String> = model.line.sections.iter().map(circuit_key).collect();
+        keys.sort();
+        keys.dedup();
+        let t = &template.cases;
+        let mut out = Self::default();
+        for k in keys {
+            let own = choice.get(&k);
+            let name = if k.is_empty() {
+                "earth wires".to_owned()
+            } else {
+                k.clone()
+            };
+            let default = if k.is_empty() {
+                &t.earth_wires
+            } else {
+                &t.conductors
+            };
+            let drawn = own.and_then(|c| c.drawn.as_ref()).or(default.as_ref());
+            let stringing = own
+                .and_then(|c| c.stringing.as_ref())
+                .or(t.stringing.as_ref());
+            out.drawn
+                .insert(k.clone(), pick(drawn, &format!("{name}, drawn"))?);
+            out.stringing
+                .insert(k, pick(stringing, &format!("{name}, stringing"))?);
+        }
+        Ok(out)
+    }
+
+    /// The cases to solve for them.
+    pub fn needed(&self) -> Vec<usize> {
+        let mut v: Vec<usize> = self
+            .drawn
+            .values()
+            .chain(self.stringing.values())
+            .flatten()
+            .copied()
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    /// Whether any circuit is drawn in a case other than the one shown.
+    pub fn mixed(&self) -> bool {
+        self.drawn.values().any(Option::is_some)
+    }
+}
+
 /// What an export needs, taken from the model (sent to the background).
 pub struct Input {
     /// The line.
@@ -651,6 +753,9 @@ pub struct Input {
     /// LiDAR points loaded of the classes drawn: (x, y, z), class (none
     /// unless the template draws them).
     pub lidar: Arc<Vec<([f64; 3], u8)>>,
+    /// The stringing case(s) and the sections solved in them (the
+    /// `stringing` band; none: no stringing case chosen).
+    pub stringing: Option<(String, Vec<SectionShape>)>,
     /// Output folder.
     pub out: PathBuf,
 }
@@ -722,6 +827,103 @@ impl Input {
             p => Some(ohl_drawing::page_format(p).ok_or("unknown sheet format")?),
         };
         let page = page.map(|p| if w.sheet.portrait { p.portrait() } else { p });
+        // The cases per circuit (the window's over the template's): the
+        // first drawing's wires each in their circuit's case, and the
+        // stringing band's tensions.
+        let picks = SheetCases::of(model, &template, &w.sheet.circuit_cases)?;
+        let solved_case = |k: usize| -> Result<&crate::model::Solved, String> {
+            let c = model.cases.get(k).ok_or("no such weather case")?;
+            if c.ready {
+                Ok(c)
+            } else {
+                Err(format!(
+                    "weather case \"{}\" is being solved: the sheets follow once it is",
+                    c.case.name
+                ))
+            }
+        };
+        let key_of = |id: &str| {
+            model
+                .line
+                .sections
+                .iter()
+                .find(|s| s.id == id)
+                .map(circuit_key)
+                .unwrap_or_default()
+        };
+        // A jumper's circuit: that of the section at its first wire end.
+        let jumper_key = |id: &str| {
+            let j = model.line.jumpers.iter().find(|j| j.id == id)?;
+            let ohl_line::JumperEnd::Wire(p) = &j.from else {
+                return None;
+            };
+            model
+                .line
+                .sections
+                .iter()
+                .find(|s| s.points.contains(p))
+                .map(circuit_key)
+        };
+        let first_mixed = if picks.mixed() {
+            let mut names: Vec<String> = Vec::new();
+            let mut shapes = Vec::new();
+            let mut swapped = std::collections::BTreeSet::new();
+            for s in model.shapes_shown(case) {
+                match picks.drawn.get(&key_of(&s.section)).copied().flatten() {
+                    Some(_) if swapped.contains(&s.section) => {}
+                    Some(k) if k != case => {
+                        swapped.insert(s.section.clone());
+                        let c = solved_case(k)?;
+                        if !names.contains(&c.case.name) {
+                            names.push(c.case.name.clone());
+                        }
+                        shapes.extend(
+                            c.drawn()
+                                .filter_map(|x| x.shapes.iter().find(|y| y.section == s.section))
+                                .cloned(),
+                        );
+                    }
+                    _ => {
+                        let n = &model.cases[case].case.name;
+                        if !names.contains(n) {
+                            names.push(n.clone());
+                        }
+                        shapes.push(s);
+                    }
+                }
+            }
+            let mut jumpers = Vec::new();
+            for j in &model.cases[case].jumpers {
+                match jumper_key(&j.jumper).and_then(|k| picks.drawn.get(&k).copied().flatten()) {
+                    Some(k) if k != case => jumpers.extend(
+                        solved_case(k)?
+                            .drawn()
+                            .filter_map(|x| x.jumpers.iter().find(|y| y.jumper == j.jumper))
+                            .cloned(),
+                    ),
+                    _ => jumpers.push(j.clone()),
+                }
+            }
+            Some((names.join(" / "), shapes, jumpers))
+        } else {
+            None
+        };
+        let stringing = if picks.stringing.values().any(Option::is_some) {
+            let mut names: Vec<String> = Vec::new();
+            let mut shapes = Vec::new();
+            for s in &model.line.sections {
+                if let Some(k) = picks.stringing.get(&circuit_key(s)).copied().flatten() {
+                    let c = solved_case(k)?;
+                    if !names.contains(&c.case.name) {
+                        names.push(c.case.name.clone());
+                    }
+                    shapes.extend(c.shapes.iter().find(|y| y.section == s.id).cloned());
+                }
+            }
+            Some((names.join(" / "), shapes))
+        } else {
+            None
+        };
         // The case shown first (solid), then the other solved ones.
         let mut order = vec![case];
         if w.all_cases {
@@ -735,6 +937,11 @@ impl Input {
             .enumerate()
             .filter_map(|(i, k)| {
                 let solved = model.cases.get(k)?;
+                if i == 0
+                    && let Some(f) = &first_mixed
+                {
+                    return Some(f.clone());
+                }
                 let (shapes, jumpers) = if i == 0 {
                     (model.shapes_shown(k), solved.jumpers.clone())
                 } else {
@@ -960,6 +1167,7 @@ impl Input {
             cases,
             isoclearance: w.isoclearance.clone(),
             lidar,
+            stringing,
             out,
         })
     }
@@ -978,6 +1186,9 @@ impl Input {
             &self.options,
         )?;
         crate::scene::set_drawn_members(&mut d, &self.line, &self.bodies);
+        if let Some((name, shapes)) = &self.stringing {
+            d.set_stringing(&self.line, shapes, name);
+        }
         if !self.lidar.is_empty() {
             d.set_lidar(
                 self.lidar.iter().copied(),
@@ -1781,6 +1992,80 @@ impl DrawingsWindow {
 }
 
 /// The sheet template's sections of the export window: its values and
+/// Per circuit (each system, and the earth wires) the weather case its
+/// wires are drawn in and that of its stringing tension (the
+/// `stringing` band): the template's (`[cases]`) or the case shown
+/// unless chosen.
+fn circuit_cases_ui(
+    ui: &mut egui::Ui,
+    s: &mut SheetChoice,
+    t: &ohl_drawing::SheetTemplate,
+    model: &Model,
+) {
+    let mut keys: Vec<String> = model.line.sections.iter().map(circuit_key).collect();
+    keys.sort();
+    keys.dedup();
+    let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+    ui.label(
+        egui::RichText::new(
+            "A case's name, else the template's (a temperature: the still case at it), else the \
+             case shown. The stringing tension is written by a \"stringing\" band row.",
+        )
+        .small()
+        .weak(),
+    );
+    egui::Grid::new("drawings-circuit-cases-grid")
+        .num_columns(3)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            ui.strong("Circuit");
+            ui.strong("Drawn");
+            ui.strong("Stringing");
+            ui.end_row();
+            for k in keys {
+                let label = if k.is_empty() {
+                    "earth wires".to_owned()
+                } else {
+                    k.clone()
+                };
+                ui.label(&label);
+                let entry = s.circuit_cases.entry(k.clone()).or_default();
+                let default_drawn = if k.is_empty() {
+                    &t.cases.earth_wires
+                } else {
+                    &t.cases.conductors
+                };
+                for (id, value, default, none) in [
+                    ("drawn", &mut entry.drawn, default_drawn, "the case shown"),
+                    (
+                        "stringing",
+                        &mut entry.stringing,
+                        &t.cases.stringing,
+                        "none",
+                    ),
+                ] {
+                    let fallback = match default {
+                        Some(d) => format!("the template's: {d}"),
+                        None => none.to_owned(),
+                    };
+                    egui::ComboBox::from_id_salt(("drawings-circuit-case", &k, id))
+                        .width(200.0)
+                        .selected_text(value.clone().unwrap_or_else(|| fallback.clone()))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(value, None, &fallback);
+                            for n in &names {
+                                ui.selectable_value(value, Some(n.clone()), n);
+                            }
+                        });
+                }
+                ui.end_row();
+            }
+        });
+    // Rows left at the defaults are not kept.
+    s.circuit_cases
+        .retain(|_, c| c.drawn.is_some() || c.stringing.is_some());
+}
+
 /// revisions, the versions of the line, its other options.
 fn sheet_sections(
     ui: &mut egui::Ui,
@@ -1791,6 +2076,9 @@ fn sheet_sections(
     egui::CollapsingHeader::new("Values of the template (title block, band rows)")
         .id_salt("drawings-values")
         .show(ui, |ui| crate::sheet_ui::fields_ui(ui, t, &mut s.fields));
+    egui::CollapsingHeader::new("Weather cases per circuit (drawn, stringing tension)")
+        .id_salt("drawings-circuit-cases")
+        .show(ui, |ui| circuit_cases_ui(ui, s, t, model));
     if t.revisions.place != "off" {
         egui::CollapsingHeader::new(format!("Revisions ({})", s.fields.revisions.len()))
             .id_salt("drawings-revisions")
@@ -2014,6 +2302,17 @@ impl Drawings {
 
     /// The window (if open) and the job's window, each frame.
     pub fn show(&mut self, ctx: &egui::Context, model: &mut Model, case: usize) {
+        // The weather cases the sheets draw per circuit, solved when they
+        // are not yet (the export and the preview wait for them).
+        if self.window.is_some() || self.preview_on {
+            let s = self.settings().sheet.clone();
+            if let Ok(t) =
+                crate::sheet_ui::resolve(model, &s.template, &self.settings().plugin_templates)
+                && let Ok(p) = SheetCases::of(model, &t, &s.circuit_cases)
+            {
+                model.want(p.needed(), ctx);
+            }
+        }
         // The sheet preview over the views is drawn again once the
         // settings settle: a frame then.
         if self.preview_pending.is_some() {

@@ -223,7 +223,12 @@ structure body) and O7 (the line and its structures solved together).
   2026-10-22, in active development (not approved yet)*: the elevations
   as schematic **stick figures** on request, with a chain of heights
   (base → arms → top), each arm's height above the base and its vertical
-  strings' lengths, placed clear of the figure and of each other.
+  strings' lengths, placed clear of the figure and of each other. *Follow-up 8, built 2026-10-23, in active development (not approved
+  yet)*: each circuit drawn in a weather case of its own (template
+  `[cases]`, the export window per circuit), a `stringing` band row (each
+  tension section's horizontal tension in kN in the stringing case),
+  the strings drawn on the structures. Still to come (owner, 2026-10-23,
+  later): a background map under the key map, chosen in the template.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane

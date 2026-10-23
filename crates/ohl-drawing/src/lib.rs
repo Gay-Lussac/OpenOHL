@@ -674,6 +674,23 @@ pub struct VersionDrawing {
     pub wires: Vec<Trace>,
 }
 
+/// The stringing tension of one tension section (between two strain
+/// structures) along a route: each circuit's conductors and the earth
+/// wires, in the stringing weather case.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Stringing {
+    /// Where it starts and ends, stations, m.
+    pub from: f64,
+    /// Its end.
+    pub to: f64,
+    /// Per circuit (its system's name; `None`: the earth wires): the
+    /// lowest and highest horizontal tension of its wires' spans, N per
+    /// subconductor.
+    pub tensions: Vec<(Option<String>, f64, f64)>,
+    /// The weather case.
+    pub case: String,
+}
+
 /// Drawing data of one route.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RouteDrawing {
@@ -713,6 +730,9 @@ pub struct RouteDrawing {
     /// LiDAR points within the corridor ([`RouteDrawing::set_lidar`]):
     /// (station, offset, z), class; by station.
     pub lidar: Vec<([f64; 3], u8)>,
+    /// The stringing tension of each tension section along the route
+    /// ([`RouteDrawing::set_stringing`]), by station.
+    pub stringing: Vec<Stringing>,
 }
 
 impl RouteDrawing {
@@ -1025,6 +1045,7 @@ pub fn build(
         clearances: Vec::new(),
         corridor_ground,
         lidar: Vec::new(),
+        stringing: Vec::new(),
     })
 }
 
@@ -1175,6 +1196,75 @@ impl RouteDrawing {
             v.wires = v.wires.iter().flat_map(|w| cut_trace(w, width)).collect();
         }
         d
+    }
+
+    /// Gives it the stringing tension of each tension section of `line`
+    /// along the route, from its sections `shapes` solved in weather case
+    /// `case` (the stringing case): per stretch between a section's end
+    /// structures, each circuit's conductors and the earth wires, the
+    /// lowest and highest horizontal tension of their spans.
+    pub fn set_stringing(&mut self, line: &Line, shapes: &[SectionShape], case: &str) {
+        let station = |id: &str| {
+            self.structures
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| m.station)
+        };
+        let mut out: Vec<Stringing> = Vec::new();
+        for shape in shapes {
+            let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
+                continue;
+            };
+            let (Some(a), Some(b)) = (section.points.first(), section.points.last()) else {
+                continue;
+            };
+            let (Some(sa), Some(sb)) = (station(&a.structure), station(&b.structure)) else {
+                continue;
+            };
+            let (from, to) = (sa.min(sb), sa.max(sb));
+            let hs = shape
+                .spans
+                .iter()
+                .map(|s| s.horizontal_tension)
+                .filter(|h| h.is_finite());
+            let (lo, hi) = hs.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), h| {
+                (a.min(h), b.max(h))
+            });
+            if !lo.is_finite() || to - from < 1e-6 {
+                continue;
+            }
+            let circuit = section.system.clone();
+            let k = match out
+                .iter()
+                .position(|s| (s.from - from).abs() < 1e-6 && (s.to - to).abs() < 1e-6)
+            {
+                Some(k) => k,
+                None => {
+                    out.push(Stringing {
+                        from,
+                        to,
+                        tensions: Vec::new(),
+                        case: case.to_owned(),
+                    });
+                    out.len() - 1
+                }
+            };
+            let t = &mut out[k].tensions;
+            match t.iter_mut().find(|x| x.0 == circuit) {
+                Some(x) => {
+                    x.1 = x.1.min(lo);
+                    x.2 = x.2.max(hi);
+                }
+                None => t.push((circuit, lo, hi)),
+            }
+        }
+        for s in &mut out {
+            // The circuits by name, the earth wires last.
+            s.tensions
+                .sort_by(|a, b| (a.0.is_none(), &a.0).cmp(&(b.0.is_none(), &b.0)));
+        }
+        out.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
+        self.stringing = out;
     }
 
     /// Gives it the isoclearance lines `lines` ((clearance m, points on
@@ -2041,6 +2131,64 @@ pub(crate) mod tests {
             .unwrap();
         // (And its 3 strings.)
         assert_eq!(e.lines.len(), tower(&line, "T2").unwrap().len() + 3);
+    }
+
+    /// The stringing tension of each tension section: one stretch per
+    /// section's ends, each circuit's lowest and highest horizontal
+    /// tension (the earth wires last), written by the `stringing` band.
+    #[test]
+    fn the_stringing_band_writes_each_tension_section() {
+        use crate::template::CasesSpec;
+        let (line, shapes, ..) = solved();
+        let options = Options::default();
+        let mut d = main_route(&options);
+        d.set_stringing(&line, &shapes, "10 °C");
+        assert!(!d.stringing.is_empty());
+        for s in &d.stringing {
+            assert!(s.to > s.from);
+            assert_eq!(s.case, "10 °C");
+            for (_, lo, hi) in &s.tensions {
+                assert!(*lo > 0.0 && hi >= lo, "{s:?}");
+            }
+            // The earth wires (no system) last.
+            let earth: Vec<bool> = s.tensions.iter().map(|t| t.0.is_none()).collect();
+            assert!(earth.windows(2).all(|w| !w[0] || w[1]), "{s:?}");
+        }
+        // A section's spans give the range.
+        let sec = &line.sections[0];
+        let shape = shapes.iter().find(|s| s.section == sec.id).unwrap();
+        let hs: Vec<f64> = shape.spans.iter().map(|s| s.horizontal_tension).collect();
+        let lo = hs.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(d.stringing.iter().any(|s| {
+            s.tensions
+                .iter()
+                .any(|t| t.0 == sec.system && t.1 <= lo + 1e-9)
+        }));
+        // Drawn on a sheet by a stringing band: in kN.
+        let mut t = SheetTemplate::builtin();
+        t.bands.push(
+            toml::from_str("kind = \"stringing\"\nheight = \"10 mm\"\nlabel = \"Stringing\"")
+                .unwrap(),
+        );
+        let o = Options {
+            template: Arc::new(t),
+            ..Options::default()
+        };
+        let s = sheets(&d, &o, &page_format("A1").unwrap());
+        assert!(
+            s.iter().any(|x| x.svg().contains(" kN")),
+            "no tension written"
+        );
+        // The cases by name or by temperature (still, no ice).
+        let cases = vec![
+            ("cold".to_owned(), -20.0, true),
+            ("windy 10".to_owned(), 10.0, false),
+            ("ten".to_owned(), 10.0, true),
+        ];
+        assert_eq!(CasesSpec::pick("cold", &cases), Some(0));
+        assert_eq!(CasesSpec::pick("10 °C", &cases), Some(2));
+        assert_eq!(CasesSpec::pick("10°C", &cases), Some(2));
+        assert_eq!(CasesSpec::pick("80 °C", &cases), None);
     }
 
     fn warnings_of(d: &RouteDrawing, o: &Options) -> Vec<String> {
