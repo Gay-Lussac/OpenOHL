@@ -157,8 +157,12 @@ of Parts A, B and C).
   Clearances page, `ohl zones` and `ohl line FILE.ohl --rules`; a name
   the project does not hold is noted and the rule not checked (never
   passed silently).
-- Not yet in the thermal limit: a rule naming a surface is skipped there
-  as having no ground.
+- Also in the thermal limit (2026-10-23; built, in active development,
+  not approved yet): Analysis › Thermal limit and `ohl thermal
+  clearance-limit FILE.ohl` read the surfaces the ground rules name. A
+  name the project does not hold stops the search with an error rather
+  than leaving the rule out, as the limit found without it could be too
+  high.
 
 **Drawings and orthophotos under the sheets' plan (owner request,
 2026-10-23; built, in active development, not approved yet)**

@@ -148,6 +148,9 @@ impl ThermalWindow {
         let line = model.line.clone();
         let library = model.library.clone();
         let ground = model.ground_for_checks();
+        // The surfaces the ground rules name (read on the search's thread).
+        let named =
+            crate::model::NamedSurfaces::of(model, rules.iter().filter_map(|r| r.surface.clone()));
         let cloud = model.cloud.clone();
         let scheme = model.scheme.clone();
         let corridor = model.sources.corridor;
@@ -198,8 +201,12 @@ impl ThermalWindow {
                     }
                     Ok(())
                 };
+                let named = named.read();
+                let surfaces: Vec<(String, &ohl_terrain::Terrain)> =
+                    named.iter().map(|(n, t)| (n.clone(), t.as_ref())).collect();
                 let mut targets = Targets {
                     ground: ground.as_deref(),
+                    surfaces: &surfaces,
                     point_classes: &classes,
                     points: (!points.is_empty()).then_some(&mut feed as _),
                 };
