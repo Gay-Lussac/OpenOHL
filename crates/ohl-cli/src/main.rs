@@ -461,6 +461,31 @@ struct LineArgs {
     /// Leave out the template's band rows.
     #[arg(long)]
     no_bands: bool,
+    /// The project's drawings (DXF) under the sheets' plan, straightened
+    /// along the line (layer OHL_BACKGROUND_DRAWINGS): alone, those the
+    /// template names (else every one); or NAME,NAME… (default: the
+    /// template's `[plan_background] drawings`).
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "NAMES")]
+    plan_drawings: Option<Vec<String>>,
+    /// The project's orthophotos under the sheets' plan, resampled along
+    /// the line (layer OHL_BACKGROUND_PHOTO; SVG, PDF, PNG): alone, the
+    /// image layers the template names (else every one); or
+    /// LAYER,LAYER… (default: the template's `[plan_background]
+    /// orthophoto`).
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "LAYERS")]
+    plan_orthophoto: Option<Vec<String>>,
+    /// Neither drawings nor orthophotos under the plan, whatever the
+    /// template says.
+    #[arg(long, conflicts_with_all = ["plan_drawings", "plan_orthophoto"])]
+    no_plan_backgrounds: bool,
+    /// Resolution of the orthophoto under the plan, dots per inch
+    /// (default: the template's `[plan_background] dpi`, 200).
+    #[arg(long)]
+    plan_background_dpi: Option<f64>,
+    /// The project file (.ohl) whose drawings and orthophotos go under the
+    /// plan (default: the line's, when it is a project file).
+    #[arg(long)]
+    backgrounds: Option<PathBuf>,
     /// Export the solved line (every weather case): FILE (format from the
     /// extension) or FORMAT=FILE, e.g. kmz=line.kmz (repeatable; see ohl
     /// formats).
@@ -1573,6 +1598,11 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         role,
         conductor_clearance,
         no_bands,
+        plan_drawings,
+        plan_orthophoto,
+        no_plan_backgrounds,
+        plan_background_dpi,
+        backgrounds,
         export,
         export_options,
         plugin,
@@ -2216,6 +2246,19 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 elevations: spec.elevations.over(options.elevations)?,
                 ..options
             };
+            // The project's drawings and orthophotos under the plan.
+            let (options, plan_backgrounds) = sheet_run::plan_backgrounds(
+                options,
+                &sheet_run::BackgroundArgs {
+                    drawings: plan_drawings.as_deref(),
+                    photos: plan_orthophoto.as_deref(),
+                    off: *no_plan_backgrounds,
+                    dpi: *plan_background_dpi,
+                },
+                backgrounds
+                    .as_deref()
+                    .or_else(|| project::is_project(file).then_some(file.as_path())),
+            )?;
             // Other versions of the line: solved in the same weather cases.
             let mut other_versions = Vec::new();
             for v in versions {
@@ -2398,6 +2441,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         options.lidar_half_width(),
                     );
                 }
+                plan_backgrounds.apply(&mut d, &options);
                 for (name, role, label, vline, solved) in &other_versions {
                     for (k, (case, shapes, jumpers)) in solved.iter().enumerate() {
                         d.add_version(

@@ -298,6 +298,7 @@ pub(crate) fn title_block(
                         width: logo.width,
                         height: (cell[3] - 6.0).max(1.0),
                         href: logo.href.clone(),
+                        pixels: None,
                     }));
                     x += logo.width + 4.0;
                 }
@@ -308,6 +309,7 @@ pub(crate) fn title_block(
                     width: (cell[2] - 2.0 * pad).max(1.0),
                     height: (cell[3] - 2.0 * pad).max(1.0),
                     href: href.clone(),
+                    pixels: None,
                 }));
             }
         }

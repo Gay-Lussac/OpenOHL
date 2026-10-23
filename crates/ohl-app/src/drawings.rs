@@ -756,9 +756,22 @@ pub struct Input {
     /// The stringing case(s) and the sections solved in them (the
     /// `stringing` band; none: no stringing case chosen).
     pub stringing: Option<(String, Vec<SectionShape>)>,
+    /// The project's drawings drawn under the plan: name, drawing (none
+    /// unless the template or the window asks).
+    pub plan_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
+    /// The project file whose orthophotos are drawn under the plan and
+    /// the image layers (none: every one); none unless asked.
+    pub plan_photo: Option<(PathBuf, Option<Vec<String>>)>,
+    /// The orthophotos, opened when first drawn (in the background): the
+    /// layers in words and where they are read; none: none there.
+    photo_source: PhotoSource,
     /// Output folder.
     pub out: PathBuf,
 }
+
+/// The orthophotos under the plan, opened once.
+type PhotoSource =
+    std::sync::OnceLock<Option<(String, Arc<dyn ohl_drawing::background::PhotoSource>)>>;
 
 /// Another version of the line drawn with it: a project line in its role,
 /// solved in the cases drawn (name, sections, jumpers).
@@ -1144,6 +1157,28 @@ impl Input {
         if let Some(stick) = s.elevation_stick {
             options.elevations.stick = stick;
         }
+        // The project's drawings and orthophotos under the plan: the
+        // window's ticks over the template's choice. The drawings are
+        // those read with the project; the orthophotos' tiles are read
+        // from the project file as the sheets are drawn (in the
+        // background).
+        options.background_drawings = s.background_drawings;
+        options.background_photo = s.background_photo;
+        let chosen = options.plan_drawings();
+        let plan_drawings = model
+            .backgrounds
+            .drawings
+            .iter()
+            .filter(|d| chosen.takes(&d.info.name))
+            .map(|d| (d.info.name.clone(), d.drawing.clone()))
+            .collect();
+        let photos = options.plan_photos();
+        let plan_photo = (photos.on() && !model.backgrounds.images.is_empty()).then(|| {
+            (
+                model.sources.file.clone(),
+                photos.names().map(<[String]>::to_vec),
+            )
+        });
         Ok(Self {
             line: model.line.clone(),
             bodies: model.bodies.clone(),
@@ -1168,8 +1203,49 @@ impl Input {
             isoclearance: w.isoclearance.clone(),
             lidar,
             stringing,
+            plan_drawings,
+            plan_photo,
+            photo_source: PhotoSource::new(),
             out,
         })
+    }
+
+    /// The orthophotos under the plan, opened on first use (none: none
+    /// asked for, or none of the layers asked for in the project).
+    fn photo(&self) -> Option<&(String, Arc<dyn ohl_drawing::background::PhotoSource>)> {
+        self.photo_source
+            .get_or_init(|| {
+                let (file, layers) = self.plan_photo.as_ref()?;
+                let mosaic = ohl_background::Mosaic::open(file, layers.as_deref())
+                    .ok()
+                    .flatten()?;
+                let name = mosaic.layers().join(", ");
+                Some((
+                    name,
+                    Arc::new(mosaic) as Arc<dyn ohl_drawing::background::PhotoSource>,
+                ))
+            })
+            .as_ref()
+    }
+
+    /// The drawing data of `route` ([`Self::drawing`]) with the project's
+    /// drawings and orthophotos under the plan, when asked for (what the
+    /// sheets draw; the layout does not depend on them).
+    ///
+    /// Expected cost: the drawings' lines near the route straightened
+    /// (≈ 1 µs per piece of 2 m and segment of the centreline).
+    pub fn drawing_with_backgrounds(
+        &self,
+        route: &AlignmentView,
+    ) -> Result<ohl_drawing::RouteDrawing, String> {
+        let mut d = self.drawing(route)?;
+        for (name, drawing) in &self.plan_drawings {
+            d.add_background_drawing(name, drawing, self.options.background_half_width());
+        }
+        if let Some((name, source)) = self.photo() {
+            d.set_photo(name, Some(source.clone()));
+        }
+        Ok(d)
     }
 
     /// The drawing data of `route`: the first case's wires solid, the
@@ -1275,7 +1351,7 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
             format!("route {} ({} of {n})", route.id, r + 1),
             r as f32 / n as f32,
         );
-        let d = input.drawing(route)?;
+        let d = input.drawing_with_backgrounds(route)?;
         let written = ohl_drawing::export::write_route(&d, &options, &export, &input.out, &budget)?;
         if let Some(paper) = &written.paper {
             warnings.push(format!("route {}: optimised layout {paper}", route.id));
@@ -1330,6 +1406,11 @@ fn paper_sizes_ui(ui: &mut egui::Ui, ticked: &mut Vec<String>) {
     }
 }
 
+/// Resolution of the orthophoto under the plan in the sheet preview, dpi
+/// (the preview is about 1600 pixels across the sheet: ≈ 100 dpi on A3,
+/// 50 on A1).
+const PREVIEW_PHOTO_DPI: f64 = 60.0;
+
 /// A sheet drawn for the window as pixels (made in the background).
 struct SheetPixels {
     /// Its size, mm.
@@ -1378,14 +1459,23 @@ fn sheet_pixels(input: &Input, route: Option<&str>, n: usize) -> Result<SheetPix
     if !input.export.paged() {
         return Err("one continuous drawing: choose a sheet format to preview a sheet".into());
     }
-    let options = input.route_options();
+    let mut options = input.route_options();
     let export = input.common_export(&options)?;
+    // The orthophoto at the preview's resolution (about that of the
+    // pixels on screen), not the export's.
+    options.background_dpi = Some(
+        PREVIEW_PHOTO_DPI.min(
+            options
+                .background_dpi
+                .unwrap_or(options.template.plan_background.dpi),
+        ),
+    );
     let routes: Vec<String> = input.routes.iter().map(|r| r.id.clone()).collect();
     let route = route
         .and_then(|id| input.routes.iter().find(|r| r.id == id))
         .or(input.routes.first())
         .ok_or("no route")?;
-    let d = input.drawing(route)?;
+    let d = input.drawing_with_backgrounds(route)?;
     // Laid out, then only the sheet shown drawn.
     let (count, draw): (usize, Box<dyn Fn(usize) -> Option<ohl_drawing::Sheet>>) =
         match (&export.optimise, &export.page) {
@@ -2067,6 +2157,76 @@ fn circuit_cases_ui(
 }
 
 /// revisions, the versions of the line, its other options.
+/// The ticks of the plan's backgrounds: the project's drawings and
+/// orthophotos under the plan, over the template's `[plan_background]`
+/// (a tick changed is kept; the template's choice of names stays).
+fn plan_background_ui(
+    ui: &mut egui::Ui,
+    s: &mut SheetChoice,
+    t: &ohl_drawing::SheetTemplate,
+    model: &Model,
+) {
+    let b = &t.plan_background;
+    let loaded = &model.backgrounds;
+    let named = |c: &ohl_drawing::template::Choice| {
+        c.names().map_or(String::new(), |n| {
+            format!(" (the template's: {})", n.join(", "))
+        })
+    };
+    ui.horizontal(|ui| {
+        let mut on = s.background_drawings.unwrap_or(b.drawings.on());
+        let r = ui
+            .add_enabled(
+                !loaded.drawings.is_empty(),
+                egui::Checkbox::new(
+                    &mut on,
+                    format!(
+                        "the project's drawings under the plan{}",
+                        named(&b.drawings)
+                    ),
+                ),
+            )
+            .on_hover_text(
+                "Its DXF drawings (Terrain › Backgrounds) straightened along the line like \
+                 everything else in the plan, on the layer OHL_BACKGROUND_DRAWINGS, under \
+                 everything else",
+            );
+        if r.changed() {
+            s.background_drawings = Some(on);
+        }
+        if loaded.drawings.is_empty() {
+            ui.weak("(the project has none)");
+        }
+    });
+    ui.horizontal(|ui| {
+        let mut on = s.background_photo.unwrap_or(b.orthophoto.on());
+        let r = ui
+            .add_enabled(
+                !loaded.images.is_empty(),
+                egui::Checkbox::new(
+                    &mut on,
+                    format!(
+                        "the project's orthophotos under the plan{}",
+                        named(&b.orthophoto)
+                    ),
+                ),
+            )
+            .on_hover_text(format!(
+                "Its orthophotos (Terrain › Backgrounds) resampled along the line at {:.0} dpi, \
+                 under a {:.0} % white veil (the template's [plan_background]); SVG, PDF and \
+                 PNG (DXF has no images)",
+                b.dpi,
+                b.veil * 100.0
+            ));
+        if r.changed() {
+            s.background_photo = Some(on);
+        }
+        if loaded.images.is_empty() {
+            ui.weak("(the project has none)");
+        }
+    });
+}
+
 fn sheet_sections(
     ui: &mut egui::Ui,
     s: &mut SheetChoice,
@@ -2165,6 +2325,7 @@ fn sheet_sections(
                     ui.weak("(the template draws none)");
                 }
             });
+            plan_background_ui(ui, s, t, model);
             ui.checkbox(
                 &mut s.conductor_clearance,
                 "lines below the lowest conductor (the project's ground rules)",

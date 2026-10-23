@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use ohl_core::budget::Budget;
 
+use crate::model::Item;
 use crate::{Options, Page, RouteDrawing};
 
 /// An output format.
@@ -247,6 +248,20 @@ pub fn write_route(
                     written.warnings.push(format!(
                         "DXF: {left_out} PNG/JPEG logo image(s) left out of the sheets (R12 has \
                          no images; SVG logos are written as outlines)"
+                    ));
+                }
+                let photos = drawings
+                    .iter()
+                    .filter(|d| {
+                        d.flat()
+                            .iter()
+                            .any(|(i, _)| matches!(i, Item::Image(x) if x.pixels.is_some()))
+                    })
+                    .count();
+                if photos > 0 {
+                    written.warnings.push(format!(
+                        "DXF: the orthophoto under the plan left out of {photos} sheet(s) (R12 \
+                         has no images; the SVG, PDF and PNG hold it)"
                     ));
                 }
                 if o.plan {

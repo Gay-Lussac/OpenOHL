@@ -159,6 +159,17 @@ cell = "0.2 mm"               # one dot per class in each cell on paper (drawing
 "3-5" = { colour = "#2e8b57", label = "vegetation" }
 "6" = { colour = "#555555", size = "0.3 mm" }
 
+[plan_background]             # the project's drawings and orthophotos under the plan, straightened along the line
+drawings = false              # true: every drawing; or ["cadastre", "survey"] (the export window and --plan-drawings may switch them)
+texts = false                 # the drawings' texts, at their size on the ground
+points = false                # the drawings' points, as dots
+own_colours = false           # the DXF's own colours (else every line in pen's colour)
+pen = { width = "0.13 mm", colour = "#8c8c8c" }
+orthophoto = false            # true: every image layer; or ["Orthophoto 2024"] (not in DXF)
+veil = 0.6                    # white veil over the photo, 0 (none) to 1
+dpi = 200                     # the photo's resolution on paper
+quality = 75                  # its JPEG quality
+
 [elevations]
 place = "above"               # "above", "below" or "off"
 offset = "8 mm"               # from the axis to the elevation's base

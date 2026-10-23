@@ -152,10 +152,18 @@ fn meets(a: [f64; 4], b: [f64; 4]) -> bool {
 /// pen, so no line end shows).
 const CULL_MARGIN: f64 = 5.0;
 
+/// A photo embedded as it is: JPEG bytes, width and height in pixels.
+struct Photo {
+    jpeg: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
 /// A page's content stream and its images.
 struct Content {
     ops: Vec<u8>,
     images: Vec<Raster>,
+    photos: Vec<Photo>,
 }
 
 impl Content {
@@ -195,6 +203,7 @@ fn page_content(d: &Drawing) -> Content {
     let mut c = Content {
         ops: Vec::new(),
         images: Vec::new(),
+        photos: Vec::new(),
     };
     // Only what can be seen is written: lines cut to the page or their
     // clip region with a margin, texts and circles outside left out.
@@ -306,6 +315,34 @@ fn page_content(d: &Drawing) -> Content {
                 c.ops.extend(literal(&t.text));
                 c.op(" Tj ET");
             }
+            // A photo (the plan's orthophoto): its JPEG as it is, filling
+            // its box.
+            Item::Image(img) if img.pixels.is_some() => {
+                let Some([pw, ph]) = img.pixels else { return };
+                let Some(jpeg) = img
+                    .href
+                    .strip_prefix("data:image/jpeg;base64,")
+                    .and_then(crate::unbase64)
+                else {
+                    return;
+                };
+                if !meets([img.at[0], img.at[1], img.width, img.height], wide) {
+                    return;
+                }
+                c.photos.push(Photo {
+                    jpeg,
+                    width: pw,
+                    height: ph,
+                });
+                c.op(&format!(
+                    "q {} 0 0 {} {} {} cm /Ph{} Do Q",
+                    n(img.width * PT),
+                    n(img.height * PT),
+                    n(img.at[0] * PT),
+                    n((height - img.at[1] - img.height) * PT),
+                    c.photos.len()
+                ));
+            }
             Item::Image(img) => {
                 if let Some(r) = logo_raster(&img.href, img.at, img.width, img.height) {
                     let [x, y, w, h] = r.rect;
@@ -407,6 +444,21 @@ pub fn write(pages: &[&Drawing], title: &str) -> Vec<u8> {
                 &r.alpha,
             ));
         }
+        for (k, photo) in content.photos.iter().enumerate() {
+            let id = next;
+            next += 1;
+            let _ = write!(xobjects, "/Ph{} {id} 0 R ", k + 1);
+            let mut o = format!(
+                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {} >>\nstream\n",
+                photo.width,
+                photo.height,
+                photo.jpeg.len()
+            )
+            .into_bytes();
+            o.extend(&photo.jpeg);
+            o.extend(b"\nendstream");
+            image_objects.push(o);
+        }
         objects.push(
             format!(
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << {xobjects}>> >> /Contents {content_id} 0 R >>",
@@ -495,6 +547,14 @@ pub fn read_back(pdf: &[u8]) -> Result<Vec<[f64; 2]>, String> {
             .is_some_and(|t| t.starts_with("\nendstream"))
         {
             return Err(format!("stream at {data} is not {length} bytes long"));
+        }
+        // A photo is a JPEG as it is; every other stream is packed.
+        let dict = &text[text[..part].rfind("<<").unwrap_or(0)..part];
+        if dict.contains("/DCTDecode") {
+            if !pdf[data..data + length].starts_with(&[0xff, 0xd8]) {
+                return Err(format!("stream at {data} is not a JPEG"));
+            }
+            continue;
         }
         miniz_oxide::inflate::decompress_to_vec_zlib(&pdf[data..data + length])
             .map_err(|e| format!("stream at {data}: {e:?}"))?;

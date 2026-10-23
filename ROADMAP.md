@@ -229,6 +229,13 @@ structure body) and O7 (the line and its structures solved together).
   tension section's horizontal tension in kN in the stringing case),
   the strings drawn on the structures. Still to come (owner, 2026-10-23,
   later): a background map under the key map, chosen in the template.
+  *Follow-up 9, built 2026-10-23, in active development (not approved
+  yet)*: the project's **DXF drawings and orthophotos under the sheets'
+  plan**, straightened along the line like the wires (drawings on
+  `OHL_BACKGROUND_DRAWINGS`, the orthophoto resampled per sheet under a
+  white veil on `OHL_BACKGROUND_PHOTO`; SVG, PDF, PNG; not in DXF R12),
+  chosen by the sheet template (`[plan_background]`), the export
+  window's ticks and `ohl drawing --plan-drawings --plan-orthophoto`.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane

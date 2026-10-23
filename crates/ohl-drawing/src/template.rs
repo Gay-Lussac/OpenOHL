@@ -589,7 +589,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 22] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 24] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -627,6 +627,8 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 22] = [
     ("isoclearance", "isoclearance {level}", &["level"]),
     ("lidar", "{name} (LiDAR class {class})", &["name", "class"]),
     ("version", "{label}: {words}", &["label", "words"]),
+    ("background_drawing", "drawing {name}", &["name"]),
+    ("orthophoto", "orthophoto {name}", &["name"]),
     // The elevations' words (written at each structure, not in the
     // legend).
     ("elevation_string", "string {length} m", &["length"]),
@@ -1105,6 +1107,166 @@ impl Default for ConductorClearanceSpec {
     }
 }
 
+/// Which backgrounds of the project are drawn: none (`false`, the
+/// default), every one (`true`) or those named (a list).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Choice {
+    /// None.
+    #[default]
+    Off,
+    /// Every one.
+    All,
+    /// Those named (never empty: an empty list reads as [`Choice::Off`]).
+    Named(Vec<String>),
+}
+
+impl<'de> Deserialize<'de> for Choice {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            On(bool),
+            Names(Vec<String>),
+        }
+        Ok(match Raw::deserialize(d)? {
+            Raw::On(true) => Self::All,
+            Raw::On(false) => Self::Off,
+            Raw::Names(n) if n.is_empty() => Self::Off,
+            Raw::Names(n) => Self::Named(n),
+        })
+    }
+}
+
+impl Choice {
+    /// Whether any is drawn.
+    pub fn on(&self) -> bool {
+        *self != Self::Off
+    }
+
+    /// Whether the one named `name` is drawn.
+    pub fn takes(&self, name: &str) -> bool {
+        match self {
+            Self::Off => false,
+            Self::All => true,
+            Self::Named(n) => n.iter().any(|x| x == name),
+        }
+    }
+
+    /// The names chosen (none: every one, or none at all).
+    pub fn names(&self) -> Option<&[String]> {
+        match self {
+            Self::Named(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// This choice switched on (`true`: the names chosen, else every
+    /// one) or off.
+    pub fn switched(&self, on: bool) -> Self {
+        match (on, self) {
+            (false, _) => Self::Off,
+            (true, Self::Named(n)) => Self::Named(n.clone()),
+            (true, _) => Self::All,
+        }
+    }
+}
+
+/// `[plan_background]`: the project's DXF drawings and orthophotos under
+/// the plan, straightened along the line like everything else drawn
+/// there. Display only.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanBackgroundSpec {
+    /// The project's drawings (DXF): `false` (default), `true` (every
+    /// one) or a list of their names.
+    #[serde(default)]
+    pub drawings: Choice,
+    /// The drawings' texts, at their size on the ground, written along
+    /// the sheet (default off).
+    #[serde(default)]
+    pub texts: bool,
+    /// The drawings' points, as dots (default off).
+    #[serde(default)]
+    pub points: bool,
+    /// The drawings in their own colours (default off: every line in
+    /// `pen`'s colour).
+    #[serde(default, alias = "own_colors")]
+    pub own_colours: bool,
+    /// The drawings' pen (default 0.13 mm, grey `#8c8c8c`; with
+    /// `own_colours` its width and dash only).
+    #[serde(default)]
+    pub pen: PenSpec,
+    /// The project's orthophotos: `false` (default), `true` (every image
+    /// layer) or a list of image layers.
+    #[serde(default)]
+    pub orthophoto: Choice,
+    /// The white veil over the orthophoto, 0 (none) to 1 (white): the
+    /// line stays readable over it (default 0.6).
+    #[serde(default = "veil")]
+    pub veil: f64,
+    /// The orthophoto's resolution on paper, dots per inch (default 200;
+    /// 50 to 600).
+    #[serde(default = "photo_dpi")]
+    pub dpi: f64,
+    /// The orthophoto's JPEG quality, 10 to 100 (default 75).
+    #[serde(default = "photo_quality")]
+    pub quality: u8,
+}
+
+fn veil() -> f64 {
+    0.6
+}
+
+fn photo_dpi() -> f64 {
+    200.0
+}
+
+fn photo_quality() -> u8 {
+    75
+}
+
+impl Default for PlanBackgroundSpec {
+    fn default() -> Self {
+        Self {
+            drawings: Choice::Off,
+            texts: false,
+            points: false,
+            own_colours: false,
+            pen: PenSpec::default(),
+            orthophoto: Choice::Off,
+            veil: veil(),
+            dpi: photo_dpi(),
+            quality: photo_quality(),
+        }
+    }
+}
+
+impl PlanBackgroundSpec {
+    fn check(&self) -> Result<(), String> {
+        self.pen.check("plan_background.pen")?;
+        if !(0.0..=1.0).contains(&self.veil) {
+            return Err("plan_background.veil: from 0 (none) to 1 (white)".into());
+        }
+        if !(50.0..=600.0).contains(&self.dpi) {
+            return Err("plan_background.dpi: from 50 to 600 dots per inch".into());
+        }
+        if !(10..=100).contains(&self.quality) {
+            return Err("plan_background.quality: from 10 to 100".into());
+        }
+        for (what, c) in [
+            ("drawings", &self.drawings),
+            ("orthophoto", &self.orthophoto),
+        ] {
+            if c.names()
+                .is_some_and(|n| n.iter().any(|x| x.trim().is_empty()))
+            {
+                return Err(format!("plan_background.{what}: a name may not be empty"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// How a cell's content sits across it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Align {
@@ -1402,6 +1564,9 @@ pub struct SheetTemplate {
     /// The weather cases drawn and of the stringing band, by default.
     #[serde(default)]
     pub cases: CasesSpec,
+    /// The plan's backgrounds: the project's drawings and orthophotos.
+    #[serde(default)]
+    pub plan_background: PlanBackgroundSpec,
     /// The title block.
     #[serde(default)]
     pub title_block: TitleBlockSpec,
@@ -1957,6 +2122,7 @@ impl SheetTemplate {
         self.corridor.near.check("corridor.near")?;
         self.corridor.far.check("corridor.far")?;
         self.centreline.pen.check("centreline.pen")?;
+        self.plan_background.check()?;
         if !["auto", "middle", "start", "end"].contains(&self.conductor_clearance.label_at.as_str())
         {
             return Err(format!(

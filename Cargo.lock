@@ -3579,7 +3579,9 @@ name = "ohl-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "image",
  "nalgebra",
+ "ohl-background",
  "ohl-bom",
  "ohl-cables",
  "ohl-clearance",
@@ -3630,7 +3632,9 @@ dependencies = [
 name = "ohl-drawing"
 version = "0.0.1"
 dependencies = [
+ "image",
  "miniz_oxide 0.8.9",
+ "ohl-background",
  "ohl-cables",
  "ohl-clearance",
  "ohl-core",

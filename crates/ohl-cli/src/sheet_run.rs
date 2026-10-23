@@ -391,6 +391,142 @@ pub fn sheet_lidar(
     Ok((options, points))
 }
 
+/// The plan's backgrounds as the command line asks: `drawings` and
+/// `photos` (none: the template's choice; an empty list: on, the
+/// template's names else every one; names: those), `off` (neither,
+/// whatever the template says), `dpi`.
+pub struct BackgroundArgs<'a> {
+    pub drawings: Option<&'a [String]>,
+    pub photos: Option<&'a [String]>,
+    pub off: bool,
+    pub dpi: Option<f64>,
+}
+
+/// The project's drawings and orthophotos read for the plan.
+#[derive(Default)]
+pub struct PlanBackgrounds {
+    /// The drawings: name, drawing.
+    pub drawings: Vec<(String, ohl_background::Drawing)>,
+    /// The orthophotos: their layers in words, where they are read.
+    pub photo: Option<(
+        String,
+        std::sync::Arc<dyn ohl_drawing::background::PhotoSource>,
+    )>,
+}
+
+impl PlanBackgrounds {
+    /// Gives route drawing `d` the backgrounds (the drawings within
+    /// `options`' reach).
+    pub fn apply(&self, d: &mut ohl_drawing::RouteDrawing, options: &ohl_drawing::Options) {
+        for (name, drawing) in &self.drawings {
+            d.add_background_drawing(name, drawing, options.background_half_width());
+        }
+        if let Some((name, source)) = &self.photo {
+            d.set_photo(name, Some(source.clone()));
+        }
+    }
+}
+
+/// The options with the command line's background choices over the
+/// template's, and the backgrounds they ask for read from project file
+/// `file` (the line's, else `--backgrounds`). Nothing is read when none
+/// is asked for.
+///
+/// Expected cost: the drawings read whole (≈ 0.1 s per 100 000 lines);
+/// the orthophotos' tiles are read later, as each sheet needs them.
+pub fn plan_backgrounds(
+    options: ohl_drawing::Options,
+    args: &BackgroundArgs<'_>,
+    file: Option<&Path>,
+) -> Result<(ohl_drawing::Options, PlanBackgrounds), String> {
+    use ohl_drawing::template::Choice;
+    let mut options = options;
+    if let Some(dpi) = args.dpi {
+        if !(10.0..=600.0).contains(&dpi) {
+            return Err(format!(
+                "--plan-background-dpi {dpi}: give 10 to 600 dots per inch"
+            ));
+        }
+        options.background_dpi = Some(dpi);
+    }
+    if args.off {
+        options.background_drawings = Some(false);
+        options.background_photo = Some(false);
+    }
+    // Names given: the template's choice replaced.
+    let named = |n: &[String]| Choice::Named(n.iter().map(|s| s.trim().to_owned()).collect());
+    let mut template = (*options.template).clone();
+    let mut changed = false;
+    for (given, switch, choice) in [
+        (
+            args.drawings,
+            &mut options.background_drawings,
+            &mut template.plan_background.drawings,
+        ),
+        (
+            args.photos,
+            &mut options.background_photo,
+            &mut template.plan_background.orthophoto,
+        ),
+    ] {
+        match given {
+            Some([]) => *switch = Some(true),
+            Some(n) => {
+                *switch = Some(true);
+                *choice = named(n);
+                changed = true;
+            }
+            None => {}
+        }
+    }
+    if changed {
+        options.template = std::sync::Arc::new(template);
+    }
+    let (drawings, photos) = (options.plan_drawings(), options.plan_photos());
+    let mut out = PlanBackgrounds::default();
+    if !drawings.on() && !photos.on() {
+        return Ok((options, out));
+    }
+    let Some(file) = file.filter(|f| crate::project::is_project(f) && f.is_file()) else {
+        println!(
+            "  warning: plan backgrounds asked for, but no project file holds them (give \
+             --backgrounds FILE.ohl)"
+        );
+        return Ok((options, out));
+    };
+    if drawings.on() {
+        let store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
+        let infos = store.drawings().map_err(|e| e.to_string())?;
+        for n in drawings.names().unwrap_or_default() {
+            if !infos.iter().any(|i| &i.name == n) {
+                println!("  warning: the project has no drawing \"{n}\"");
+            }
+        }
+        for info in infos.iter().filter(|i| drawings.takes(&i.name)) {
+            let d = store.drawing(&info.name).map_err(|e| e.to_string())?;
+            out.drawings.push((info.name.clone(), d));
+        }
+        println!(
+            "plan backgrounds: {} drawing(s) under the plan",
+            out.drawings.len()
+        );
+    }
+    if photos.on() {
+        match ohl_background::Mosaic::open(file, photos.names()).map_err(|e| e.to_string())? {
+            Some(m) => {
+                let name = m.layers().join(", ");
+                println!(
+                    "plan backgrounds: orthophoto {name} ({} image(s)) under the plan",
+                    m.images().len()
+                );
+                out.photo = Some((name, std::sync::Arc::new(m)));
+            }
+            None => println!("  warning: the project has no orthophoto of the layers asked for"),
+        }
+    }
+    Ok((options, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

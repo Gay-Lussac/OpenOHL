@@ -1247,6 +1247,43 @@ the template's words: `Curve::legend_with`); `style::Sample::Dots`;
 `SheetChoice` gained `lidar_classes: Option<String>`; `ohl drawing`
 `--sheet-lidar-classes`.
 
+**The plan's backgrounds** (2026-10-23; display only, still template
+version 1, every key optional and off by default):
+`[plan_background]` (`template::PlanBackgroundSpec`): `drawings:
+Choice`, `texts: bool`, `points: bool`, `own_colours: bool`, `pen:
+PenSpec` (default 0.13 mm `#8c8c8c`), `orthophoto: Choice`, `veil: f64`
+(0–1, default 0.6), `dpi: f64` (50–600, default 200), `quality: u8`
+(10–100, default 75); `template::Choice` = `Off` (`false`) | `All`
+(`true`) | `Named(Vec<String>)` (a list; drawing names, image layers).
+`LEGEND_LABELS` gained `background_drawing` (`{name}`) and `orthophoto`
+(`{name}`). `Options` gained `background_drawings: Option<bool>`,
+`background_photo: Option<bool>` (the export's switch over the
+template's choice: `Options::plan_drawings`, `plan_photos`;
+`Choice::switched`), `background_dpi: Option<f64>` (the sheet preview's
+60 dpi), and `Options::background_half_width` (`BACKGROUND_REACH` = 3 ×
+the line width or the corridor). `RouteDrawing` gained `background:
+Arc<Vec<background::PlanDrawing { name, lines: Vec<(Vec<[station,
+offset]>, Color)>, points, texts: Vec<PlanText> }>>`
+(`RouteDrawing::add_background_drawing(name, &ohl_background::Drawing,
+half_width)`: pieces of at most `background::DENSIFY_M` = 2 m
+straightened, cut at the width, layers off left out) and `photo:
+Option<background::PlanPhoto { name, source: Arc<dyn PhotoSource> }>`
+(`RouteDrawing::set_photo`; `PhotoSource::sample(points, metres per
+pixel, out)`, implemented by `ohl_background::Mosaic`: the project's
+images of chosen layers, tiles read on demand at the pyramid level of
+the pixel, bilinear, 512 tiles cached). `model::Image` gained `pixels:
+Option<[u32; 2]>` (a photo stretched to its box: SVG
+`preserveAspectRatio="none"`, PDF the JPEG as a `/DCTDecode` image, DXF
+left out with a `999` comment); new layers `OHL_BACKGROUND_DRAWINGS`,
+`OHL_BACKGROUND_PHOTO` (`Layer::ALL` 29). The app's `SheetChoice` gained
+`background_drawings`, `background_photo: Option<bool>` (kept in
+`DrawingSettings`); `drawings::Input` the drawings and the project file
+and layers of the photos (`Input::drawing_with_backgrounds`). `ohl
+drawing` / `ohl line`: `--plan-drawings [NAMES]`, `--plan-orthophoto
+[LAYERS]`, `--no-plan-backgrounds`, `--plan-background-dpi`,
+`--backgrounds FILE.ohl`. `ohl-drawing` now depends on `ohl-background`
+and `image` (JPEG).
+
 **Editing a structure file** (`apps/structure/ohl-structure-edit`,
 [crates](structure-app.md)): every edit of the structure application and
 of `ohl-app`'s structure screen is a function on the file's text
