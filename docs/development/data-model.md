@@ -1247,6 +1247,18 @@ the template's words: `Curve::legend_with`); `style::Sample::Dots`;
 `SheetChoice` gained `lidar_classes: Option<String>`; `ohl drawing`
 `--sheet-lidar-classes`.
 
+**The key map's backgrounds** (2026-10-23, display only): `[key_map]`
+(`template::KeyMapSpec`) gained `box: PenSpec` (field `sheet_box`),
+`drawings: bool`, `orthophoto: bool`, `veil: f64` (0–1, default 0.4);
+`Options` gained `key_map_drawings`, `key_map_photo: Option<bool>`
+(`Options::key_map_drawings_on`, `key_map_photo_on`);
+`RouteDrawing::key_background: Arc<Vec<background::KeyMapDrawing { name,
+lines: [(xy points, colour)] }>>`, filled by
+`RouteDrawing::add_key_map_drawing` (the square 1.6 times the route's box,
+points thinned to 1/3000 of it); `SheetChoice` (the drawing settings)
+gained `key_map_drawings`, `key_map_photo: Option<bool>`. The plan's
+backgrounds are cut at the corridor's edges when a corridor is drawn.
+
 **The plan's backgrounds** (2026-10-23; display only, still template
 version 1, every key optional and off by default):
 `[plan_background]` (`template::PlanBackgroundSpec`): `drawings:

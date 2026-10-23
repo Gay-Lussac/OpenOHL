@@ -993,7 +993,8 @@ pub(crate) fn key_map(
             inner[1] + inner[3] / 2.0 - (y - cy) * k,
         ]
     };
-    let mut drawn = Vec::new();
+    // The backgrounds under everything else.
+    let mut drawn = crate::background::key_map_items(d, o, inner, (cx, cy, k));
     drawn.push(Item::Path(Path {
         layer: Layer::KeyMap,
         points: centre.iter().map(|p| map(p[1], p[2])).collect(),
@@ -1027,6 +1028,8 @@ pub(crate) fn key_map(
         }
     }
     let hl = spec.highlight.over(Pen::new(Color(0xcc, 0x22, 0x22), 0.7));
+    // The box around the sheet's stretch: (left, top, right, bottom).
+    let mut sheet_box: Option<[f64; 4]> = None;
     if sheet.len() > 1 {
         drawn.push(Item::Path(Path {
             layer: Layer::KeyMap,
@@ -1037,11 +1040,94 @@ pub(crate) fn key_map(
         }));
         let e = extent_of(&sheet);
         let (a, b) = (map(e[0], e[3]), map(e[2], e[1]));
+        sheet_box = Some([a[0] - 1.0, a[1] - 1.0, b[0] + 1.0, b[1] + 1.0]);
         drawn.push(rect_path(
             Layer::KeyMap,
             [a[0] - 1.0, a[1] - 1.0, b[0] - a[0] + 2.0, b[1] - a[1] + 2.0],
-            Pen::new(hl.color, 0.2),
+            spec.sheet_box.over(Pen::new(hl.color, 0.2)),
         ));
+    }
+    // The names that keep clear of each other, of the route and of the
+    // map's edge (the first and the last structure first, then along the
+    // route), each at the first of four places around its structure that
+    // is clear, so they stay readable at the key map's scale.
+    let size = 1.5;
+    // (The box's edges kept clear, not its inside.)
+    let mut kept: Vec<[f64; 4]> = sheet_box
+        .map(|[l, t, r, b]| {
+            vec![
+                [l - 0.2, t - 0.2, r + 0.2, t + 0.2],
+                [l - 0.2, b - 0.2, r + 0.2, b + 0.2],
+                [l - 0.2, t - 0.2, l + 0.2, b + 0.2],
+                [r - 0.2, t - 0.2, r + 0.2, b + 0.2],
+            ]
+        })
+        .unwrap_or_default();
+    let mut names = Vec::new();
+    if spec.structures && !d.structures.is_empty() {
+        // The route on paper, a point every 0.3 mm at most.
+        let mut route: Vec<[f64; 2]> = Vec::new();
+        for w in centre.windows(2) {
+            let (a, b) = (map(w[0][1], w[0][2]), map(w[1][1], w[1][2]));
+            let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / 0.3).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let f = i as f64 / n as f64;
+                route.push([a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])]);
+            }
+        }
+        if let Some(l) = centre.last() {
+            route.push(map(l[1], l[2]));
+        }
+        // The structures on the line (not those beside it: connections).
+        let on: Vec<&crate::Mark> = d.structures.iter().filter(|m| !m.away).collect();
+        let n = on.len();
+        let order = [0, n.saturating_sub(1)]
+            .into_iter()
+            .chain(1..n.saturating_sub(1));
+        for i in order.filter(|_| n > 0) {
+            let m = on[i];
+            let p = map(m.xy[0], m.xy[1]);
+            let w = 0.6 * size * m.id.chars().count() as f64;
+            // Above right, below right, above left, below left: the text's
+            // start (baseline) and its box.
+            let places = [
+                ([p[0] + 0.8, p[1] - 0.8], Anchor::Start),
+                ([p[0] + 0.8, p[1] + 0.8 + size], Anchor::Start),
+                ([p[0] - 0.8, p[1] - 0.8], Anchor::End),
+                ([p[0] - 0.8, p[1] + 0.8 + size], Anchor::End),
+            ];
+            let found = places.into_iter().find_map(|(at, anchor)| {
+                let x0 = if anchor == Anchor::End {
+                    at[0] - w
+                } else {
+                    at[0]
+                };
+                let b = [x0 - 0.2, at[1] - size - 0.1, x0 + w + 0.2, at[1] + 0.3];
+                let inside = b[0] >= inner[0]
+                    && b[2] <= inner[0] + inner[2]
+                    && b[1] >= inner[1]
+                    && b[3] <= inner[1] + inner[3];
+                let clear = kept
+                    .iter()
+                    .all(|q| b[2] < q[0] || b[0] > q[2] || b[3] < q[1] || b[1] > q[3]);
+                let off_route = route
+                    .iter()
+                    .all(|r| r[0] < b[0] || r[0] > b[2] || r[1] < b[1] || r[1] > b[3]);
+                (inside && clear && off_route).then_some((at, anchor, b))
+            });
+            if let Some((at, anchor, b)) = found {
+                kept.push(b);
+                names.push(Item::Text(Text {
+                    layer: Layer::KeyMap,
+                    at,
+                    text: m.id.clone(),
+                    size,
+                    anchor,
+                    bold: false,
+                    color: Color::BLACK,
+                }));
+            }
+        }
     }
     for m in &d.structures {
         let p = map(m.xy[0], m.xy[1]);
@@ -1053,18 +1139,8 @@ pub(crate) fn key_map(
             fill: Some(Color(0x33, 0x33, 0x33)),
             title: None,
         }));
-        if spec.structures {
-            drawn.push(Item::Text(Text {
-                layer: Layer::KeyMap,
-                at: [p[0] + 0.8, p[1] - 0.8],
-                text: m.id.clone(),
-                size: 1.5,
-                anchor: Anchor::Start,
-                bold: false,
-                color: Color::BLACK,
-            }));
-        }
     }
+    drawn.extend(names);
     items.push(Item::Clip(Clip {
         rect: inner,
         items: drawn,

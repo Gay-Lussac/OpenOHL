@@ -152,6 +152,12 @@ pub struct Options {
     /// The orthophoto's resolution on paper, dpi (none: the template's;
     /// the sheet preview draws it coarser).
     pub background_dpi: Option<f64>,
+    /// The project's drawings under the key map switched on or off (none:
+    /// the template's `[key_map] drawings`).
+    pub key_map_drawings: Option<bool>,
+    /// The project's orthophotos under the key map switched on or off
+    /// (none: the template's `[key_map] orthophoto`).
+    pub key_map_photo: Option<bool>,
 }
 
 impl Options {
@@ -169,6 +175,18 @@ impl Options {
         let t = &self.template.plan_background.orthophoto;
         self.background_photo
             .map_or_else(|| t.clone(), |on| t.switched(on))
+    }
+
+    /// Whether the key map shows the project's drawings.
+    pub fn key_map_drawings_on(&self) -> bool {
+        self.key_map_drawings
+            .unwrap_or(self.template.key_map.drawings)
+    }
+
+    /// Whether the key map shows the project's orthophotos.
+    pub fn key_map_photo_on(&self) -> bool {
+        self.key_map_photo
+            .unwrap_or(self.template.key_map.orthophoto)
     }
 
     /// The half width the project's drawings are taken within, m:
@@ -463,6 +481,8 @@ impl Default for Options {
             background_drawings: None,
             background_photo: None,
             background_dpi: None,
+            key_map_drawings: None,
+            key_map_photo: None,
         }
     }
 }
@@ -787,6 +807,9 @@ pub struct RouteDrawing {
     /// ([`RouteDrawing::add_background_drawing`]): drawn under the plan
     /// when the options ask ([`Options::plan_drawings`]).
     pub background: Arc<Vec<background::PlanDrawing>>,
+    /// The project's drawings around the route for the key map, north up
+    /// ([`RouteDrawing::add_key_map_drawing`]).
+    pub key_background: Arc<Vec<background::KeyMapDrawing>>,
     /// The project's orthophotos, resampled along the route on each sheet
     /// ([`RouteDrawing::set_photo`]) when the options ask
     /// ([`Options::plan_photos`]).
@@ -1105,6 +1128,7 @@ pub fn build(
         lidar: Vec::new(),
         stringing: Vec::new(),
         background: Arc::default(),
+        key_background: Arc::default(),
         photo: None,
     })
 }

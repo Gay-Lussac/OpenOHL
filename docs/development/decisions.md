@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-10-23
 
+**Key map and plan backgrounds (owner, 2026-10-23)**
+
+- The key map's structure names are thinned so they stay readable
+  (none touching another, the route, the sheet's box or the map's
+  edge; the first and the last structure first; connections beside the
+  line not named); the box around the sheet's stretch has its own pen
+  (`box`, red in the plan-submission template).
+- The project's drawings and orthophotos may be shown under the key map,
+  north up, switched in the template and the export window.
+- The backgrounds under the plan stop at the corridor's edges (the area
+  shown) instead of filling the panel above and below it.
+- Background maps imported into the project, per view, are on the
+  roadmap (U3 follow-up 10).
+
 **A stringing table on the sheets (owner, 2026-10-23)**
 
 - The owner asked for the list of tension sections with their stringing
