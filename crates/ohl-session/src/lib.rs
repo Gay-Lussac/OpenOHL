@@ -34,17 +34,18 @@
 //! attachments), sections (with stringing and loads) and jumpers, each a
 //! JSON row with a version number, in their order in the line.
 //!
-//! Schema (version 5, tables next to the point clouds of ADR-0007; older
+//! Schema (version 6, tables next to the point clouds of ADR-0007; older
 //! files are migrated when opened — version 2 added the tables of
 //! [`versions`] and [`collab`], version 3 the project lines of [`lines`],
 //! version 4 the library files as objects of each project line, version
 //! 5 the heights' vertical datum in the line settings, nothing to
-//! convert):
+//! convert; version 6 lines kept as differences from a revision, older
+//! lines read as they are):
 //!
 //! ```sql
-//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '5'
+//! ols_meta(key PRIMARY KEY, value)        -- 'session_schema' = '6'
 //! session_user(name PRIMARY KEY, role)
-//! model_object(line, kind, id, ord, version, json, PRIMARY KEY(line, kind, id))
+//! model_object(line, kind, id, ord, version, json, gone, PRIMARY KEY(line, kind, id))
 //! oplog(seq PRIMARY KEY, time, user, kind, command, inverse, objects,
 //!       sections, undoes, undone_by, note, line)
 //! spatial_index(line, kind, id, level, tx, ty, xmin, ymin, xmax, ymax)  -- [`spatial`]
@@ -58,6 +59,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
+use std::sync::Arc;
 
 use ohl_core::grid::{Bounds, Grid, Tile};
 use ohl_line::{Jumper, Line, Point, Route, Section, Stringing, Structure};
@@ -65,14 +67,19 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Schema version of the session tables: 5 lets the line settings row
+/// Schema version of the session tables: 6 keeps a project line started
+/// since as the revision it starts from (`vc_ref.base`) and only what it
+/// changes (`model_object` rows, tombstones with `gone` for objects
+/// deleted) — an older program would read such a line as nearly empty, so
+/// it refuses the project; lines of older projects keep all their objects
+/// and are read as before ([`lines`]). 5 lets the line settings row
 /// (`meta` `line`) hold the heights' vertical datum (`height_datum`, line
 /// file version 7) — an older program refuses such a project instead of
 /// dropping the datum when it writes the row; nothing in an older project
 /// changes when it opens (it has none). 4 keeps library files as objects
 /// of each project line (before, a `library_file` table shared by all
 /// lines).
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// The object id of library file `name` of `kind`.
 pub(crate) fn library_id(kind: &str, name: &str) -> String {
@@ -832,13 +839,13 @@ fn meta_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Option<Meta>, S
     let Some(base) = objects.get(&(Kind::Meta, "line".to_owned())) else {
         return Ok(None);
     };
-    let Value::Object(mut all) = base.value.clone() else {
+    let Value::Object(mut all) = (*base.value).clone() else {
         return Err("line settings: not an object".into());
     };
     for key in META_ROWS {
         if let Some(Value::Object(row)) = objects
             .get(&(Kind::Meta, key.to_owned()))
-            .map(|o| o.value.clone())
+            .map(|o| (*o.value).clone())
         {
             all.extend(row);
         }
@@ -931,12 +938,13 @@ type EntryRow = (
     String,
 );
 
-/// One object of the model.
+/// One object of the model. Its JSON is shared (not copied) by the
+/// lines and states holding it unchanged.
 #[derive(Debug, Clone, PartialEq)]
 struct Object {
     ord: i64,
     version: i64,
-    value: Value,
+    value: Arc<Value>,
 }
 
 /// An open project.
@@ -1130,7 +1138,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         defaults: meta.defaults,
     };
     for ((kind, id), o) in ordered {
-        let v = o.value.clone();
+        let v = (*o.value).clone();
         let parse_err = |e: serde_json::Error| bad(format!("{} {id}: {e}", kind.as_str()));
         match kind {
             Kind::Meta => {}
@@ -1249,7 +1257,9 @@ fn upgrade_before_tables(conn: &Connection) -> Result<(), SessionError> {
         conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
     }
     // Schema 3: every project line has its own objects, log and index.
-    lines::migrate(conn)
+    lines::migrate(conn)?;
+    // Schema 6: lines kept as differences have tombstones.
+    lines::migrate_tombstones(conn)
 }
 
 /// Schema 4: library files of the `library_file` table (schema 3 and
@@ -1330,7 +1340,8 @@ impl Session {
              CREATE TABLE IF NOT EXISTS model_object (
                  line TEXT NOT NULL DEFAULT 'main',
                  kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL,
-                 version INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (line, kind, id));
+                 version INTEGER NOT NULL, json TEXT NOT NULL, gone INTEGER NOT NULL DEFAULT 0,
+                 PRIMARY KEY (line, kind, id));
              CREATE TABLE IF NOT EXISTS oplog (
                  seq INTEGER PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                  user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
@@ -1407,9 +1418,11 @@ impl Session {
             migrate_library_files(&conn)?;
         }
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
+        // Tombstones of lines kept as differences ([`lines`]).
+        let mut gone: BTreeMap<String, BTreeSet<(Kind, String)>> = BTreeMap::new();
         {
             let mut stmt =
-                conn.prepare("SELECT line, kind, id, ord, version, json FROM model_object")?;
+                conn.prepare("SELECT line, kind, id, ord, version, json, gone FROM model_object")?;
             let rows = stmt.query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
@@ -1418,18 +1431,25 @@ impl Session {
                     r.get::<_, i64>(3)?,
                     r.get::<_, i64>(4)?,
                     r.get::<_, String>(5)?,
+                    r.get::<_, bool>(6)?,
                 ))
             })?;
             for row in rows {
-                let (line, kind, id, ord, version, text) = row?;
-                let value =
+                let (line, kind, id, ord, version, text, deleted) = row?;
+                if deleted {
+                    gone.entry(line)
+                        .or_default()
+                        .insert((Kind::parse(&kind)?, id));
+                    continue;
+                }
+                let value: Value =
                     serde_json::from_str(&text).map_err(|e| SessionError::Store(e.to_string()))?;
                 by_line.entry(line).or_default().insert(
                     (Kind::parse(&kind)?, id),
                     Object {
                         ord,
                         version,
-                        value,
+                        value: Arc::new(value),
                     },
                 );
             }
@@ -1464,7 +1484,7 @@ impl Session {
                     *n += 1;
                     let reorder = matches!(kind, Kind::Alignment | Kind::AlignmentPoint);
                     let (ord, version) = match objects.get(&key) {
-                        Some(o) if o.value == value && (!reorder || o.ord == place) => continue,
+                        Some(o) if *o.value == value && (!reorder || o.ord == place) => continue,
                         Some(o) => (if reorder { place } else { o.ord }, o.version + 1),
                         None => (if reorder { place } else { k as i64 }, 1),
                     };
@@ -1478,7 +1498,7 @@ impl Session {
                         Object {
                             ord,
                             version,
-                            value,
+                            value: Arc::new(value),
                         },
                     );
                 }
@@ -1513,7 +1533,7 @@ impl Session {
             others: BTreeMap::new(),
             renamed: None,
         };
-        session.load_lines(by_line)?;
+        session.load_lines(by_line, gone)?;
         Ok(session)
     }
 
@@ -1618,7 +1638,7 @@ impl Session {
         if self
             .objects
             .get(&(Kind::Library, id.clone()))
-            .is_some_and(|o| o.value == value)
+            .is_some_and(|o| *o.value == value)
         {
             return Ok(());
         }
@@ -1658,7 +1678,7 @@ impl Session {
             match text {
                 Some(t) => {
                     let value = library_value(kind, name, t);
-                    if current.is_none_or(|o| o.value != value) {
+                    if current.is_none_or(|o| *o.value != value) {
                         commands.push(Command::Put {
                             kind: Kind::Library,
                             id,
@@ -2178,7 +2198,7 @@ impl Session {
                         kind.as_str()
                     )));
                 }
-                let mut value = old.value.clone();
+                let mut value = (*old.value).clone();
                 value["id"] = Value::String(new_id.clone());
                 out.push(Command::Put {
                     kind,
@@ -2528,7 +2548,7 @@ impl Session {
                     if self
                         .objects
                         .get(&(kind, id.clone()))
-                        .is_some_and(|o| o.value == value && o.ord == place)
+                        .is_some_and(|o| *o.value == value && o.ord == place)
                     {
                         continue;
                     }
@@ -3027,7 +3047,7 @@ impl Session {
         // its own row only ([`META_ROWS`]).
         let same = |c: &Command| {
             matches!(c, Command::Put { kind: Kind::Meta, id, value, .. }
-                if self.objects.get(&(Kind::Meta, id.clone())).is_some_and(|o| &o.value == value))
+                if self.objects.get(&(Kind::Meta, id.clone())).is_some_and(|o| *o.value == *value))
         };
         if prims.iter().any(|c| !same(c)) {
             prims.retain(|c| !same(c));
@@ -3070,10 +3090,10 @@ impl Session {
                             inverse.push(Command::Put {
                                 kind: *kind,
                                 id: id.clone(),
-                                value: o.value.clone(),
+                                value: (*o.value).clone(),
                                 ord: moved.map(|_| o.ord),
                             });
-                            o.value = value.clone();
+                            o.value = Arc::new(value.clone());
                             o.version += 1;
                             if let Some(w) = moved {
                                 o.ord = w;
@@ -3091,7 +3111,7 @@ impl Session {
                                 Object {
                                     ord,
                                     version: 1,
-                                    value: value.clone(),
+                                    value: Arc::new(value.clone()),
                                 },
                             );
                         }
@@ -3107,7 +3127,7 @@ impl Session {
                     inverse.push(Command::Put {
                         kind: *kind,
                         id: id.clone(),
-                        value: old.value,
+                        value: Arc::unwrap_or_clone(old.value),
                         ord: Some(old.ord),
                     });
                     changed.push((*kind, id.clone()));
@@ -3198,18 +3218,16 @@ impl Session {
         point_inverses.reverse();
         point_inverses.extend(inverse);
         let inverse = point_inverses;
+        // A line kept as differences from a revision keeps a tombstone
+        // for an object deleted ([`lines`]).
+        let based = lines::line_base(&tx, &self.current)?.is_some();
         for (kind, id) in &changed {
             if *kind == Kind::PointCloud {
                 continue;
             }
             match objects.get(&(*kind, id.clone())) {
-                Some(o) => {
-                    tx.execute(
-                        "INSERT INTO model_object (kind, id, ord, version, json, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                         ON CONFLICT(line, kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version, json = excluded.json",
-                        params![kind.as_str(), id, o.ord, o.version, o.value.to_string(), self.current],
-                    )?;
-                }
+                Some(o) => lines::write_row(&tx, &self.current, *kind, id, Some(o))?,
+                None if based => lines::write_row(&tx, &self.current, *kind, id, None)?,
                 None => {
                     tx.execute(
                         "DELETE FROM model_object WHERE kind = ?1 AND id = ?2 AND line = ?3",
@@ -3386,7 +3404,7 @@ impl Session {
             }
         }
         for ((k, id), value) in &left {
-            let now = self.objects.get(&(*k, id.clone())).map(|o| &o.value);
+            let now = self.objects.get(&(*k, id.clone())).map(|o| &*o.value);
             if now != value.as_ref() {
                 return Err(refused(format!(
                     "{} {id} was changed after entry {seq}: undo those changes first or ask an admin to roll back",
@@ -3469,7 +3487,7 @@ impl Session {
         let mut target: BTreeMap<(Kind, String), (Value, Option<i64>)> = self
             .objects
             .iter()
-            .map(|(k, o)| (k.clone(), (o.value.clone(), Some(o.ord))))
+            .map(|(k, o)| (k.clone(), ((*o.value).clone(), Some(o.ord))))
             .collect();
         // Changed points: put back by the inverses, newest first.
         let mut points_back = Vec::new();
@@ -3499,7 +3517,7 @@ impl Session {
         let mut diff = points_back;
         for (key, o) in &self.objects {
             match target.get(key) {
-                Some((v, _)) if *v == o.value => {}
+                Some((v, _)) if *v == *o.value => {}
                 Some((v, _)) => diff.push(Command::Put {
                     kind: key.0,
                     id: key.1.clone(),

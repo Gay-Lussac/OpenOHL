@@ -28,6 +28,46 @@ of Parts A, B and C).
 - Step 2 (owner: yes, after step 1): the project file keeps a new line
   as its starting revision and what it changed (roadmap U9).
 
+**New project lines keep only their differences (owner, 2026-10-23; roadmap U9)**
+
+- Starting a project line no longer writes every object of the line it
+  starts from again: the line records the revision it starts from as
+  its base (`vc_ref.base`; the revision recorded on the source line, or
+  the revision or tag it is made from) and keeps in `model_object` only
+  the objects it changes or adds since, and a tombstone (`gone`) for each
+  object of the base it deletes. Reading it: the base revision's objects
+  and library files with its rows laid over them. Project schema
+  **6**; an older program refuses such a project (it would read the line
+  as nearly empty).
+- Older projects are read as they are: a line without a base (the main
+  line, every line of schema 5 and before) keeps all its objects, and
+  nothing is rewritten when they open. Lines started from them are kept
+  as differences.
+- Why a revision and not the source line: revisions are immutable and
+  never deleted, so deleting or renaming the line a line came from
+  cannot change it, and the base is already the two lines' common
+  ancestor for bringing changes in.
+- Not compacted: the rows of a line are bounded by the objects it ever
+  changed; moving them onto a newer revision would gain little and
+  reset the objects' versions.
+- Visible differences: none in the lines, their library files, the log,
+  undo, merges or bundles. The objects of a new line start again at
+  version 1 (they kept the source line's numbers; versions are not shown
+  and undo judges by content). A line's spatial index rows are written
+  when it is first worked on, not when it is started. Lines made from a
+  revision or a bundle still start without that revision's library
+  files, as before (kept as tombstones; whether they should have them is
+  an open question).
+- In memory the lines share the JSON of the objects they hold alike.
+  Measured on an invented line of 1 101 structures and 552 sections
+  (2 770 objects, five library files of 200 kB): starting a line 67 ms →
+  34 ms, rows written 2 770 objects and 2 756 index rows → none, the
+  file +2.88 MB → +0 MB, memory held +18.3 MB → +3.1 MB (the second
+  line's typed copy); the project with two lines opened again holds
+  37.6 MB → 22.5 MB and opens in 62 ms → about 77 ms (the base revision is
+  read from its compressed blobs); working on the new line for the first
+  time writes its index (about 4 ms).
+
 **Sheets: cases per circuit, the stringing band, strings drawn (owner, 2026-10-23)**
 
 - Each circuit's wires are drawn in a weather case of their own: by

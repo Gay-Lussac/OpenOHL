@@ -31,7 +31,9 @@ changes *stage 1* only.
 - **A new line is a copy.** It starts as the line it is made from is at that
   moment, including changes not yet committed. From then on the two are
   independent: a correction made later on the main line does **not** appear
-  in the stage by itself.
+  in the stage by itself. The project file keeps a new line as the revision
+  it starts from and only what the line changes, so starting a line is
+  quick and takes next to no room, however long the line.
 - **Bringing in changes** updates a line with what changed on another since
   they parted. Changes to different objects combine by themselves. Where
   both lines changed the same object, you choose which version to keep.
@@ -221,6 +223,10 @@ project is opened: each becomes an editable line of the same name and
 creator. Their working state is the one saved. They have no revision in
 common with the main line, so bringing changes between them compares
 whole objects.
+
+Projects in which a line was started by this version (project schema 6)
+cannot be opened by earlier versions: they say the project is newer than
+they support. Lines of older projects stay as they are when opened.
 
 ## On the command line
 

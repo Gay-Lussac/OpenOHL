@@ -1025,7 +1025,7 @@ fn library_files_of_schema_3_become_each_lines() {
 }
 
 /// The heights' vertical datum (schema 5): a project of schema 4 opens
-/// unchanged with none (and is marked 5); set next to the coordinate
+/// unchanged with none (and is marked current); set next to the coordinate
 /// system (the line settings row), it is kept when the project opens
 /// again, undone as any change, and an empty one is refused.
 #[test]
@@ -1048,7 +1048,7 @@ fn the_height_datum_is_kept_and_older_projects_read() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(schema, "5");
+    assert_eq!(schema, SCHEMA_VERSION.to_string());
     let mut line = s.line().clone();
     line.crs = "EPSG:2056".into();
     line.height_datum = Some(ohl_line::HeightDatum {
@@ -1095,7 +1095,9 @@ fn a_new_project_has_no_tables_of_older_schemas() {
         ("oplog", "note"),
         ("oplog", "line"),
         ("model_object", "line"),
+        ("model_object", "gone"),
         ("vc_ref", "description"),
+        ("vc_ref", "base"),
     ] {
         let has: bool = c
             .prepare("SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2")
@@ -1869,7 +1871,7 @@ fn settings_changed_by_two_users_are_both_kept() {
     objects
         .get_mut(&(Kind::Meta, "line".to_owned()))
         .unwrap()
-        .value = json(&all);
+        .value = std::sync::Arc::new(json(&all));
     let read = meta_of(&objects).unwrap().unwrap();
     assert_eq!(read.name, "old form");
     assert_eq!(read.solver.jumper_loads, ohl_line::JumperLoads::Pull);
@@ -1898,7 +1900,7 @@ fn structure_loads_are_a_settings_row() {
     let applied = s.apply("ana", command).unwrap();
     assert!(applied.sections.is_empty(), "{:?}", applied.sections);
     assert_eq!(s.line().structure_loads, choice);
-    let row = &s.objects[&(Kind::Meta, "structure_loads".to_owned())].value;
+    let row = &*s.objects[&(Kind::Meta, "structure_loads".to_owned())].value;
     assert_eq!(
         row,
         &serde_json::json!({ "structure_loads": {

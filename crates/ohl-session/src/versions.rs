@@ -44,7 +44,8 @@
 //! ```sql
 //! vc_blob(hash PRIMARY KEY, data)                    -- zstd of the text
 //! vc_revision(id PRIMARY KEY, parents, author, time, message, tree, seq)
-//! vc_ref(name PRIMARY KEY, kind, revision, protected, user, time, note)
+//! vc_ref(name PRIMARY KEY, kind, revision, protected, user, time, note,
+//!        description, base)                       -- base: [`crate::lines`]
 //! ols_meta('vc_head')                                -- branch:NAME, the line the file opens on
 //! ```
 
@@ -69,7 +70,7 @@ pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS vc_blob (
         name TEXT PRIMARY KEY, kind TEXT NOT NULL, revision TEXT,
         protected INTEGER NOT NULL DEFAULT 0, user TEXT NOT NULL,
         time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '');";
+        note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', base TEXT);";
 
 /// The first branch of every project.
 pub const MAIN: &str = "main";
@@ -108,7 +109,7 @@ impl State {
             objects: objects
                 .iter()
                 .filter(|((k, _), _)| *k != Kind::Library)
-                .map(|(k, o)| (k.clone(), (o.ord, o.value.clone())))
+                .map(|(k, o)| (k.clone(), (o.ord, (*o.value).clone())))
                 .collect(),
             libraries: BTreeMap::new(),
         };
@@ -133,7 +134,7 @@ impl State {
                     Object {
                         ord: *ord,
                         version: 1,
-                        value: value.clone(),
+                        value: std::sync::Arc::new(value.clone()),
                     },
                 )
             })
@@ -1506,7 +1507,7 @@ impl Session {
         let mut prims = Vec::new();
         for (key, (ord, value)) in target_objects {
             match self.objects.get(key) {
-                Some(o) if o.value == *value && o.ord == *ord => {}
+                Some(o) if *o.value == *value && o.ord == *ord => {}
                 _ => prims.push(Command::Put {
                     kind: key.0,
                     id: key.1.clone(),

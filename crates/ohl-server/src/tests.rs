@@ -505,6 +505,20 @@ fn replicas_follow_version_control() {
     };
     assert_eq!(lines(&server), lines(&replica));
     assert!(replica.is_line("phase 1"));
+    // The phase kept as its differences from main's revision: read back
+    // alike from the replica's file and from a new copy of the server's.
+    drop(replica);
+    let replica = Session::open(&copy).unwrap();
+    let fresh = dir.join("fresh.ohl");
+    server.copy_to(&fresh).unwrap();
+    let fresh = Session::open(&fresh).unwrap();
+    for s in [&replica, &fresh] {
+        assert_eq!(lines(s), lines(&server));
+        assert_eq!(
+            s.line_named("phase 1").unwrap(),
+            server.line_named("phase 1").unwrap()
+        );
+    }
     assert!(
         Op::BringIn {
             from: "main".into(),
