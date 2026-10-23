@@ -1863,7 +1863,15 @@ pub(crate) mod tests {
             .iter()
             .filter(|p| p.title.as_deref() == Some("T2 elevation"))
             .collect();
-        assert_eq!(t2.len(), 5);
+        // Its four legs and the mast (members), and its strings.
+        let strings = d
+            .structures
+            .iter()
+            .find(|m| m.id == "T2")
+            .unwrap()
+            .strings
+            .len();
+        assert_eq!(t2.len(), 5 + strings);
         // The leg's foot 2 m right of the axis, 30 m up: at 1:2000 1 mm
         // across, 15 mm up from the base, which is 10 mm above the line.
         let m = d.structures.iter().find(|m| m.id == "T2").unwrap();
@@ -2031,7 +2039,8 @@ pub(crate) mod tests {
             .into_iter()
             .find(|e| e.id == "T2")
             .unwrap();
-        assert_eq!(e.lines.len(), tower(&line, "T2").unwrap().len());
+        // (And its 3 strings.)
+        assert_eq!(e.lines.len(), tower(&line, "T2").unwrap().len() + 3);
     }
 
     fn warnings_of(d: &RouteDrawing, o: &Options) -> Vec<String> {
