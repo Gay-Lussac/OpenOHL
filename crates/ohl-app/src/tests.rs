@@ -3580,7 +3580,18 @@ fn project_lines_are_made_shown_worked_on_and_brought_up_to_date() {
         // Just started, it differs in nothing: nothing drawn of it.
         assert_eq!(count(&r.model, crate::scene::Layer::OtherLines), 0);
         // Whole lines asked for: drawn exactly as the line worked on (every
-        // structure, string, subconductor, yoke and jumper).
+        // structure, string, subconductor, yoke and jumper) once solved in
+        // the case shown (in the background; exit clause: a minute).
+        let shown = vec![0usize];
+        r.model.ensure_solved(0);
+        let ctx = egui::Context::default();
+        let start = std::time::Instant::now();
+        while !r.model.other_lines[0].cases[0].ready {
+            r.model.want_others(&shown, &ctx);
+            r.model.poll_others();
+            assert!(start.elapsed().as_secs() < 60, "not solved in a minute");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         r.model.other_lines_whole = true;
         let working = count(&r.model, crate::scene::Layer::Structures)
             + count(&r.model, crate::scene::Layer::Wires);
