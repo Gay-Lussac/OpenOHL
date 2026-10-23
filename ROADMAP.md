@@ -154,21 +154,24 @@ Proposed (to discuss; nothing built yet):
    - the line's axis, its structures (numbered), the corridor, the other
      lines and project lines in their roles, crossings marked; legend,
      north arrow, scale bar, title block from the sheet template;
-   - background: the project's orthophotos and DXF drawings (as under the
-     sheets' plan, 2026-10-23) and, if wanted, a background map from a
-     map service chosen in the template (which services, and whether the
-     program may fetch from one, to decide);
+   - background: a map the user loads into the project (an image layer,
+     like the orthophotos) and the project's orthophotos and DXF drawings
+     (as under the sheets' plan, 2026-10-23), chosen in the template;
+     **later**: links to public map services (an interface to fetch
+     their maps), a separate step;
    - laid out on sheets along the route (overlapping, a key of the
      sheets), or one sheet of the whole line fitted to a paper size (the
      paper optimisation of 2026-10-22).
-2. **Phase plan** — which conductor (circuit and phase) hangs where on
-   every structure along the line:
-   - a diagram along the line: one column per structure (number, type),
-     one row per wire position (arms, left and right; earth wires on
-     top), each wire marked with its circuit and phase in the phase
-     colours, transpositions shown where a phase changes position;
-   - the structures' heads (the elevations of 2026-10-22, schematic) with
-     their positions labelled, once per type or per structure;
+2. **Phase plan** — where the phase arrangement changes along the line,
+   and nothing else (owner, 2026-10-23):
+   - only the **stick figures** of the structures (the schematic
+     elevations of 2026-10-22), each wire position labelled with its
+     circuit and phase (phase colours; earth wires);
+   - drawn only where the arrangement on the structure **changes**
+     (a transposition, a circuit leaving or joining, a change of arm);
+   - where everything runs straight along the line unchanged, no
+     drawing: a text "from structure A to structure B: arrangement
+     unchanged" (the template's words) between the changes;
    - taken from the line as it is (sections, circuits, phases, wire
      points): nothing typed twice.
 3. **Plan sets, exported at once** — a set names the drawings to make
@@ -184,9 +187,14 @@ Proposed (to discuss; nothing built yet):
 
 > **Owner:** (2026-10-23) Set up a roadmap for situation plans and phase
 > plans; export them automatically too; templates in the plugin.
-> **Owner:** (to answer) Scales of the situation plan; a background map
-> from a service, and which; what the phase plan must show (the diagram,
-> the heads, both); the plans of a set and their naming.
+> **Owner:** (2026-10-23) The phase plan shows only the stick figures of
+> the pylons and the phase changes in the layout on the pylon; if
+> everything goes straight along the line unchanged, not drawn but a
+> text "from mast to mast", the plan showing where the line changes.
+> Background map of the situation plans: for now a map the user loads
+> into the project; later links to public services (API).
+> **Owner:** (to answer) Scales of the situation plan; the plans of a set
+> and their naming.
 
 *In Part B:* O6 (clearances from the strings and conductors to the
 structure body) and O7 (the line and its structures solved together).
