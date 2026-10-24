@@ -84,6 +84,10 @@ pub struct NewStructure {
     /// The id and name last given from the template chosen (replaced when
     /// another is chosen, unless typed over).
     auto: (String, String),
+    /// The shipped example cross-sections and insulators copied beside it
+    /// (into `Sections/` and `Insulators/`; a file there kept), to start
+    /// from.
+    pub examples: bool,
 }
 
 impl Default for NewStructure {
@@ -108,6 +112,7 @@ impl Default for NewStructure {
             error: None,
             kind: "lattice".into(),
             auto: ("new-structure".into(), "New structure".into()),
+            examples: true,
         }
     }
 }
@@ -172,6 +177,38 @@ pub fn create(path: &Path, n: &NewStructure) -> Result<(), String> {
     }
     std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
     ohl_structure_edit::StructureFile::open(path).map(|_| ())
+}
+
+/// The shipped example libraries copied beside a new structure in `dir`:
+/// the cross-sections into `Sections/`, the insulator assemblies into
+/// `Insulators/` (a file of the same name there kept).
+pub fn copy_examples(dir: &Path) -> Result<(), String> {
+    for (kind, into, ext) in [
+        ("sections", "Sections", "ohlsec"),
+        ("insulators", "Insulators", "ohli"),
+    ] {
+        let from = ohl_core::files::shipped_library(kind);
+        let Ok(entries) = std::fs::read_dir(&from) else {
+            continue;
+        };
+        let to = dir.join(into);
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) != Some(ext) {
+                continue;
+            }
+            let Some(name) = p.file_name() else {
+                continue;
+            };
+            let target = to.join(name);
+            if target.exists() {
+                continue;
+            }
+            std::fs::create_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            std::fs::copy(&p, &target).map_err(|e| format!("{}: {e}", target.display()))?;
+        }
+    }
+    Ok(())
 }
 
 impl StructureApp {
@@ -353,6 +390,14 @@ impl StructureApp {
                     );
                 }
                 ui.separator();
+                ui.checkbox(
+                    &mut n.examples,
+                    "Copy the example cross-sections and insulators beside it (to start from)",
+                )
+                .on_hover_text(
+                    "The ones shipped with OpenOHL, into Sections/ and Insulators/ beside the new \
+                     file (a file there is kept); change or replace them later (File › Libraries)",
+                );
                 if let Some(e) = &n.error {
                     error_label(ui, e.as_str());
                 }
@@ -390,6 +435,11 @@ impl StructureApp {
             return Err("save or undo the changes of the structure open first".into());
         }
         create(path, n)?;
+        if n.examples
+            && let Some(dir) = path.parent()
+        {
+            copy_examples(dir)?;
+        }
         self.open_chosen(path);
         self.message = Some((format!("new structure {}", path.display()), false));
         // The next step in front: the body (a lattice tower's generators,
@@ -411,6 +461,24 @@ impl StructureApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The examples copied beside a new structure: the cross-sections and
+    /// the insulators, a file already there kept.
+    #[test]
+    fn the_examples_are_copied_beside_it() {
+        let dir = std::env::temp_dir().join(format!("ohl-new-examples-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(dir.join("Sections")).unwrap();
+        let mine = dir.join("Sections/example-sections.ohlsec");
+        std::fs::write(&mine, "# mine").unwrap();
+        copy_examples(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(&mine).unwrap(), "# mine");
+        assert!(dir.join("Insulators/example-suspension.ohli").is_file());
+        std::fs::remove_file(&mine).unwrap();
+        copy_examples(&dir).unwrap();
+        assert!(std::fs::read_to_string(&mine).unwrap().contains("section"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// Recent files: the last first, once, at most ten.
     #[test]

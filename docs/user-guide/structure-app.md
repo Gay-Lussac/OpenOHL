@@ -665,7 +665,10 @@ the templates shipped with OpenOHL (or another template file chosen); a
 template chosen gives the id and the name (`<template>-suspension`, its
 name), unless typed over. *Empty* asks the kind (lattice tower, pole,
 portal, other). The new structure opens on its next step: a lattice
-tower's Generators, a pole's outline.
+tower's Generators, a pole's outline. **Copy the example cross-sections
+and insulators beside it** (ticked by default) puts the shipped examples
+into `Sections/` and `Insulators/` beside the new file (a file there is
+kept), so the cross-section lists are not empty to start with.
 
 **File › Libraries ›**:
 
