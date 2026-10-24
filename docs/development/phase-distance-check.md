@@ -133,8 +133,12 @@ closest approach may come at less). The check `unequal-wind`
 3. For each pair, every combination: one conductor at a level p, the
    other at a level from the share of p up to p, both ways, on the same
    side (still air with either). Their **closest approach** between the
-   axes (bundles by their subconductors), first on stations every 10 m,
-   the four closest combinations again every Δs.
+   axes (bundles by their subconductors), **exact**: the shortest
+   distance between the two polylines, segment against segment — not at
+   stations (owner, 2026-10-24). Fast: the levels are solved once for
+   every wire; per pair the combinations are taken nearest first by the
+   wires' boxes, and those (and the pieces of a wire) whose boxes are
+   farther than the closest found are not measured.
 4. The plugin is asked once per pair with one station (d, β, no sag, no
    string: zeros) and returns the distance required (and its own
    numbers).
@@ -147,14 +151,14 @@ How exact it is:
   the user's); the levels include the share of each step, so the
   largest difference in wind (where the closest approach usually is)
   is always measured.
-- **Simplification:** the closest approach is found to the station
-  spacing (the closest point on the other conductor searched
-  continuously); a combination not among the four closest on the 10 m
-  stations is not measured again finely (their coarse distances differ
-  from the fine ones by much less than the levels' differences).
+- **Exact:** the closest approach between the two polylines at the
+  levels measured (segment against segment).
 
 Per pair the report gives the closest approach: its two points, d, the
-required distance, the margin, the wind on each conductor and the side;
+required distance (the LeV plugin: C₃ within a system and towards earth
+wires, C₄ between systems), the margin, the wind on each conductor and
+the side, and the two wires as measured (the subconductors the points
+are on, each at its wind: drawn when the result is clicked);
 saved like the distance in the span (check id `unequal-wind`, with the
 step and the share in the parameters).
 
