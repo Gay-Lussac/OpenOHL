@@ -600,6 +600,7 @@ pub(super) fn tool_windows(
     r.drawings.save(&mut r.model, ctx);
     controls_window(ctx, r);
     creep_stretch_window(ctx, r);
+    crate::merge_cases::window(ctx, r);
     bimetallic_window(ctx, r);
     solver_window(ctx, r);
     circuit_join_window(ctx, r);

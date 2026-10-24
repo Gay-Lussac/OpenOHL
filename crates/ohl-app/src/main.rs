@@ -51,6 +51,7 @@ mod link_tool;
 mod loads;
 mod lod;
 mod menu;
+mod merge_cases;
 mod model;
 mod next_steps;
 mod octree;

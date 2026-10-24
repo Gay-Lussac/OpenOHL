@@ -167,14 +167,48 @@ pub fn targets(r: &Ready, base: &str) -> (PathBuf, PathBuf) {
     )
 }
 
-/// Writes generated cases as `base`.ohlwc / .ohllc (see [`targets`]),
+/// Writes generated cases as `base`.ohlwc / .ohllc (see [`targets`]):
+/// with a weather case file in use, its cases kept and the code's of the
+/// same physics taken as them (the load cases naming them), only the
+/// others added ([`crate::preset_cases::Plan`]);
 /// and the clearance presets as `<plugin>-<name>`.ohlr / .ohlwc (the
 /// project's rule files and weather case files, else next to the line
 /// file); keeps them in the project and uses the cases for the model (the
 /// libraries read again, the cases solved). Returns what was done.
 pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String> {
-    let (weather, loads) = targets(r, base);
-    g.write(&weather, &loads)?;
+    let (generated_weather, loads) = targets(r, base);
+    // The code's cases matched to the project's (owner, 2026-10-24: no
+    // case created twice): one of the same physics is the project's, the
+    // load cases naming it; only the others are added, to the project's
+    // own case file.
+    let project = r.model.sources.weather.clone().filter(|p| p.is_file());
+    let (weather, matched) = match &project {
+        Some(file) => {
+            let plan = crate::preset_cases::Plan::new(
+                &crate::preset_cases::project_cases(&r.model),
+                &g.weather,
+            );
+            let text =
+                std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+            let merged = plan.add_to_project(&text, &g.weather_text)?;
+            let load_text = plan.load_cases_text(&g.load_cases_text)?;
+            ohl_weather::WeatherCases::parse(&merged)
+                .map_err(|e| format!("the weather cases with the code's added: {e}"))?;
+            // Written as the code's file (the project's own file, maybe
+            // elsewhere, left as it is).
+            for (path, text) in [(&generated_weather, &merged), (&loads, &load_text)] {
+                if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                }
+                std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            }
+            (generated_weather.clone(), Some(plan))
+        }
+        None => {
+            g.write(&generated_weather, &loads)?;
+            (generated_weather, None)
+        }
+    };
     let weather_dir = weather
         .parent()
         .map_or_else(PathBuf::new, Path::to_path_buf);
@@ -202,15 +236,35 @@ pub fn apply(r: &mut Ready, g: &Generated, base: &str) -> Result<String, String>
     }
     // Structure loads computed before used the old cases.
     r.loads.results = None;
-    let mut done = format!(
-        "{}: {} weather cases and {} load cases in {} — used for the model",
-        g.plugin,
-        g.weather.cases.len(),
-        g.load_cases.cases.len(),
-        weather
-            .file_name()
-            .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-    );
+    let mut done = match &matched {
+        Some(plan) => {
+            let used = plan
+                .cases
+                .iter()
+                .filter(|m| matches!(m.target, crate::preset_cases::Target::Uses { .. }))
+                .count();
+            format!(
+                "{}: {} weather cases ({used} already yours, used; {} added, in {} with yours) and \
+                 {} load cases — used for the model",
+                g.plugin,
+                g.weather.cases.len(),
+                g.weather.cases.len() - used,
+                weather
+                    .file_name()
+                    .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                g.load_cases.cases.len(),
+            )
+        }
+        None => format!(
+            "{}: {} weather cases and {} load cases in {} — used for the model",
+            g.plugin,
+            g.weather.cases.len(),
+            g.load_cases.cases.len(),
+            weather
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+        ),
+    };
     if !presets.is_empty() {
         let names: Vec<String> = presets
             .iter()

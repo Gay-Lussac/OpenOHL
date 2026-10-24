@@ -375,6 +375,8 @@ pub struct Ready {
     pub controls_window: Option<ControlsPage>,
     /// Criteria › Creep-Stretch, when open: the weather cases chosen.
     pub creep_stretch_window: Option<ohl_line::condition::CreepStretch>,
+    /// Criteria › Merge duplicate weather cases….
+    pub merge_cases: crate::merge_cases::MergeCasesWindow,
     /// Criteria › Bimetallic conductor model, when open: the choice.
     pub bimetallic_window: Option<ohl_cables::BimetallicModel>,
     /// Criteria › Calculation options (a draft while open).
@@ -528,6 +530,7 @@ impl Ready {
             class_window: None,
             controls_window: None,
             creep_stretch_window: None,
+            merge_cases: Default::default(),
             bimetallic_window: None,
             solver_window: None,
             circuit_join: None,

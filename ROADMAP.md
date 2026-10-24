@@ -32,7 +32,7 @@ Guiding principles:
 - **Multi-user from day one**: every edit is a command applied by a session.
 
 **Contents**
-- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13; U3, U7, U8; Phases 1–5 for the line
+- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16; U7, U8, U10, U11; Phases 1–5 for the line
 - [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): O2, O9, O11; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
@@ -226,107 +226,16 @@ wind). To decide: pressure or factor, per weather case or for all, how
 it is set on many spans at once, whether a direction can be given too.
 > **Owner:** (2026-10-24) Be able to have local winds, given per span.
 
+### O16. Background maps imported into the project
+The drawings and orthophotos already show on the plan, the sheets'
+plans and the key map. Still to come: background maps imported into
+the project (one or many), each shown on the plan view only or switched
+on the other views and the sheets (the key map, the plan); later, links
+to public map services.
+> **Owner:** (2026-10-23) Asked, with the key map's backgrounds.
+
 ## Unfinished or approximate (known limitations)
 
-- **U3. Profile sheets**: a sheet break can still fall at a structure that
-  stands off the alignment. *Built 2026-10-19, in active development (not
-  approved yet)*: sheets break only at structures of the run along the
-  alignment, at least 2 mm on paper from what is drawn of every other
-  structure (away ones included); the break moves back to the last free
-  structure, or the sheet runs on to the next free one with a warning.
-  Profile first, sheets on top (owner, 2026-10-19): the app's profile view
-  stays continuous; sheet format, scales and breaks belong to the drawing
-  exports. *Follow-up built 2026-10-19, in active development (not
-  approved yet)*: the break clearance is an export setting (default 2 mm
-  on paper, 0 to 20 mm: `--break-clearance`, the export window); a
-  structure counts as on the line, and may end a sheet, when it stands
-  within the line width (the drawings' plan half width, `--plan-width`,
-  default ±40 m), breaks stay at structures only; a sheet preview (off by
-  default) shows the export's sheets, match lines, numbers and warnings
-  over the continuous profile and the plan, laid out by the export's own
-  code with the export window's settings. *Follow-up 2, built
-  2026-10-19, in active development (not approved yet)*: one line width
-  (default ±40 m) for the drawings and the Profile page (which shows the
-  ground edges, survey and LiDAR points and 3D drawings within it): a
-  structure beside the line is drawn only within it, wires are cut at it;
-  a sheet ends only at a structure on the line (of the run along the
-  alignment; never at a connection beside it, however near) or at an
-  alignment point without a structure, still clear of every other
-  structure drawn and never in a span; the drawing export settings
-  (formats, scales, sheet format, line width, break clearance, options,
-  the preview on or off) are kept in the project per project line.
-  *Follow-up 3, built 2026-10-20, in active development (not approved
-  yet)*: the sheet export's defects fixed (the ground always on the
-  sheet: the profile panel the whole height, tops cut or the **datum
-  stepped** at a structure, warned, never another vertical scale; panels
-  ending at the match lines; structures at a sheet's end whole; the app's
-  other cases, markers, side profiles, plan scale, logos, ground rule);
-  **sheet templates** (`.ohlsheet`: page and orientation, frame, panels,
-  pens, band rows, title block grid with fields and logos, revisions,
-  notes, legend, key map, scale bars, north arrows, corridor, elevations
-  with labels, wires by kind and the line's **versions in roles**, **lines
-  below the lowest conductor** from the ground rules), built in, in the
-  project, in a library folder and as **plugin presets** (WIT export
-  `sheet-templates` or manifest files); `ohl drawing --sheet-template
-  --field --revision --version --role --corridor-width
-  --conductor-clearance`, `ohl sheet-templates`; the export window with
-  the template, its values, revisions, versions and a sheet preview.
-  *Follow-up 4, built 2026-10-20, in active development (not approved
-  yet)*: title block, revisions and legend inside the frame's padding,
-  texts fitted to their cells; no empty field (`{height_datum}` from the
-  CRS, `[if_empty]`); the legend's and panels' words from the template
-  (`[legend.labels]`, `plan_title`, `profile_title`); a structures band
-  row `format`; the conductor-clearance label clear of the structures
-  (`label_at`); **LiDAR points** of chosen classes within the corridor
-  as dots in the profile and the plan (`[lidar]`,
-  `--sheet-lidar-classes`, the export window); the **ground along the
-  corridor's near and far edges** in the profile, each edge in its pen
-  in plan, key map and profile; the centreline's ground always solid, the
-  plan's axis in its own pen (`[centreline]`).
-  *Follow-up 5, built 2026-10-21, in active development (not approved
-  yet)*: the project's **height datum** (a name and an optional EPSG
-  vertical code, Terrain › Coordinate system › Define… or `ohl project
-  apply`; line file 7, project schema 5) written by `{height_datum}`
-  before the CRS's vertical part and `[if_empty]`.
-  *Follow-up 6, built 2026-10-22, in active development (not approved
-  yet)*: **paper size and orientation optimised** per route from the
-  ticked standard sizes (ISO A and B, long A sizes, ANSI, ARCH): fewest
-  warnings, then least paper, then fewest sheets; different sizes of one
-  standard on a route and the same paper on every route as ticks;
-  `--page optimised`, template `format = "optimised"`. The sheet preview
-  draws one sheet in the background, after the settings settle, with
-  route and sheet chosen in its window.
-  Still open: font embedding, a title block editor in the app, an
-  orthophoto under the key map, DXF 2000 images. Mixed sizes stay free
-  (owner, 2026-10-22: the goal is that it fits). *Follow-up 7, built
-  2026-10-22, in active development (not approved yet)*: the elevations
-  as schematic **stick figures** on request, with a chain of heights
-  (base → arms → top), each arm's height above the base and its vertical
-  strings' lengths, placed clear of the figure and of each other. *Follow-up 8, built 2026-10-23, in active development (not approved
-  yet)*: each circuit drawn in a weather case of its own (template
-  `[cases]`, the export window per circuit), a `stringing` band row (each
-  tension section's horizontal tension in kN in the stringing case),
-  the strings drawn on the structures. Still to come (owner, 2026-10-23,
-  later): a background map under the key map, chosen in the template.
-  *Follow-up 9, built 2026-10-23, in active development (not approved
-  yet)*: the project's **DXF drawings and orthophotos under the sheets'
-  plan**, straightened along the line like the wires (drawings on
-  `OHL_BACKGROUND_DRAWINGS`, the orthophoto resampled per sheet under a
-  white veil on `OHL_BACKGROUND_PHOTO`; SVG, PDF, PNG; not in DXF R12),
-  chosen by the sheet template (`[plan_background]`), the export
-  window's ticks and `ohl drawing --plan-drawings --plan-orthophoto`;
-  since 2026-10-23 cut at the corridor's edges (the area shown) where
-  the sheet draws a corridor. *Follow-up 10, built 2026-10-23, in active
-  development (not approved yet)*: the **key map** with the project's
-  drawings and orthophotos under it, north up (template `[key_map]
-  drawings`, `orthophoto`, `veil`; the export window's ticks; `ohl
-  drawing --key-map-drawings --key-map-orthophoto`), the sheet's box in a
-  pen of its own (`box`), the structures' names thinned so that none
-  touches another, the route, the box's edges or the map's edge.
-  **Still to come (owner, 2026-10-23):** background maps imported into
-  the project (one or many), each shown on the plan view only or
-  switched on other views and the sheets (the key map, the plan);
-  later links to public map services.
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
   line's 3D view built (in active development, not approved yet): points
   and wire points of the structure being edited, held to an axis or plane
@@ -363,6 +272,8 @@ it is set on many spans at once, whether a direction can be given too.
   2026-10-24). To find out whether the pull's iteration stops before it
   settles or settles where it starts, and to make both give the same
   answer (the full solve's, or the better converged one).
+  > **Owner:** (2026-10-24) Unless it can be fixed fast, keep it as it is,
+  > but say it in the docs (done: the jumpers' theory, After an edit).
 - **U10. Named TIN layers in the thermal limit** (2026-10-23; built
   2026-10-23, in active development, not approved yet): clearance rules
   may name a terrain surface of their own (the clearance windows, the
@@ -370,19 +281,6 @@ it is set on many spans at once, whether a direction can be given too.
   limit (Analysis › Thermal limit, `ohl thermal clearance-limit
   FILE.ohl`) now reads them too; a name the project does not hold stops
   the search with an error.
-- **U9. New project lines are full copies** (asked by the owner,
-  2026-10-22; built 2026-10-23 in two steps, in active development, not
-  approved yet). Step 1: a project line shown is solved per weather case
-  displayed, in the background, from the worked-on line's solutions with
-  only the sections that differ solved again, and only what differs is
-  drawn (a tick draws the whole lines). Step 2: a project line started now keeps the revision it starts from as
-  its base and only what it changes since (objects changed or added,
-  tombstones for those deleted; project schema 6, older projects read
-  as they are, an older program refuses a newer project), so starting a
-  line writes no object row and takes no room; the lines share in memory
-  the objects they hold alike (decision log, 2026-10-23). Lines made
-  from a revision or a bundle get its library files; a line shown is
-  read and solved with its own library files where they differ.
 
 ## Proposed stages (to discuss)
 
@@ -464,7 +362,7 @@ it is set on many spans at once, whether a direction can be given too.
 - [x] Wire stringing: String wire tool (strings in order → section window: wire type, circuit, system, bundle), sections edited and strung again through new points; sagged to a tension or a sag (ruling span or chosen span); status in the blocks (rolling: equal tension in all spans in every case, default) or clipped in (unstressed lengths per span) *(tension criteria by weather case still open)*
 - [x] Clearance violation display: Clearances tab (rule file, violations of the shown case re-checked after edits in the background, click to go there), red marks in 3D and plan *(reports: `ohl line --clearance-csv`)*
 - [x] Clearance rules by voltage in the app (2026-10-20, built, in active development): every rule distance — the Clearances tab's rule editor (rules of the chosen file edited in place, comments kept, each change one undoable command), the Vertical / Radial clearances windows and their Add a rule — as one distance, a table "up to kV: distance" or a base plus an amount per kV, with a preview at the project's voltages; 2026-10-21 (built, in active development (not approved yet)): one shared editor everywhere (rule editor, clearance windows, vegetation panel, safety volumes) with a form selector "One distance | Table by voltage | Base + per kV", every value a framed field with its unit in place, table rows with × (remove) / + Add row / Sort by voltage, a live line of the distances at the line's voltages, read-only previews greyed "(preview — Apply to edit)"; Load preset… with the rule presets of the enabled design-code plugins (optional `rule-presets` export, interface 0.3 unchanged for older plugins), merged or replacing, one command; `ohl code rule-presets` *(the example codes give none; presets that need geometry the rules cannot express — e.g. a distance growing with the distance to the nearest structure — wait on the engine)*
-- [ ] Weather cases › Merge duplicates… (proposed 2026-10-21): find the project's cases of the same physics (`WeatherCase::same_physics`) and merge them, every reference renamed in one undoable command — rule files (`cases`, `case_pairs`), load cases (`weather`), the line's creep-stretch condition cases, saved performed checks and the drawings' case choices *(not built: those references live in several stores — library files, the line, the performed checks — that no single command changes yet)*
+- [x] Weather cases › Merge duplicates (proposed 2026-10-21; built 2026-10-24, in active development (not approved yet)): Criteria › Merge duplicate weather cases… — the cases of the same physics (`WeatherCase::same_physics`) in groups, each merged into the case kept, every name of the others renamed in one undoable command: the project's rule files (`cases`, `case_pairs`, tension rules), load cases (`weather`), galloping files, sheet templates' `[cases]`, the line's creep-stretch cases and the weather cases sent to the structures; the cases shown and the sections' display cases follow *(saved performed checks are not rewritten: records of a run)*. Design-code cases matched to the project's the same way (no case created twice)
 - [x] Library editors (wires, insulators, structure types, weather cases): fields with units, known fields to add, checked as typed, comments kept; files browsed or created anywhere (system file dialog) and used for the model; the model reads its libraries again on save
 - [x] Menu bar (File, Edit with Snap, View pages and layers, Lines, Tools, Checks on demand, Terrain, Structures and Sections with their libraries and tables, Criteria, Parameters, Plugins, Help) and a customizable quick bar; pages closable and reopened from View
 - [x] Circuits table (2026-10-21, built, in active development (not approved yet)): circuits as objects of the line (`circuits`, line file version 7, the same unreleased raise; OHL XML `<circuit>`; a project's settings row `circuits`) — id, name, optional system, description, members (conductor paths, by their first section), phases, sections, notes; added, renamed (the sections follow), given a system, deleted (paths in none after, confirmed), paths taken out and put in, one command per Apply; *Assign to circuit…* in Properties for a wire's whole conductor path. Following the connections: a conductor path in two circuits, two paths of one phase not connected, a path of another system, a repeated name — refused (files written so are read, noted); no merge. Files before: one circuit per name on the sections (id the name), the same results

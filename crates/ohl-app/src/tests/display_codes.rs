@@ -254,14 +254,35 @@ fn design_code_cases_go_into_the_project() {
     let host = ohl_plugins::WasmHost::new().unwrap();
     let params = std::fs::read_to_string(dir.join("example-parameters.toml")).unwrap();
     let g = ohl_io::codes::generate(&host, &dir, &params).unwrap();
+    let before: Vec<ohl_weather::WeatherCase> =
+        r.model.cases.iter().map(|c| c.case.clone()).collect();
+    let report = crate::codes::apply(&mut r, &g, "en50341").unwrap();
+    assert!(report.contains("6 weather cases ("), "{report}");
+    // The project's cases kept, first; only the code's new ones added
+    // (those of the same physics as one of the project's not).
+    let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+    let kept: Vec<String> = before.iter().map(|c| c.name.clone()).collect();
+    assert_eq!(names[..kept.len()], kept[..]);
+    let new = g
+        .weather
+        .cases
+        .iter()
+        .filter(|c| !before.iter().any(|b| b.same_physics(c)))
+        .count();
+    assert!(new > 0);
+    assert_eq!(names.len(), kept.len() + new, "{names:?}");
+    // The load cases name cases of the model.
+    let lc_text = std::fs::read_to_string(r.model.sources.load_cases.clone().unwrap()).unwrap();
+    for c in ohl_loads::LoadCases::parse(&lc_text).unwrap().cases {
+        assert!(names.contains(&c.weather), "{}", c.weather);
+    }
+    // Generated again: every case already the project's, none added.
     let report = crate::codes::apply(&mut r, &g, "en50341").unwrap();
     assert!(
-        report.contains("6 weather cases and 7 load cases"),
+        report.contains("6 already yours, used; 0 added"),
         "{report}"
     );
-    let names: Vec<&str> = r.model.cases.iter().map(|c| c.case.name.as_str()).collect();
-    assert_eq!(names[0], "EN extreme wind");
-    assert_eq!(names.len(), 6);
+    assert_eq!(r.model.cases.len(), names.len());
     let lc = r.model.sources.load_cases.clone().unwrap();
     assert!(lc.ends_with("loadcases/en50341.ohllc"), "{}", lc.display());
     let session = &r.model.editing.as_ref().unwrap().session;
@@ -274,8 +295,8 @@ fn design_code_cases_go_into_the_project() {
 /// A design code's clearance presets: written into the project's rule
 /// and weather case files when it generates; the Vertical clearances
 /// window lists the vertical one, Load preset takes its rules (with their
-/// own half widths), its circuits, method and search distance, and adds
-/// its weather cases missing from the model to the model's weather cases.
+/// own half widths), its circuits, method and search distance, its 80 °C
+/// case taken as the project's of the same physics (none created).
 #[test]
 fn design_code_clearance_presets_load_into_the_window() {
     use ohl_plugins::{ClearanceMeasure, ClearancePreset};
@@ -310,9 +331,10 @@ fn design_code_clearance_presets_load_into_the_window() {
     assert!(report.contains("code-vertical.ohlr"), "{report}");
     assert!(work.join("rules/code-vertical.ohlr").is_file());
     assert!(work.join("weather/code-vertical.ohlwc").is_file());
-    // The model's cases are the generated ones ("a"): the preset's is
-    // missing.
+    // The model's cases: the project's and the code's "a" (none of the
+    // project's at 5 °C); the preset's is not created.
     assert!(!r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"));
+    assert!(r.model.cases.iter().any(|c| c.case.name == "a"));
     let mut win = crate::clearance_zones::ZoneWindow::new(ohl_clearance::Measure::Vertical);
     win.show(&r.model);
     let presets = win.presets(&r.model);
@@ -329,14 +351,19 @@ fn design_code_clearance_presets_load_into_the_window() {
     assert_eq!((win.rules[0].width, win.rules[1].width), (None, Some(3.0)));
     assert_eq!(win.zone.search, Some(30.0));
     assert_eq!(win.check.method, Some(ohl_line::condition::Method::Fe));
-    assert!(out.weather_saved.is_some());
-    crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
+    // Its 80 °C is the project's "max temperature" (the same physics):
+    // nothing created, the rules naming the project's case.
+    assert!(out.weather_saved.is_none());
     assert!(
-        r.model.cases.iter().any(|c| c.case.name == "Preset 80 °C"),
+        win.rules
+            .iter()
+            .all(|x| x.cases == vec!["max temperature".to_owned()]),
         "{:?}",
-        r.status
+        win.rules.iter().map(|x| &x.cases).collect::<Vec<_>>()
     );
-    assert!(r.model.cases.iter().any(|c| c.case.name == "a"));
+    let n = r.model.cases.len();
+    crate::app::clearance_zone_out(&mut r, win.zone.measure, out);
+    assert_eq!(r.model.cases.len(), n, "{:?}", r.status);
     // Kept: the window's rule file says it again.
     let text = win.rule_set().to_toml();
     assert!(text.contains("search_distance = \"30 m\""), "{text}");
