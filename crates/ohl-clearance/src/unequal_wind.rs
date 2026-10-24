@@ -21,10 +21,14 @@
 //! safe side). The [`Evaluator`] (the plugin) says what is required,
 //! once per pair; the check keeps the margin.
 //!
-//! Exact where it counts: each combination is first measured on coarse
-//! stations (every [`COARSE`] m), the closest ones again every
-//! `spacing`. The levels include `low_share`·p of every step p, so the
-//! largest difference in wind is always among them.
+//! The closest approach is exact: the shortest distance between the two
+//! wires' polylines, segment against segment (owner, 2026-10-24: not at
+//! stations). Fast: the line is solved once per level for every wire
+//! (the levels shared by all pairs); per pair the combinations are taken
+//! nearest first by the wires' boxes and those whose boxes are farther
+//! than the closest found are left out, as are the pieces of a wire
+//! farther than it. The levels include `low_share`·p of every step p, so
+//! the largest difference in wind is always among them.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -35,19 +39,11 @@ use ohl_line::solve::SectionShape;
 use ohl_weather::{WeatherCase, WindSide};
 
 use crate::phase_distance::{
-    Conductor, Evaluator, PairGeometry, PhaseDistanceSettings, Poly, STATION_VALUES,
+    CHUNK, Conductor, Evaluator, PairGeometry, PhaseDistanceSettings, Poly, STATION_VALUES,
     candidate_pairs, kind_of, mean_height, subconductors,
 };
 
 type P3 = [f64; 3];
-
-/// Coarse stations, m: every combination of levels is measured on these
-/// first.
-pub const COARSE: f64 = 10.0;
-
-/// The combinations measured again every `spacing`: the closest ones on
-/// the coarse stations.
-const REFINED: usize = 4;
 
 /// How the measuring runs.
 #[derive(Debug, Clone, PartialEq)]
@@ -212,6 +208,10 @@ pub struct UnequalWindPair {
     /// The levels of each (indices in the levels checked): the
     /// conductors there are the pair as measured.
     pub levels: [usize; 2],
+    /// The two wires as measured, each at its wind: the subconductor of
+    /// each the closest points are on (the conductor itself when single),
+    /// to draw the pair.
+    pub wires: [Vec<P3>; 2],
     /// The evaluator's own numbers (after the distance required).
     pub values: Vec<f64>,
 }
@@ -223,28 +223,105 @@ impl UnequalWindPair {
     }
 }
 
-/// The closest approach of two conductors: (distance between the axes,
-/// the points, where along each).
-type Approach = (f64, [P3; 2], [f64; 2]);
+/// The closest approach of two conductors: the distance between the
+/// axes, the points, where along each (m of its length), and which
+/// subconductor of each.
+#[derive(Debug, Clone, Copy)]
+struct Approach {
+    d: f64,
+    at: [P3; 2],
+    along: [f64; 2],
+    sub: [usize; 2],
+}
 
-/// The closest points of two conductors (each its subconductors'
-/// polylines), from stations every `spacing` along each in turn.
-fn approach(first: &[Poly], second: &[Poly], spacing: f64) -> Option<Approach> {
+/// The gap between two boxes (0 when they overlap), m.
+fn box_gap(a: (P3, P3), b: (P3, P3)) -> f64 {
+    (0..3)
+        .map(|k| (b.0[k] - a.1[k]).max(a.0[k] - b.1[k]).max(0.0).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// The closest points of segments p1–q1 and p2–q2: (distance, the
+/// points, their parameters from 0 to 1).
+fn segments(p1: P3, q1: P3, p2: P3, q2: P3) -> (f64, P3, P3, f64, f64) {
+    let sub = |a: P3, b: P3| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let dot = |a: P3, b: P3| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let at = |p: P3, d: P3, t: f64| [p[0] + d[0] * t, p[1] + d[1] * t, p[2] + d[2] * t];
+    let (d1, d2, r) = (sub(q1, p1), sub(q2, p2), sub(p1, p2));
+    let (a, e, f) = (dot(d1, d1), dot(d2, d2), dot(d2, r));
+    let eps = 1e-18;
+    let (s, t) = if a <= eps && e <= eps {
+        (0.0, 0.0)
+    } else if a <= eps {
+        (0.0, (f / e).clamp(0.0, 1.0))
+    } else {
+        let c = dot(d1, r);
+        if e <= eps {
+            ((-c / a).clamp(0.0, 1.0), 0.0)
+        } else {
+            let b = dot(d1, d2);
+            let denom = a * e - b * b;
+            let mut s = if denom > eps {
+                ((b * f - c * e) / denom).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let mut t = (b * s + f) / e;
+            if t < 0.0 {
+                t = 0.0;
+                s = (-c / a).clamp(0.0, 1.0);
+            } else if t > 1.0 {
+                t = 1.0;
+                s = ((b - c) / a).clamp(0.0, 1.0);
+            }
+            (s, t)
+        }
+    };
+    let (c1, c2) = (at(p1, d1, s), at(p2, d2, t));
+    let d = dot(sub(c1, c2), sub(c1, c2)).sqrt();
+    (d, c1, c2, s, t)
+}
+
+/// The exact closest approach of two conductors (each its subconductors'
+/// polylines), closer than `cutoff`: segment against segment, the pieces'
+/// boxes nearest first, those farther than the closest found left out.
+fn approach(first: &[Poly], second: &[Poly], cutoff: f64) -> Option<Approach> {
     let mut best: Option<Approach> = None;
-    for (from, to, swap) in [(first, second, false), (second, first, true)] {
-        for f in from {
-            for (p, sp, _) in f.stations(spacing) {
-                let cutoff = best.map_or(f64::INFINITY, |b| b.0);
-                for t in to {
-                    let Some((q, sq, d)) = t.closest(p, cutoff) else {
-                        continue;
-                    };
-                    if best.is_none_or(|b| d < b.0) {
-                        best = Some(if swap {
-                            (d, [q, p], [sq, sp])
-                        } else {
-                            (d, [p, q], [sp, sq])
-                        });
+    let limit = |best: &Option<Approach>| best.map_or(cutoff, |b| b.d.min(cutoff));
+    for (fa, a) in first.iter().enumerate() {
+        for (fb, b) in second.iter().enumerate() {
+            let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+            for (u, ba) in a.boxes.iter().enumerate() {
+                for (v, bb) in b.boxes.iter().enumerate() {
+                    let g = box_gap(*ba, *bb);
+                    if g < limit(&best) {
+                        pairs.push((g, u, v));
+                    }
+                }
+            }
+            pairs.sort_by(|x, y| x.0.total_cmp(&y.0));
+            for (g, u, v) in pairs {
+                if g >= limit(&best) {
+                    break;
+                }
+                let ra = u * CHUNK..((u + 1) * CHUNK).min(a.points.len() - 1);
+                let rb = v * CHUNK..((v + 1) * CHUNK).min(b.points.len() - 1);
+                for k in ra {
+                    for m in rb.clone() {
+                        let (d, c1, c2, s, t) =
+                            segments(a.points[k], a.points[k + 1], b.points[m], b.points[m + 1]);
+                        if d < limit(&best) {
+                            let along = |p: &Poly, k: usize, s: f64| {
+                                p.run[k] + (p.run[k + 1] - p.run[k]) * s
+                            };
+                            best = Some(Approach {
+                                d,
+                                at: [c1, c2],
+                                along: [along(a, k, s), along(b, m, t)],
+                                sub: [fa, fb],
+                            });
+                        }
                     }
                 }
             }
@@ -313,6 +390,21 @@ pub fn check<E: Evaluator>(
                 .collect()
         })
         .collect();
+    // Each conductor's box at each level.
+    let union = |a: (P3, P3), b: (P3, P3)| {
+        (
+            [0, 1, 2].map(|k| a.0[k].min(b.0[k])),
+            [0, 1, 2].map(|k| a.1[k].max(b.1[k])),
+        )
+    };
+    let level_bounds: Vec<Vec<Option<(P3, P3)>>> = polys
+        .iter()
+        .map(|l| {
+            l.iter()
+                .map(|ps| ps.iter().map(Poly::bounds).reduce(union))
+                .collect()
+        })
+        .collect();
     // Each conductor's box over all levels.
     let bounds: Vec<Option<(P3, P3)>> = (0..n)
         .map(|c| {
@@ -356,7 +448,6 @@ pub fn check<E: Evaluator>(
             }
         }
     }
-    let spacing = settings.pairs.spacing;
     let measure = |evaluator: &mut E,
                    i: usize,
                    j: usize,
@@ -365,30 +456,33 @@ pub fn check<E: Evaluator>(
         let (a, b) = (&still.conductors[i], &still.conductors[j]);
         let (same_system, kv) = kind_of(a, b);
         let altitude = mean_height(a, b);
-        // Coarse, then the closest few again at the spacing.
-        let mut coarse: Vec<(f64, usize)> = combos
+        // The combinations nearest first by the wires' boxes; those
+        // farther than the closest found need no measuring.
+        let cutoff = if same_span {
+            f64::INFINITY
+        } else {
+            settings.pairs.max_distance
+        };
+        let mut order: Vec<(f64, usize)> = combos
             .iter()
             .enumerate()
-            .filter_map(|(k, &(x, y))| {
-                approach(&polys[x][i], &polys[y][j], COARSE.max(spacing)).map(|r| (r.0, k))
-            })
+            .filter_map(|(k, &(x, y))| Some((box_gap(level_bounds[x][i]?, level_bounds[y][j]?), k)))
             .collect();
-        coarse.sort_by(|p, q| p.0.total_cmp(&q.0));
+        order.sort_by(|p, q| p.0.total_cmp(&q.0));
         let mut best: Option<(Approach, usize)> = None;
-        for &(_, k) in coarse.iter().take(REFINED) {
+        for (gap, k) in order {
+            let limit = best.map_or(cutoff, |b| b.0.d);
+            if gap >= limit {
+                break;
+            }
             let (x, y) = combos[k];
-            if let Some(r) = approach(&polys[x][i], &polys[y][j], spacing)
-                && best.is_none_or(|b| r.0 < b.0.0)
-            {
+            if let Some(r) = approach(&polys[x][i], &polys[y][j], limit) {
                 best = Some((r, k));
             }
         }
-        let Some(((d, at, along), k)) = best else {
+        let Some((Approach { d, at, along, sub }, k)) = best else {
             return Ok(None);
         };
-        if !same_span && d > settings.pairs.max_distance {
-            return Ok(None);
-        }
         let (x, y) = combos[k];
         let axes = d - a.wire.polyline_error - b.wire.polyline_error;
         let dz = (at[0][2] - at[1][2]).abs();
@@ -436,6 +530,10 @@ pub fn check<E: Evaluator>(
             pressure: [levels[x].pressure, levels[y].pressure],
             side,
             levels: [x, y],
+            wires: [
+                polys[x][i][sub[0]].points.to_vec(),
+                polys[y][j][sub[1]].points.to_vec(),
+            ],
             values: req.values[1..].to_vec(),
         }))
     };
@@ -588,6 +686,34 @@ mod tests {
         )
         .unwrap()[0];
         assert_eq!(p.pressure, [450.0, 270.0]);
+    }
+
+    /// Bundles of two (0.4 m apart across): the closest approach between
+    /// the nearest subconductors, exact (3.2 m less the two half widths at
+    /// mid-span), its points on the wires handed back to draw (owner,
+    /// 2026-10-24: the wires drawn went beside the line measured).
+    #[test]
+    fn the_points_are_on_the_wires_drawn() {
+        let mut levels = solved(500.0, 100.0);
+        for l in &mut levels {
+            for c in &mut l.conductors {
+                c.wire.bundle = vec![[-0.2, 0.0], [0.2, 0.0]];
+            }
+        }
+        let p = &check(
+            &UnequalWindSettings::default(),
+            &levels,
+            &Budget::new(),
+            || Ok(TestCode),
+        )
+        .unwrap()[0];
+        assert!((p.distance - (3.2 - 0.4)).abs() < 1e-6, "{}", p.distance);
+        for k in 0..2 {
+            let on = p.wires[k]
+                .windows(2)
+                .any(|w| segments(w[0], w[1], p.at[k], p.at[k]).0 < 1e-9);
+            assert!(on, "point {k} {:?} not on its wire", p.at[k]);
+        }
     }
 
     #[test]

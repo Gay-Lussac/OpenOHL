@@ -360,13 +360,13 @@ pub(crate) fn dist(a: P3, b: P3) -> f64 {
 pub(crate) struct Poly<'a> {
     pub(crate) points: &'a [P3],
     /// Length from the first point to each point, m.
-    run: Vec<f64>,
+    pub(crate) run: Vec<f64>,
     /// Bounding box (min, max) of each run of `CHUNK` pieces.
-    boxes: Vec<(P3, P3)>,
+    pub(crate) boxes: Vec<(P3, P3)>,
 }
 
 /// Pieces per box.
-const CHUNK: usize = 8;
+pub(crate) const CHUNK: usize = 8;
 
 impl<'a> Poly<'a> {
     pub(crate) fn new(points: &'a [P3]) -> Self {

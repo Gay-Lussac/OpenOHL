@@ -1005,10 +1005,9 @@ impl PhaseDistanceWindow {
                         rule: p.rule.clone(),
                         pressure: Some(p.pressure),
                         side: Some(p.side.as_str().to_owned()),
-                        wires: vec![
-                            levels[p.levels[0]].conductors[p.a].wire.points.clone(),
-                            levels[p.levels[1]].conductors[p.b].wire.points.clone(),
-                        ],
+                        // The wires the distance was measured between
+                        // (a bundle's subconductor), each at its wind.
+                        wires: p.wires.to_vec(),
                     });
                 }
             }
@@ -1782,13 +1781,16 @@ impl PhaseDistanceWindow {
                         }
                     });
             });
-            ui.label("stations every");
-            ui.add(
-                egui::DragValue::new(&mut self.settings.spacing)
-                    .range(0.1..=50.0)
-                    .speed(0.1)
-                    .suffix(" m"),
-            );
+            // Under unequal wind the closest approach is exact: no stations.
+            if self.kind == Kind::Span {
+                ui.label("stations every");
+                ui.add(
+                    egui::DragValue::new(&mut self.settings.spacing)
+                        .range(0.1..=50.0)
+                        .speed(0.1)
+                        .suffix(" m"),
+                );
+            }
             ui.checkbox(&mut self.settings.nearby, "nearby spans too")
                 .on_hover_text(
                     "Also conductors not between the same two structures (another line, the \
@@ -1959,7 +1961,10 @@ impl PhaseDistanceWindow {
         let mut export = false;
         ui.horizontal(|ui| {
             let how = if unequal {
-                format!("{}: {} pairs, {below} below z", report.code, report.pairs)
+                format!(
+                    "{}: {} pairs, {below} below z (z = C₃ within a system, C₄ between)",
+                    report.code, report.pairs
+                )
             } else {
                 format!(
                     "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor)",
@@ -2183,10 +2188,11 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
                 small(
                     ui,
                     "For each pair, one conductor at a wind p, the other at every level from \
-                     the share of p to p, both ways, on each side: the closest approach of \
-                     their axes (a bundle by its subconductors), first on stations every 10 m, \
-                     the closest combinations again every Δs. Kept: the closest, with the \
-                     winds and the side; z from the plugin (no sag or string term).",
+                     the share of p to p, both ways, on each side: the shortest distance \
+                     between their axes (a bundle by its subconductors), exact — segment \
+                     against segment, not at stations. Kept: the closest, with the winds and \
+                     the side. Required: C₃ within one system and towards earth wires, C₄ \
+                     between systems (the plugin's values; no sag or string term).",
                 );
                 return;
             }

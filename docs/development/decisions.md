@@ -17,6 +17,17 @@ of Parts A, B and C).
   for each circuit the largest of its voltage); kept with the project's
   drawing settings (`ground_rule`).
 
+**Unequal wind: the exact closest approach (owner, 2026-10-24)**
+
+- The closest approach of a pair is the exact shortest distance between
+  the two wires (segment against segment), not at stations; the station
+  spacing is not a setting of this check any more. The levels stay
+  solved once for every wire; per pair the combinations are taken
+  nearest first by the wires' boxes and stop once no box can come
+  closer. The wires drawn for a result are those measured (a bundle's
+  subconductor), so the line of the distance ends on them. The window
+  says the requirement is C₃ / C₄.
+
 **The stringing table smaller (owner, 2026-10-24)**
 
 - Without a `{st.phase}` column the table has one row per tension

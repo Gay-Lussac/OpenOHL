@@ -173,8 +173,11 @@ kept), in **steps** you set (default 50 Pa; the case's wind always
 included), from each side. The line is solved at each step and at the
 share of each (a few seconds per level on a long line, side by side on
 the cores). The pairs are chosen as above (circuits, nearby spans).
-Per pair: the closest approach, d, the required distance (the plugin's,
-e.g. C₃ / C₄), the margin, the wind on each conductor and the side.
+Per pair: the closest approach — the exact shortest distance between
+the two wires (a bundle by its subconductors), not at stations —, d,
+the required distance (the plugin's: with the LeV, C₃ within a system,
+C₄ between systems), the margin, the wind on each conductor and the
+side.
 Clicking it draws the line between the two points and the pair's two
 conductors as they were measured, each at its wind, labelled with it
 and the side — only that span's pair, on top of the view; the weather
