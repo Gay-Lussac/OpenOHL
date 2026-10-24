@@ -227,9 +227,11 @@ creator. Their working state is the one saved. They have no revision in
 common with the main line, so bringing changes between them compares
 whole objects.
 
-Projects in which a line was started by this version (project schema 6)
-cannot be opened by earlier versions: they say the project is newer than
-they support. Lines of older projects stay as they are when opened.
+A project opened by this version is marked as project schema 6 (its
+lines can be kept as differences) and can then no longer be opened by
+earlier versions: they say the project is newer than they support. Lines
+of older projects stay as they are when opened; only lines started from
+then on are kept as differences.
 
 ## On the command line
 

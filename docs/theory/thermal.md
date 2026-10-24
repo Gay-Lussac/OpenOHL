@@ -197,6 +197,12 @@ its temperature changed, and checked by the rules that apply to that case
 0.5 °C below the exact one. Exact: the temperature where the governing
 clearance equals its required clearance.
 
+A ground rule naming a terrain surface of the project (`surface =
+"name"`, since 2026-10-23) is checked against that surface. A name the
+project does not hold stops the search with an error (`ohl_thermal::limit`
+checks the names before solving): left out, the rule could not fail,
+and the limit found could be too high.
+
 The span and rule failing just above the limit are reported (the
 *governing* span). Clearance falls with temperature as the sag grows; the
 scan stops at the first failure on its grid, so a failure that appears and

@@ -59,6 +59,7 @@ ohl drawing examples/synthetic-line/synthetic-line.ohl.json \
 | `--sheet-lidar-classes 2,3,5` | LiDAR classes drawn as dots where the template draws them (`[lidar]`), from `--lidar` or `--pointcloud`, within the corridor ([Sheet templates](sheet-templates.md#lidar-points)) |
 | `--conductor-clearance` | lines below the lowest conductor from the ground rules (`--rules`, `--clearance`) |
 | `--plan-drawings [NAMES]`, `--plan-orthophoto [LAYERS]` | the project's drawings (DXF) and orthophotos under the plan, straightened along the line (alone: the template's names, else every one; or the names, comma-separated); `--no-plan-backgrounds` neither, `--plan-background-dpi` the photo's resolution, `--backgrounds FILE.ohl` the project file holding them (default: the line's) — [Drawings and orthophotos under the plan](sheet-templates.md#drawings-and-orthophotos-under-the-plan) |
+| `--key-map-drawings`, `--key-map-orthophoto` | the project's drawings and orthophotos under the sheets' key map, north up (default: the template's `[key_map] drawings`, `orthophoto`), from the same project file as `--backgrounds` |
 | `--no-bands` | without the template's band rows |
 | `--out DIR` | output folder (created) |
 
