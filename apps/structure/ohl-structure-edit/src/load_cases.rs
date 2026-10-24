@@ -168,9 +168,11 @@ pub fn remove_load_case(doc: &mut DocumentMut, case: usize) {
     }
 }
 
-/// A new load at the end of case `case`: the line's vertical load at
-/// every point (a valid load to start from); its place.
-pub fn add_load(doc: &mut DocumentMut, case: usize) -> Result<usize, String> {
+/// A new load at the end of case `case`, a valid one to start from: with
+/// the line's values (`from_line`), the line's vertical load at every
+/// point; else (the structure opened on its own) 1 kN down at every
+/// point. Its place.
+pub fn add_load(doc: &mut DocumentMut, case: usize, from_line: bool) -> Result<usize, String> {
     let c = case_mut(doc, case)?;
     if c.get("load").and_then(Item::as_array_of_tables).is_none() {
         c.insert("load", Item::ArrayOfTables(ArrayOfTables::new()));
@@ -180,7 +182,12 @@ pub fn add_load(doc: &mut DocumentMut, case: usize) -> Result<usize, String> {
         .and_then(Item::as_array_of_tables_mut)
         .expect("made above");
     let mut t = Table::new();
-    t.insert("what", toml_edit::value("vertical"));
+    if from_line {
+        t.insert("what", toml_edit::value("vertical"));
+    } else {
+        t.insert("value", toml_edit::value("1 kN"));
+        t.insert("direction", toml_edit::value("down"));
+    }
     t.insert("points", toml_edit::value("all"));
     a.push(t);
     Ok(a.len() - 1)
@@ -683,7 +690,7 @@ set = 1
     #[test]
     fn a_load_added_to_the_first_case_stays_in_it() {
         let mut d = doc();
-        assert_eq!(add_load(&mut d, 0), Ok(1));
+        assert_eq!(add_load(&mut d, 0, true), Ok(1));
         let t = reads(&d);
         let first = &t.load_cases[0];
         let loads = first["load"].as_array().unwrap();
@@ -704,7 +711,14 @@ set = 1
         assert_eq!((k, name.as_str()), (2, "case 1"));
         let (_, again) = add_load_case(&mut d, "case 1");
         assert_eq!(again, "case 2");
-        assert_eq!(add_load(&mut d, 2), Ok(0));
+        assert_eq!(add_load(&mut d, 2, true), Ok(0));
+        // Opened on its own: a force of the case, 1 kN down, valid.
+        assert_eq!(add_load(&mut d, 2, false), Ok(1));
+        let added = &reads(&d).load_cases[2]["load"][1];
+        assert_eq!(added["value"].as_str(), Some("1 kN"));
+        assert_eq!(added["direction"].as_str(), Some("down"));
+        assert!(added.get("what").is_none());
+        remove_load(&mut d, 2, 1);
         set_load_field(&mut d, 2, 0, "factor", "1.3").unwrap();
         let t = reads(&d);
         assert_eq!(t.load_cases.len(), 4);

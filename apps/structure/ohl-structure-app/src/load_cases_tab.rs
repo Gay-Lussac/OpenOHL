@@ -691,13 +691,15 @@ impl StructureApp {
             if ui
                 .button("+ Load")
                 .on_hover_text(
-                    "A new load in this case (the line's vertical load at every point, to change)",
+                    "A new load in this case, to change: with the line's values, the line's \
+                     vertical load at every point; opened on its own, 1 kN down at every point",
                 )
                 .clicked()
             {
                 let name = case.get("name").to_owned();
+                let from_line = self.line_values.is_some();
                 match f.edit(&format!("add a load to {name}"), |doc, _| {
-                    edit::add_load(doc, k)
+                    edit::add_load(doc, k, from_line)
                 }) {
                     Ok(n) => self.message = Some((format!("{name}: load {} added", n + 1), false)),
                     Err(e) => self.message = Some((e, true)),

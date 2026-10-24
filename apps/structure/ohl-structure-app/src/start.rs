@@ -78,6 +78,12 @@ pub struct NewStructure {
     pub templates: Vec<(PathBuf, String, String)>,
     /// Why the last attempt failed.
     pub error: Option<String>,
+    /// The kind of an empty structure: `lattice`, `pole`, `portal` or
+    /// `other`.
+    pub kind: String,
+    /// The id and name last given from the template chosen (replaced when
+    /// another is chosen, unless typed over).
+    auto: (String, String),
 }
 
 impl Default for NewStructure {
@@ -100,19 +106,30 @@ impl Default for NewStructure {
             source: Source::Empty,
             templates,
             error: None,
+            kind: "lattice".into(),
+            auto: ("new-structure".into(), "New structure".into()),
         }
     }
 }
 
-/// The text of an empty level 1 structure `id` named `name`: one point
-/// where an insulator hangs, 10 m up.
-pub fn minimal(id: &str, name: &str) -> String {
+/// The text of an empty level 1 structure `id` named `name` of `kind`
+/// (`lattice`, `pole`, `portal`, `other`): one point where an insulator
+/// hangs, 10 m up.
+pub fn minimal(id: &str, name: &str, kind: &str) -> String {
     format!(
         "# A new structure (OHL-Structure): add points and strings (Geometry), then its \
          body (Body).\nformat = \"ohl-structure\"\nversion = 2\nid = {id:?}\nname = {name:?}\n\
-         kind = \"other\"\n\n[[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n"
+         kind = {kind:?}\n\n[[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n"
     )
 }
+
+/// The kinds of an empty structure offered: file word and words shown.
+const KINDS: [(&str, &str); 4] = [
+    ("lattice", "lattice tower"),
+    ("pole", "pole"),
+    ("portal", "portal"),
+    ("other", "other"),
+];
 
 /// The text of the new structure `n`.
 pub fn text_of(n: &NewStructure) -> Result<String, String> {
@@ -132,7 +149,7 @@ pub fn text_of(n: &NewStructure) -> Result<String, String> {
         n.name.trim()
     };
     match &n.source {
-        Source::Empty => Ok(minimal(id, name)),
+        Source::Empty => Ok(minimal(id, name, &n.kind)),
         Source::Template(path, role) => {
             let text =
                 std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -260,6 +277,14 @@ impl StructureApp {
                 {
                     n.source = Source::Empty;
                 }
+                if matches!(n.source, Source::Empty) {
+                    ui.horizontal(|ui| {
+                        ui.label("kind");
+                        for (k, words) in KINDS {
+                            ui.radio_value(&mut n.kind, k.to_owned(), words);
+                        }
+                    });
+                }
                 let mut chosen: Option<Source> = None;
                 for (p, id, name) in &n.templates {
                     let on = matches!(&n.source, Source::Template(q, _) if q == p);
@@ -283,6 +308,29 @@ impl StructureApp {
                 }
                 if let Some(s) = chosen {
                     n.source = s;
+                }
+                // The id and name from the template and the role (unless
+                // typed over): `delta-1c-suspension`, the template's name.
+                if let Source::Template(p, role) = &n.source
+                    && (n.id.trim(), n.name.trim()) == (n.auto.0.as_str(), n.auto.1.as_str())
+                {
+                    let (tid, tname) = n
+                        .templates
+                        .iter()
+                        .find(|(q, ..)| q == p)
+                        .map(|(_, i, m)| (i.clone(), m.clone()))
+                        .unwrap_or_else(|| {
+                            let stem = p
+                                .file_stem()
+                                .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+                            (stem.clone(), stem)
+                        });
+                    let role = match role {
+                        Role::Suspension => "suspension",
+                        Role::Strain => "strain",
+                    };
+                    n.auto = (format!("{tid}-{role}"), format!("{tname} ({role})"));
+                    (n.id, n.name) = n.auto.clone();
                 }
                 if let Source::Template(p, role) = &mut n.source {
                     ui.label(
@@ -344,6 +392,18 @@ impl StructureApp {
         create(path, n)?;
         self.open_chosen(path);
         self.message = Some((format!("new structure {}", path.display()), false));
+        // The next step in front: the body (a lattice tower's generators,
+        // a pole's outline).
+        let kind = self.file.as_ref().map(|f| f.structure().kind);
+        match kind {
+            Some(ohl_structures::structures::StructureKind::Pole) => {
+                self.focus(crate::layout::Panel::Pole);
+            }
+            Some(ohl_structures::structures::StructureKind::Lattice) => {
+                self.focus(crate::layout::Panel::Generators);
+            }
+            _ => {}
+        }
         Ok(())
     }
 }

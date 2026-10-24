@@ -105,7 +105,7 @@ fn the_header_names_what_the_next_level_lacks() {
     let mut h = harness(&path);
     h.get_by_label("Level 1 — stick figure");
     h.get_by_label("for level 2:");
-    h.get_by_label("no member: add joints and members (Body), or a 3D [[body]]")
+    h.get_by_label("no member: build the body (Body › Generators › legs and panels), or add joints and members")
         .click();
     h.run_steps(3);
     assert_eq!(h.state().area, Area::Body);

@@ -615,10 +615,11 @@ fn a_full_design_needs_nothing_but_gets_advice() {
     assert!(m.iter().all(|m| m.need == Need::Advice));
 }
 
-/// The full design without its sections and supports: level 2, and per
-/// member what level 3 lacks, each item picking its member.
+/// The full design without its sections and supports: level 2, and what
+/// level 3 lacks — the members without a section in one line (many),
+/// the supports.
 #[test]
-fn missing_for_level_three_names_each_member() {
+fn missing_for_level_three_names_the_members() {
     let mut f = example("type-02.ohls");
     f.edit("strip", |doc, t| {
         for m in &t.members {
@@ -632,8 +633,13 @@ fn missing_for_level_three_names_each_member() {
     assert_eq!(t.detail(), Detail::Outline);
     let m = missing(t, 3);
     let needed: Vec<&Missing> = m.iter().filter(|m| m.need == Need::Level).collect();
-    assert_eq!(needed.len(), 178 + 1, "{needed:?}");
-    assert_eq!(needed[0].target, Some(Handle::Member("m1".into())));
+    assert_eq!(needed.len(), 2, "{needed:?}");
+    assert!(
+        needed[0]
+            .reason
+            .starts_with("178 members without a cross-section"),
+        "{needed:?}"
+    );
     assert!(needed.last().unwrap().reason.contains("no supported joint"));
     assert_eq!(needed.last().unwrap().place, Place::Joints);
 }
@@ -663,8 +669,16 @@ fn advice_on_points_and_joints() {
         ]
     );
     // Level 3 lacks a section on each member (from the section library
-    // or the file's own [[section]]s).
-    assert_eq!(level_items(&m).len(), 2, "{m:?}");
+    // or the file's own [[section]]s: few, each named) and the point on
+    // a joint of the members (as the level asks).
+    let level = level_items(&m);
+    assert_eq!(level.len(), 3, "{m:?}");
+    assert!(
+        level
+            .iter()
+            .any(|x| x.starts_with("point A2 is on no joint of the members")),
+        "{m:?}"
+    );
 }
 
 /// Two members crossing in space without a joint, and two that only

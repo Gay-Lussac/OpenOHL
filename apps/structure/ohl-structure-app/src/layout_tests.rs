@@ -115,7 +115,7 @@ fn a_header_link_opens_a_closed_panel() {
     close_panel(&mut h.state_mut().dock, Panel::Members);
     h.run();
     assert!(!h.state().is_open(Panel::Members));
-    h.get_by_label("no member: add joints and members (Body), or a 3D [[body]]")
+    h.get_by_label("no member: build the body (Body › Generators › legs and panels), or add joints and members")
         .click();
     h.run_steps(3);
     assert!(h.state().is_open(Panel::Members));

@@ -35,21 +35,62 @@ const KINDS: [(&str, &str); 4] = [
     ("copy_face", "copy a face"),
 ];
 
-/// The inputs a new generator of kind `key` starts with, from `t`.
+/// Off the structure's axis by more than this, m: a point an arm reaches
+/// (on it: a peak's, an earth wire's).
+const OFF_AXIS: f64 = 0.1;
+
+/// Whether point `p` is off the structure's axis (an arm's).
+fn off_axis(p: &ohl_structures::TypePoint) -> bool {
+    let [x, y, _] = p.position();
+    x.si().hypot(y.si()) > OFF_AXIS
+}
+
+/// The levels of the points arms reach above the feet, bottom to top
+/// (those within 0.5 m of each other one level).
+fn arm_levels(t: &StructureType) -> Vec<f64> {
+    let foot = t.foot_level();
+    let mut zs: Vec<f64> = t
+        .points
+        .iter()
+        .filter(|p| off_axis(p))
+        .map(|p| p.position()[2].si())
+        .filter(|z| *z > foot + 1.0)
+        .collect();
+    zs.sort_by(f64::total_cmp);
+    let mut levels: Vec<f64> = Vec::new();
+    for z in zs {
+        if levels.last().is_none_or(|l| z - l > 0.5) {
+            levels.push(z);
+        }
+    }
+    levels
+}
+
+/// The inputs a new generator of kind `key` starts with, from `t`: arms
+/// to the points off the axis, a peak to those on it (the earth wires),
+/// the body up to the highest arm.
 fn default_kind(t: &StructureType, key: &str) -> Kind {
+    let free = |p: &&ohl_structures::TypePoint| p.node.is_none() && p.member.is_none();
     match key {
         "crossarm" => Kind::Crossarm(Crossarm {
             points: t
                 .points
                 .iter()
-                .filter(|p| p.node.is_none() && p.member.is_none())
+                .filter(free)
+                .filter(|p| off_axis(p))
                 .map(|p| p.label.clone())
                 .collect(),
             shape: ArmShape::Triangular,
             one_arm: false,
         }),
         "peak" => Kind::Peak(Peak {
-            points: Vec::new(),
+            points: t
+                .points
+                .iter()
+                .filter(free)
+                .filter(|p| !off_axis(p) && p.position()[2].si() > t.foot_level() + 1.0)
+                .map(|p| p.label.clone())
+                .collect(),
             height: 4.0,
         }),
         "copy_face" => Kind::CopyFace(CopyFace {
@@ -61,32 +102,43 @@ fn default_kind(t: &StructureType, key: &str) -> Kind {
             face: Face::YMinus,
         }),
         _ => {
-            // Four panels up to the lowest point (the waist under the
-            // crossarms), else to the height.
+            // Four panels up to the lowest arm (the waist), then a panel
+            // to each arm level above it at the waist's width; without
+            // arms, four panels to the height.
             let foot = t.foot_level();
-            let lowest = t
-                .points
-                .iter()
-                .map(|p| p.position()[2].si())
-                .filter(|z| *z > foot + 1.0)
-                .fold(f64::INFINITY, f64::min);
-            let top = if lowest.is_finite() {
-                lowest
-            } else {
-                t.height.map_or(foot + 30.0, |h| h.si())
-            };
+            let levels = arm_levels(t);
+            let waist = [2.0, 2.0];
+            let lowest = levels
+                .first()
+                .copied()
+                .unwrap_or_else(|| t.height.map_or(foot + 30.0, |h| h.si()));
+            let mut panels: Vec<Panel> = (1..=4)
+                .map(|k| Panel {
+                    top: round3(foot + (lowest - foot) * f64::from(k) / 4.0),
+                    bracing: Bracing::X,
+                    horizontal: true,
+                    ..Default::default()
+                })
+                .collect();
+            if levels.len() > 1 {
+                if let Some(p) = panels.last_mut() {
+                    p.width = Some(waist);
+                }
+                for z in &levels[1..] {
+                    panels.push(Panel {
+                        top: round3(*z),
+                        bracing: Bracing::X,
+                        horizontal: true,
+                        width: Some(waist),
+                        ..Default::default()
+                    });
+                }
+            }
             Kind::Panels(Panels {
                 bottom: None,
                 feet: [6.0, 6.0],
-                waist: [2.0, 2.0],
-                panels: (1..=4)
-                    .map(|k| Panel {
-                        top: round3(foot + (top - foot) * f64::from(k) / 4.0),
-                        bracing: Bracing::X,
-                        horizontal: true,
-                        ..Default::default()
-                    })
-                    .collect(),
+                waist,
+                panels,
                 ..Default::default()
             })
         }

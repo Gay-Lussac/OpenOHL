@@ -231,7 +231,10 @@ their menu or from View.
 - **Level** panel: **Level N — name** (worked out from the file, never
   stated), the structure's id and name, its file, *\* unsaved*. Under it,
   **for level N + 1:** what the next level still lacks — no member yet,
-  a member without a cross-section (one item per member), no supported joint,
+  a member without a cross-section (one item per member; more than three:
+  one line, set per group in Design › Groups), no supported joint, an
+  attachment point on no joint of the members (tick it in the peak or
+  crossarm generator, or link it), a support joint without a support,
   and the same for each extension with a piece. A supported joint is one
   with a `support`: a structure standing only on `spring`s does not
   reach level 3 (this is how the level is worked out now). Each item is a link: it brings the panel and table
@@ -265,8 +268,8 @@ their menu or from View.
 |---|---|---|
 | **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Link** (the Link tool), **Delete…** (lists what goes with it first) |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint (not on a support joint: strings hang from attach joints), **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
-| **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
-| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load**, 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
+| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load** (with the line's values the line's vertical load at every point; opened on its own 1 kN down at every point, to change), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
@@ -337,8 +340,10 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     and along the line), the level of the feet (default: the file's
     foot), and per panel its top, its bracing (single diagonal, X, K,
     diamond, Warren) and whether it has horizontals at its top; **+ Panel**
-    adds one on top. A new body goes up to the lowest point of the
-    structure (the waist under the crossarms), in four X panels. Options
+    adds one on top. A new body goes up to the lowest arm (the waist
+    under the crossarms) in four X panels, then (since 2026-10-24) one
+    panel to each higher arm level at the waist's width, so every arm has
+    body joints beside it; without arms, four panels to the height. Options
     per panel (all off by default, [format](structure-library.md#body-generators-groups-and-symmetry)):
     a **width** at its top (ticked: the slope changes there, say legs
     then a straight body; the last panel's is the waist), **redundants**
@@ -348,7 +353,8 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     bracing where the slope changes and at the crossarms' levels** puts
     that plan bracing at those levels (a panel's own goes first; after
     adding a crossarm, **Rebuild all** so the body knows its levels).
-  - *Crossarms*: the points ticked each get an arm from the body face on
+  - *Crossarms* (a new one ticks the points off the structure's axis;
+    those on it are the peak's): the points ticked each get an arm from the body face on
     their side, triangular (four chords to the point) or rectangular (a
     tip at the point and one above it); the point is put on the arm's
     tip, so it carries its loads in the analysis. **Several points on one
@@ -357,7 +363,9 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
     its tip and the others each on a cross-section of the arm, every point on
     a joint.
   - *Peak*: a tip above the top of the body, or one at each earth-wire
-    point ticked, joined to the joints at the top.
+    point ticked (a new one ticks the points on the axis above the feet),
+    joined to the joints at the top. On a pole the crossarm generator
+    says so: a pole's points are checked where they are (Pole design).
   - *Copy a face*: the members on one face of a legs-and-panels body (a
     redundant added by hand, say) copied to the opposite face, without
     doubling those there already.
@@ -653,7 +661,11 @@ The structure templates are kept apart in the two applications: OHL-Structure
 reads and imports them in `StructureTemplates/` beside the structure file;
 the line application's structure builder reads the project's own in a
 `Structure templates` folder beside the line. **New structure…** offers only
-the templates shipped with OpenOHL (or another template file chosen).
+the templates shipped with OpenOHL (or another template file chosen); a
+template chosen gives the id and the name (`<template>-suspension`, its
+name), unless typed over. *Empty* asks the kind (lattice tower, pole,
+portal, other). The new structure opens on its next step: a lattice
+tower's Generators, a pole's outline.
 
 **File › Libraries ›**:
 
