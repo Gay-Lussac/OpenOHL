@@ -379,14 +379,33 @@ pub fn structures(
     type Drawn = Vec<([f64; 3], [f64; 3], bool)>;
     let mut solved: std::collections::HashMap<(&str, String), Drawn> =
         std::collections::HashMap::new();
+    // Each case's shapes by section, made when first wanted (the first
+    // shape of a section, as a search finds it).
+    let mut by_case: std::collections::HashMap<
+        *const crate::model::Solved,
+        std::collections::HashMap<&str, &ohl_line::solve::SectionShape>,
+    > = Default::default();
     for sec in &line.sections {
         // Both wind sides shown: the strings to each side's clamps.
-        let shapes = model
+        let drawn: Vec<&crate::model::Solved> = model
             .section_cases(&sec.id, case)
             .into_iter()
             .filter_map(|k| cases.get(k))
             .flat_map(|c| c.drawn())
-            .filter_map(|c| c.shapes.iter().find(|x| x.section == sec.id));
+            .collect();
+        let mut shapes = Vec::new();
+        for c in drawn {
+            let index = by_case.entry(std::ptr::from_ref(c)).or_insert_with(|| {
+                let mut m = std::collections::HashMap::with_capacity(c.shapes.len());
+                for s in &c.shapes {
+                    m.entry(s.section.as_str()).or_insert(s);
+                }
+                m
+            });
+            if let Some(s) = index.get(sec.id.as_str()) {
+                shapes.push(*s);
+            }
+        }
         for shape in shapes {
             for (p, strings) in sec.points.iter().zip(&shape.strings) {
                 for x in strings {
