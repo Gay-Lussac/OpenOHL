@@ -164,7 +164,13 @@ step and the share in the parameters).
 
 Speed, on the existing line above (930 conductors, 5593 pairs), a case
 of 2400 Pa in steps of 50 Pa (175 levels): the levels solved in about
-95 s, the pairs measured in about 130 s, on all cores. The combinations
+100 s, the pairs measured exactly in about 47 s, on all cores (the
+combinations taken nearest first by the wires' boxes; each first on the
+axes thinned to every 8th point — no closer than their distance less the
+thinning's error and the bundles' radii, a bound that is never above the
+true distance — and measured in full only when that bound may beat the
+closest found; 2026-10-24: 273 s exact without it, 128 s at stations
+before). The combinations
 grow with the square of the levels: a case of 650 Pa in steps of 50 Pa
 (27 levels) takes some 15 s to solve and a few seconds to measure;
 `unequal_wind_benchmark` (`crates/ohl-app/src/bench.rs`) times a
