@@ -330,6 +330,38 @@ fn approach(first: &[Poly], second: &[Poly], cutoff: f64) -> Option<Approach> {
     best
 }
 
+/// Points of a wire's axis kept in its thinned axis.
+const THIN: usize = 8;
+
+/// A wire's axis thinned to every [`THIN`]-th point (its last kept), and
+/// the most any of its subconductors lies from that thinned axis, m: the
+/// largest distance of a point of the axis from the thinned polyline,
+/// plus the bundle's radius (subconductors are the axis moved by their
+/// offsets).
+fn thinned(w: &crate::checks::Wire) -> (Vec<P3>, f64) {
+    let pts = &w.points;
+    if pts.len() < 2 {
+        return (pts.clone(), 0.0);
+    }
+    let mut keep: Vec<usize> = (0..pts.len()).step_by(THIN).collect();
+    if keep.last() != Some(&(pts.len() - 1)) {
+        keep.push(pts.len() - 1);
+    }
+    let mut err = 0.0f64;
+    for w2 in keep.windows(2) {
+        let (a, b) = (pts[w2[0]], pts[w2[1]]);
+        for p in &pts[w2[0]..=w2[1]] {
+            err = err.max(segments(a, b, *p, *p).0);
+        }
+    }
+    let radius = w
+        .bundle
+        .iter()
+        .map(|o| o[0].hypot(o[1]))
+        .fold(0.0, f64::max);
+    (keep.iter().map(|k| pts[*k]).collect(), err + radius)
+}
+
 /// Checks the pairs of conductors under unequal wind: `levels` are the
 /// line solved at the pressures of [`levels`] (still air once, or from
 /// each side), each with the same conductors in the same order. Paired
@@ -387,6 +419,22 @@ pub fn check<E: Evaluator>(
                         .map(|p| Poly::new(p))
                         .collect()
                 })
+                .collect()
+        })
+        .collect();
+    // Per level and conductor its axis thinned (every THIN-th point, the
+    // last kept) and how far the thinned axis may lie from any of its
+    // subconductors (the thinning's error and the bundle's radius): a
+    // quick lower bound of a combination's distance.
+    let thin: Vec<Vec<(Vec<P3>, f64)>> = levels
+        .iter()
+        .map(|l| l.conductors.iter().map(|c| thinned(&c.wire)).collect())
+        .collect();
+    let thin_polys: Vec<Vec<Option<Poly>>> = thin
+        .iter()
+        .map(|l| {
+            l.iter()
+                .map(|(p, _)| (p.len() >= 2).then(|| Poly::new(p)))
                 .collect()
         })
         .collect();
@@ -476,6 +524,21 @@ pub fn check<E: Evaluator>(
                 break;
             }
             let (x, y) = combos[k];
+            // The thinned axes first: no closer than their distance less
+            // both slacks; only a combination that may come closer than
+            // the closest found is measured in full.
+            if let (Some(ta), Some(tb)) = (&thin_polys[x][i], &thin_polys[y][j]) {
+                let slack = thin[x][i].1 + thin[y][j].1;
+                match approach(
+                    std::slice::from_ref(ta),
+                    std::slice::from_ref(tb),
+                    limit + slack,
+                ) {
+                    None => continue,
+                    Some(c) if c.d - slack >= limit => continue,
+                    Some(_) => {}
+                }
+            }
             if let Some(r) = approach(&polys[x][i], &polys[y][j], limit) {
                 best = Some((r, k));
             }
