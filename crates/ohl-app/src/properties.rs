@@ -1264,11 +1264,11 @@ pub fn ui(
                     ("spans in section", (sec.points.len() - 1).to_string()),
                     (
                         "routes",
-                        line.wire_routes()
-                            .0
-                            .remove(&section)
-                            .unwrap_or_default()
-                            .join(", "),
+                        model
+                            .routes_of()
+                            .sections
+                            .get(&section)
+                            .map_or(String::new(), |r| r.join(", ")),
                     ),
                 ],
             );

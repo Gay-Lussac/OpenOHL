@@ -1612,9 +1612,9 @@ impl DrawingsWindow {
     ) -> Option<Job> {
         let mut job = None;
         let routes = model.line.alignment_views();
-        let offers = crate::sheet_ui::offers(model, &self.plugin_templates);
+        let offers = crate::sheet_ui::offers_kept(model, &self.plugin_templates);
         let template =
-            crate::sheet_ui::resolve(model, &self.sheet.template, &self.plugin_templates);
+            crate::sheet_ui::resolve_kept(model, &self.sheet.template, &self.plugin_templates);
         let max_height = (ctx.content_rect().height() * 0.85).max(300.0);
         egui::Window::new("Export drawings")
             .open(open)
@@ -2546,7 +2546,7 @@ impl Drawings {
         if self.window.is_some() || self.preview_on {
             let s = self.settings().sheet.clone();
             if let Ok(t) =
-                crate::sheet_ui::resolve(model, &s.template, &self.settings().plugin_templates)
+                crate::sheet_ui::resolve_kept(model, &s.template, &self.settings().plugin_templates)
                 && let Ok(p) = SheetCases::of(model, &t, &s.circuit_cases)
             {
                 model.want(p.needed(), ctx);

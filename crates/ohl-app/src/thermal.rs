@@ -64,7 +64,14 @@ pub struct ThermalWindow {
     job: Option<Job>,
     /// What the last search was computed from ([`crate::revision`]).
     stamp: crate::revision::Stamp,
+    /// The table's ratings as last computed: what from, and per section
+    /// the texts at the maximum temperature and at its limit (made again
+    /// when one of them changes, not every frame).
+    ratings: std::cell::RefCell<Option<(u64, Vec<SectionRatings>)>>,
 }
+
+/// One section's ratings in the table: (text, hover) per ambient case.
+type SectionRatings = (Vec<(String, String)>, Vec<(String, String)>);
 
 impl Default for ThermalWindow {
     fn default() -> Self {
@@ -80,6 +87,7 @@ impl Default for ThermalWindow {
             took: None,
             job: None,
             stamp: Default::default(),
+            ratings: Default::default(),
         }
     }
 }
@@ -465,33 +473,83 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
                     }
                 }
                 ui.end_row();
-                for s in &model.line.sections {
+                // The limit found per section (its temperature, where
+                // there is one).
+                let by_section: std::collections::HashMap<&str, &SectionLimit> =
+                    limits.iter().map(|l| (l.section.as_str(), l)).collect();
+                let limit_t = |l: &SectionLimit| match &l.result {
+                    Ok(Limit::At(t)) => Some(*t),
+                    Ok(Limit::AboveRange) => Some(w.options.max_temperature),
+                    _ => None,
+                };
+                // The ratings, made again only when what they come from
+                // changed.
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    model.line_version.hash(&mut h);
+                    format!("{:?}", w.method).hash(&mut h);
+                    w.max_temperature.to_bits().hash(&mut h);
+                    format!("{cases:?}").hash(&mut h);
+                    for s in &model.line.sections {
+                        by_section
+                            .get(s.id.as_str())
+                            .and_then(|l| limit_t(l))
+                            .map(f64::to_bits)
+                            .hash(&mut h);
+                    }
+                    h.finish()
+                };
+                let mut kept = w.ratings.borrow_mut();
+                if kept.as_ref().is_none_or(|(k, _)| *k != key) {
+                    let rows = model
+                        .line
+                        .sections
+                        .iter()
+                        .map(|s| {
+                            let conductor = model
+                                .library
+                                .get(&s.cable)
+                                .ok_or_else(|| format!("wire type {} not in the library", s.cable))
+                                .and_then(|c| {
+                                    Conductor::from_cable(c)
+                                        .map(|c| c.with_defaults(&model.line.defaults))
+                                        .map_err(|e| e.to_string())
+                                });
+                            let at_max = cases
+                                .iter()
+                                .map(|c| rating(w.method, &conductor, c, w.max_temperature))
+                                .collect();
+                            let at_limit =
+                                match by_section.get(s.id.as_str()).and_then(|l| limit_t(l)) {
+                                    Some(t) => cases
+                                        .iter()
+                                        .map(|c| rating(w.method, &conductor, c, t))
+                                        .collect(),
+                                    None => Vec::new(),
+                                };
+                            (at_max, at_limit)
+                        })
+                        .collect();
+                    *kept = Some((key, rows));
+                }
+                let rows = &kept.as_ref().expect("made above").1;
+                for (s, (at_max, at_limit)) in model.line.sections.iter().zip(rows) {
                     ui.label(&s.id);
                     ui.label(&s.cable);
-                    let conductor = model
-                        .library
-                        .get(&s.cable)
-                        .ok_or_else(|| format!("wire type {} not in the library", s.cable))
-                        .and_then(|c| {
-                            Conductor::from_cable(c)
-                                .map(|c| c.with_defaults(&model.line.defaults))
-                                .map_err(|e| e.to_string())
-                        });
-                    for c in cases {
-                        let (text, hover) = rating(w.method, &conductor, c, w.max_temperature);
+                    for (text, hover) in at_max {
                         ui.label(text).on_hover_text(hover);
                     }
-                    if let Some(l) = limits.iter().find(|l| l.section == s.id) {
-                        let (t, text) = match &l.result {
-                            Ok(Limit::At(t)) => (Some(*t), format!("{t:.1} °C")),
-                            Ok(Limit::AboveRange) => (
-                                Some(w.options.max_temperature),
-                                format!("above {} °C", w.options.max_temperature),
-                            ),
-                            Ok(Limit::BelowRange) => {
-                                (None, format!("below {} °C", w.options.min_temperature))
+                    if let Some(l) = by_section.get(s.id.as_str()) {
+                        let text = match &l.result {
+                            Ok(Limit::At(t)) => format!("{t:.1} °C"),
+                            Ok(Limit::AboveRange) => {
+                                format!("above {} °C", w.options.max_temperature)
                             }
-                            Err(e) => (None, format!("error: {e}")),
+                            Ok(Limit::BelowRange) => {
+                                format!("below {} °C", w.options.min_temperature)
+                            }
+                            Err(e) => format!("error: {e}"),
                         };
                         ui.label(text);
                         ui.label(l.governing.as_ref().map_or(String::new(), |g| {
@@ -504,15 +562,13 @@ fn table(ui: &mut egui::Ui, w: &ThermalWindow, model: &Model, cases: &[ohl_therm
                                 g.required
                             )
                         }));
-                        for c in cases {
-                            match t {
-                                Some(t) => {
-                                    let (text, hover) = rating(w.method, &conductor, c, t);
-                                    ui.label(text).on_hover_text(hover);
-                                }
-                                None => {
-                                    ui.label("—");
-                                }
+                        if at_limit.is_empty() {
+                            for _ in cases {
+                                ui.label("—");
+                            }
+                        } else {
+                            for (text, hover) in at_limit {
+                                ui.label(text).on_hover_text(hover);
                             }
                         }
                     }

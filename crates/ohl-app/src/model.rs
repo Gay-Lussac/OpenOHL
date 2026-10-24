@@ -499,34 +499,48 @@ impl Differences {
         other: &Line,
         cables_changed: &std::collections::BTreeSet<String>,
     ) -> Self {
+        // Ours by id (the first of an id, as a search finds it).
+        fn by_id<T>(items: &[T], id: impl Fn(&T) -> &str) -> std::collections::HashMap<&str, &T> {
+            let mut m = std::collections::HashMap::with_capacity(items.len());
+            for x in items {
+                m.entry(id(x)).or_insert(x);
+            }
+            m
+        }
+        let our_structures = by_id(&ours.structures, |s| s.id.as_str());
+        let our_sections = by_id(&ours.sections, |s| s.id.as_str());
+        let our_jumpers = by_id(&ours.jumpers, |j| j.id.as_str());
         let structures: std::collections::BTreeSet<String> = other
             .structures
             .iter()
-            .filter(|s| ours.structures.iter().find(|o| o.id == s.id) != Some(*s))
+            .filter(|s| our_structures.get(s.id.as_str()).copied() != Some(*s))
             .map(|s| s.id.clone())
             .collect();
         let sections: std::collections::BTreeSet<String> = other
             .sections
             .iter()
             .filter(|s| {
-                ours.sections.iter().find(|o| o.id == s.id) != Some(*s)
+                our_sections.get(s.id.as_str()).copied() != Some(*s)
                     || s.points.iter().any(|p| structures.contains(&p.structure))
                     || cables_changed.contains(&s.cable)
             })
             .map(|s| s.id.clone())
             .collect();
+        // The points of the sections that differ.
+        let changed_points: std::collections::HashSet<&ohl_line::SectionPoint> = other
+            .sections
+            .iter()
+            .filter(|s| sections.contains(&s.id))
+            .flat_map(|s| &s.points)
+            .collect();
         let at_changed = |p: &ohl_line::SectionPoint| {
-            structures.contains(&p.structure)
-                || other
-                    .sections
-                    .iter()
-                    .any(|s| sections.contains(&s.id) && s.points.contains(p))
+            structures.contains(&p.structure) || changed_points.contains(p)
         };
         let jumpers = other
             .jumpers
             .iter()
             .filter(|j| {
-                ours.jumpers.iter().find(|o| o.id == j.id) != Some(*j)
+                our_jumpers.get(j.id.as_str()).copied() != Some(*j)
                     || [&j.from, &j.to].into_iter().any(|e| match e {
                         ohl_line::JumperEnd::Wire(p) => at_changed(p),
                         _ => false,
@@ -624,6 +638,9 @@ pub struct Model {
     /// The structures merged with their types after the last edits, kept
     /// for the next (with these libraries; a new one with others).
     pub resolve_cache: ohl_line::library::ResolveCache,
+    /// The routes of the structures, sections and jumpers, by line
+    /// version ([`Model::routes_of`]).
+    routes_cache: std::sync::Mutex<Option<(u64, std::sync::Arc<RoutesOf>)>>,
     /// The project to edit, or why the model is read-only.
     pub editing: Result<Editing, String>,
     /// The project's session when it is read-only for this user (a
@@ -1239,29 +1256,63 @@ pub struct Scope {
     pub jumpers: std::collections::BTreeSet<String>,
 }
 
+/// The routes each structure, section and jumper of the line is on
+/// ([`ohl_line::Line::structure_routes`], [`ohl_line::Line::wire_routes`]).
+#[derive(Debug, Default)]
+pub struct RoutesOf {
+    /// By structure.
+    pub structures: std::collections::BTreeMap<String, Vec<String>>,
+    /// By section.
+    pub sections: std::collections::BTreeMap<String, Vec<String>>,
+    /// By jumper.
+    pub jumpers: std::collections::BTreeMap<String, Vec<String>>,
+}
+
 impl Model {
+    /// The routes of the line's structures, sections and jumpers, worked
+    /// out once per version of the line (the panels ask every frame).
+    pub fn routes_of(&self) -> std::sync::Arc<RoutesOf> {
+        if let Ok(m) = self.routes_cache.lock()
+            && let Some((v, r)) = m.as_ref()
+            && *v == self.line_version
+        {
+            return r.clone();
+        }
+        let (sections, jumpers) = self.line.wire_routes();
+        let r = std::sync::Arc::new(RoutesOf {
+            structures: self.line.structure_routes(),
+            sections,
+            jumpers,
+        });
+        if let Ok(mut m) = self.routes_cache.lock() {
+            *m = Some((self.line_version, r.clone()));
+        }
+        r
+    }
+
     /// What the route worked on holds; none: all the line is worked on.
     pub fn scope(&self) -> Option<Scope> {
         let r = self.work_route.as_ref()?;
         let on = |rs: &Vec<String>| rs.contains(r);
-        let (sections, jumpers) = self.line.wire_routes();
+        let routes = self.routes_of();
         Some(Scope {
-            structures: self
-                .line
-                .structure_routes()
-                .into_iter()
+            structures: routes
+                .structures
+                .iter()
                 .filter(|(_, rs)| on(rs))
-                .map(|(id, _)| id)
+                .map(|(id, _)| id.clone())
                 .collect(),
-            sections: sections
-                .into_iter()
+            sections: routes
+                .sections
+                .iter()
                 .filter(|(_, rs)| on(rs))
-                .map(|(id, _)| id)
+                .map(|(id, _)| id.clone())
                 .collect(),
-            jumpers: jumpers
-                .into_iter()
+            jumpers: routes
+                .jumpers
+                .iter()
                 .filter(|(_, rs)| on(rs))
-                .map(|(id, _)| id)
+                .map(|(id, _)| id.clone())
                 .collect(),
         })
     }
@@ -1899,7 +1950,9 @@ impl Model {
     pub fn reread_line(&mut self) -> Result<(), String> {
         let stored = self.session().map(|s| s.export()).ok_or("no project")?;
         let mut line = match &self.types {
-            Some((s, i)) => stored.resolve(s, i).map_err(|e| e.to_string())?,
+            Some((s, i)) => stored
+                .resolve_with(s, i, Some(&self.resolve_cache))
+                .map_err(|e| e.to_string())?,
             None => stored,
         };
         let cases: Vec<WeatherCase> = self.cases.iter().map(|c| c.case.clone()).collect();
@@ -2592,6 +2645,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         bodies,
         types,
         resolve_cache,
+        routes_cache: Default::default(),
         editing,
         display_cases: Default::default(),
         shown_cases: vec![0],
