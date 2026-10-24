@@ -424,6 +424,10 @@ pub struct Manifest {
     /// `[[sheet-template]]` files the plugin ships.
     #[serde(default, rename = "sheet-template")]
     pub sheet_templates: Vec<ManifestTemplate>,
+    /// `[[plan-set]]` files the plugin ships (2026-10-24): the drawings to
+    /// make in one go with its sheet templates (`.ohlset`).
+    #[serde(default, rename = "plan-set")]
+    pub plan_sets: Vec<ManifestTemplate>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -457,16 +461,21 @@ impl Manifest {
             path: manifest_path(dir),
             message,
         };
-        for t in &manifest.sheet_templates {
-            let inside = t
-                .file
-                .components()
-                .all(|c| matches!(c, std::path::Component::Normal(_)));
-            if !inside || t.file.as_os_str().is_empty() {
-                return Err(bad(format!(
-                    "sheet-template {}: a file inside the plugin's folder",
-                    t.file.display()
-                )));
+        for (what, list) in [
+            ("sheet-template", &manifest.sheet_templates),
+            ("plan-set", &manifest.plan_sets),
+        ] {
+            for t in list {
+                let inside = t
+                    .file
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)));
+                if !inside || t.file.as_os_str().is_empty() {
+                    return Err(bad(format!(
+                        "{what} {}: a file inside the plugin's folder",
+                        t.file.display()
+                    )));
+                }
             }
         }
         let mut names = std::collections::BTreeSet::new();
@@ -1309,6 +1318,26 @@ pub fn discover_checks(roots: &[PathBuf]) -> Vec<Found> {
         .collect()
 }
 
+/// The plan sets plugin `dir`'s manifest names (`[[plan-set]]`): each
+/// file's name (without its extension) and text.
+pub fn plan_sets(dir: &Path) -> Result<Vec<(String, String)>, PluginError> {
+    let manifest = Manifest::load(dir)?;
+    let mut out = Vec::new();
+    for t in &manifest.plan_sets {
+        let path = dir.join(&t.file);
+        let text = std::fs::read_to_string(&path).map_err(|e| PluginError::Manifest {
+            path: path.clone(),
+            message: e.to_string(),
+        })?;
+        let name = t
+            .file
+            .file_stem()
+            .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        out.push((name, text));
+    }
+    Ok(out)
+}
+
 /// The plugins in `roots` giving sheet templates (each as [`discover`]
 /// reads it): those whose manifest lists [`SHEET_TEMPLATES`] or names
 /// template files; a name found again is left out.
@@ -1321,7 +1350,7 @@ pub fn discover_sheet_templates(roots: &[PathBuf]) -> Vec<Found> {
             f.provides(SHEET_TEMPLATES)
                 || f.manifest
                     .as_ref()
-                    .is_ok_and(|m| !m.sheet_templates.is_empty())
+                    .is_ok_and(|m| !m.sheet_templates.is_empty() || !m.plan_sets.is_empty())
         })
         .filter(|f| names.insert(f.name()))
         .collect()
@@ -1372,6 +1401,13 @@ fn format_line(
 }
 
 impl WasmHost {
+    /// The plan sets plugin `dir`'s manifest names (`[[plan-set]]`): each
+    /// file's name (without its extension) and text, read as they are
+    /// (the caller checks them).
+    pub fn plan_sets(&self, dir: &Path) -> Result<Vec<(String, String)>, PluginError> {
+        plan_sets(dir)
+    }
+
     /// The sheet templates of the plugin in `dir`: the files its manifest
     /// names (read as they are, no code run), then those of its
     /// `sheet-templates` export when it is a WebAssembly plugin built with

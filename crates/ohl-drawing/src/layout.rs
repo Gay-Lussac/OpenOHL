@@ -3046,6 +3046,7 @@ fn sheet_values(
         },
     );
     put("program", format!("OpenOHL {}", env!("CARGO_PKG_VERSION")));
+    put("plan_kind", o.template.legend.label("plan_sheets", &[]));
     for (k, v) in [
         ("sheet", sl.number as f64),
         ("sheets", n as f64),
@@ -3478,7 +3479,7 @@ pub(crate) fn framed_page(
     (number, n): (usize, usize),
     (from, to): (f64, f64),
     ends: (String, String),
-    scale: &str,
+    (scale, kind): (&str, &str),
 ) -> (Drawing, furniture::Rect, furniture::Values) {
     let t = &o.template;
     let paper = Paper::new(d, o, page);
@@ -3494,6 +3495,9 @@ pub(crate) fn framed_page(
     };
     let mut values = sheet_values(d, o, page, &sl, n);
     values.text.insert("scales".into(), scale.to_owned());
+    values
+        .text
+        .insert("plan_kind".into(), o.template.legend.label(kind, &[]));
     let mut drawing = Drawing::sheet(page.width, page.height);
     let items = &mut drawing.items;
     for b in &t.frame.border {

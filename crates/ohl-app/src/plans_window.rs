@@ -13,9 +13,10 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use crate::drawings::{Input, PlanKind, PlanRequest, run_plans};
+use crate::drawings::{Input, PlanKind, PlanRequest, plan_set_inputs, run_plan_set, run_plans};
 use crate::model::Model;
 use crate::survey_io::Job;
+use ohl_drawing::plan_set::PlanSet;
 
 /// The papers offered.
 const PAPERS: [&str; 5] = ["A0", "A1", "A2", "A3", "A4"];
@@ -47,6 +48,13 @@ pub struct PlansWindow {
     pub error: Option<String>,
     /// The export under way, or done.
     pub job: Option<Job>,
+    /// A plan set exported instead of one plan.
+    pub set_mode: bool,
+    /// The plugins' plan sets: plugin, name, the set or why it does not
+    /// read.
+    pub sets: Vec<(String, String, Result<PlanSet, String>)>,
+    /// The set chosen (index in `sets`).
+    pub set: usize,
 }
 
 impl Default for PlansWindow {
@@ -64,6 +72,9 @@ impl Default for PlansWindow {
             out: None,
             error: None,
             job: None,
+            set_mode: false,
+            sets: Vec::new(),
+            set: 0,
         }
     }
 }
@@ -72,6 +83,16 @@ impl PlansWindow {
     /// Opens the window on plan `kind`.
     pub fn show(&mut self, kind: PlanKind) {
         self.kind = kind;
+        self.set_mode = false;
+        self.open = true;
+    }
+
+    /// Opens the window on the plan sets of the plugins `dirs` (name,
+    /// folder), read now.
+    pub fn show_sets(&mut self, dirs: &[(String, PathBuf)]) {
+        self.sets = crate::drawings::plugin_plan_sets(dirs);
+        self.set = self.set.min(self.sets.len().saturating_sub(1));
+        self.set_mode = true;
         self.open = true;
     }
 
@@ -124,9 +145,63 @@ impl PlansWindow {
                 );
                 ui.horizontal(|ui| {
                     for k in [PlanKind::Route, PlanKind::Situation, PlanKind::Phase] {
-                        ui.selectable_value(&mut self.kind, k, k.title());
+                        if ui
+                            .selectable_label(!self.set_mode && self.kind == k, k.title())
+                            .clicked()
+                        {
+                            self.kind = k;
+                            self.set_mode = false;
+                        }
+                    }
+                    if ui
+                        .selectable_label(self.set_mode, "Plan set")
+                        .on_hover_text(
+                            "Several drawings in one go, as a plugin's plan set lists them",
+                        )
+                        .clicked()
+                    {
+                        self.set_mode = true;
                     }
                 });
+                if self.set_mode {
+                    if self.sets.is_empty() {
+                        ui.label("No plugin in use gives a plan set.");
+                    }
+                    let shown = self
+                        .sets
+                        .get(self.set)
+                        .map_or("—".to_owned(), |(p, n, _)| format!("{p} / {n}"));
+                    egui::ComboBox::from_id_salt("plans-set")
+                        .selected_text(shown)
+                        .show_ui(ui, |ui| {
+                            for (k, (p, n, _)) in self.sets.iter().enumerate() {
+                                ui.selectable_value(&mut self.set, k, format!("{p} / {n}"));
+                            }
+                        });
+                    match self.sets.get(self.set).map(|x| &x.2) {
+                        Some(Ok(set)) => {
+                            ui.label(egui::RichText::new(&set.description).small());
+                            for d in &set.drawings {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "• {}{}{}{}",
+                                        d.kind.as_str(),
+                                        d.template
+                                            .as_ref()
+                                            .map_or(String::new(), |t| format!(", template {t}")),
+                                        d.page.as_ref().map_or(String::new(), |p| format!(", {p}")),
+                                        d.scale.map_or(String::new(), |s| format!(", 1:{s}"))
+                                    ))
+                                    .small(),
+                                );
+                            }
+                        }
+                        Some(Err(e)) => {
+                            crate::menu::error_label(ui, e);
+                        }
+                        None => {}
+                    }
+                }
                 ui.label(
                     egui::RichText::new(match self.kind {
                         PlanKind::Route => {
@@ -152,16 +227,18 @@ impl PlansWindow {
                     .num_columns(2)
                     .spacing([10.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("Paper");
-                        egui::ComboBox::from_id_salt("plans-paper")
-                            .selected_text(self.page.as_str())
-                            .show_ui(ui, |ui| {
-                                for p in PAPERS {
-                                    ui.selectable_value(&mut self.page, p.to_owned(), p);
-                                }
-                            });
-                        ui.end_row();
-                        if self.kind != PlanKind::Phase {
+                        if !self.set_mode {
+                            ui.label("Paper");
+                            egui::ComboBox::from_id_salt("plans-paper")
+                                .selected_text(self.page.as_str())
+                                .show_ui(ui, |ui| {
+                                    for p in PAPERS {
+                                        ui.selectable_value(&mut self.page, p.to_owned(), p);
+                                    }
+                                });
+                            ui.end_row();
+                        }
+                        if !self.set_mode && self.kind != PlanKind::Phase {
                             ui.label("Scale 1:");
                             let (scale, range) = if self.kind == PlanKind::Route {
                                 (&mut self.route_scale, 5000.0..=25_000.0)
@@ -223,6 +300,32 @@ impl PlansWindow {
                     let _ = out;
                     self.error = Some("tick a format".into());
                 }
+                Some(out) if self.set_mode => {
+                    let formats: Vec<ohl_drawing::export::Format> = self
+                        .formats
+                        .iter()
+                        .filter_map(|f| ohl_drawing::export::Format::parse(f))
+                        .collect();
+                    match self.sets.get(self.set) {
+                        Some((plugin, name, Ok(set))) => {
+                            match plan_set_inputs(model, case, drawings, plugin, set, &formats, out)
+                            {
+                                Ok(jobs) => {
+                                    self.error = None;
+                                    self.job = Some(Job::start(
+                                        format!("Exporting the plan set {name}"),
+                                        false,
+                                        ctx,
+                                        move |report| run_plan_set(&jobs, report),
+                                    ));
+                                }
+                                Err(e) => self.error = Some(e),
+                            }
+                        }
+                        Some((_, _, Err(e))) => self.error = Some(e.clone()),
+                        None => self.error = Some("no plan set chosen".into()),
+                    }
+                }
                 Some(out) => {
                     let mut w = drawings.clone();
                     w.formats = self
@@ -281,5 +384,61 @@ mod tests {
             assert!(names.iter().any(|n| n.ends_with(what)), "{what}: {names:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A plan set written in one go: the sheets and the phase plan of
+    /// the example line, each with the set's paper; and the LeV plugin's
+    /// set (when this checkout has it) reads.
+    #[test]
+    fn a_plan_set_is_written() {
+        let model = crate::tests::synthetic();
+        let w = crate::drawings::DrawingsWindow::default();
+        let set = PlanSet::parse(
+            "format = \"ohl-plan-set\"\nversion = 1\nname = \"S\"\n\
+             [[drawing]]\nkind = \"sheets\"\npage = \"A3\"\n\
+             [[drawing]]\nkind = \"phase\"\npage = \"A4\"\n",
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join(format!("ohl-app-{}-plan-set", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let jobs = crate::drawings::plan_set_inputs(
+            &model,
+            0,
+            &w,
+            "",
+            &set,
+            &[ohl_drawing::export::Format::Pdf],
+            dir.clone(),
+        )
+        .unwrap();
+        assert_eq!(jobs.len(), 2);
+        let done = run_plan_set(&jobs, &|_, _| {}).unwrap();
+        assert!(done.contains("phase plan"), "{done}");
+        let names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().any(|n| n.ends_with("phase-plan.pdf")),
+            "{names:?}"
+        );
+        assert!(
+            names.iter().filter(|n| n.ends_with(".pdf")).count() >= 2,
+            "{names:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let lev = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../local-data/plugins/lev-ch");
+        if lev.is_dir() {
+            let sets = crate::drawings::plugin_plan_sets(&[("lev-ch".into(), lev.clone())]);
+            assert!(!sets.is_empty());
+            for (_, n, s) in &sets {
+                assert!(s.is_ok(), "{n}: {:?}", s.as_ref().err());
+            }
+            let t = ohl_drawing::template::SheetTemplate::load(
+                &lev.join("sheets/esti-235-a1.ohlsheet"),
+            );
+            assert!(t.is_ok(), "{:?}", t.err());
+        }
     }
 }

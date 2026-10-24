@@ -241,7 +241,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         (1, 1),
         (0.0, d.length),
         (String::new(), String::new()),
-        "–",
+        ("–", "plan_phase"),
     );
     let room = [room[0], room[1], room[2], room[3] - key_h];
     let mut placed: Vec<(usize, [f64; 2], f64)> = Vec::new();
@@ -291,7 +291,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             (page_no + 1, pages),
             (s0, s1),
             (first, last),
-            "–",
+            ("–", "plan_phase"),
         );
         let items = &mut drawing.items;
         // The key of the circuits, under the figures.
@@ -444,6 +444,14 @@ impl MapKind {
         }
     }
 
+    /// Its legend label (the field `{plan_kind}`).
+    pub fn label_key(self) -> &'static str {
+        match self {
+            MapKind::Route => "plan_route",
+            MapKind::Situation => "plan_situation",
+        }
+    }
+
     /// The scales it is drawn at (1:…).
     pub fn scales(self) -> std::ops::RangeInclusive<f64> {
         match self {
@@ -573,7 +581,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
         (1, 1),
         (0.0, d.length),
         (String::new(), String::new()),
-        &scale_text,
+        (&scale_text, m.kind.label_key()),
     );
     let (w, h) = (room[2] / k, room[3] / k);
     let line = densified(&d.centreline, w.min(h) / 8.0);
@@ -612,7 +620,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                 first.map_or(String::new(), |s| s.id.clone()),
                 last.map_or(String::new(), |s| s.id.clone()),
             ),
-            &scale_text,
+            (&scale_text, m.kind.label_key()),
         );
         let items = &mut drawing.items;
         let mut legend: Vec<(String, String)> = Vec::new();
