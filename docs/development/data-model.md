@@ -1230,7 +1230,8 @@ kind, English default, its placeholders; `LegendSpec::label`);
 plan, classes: Vec<u8>, size, cell, styles: BTreeMap<"2" | "3-5" |
 "3,4", LidarStyle { colour, size, label }> }` (`LidarSpec`,
 `template::class_codes`); `[conductor_clearance] label_at` (`auto`,
-`middle`, `start`, `end`); `[if_empty]: BTreeMap<field | "*", text>`
+`middle`, `start`, `end`), since 2026-10-24 `envelope: bool` and
+`envelope_label` (one line for the whole line, `curves::envelope`); `[if_empty]: BTreeMap<field | "*", text>`
 (`SheetTemplate::if_empty`; `template::MAY_BE_EMPTY` the fields left
 empty unless named). The title block, revisions and legend now lie
 inside the frame's padding (`Paper::new`), texts made smaller to fit

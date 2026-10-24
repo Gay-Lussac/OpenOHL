@@ -189,6 +189,10 @@ impl Curve {
     /// `conductor_clearance_note`).
     pub fn legend_with(&self, legend: &crate::template::LegendSpec) -> String {
         let p = &self.parts;
+        // The one line for the whole line ([`envelope`]): its own words.
+        if p.circuit.is_empty() {
+            return self.legend.clone();
+        }
         let note = if p.largest_sag {
             legend.label("conductor_clearance_note", &[("case", &p.case)])
         } else {
@@ -322,9 +326,162 @@ pub fn curves(
     (out, warnings)
 }
 
+/// The circuits' lines `curves` as one: at each station the lowest of
+/// those there (the limit the ground must stay under along the whole
+/// line), the points where another circuit's line becomes the lowest
+/// added; labelled `label` (`{distance}`, `{rule}`, `{case}`: those of the
+/// circuits in it, joined). None without a line.
+pub fn envelope(curves: &[Curve], label: &str) -> Option<Curve> {
+    if curves.is_empty() {
+        return None;
+    }
+    // z of a run at station s (None outside it).
+    let at = |run: &[[f64; 2]], s: f64| -> Option<f64> {
+        let w = run
+            .windows(2)
+            .find(|w| s >= w[0][0] - 1e-9 && s <= w[1][0] + 1e-9)?;
+        let k = if w[1][0] > w[0][0] {
+            ((s - w[0][0]) / (w[1][0] - w[0][0])).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        Some(w[0][1] + k * (w[1][1] - w[0][1]))
+    };
+    let lowest = |s: f64| -> Option<f64> {
+        curves
+            .iter()
+            .flat_map(|c| &c.runs)
+            .filter_map(|r| at(r, s))
+            .reduce(f64::min)
+    };
+    let mut stations: Vec<f64> = curves
+        .iter()
+        .flat_map(|c| &c.runs)
+        .flatten()
+        .map(|p| p[0])
+        .collect();
+    stations.sort_by(f64::total_cmp);
+    stations.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    // Where the lowest changes between two stations: the crossing added
+    // (bisection on which line is lowest, to a millimetre).
+    let which = |s: f64| -> Option<usize> {
+        let mut best: Option<(usize, f64)> = None;
+        for (k, c) in curves.iter().enumerate() {
+            for r in &c.runs {
+                if let Some(z) = at(r, s)
+                    && best.is_none_or(|b| z < b.1)
+                {
+                    best = Some((k, z));
+                }
+            }
+        }
+        best.map(|b| b.0)
+    };
+    let mut all = Vec::with_capacity(stations.len() * 2);
+    for w in stations.windows(2) {
+        all.push(w[0]);
+        let (a, b) = (which(w[0]), which(w[1]));
+        if a.is_some() && b.is_some() && a != b {
+            let (mut lo, mut hi) = (w[0], w[1]);
+            while hi - lo > 1e-3 {
+                let m = 0.5 * (lo + hi);
+                if which(m) == a {
+                    lo = m;
+                } else {
+                    hi = m;
+                }
+            }
+            all.push(0.5 * (lo + hi));
+        }
+    }
+    if let Some(l) = stations.last() {
+        all.push(*l);
+    }
+    // Runs where some line is (a gap where none is).
+    let mut runs: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut run: Vec<[f64; 2]> = Vec::new();
+    for s in all {
+        match lowest(s) {
+            Some(z) => run.push([s, z]),
+            None if run.len() > 1 => runs.push(std::mem::take(&mut run)),
+            None => run.clear(),
+        }
+    }
+    if run.len() > 1 {
+        runs.push(run);
+    }
+    // Each value once (distances by size, the others by name).
+    let joined = |f: &dyn Fn(&CurveParts) -> &str| {
+        let mut v: Vec<&str> = curves.iter().map(|c| f(&c.parts)).collect();
+        v.sort_by(|a, b| match (a.parse::<f64>(), b.parse::<f64>()) {
+            (Ok(x), Ok(y)) => x.total_cmp(&y),
+            _ => a.cmp(b),
+        });
+        v.dedup();
+        v.join(" / ")
+    };
+    let (distance, rule, case) = (
+        joined(&|p| p.distance.as_str()),
+        joined(&|p| p.rule.as_str()),
+        joined(&|p| p.case.as_str()),
+    );
+    let text = crate::template::fill(label, &|n, _| match n {
+        "distance" => Some(distance.clone()),
+        "rule" => Some(rule.clone()),
+        "case" => Some(case.clone()),
+        _ => None,
+    });
+    Some(Curve {
+        runs,
+        legend: text.clone(),
+        label: text,
+        parts: CurveParts {
+            circuit: String::new(),
+            voltage: String::new(),
+            distance,
+            rule,
+            case,
+            largest_sag: false,
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two circuits' lines crossing: one line, at each station the lower
+    /// of them, the crossing point added; its label with both distances.
+    #[test]
+    fn the_envelope_is_the_lowest_line() {
+        let line = |circuit: &str, runs: Vec<Vec<[f64; 2]>>, distance: &str| Curve {
+            runs,
+            label: String::new(),
+            legend: String::new(),
+            parts: CurveParts {
+                circuit: circuit.into(),
+                distance: distance.into(),
+                rule: "ground".into(),
+                case: "80 °C".into(),
+                ..CurveParts::default()
+            },
+        };
+        let a = line("A", vec![vec![[0.0, 10.0], [100.0, 20.0]]], "7");
+        let b = line("B", vec![vec![[0.0, 20.0], [100.0, 10.0]]], "9");
+        let e = envelope(&[a, b], "limit ({distance} m, {rule})").unwrap();
+        assert_eq!(e.label, "limit (7 / 9 m, ground)");
+        assert_eq!(
+            e.legend_with(&crate::template::LegendSpec::default()),
+            e.label
+        );
+        let run = &e.runs[0];
+        assert_eq!(run.first(), Some(&[0.0, 10.0]));
+        assert_eq!(run.last(), Some(&[100.0, 10.0]));
+        // The crossing at 50 m, 15 m (within the bisection's millimetre).
+        let mid = run.iter().find(|p| (p[0] - 50.0).abs() < 0.01).unwrap();
+        assert!((mid[1] - 15.0).abs() < 0.01, "{run:?}");
+        assert!(envelope(&[], "x").is_none());
+    }
 
     /// A span from station 0 to 300 m between attachments at 30 m, its
     /// lowest point `sag` m lower at 150 m (a parabola), on `circuit`.

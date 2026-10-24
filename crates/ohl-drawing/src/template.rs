@@ -1104,6 +1104,15 @@ pub struct ConductorClearanceSpec {
     /// `"end"` (the free place nearest that end of the sheet).
     #[serde(default = "auto_place")]
     pub label_at: String,
+    /// One line for the whole line instead of one per circuit: at each
+    /// station the lowest of the circuits' lines (the limit the ground
+    /// must stay under), labelled `envelope_label`.
+    #[serde(default)]
+    pub envelope: bool,
+    /// The one line's label: `{distance}` (the distances of the circuits
+    /// in it, e.g. `7 / 9`), `{rule}` (their rules), `{case}`.
+    #[serde(default = "envelope_label")]
+    pub envelope_label: String,
     /// Its pen.
     #[serde(default)]
     pub pen: PenSpec,
@@ -1115,6 +1124,10 @@ fn auto_place() -> String {
 
 fn also() -> String {
     "also".into()
+}
+
+fn envelope_label() -> String {
+    "ground clearance limit ({distance} m below the lowest conductors, {rule})".into()
 }
 
 fn curve_label() -> String {
@@ -1129,6 +1142,8 @@ impl Default for ConductorClearanceSpec {
             mode: also(),
             label: curve_label(),
             label_at: auto_place(),
+            envelope: false,
+            envelope_label: envelope_label(),
             pen: PenSpec::default(),
         }
     }
