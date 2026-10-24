@@ -41,23 +41,7 @@ use std::collections::HashMap;
 
 use ohl_core::budget::Budget;
 
-use crate::geometry::{P3, closest_on_segment, closest_on_triangle};
-
-fn sub(a: P3, b: P3) -> P3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: P3, b: P3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: P3, b: P3) -> P3 {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
+use crate::geometry::{P3, closest_on_segment, closest_on_triangle, cross, dot, sub};
 
 fn norm(a: P3) -> f64 {
     dot(a, a).sqrt()
