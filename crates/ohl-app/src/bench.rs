@@ -1095,3 +1095,70 @@ fn edit_benchmark() {
     println!("every case solved in {:.1?}", t.elapsed());
     edit(&mut m, "every case");
 }
+
+/// The distance under unequal wind on a project of your own: the line
+/// solved at the levels of the windiest case (step `OHL_BENCH_STEP`,
+/// default 50 Pa), then measured with the check plugin in the folder
+/// `OHL_BENCH_PLUGIN`; each part timed.
+///
+/// ```bash
+/// OHL_BENCH_FILE=copy.ohl OHL_BENCH_PLUGIN=path/to/plugin \
+///   cargo test --release -p ohl-app unequal_wind_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "a benchmark on a project of your own"]
+fn unequal_wind_benchmark() {
+    let (Some(mut m), Some(dir)) = (from_env(), ohl_core::env::var_os("OHL_BENCH_PLUGIN")) else {
+        eprintln!("skipping: set OHL_BENCH_FILE and OHL_BENCH_PLUGIN");
+        return;
+    };
+    let step: f64 = ohl_core::env::var("OHL_BENCH_STEP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(crate::phase_distance::DEFAULT_WIND_STEP);
+    let host = ohl_plugins::WasmHost::new().unwrap();
+    let (checks, problems) = ohl_io::checks::list(&host, &[dir.into()]);
+    assert!(problems.is_empty(), "{problems:?}");
+    let check = checks
+        .iter()
+        .find(|c| c.info.id == ohl_io::checks::UNEQUAL_WIND)
+        .expect("the plugin runs the unequal wind check");
+    let k = (0..m.cases.len())
+        .max_by(|a, b| {
+            let p = |k: usize| m.cases[k].case.wind_pressure.si();
+            p(*a).total_cmp(&p(*b))
+        })
+        .unwrap();
+    m.ensure_solved(k);
+    let case = m.cases[k].case.clone();
+    let t = Instant::now();
+    let (levels, notes) =
+        ohl_clearance::unequal_wind::solve_levels(&m.line, &m.library, &case, step, 0.6, |c| {
+            let s = model::Solved::new(&m.line, &m.library, c.clone());
+            (s.shapes, s.failed)
+        })
+        .unwrap();
+    let solved = t.elapsed();
+    let t = Instant::now();
+    let pairs = ohl_io::checks::unequal_wind(
+        &host,
+        check,
+        &check.info.values,
+        &[],
+        &Default::default(),
+        &levels,
+        &ohl_core::budget::Budget::new(),
+    )
+    .unwrap();
+    let measured = t.elapsed();
+    let below = pairs.iter().filter(|p| p.margin() < 0.0).count();
+    println!(
+        "unequal wind, {:.0} Pa by {step} Pa: {} levels solved in {solved:.1?} ({} notes); {} \
+         conductors, {} pairs ({below} below) measured in {measured:.1?}",
+        case.wind_pressure.si(),
+        levels.len(),
+        notes.len(),
+        levels[0].conductors.len(),
+        pairs.len()
+    );
+}

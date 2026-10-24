@@ -10,6 +10,42 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**The distance between conductors under unequal wind (owner, 2026-10-24)**
+
+- A second check in the same plugin submenu as the distance between
+  conductors in the span: under **unequal wind**, as codes ask (e.g.
+  the Swiss LeV, Annex 6, 2.2, with ESTI's directive 240: one conductor
+  at a wind p, the other at 100 … 60 % of p, p from none up to the full
+  wind since the closest approach may come at less). The required
+  distance is the plugin's (there C₃ within a system, C₄ between
+  systems, from the same table; no sag or string term). OpenOHL
+  measures (`ohl_clearance::unequal_wind`, check id `unequal-wind`).
+- The core change was asked and approved (owner: yes). The user
+  chooses the weather case (its wind, the most) and the wind step; the
+  case's temperature and ice are kept, only the wind is stepped
+  (owner); the wind from **both sides** (owner); the pairs as for the
+  distance in the span — the same span, nearby spans when ticked, the
+  circuits ticked (owner). The other conductor's least share is a
+  setting (60 % by default).
+- The line is solved at every step from none to the case's wind (the
+  case's included) and at the share of each step, so the largest
+  difference is always among the levels; between the levels the
+  approach is not measured (a simplification: the step is the user's).
+  Each combination is measured on stations every 10 m, the four closest
+  again every Δs (a simplification: a combination's minimum is found to
+  the stations' spacing); the distance is between the axes less the
+  polylines' bounds (conservative).
+- The same window as the distance in the span (its values tables, the
+  admin's edits, saved reports, the circuits' insulation level), with
+  the case, the step and the share instead of the cases and the k
+  diagram; per pair the closest approach, the wind on each and the side.
+- A result clicked shows only that span's pair as it was measured
+  (owner): the two conductors at their own winds drawn on top, labelled,
+  kept from the run (and in a saved report) — no case switched, nothing
+  solved again. Closing a distance between conductors page shows again
+  the cases shown before its first result switched them (owner), unless
+  another case was chosen meanwhile.
+
 **The sag on the profile sheets (owner, 2026-10-24)**
 
 - The sag of each span can be shown on the profile sheets, per circuit

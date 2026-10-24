@@ -15,6 +15,11 @@
 //! included) and the pairs below z or within [`KEPT_WITHIN`] of it;
 //! reopened, it shows whether the line changed since; run again, the new
 //! run is compared with it and may replace it.
+//!
+//! The same window runs the distance under unequal wind
+//! ([`Kind::UnequalWind`], [`ohl_clearance::unequal_wind`]): one weather
+//! case, its wind stepped from none to its pressure on one conductor and
+//! from a share of it to it on the other.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -49,6 +54,51 @@ pub const CHECK_ID: &str = "phase-distance";
 /// The check in words.
 /// (A check's title is its plugin's; this where there is none.)
 pub const CHECK_TITLE: &str = "Distance between conductors";
+
+/// The unequal wind check's id in the library of performed checks.
+pub const UNEQUAL_WIND_CHECK_ID: &str = "unequal-wind";
+
+/// The unequal wind check in words (where its plugin gives none).
+pub const UNEQUAL_WIND_CHECK_TITLE: &str = "Distance between conductors under unequal wind";
+
+/// The wind step when none is set, Pa.
+pub const DEFAULT_WIND_STEP: f64 = 50.0;
+
+/// Which check the window runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Kind {
+    /// The distance in the span (sag and string).
+    #[default]
+    Span,
+    /// The distance under unequal wind.
+    UnequalWind,
+}
+
+impl Kind {
+    /// The plugin check's id ([`ohl_io::checks`]), also the report's.
+    pub fn check_id(self) -> &'static str {
+        match self {
+            Kind::Span => CHECK_ID,
+            Kind::UnequalWind => UNEQUAL_WIND_CHECK_ID,
+        }
+    }
+
+    /// The check in words.
+    pub fn title(self) -> &'static str {
+        match self {
+            Kind::Span => CHECK_TITLE,
+            Kind::UnequalWind => UNEQUAL_WIND_CHECK_TITLE,
+        }
+    }
+
+    /// The page's id.
+    fn page(self) -> &'static str {
+        match self {
+            Kind::Span => "phase-distance-page",
+            Kind::UnequalWind => "unequal-wind-page",
+        }
+    }
+}
 
 /// A saved report keeps the pairs below z and those within this of it,
 /// m (all of them are counted).
@@ -95,6 +145,16 @@ pub struct Row {
     /// The rule applied (e.g. "2.2.1"; "2.2.4 (phase spacers)").
     #[serde(default)]
     pub rule: String,
+    /// Under unequal wind: the wind pressure on each, Pa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure: Option<[f64; 2]>,
+    /// Under unequal wind: the side it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+    /// Under unequal wind: the two conductors as measured (each at its
+    /// wind), to draw the pair without solving again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wires: Vec<Vec<[f64; 3]>>,
 }
 
 impl Row {
@@ -155,6 +215,12 @@ pub struct Params {
     pub cases: Vec<CaseParams>,
     /// The insulation level used for each circuit.
     pub levels: BTreeMap<String, String>,
+    /// Under unequal wind: the wind step, Pa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind_step_pa: Option<f64>,
+    /// Under unequal wind: the other conductor's least share of the wind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub low_share: Option<f64>,
 }
 
 /// What a saved report keeps as results.
@@ -295,6 +361,10 @@ enum Ask {
 /// A line to draw: the worst station of a pair, with its label.
 pub type Measure = ([f64; 3], [f64; 3], String);
 
+/// A wire to draw, with its label (under unequal wind: a conductor at
+/// its own wind).
+pub type MeasureWire = (Vec<[f64; 3]>, String);
+
 /// What the window asks of the application.
 #[derive(Default)]
 pub struct Out {
@@ -306,10 +376,15 @@ pub struct Out {
     pub apply: Option<(String, ohl_session::Command)>,
     /// The weather case to show (that of the result clicked), by name.
     pub case: Option<String>,
+    /// The wires to draw, replacing the last (empty: none).
+    pub wires: Option<Vec<MeasureWire>>,
 }
 
-/// The Distance between conductors window.
+/// The Distance between conductors window (and the one under unequal
+/// wind).
 pub struct PhaseDistanceWindow {
+    /// The check it runs.
+    pub kind: Kind,
     /// To be shown (the app opens its page).
     pub open: bool,
     /// A values file chosen (none: the project's copy, else the
@@ -323,6 +398,10 @@ pub struct PhaseDistanceWindow {
     pub settings: PhaseDistanceSettings,
     /// The plugin's choices (the k diagram).
     pub choices: Vec<u32>,
+    /// Under unequal wind: the wind step, Pa.
+    pub wind_step: f64,
+    /// Under unequal wind: the other conductor's least share of the wind.
+    pub low_share: f64,
     /// Only pairs below z.
     pub only_below: bool,
     /// The row clicked.
@@ -359,13 +438,23 @@ pub struct PhaseDistanceWindow {
 
 impl Default for PhaseDistanceWindow {
     fn default() -> Self {
+        Self::new(Kind::Span)
+    }
+}
+
+impl PhaseDistanceWindow {
+    /// The window of `kind`.
+    pub fn new(kind: Kind) -> Self {
         Self {
+            kind,
             open: false,
             file: None,
             cases: BTreeSet::new(),
             circuits: None,
             settings: PhaseDistanceSettings::default(),
             choices: Vec::new(),
+            wind_step: DEFAULT_WIND_STEP,
+            low_share: ohl_clearance::unequal_wind::UnequalWindSettings::default().low_share,
             only_below: true,
             picked: None,
             values: None,
@@ -395,12 +484,15 @@ struct Loaded {
     check: Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String>,
 }
 
-/// The plugins' check of the distance between conductors, loaded.
-fn load_plugin(model: &Model) -> Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String> {
+/// The plugins' check `id` (of the distance between conductors), loaded.
+fn load_plugin(
+    model: &Model,
+    id: &str,
+) -> Result<(Arc<WasmHost>, PluginCheck, WasmCheckPlugin), String> {
     let check = model
         .checks
         .iter()
-        .find(|c| c.info.id == ohl_io::checks::PHASE_DISTANCE)
+        .find(|c| c.info.id == id)
         .cloned()
         .ok_or_else(|| {
             let mut why = "no check plugin in use runs it: install a plugin that does or turn it \
@@ -652,8 +744,27 @@ impl PhaseDistanceWindow {
         self.open = true;
         self.ensure_plugin(model);
         self.cases.retain(|k| *k < model.cases.len());
-        if self.cases.is_empty() {
-            self.cases = still_air_10(model);
+        match self.kind {
+            Kind::Span if self.cases.is_empty() => self.cases = still_air_10(model),
+            Kind::UnequalWind if self.cases.len() != 1 => {
+                // One case: the first with the most wind.
+                let windiest = model
+                    .cases
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| c.case.wind_pressure.si() > 0.0)
+                    .max_by(|(i, a), (j, b)| {
+                        a.case
+                            .wind_pressure
+                            .si()
+                            .total_cmp(&b.case.wind_pressure.si())
+                            .then(j.cmp(i))
+                    })
+                    .map(|(k, _)| k);
+                let first = self.cases.first().copied();
+                self.cases = first.or(windiest).into_iter().collect();
+            }
+            _ => {}
         }
     }
 
@@ -666,7 +777,7 @@ impl PhaseDistanceWindow {
         {
             return;
         }
-        let check = load_plugin(model);
+        let check = load_plugin(model, self.kind.check_id());
         if let Ok((_, c, _)) = &check {
             self.choices = c.info.choices.iter().map(|x| x.default).collect();
         }
@@ -734,6 +845,10 @@ impl PhaseDistanceWindow {
             self.job.result = Some(Err("tick a weather case".into()));
             return;
         }
+        if self.kind == Kind::UnequalWind && self.cases.len() != 1 {
+            self.job.result = Some(Err("choose one weather case (its wind)".into()));
+            return;
+        }
         self.ensure_plugin(model);
         let (host, check) = match self.plugin.as_ref().map(|p| &p.check) {
             Some(Ok((h, c, _))) => (h.clone(), c.clone()),
@@ -791,6 +906,8 @@ impl PhaseDistanceWindow {
                 .as_deref()
                 .map(|k| levels(model, k, &default))
                 .unwrap_or_default(),
+            wind_step_pa: (self.kind == Kind::UnequalWind).then_some(self.wind_step),
+            low_share: (self.kind == Kind::UnequalWind).then_some(self.low_share),
         };
         let state = model
             .editing
@@ -808,10 +925,94 @@ impl PhaseDistanceWindow {
             .collect();
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
+        let kind = self.kind;
+        let unequal = ohl_clearance::unequal_wind::UnequalWindSettings {
+            pairs: settings.clone(),
+            low_share: self.low_share,
+        };
+        let wind_step = self.wind_step;
         self.job.start_at(ctx, model.revision(), move || {
             let mut notes = Vec::new();
             let mut rows = Vec::new();
-            for (solved, ready) in cases {
+            if kind == Kind::UnequalWind
+                && let Some((solved, _)) = cases.first()
+            {
+                let case = &solved.case;
+                let (levels, n) = ohl_clearance::unequal_wind::solve_levels(
+                    &line,
+                    &library,
+                    case,
+                    wind_step,
+                    unequal.low_share,
+                    |c| {
+                        let s = crate::model::Solved::new(&line, &library, c.clone());
+                        (s.shapes, s.failed)
+                    },
+                )?;
+                notes.extend(n.into_iter().map(|n| format!("\"{}\" {n}", case.name)));
+                // Exit clause: the pairs of a 25 km line at about 20
+                // levels in seconds.
+                let budget =
+                    ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+                let pairs = ohl_io::checks::unequal_wind(
+                    &host,
+                    &check,
+                    &params.values_text,
+                    &choices,
+                    &unequal,
+                    &levels,
+                    &budget,
+                )
+                .map_err(|e| format!("{}: {e}", check.plugin))?;
+                let cs = levels
+                    .first()
+                    .map(|l| &l.conductors[..])
+                    .unwrap_or_default();
+                for p in pairs {
+                    let (a, b) = (&cs[p.a], &cs[p.b]);
+                    rows.push(Row {
+                        case: case.name.clone(),
+                        span: [
+                            (a.wire.section.clone(), a.wire.span),
+                            (b.wire.section.clone(), b.wire.span),
+                        ],
+                        what: [what(a), what(b)],
+                        same_system: p.same_system,
+                        same_span: p.same_span,
+                        kv: p.kv,
+                        distance: p.distance,
+                        required: p.required,
+                        length_below: 0.0,
+                        at: p.at,
+                        along: p.along,
+                        at_clamp: false,
+                        sag: [0.0; 2],
+                        lk: [0.0; 2],
+                        beta: {
+                            let d = (0..3)
+                                .map(|k| (p.at[0][k] - p.at[1][k]).powi(2))
+                                .sum::<f64>()
+                                .sqrt();
+                            let dz = (p.at[0][2] - p.at[1][2]).abs();
+                            if d > 0.0 {
+                                (dz / d).clamp(0.0, 1.0).acos().to_degrees()
+                            } else {
+                                0.0
+                            }
+                        },
+                        k: [f64::NAN; 2],
+                        c: p.values.first().copied().unwrap_or(p.required),
+                        rule: p.rule.clone(),
+                        pressure: Some(p.pressure),
+                        side: Some(p.side.as_str().to_owned()),
+                        wires: vec![
+                            levels[p.levels[0]].conductors[p.a].wire.points.clone(),
+                            levels[p.levels[1]].conductors[p.b].wire.points.clone(),
+                        ],
+                    });
+                }
+            }
+            for (solved, ready) in cases.into_iter().filter(|_| kind == Kind::Span) {
                 let solved = if ready {
                     solved
                 } else {
@@ -850,13 +1051,6 @@ impl PhaseDistanceWindow {
                         })
                         .sum::<f64>()
                 };
-                let what = |c: &Conductor| {
-                    if c.wire.potential.is_none() {
-                        format!("{} (earth wire)", c.wire.circuit)
-                    } else {
-                        format!("{} {}", c.wire.circuit, c.wire.phase)
-                    }
-                };
                 for p in pairs {
                     let (a, b) = (&cs[p.a], &cs[p.b]);
                     let w = &p.worst;
@@ -885,6 +1079,9 @@ impl PhaseDistanceWindow {
                         k: [v(0), v(1)],
                         c: v(2),
                         rule: p.rule.clone(),
+                        pressure: None,
+                        side: None,
+                        wires: Vec::new(),
                     });
                 }
             }
@@ -905,8 +1102,8 @@ impl PhaseDistanceWindow {
     /// Shows saved report `r`: its parameters set (its values used until
     /// another file is chosen), its results shown; Check runs it again.
     pub fn load(&mut self, r: &CheckReport, model: &Model) -> Result<(), String> {
-        if r.check != CHECK_ID {
-            return Err(format!("{} is not a {CHECK_TITLE} report", r.id));
+        if r.check != self.kind.check_id() {
+            return Err(format!("{} is not a {} report", r.id, self.kind.title()));
         }
         let params: Params = serde_json::from_value(r.parameters.clone())
             .map_err(|e| format!("report {}: parameters: {e}", r.id))?;
@@ -940,6 +1137,12 @@ impl PhaseDistanceWindow {
         } else {
             params.choices.clone()
         };
+        if let Some(step) = params.wind_step_pa {
+            self.wind_step = step;
+        }
+        if let Some(share) = params.low_share {
+            self.low_share = share;
+        }
         self.settings.spacing = params.spacing;
         self.settings.nearby = params.nearby;
         self.settings.max_distance = params.max_distance;
@@ -1004,10 +1207,10 @@ impl PhaseDistanceWindow {
             format: reports::REPORT_FILE_FORMAT.into(),
             version: reports::REPORT_FILE_VERSION,
             id: name.to_owned(),
-            check: CHECK_ID.into(),
+            check: self.kind.check_id().into(),
             title: self
                 .check()
-                .map_or(CHECK_TITLE.to_owned(), |c| c.info.title.clone()),
+                .map_or(self.kind.title().to_owned(), |c| c.info.title.clone()),
             time: editing.session.now().map_err(|e| e.to_string())?,
             user: editing.user.clone(),
             app: format!("OHL-Design {}", env!("CARGO_PKG_VERSION")),
@@ -1015,10 +1218,14 @@ impl PhaseDistanceWindow {
             status: ReportStatus::Draft,
             note,
             state,
-            summary: format!(
-                "{} pairs, {below} below z ({length:.0} m of conductor)",
-                r.pairs
-            ),
+            summary: if self.kind == Kind::UnequalWind {
+                format!("{} pairs, {below} below z (unequal wind)", r.pairs)
+            } else {
+                format!(
+                    "{} pairs, {below} below z ({length:.0} m of conductor)",
+                    r.pairs
+                )
+            },
             parameters: serde_json::to_value(&r.params).map_err(|e| e.to_string())?,
             results: serde_json::to_value(&saved).map_err(|e| e.to_string())?,
         })
@@ -1072,8 +1279,9 @@ impl PhaseDistanceWindow {
     /// the footer at the bottom left, always visible (owner, 2026-10-21);
     /// the rest scrolls above it.
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
-        let out = help::body(ui, "phase-distance-page", |ui| self.body_ui(ui, model));
-        help::footer(ui, "phase-distance-page", |ui| {
+        let page = self.kind.page();
+        let out = help::body(ui, page, |ui| self.body_ui(ui, model));
+        help::footer(ui, page, |ui| {
             if help::run_button(
                 ui,
                 !self.job.running(),
@@ -1117,7 +1325,7 @@ impl PhaseDistanceWindow {
             .max_height(260.0)
             .show(ui, |ui| {
                 let plugin = self.check().ok().map(|c| c.info.explanation.clone());
-                explanation(ui, plugin.as_deref());
+                explanation(ui, plugin.as_deref(), self.kind);
                 self.values_ui(ui, model);
             });
         ui.separator();
@@ -1235,7 +1443,7 @@ impl PhaseDistanceWindow {
             if self.save_name.is_empty() {
                 self.save_name = self
                     .check()
-                    .map_or(CHECK_TITLE.to_owned(), |c| c.info.title.clone());
+                    .map_or(self.kind.title().to_owned(), |c| c.info.title.clone());
             }
             ui.label("Save in the library of performed checks as");
             ui.add(egui::TextEdit::singleline(&mut self.save_name).desired_width(240.0));
@@ -1443,37 +1651,92 @@ impl PhaseDistanceWindow {
         });
         ui.horizontal(|ui| {
             let names: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-            let title = match self.cases.len() {
-                0 => "Weather cases: none".to_owned(),
-                1 => format!(
-                    "Weather case: {}",
-                    names
-                        .get(*self.cases.first().expect("one"))
-                        .map_or("", String::as_str)
-                ),
-                n => format!("Weather cases: {n}"),
-            };
-            crate::menu::options_menu(ui, &title, |ui| {
-                ui.label(
-                    egui::RichText::new("each checked on its own (LeV: f at 10 °C, still air)")
-                        .small()
-                        .weak(),
-                );
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        for (k, n) in names.iter().enumerate() {
-                            let mut on = self.cases.contains(&k);
-                            if ui.checkbox(&mut on, n).changed() {
-                                if on {
-                                    self.cases.insert(k);
-                                } else {
-                                    self.cases.remove(&k);
-                                }
+            if self.kind == Kind::UnequalWind {
+                let shown = self
+                    .cases
+                    .first()
+                    .and_then(|k| model.cases.get(*k))
+                    .map_or("—".to_owned(), |c| {
+                        format!("{} ({:.0} Pa)", c.case.name, c.case.wind_pressure.si())
+                    });
+                ui.label("Weather case")
+                    .on_hover_text("Its wind (the most), temperature and ice");
+                egui::ComboBox::from_id_salt("unequal-wind-case")
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        for (k, c) in model.cases.iter().enumerate() {
+                            let text =
+                                format!("{} ({:.0} Pa)", c.case.name, c.case.wind_pressure.si());
+                            if ui
+                                .selectable_label(self.cases.first() == Some(&k), text)
+                                .clicked()
+                            {
+                                self.cases = BTreeSet::from([k]);
                             }
                         }
                     });
-            });
+                ui.label("wind step");
+                ui.add(
+                    egui::DragValue::new(&mut self.wind_step)
+                        .range(1.0..=1000.0)
+                        .speed(1.0)
+                        .suffix(" Pa"),
+                )
+                .on_hover_text(
+                    "The wind on one conductor from none to the case's in these steps (the \
+                     case's always included); the line is solved at each, and at the share of \
+                     each",
+                );
+                let mut share = self.low_share * 100.0;
+                ui.label("the other from");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut share)
+                            .range(0.0..=100.0)
+                            .speed(1.0)
+                            .suffix(" %"),
+                    )
+                    .on_hover_text(
+                        "The other conductor's wind from this share of the first's up to it \
+                         (LeV: up to 40 % less, 60 %)",
+                    )
+                    .changed()
+                {
+                    self.low_share = share / 100.0;
+                }
+            } else {
+                let title = match self.cases.len() {
+                    0 => "Weather cases: none".to_owned(),
+                    1 => format!(
+                        "Weather case: {}",
+                        names
+                            .get(*self.cases.first().expect("one"))
+                            .map_or("", String::as_str)
+                    ),
+                    n => format!("Weather cases: {n}"),
+                };
+                crate::menu::options_menu(ui, &title, |ui| {
+                    ui.label(
+                        egui::RichText::new("each checked on its own (LeV: f at 10 °C, still air)")
+                            .small()
+                            .weak(),
+                    );
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for (k, n) in names.iter().enumerate() {
+                                let mut on = self.cases.contains(&k);
+                                if ui.checkbox(&mut on, n).changed() {
+                                    if on {
+                                        self.cases.insert(k);
+                                    } else {
+                                        self.cases.remove(&k);
+                                    }
+                                }
+                            }
+                        });
+                });
+            }
             let all = circuit_names(model);
             let ticked = |c: &Option<BTreeSet<String>>, n: &String| {
                 c.as_ref().is_none_or(|set| set.contains(n))
@@ -1692,13 +1955,19 @@ impl PhaseDistanceWindow {
         }
         let (below, length) = report.below();
         let kept = report.rows.len() < report.pairs;
+        let unequal = self.kind == Kind::UnequalWind;
         let mut export = false;
         ui.horizontal(|ui| {
+            let how = if unequal {
+                format!("{}: {} pairs, {below} below z", report.code, report.pairs)
+            } else {
+                format!(
+                    "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor)",
+                    report.code, report.diagram, report.pairs
+                )
+            };
             ui.label(format!(
-                "{} — {}: {} pairs, {below} below z ({length:.0} m of conductor){}",
-                report.code,
-                report.diagram,
-                report.pairs,
+                "{how}{}",
                 if kept {
                     format!("; {} kept (within {KEPT_WITHIN} m of z)", report.rows.len())
                 } else {
@@ -1709,7 +1978,12 @@ impl PhaseDistanceWindow {
             export = ui.button("Export CSV…").clicked();
         });
         if export {
-            save_csv("phase-distance.csv", &csv(report));
+            let name = if unequal {
+                "unequal-wind.csv"
+            } else {
+                "phase-distance.csv"
+            };
+            save_csv(name, &csv(report));
         }
         let mut clicked = None;
         egui::ScrollArea::both()
@@ -1719,11 +1993,20 @@ impl PhaseDistanceWindow {
                     .striped(true)
                     .spacing([10.0, 3.0])
                     .show(ui, |ui| {
-                        for h in [
-                            "case", "span", "circuit", "other", "circuit", "C", "kV", "d m", "z m",
-                            "d − z", "below m", "f m", "l_k m", "β °", "k", "C m", "rule", "",
-                        ] {
-                            ui.strong(h);
+                        let heads: &[&str] = if unequal {
+                            &[
+                                "case", "span", "circuit", "other", "circuit", "C", "kV", "d m",
+                                "z m", "d − z", "wind Pa", "from", "β °", "rule", "",
+                            ]
+                        } else {
+                            &[
+                                "case", "span", "circuit", "other", "circuit", "C", "kV", "d m",
+                                "z m", "d − z", "below m", "f m", "l_k m", "β °", "k", "C m",
+                                "rule", "",
+                            ]
+                        };
+                        for h in heads {
+                            ui.strong(*h);
                         }
                         if self.comparison.is_some() {
                             ui.strong("vs saved");
@@ -1752,7 +2035,12 @@ impl PhaseDistanceWindow {
                                 }
                                 ui.label(&r.what[k]);
                             }
-                            ui.label(if r.same_system { "C₁" } else { "C₂" });
+                            ui.label(match (unequal, r.same_system) {
+                                (false, true) => "C₁",
+                                (false, false) => "C₂",
+                                (true, true) => "C₃",
+                                (true, false) => "C₄",
+                            });
                             ui.label(format!("{:.0}", r.kv));
                             let mono = |v: f64| egui::RichText::new(format!("{v:.2}")).monospace();
                             let m = mono(r.margin());
@@ -1774,12 +2062,22 @@ impl PhaseDistanceWindow {
                                     clicked = Some((i, 0));
                                 }
                             }
-                            ui.label(format!("{:.0}", r.length_below));
-                            ui.label(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]));
-                            ui.label(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]));
-                            ui.label(format!("{:.0}", r.beta));
-                            ui.label(format!("{:.2} / {:.2}", r.k[0], r.k[1]));
-                            ui.label(format!("{:.2}", r.c));
+                            if unequal {
+                                let [pa, pb] = r.pressure.unwrap_or([f64::NAN; 2]);
+                                ui.label(format!("{pa:.0} / {pb:.0}")).on_hover_text(
+                                    "The wind pressure on the first and on the other conductor \
+                                     at the closest approach",
+                                );
+                                ui.label(r.side.as_deref().unwrap_or("—"));
+                                ui.label(format!("{:.0}", r.beta));
+                            } else {
+                                ui.label(format!("{:.0}", r.length_below));
+                                ui.label(format!("{:.2} / {:.2}", r.sag[0], r.sag[1]));
+                                ui.label(format!("{:.2} / {:.2}", r.lk[0], r.lk[1]));
+                                ui.label(format!("{:.0}", r.beta));
+                                ui.label(format!("{:.2} / {:.2}", r.k[0], r.k[1]));
+                                ui.label(format!("{:.2}", r.c));
+                            }
                             ui.label(&r.rule);
                             let mut note = Vec::new();
                             if r.at_clamp {
@@ -1810,7 +2108,10 @@ impl PhaseDistanceWindow {
         if let Some((i, k)) = clicked {
             let r = &report.rows[i];
             self.picked = Some(i);
-            out.case = Some(r.case.clone());
+            if r.pressure.is_none() {
+                // The worst station is in its case: shown.
+                out.case = Some(r.case.clone());
+            }
             out.go = Some(Selection::Span {
                 section: r.span[k].0.clone(),
                 span: r.span[k].1,
@@ -1820,13 +2121,42 @@ impl PhaseDistanceWindow {
                 r.at[1],
                 format!("d {:.2} m · z {:.2} m", r.distance, r.required),
             ));
+            if let Some(p) = r.pressure {
+                // Only the pair, as measured (each at its wind): nothing
+                // solved, the case shown kept.
+                let side = r.side.as_deref().unwrap_or("right");
+                out.wires = Some(
+                    r.wires
+                        .iter()
+                        .zip(p)
+                        .zip(&r.what)
+                        .map(|((w, p), what)| {
+                            let label = if p > 0.0 {
+                                format!("{what} at {p:.0} Pa from the {side}")
+                            } else {
+                                format!("{what} in still air")
+                            };
+                            (w.clone(), label)
+                        })
+                        .collect(),
+                );
+            }
         }
+    }
+}
+
+/// A conductor's circuit and phase, in words.
+fn what(c: &Conductor) -> String {
+    if c.wire.potential.is_none() {
+        format!("{} (earth wire)", c.wire.circuit)
+    } else {
+        format!("{} {}", c.wire.circuit, c.wire.phase)
     }
 }
 
 /// How the check computes, in brief (always shown at the top): the
 /// measuring (OpenOHL's), then the rules (the plugin's).
-fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
+fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
     egui::CollapsingHeader::new("How it is computed")
         .id_salt("phase-distance-how")
         .default_open(true)
@@ -1840,6 +2170,25 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>) {
                 .filter(|p| !p.trim().is_empty())
             {
                 small(ui, &p.replace('\n', " "));
+            }
+            if kind == Kind::UnequalWind {
+                small(
+                    ui,
+                    "Measured by OpenOHL — pairs as for the distance in the span (in still \
+                     air; nearby spans where they come within the distance at any wind). The \
+                     line is solved in the weather case (its temperature and ice) with its \
+                     wind every step from none to the case's, from each side, and at the \
+                     share of each step (so the largest difference is always among them).",
+                );
+                small(
+                    ui,
+                    "For each pair, one conductor at a wind p, the other at every level from \
+                     the share of p to p, both ways, on each side: the closest approach of \
+                     their axes (a bundle by its subconductors), first on stations every 10 m, \
+                     the closest combinations again every Δs. Kept: the closest, with the \
+                     winds and the side; z from the plugin (no sag or string term).",
+                );
+                return;
             }
             small(
                 ui,
@@ -1878,13 +2227,14 @@ fn csv(r: &Report) -> String {
     let mut out = String::from(
         "case,section,span,circuit,other_section,other_span,other_circuit,c,kv,distance_m,\
          required_m,margin_m,length_below_m,sag_m,other_sag_m,lk_m,other_lk_m,beta_deg,k,\
-         other_k,c_m,at_clamp,same_span,along_m,other_along_m,x,y,z,other_x,other_y,other_z\n",
+         other_k,c_m,at_clamp,same_span,along_m,other_along_m,x,y,z,other_x,other_y,other_z,\
+         wind_pa,other_wind_pa,wind_from\n",
     );
     for row in &r.rows {
         let _ = writeln!(
             out,
             "{},{},{},{},{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.3},{:.3},{:.3},{:.3},{:.1},\
-             {:.3},{:.3},{:.3},{},{},{:.1},{:.1},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
+             {:.3},{:.3},{:.3},{},{},{:.1},{:.1},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
             q(&row.case),
             q(&row.span[0].0),
             row.span[0].1 + 1,
@@ -1916,6 +2266,11 @@ fn csv(r: &Report) -> String {
             row.at[1][0],
             row.at[1][1],
             row.at[1][2],
+            row.pressure
+                .map_or(String::new(), |p| format!("{:.1}", p[0])),
+            row.pressure
+                .map_or(String::new(), |p| format!("{:.1}", p[1])),
+            row.side.as_deref().unwrap_or_default(),
         );
     }
     out

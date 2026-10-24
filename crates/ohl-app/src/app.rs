@@ -69,6 +69,9 @@ pub enum Tab {
     StructureEditor,
     /// Checks › (the plugin's submenu) › Distance between conductors.
     PhaseDistance,
+    /// Checks › (the plugin's submenu) › Distance between conductors under
+    /// unequal wind.
+    UnequalWind,
     /// Checks › Performed checks.
     CheckLibrary,
     /// What the line still needs, each step a link ([`crate::next_steps`]).
@@ -127,6 +130,7 @@ impl Tab {
             Tab::Loads => "Structure loads",
             Tab::StructureEditor => "Structure editor",
             Tab::PhaseDistance => "Distance between conductors",
+            Tab::UnequalWind => "Under unequal wind",
             Tab::CheckLibrary => "Performed checks",
             Tab::NextSteps => "Next steps",
             Tab::Tool(p) => p.name(),
@@ -325,6 +329,13 @@ pub struct Ready {
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
+    /// The distance between conductors under unequal wind (the same
+    /// window, its own check).
+    pub unequal_wind: crate::phase_distance::PhaseDistanceWindow,
+    /// The weather cases shown before a check's result showed its own,
+    /// and the case it showed: shown again when its page closes (unless
+    /// another case was chosen meanwhile).
+    pub cases_before_check: Option<(Vec<usize>, usize)>,
     /// Checks › Performed checks: the library of saved reports.
     pub check_library: crate::check_library::CheckLibraryWindow,
     /// Checks › Vegetation.
@@ -487,6 +498,10 @@ impl Ready {
             galloping: Default::default(),
             wire_tensions: Default::default(),
             phase_distance: Default::default(),
+            cases_before_check: None,
+            unequal_wind: crate::phase_distance::PhaseDistanceWindow::new(
+                crate::phase_distance::Kind::UnequalWind,
+            ),
             check_library: Default::default(),
             vegetation: Default::default(),
             safety_volume: Default::default(),
@@ -2101,16 +2116,36 @@ impl eframe::App for App {
                 if std::mem::take(&mut ready.phase_distance.open) {
                     open_page(&mut self.dock, Tab::PhaseDistance);
                 }
+                if std::mem::take(&mut ready.unequal_wind.open) {
+                    open_page(&mut self.dock, Tab::UnequalWind);
+                }
                 if std::mem::take(&mut ready.check_library.open) {
                     open_page(&mut self.dock, Tab::CheckLibrary);
                 }
                 // The line of a result gone with its page (or a new run, a
                 // report opened: no result picked).
-                if ready.view3d.measure.is_some()
-                    && (self.dock.find_tab(&Tab::PhaseDistance).is_none()
-                        || ready.phase_distance.picked.is_none())
+                let (tab, window) = match ready.view3d.measure_from {
+                    crate::phase_distance::Kind::Span => {
+                        (Tab::PhaseDistance, &ready.phase_distance)
+                    }
+                    crate::phase_distance::Kind::UnequalWind => {
+                        (Tab::UnequalWind, &ready.unequal_wind)
+                    }
+                };
+                let closed = self.dock.find_tab(&tab).is_none();
+                if (ready.view3d.measure.is_some() || !ready.view3d.measure_wires.is_empty())
+                    && (closed || window.picked.is_none())
                 {
                     ready.view3d.measure = None;
+                    ready.view3d.measure_wires.clear();
+                }
+                // Its page closed: the cases shown before it, back.
+                if closed && let Some((before, showed)) = ready.cases_before_check.take() {
+                    let untouched =
+                        ready.case == showed && ready.model.shown(ready.case) == vec![showed];
+                    if untouched {
+                        ready.show_cases(before);
+                    }
                 }
                 for (measure, out) in [
                     (

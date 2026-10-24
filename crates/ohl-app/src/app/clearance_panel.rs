@@ -40,9 +40,14 @@ pub(crate) const SURFACE_NOTE: &str =
 /// What a vertical or radial clearance window asks: its violations drawn
 /// (layer "Clearance violations"), a span gone to.
 impl Ready {
-    /// What the Distance between conductors page asks: a report saved, the
-    /// result's weather case shown, its span gone to, its line drawn.
-    pub(super) fn phase_distance_out(&mut self, out: crate::phase_distance::Out) {
+    /// What a Distance between conductors page (of `kind`) asks: a report
+    /// saved, the result's weather case shown, its span gone to, its line
+    /// drawn (and under unequal wind its two conductors at their winds).
+    pub(super) fn phase_distance_out(
+        &mut self,
+        out: crate::phase_distance::Out,
+        kind: crate::phase_distance::Kind,
+    ) {
         if let Some((what, command)) = out.apply {
             self.perform(crate::edit::Action::Command { what, command });
         }
@@ -50,7 +55,12 @@ impl Ready {
             && let Some(k) = self.model.cases.iter().position(|c| &c.case.name == name)
             && k != self.case
         {
+            // The first result's: the cases shown before kept, to come
+            // back when the page closes.
+            let before = self.model.shown(self.case);
+            let kept = self.cases_before_check.take().map_or(before, |(b, _)| b);
             self.set_case(k);
+            self.cases_before_check = Some((kept, k));
         }
         if let Some(target) = out.go {
             self.go_to(target);
@@ -64,6 +74,11 @@ impl Ready {
             }
             self.plan.centre_on(mid);
             self.view3d.measure = Some(m);
+            self.view3d.measure_from = kind;
+        }
+        if let Some(w) = out.wires {
+            self.view3d.measure_wires = w;
+            self.view3d.measure_from = kind;
         }
     }
 
@@ -74,6 +89,11 @@ impl Ready {
             match r.check.as_str() {
                 crate::phase_distance::CHECK_ID => {
                     if let Err(e) = self.phase_distance.load(&r, &self.model) {
+                        self.model.log.push(e);
+                    }
+                }
+                crate::phase_distance::UNEQUAL_WIND_CHECK_ID => {
+                    if let Err(e) = self.unequal_wind.load(&r, &self.model) {
                         self.model.log.push(e);
                     }
                 }

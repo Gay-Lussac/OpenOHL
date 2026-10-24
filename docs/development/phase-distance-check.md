@@ -110,3 +110,58 @@ structures; about 10 500 with nearby pairs within 20 m): about 0.8 s on all
 cores, the closest point searched in boxes of 8 pieces, nearest first;
 the plugin's evaluation costs about as much as the same computation
 built into OpenOHL, plus about 0.3 s to load the plugin once.
+
+## Under unequal wind
+
+A code may also require a fixed distance between two conductors while
+the wind blows them unequally (e.g. the Swiss LeV, Annex 6, 2.2, as
+ESTI's directive 240 explains it: one conductor at a wind pressure p,
+the other at 100 … 60 % of p, p from none to the full wind, since the
+closest approach may come at less). The check `unequal-wind`
+(`ohl_clearance::unequal_wind`, the host's side
+`ohl_io::checks::unequal_wind`, the same window as above):
+
+1. The weather case chosen gives the wind (its pressure) and keeps its
+   temperature and ice. The line is solved at every **step** (the
+   user's, default 50 Pa) from none up to the case's pressure (always
+   included), and at the **share** (default 60 %) of each step; still
+   air once, every other level with the wind **from each side**
+   (`ohl_clearance::unequal_wind::solve_levels`, the levels solved side
+   by side on the cores).
+2. The pairs as above (in still air; nearby pairs where their boxes,
+   over all levels, come within the distance).
+3. For each pair, every combination: one conductor at a level p, the
+   other at a level from the share of p up to p, both ways, on the same
+   side (still air with either). Their **closest approach** between the
+   axes (bundles by their subconductors), first on stations every 10 m,
+   the four closest combinations again every Δs.
+4. The plugin is asked once per pair with one station (d, β, no sag, no
+   string: zeros) and returns the distance required (and its own
+   numbers).
+
+How exact it is:
+
+- **Conservative:** d between the axes less both polylines' bounds, as
+  above.
+- **Simplification:** the wind is taken at the levels only (the step is
+  the user's); the levels include the share of each step, so the
+  largest difference in wind (where the closest approach usually is)
+  is always measured.
+- **Simplification:** the closest approach is found to the station
+  spacing (the closest point on the other conductor searched
+  continuously); a combination not among the four closest on the 10 m
+  stations is not measured again finely (their coarse distances differ
+  from the fine ones by much less than the levels' differences).
+
+Per pair the report gives the closest approach: its two points, d, the
+required distance, the margin, the wind on each conductor and the side;
+saved like the distance in the span (check id `unequal-wind`, with the
+step and the share in the parameters).
+
+Speed, on the existing line above (930 conductors, 5593 pairs), a case
+of 2400 Pa in steps of 50 Pa (175 levels): the levels solved in about
+95 s, the pairs measured in about 130 s, on all cores. The combinations
+grow with the square of the levels: a case of 650 Pa in steps of 50 Pa
+(27 levels) takes some 15 s to solve and a few seconds to measure;
+`unequal_wind_benchmark` (`crates/ohl-app/src/bench.rs`) times a
+project of your own.

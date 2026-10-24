@@ -76,6 +76,11 @@ pub struct View3d {
     /// A measured line to draw on top, with its label (the distance
     /// between conductors' worst station: d and z).
     pub measure: Option<crate::phase_distance::Measure>,
+    /// Wires to draw on top with their labels (under unequal wind: the
+    /// pair's two conductors, each at its own wind).
+    pub measure_wires: Vec<crate::phase_distance::MeasureWire>,
+    /// The check whose result drew `measure` and `measure_wires`.
+    pub measure_from: crate::phase_distance::Kind,
     /// The camera was fitted to the line's structures or wires (else to
     /// its alignments or the ground: fitted again when the first
     /// structures come).
@@ -1608,6 +1613,34 @@ impl View3d {
                 egui::Color32::from_black_alpha(170),
             );
             painter.galley(at, galley, egui::Color32::WHITE);
+        }
+        // Wires measured at their own wind: on top, each labelled at its
+        // middle.
+        for (k, (points, label)) in self.measure_wires.iter().enumerate() {
+            let colour = if k == 0 {
+                egui::Color32::from_rgb(80, 220, 255)
+            } else {
+                egui::Color32::from_rgb(255, 110, 220)
+            };
+            let shown: Vec<Option<egui::Pos2>> = points.iter().map(|p| screen(*p)).collect();
+            for (w, c) in [(4.5, egui::Color32::from_black_alpha(170)), (2.0, colour)] {
+                for pair in shown.windows(2) {
+                    if let [Some(a), Some(b)] = pair {
+                        painter.line_segment([*a, *b], egui::Stroke::new(w, c));
+                    }
+                }
+            }
+            if let Some(Some(mid)) = shown.get(shown.len() / 2) {
+                let galley =
+                    painter.layout_no_wrap(label.clone(), egui::FontId::proportional(13.0), colour);
+                let at = *mid + egui::vec2(8.0, 6.0 + 18.0 * k as f32);
+                painter.rect_filled(
+                    egui::Rect::from_min_size(at, galley.size()).expand(3.0),
+                    3.0,
+                    egui::Color32::from_black_alpha(170),
+                );
+                painter.galley(at, galley, colour);
+            }
         }
         // Structures coloured by usage: the legend.
         if !model.usage_marks.is_empty() {

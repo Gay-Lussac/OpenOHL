@@ -583,6 +583,8 @@ pub(super) fn menus(
         if let Some(id) = plugin_checks_menu(ui, &checks) {
             if id == ohl_io::checks::PHASE_DISTANCE {
                 r.phase_distance.show(&r.model);
+            } else if id == ohl_io::checks::UNEQUAL_WIND {
+                r.unequal_wind.show(&r.model);
             }
             ui.close();
         }
@@ -977,7 +979,8 @@ pub(super) fn plugin_checks_menu(
         });
     }
     for (_, c) in checks.iter().filter(|(p, _)| p.is_empty()) {
-        let known = c.info.id == ohl_io::checks::PHASE_DISTANCE;
+        let known = [ohl_io::checks::PHASE_DISTANCE, ohl_io::checks::UNEQUAL_WIND]
+            .contains(&c.info.id.as_str());
         let help = c
             .info
             .explanation

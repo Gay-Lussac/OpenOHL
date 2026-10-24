@@ -329,7 +329,7 @@ fn span_key(w: &Wire) -> Option<[String; 2]> {
 
 /// A conductor's polylines: the centre line, or each subconductor of a
 /// bundle (offsets across and up around it).
-fn subconductors(w: &Wire) -> Vec<Vec<P3>> {
+pub(crate) fn subconductors(w: &Wire) -> Vec<Vec<P3>> {
     let pts = &w.points;
     if w.bundle.len() <= 1 || pts.len() < 2 {
         return vec![pts.clone()];
@@ -351,14 +351,14 @@ fn subconductors(w: &Wire) -> Vec<Vec<P3>> {
         .collect()
 }
 
-fn dist(a: P3, b: P3) -> f64 {
+pub(crate) fn dist(a: P3, b: P3) -> f64 {
     (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt()
 }
 
 /// A polyline with its piece lengths and the boxes of runs of pieces,
 /// for fast closest-point searches.
-struct Poly<'a> {
-    points: &'a [P3],
+pub(crate) struct Poly<'a> {
+    pub(crate) points: &'a [P3],
     /// Length from the first point to each point, m.
     run: Vec<f64>,
     /// Bounding box (min, max) of each run of `CHUNK` pieces.
@@ -369,7 +369,7 @@ struct Poly<'a> {
 const CHUNK: usize = 8;
 
 impl<'a> Poly<'a> {
-    fn new(points: &'a [P3]) -> Self {
+    pub(crate) fn new(points: &'a [P3]) -> Self {
         let mut run = vec![0.0];
         for w in points.windows(2) {
             run.push(run[run.len() - 1] + dist(w[0], w[1]));
@@ -392,12 +392,12 @@ impl<'a> Poly<'a> {
         Self { points, run, boxes }
     }
 
-    fn total(&self) -> f64 {
+    pub(crate) fn total(&self) -> f64 {
         self.run[self.run.len() - 1]
     }
 
     /// Bounding box of the whole polyline.
-    fn bounds(&self) -> (P3, P3) {
+    pub(crate) fn bounds(&self) -> (P3, P3) {
         self.boxes.iter().fold(
             ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
             |(lo, hi), (a, b)| {
@@ -411,7 +411,7 @@ impl<'a> Poly<'a> {
 
     /// Stations every `spacing` of its 3D length, its ends included:
     /// (point, length from its first point, length it stands for).
-    fn stations(&self, spacing: f64) -> Vec<(P3, f64, f64)> {
+    pub(crate) fn stations(&self, spacing: f64) -> Vec<(P3, f64, f64)> {
         let total = self.total();
         if total <= 0.0 {
             return vec![(self.points[0], 0.0, 0.0)];
@@ -440,7 +440,7 @@ impl<'a> Poly<'a> {
 
     /// The closest point to `p`: (point, length from the first point,
     /// distance); none farther than `cutoff`.
-    fn closest(&self, p: P3, cutoff: f64) -> Option<(P3, f64, f64)> {
+    pub(crate) fn closest(&self, p: P3, cutoff: f64) -> Option<(P3, f64, f64)> {
         let mut order: Vec<(f64, usize)> = self
             .boxes
             .iter()
@@ -495,6 +495,89 @@ fn local_sag(points: &[P3], p: P3) -> f64 {
     (f[2] + (l[2] - f[2]) * t - p[2]).max(0.0)
 }
 
+/// The pairs of `conductors` to measure, (first, second, both between
+/// the same two structures), cheap tests first: between the same two
+/// structures, or with [`PhaseDistanceSettings::nearby`] within its
+/// distance (`apart`: the least distance two conductors can be apart).
+/// Not paired: jumpers, two earth wires, the same circuit and phase, two
+/// sharing a clamp, conductors not `filled` (no polyline) or not ticked.
+pub(crate) fn candidate_pairs(
+    settings: &PhaseDistanceSettings,
+    conductors: &[Conductor],
+    filled: &[bool],
+    apart: impl Fn(usize, usize) -> f64,
+) -> Vec<(usize, usize, bool)> {
+    let ticked = |c: &Conductor| {
+        settings
+            .circuits
+            .as_ref()
+            .is_none_or(|set| set.contains(&c.wire.circuit))
+    };
+    let keys: Vec<Option<[String; 2]>> = conductors.iter().map(|c| span_key(&c.wire)).collect();
+    let mut candidates = Vec::new();
+    for i in 0..conductors.len() {
+        let Some(key) = &keys[i] else { continue };
+        if !ticked(&conductors[i]) || !filled[i] {
+            continue;
+        }
+        for j in i + 1..conductors.len() {
+            let Some(other) = &keys[j] else { continue };
+            if !ticked(&conductors[j]) || !filled[j] {
+                continue;
+            }
+            let same_span = other == key;
+            if !same_span && (!settings.nearby || apart(i, j) > settings.max_distance) {
+                continue;
+            }
+            let (a, b) = (&conductors[i], &conductors[j]);
+            if !a.wire.phase.is_empty()
+                && a.wire.circuit == b.wire.circuit
+                && a.wire.phase == b.wire.phase
+            {
+                // One potential.
+                continue;
+            }
+            if a.wire.ends.iter().any(|e| b.wire.ends.contains(e)) {
+                // Connected at a clamp (the next span of the same wire).
+                continue;
+            }
+            if a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0)) <= 0.0 {
+                // Two earth wires: nothing to keep apart.
+                continue;
+            }
+            candidates.push((i, j, same_span));
+        }
+    }
+    candidates
+}
+
+/// Within one electrical system or towards earth (an earth wire: no
+/// potential), and the nominal voltage, the higher of the two, kV.
+pub(crate) fn kind_of(a: &Conductor, b: &Conductor) -> (bool, f64) {
+    let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
+    let same_system = earth
+        || match (&a.system, &b.system) {
+            (Some(x), Some(y)) => x == y,
+            // No system given: by the circuit names.
+            _ => a.wire.circuit == b.wire.circuit,
+        };
+    let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
+    (same_system, kv)
+}
+
+/// Mean height of the points of two conductors, m above sea level.
+pub(crate) fn mean_height(a: &Conductor, b: &Conductor) -> f64 {
+    let n = a.wire.points.len() + b.wire.points.len();
+    let sum: f64 = a
+        .wire
+        .points
+        .iter()
+        .chain(&b.wire.points)
+        .map(|p| p[2])
+        .sum();
+    sum / n.max(1) as f64
+}
+
 /// Checks the pairs of `conductors` hanging between the same two
 /// structures, and with [`PhaseDistanceSettings::nearby`] those coming
 /// within its distance elsewhere. Not paired: jumpers, two earth wires,
@@ -510,13 +593,6 @@ pub fn check<E: Evaluator>(
     make: impl Fn() -> Result<E, String> + Sync,
 ) -> Result<Vec<PhaseDistancePair>, String> {
     let run = budget.start();
-    let ticked = |c: &Conductor| {
-        settings
-            .circuits
-            .as_ref()
-            .is_none_or(|set| set.contains(&c.wire.circuit))
-    };
-    let keys: Vec<Option<[String; 2]>> = conductors.iter().map(|c| span_key(&c.wire)).collect();
     let subs: Vec<Vec<Vec<P3>>> = conductors.iter().map(|c| subconductors(&c.wire)).collect();
     let polys: Vec<Vec<Poly>> = subs
         .iter()
@@ -545,41 +621,8 @@ pub fn check<E: Evaluator>(
             .sqrt(),
         _ => f64::INFINITY,
     };
-    // The pairs to measure (cheap tests first).
-    let mut candidates = Vec::new();
-    for i in 0..conductors.len() {
-        let Some(key) = &keys[i] else { continue };
-        if !ticked(&conductors[i]) || polys[i].is_empty() {
-            continue;
-        }
-        for j in i + 1..conductors.len() {
-            let Some(other) = &keys[j] else { continue };
-            if !ticked(&conductors[j]) || polys[j].is_empty() {
-                continue;
-            }
-            let same_span = other == key;
-            if !same_span && (!settings.nearby || apart(i, j) > settings.max_distance) {
-                continue;
-            }
-            let (a, b) = (&conductors[i], &conductors[j]);
-            if !a.wire.phase.is_empty()
-                && a.wire.circuit == b.wire.circuit
-                && a.wire.phase == b.wire.phase
-            {
-                // One potential.
-                continue;
-            }
-            if a.wire.ends.iter().any(|e| b.wire.ends.contains(e)) {
-                // Connected at a clamp (the next span of the same wire).
-                continue;
-            }
-            if a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0)) <= 0.0 {
-                // Two earth wires: nothing to keep apart.
-                continue;
-            }
-            candidates.push((i, j, same_span));
-        }
-    }
+    let filled: Vec<bool> = polys.iter().map(|p| !p.is_empty()).collect();
+    let candidates = candidate_pairs(settings, conductors, &filled, apart);
     // A station measured: (direction, polyline of the first conductor,
     // station on it), the length it stands for, the points and where
     // along each (in the pair's order).
@@ -597,22 +640,8 @@ pub fn check<E: Evaluator>(
         let (a, b) = (&conductors[i], &conductors[j]);
         // Within one electrical system and towards earth (an earth wire:
         // no potential); else between systems.
-        let earth = a.wire.potential.is_none() || b.wire.potential.is_none();
-        let same_system = earth
-            || match (&a.system, &b.system) {
-                (Some(x), Some(y)) => x == y,
-                // No system given: by the circuit names.
-                _ => a.wire.circuit == b.wire.circuit,
-            };
-        let kv = a.wire.kv().unwrap_or(0.0).max(b.wire.kv().unwrap_or(0.0));
-        let all: Vec<f64> = a
-            .wire
-            .points
-            .iter()
-            .chain(&b.wire.points)
-            .map(|p| p[2])
-            .collect();
-        let altitude = all.iter().sum::<f64>() / all.len().max(1) as f64;
+        let (same_system, kv) = kind_of(a, b);
+        let altitude = mean_height(a, b);
         // Spacers between these two in the span: each one's largest sag
         // between its clamps.
         let joined: Vec<&String> = a
@@ -871,7 +900,7 @@ pub(crate) mod tests {
     /// A conductor between T1 and T2 along x (300 m), its clamps at
     /// (0, y, z) and (300, y, z + rise), sagging `sag` at mid-span
     /// (a parabola below the chord), 301 points.
-    fn conductor(
+    pub(crate) fn conductor(
         circuit: &str,
         set: u32,
         y: f64,
