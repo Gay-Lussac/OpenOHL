@@ -2581,6 +2581,9 @@ pub(crate) struct Paper {
     legend: Option<furniture::Rect>,
     key_map: Option<furniture::Rect>,
     scale_bars: Option<furniture::Rect>,
+    /// The bottom row (key map, stringing table, legend, scale bars)
+    /// reaches into the title block: said on every sheet.
+    bottom_row_overlap: Option<String>,
 }
 
 impl Paper {
@@ -2700,6 +2703,26 @@ impl Paper {
         }
         let scale_bars = matches!(t.scale_bar.place.as_str(), "bottom" | "title_block")
             .then(|| place(70.0, 16.0));
+        // Beside the title block: the row must end before it.
+        let row_end = x - dir * 3.0;
+        let bottom_row_overlap = (!full
+            && if dir > 0.0 {
+                row_end > tb_x - 1.0
+            } else {
+                row_end < tb_x + tb_w + 1.0
+            })
+        .then(|| {
+            format!(
+                "the bottom row (key map, stringing table, legend, scale bars) is {:.0} mm too \
+                 wide for this paper: it runs into the title block (narrower or fewer items \
+                 in the sheet template, or a larger paper)",
+                if dir > 0.0 {
+                    row_end - tb_x
+                } else {
+                    tb_x + tb_w - row_end
+                }
+            )
+        });
         // The panels between.
         let left = inner[0] + t.layout.axis_room.0;
         let (above, below) = plan_room(d, o, plan_k);
@@ -2749,6 +2772,7 @@ impl Paper {
             legend,
             key_map,
             scale_bars,
+            bottom_row_overlap,
         }
     }
 }
@@ -3194,6 +3218,7 @@ fn draw_some(
             }
             let notes = furniture::notes(items, t, paper.inner, &values);
             let mut warnings = sl.warnings.clone();
+            warnings.extend(paper.bottom_row_overlap.clone());
             if let Some(r) = paper.stringing_table {
                 warnings.extend(furniture::stringing_table(items, t, r, &values, d, s0, s1));
             }

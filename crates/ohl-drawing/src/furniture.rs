@@ -450,20 +450,46 @@ pub(crate) fn stringing_table(
     let h = spec.row_height.0;
     let size = spec.size.0;
     let mut rows: Vec<[String; 6]> = Vec::new();
+    // A column of the phase: a row per phase; else a row per circuit, its
+    // phases' tensions in one cell (as the band writes them).
+    let per_phase = spec.columns.iter().any(|c| c.value.contains("{st.phase}"));
     for st in d.stringing.iter().filter(|st| st.to > s0 && st.from < s1) {
-        // One row per phase of each circuit (the earth wires last).
-        for (circuit, phase, lo, hi) in &st.phases {
-            let name = match circuit {
-                Some(c) => c.clone(),
-                None => t.legend.label("earth_wires", &[]),
-            };
+        let name = |circuit: &Option<String>| match circuit {
+            Some(c) => c.clone(),
+            None => t.legend.label("earth_wires", &[]),
+        };
+        if per_phase {
+            // One row per phase of each circuit (the earth wires last).
+            for (circuit, phase, lo, hi) in &st.phases {
+                rows.push([
+                    st.from_structure.clone(),
+                    st.to_structure.clone(),
+                    name(circuit),
+                    tension_text(*lo, *hi),
+                    st.case.clone(),
+                    phase.clone(),
+                ]);
+            }
+            continue;
+        }
+        let mut circuits: Vec<&Option<String>> = Vec::new();
+        for (c, ..) in &st.phases {
+            if !circuits.contains(&c) {
+                circuits.push(c);
+            }
+        }
+        for c in circuits {
+            let of: Vec<&(Option<String>, String, f64, f64)> =
+                st.phases.iter().filter(|p| &p.0 == c).collect();
+            let lo = of.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+            let hi = of.iter().map(|p| p.3).fold(f64::NEG_INFINITY, f64::max);
             rows.push([
                 st.from_structure.clone(),
                 st.to_structure.clone(),
-                name,
-                tension_text(*lo, *hi),
+                name(c),
+                phases_text(st, c, lo, hi),
                 st.case.clone(),
-                phase.clone(),
+                String::new(),
             ]);
         }
     }
