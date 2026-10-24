@@ -17,6 +17,26 @@ of Parts A, B and C).
   for each circuit the largest of its voltage); kept with the project's
   drawing settings (`ground_rule`).
 
+**The route, situation and phase plans (owner, 2026-10-24; roadmap O14)**
+
+- A menu of their own, Export › Plans (owner: apart from the sheets),
+  each plan written for every route with the Drawings window's template,
+  title fields, routes and cases; `ohl drawing --plans` likewise.
+- The route and situation plans are north up (not straightened along
+  the line as the sheets' plan), the sheets placed along the route by
+  what fits at the scale (the situation plans overlapping by a tenth),
+  over the project's drawings within 1 km (full detail) and orthophotos;
+  the axis, wires, structures numbered, corridor, north arrow, scale bar,
+  legend.
+- The phase plan compares the arrangement of the wires leaving each
+  structure ahead (by level from the top and place from the left, with
+  their circuit and phase — not by height, so a taller structure with
+  the same arrangement is not drawn), the first and last always drawn;
+  circuits by number with a key (long names made the figures
+  unreadable).
+- Plan sets (several at once) come next; links to public map services
+  later (a separate step).
+
 **Unequal wind: the exact closest approach (owner, 2026-10-24)**
 
 - The closest approach of a pair is the exact shortest distance between

@@ -149,6 +149,7 @@ without):
 | `conductor_clearance` | lowest conductor of {circuit} ({voltage}) – {distance} m, rule "{rule}", {case}{note} | `{circuit}`, `{voltage}`, `{distance}`, `{rule}`, `{case}`, `{note}` |
 | `conductor_clearance_note` | — the rule names no weather case: the case drawn with the largest sag, {case} | `{case}` |
 | `match_line` | match line (sheet's end) | |
+| `phase_unchanged` | from {from} to {to}: arrangement unchanged (the phase plan, between the structures drawn) | `from`, `to` |
 | `isoclearance` | isoclearance {level} | `{level}` |
 | `lidar` | {name} (LiDAR class {class}) | `{name}`, `{class}` (a code or a group's key) |
 | `version` | {label}: {words} | `{label}`, `{words}` |

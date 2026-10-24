@@ -60,6 +60,7 @@ mod phase_distance;
 mod placed_editor;
 mod placement;
 mod plan;
+mod plans_window;
 mod plugins;
 mod preset_cases;
 mod preview3d;

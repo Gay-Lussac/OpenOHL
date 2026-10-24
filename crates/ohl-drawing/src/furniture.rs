@@ -782,7 +782,13 @@ pub(crate) fn legend(
 
 /// A north arrow of `size` mm at `at` (its foot), pointing `dir` (a unit
 /// vector on paper), on `layer`.
-fn north_arrow(items: &mut Vec<Item>, at: [f64; 2], dir: [f64; 2], size: f64, layer: Layer) {
+pub(crate) fn north_arrow(
+    items: &mut Vec<Item>,
+    at: [f64; 2],
+    dir: [f64; 2],
+    size: f64,
+    layer: Layer,
+) {
     let tip = [at[0] + dir[0] * size, at[1] + dir[1] * size];
     let across = [-dir[1], dir[0]];
     let head = 0.3 * size;

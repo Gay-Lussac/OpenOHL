@@ -332,6 +332,8 @@ pub struct Ready {
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
+    /// Export › Plans: the route, situation and phase plans.
+    pub plans: crate::plans_window::PlansWindow,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
     /// The distance between conductors under unequal wind (the same
@@ -505,6 +507,7 @@ impl Ready {
             galloping: Default::default(),
             wire_tensions: Default::default(),
             string_checks: Default::default(),
+            plans: Default::default(),
             phase_distance: Default::default(),
             cases_before_check: None,
             unequal_wind: crate::phase_distance::PhaseDistanceWindow::new(

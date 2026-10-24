@@ -403,6 +403,9 @@ pub struct BackgroundArgs<'a> {
     /// The key map's drawings and orthophotos asked for.
     pub key_drawings: bool,
     pub key_photo: bool,
+    /// The route or situation plans asked for: every drawing and the
+    /// orthophotos read for them.
+    pub plans: bool,
 }
 
 /// The project's drawings and orthophotos read for the plan.
@@ -412,6 +415,9 @@ pub struct PlanBackgrounds {
     pub drawings: Vec<(String, ohl_background::Drawing)>,
     /// The key map's drawings (every one of the project): name, drawing.
     pub key_drawings: Vec<(String, ohl_background::Drawing)>,
+    /// The route and situation plans' drawings (every one of the
+    /// project): name, drawing.
+    pub map_drawings: Vec<(String, ohl_background::Drawing)>,
     /// The orthophotos: their layers in words, where they are read.
     pub photo: Option<(
         String,
@@ -428,6 +434,11 @@ impl PlanBackgrounds {
         }
         for (name, drawing) in &self.key_drawings {
             d.add_key_map_drawing(name, drawing);
+        }
+        // The plans': within 1 km of the line (the route plan's municipal
+        // boundaries; the situation plans' parcels), points 5 cm apart.
+        for (name, drawing) in &self.map_drawings {
+            d.add_map_drawing(name, drawing, 1000.0, 0.05);
         }
         if let Some((name, source)) = &self.photo {
             d.set_photo(name, Some(source.clone()));
@@ -499,7 +510,7 @@ pub fn plan_backgrounds(
     let (drawings, photos) = (options.plan_drawings(), options.plan_photos());
     let (key_drawings, key_photo) = (options.key_map_drawings_on(), options.key_map_photo_on());
     let mut out = PlanBackgrounds::default();
-    if !drawings.on() && !photos.on() && !key_drawings && !key_photo {
+    if !drawings.on() && !photos.on() && !key_drawings && !key_photo && !args.plans {
         return Ok((options, out));
     }
     let Some(file) = file.filter(|f| crate::project::is_project(f) && f.is_file()) else {
@@ -520,6 +531,13 @@ pub fn plan_backgrounds(
             out.key_drawings.len()
         );
     }
+    if args.plans {
+        let store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
+        for info in store.drawings().map_err(|e| e.to_string())? {
+            let d = store.drawing(&info.name).map_err(|e| e.to_string())?;
+            out.map_drawings.push((info.name.clone(), d));
+        }
+    }
     if drawings.on() {
         let store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
         let infos = store.drawings().map_err(|e| e.to_string())?;
@@ -537,7 +555,7 @@ pub fn plan_backgrounds(
             out.drawings.len()
         );
     }
-    if photos.on() || key_photo {
+    if photos.on() || key_photo || args.plans {
         let layers = photos.on().then(|| photos.names()).flatten();
         match ohl_background::Mosaic::open(file, layers).map_err(|e| e.to_string())? {
             Some(m) => {

@@ -390,3 +390,72 @@ mod tests {
         assert_eq!(Format::parse("PDF"), Some(Format::Pdf));
     }
 }
+
+/// Writes the sheets of one of the other plans (the phase plan, the route
+/// and situation plans: [`crate::plans`]) into `dir` as `stem`-NN.svg /
+/// .dxf / .png and one `stem`.pdf, the formats of `e` that hold sheets
+/// (CSV and XML are the profile's: not written).
+pub fn write_plan(
+    sheets: &[crate::Sheet],
+    e: &Export,
+    stem: &str,
+    title: &str,
+    dir: &Path,
+    budget: &Budget,
+) -> Result<Written, String> {
+    std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
+    let mut run = budget.start();
+    let mut written = Written {
+        sheets: sheets.len(),
+        ..Written::default()
+    };
+    for s in sheets {
+        for w in &s.warnings {
+            written.warnings.push(format!("sheet {}: {w}", s.number));
+        }
+    }
+    let stem = file_stem(stem);
+    let mut put = |file: String, bytes: &[u8], run: &mut ohl_core::budget::Run| {
+        run.step().map_err(|s| format!("export {s}"))?;
+        let path = dir.join(file);
+        std::fs::write(&path, bytes).map_err(|err| format!("{}: {err}", path.display()))?;
+        written.files.push(path);
+        Ok::<(), String>(())
+    };
+    let mut formats = e.formats.clone();
+    formats.sort();
+    formats.dedup();
+    for format in formats {
+        match format {
+            Format::Svg => {
+                for s in sheets {
+                    let name = format!("{stem}-{:02}.svg", s.number);
+                    put(name, s.drawing.svg().as_bytes(), &mut run)?;
+                }
+            }
+            Format::Dxf => {
+                for s in sheets {
+                    let name = format!("{stem}-{:02}.dxf", s.number);
+                    put(name, crate::dxf::write(&s.drawing).as_bytes(), &mut run)?;
+                }
+            }
+            Format::Pdf => {
+                let pages: Vec<&crate::model::Drawing> =
+                    sheets.iter().map(|s| &s.drawing).collect();
+                put(
+                    format!("{stem}.pdf"),
+                    &crate::pdf::write(&pages, title),
+                    &mut run,
+                )?;
+            }
+            Format::Png => {
+                for s in sheets {
+                    let (png, _) = crate::png::render(&s.drawing, e.dpi)?;
+                    put(format!("{stem}-{:02}.png", s.number), &png, &mut run)?;
+                }
+            }
+            Format::Csv | Format::Xml => {}
+        }
+    }
+    Ok(written)
+}

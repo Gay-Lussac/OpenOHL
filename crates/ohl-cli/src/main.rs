@@ -536,6 +536,21 @@ struct DrawingArgs {
     /// The profile alone, without the plan.
     #[arg(long)]
     profile_only: bool,
+    /// Also the other plans of each route (comma-separated), on the
+    /// sheets' paper (else A3) with the template's frame and title block:
+    /// `phase` — the phase plan, the structures drawn where the phase
+    /// arrangement changes (`<route>-phase-plan-NN`); `route` — the route
+    /// plan, north up at --route-plan-scale; `situation` — the situation
+    /// plans at --situation-scale; both over the project's drawings and
+    /// orthophotos, with the corridor at the line width.
+    #[arg(long, value_delimiter = ',')]
+    plans: Vec<String>,
+    /// The route plan's scale, 1:5000 to 1:25 000.
+    #[arg(long, default_value = "10000")]
+    route_plan_scale: String,
+    /// The situation plans' scale, 1:500 to 1:2000.
+    #[arg(long, default_value = "1000")]
+    situation_scale: String,
     /// Resolution of PNG images, dots per inch.
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
@@ -623,6 +638,10 @@ struct DrawingSpec {
     to: Option<f64>,
     /// The profile alone.
     profile_only: bool,
+    /// The other plans (`phase`, `route`, `situation`).
+    plans: Vec<String>,
+    /// The route plan's and the situation plans' scales.
+    map_scales: (f64, f64),
     /// The structures' elevations on the plan, as given (none: the
     /// template's, else the defaults).
     elevations: ElevationChoice,
@@ -697,6 +716,11 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
         from: args.from,
         to: args.to,
         profile_only: args.profile_only,
+        plans: args.plans.clone(),
+        map_scales: (
+            ohl_drawing::parse_scale(&args.route_plan_scale).unwrap_or(10_000.0),
+            ohl_drawing::parse_scale(&args.situation_scale).unwrap_or(1000.0),
+        ),
         elevations: ElevationChoice {
             place: args.elevations,
             offset: args.elevation_offset,
@@ -2076,6 +2100,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             from: None,
             to: None,
             profile_only: false,
+            plans: Vec::new(),
+            map_scales: (10_000.0, 1000.0),
             elevations: Default::default(),
             isoclearance: None,
             out: dir.clone(),
@@ -2281,6 +2307,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     dpi: *plan_background_dpi,
                     key_drawings: *key_map_drawings,
                     key_photo: *key_map_orthophoto,
+                    plans: spec.plans.iter().any(|p| p == "route" || p == "situation"),
                 },
                 backgrounds
                     .as_deref()
@@ -2532,6 +2559,54 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 }
                 if let Some(paper) = &written.paper {
                     println!("  route {}: optimised layout {paper}", route.id);
+                }
+                for kind in &spec.plans {
+                    let plan_page = match &page {
+                        Some(p) => p.clone(),
+                        None => ohl_drawing::page_format("A3").ok_or("no A3 page")?,
+                    };
+                    let (sheets, what) = match kind.as_str() {
+                        "phase" => (
+                            ohl_drawing::plans::phase_plan(d, options, &plan_page),
+                            "phase-plan",
+                        ),
+                        "route" | "situation" => {
+                            use ohl_drawing::plans::{MapKind, MapPlan, map_plan};
+                            let (kind, scale) = if kind == "route" {
+                                (MapKind::Route, spec.map_scales.0)
+                            } else {
+                                (MapKind::Situation, spec.map_scales.1)
+                            };
+                            if !kind.scales().contains(&scale) {
+                                return Err(format!(
+                                    "the {} at 1:{scale}: give 1:{} to 1:{}",
+                                    kind.file_name(),
+                                    kind.scales().start(),
+                                    kind.scales().end()
+                                ));
+                            }
+                            let plan = MapPlan {
+                                scale,
+                                ..MapPlan::new(kind, Some(options.plan_half_width))
+                            };
+                            (map_plan(d, options, &plan_page, &plan), kind.file_name())
+                        }
+                        other => {
+                            return Err(format!("--plans {other}: use phase, route, situation"));
+                        }
+                    };
+                    let w = ohl_drawing::export::write_plan(
+                        &sheets,
+                        &target,
+                        &format!("{}-{what}", route.id),
+                        &format!("Route {} {} — {what}", route.id, d.name),
+                        &spec.out,
+                        &budget,
+                    )?;
+                    println!(
+                        "  route {}: {what}, {} sheet(s) {}",
+                        route.id, w.sheets, plan_page.name
+                    );
                 }
                 if let Some(page) = &page {
                     println!(

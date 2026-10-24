@@ -118,6 +118,10 @@ pub struct KeyMapDrawing {
     pub name: String,
     /// Its lines: runs of (x, y), m, and their colour.
     pub lines: Vec<(Vec<[f64; 2]>, Color)>,
+    /// Its texts (the route and situation plans': parcel numbers and
+    /// names): where (x, y), letter height on the ground (m), the text,
+    /// its colour. None on the key map.
+    pub texts: Vec<([f64; 2], f64, String, Color)>,
 }
 
 /// The square around the route the key map's backgrounds are taken
@@ -317,6 +321,7 @@ impl RouteDrawing {
         let mut out = KeyMapDrawing {
             name: name.to_owned(),
             lines: Vec::new(),
+            texts: Vec::new(),
         };
         for l in &drawing.lines {
             if off(l.layer) || l.points.len() < 2 {
@@ -352,6 +357,81 @@ impl RouteDrawing {
         }
         if !out.lines.is_empty() {
             Arc::make_mut(&mut self.key_background).push(out);
+        }
+    }
+
+    /// Adds the project's drawing `drawing` named `name` for the route and
+    /// situation plans ([`crate::plans::map_plan`]): its lines (north up,
+    /// project coordinates) that come within `band` m of the route's
+    /// centreline's box, points closer than `tolerance` m to the last one
+    /// kept left out; what lies on layers switched off is left out.
+    pub fn add_map_drawing(
+        &mut self,
+        name: &str,
+        drawing: &ohl_background::Drawing,
+        band: f64,
+        tolerance: f64,
+    ) {
+        if self.centreline.len() < 2 {
+            return;
+        }
+        let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+        for p in &self.centreline {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k] - band);
+                hi[k] = hi[k].max(p[k] + band);
+            }
+        }
+        let off = |layer: u32| drawing.layers.get(layer as usize).is_some_and(|l| l.off);
+        let mut out = KeyMapDrawing {
+            name: name.to_owned(),
+            lines: Vec::new(),
+            texts: Vec::new(),
+        };
+        for l in &drawing.lines {
+            if off(l.layer) || l.points.len() < 2 {
+                continue;
+            }
+            let near = l
+                .points
+                .iter()
+                .any(|p| p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1]);
+            if !near {
+                continue;
+            }
+            let mut pts: Vec<[f64; 2]> = Vec::new();
+            for p in &l.points {
+                let q = [p[0], p[1]];
+                if pts
+                    .last()
+                    .is_none_or(|r: &[f64; 2]| (q[0] - r[0]).hypot(q[1] - r[1]) >= tolerance)
+                {
+                    pts.push(q);
+                }
+            }
+            if l.closed && pts.len() > 2 {
+                pts.push(pts[0]);
+            }
+            if pts.len() > 1 {
+                out.lines
+                    .push((pts, Color(l.color[0], l.color[1], l.color[2])));
+            }
+        }
+        for t in &drawing.texts {
+            let inside =
+                t.at[0] >= lo[0] && t.at[0] <= hi[0] && t.at[1] >= lo[1] && t.at[1] <= hi[1];
+            if !off(t.layer) && inside && !t.text.trim().is_empty() {
+                let first = t.text.lines().next().unwrap_or_default().to_owned();
+                out.texts.push((
+                    [t.at[0], t.at[1]],
+                    t.height,
+                    first,
+                    Color(t.color[0], t.color[1], t.color[2]),
+                ));
+            }
+        }
+        if !out.lines.is_empty() || !out.texts.is_empty() {
+            Arc::make_mut(&mut self.map_background).push(out);
         }
     }
 
@@ -569,6 +649,71 @@ pub(crate) fn photo_item(d: &RouteDrawing, o: &Options, f: &Frame, rect: [f64; 4
 ///
 /// Cost: one photo read per pixel (a key map of 110 × 70 mm at 150 dpi:
 /// ≈ 0.27 million pixels) and the drawings' lines in it.
+/// The orthophoto of `photo` in rectangle `inner` (paper, mm) of a
+/// north-up map whose middle is (`cx`, `cy`) at `k` mm per metre, under a
+/// white `veil` (0 to 1), as an image on `layer`; none where it has
+/// nothing there. Its resolution: the options' background dpi (at most
+/// 150).
+pub(crate) fn north_up_photo(
+    photo: &PlanPhoto,
+    o: &Options,
+    inner: [f64; 4],
+    (cx, cy, k): (f64, f64, f64),
+    veil: f64,
+    layer: Layer,
+) -> Option<Item> {
+    if !(inner[2] > 0.0 && inner[3] > 0.0 && k > 0.0) {
+        return None;
+    }
+    let dpi = o
+        .background_dpi
+        .unwrap_or(o.template.plan_background.dpi)
+        .clamp(10.0, 150.0);
+    let px = dpi / 25.4;
+    let (w, h) = (
+        (inner[2] * px).ceil().max(1.0) as usize,
+        (inner[3] * px).ceil().max(1.0) as usize,
+    );
+    let metres_per_pixel = (inner[2] / w as f64) / k;
+    let mut points = Vec::with_capacity(w * h);
+    for j in 0..h {
+        let y = inner[1] + (j as f64 + 0.5) * inner[3] / h as f64;
+        let gy = cy - (y - (inner[1] + inner[3] / 2.0)) / k;
+        for i in 0..w {
+            let x = inner[0] + (i as f64 + 0.5) * inner[2] / w as f64;
+            points.push([cx + (x - (inner[0] + inner[2] / 2.0)) / k, gy]);
+        }
+    }
+    let mut colours = vec![None; points.len()];
+    photo.source.sample(&points, metres_per_pixel, &mut colours);
+    if !colours.iter().any(Option::is_some) {
+        return None;
+    }
+    let mut rgb = vec![255u8; w * h * 3];
+    for (q, c) in colours.iter().enumerate() {
+        if let Some(c) = c {
+            for (ch, v) in c.iter().enumerate() {
+                rgb[q * 3 + ch] = (f64::from(*v) * (1.0 - veil) + 255.0 * veil).round() as u8;
+            }
+        }
+    }
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(
+        &mut jpeg,
+        o.template.plan_background.quality,
+    )
+    .encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)
+    .ok()?;
+    Some(Item::Image(Image {
+        layer,
+        at: [inner[0], inner[1]],
+        width: inner[2],
+        height: inner[3],
+        href: format!("data:image/jpeg;base64,{}", crate::base64(&jpeg)),
+        pixels: Some([w as u32, h as u32]),
+    }))
+}
+
 pub(crate) fn key_map_items(
     d: &RouteDrawing,
     o: &Options,
@@ -579,60 +724,9 @@ pub(crate) fn key_map_items(
     let spec = &o.template.key_map;
     if o.key_map_photo_on()
         && let Some(photo) = &d.photo
-        && inner[2] > 0.0
-        && inner[3] > 0.0
-        && k > 0.0
+        && let Some(image) = north_up_photo(photo, o, inner, (cx, cy, k), spec.veil, Layer::KeyMap)
     {
-        let dpi = o
-            .background_dpi
-            .unwrap_or(o.template.plan_background.dpi)
-            .clamp(10.0, 150.0);
-        let px = dpi / 25.4;
-        let (w, h) = (
-            (inner[2] * px).ceil().max(1.0) as usize,
-            (inner[3] * px).ceil().max(1.0) as usize,
-        );
-        let metres_per_pixel = (inner[2] / w as f64) / k;
-        let mut points = Vec::with_capacity(w * h);
-        for j in 0..h {
-            let y = inner[1] + (j as f64 + 0.5) * inner[3] / h as f64;
-            let gy = cy - (y - (inner[1] + inner[3] / 2.0)) / k;
-            for i in 0..w {
-                let x = inner[0] + (i as f64 + 0.5) * inner[2] / w as f64;
-                points.push([cx + (x - (inner[0] + inner[2] / 2.0)) / k, gy]);
-            }
-        }
-        let mut colours = vec![None; points.len()];
-        photo.source.sample(&points, metres_per_pixel, &mut colours);
-        if colours.iter().any(Option::is_some) {
-            let veil = spec.veil;
-            let mut rgb = vec![255u8; w * h * 3];
-            for (q, c) in colours.iter().enumerate() {
-                if let Some(c) = c {
-                    for (ch, v) in c.iter().enumerate() {
-                        rgb[q * 3 + ch] =
-                            (f64::from(*v) * (1.0 - veil) + 255.0 * veil).round() as u8;
-                    }
-                }
-            }
-            let mut jpeg = Vec::new();
-            if image::codecs::jpeg::JpegEncoder::new_with_quality(
-                &mut jpeg,
-                o.template.plan_background.quality,
-            )
-            .encode(&rgb, w as u32, h as u32, image::ExtendedColorType::Rgb8)
-            .is_ok()
-            {
-                out.push(Item::Image(Image {
-                    layer: Layer::KeyMap,
-                    at: [inner[0], inner[1]],
-                    width: inner[2],
-                    height: inner[3],
-                    href: format!("data:image/jpeg;base64,{}", crate::base64(&jpeg)),
-                    pixels: Some([w as u32, h as u32]),
-                }));
-            }
-        }
+        out.push(image);
     }
     if o.key_map_drawings_on() && !d.key_background.is_empty() {
         let pb = &o.template.plan_background;

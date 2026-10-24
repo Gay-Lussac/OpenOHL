@@ -147,7 +147,12 @@ memory.
 Two kinds of drawing beside the plan-and-profile sheets, and a way to
 export a whole set of plans in one go, each kind with templates (built
 in, and as plugin presets — a utility's own templates in its plugin).
-Proposed (to discuss; nothing built yet):
+*Built 2026-10-24, in active development (not approved yet): the route
+plan, the situation plans and the phase plan (Export › Plans, `ohl
+drawing --plans`), see [Drawings](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/drawings.md#plans-route-plan-situation-plans-phase-plan);
+still to come: plan sets (3), links to public map services, the
+corridor's protection zones and land use as their own layers (today:
+the project's drawings).* Proposed (to discuss):
 
 1. **Route plan and situation plans** — the plan alone, the line drawn
    on a background, at two scales (owner, 2026-10-23):
