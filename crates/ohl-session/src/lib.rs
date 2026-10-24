@@ -1182,80 +1182,23 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
     Ok(line)
 }
 
-/// Sections to recalculate after `changed` objects (on the line after the
-/// change, and before it for deleted ones): changed sections and sections
-/// through changed structures.
+/// Sections to recalculate after `changed` objects, the line `lines[0]`
+/// before and `lines[1]` after: the one rule of [`ohl_line::diff`] (the
+/// sections that differ, through a structure that does, at a jumper's end,
+/// joined by a spacer, read a line setting that does, or given the wind
+/// from the other side); none when nothing of the line changed (a report,
+/// a library file, points).
 fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<String> {
-    let mut out = BTreeSet::new();
-    // The line's settings the solve reads: every section.
-    let [a, b] = lines;
-    if changed.iter().any(|(k, _)| *k == Kind::Meta)
-        && (a.solver != b.solver
-            || a.defaults != b.defaults
-            || a.bimetallic != b.bimetallic
-            || a.creep_stretch != b.creep_stretch
-            || a.systems != b.systems)
-    {
-        out.extend(b.sections.iter().map(|s| s.id.clone()));
-    }
-    // The routes give each section the side the wind comes from (the
-    // line's direction where it is): the sections whose side changed.
     if changed
         .iter()
-        .any(|(k, _)| matches!(k, Kind::Route | Kind::Alignment | Kind::AlignmentPoint))
-        && (a.routes != b.routes
-            || a.alignments != b.alignments
-            || a.alignment_points != b.alignment_points)
+        .all(|(k, _)| matches!(k, Kind::Report | Kind::Library | Kind::PointCloud))
     {
-        let before = ohl_line::solve::sections_against_the_line(a);
-        for (id, now) in ohl_line::solve::sections_against_the_line(b) {
-            if before.get(&id) != Some(&now) {
-                out.insert(id);
-            }
-        }
+        return Vec::new();
     }
-    for line in lines {
-        for (kind, id) in changed {
-            match kind {
-                Kind::Section => {
-                    out.insert(id.clone());
-                }
-                Kind::Structure => {
-                    for s in &line.sections {
-                        if s.points.iter().any(|p| &p.structure == id) {
-                            out.insert(s.id.clone());
-                        }
-                    }
-                }
-                // A jumper's weight hangs on the clamps of the sections at
-                // its ends.
-                Kind::Jumper => {
-                    if let Some(j) = line.jumpers.iter().find(|j| &j.id == id) {
-                        for sec in &line.sections {
-                            if sec.points.iter().any(|p| j.is_at(p)) {
-                                out.insert(sec.id.clone());
-                            }
-                        }
-                    }
-                }
-                // The sections it joins.
-                Kind::Spacer => {
-                    if let Some(s) = line.spacers.iter().find(|s| &s.id == id) {
-                        out.insert(s.a.section.clone());
-                        out.insert(s.b.section.clone());
-                    }
-                }
-                Kind::Meta
-                | Kind::Route
-                | Kind::Alignment
-                | Kind::AlignmentPoint
-                | Kind::Report
-                | Kind::Library
-                | Kind::PointCloud => {}
-            }
-        }
-    }
-    out.into_iter().collect()
+    let [a, b] = lines;
+    ohl_line::diff::sections_to_solve_again(a, b)
+        .into_iter()
+        .collect()
 }
 
 /// Upgrade steps of older project files that come before the current

@@ -30,6 +30,7 @@ pub mod assembly;
 pub mod bundles;
 pub mod circuits;
 pub mod condition;
+pub mod diff;
 pub mod electrical;
 pub mod export;
 pub mod finite;

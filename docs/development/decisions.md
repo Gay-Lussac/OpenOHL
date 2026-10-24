@@ -23,6 +23,11 @@ of Parts A, B and C).
 - The stringing tension is given per phase of each circuit (owner): the
   band row lists the phases on the circuit's line, the stringing table
   has a row per phase (`{st.phase}`).
+- One rule for what to solve again after an edit (`ohl_line::diff`):
+  the project's dirty sections after a command and the differences of a
+  project line shown with the line worked on now come from the same
+  comparison (they had drifted, the cause of some of the kept results
+  found stale).
 - After an edit of the routes, the sections whose wind side changes
   (the line's direction where they are) are solved again; before, none
   was (found while answering the review's questions).
