@@ -30,6 +30,21 @@ of Parts A, B and C).
   while what it comes from is unchanged; the lines on the ground keep
   showing their other wind side's solution before while the new one is
   computed (display only, computed again as before).
+- A code review of the kept solutions found inputs missing from their
+  keys, now in them (each a case where a kept result could differ from a
+  fresh one): the jumpers' cut lengths and kept solutions now depend on
+  the line's defaults and solver settings too (a change of the jumpers'
+  exit angle or stiffness factor kept the old cut), a jumper's kept
+  solution on its cable's data; two versions of a line compared (project
+  lines shown, the lines on the ground) differ in every section when a
+  setting every solve reads differs, and in a spacer's sections when it
+  does; the lines on the ground solve a project line with its own wire
+  library and again when the libraries are read again; sections sharing
+  an assembly or joined by spacers are coupled again from each solved
+  alone, as a full solve does (the result no longer depends on the edits
+  before); nothing is solved in the background while a structure is
+  dragged. Tests compare a kept result with a fresh solve after such
+  edits.
 - A jumper on a real line that does not solve in a narrow band of
   temperatures is left to the project's engineer (its design), not
   worked around in the solver (owner, 2026-10-24).

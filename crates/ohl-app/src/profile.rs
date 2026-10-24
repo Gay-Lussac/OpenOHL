@@ -21,9 +21,9 @@ pub struct ProfileView {
     /// What it shows (none yet: the route with most structures).
     pub(crate) show: Option<Show>,
     pub(crate) drawing: Option<(Key, Built)>,
-    /// Each route's corridor as last made, kept while what it is made from
-    /// is unchanged (an edit of the line leaves it).
-    corridors: Vec<(CorridorKey, Built)>,
+    /// Each route's corridor as last made (by alignment id), kept while
+    /// what it is made from is unchanged (an edit of the line leaves it).
+    corridors: Vec<(String, CorridorKey, Built)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
     /// At a fixed aspect ratio: the height at the middle of the view.
@@ -148,31 +148,58 @@ pub(crate) fn default_show(
 }
 
 /// What a route's corridor ([`corridor`]) is made from: its centreline
-/// (bits), the width (bits), the ground surface, the LiDAR points loaded
-/// (where, how many, their revision) and the drawings.
-type CorridorKey = (Vec<u64>, u64, usize, (usize, usize, u64), Vec<usize>);
+/// (bits), the width (bits), the ground surface and the drawings (held,
+/// compared as the same ones), the LiDAR points loaded (where, how many,
+/// their revision) and the ground's revision.
+struct CorridorKey {
+    centre: Vec<u64>,
+    depth: u64,
+    ground: Option<std::sync::Arc<ohl_terrain::Terrain>>,
+    points: (usize, usize, u64, u64),
+    drawings: Vec<std::sync::Arc<ohl_background::Drawing>>,
+}
+
+impl PartialEq for CorridorKey {
+    fn eq(&self, o: &Self) -> bool {
+        let same =
+            |a: &Option<std::sync::Arc<ohl_terrain::Terrain>>,
+             b: &Option<std::sync::Arc<ohl_terrain::Terrain>>| match (a, b) {
+                (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+        self.centre == o.centre
+            && self.depth == o.depth
+            && same(&self.ground, &o.ground)
+            && self.points == o.points
+            && self.drawings.len() == o.drawings.len()
+            && self
+                .drawings
+                .iter()
+                .zip(&o.drawings)
+                .all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
+    }
+}
 
 /// What `corridor` would be made from now.
 fn corridor_key(model: &Model, centre: &[[f64; 3]], depth: f64) -> CorridorKey {
-    (
-        centre.iter().flatten().map(|v| v.to_bits()).collect(),
-        depth.to_bits(),
-        model
-            .ground
-            .as_ref()
-            .map_or(0, |g| std::sync::Arc::as_ptr(g) as usize),
-        (
+    CorridorKey {
+        centre: centre.iter().flatten().map(|v| v.to_bits()).collect(),
+        depth: depth.to_bits(),
+        ground: model.ground.clone(),
+        points: (
             model.points.as_ptr() as usize,
             model.points.len(),
             model.revisions.points,
+            model.revisions.ground,
         ),
-        model
+        drawings: model
             .backgrounds
             .drawings
             .iter()
-            .map(|d| std::sync::Arc::as_ptr(&d.drawing) as usize)
+            .map(|d| d.drawing.clone())
             .collect(),
-    )
+    }
 }
 
 /// The profile drawing and what is seen in the corridor around it.
@@ -571,13 +598,18 @@ impl ProfileView {
                     Ok(mut d) => {
                         crate::scene::set_drawn_members(&mut d, &model.line, &model.bodies);
                         let ck = corridor_key(model, &d.centreline, depth);
-                        let kept = self.corridors.iter().find(|(k, _)| *k == ck);
+                        let route = &routes[k].id;
+                        let kept = self
+                            .corridors
+                            .iter()
+                            .find(|(r, key, _)| r == route && *key == ck);
                         let mut b = match kept {
-                            Some((_, b)) => b.clone(),
+                            Some((.., b)) => b.clone(),
                             None => {
                                 let b = corridor(model, &d.centreline, d.length, depth);
-                                self.corridors.retain(|(k, _)| k.0 != ck.0);
-                                self.corridors.push((ck, b.clone()));
+                                // One per route.
+                                self.corridors.retain(|(r, ..)| r != route);
+                                self.corridors.push((route.clone(), ck, b.clone()));
                                 b
                             }
                         };

@@ -243,7 +243,7 @@ struct LineArgs {
     /// line or project file).
     #[arg(long)]
     structures: Option<PathBuf>,
-    /// Cross-cross-section library (.ohlsec file or folder) the structure models'
+    /// Cross-section library (.ohlsec file or folder) the structure models'
     /// members refer to (default: a project's own, else the `Sections`
     /// folder next to the line or project file, if there is one).
     #[arg(long)]

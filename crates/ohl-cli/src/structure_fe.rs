@@ -44,7 +44,7 @@ pub struct FeArgs {
     /// Write every member of every case as CSV.
     #[arg(long)]
     csv: Option<PathBuf>,
-    /// Cross-cross-section library (.ohlsec file or folder): a member's cross-section is
+    /// Cross-section library (.ohlsec file or folder): a member's cross-section is
     /// looked up there first, then in the model's [[section]] tables.
     #[arg(long)]
     sections: Option<PathBuf>,
@@ -73,7 +73,7 @@ pub struct PoleArgs {
     /// Structure type (.ohls): where the attachments are.
     #[arg(long = "type")]
     structure_type: PathBuf,
-    /// Cross-cross-section library (.ohlsec file or folder): a `[pole]`'s cross-section.
+    /// Cross-section library (.ohlsec file or folder): a `[pole]`'s cross-section.
     #[arg(long)]
     sections: Option<PathBuf>,
     /// Structure loads (CSV of `ohl line --loads-csv`).

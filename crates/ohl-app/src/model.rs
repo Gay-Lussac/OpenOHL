@@ -513,13 +513,34 @@ impl Differences {
             .filter(|s| our_structures.get(s.id.as_str()).copied() != Some(*s))
             .map(|s| s.id.clone())
             .collect();
+        // The line's settings every solve reads (as the session's dirty
+        // sections after an edit): every section differs when one does.
+        let settings = ours.solver != other.solver
+            || ours.defaults != other.defaults
+            || ours.bimetallic != other.bimetallic
+            || ours.creep_stretch != other.creep_stretch
+            || ours.systems != other.systems
+            || ours.condition_cases != other.condition_cases;
+        // The sections a spacer joins, where the spacer differs (or is
+        // only in one of them).
+        let mut spaced: std::collections::BTreeSet<&str> = Default::default();
+        for (a, b) in [(ours, other), (other, ours)] {
+            for s in &a.spacers {
+                if b.spacers.iter().find(|x| x.id == s.id) != Some(s) {
+                    spaced.insert(s.a.section.as_str());
+                    spaced.insert(s.b.section.as_str());
+                }
+            }
+        }
         let sections: std::collections::BTreeSet<String> = other
             .sections
             .iter()
             .filter(|s| {
-                our_sections.get(s.id.as_str()).copied() != Some(*s)
+                settings
+                    || our_sections.get(s.id.as_str()).copied() != Some(*s)
                     || s.points.iter().any(|p| structures.contains(&p.structure))
                     || cables_changed.contains(&s.cable)
+                    || spaced.contains(s.id.as_str())
             })
             .map(|s| s.id.clone())
             .collect();
@@ -538,6 +559,7 @@ impl Differences {
             .iter()
             .filter(|j| {
                 our_jumpers.get(j.id.as_str()).copied() != Some(*j)
+                    || cables_changed.contains(&j.cable)
                     || [&j.from, &j.to].into_iter().any(|e| match e {
                         ohl_line::JumperEnd::Wire(p) => at_changed(p),
                         _ => false,
@@ -665,6 +687,10 @@ pub struct Model {
     /// those asked for lately are brought up to date at once after an edit,
     /// the others solved again when next wanted ([`Model::sync`]).
     pub recently_wanted: std::collections::BTreeMap<usize, std::time::Instant>,
+    /// A structure is being dragged (its line changed in memory only,
+    /// [`Model::preview_move`]): nothing solved in the background from that
+    /// line meanwhile.
+    pub previewing: bool,
     /// The structures coloured by usage in the plan and 3D views
     /// (Checks › Structure loads › Usage, Colour structures by usage); empty:
     /// not coloured.
@@ -1537,6 +1563,10 @@ impl Model {
         let now = std::time::Instant::now();
         for k in wanted {
             self.recently_wanted.insert(k, now);
+            // (Not from a line being dragged: solved when it is let go.)
+            if self.previewing {
+                continue;
+            }
             let Some(c) = self.cases.get(k) else {
                 continue;
             };
@@ -1565,6 +1595,10 @@ impl Model {
     /// Expected cost: one section solve per differing section and case
     /// (a new line: none), on background threads.
     pub fn want_others(&mut self, wanted: &[usize], ctx: &eframe::egui::Context) {
+        // (Not against a line being dragged: when it is let go.)
+        if self.previewing {
+            return;
+        }
         for o in &mut self.other_lines {
             if o.differs_for != self.line_version {
                 o.differs = Differences::between_with(&self.line, &o.line, &o.cables_changed);
@@ -2648,6 +2682,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         shown_cases: vec![0],
         selection_case: None,
         recently_wanted: Default::default(),
+        previewing: false,
         usage_marks: Default::default(),
         usage_out_of_date: false,
         other_lines: Vec::new(),

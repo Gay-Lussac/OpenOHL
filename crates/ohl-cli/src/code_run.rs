@@ -50,7 +50,7 @@ pub enum CodeCommand {
         /// Load case file to write.
         #[arg(long = "load-cases")]
         load_cases: PathBuf,
-        /// Cross-cross-section library folder the wind factors for structures go
+        /// Cross-section library folder the wind factors for structures go
         /// into, if the plugin gives them (default: `Sections` beside the
         /// weather case file).
         #[arg(long)]

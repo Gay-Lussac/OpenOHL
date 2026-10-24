@@ -532,7 +532,7 @@ pub struct Libraries {
     pub structures: PathBuf,
     /// Insulator assembly folder.
     pub insulators: PathBuf,
-    /// Cross-cross-section library, if any.
+    /// Cross-section library, if any.
     pub sections: Option<PathBuf>,
     /// Where each came from, one line per kind: "cables: the project's
     /// (2 files)".
