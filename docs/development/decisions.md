@@ -10,6 +10,23 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**The sag on the profile sheets (owner, 2026-10-24)**
+
+- The sag of each span can be shown on the profile sheets, per circuit
+  (the earth wires apart), in the case each circuit is drawn in: as a
+  band row (`sag`) and as a label under each circuit's lowest wire at
+  mid-span (`[sag_labels]`), each switched in the template (owner:
+  both, chosen in the template; each circuit). The plan-submission
+  template shows both. The necessary ground clearance is the existing
+  line under each circuit's lowest conductor, lowered by its rule's
+  clearance (`[conductor_clearance]`).
+- The stringing tension is given per phase of each circuit (owner): the
+  band row lists the phases on the circuit's line, the stringing table
+  has a row per phase (`{st.phase}`).
+- After an edit of the routes, the sections whose wind side changes
+  (the line's direction where they are) are solved again; before, none
+  was (found while answering the review's questions).
+
 **Edits stay fast (owner, 2026-10-24)**
 
 - The owner: visuals and edits must stay snappy, with the calculations'

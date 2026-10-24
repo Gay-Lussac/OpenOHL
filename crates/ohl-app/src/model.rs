@@ -524,6 +524,21 @@ impl Differences {
             || ours.creep_stretch != other.creep_stretch
             || ours.systems != other.systems
             || ours.condition_cases != other.condition_cases;
+        // The routes give each section its wind's side: those whose side
+        // differs.
+        let sides: std::collections::BTreeSet<String> = if ours.routes != other.routes
+            || ours.alignments != other.alignments
+            || ours.alignment_points != other.alignment_points
+        {
+            let a = ohl_line::solve::sections_against_the_line(ours);
+            ohl_line::solve::sections_against_the_line(other)
+                .into_iter()
+                .filter(|(id, side)| a.get(id) != Some(side))
+                .map(|(id, _)| id)
+                .collect()
+        } else {
+            Default::default()
+        };
         // The sections a spacer joins, where the spacer differs (or is
         // only in one of them).
         let mut spaced: std::collections::BTreeSet<&str> = Default::default();
@@ -544,6 +559,7 @@ impl Differences {
                     || s.points.iter().any(|p| structures.contains(&p.structure))
                     || cables_changed.contains(&s.cable)
                     || spaced.contains(s.id.as_str())
+                    || sides.contains(&s.id)
             })
             .map(|s| s.id.clone())
             .collect();

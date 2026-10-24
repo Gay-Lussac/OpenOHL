@@ -1305,6 +1305,8 @@ impl Input {
         if let Some((name, shapes)) = &self.stringing {
             d.set_stringing(&self.line, shapes, name);
         }
+        // The sags of the wires as drawn (each circuit in its case).
+        d.set_sags(&self.line, shapes);
         if !self.lidar.is_empty() {
             d.set_lidar(
                 self.lidar.iter().copied(),

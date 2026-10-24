@@ -1652,6 +1652,56 @@ fn profile_part(
     for (q, label) in &d.markers {
         prof.push(marker([f.x(q[0]), y(q[2])], 1.2, label));
     }
+    // The sag of each span, under each circuit's lowest wire at mid-span
+    // (`[sag_labels]`).
+    let sl = &o.template.sag_labels;
+    if sl.show {
+        let earth = o.template.legend.label("earth_wires", &[]);
+        let color = Color::hex_or_black(&o.template.text.colour);
+        // The labels written (their boxes): one that would touch another is
+        // put under it.
+        let mut placed: Vec<[f64; 4]> = Vec::new();
+        for sp in d.sags.iter().filter(|sp| {
+            let at = 0.5 * (sp.from + sp.to);
+            at >= p.s0 && at <= p.s1
+        }) {
+            for (circuit, sag, mid) in &sp.sags {
+                let name = circuit.clone().unwrap_or_else(|| earth.clone());
+                if !sl.circuits.is_empty() && !sl.circuits.contains(&name) {
+                    continue;
+                }
+                let text = crate::template::fill(&sl.label, &|n, _| match n {
+                    "sag" => Some(format!("{sag:.2}")),
+                    "circuit" => Some(name.clone()),
+                    _ => None,
+                });
+                let size = sl.size.0;
+                let w = 0.6 * size * text.chars().count() as f64;
+                let x = f.x(mid[0]);
+                let mut base = y(mid[1]) + sl.gap.0 + size;
+                for _ in 0..8 {
+                    let b = [x - w / 2.0, base - size, x + w / 2.0, base + 0.2 * size];
+                    let touches = placed
+                        .iter()
+                        .any(|q| b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1]);
+                    if !touches {
+                        placed.push(b);
+                        break;
+                    }
+                    base += 1.25 * size;
+                }
+                prof.push(Item::Text(Text {
+                    layer: Layer::Wires,
+                    at: [x, base],
+                    text,
+                    size: sl.size.0,
+                    anchor: Anchor::Middle,
+                    bold: false,
+                    color,
+                }));
+            }
+        }
+    }
     (prof, ends)
 }
 

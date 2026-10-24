@@ -443,11 +443,14 @@ pub enum BandKind {
     /// structures): each circuit's conductors and the earth wires, kN
     /// per subconductor, in the stringing weather case.
     Stringing,
+    /// The sag of each span, m: one line per circuit (the earth wires
+    /// last), in the cases the wires are drawn.
+    Sag,
 }
 
 impl BandKind {
     /// Every kind, as written.
-    pub const ALL: [(Self, &'static str); 10] = [
+    pub const ALL: [(Self, &'static str); 11] = [
         (Self::Structures, "structures"),
         (Self::Stations, "stations"),
         (Self::GroundHeight, "ground_height"),
@@ -458,6 +461,7 @@ impl BandKind {
         (Self::GroundClearance, "ground_clearance"),
         (Self::Text, "text"),
         (Self::Stringing, "stringing"),
+        (Self::Sag, "sag"),
     ];
 }
 
@@ -1470,14 +1474,14 @@ pub struct StringingColumn {
     pub width: Mm,
     /// What it shows: `{st.from}`, `{st.to}` (the tension section's end
     /// structures, along the route), `{st.circuit}` (the earth wires: the
-    /// legend's `earth_wires` word), `{st.tension}` (kN, the lowest–highest
+    /// legend's `earth_wires` word), `{st.phase}` (its phase label), `{st.tension}` (kN, the lowest–highest
     /// of its spans), `{st.case}` (the stringing weather case), and the
     /// sheet's fields.
     pub value: String,
 }
 
 /// `[stringing_table]`: the tension sections on the sheet, one row per
-/// section and circuit (the earth wires last), with the stringing tension
+/// section, circuit and phase (the earth wires last), with the stringing tension
 /// in the stringing case (ESTI 235, 2.2.2 a).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1517,8 +1521,59 @@ impl Default for StringingTableSpec {
     }
 }
 
+/// `[sag_labels]`: the sag written in each span of the profile, under
+/// each circuit's lowest wire at mid-span (in the cases the wires are
+/// drawn).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SagLabelsSpec {
+    /// Written (default off).
+    #[serde(default)]
+    pub show: bool,
+    /// The circuits written, by name (default every circuit; `earth wires`
+    /// for the earth wires).
+    #[serde(default)]
+    pub circuits: Vec<String>,
+    /// The text: `{sag}` (m, two decimals), `{circuit}`.
+    #[serde(default = "sag_label")]
+    pub label: String,
+    /// Size of its text.
+    #[serde(default = "small")]
+    pub size: Mm,
+    /// Below the wire, on paper.
+    #[serde(default = "sag_gap")]
+    pub gap: Mm,
+}
+
+fn sag_label() -> String {
+    "f = {sag} m".into()
+}
+
+fn sag_gap() -> Mm {
+    Mm(1.5)
+}
+
+impl Default for SagLabelsSpec {
+    fn default() -> Self {
+        Self {
+            show: false,
+            circuits: Vec::new(),
+            label: sag_label(),
+            size: small(),
+            gap: sag_gap(),
+        }
+    }
+}
+
 /// The fields of a stringing table row.
-pub const STRINGING_FIELDS: [&str; 5] = ["st.from", "st.to", "st.circuit", "st.tension", "st.case"];
+pub const STRINGING_FIELDS: [&str; 6] = [
+    "st.from",
+    "st.to",
+    "st.circuit",
+    "st.tension",
+    "st.case",
+    "st.phase",
+];
 
 /// `[[note]]`: a free text on the sheet.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -1659,6 +1714,9 @@ pub struct SheetTemplate {
     /// The stringing table.
     #[serde(default)]
     pub stringing_table: StringingTableSpec,
+    /// The sag written in each span of the profile.
+    #[serde(default)]
+    pub sag_labels: SagLabelsSpec,
     /// Free texts.
     #[serde(default, rename = "note")]
     pub notes: Vec<NoteSpec>,
@@ -2171,6 +2229,13 @@ impl SheetTemplate {
                         REVISION_FIELDS.join(", ")
                     ));
                 }
+            }
+        }
+        for (name, _) in placeholders(&self.sag_labels.label)? {
+            if !["sag", "circuit"].contains(&name.as_str()) {
+                return Err(format!(
+                    "sag_labels.label: unknown field {{{name}}} (give sag, circuit)"
+                ));
             }
         }
         for c in &self.stringing_table.columns {

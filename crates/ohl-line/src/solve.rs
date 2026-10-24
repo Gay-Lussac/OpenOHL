@@ -2825,6 +2825,33 @@ fn core_branch(
     Some((core, limit / core_part.axial_stiffness().si()))
 }
 
+/// Per section of `line` (by id), whether it runs against the line's
+/// direction ([`against_the_line`], the routes made once): the sections
+/// solved with the wind's side swapped. A section whose answer differs
+/// between two versions of a line is solved again (its wind's side).
+pub fn sections_against_the_line(line: &Line) -> std::collections::BTreeMap<String, bool> {
+    let views = line.alignment_views();
+    line.sections
+        .iter()
+        .map(|s| (s.id.clone(), against_in(line, s, &views)))
+        .collect()
+}
+
+/// [`against_the_line`] on the routes `views`.
+fn against_in(line: &Line, section: &Section, views: &[crate::route::AlignmentView]) -> bool {
+    let ends = (section.points.first(), section.points.last());
+    let (Some(a), Some(b)) = ends else {
+        return false;
+    };
+    let (Some(a), Some(b)) = (line.wire_point(a), line.wire_point(b)) else {
+        return false;
+    };
+    let (a, b) = (a.position, b.position);
+    let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
+    line.direction_at_in(views, mid)
+        .is_some_and(|d| (b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1] < 0.0)
+}
+
 /// Whether a section's points run against the line's direction (its first
 /// to last wire point, against the line's direction at their middle).
 fn against_the_line(line: &Line, section: &Section) -> bool {
