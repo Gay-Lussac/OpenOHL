@@ -9,7 +9,7 @@ cd "${0:A:h}" || exit 1
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 echo "Building and starting OHL-Structure…"
-cargo build --release -p ohl-structure-app && cargo run --release -p ohl-structure-app --bin ohl-structure
+cargo build --release -p ohl-structure-app && { sh tools/prune-target.sh target >/dev/null; cargo run --release -p ohl-structure-app --bin ohl-structure; }
 rc=$?
 
 if [ $rc -ne 0 ]; then
