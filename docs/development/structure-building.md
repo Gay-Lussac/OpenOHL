@@ -464,8 +464,12 @@ with its reason.
 - **Report** (HTML / PDF, CSV tables): the file and its hash, level,
   engine version, cross-section library, load cases with their source, the
   governing member per group and per case, reactions, notes.
-- CLI (planned, not built yet): `ohl structures check structure.ohls [--loads table.csv]
-  [--report out.html]`; today's `fe` and `pole` remain.
+- CLI (built 2026-10-19, in place of the `ohl structures check` planned
+  here): `ohl structures analyse structure.ohls [--loads table.csv]` and
+  `ohl structures report structure.ohls [--loads table.csv] -o out.html`
+  ask OHL-Structure's headless tool `ohl-structure-report` (a program of
+  its own, [OHL-Structure](../user-guide/structure-app.md)); `fe` and
+  `pole` remain.
 
 ## 3. Verification
 

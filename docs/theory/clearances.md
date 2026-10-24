@@ -70,6 +70,16 @@ keep (one, by voltage, or base + per kV) and its targets; each span's
 lowest clearance over every wind position of the rule's cases is
 reported, with the position.
 
+**Which ground** (since 2026-10-23). A ground rule checks the surface of
+the checks (one for every user of the project), or the terrain surface
+(TIN layer) of the project it names (`surface = "name"` in the rule
+file, `Rule::surface`); the checks get the named surfaces by name
+(`ZoneTargets::surfaces`, `CaseTargets::surfaces`) and measure to each
+exactly as to the surface of the checks. A name the project does not
+hold is noted and its rule is not checked: never passed silently. The
+thermal limit refuses to run instead ([Thermal
+rating](thermal.md#maximum-operating-temperature-from-clearance)).
+
 ## Wind positions
 
 A weather case with wind is solved from each side chosen (left, right or

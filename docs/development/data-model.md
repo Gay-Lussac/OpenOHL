@@ -1760,22 +1760,316 @@ keeps them equal to what the exporter writes):
 |---|---|---|---|
 | Line file `*.ohl.json` | JSON, `ohl_line::Line` (serde; unknown fields refused) | one line | [Line files](../user-guide/line-file.md) |
 | OHL XML | XML, namespace `urn:openohl:ohl-line:1`, schema `docs/schema/ohl-line.xsd` | the same content as the line file, lossless round trip (`crates/ohl-io/src/ohlxml.rs`): objects are elements, plain values attributes named like the JSON keys, points `x`/`y`/`z` attributes | [OHL XML schema](../schema/ohl-line.md) |
-| Project file `*.ohl` | SQLite (ADR-0004) | project lines, operation log, users, libraries, point clouds, surfaces, versions | [Project files](../user-guide/project.md) |
+| Project file `*.ohl` | SQLite (ADR-0004), session schema 6 | project lines, operation log, users, libraries, versions and reviews, edit rights, spatial index, surfaces, point clouds, backgrounds, settings | [below](#project-file-tables-cratesohl-session), [Project files](../user-guide/project.md) |
 | Libraries | TOML directories | see above | — |
 | Plugin settings `settings.toml` (in the user's plugin folder, the line application's data folder `plugins/` — storage id "OLS CAD", kept from before OpenOHL) | TOML, `ohl_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off); read and written by `ohl-design` and `ohl-structure` alike | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
 
 ### Project file tables (`crates/ohl-session`)
 
-| Table | Content |
+A project file (`.ohl`) is **one SQLite database** (ADR-0004). Three
+crates open the same file, and each makes the tables it needs when they
+are missing (`CREATE TABLE IF NOT EXISTS`):
+
+| Opened by | Its tables | Schema number |
+|---|---|---|
+| `ohl_session::Session::open` | `ols_meta`, `session_user`, `model_object`, `oplog`, `spatial_index`, `surface`, `vc_blob`, `vc_revision`, `vc_ref`, `edit_grant`, `vc_review`, `vc_review_note` | `ols_meta` `session_schema` = `6` (`ohl_session::SCHEMA_VERSION`) |
+| `ohl_pointcloud::Store::open` | `pointcloud`, `pointcloud_source`, `pointcloud_block`, `pointcloud_lod` (and `ols_meta`, if missing) | `ols_meta` `pointcloud_schema` = `2` |
+| `ohl_background::Store::open` | `background_image`, `background_tile`, `background_drawing` | none (tables only added) |
+
+The file is kept in SQLite's WAL journal mode: while a program has it
+open, `project.ohl-wal` and `project.ohl-shm` lie next to it and hold the
+latest changes. `Session::checkpoint` writes them into the file itself;
+`Session::copy_to` (`VACUUM INTO`) writes a consistent copy (what a
+client joining a server gets). Copy a project only when no program has
+it open, or with SQLite's own backup.
+
+```text
+  ols_meta  ── session_schema, pointcloud_schema, grid_size, vc_head,
+               routes_alignments, alignment_points, setting.<key> …
+  session_user (name → role)          edit_grant (who may edit what)
+
+  vc_ref ── one row per project line (kind 'branch') or tag ('tag')
+    │  name ─────────────┬───────────────────────┬──────────────────────┐
+    │  revision ──┐      │                       │                      │
+    │  base ──────┤      ▼                       ▼                      ▼
+    │             │  model_object.line       oplog.line        spatial_index.line
+    │             │  (kind, id) → JSON      seq, user, command, (kind, id) → bounds,
+    │             │  ord, version, gone     inverse, objects,   home tile
+    │             │                         sections, undoes…
+    │             ▼
+    │        vc_revision (id = SHA-256) ── parents [ids], tree ──► vc_blob (hash → zstd text)
+    │             │  seq: the oplog entry it was made after          ▲
+    │             └───────────────────────────────────────────────── tree lists objects and
+    │                                                                 library files by hash
+    └── vc_review (branch → target, revision) ──► vc_review_note (verdicts, comments)
+
+  Shared by every project line (not in revisions, not logged except change_points):
+  surface (TINs) · pointcloud ─► pointcloud_source, pointcloud_block ─► pointcloud_lod
+  background_image ─► background_tile · background_drawing
+```
+
+#### Opening a file: schema checks and upgrades
+
+`Session::open` (every program that opens a project: `ohl-design`,
+`ohl-structure`, `ohl project …`, `ohl line FILE.ohl`, the server) does,
+in this order:
+
+1. A file whose `session_schema` is higher than 6 (or not a number) is
+   **refused before anything in it changes**.
+2. `PRAGMA journal_mode = WAL`; `ols_meta`, `session_user`, `model_object`
+   and `oplog` made when missing.
+3. Older files only (they have `ols_meta`): the upgrade steps that come
+   before the other tables — `oplog.note` added (schema 1, before its
+   first release); schema 2 → 3 (`lines::migrate`): `model_object` copied
+   into a new table with the `line` column (every row `main`), `oplog.line`
+   added (`main`), an old `spatial_index` without `line` dropped (it is
+   built again); schema 6 (`lines::migrate_tombstones`):
+   `model_object.gone` added (0 for every row).
+4. `spatial_index`, `surface`, the `vc_*` tables and the edit grant and
+   review tables made when missing; older files: `vc_ref.description`
+   (within schema 3) and `vc_ref.base` (schema 6) added
+   (`lines::migrate_descriptions`).
+5. `grid_size` written when missing (256 m, `Grid::DEFAULT_SIZE`; fixed
+   for the project from then on).
+6. `session_schema` written (a new file) or raised to 6 (an older one).
+   From then on **an older program refuses the file**, whatever was done
+   in it.
+7. `versions::init`: the branch `main` and `vc_head` = `branch:main` when
+   missing.
+8. Schema 4 (`migrate_library_files`): the rows of the old
+   `library_file` table copied as `library` objects into every project
+   line, the table dropped.
+9. The objects read; projects from before routes and alignment points
+   are converted once (rows rewritten in place, not logged; the keys
+   `routes_alignments` and `alignment_points` say it is done); frozen
+   lines of schema 2 (`line_snapshot`) made editable lines, the table
+   dropped; branches of schema 2 without a working state get their
+   revision as base.
+
+Each step looks for what it changes (a column, a table), so a file of an
+in-between build is upgraded too and a step already done does nothing.
+Upgrading rewrites no object of a line: schema 5 and 6 add nothing to
+convert. `ohl_pointcloud::Store::open` refuses a `pointcloud_schema`
+above 2; a file of version 1 is read as it is and gets its levels of
+detail with `ohl pointcloud octree` (the version is then raised to 2).
+
+#### The tables, column by column
+
+As made by the code (types as SQLite takes them; `time` columns are UTC
+text, `strftime('%Y-%m-%dT%H:%M:%fZ')`, the point-cloud and background
+ones `datetime('now')`):
+
+```sql
+-- ohl-session (lib.rs, lines.rs)
+ols_meta      (key TEXT PRIMARY KEY, value TEXT NOT NULL)
+session_user  (name TEXT PRIMARY KEY, role TEXT NOT NULL)            -- viewer | designer | admin
+model_object  (line TEXT NOT NULL DEFAULT 'main', kind TEXT NOT NULL, id TEXT NOT NULL,
+               ord INTEGER NOT NULL, version INTEGER NOT NULL, json TEXT NOT NULL,
+               gone INTEGER NOT NULL DEFAULT 0,                      -- 0 object, 1 tombstone, 2 place
+               PRIMARY KEY (line, kind, id))
+oplog         (seq INTEGER PRIMARY KEY, time TEXT NOT NULL, user TEXT NOT NULL,
+               kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
+               objects TEXT NOT NULL, sections TEXT NOT NULL,
+               undoes INTEGER, undone_by INTEGER, note TEXT,
+               line TEXT NOT NULL DEFAULT 'main')
+-- spatial.rs
+spatial_index (line TEXT NOT NULL DEFAULT 'main', kind TEXT NOT NULL, id TEXT NOT NULL,
+               level INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL,
+               xmin REAL NOT NULL, ymin REAL NOT NULL, xmax REAL NOT NULL, ymax REAL NOT NULL,
+               PRIMARY KEY (line, kind, id))
+INDEX spatial_tile ON spatial_index (line, level, tx, ty)
+-- surfaces.rs
+surface       (name TEXT PRIMARY KEY, time TEXT NOT NULL, user TEXT NOT NULL, source TEXT NOT NULL,
+               points INTEGER NOT NULL, triangles INTEGER NOT NULL,
+               bounds TEXT NOT NULL, data BLOB NOT NULL)
+-- versions.rs
+vc_blob       (hash TEXT PRIMARY KEY, data BLOB NOT NULL)
+vc_revision   (id TEXT PRIMARY KEY, parents TEXT NOT NULL, author TEXT NOT NULL, time TEXT NOT NULL,
+               message TEXT NOT NULL, tree TEXT NOT NULL, seq INTEGER NOT NULL)
+vc_ref        (name TEXT PRIMARY KEY, kind TEXT NOT NULL, revision TEXT,
+               protected INTEGER NOT NULL DEFAULT 0, user TEXT NOT NULL, time TEXT NOT NULL,
+               note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', base TEXT)
+-- collab.rs
+edit_grant    (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, kinds TEXT NOT NULL,
+               objects TEXT NOT NULL, area TEXT, user TEXT NOT NULL, time TEXT NOT NULL,
+               note TEXT NOT NULL DEFAULT '')
+vc_review     (id INTEGER PRIMARY KEY, branch TEXT NOT NULL, target TEXT NOT NULL,
+               revision TEXT NOT NULL, author TEXT NOT NULL, time TEXT NOT NULL,
+               note TEXT NOT NULL, reviewers TEXT NOT NULL, state TEXT NOT NULL)
+vc_review_note(seq INTEGER PRIMARY KEY, review INTEGER NOT NULL, user TEXT NOT NULL,
+               time TEXT NOT NULL, verdict TEXT NOT NULL, comment TEXT NOT NULL)
+-- ohl-pointcloud
+pointcloud        (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, crs TEXT NOT NULL DEFAULT '',
+                   scale REAL NOT NULL, chunk_size REAL NOT NULL, class_scheme TEXT,
+                   points INTEGER NOT NULL DEFAULT 0,
+                   xmin REAL, ymin REAL, zmin REAL, xmax REAL, ymax REAL, zmax REAL, created TEXT)
+pointcloud_source (cloud INTEGER NOT NULL REFERENCES pointcloud(id) ON DELETE CASCADE,
+                   path TEXT NOT NULL, points INTEGER NOT NULL, imported TEXT)
+pointcloud_block  (id INTEGER PRIMARY KEY,
+                   cloud INTEGER NOT NULL REFERENCES pointcloud(id) ON DELETE CASCADE,
+                   cx INTEGER NOT NULL, cy INTEGER NOT NULL, class INTEGER NOT NULL,
+                   count INTEGER NOT NULL, z0 INTEGER NOT NULL,
+                   xyz BLOB NOT NULL, intensity BLOB, returns BLOB,
+                   UNIQUE (cloud, cx, cy, class))
+pointcloud_lod    (block INTEGER NOT NULL REFERENCES pointcloud_block(id) ON DELETE CASCADE,
+                   level INTEGER NOT NULL, count INTEGER NOT NULL, z1 INTEGER NOT NULL,
+                   xyz BLOB NOT NULL, PRIMARY KEY (block, level))
+-- ohl-background
+background_image  (id INTEGER PRIMARY KEY, layer TEXT NOT NULL, name TEXT NOT NULL,
+                   source TEXT NOT NULL, crs TEXT NOT NULL DEFAULT '',
+                   x0 REAL NOT NULL, y0 REAL NOT NULL, px REAL NOT NULL, py REAL NOT NULL,
+                   width INTEGER NOT NULL, height INTEGER NOT NULL, levels INTEGER NOT NULL,
+                   created TEXT, UNIQUE (layer, name))
+background_tile   (image INTEGER NOT NULL REFERENCES background_image(id) ON DELETE CASCADE,
+                   level INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL,
+                   data BLOB NOT NULL, PRIMARY KEY (image, level, tx, ty))
+background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NULL DEFAULT '',
+                   items INTEGER NOT NULL, bounds TEXT NOT NULL, data BLOB NOT NULL, created TEXT)
+```
+
+| Table | What it holds | Written by | Read by |
+|---|---|---|---|
+| `ols_meta` | key–value pairs of the project (below); the table keeps its old name | `Session::open`, `checkout` (`vc_head`), `Session::set_setting`; `ohl_pointcloud` (`pointcloud_schema`) | every open; the applications' settings |
+| `session_user` | the users and their roles; the first user added becomes the admin | `Session::set_user` (`ohl project user`; the user of the first import becomes the admin) | every command (`Session::require`) |
+| `model_object` | the objects of each project line (below) | every command (`Session::apply_as` → `lines::write_row`), import, `create_line`, `rename_line`, `delete_line`, the upgrades | `Session::open` (all lines at once) |
+| `oplog` | every applied command with its inverse, per project line (below) | every command, in the same transaction as its objects | undo, redo, rollback, `ohl project log`, the History window; `MAX(seq)` is the revision's `seq` |
+| `spatial_index` | plan bounds and home tile of every object with a place (ADR-0008), per project line | every command (`spatial::write_diff`); a line's rows when it is first worked on | `Session::objects_in` (`ohl project query`, `tiles`), partial loading, the server |
+| `surface` | terrain surfaces (TINs) by name; shared by every line, not logged, not undone | `Session::put_surface`, `rename_surface`, `delete_surface` (Terrain menu, `ohl surface import`, `rename`, `delete`; a designer) | the views, the checks (the surface of the checks, a rule's `surface`) |
+| `vc_blob` | content-addressed texts of the version control: each object's canonical JSON, each library file, each revision's tree | `commit`, merges, bundle imports (`write_blob`, only when the hash is new) | checkout, diff, merge, lines kept as differences (their base) |
+| `vc_revision` | the revisions (commits) | `commit`, `merge`, `revert`, bundle imports | history, diff, merge, `create_line` from a revision |
+| `vc_ref` | the branches — the project lines — and tags | `create_line`, `rename_line`, `delete_line`, `set_line_description`, `tag`, protecting, `commit` (moves the branch) | every open (which lines exist), the Project lines window, `ohl project branch` |
+| `edit_grant` | limits of a user's or a role's edits (kinds, objects, a plan area) | admins (`ohl project grant`, the Versions window's Rights page) | every command (`check_edit`) |
+| `vc_review` | a branch submitted for merging into another | `submit_review`, `decide_review`, `merge_review`; closed when its branch is deleted, renamed with it | the Versions window's Reviews page, `ohl project review` |
+| `vc_review_note` | the verdicts and comments of a review, in order | `decide_review` (`approve`, `reject`), `merge_review` (`merge`) | the same |
+| `pointcloud` … `pointcloud_lod` | the point clouds (ADR-0007), shared by every line | `ohl pointcloud import`, `octree`, the app's import, `change_points` | the views, the LiDAR checks, `ohl pointcloud export` |
+| `background_*` | orthophotos as JPEG tile pyramids, DXF drawings; shared by every line, not logged | Terrain › Backgrounds (and moving the project into another coordinate system) | the views, the sheets (`[plan_background]`, `[key_map]`) |
+
+**Columns in words.**
+
+- `model_object`: `line` the project line (= `vc_ref.name` of a branch);
+  `kind` one of `meta`, `route`, `alignment`, `alignment_point`,
+  `structure`, `section`, `jumper`, `spacer`, `report`, `library`
+  (`ohl_session::Kind`; `point_cloud` is a kind of the log only, it has
+  no row); `id` the object's id (`line` for the line's own settings row,
+  `kind/name` for a library file); `ord` its place among the objects of
+  its kind (the line file's order); `version` counts its changes (1 when
+  made) and lets undo see another user's change; `json` the object as in
+  the line file; `gone` 0 an object, 1 a **tombstone** (an object of the
+  line's base deleted on it: `json` `null`, `ord` and `version` 0), 2 a
+  **place** (the base's object unchanged, at another `ord`: `json`
+  `null`).
+- `oplog`: `seq` the entry's number, in the order applied, over all
+  lines; `kind` `do` (a command), `undo`, `redo`, `rollback`, `import`
+  (a line imported: cannot be undone), `library` (what the program does
+  on its own with the library files: logged, not undone by Undo),
+  `reproject` (the project moved into another coordinate system: cannot
+  be undone); `command` the command as applied (JSON, a `batch` of the
+  primitive puts and deletes it expanded into), `inverse` the command that
+  takes it back; `objects` `[[kind, id, version after], …]` (0: deleted);
+  `sections` the section ids to solve again; `undoes` the entry an undo,
+  redo or rollback reverses, `undone_by` the entry that reversed this one;
+  `note` a summary in words of what it did (what a confirmed deletion
+  took with it, renames, links), or none.
+- `spatial_index`: `level`, `tx`, `ty` the home tile of the project's
+  chunk grid (tiles of `grid_size` × 2^level m; `ohl_core::grid`);
+  `xmin` … `ymax` the plan bounds, m, project coordinates.
+- `surface`: `bounds` JSON `[[xmin, ymin, zmin], [xmax, ymax, zmax]]` (or
+  `null`); `data` zstd of the point and triangle counts (u64 each), the
+  points (3 × f64) and the triangles (3 × u32), little-endian.
+- `vc_blob`: `hash` SHA-256 (hex) of the text; `data` the text compressed
+  with zstd.
+- `vc_revision`: `id` SHA-256 of the canonical JSON of tree, parents,
+  author and message; `parents` a JSON list of ids (none: the first
+  revision, two: a merge); `tree` the hash of the tree's blob —
+  `{"objects": [[kind, id, ord, hash], …], "libraries": [[kind, name,
+  hash], …]}`; `seq` the last `oplog` entry when it was made.
+- `vc_ref`: `kind` `branch` or `tag`; `revision` the branch's last
+  revision or the tag's (null: nothing committed yet); `protected` 1:
+  commits and merges by admins or approved reviews only; `user` who made
+  it (empty: the project's first line); `base` (schema 6) the revision a
+  line keeps its differences from (null: the line keeps all its objects).
+- `edit_grant`: `subject` a user's name or `role:designer`; `kinds` and
+  `objects` JSON lists (empty: no limit of that kind); `area` a JSON
+  polygon `[[x, y], …]` or null; `user` the admin who gave it.
+- `vc_review`: `branch` submitted into `target` at `revision`;
+  `reviewers` a JSON list of names; `state` `open`, `approved`,
+  `rejected`, `merged` or `closed`.
+- `pointcloud`: `scale` the coordinates' unit, m (1 mm by default);
+  `chunk_size` the blocks' square, m (a whole number of `scale` units);
+  `class_scheme` the `.ohlc` text given at import. `pointcloud_block`: one
+  block per chunk (`cx`, `cy`) and class; `z0` its lowest point (scale
+  units); `xyz`, `intensity`, `returns` columns encoded by
+  `ohl_pointcloud::codec` (integers relative to the chunk, byte planes
+  shuffled, zstd). `pointcloud_lod`: the block's points of levels 1 to 3
+  (about a 4th, 16th, 64th) and `z1`, its highest point.
+- `background_image`: `x0`, `y0` the image's top-left corner, `px`, `py`
+  the pixel size, m; `levels` the pyramid's levels; `background_tile`:
+  JPEG tiles of 256 pixels (blank tiles not kept). `background_drawing`:
+  `data` zstd of the drawing's JSON (`ohl_background::Drawing`), `bounds`
+  JSON as for `surface`.
+
+#### `ols_meta` keys
+
+| Key | Value |
 |---|---|
-| `ols_meta(key, value)` (the table keeps its old name) | settings: `session_schema` (6 — project lines kept as differences from a revision, below; 5 — the `line` row may hold `height_datum`; 4 before; a newer one is refused before any table is created or migrated), `grid_size`, the weather file used, … The applications' settings are keys `setting.<key>` (`Session::setting`, `set_setting`; not logged, not undone; `Op::SetSetting` on a server, a designer's): `app.weather`, `app.check_surface`, `app.lidar_percent`, … and `app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4; since 2026-10-22 any standard paper size of `ohl_drawing::paper::PAPER_SIZES`, `WIDTHxHEIGHT`, or `"optimised"`), `paper_sizes` (the sizes ticked, names; 2026-10-22), `mixed_sizes`, `same_paper`, `paper_orientation` (`both`, `landscape`, `portrait`), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`, since 2026-10-22 `elevation_stick` (none: the template's) — labels `dimensions` and `arm_heights` too; since 2026-10-23 `circuit_cases`: per circuit key — a system's name, "" for the earth wires — `{drawn, stringing}`, each a case's name or none); missing fields and values out of range take the defaults; absent: the defaults) |
-| `session_user(name, role)` | `viewer`, `designer`, `admin` |
-| `model_object(line, kind, id, ord, version, json, gone)` | one row per object of a project line — or, for a line kept as differences (schema 6, `vc_ref.base` set), per object it changed or added since its base revision, a **tombstone** (`gone` = 1, `json` `null`) per object of the base it deleted, and a **place** (`gone` = 2, `json` `null`: the base's object unchanged, at `ord`) per object of the base it holds at another place ([below](#project-lines-kept-as-differences-schema-6)); `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `height_datum` (schema 5, left out when none), `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `circuits` (2026-10-21), `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order |
-| `oplog(seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)` | every applied command with its inverse; `kind` is `do`, `undo`, `redo`, `rollback` or `import` |
-| `library` objects (`model_object` kind `library`, id `kind/name`: `{"id", "kind", "name", "text"}`) | the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the cross-section library), `sheet-templates` (`.ohlsheet`, the drawings' sheet templates with their images embedded; 2026-10-20), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on |
-| `spatial_index` | plan bounds and tile of every object (ADR-0008), per project line; a line's rows are written when it is first worked on (selected), not when it is started |
-| `vc_ref(name, kind, revision, protected, user, time, note, description, base)` | branches (the project lines) and tags; `base` (schema 6): the revision a line keeps its differences from (none: the line keeps all its objects) |
-| `vc_*`, `edit_grant`, `surface`, point cloud tables | versions and reviews, edit rights, terrain surfaces, LiDAR ([Versions](../user-guide/versions.md), ADR-0007); the point cloud tables (`pointcloud`, `pointcloud_block`, `pointcloud_lod`, `pointcloud_source`; `ohl_pointcloud` crate docs) are shared by every project line and changed point by point only by `change_points` (below) |
+| `session_schema` | `6` (above) |
+| `pointcloud_schema` | `2` (when a point cloud store was opened) |
+| `grid_size` | the chunk grid's tile size at level 0, m (default 256) |
+| `vc_head` | `branch:NAME`: the project line the file opens on (`ohl project checkout`) |
+| `routes_alignments`, `alignment_points` | `1`: the one-off conversion to routes, alignments and alignment points is done |
+| `setting.<key>` | the applications' settings (below) |
+
+#### The applications' settings (`setting.<key>`)
+
+Kept in `ols_meta` under `setting.<key>` (`Session::setting`,
+`Session::set_setting`): not part of the line, not logged, not undone,
+not in revisions; on a server `Op::SetSetting`, a designer's (the
+others follow at once).
+
+| Key | Written by | Value |
+|---|---|---|
+| `app.weather` | `ohl-design` (the weather case file chosen) | the file's name when it is one of the project's own files, else its path; read by `ohl zones` too |
+| `app.own-libraries` | `ohl-design`, when a new project is made (File › New project) | `1`: nothing is copied in from files next to the project |
+| `app.check_surface` | `ohl-design` (Terrain menu: the surface of the checks) | a surface's name: the ground every user's checks use; read by `ohl zones` and by the engineering impact of `ohl project` diffs and merges |
+| `app.drawings.<project line>` | `ohl-design` (File › Export › Drawings…) | JSON, below |
+| `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |
+
+`app.drawings.<project line>`: the drawing export settings of that project line as JSON (`ohl_app::drawings::DrawingSettings`: `formats` (names), `page` ("" or A0–A4; since 2026-10-22 any standard paper size of `ohl_drawing::paper::PAPER_SIZES`, `WIDTHxHEIGHT`, or `"optimised"`), `paper_sizes` (the sizes ticked, names; 2026-10-22), `mixed_sizes`, `same_paper`, `paper_orientation` (`both`, `landscape`, `portrait`), `hscale`, `vscale`, `range`, `from`, `to`, `profile_only`, `clearance`, `all_cases`, `dpi`, `line_width` (m, also the Profile page's), `break_clearance` (mm), `elevations` ("off", "above" or "below"), `elevation_offset` (mm on paper), `elevation_rotation` (degrees), `preview`; since 2026-10-20 `side_offsets` (m), `plan_scale`, `logos` (`[{file, width}]`), `clearance_rule` (the clearance line from the ground rule), `markers`, `page` may be `"template"`, and `sheet` (`ohl_app::sheet_ui::SheetChoice`: `template` (choice key), `portrait`, `fields` (`values`, `per_sheet`, `revisions`), `versions` (`[{line, role, label}]`), `role`, `corridor`, `conductor_clearance`, `bands`, `elevation_scale`, `elevation_labels`, since 2026-10-22 `elevation_stick` (none: the template's) — labels `dimensions` and `arm_heights` too; since 2026-10-23 `circuit_cases`: per circuit key — a system's name, "" for the earth wires — `{drawn, stringing}`, each a case's name or none; `lidar_classes` (codes, comma separated; none: the template's), `background_drawings`, `background_photo` (the drawings and orthophotos under the plan; 2026-10-23), `key_map_drawings`, `key_map_photo` (under the key map; 2026-10-23) — each on, off or none: the template's); missing fields and values out of range take the defaults; absent: the defaults).
+
+#### The objects of a project line (`model_object`)
+
+One row per object of a project line — or, for a line kept as differences (schema 6, `vc_ref.base` set), per object it changed or added since its base revision, a **tombstone** (`gone` = 1, `json` `null`) per object of the base it deleted, and a **place** (`gone` = 2, `json` `null`: the base's object unchanged, at `ord`) per object of the base it holds at another place ([below](#project-lines-kept-as-differences-schema-6)); `kind` is `meta`, `route`, `alignment`, `alignment_point`, `structure`, `section`, `jumper`, `spacer`, `report` (`ohl_session::Kind`) — routes, alignments and alignment points are three kinds of row; span points, spreads and jumper points are inside their section's / jumper's row; `report`: a performed check (below), kept with the line, not part of it; `json` as in the line file; the line's settings are `meta` rows: `line` (`name`, `crs`, `height_datum` (schema 5, left out when none), `display`; projects before routes and alignments also an `alignment`, converted once when they open) and one row per setting — `systems`, `circuits` (2026-10-21), `creep_stretch`, `bimetallic`, `solver`, `defaults`, `circuit_starts`, `structure_loads` (`{"solver": …}`; `structure_loads` solves nothing again) — so two users changing different settings keep both and undo their own; a change puts the rows that differ from the line it was made on (`line_settings_change`). Projects written before kept every setting in `line`: read with the rows over it, until a change writes the rows; spacers are in the spatial index (where their ends are), jumpers with their taps; `replace_line` keeps the replacing line's order.
+
+#### Library files (`library` objects)
+
+`model_object` rows of kind `library`, id `kind/name`, JSON `{"id",
+"kind", "name", "text"}`: the project line's library files: `kind` `cables`, `structures`, `insulators`, `weather`, `loadcases`, `objects` (`project.ohlload`, the project's point and spread load types), `phase-distance` (an admin's copy of a `.ohlpd`), `rules` (`.ohlr`), `galloping` (`.ohlg`), `ambient` (`.ohlta`), `costs` (`.ohlcost`), `poles` (`.ohlp`), `femodels` (`.ohlfe`), `sections` (`.ohlsec`, the cross-section library), `sheet-templates` (`.ohlsheet`, the drawings' sheet templates with their images embedded; 2026-10-20), `loads` (`*.loads.csv`: values typed over a structure's load table in the structure application, per structure type and per placed structure, [below](#structure-load-cases-load_case-ohlslc)); each project line has its own (a new line starts with those of the line it is made from); changed as logged commands (`put_library_file`, `delete_library_file`: undone as any change; `keep_library_files`: what the program does on its own — files next to the project copied in when it opens, an older form converted — logged as `library`, not undone by Undo); by the "library" edit grant; revisions keep them apart (`State::libraries`). Schema 3 kept them in a `library_file(kind, name, time, user, text)` table shared by all lines: copied into every line when the project opens, the table dropped (schema 2 kept frozen lines in `line_snapshot`: made lines, the table dropped; new files have neither table). When the project opens, the app copies in the kinds it lacks from next to the project (never the shipped libraries; `poles`, `femodels`, `loads` from its structure folder; `sections` from the `Sections/` folder next to it, else the files next to it) and writes each line's files to a working folder (`poles`, `femodels`, `loads` next to the `structures`; `sections` in its own folder), which it reads from then on.
+
+#### How project lines, revisions and the log fit together
+
+- A **project line** is a branch: a `vc_ref` row of kind `branch`. Its
+  working state is its `model_object` rows (with `line` = its name), laid
+  over its base revision when `vc_ref.base` is set; its `spatial_index`
+  rows carry the same `line`. `main` is always there.
+- Every **command** writes, in one transaction, the objects it changes
+  (`model_object`), one `oplog` row (with `line` = the line worked on)
+  and the spatial index's changes. Nothing waits to be saved: the file
+  is always up to date. Undo and redo find the user's last entry on that
+  line (`undone_by` null) and apply its `inverse` as a new entry
+  (`undoes` pointing back).
+- A **revision** (`vc_revision`) is a frozen state of a line: its tree
+  lists every object and library file by the SHA-256 of its text, the
+  texts are in `vc_blob` (each once, however many revisions hold it).
+  `commit` writes the blobs that are new, the tree, the revision, and
+  moves the branch's `vc_ref.revision`; the revision's `seq` names the
+  last log entry then. The log itself and the point clouds, surfaces,
+  backgrounds, settings and users are not under version control.
+- A **line kept as differences** (`vc_ref.base`) is read as its base
+  revision's state with its rows over it ([below](#project-lines-kept-as-differences-schema-6)).
+- A **tag** is a `vc_ref` row of kind `tag` naming a revision; a
+  **review** (`vc_review`) names a branch, its target and the revision
+  submitted.
+- `vc_head` in `ols_meta` is the line the file opens on.
 
 ### Project lines kept as differences (schema 6)
 
@@ -1825,6 +2119,68 @@ place; on a real project 401 such rows, 1.6 kB, where whole copies took
   file are matched object by object, bit for bit).
 - An older program refuses a project of schema 6 (it would read a line
   kept as differences as nearly empty).
+
+### Inspecting a project file with `sqlite3`
+
+The project file is an ordinary SQLite database, so the `sqlite3` shell
+reads it. Open it **read-only** (`-readonly`), preferably on a copy or
+with the programs closed: a row changed by hand bypasses the session's
+checks, the log and undo, and can leave a line the program refuses. Every
+change goes through a command (`ohl project apply`).
+
+```bash
+sqlite3 -readonly project.ohl
+```
+
+```sql
+.tables
+-- The schema numbers, the grid, the line the file opens on, the settings.
+SELECT key, value FROM ols_meta ORDER BY key;
+-- The project lines (branches) and tags, their last revision and base.
+SELECT name, kind, substr(revision, 1, 10) AS revision, protected, user,
+       substr(base, 1, 10) AS base
+FROM vc_ref ORDER BY kind, name;
+-- Rows per line and kind: objects, tombstones (gone = 1), places (gone = 2).
+SELECT line, kind, COUNT(*) AS rows, SUM(gone = 1) AS tombstones, SUM(gone = 2) AS places
+FROM model_object GROUP BY line, kind;
+-- One object's JSON (fields with json_extract).
+SELECT version, json_extract(json, '$.position') FROM model_object
+WHERE line = 'main' AND kind = 'structure' AND id = 'T2';
+-- What a line kept as differences changed against its base revision.
+SELECT o.line, o.kind, o.id, o.version,
+       CASE o.gone WHEN 0 THEN 'changed or added' WHEN 1 THEN 'deleted' ELSE 'other place' END AS what
+FROM model_object o JOIN vc_ref r ON r.name = o.line AND r.kind = 'branch'
+WHERE r.base IS NOT NULL ORDER BY o.line, o.kind, o.id;
+-- The operation log, newest first.
+SELECT seq, time, user, kind, line, objects, sections, undoes, undone_by, note
+FROM oplog ORDER BY seq DESC LIMIT 20;
+-- The objects of one log entry, one per row.
+SELECT value FROM json_each((SELECT objects FROM oplog WHERE seq = 2));
+-- The revisions, newest first.
+SELECT substr(id, 1, 10) AS id, parents, author, time, message, seq
+FROM vc_revision ORDER BY time DESC;
+-- Library files of each line (a line kept as differences: only those it changed).
+SELECT line, json_extract(json, '$.kind') AS kind, json_extract(json, '$.name') AS name,
+       length(json_extract(json, '$.text')) AS chars
+FROM model_object WHERE kind = 'library' AND gone = 0;
+-- Objects of a line whose plan bounds touch an area (the spatial index).
+SELECT kind, id, level, tx, ty FROM spatial_index
+WHERE line = 'main' AND xmax >= 0 AND xmin <= 500 AND ymax >= -50 AND ymin <= 50;
+-- Surfaces, point clouds, backgrounds (the point-cloud and background tables
+-- exist once their store has opened the file).
+SELECT name, user, source, points, triangles FROM surface;
+SELECT name, crs, scale, chunk_size, points FROM pointcloud;
+SELECT layer, name, width, height, levels FROM background_image;
+SELECT name, source, items FROM background_drawing;
+```
+
+What `sqlite3` alone cannot show: the blobs (`vc_blob.data`, `surface.data`,
+the point blocks, the drawings) are zstd-compressed, and a line kept as
+differences has only its changes in `model_object` — its whole state is
+the base revision's (in `vc_blob`) with them laid over it. For those use
+the programs: `ohl project checkout` and `ohl project export` (a line's
+whole state as a line file), `ohl project history`, `diff` and `log`,
+`ohl surface export`, `ohl pointcloud info` and `export`.
 
 ### Performed checks (`ohl_session::reports`)
 
@@ -1976,7 +2332,9 @@ the same as before. Example (synthetic, a 1 mm cloud):
 {"op": "change_points", "cloud": "survey",
  "points": [{"from": {"xyz": [2600123456, 1200045678, 512345], "class": 2, "intensity": 310, "returns": 17},
              "to":   {"xyz": [2600123456, 1200045678, 513845], "class": 5, "intensity": 310, "returns": 17}}]}
-``` Example (synthetic):
+```
+
+Example (synthetic):
 
 ```json
 {"op": "batch", "commands": [

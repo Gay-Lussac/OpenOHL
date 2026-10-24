@@ -279,3 +279,25 @@ metres further.
 
 On the real 25 km line (633 objects, 99.6 million points): an area query
 takes 0.3 ms; listing the 53 level-2 tiles with object and point counts 80 ms.
+
+## Inside the file
+
+The project file is one SQLite database: the objects of every project
+line, the operation log, the users and their edit rights, the revisions,
+branches, tags and reviews, the spatial index, the terrain surfaces, the
+point clouds, the backgrounds (orthophotos, DXF drawings) and the
+project's settings, each in tables of their own. Every table, its
+columns and how they fit together, with read-only `sqlite3` queries to
+look inside: [Data model › Project file
+tables](../development/data-model.md#project-file-tables-cratesohl-session).
+
+- **Saved as you go.** Every command is written when it is applied;
+  there is no Save. While a program has the project open, two files lie
+  next to it (`project.ohl-wal`, `project.ohl-shm`) holding the latest
+  changes: copy or send a project only when no program has it open.
+- **Newer files are refused.** A program refuses a project file of a
+  newer session schema than it knows, before changing anything in it.
+  Opening an older one upgrades it in place (session schema 6 since
+  2026-10-23); from then on older programs refuse it.
+- **Change it only through the programs.** A row changed by hand
+  bypasses the checks, the log and undo.

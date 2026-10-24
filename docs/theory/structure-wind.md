@@ -158,7 +158,7 @@ force, the far ones none.
 ## Where it applies
 
 - The finite-element check of a level 3 structure in the line
-  application (Checks › Structure usage, `ohl line`): the wind of the
+  application (Checks › Compute structure loads, its Usage page; `ohl line`): the wind of the
   load case across the line, the factors of the project line's section
   library; the faces are found once per model. The usage notes say what
   was applied: *member wind: drag factors from …: 12 member(s) by their

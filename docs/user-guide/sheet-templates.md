@@ -153,6 +153,11 @@ without):
 | `version` | {label}: {words} | `{label}`, `{words}` |
 | `background_drawing` | drawing {name} | `{name}` (the drawing's name) |
 | `orthophoto` | orthophoto {name} | `{name}` (the image layers) |
+| `elevation_string` | string {length} m | `{length}` (written at each elevation, not in the legend) |
+| `elevation_arm` | {height} m | `{height}` (the same) |
+| `elevation_dimension` | {length} m | `{length}` (the same) |
+| `stringing` | {circuit}: {tension} kN | `{circuit}`, `{tension}` (the `stringing` band row) |
+| `earth_wires` | earth wires | (the earth wires' name in the stringing band and table) |
 
 The panels' titles are `[layout] plan_title` and `profile_title`; the
 wires' words come from `[line_styles.kinds.*] label` and `[roles.*]
@@ -165,8 +170,8 @@ Kinds, all from what the drawing holds (no new engineering number):
 structures and every `every`), `span_length`, `structure_height`,
 `line_angle` (at the alignment's alignment points), `lowest_wire_height` (the
 solid case's lowest wire in each span), `ground_clearance` (only from a
-clearance check's results; empty otherwise, for now always empty in the
-app), `text` (a field of the user, per sheet), `stringing` (since
+clearance check's results; for now always empty: neither the app nor
+`ohl drawing` passes them yet), `text` (a field of the user, per sheet), `stringing` (since
 2026-10-23: one line per circuit of the route — its systems by name,
 the earth wires last — and on it each of the circuit's tension sections
 (between a section's two end structures, ticked on that line) with its
@@ -178,6 +183,12 @@ of a route; the stringing
 case from `[cases]` or the export window, none chosen: empty; its words
 `[legend.labels]` `stringing` and `earth_wires`). The export window and
 `--no-bands` switch them off.
+
+A `structures` row writes its `format` for each structure (default
+`"{name} {type}"`): `{name}`, `{type}` (its type and extension),
+`{type_id}`, `{extension}`, `{station}`, `{height}` (above its base); a
+line break (`"{name}\n{type}"`) makes two lines. What a structure does
+not have (an untyped one's type) is left out, the spaces closed up.
 
 ## Weather cases (`[cases]`)
 
@@ -199,12 +210,6 @@ the case drawn and the stringing case over these. Each wire is drawn in
 its circuit's case, the jumpers in their circuit's (that of the
 section at their first end). `ohl drawing` takes them among the cases
 given with `--case` (one missing is an error naming it).
-
-A `structures` row writes its `format` for each structure (default
-`"{name} {type}"`): `{name}`, `{type}` (its type and extension),
-`{type_id}`, `{extension}`, `{station}`, `{height}` (above its base); a
-line break (`"{name}\n{type}"`) makes two lines. What a structure does
-not have (an untyped one's type) is left out, the spaces closed up.
 
 ## The corridor's sides and the centreline
 
@@ -383,7 +388,6 @@ the lowest conductor have their own DXF layers (`OHL_TITLE`,
   of an open font, on a template's request) is planned.
 - No title block editor in the app: the file is the editor (Save as
   file…, edit, Load file…).
-- The key map has no background image (orthophoto).
 - No DXF 2000 with image references (PNG/JPEG logos and the plan's
   orthophoto in DXF).
 - The drawings' texts under the plan are not turned with the drawing.
