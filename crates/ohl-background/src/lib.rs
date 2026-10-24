@@ -503,13 +503,6 @@ impl Store {
             .ok_or_else(|| err("the image was not kept"))
     }
 
-    /// Removes image `id`.
-    pub fn delete_image(&self, id: i64) -> Result<(), BackgroundError> {
-        self.conn
-            .execute("DELETE FROM background_image WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
     /// Removes every image of layer `layer`.
     pub fn delete_image_layer(&self, layer: &str) -> Result<usize, BackgroundError> {
         Ok(self.conn.execute(

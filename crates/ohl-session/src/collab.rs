@@ -40,7 +40,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::spatial::Entry;
-use crate::versions::{Choices, MergeOutcome, RefKind};
+use crate::versions::{Choices, MergeOutcome};
 use crate::{Kind, Role, Session, SessionError, refused};
 
 /// Tables of grants and reviews.
@@ -690,13 +690,5 @@ impl Session {
         )?;
         tx.commit()?;
         Ok(outcome)
-    }
-
-    /// Whether `name` is a branch.
-    pub fn is_branch(&self, name: &str) -> Result<bool, SessionError> {
-        Ok(self
-            .refs()?
-            .iter()
-            .any(|r| r.name == name && r.kind == RefKind::Branch))
     }
 }

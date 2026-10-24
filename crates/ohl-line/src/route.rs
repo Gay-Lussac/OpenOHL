@@ -841,14 +841,6 @@ impl Line {
         (sections, jumpers)
     }
 
-    /// The alignments of route `id`, in the line's order.
-    pub fn route_alignments(&self, id: &str) -> Vec<AlignmentView> {
-        self.alignment_views()
-            .into_iter()
-            .filter(|a| a.route == id)
-            .collect()
-    }
-
     /// Reads older files into the current form.
     ///
     /// Version 2 and before: their routes (each its own alignment, with
