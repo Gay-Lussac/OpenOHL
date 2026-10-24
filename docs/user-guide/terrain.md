@@ -199,7 +199,8 @@ tension check (Checks › [Wire tensions…](desktop-app.md#wire-tensions)
 and `ohl tensions`): optional `[[tension_rule]]` tables, beside or
 instead of the clearance rules. A file without them reads as before;
 `ohl line` and the clearance windows ignore them. A preset declares the
-check with `checks = ["tension"]` (or holds tension rules).
+check with `checks = ["tension"]` (or holds tension rules); string
+rules: [below](#string-rules-string_rule).
 
 ```toml
 [[tension_rule]]
@@ -234,6 +235,59 @@ usage_pct, status, x, y, z`, the point the most tensioned support). Exit
 status 0: every span within its allowed tension, 1: some above, 2: an
 error (a rule file without tension rules too). The example's rule file
 (`examples/synthetic-line/tension-rules.ohlr`) uses **invented** factors.
+
+### String rules (`[[string_rule]]`)
+
+Since 2026-10-24 a rule file may hold **string rules** for the string
+check (Checks › [String checks…](desktop-app.md#string-checks) and `ohl
+strings`): optional `[[string_rule]]` tables. A file without them reads
+as before; the other checks ignore them. A preset declares the check with
+`checks = ["strings"]` (or holds string rules) — a design-code plugin's
+template for the values to respect.
+
+```toml
+[[string_rule]]
+name = "Suspension swing (invented 55°)"
+cases = ["high wind"]          # optional; none: every case
+strings = "suspension"         # "all" (default), "suspension" or "strain"
+voltages = [220.0]             # optional; none: every voltage (0: earth wires)
+load = true                    # the strings' own maximum load (default true)
+swing = true                   # the strings' own swing limits (default true)
+uplift = true                  # suspension strings going slack (default true)
+max_swing_across_deg = 55.0    # optional: the rule's own swing limits, degrees
+# max_swing_deg, max_swing_along_deg likewise
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | for the reports |
+| `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `strings` | which strings: `suspension` (not dead ends), `strain` (dead ends, as the solve treats them: flagged `strain`, or the string holding the clamp at a section's end), `all` |
+| `voltages` | the nominal voltages of their sections, kV; none: every voltage |
+| `load` | the string's axial force against **its own** `max_load` (the string's, else its library entry's) — a plain comparison; a string without one: not checked, counted in a note |
+| `swing` | its swing as solved against **its own** swing limits (`max_swing`, `max_swing_across`, `max_swing_along`), where it has them |
+| `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg` | the rule's own limits (above 0°, at most 180°): from straight down, across and along the line (either side), checked for every string the rule takes; each limit given (the string's and the rule's) is its own row |
+| `uplift` | a suspension string that **goes slack** (pushed while it takes tension only) or, one that may push (`compression` given), pushed beyond that limit — not the geometry: some strings hang upside down by design |
+
+No limit is built in: the strings' are yours, the rules' a design
+code's or yours (the examples' are invented).
+
+**Without the window:**
+
+```sh
+ohl strings examples/synthetic-line/synthetic-line.ohl.json \
+  --weather examples/synthetic-line/weather-cases.ohlwc \
+  --rules my-string-rules.ohlr --csv strings.csv
+```
+
+prints every limit of every string in each weather case of a rule —
+rule, case, string, check, value, limit, usage %, pass or FAIL —
+failures first, then the largest usage, and writes them as CSV with
+`--csv` (`rule, case, structure, string, kind, section, point, measure,
+limit_from, value, limit, unit, usage_pct, status, x, y, z`, the point
+the string's wire point). Exit status 0: every string within its
+limits, 1: some beyond, 2: an error (a rule file without string rules
+too).
 
 ## Vertical and radial clearances without the window (`ohl zones`)
 

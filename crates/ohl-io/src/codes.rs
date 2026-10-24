@@ -128,12 +128,17 @@ impl RulePresetChecked {
             return Err(bad("name", "empty".into()));
         }
         let rules = RuleSet::parse(&p.rules).map_err(|e| bad("rules", e))?;
-        // A preset of the vegetation check ([vegetation]) or of the wire
-        // tension check ([[tension_rule]]) may hold no clearance rule.
-        if rules.rules.is_empty() && rules.vegetation.is_none() && rules.tension_rules.is_empty() {
+        // A preset of the vegetation check ([vegetation]), of the wire
+        // tension check ([[tension_rule]]) or of the string check
+        // ([[string_rule]], 2026-10-24) may hold no clearance rule.
+        if rules.rules.is_empty()
+            && rules.vegetation.is_none()
+            && rules.tension_rules.is_empty()
+            && rules.string_rules.is_empty()
+        {
             return Err(bad(
                 "rules",
-                "no rule (and no [vegetation] or [[tension_rule]])".into(),
+                "no rule (and no [vegetation], [[tension_rule]] or [[string_rule]])".into(),
             ));
         }
         let weather = if p.weather_cases.trim().is_empty() {
@@ -808,9 +813,9 @@ mod tests {
 
     /// The Swiss LeV plugin's rule presets (when this checkout has it and
     /// it is built with the `rule-presets` export): read through the
-    /// interface and checked as rule files; the law's ground clearance of
-    /// a span line, 7.5 m + 0.01 m/kV: 11.3 m at 380 kV, 7.5 m for an earth
-    /// wire (0 kV).
+    /// interface and checked as rule files; their ground rules at least
+    /// the law's ground clearance of a span line, 7.5 m + 0.01 m/kV:
+    /// 11.3 m at 380 kV, 7.5 m for an earth wire (0 kV).
     #[test]
     fn lev_rule_presets_load() {
         let Some(dir) = lev_plugin() else {
@@ -823,17 +828,34 @@ mod tests {
         }
         let text = std::fs::read_to_string(dir.join("example-parameters.toml")).unwrap();
         let list = rule_presets(&host, &dir, &text).unwrap();
-        let ground = list
+        // The presets offered combine the law's with a utility's practice
+        // (the stricter governs, owner 2026-10-21): their ground rules are
+        // at least the law's for a span line.
+        let ground: Vec<&ohl_clearance::Rule> = list
             .iter()
-            .find(|p| p.name == "lev-ground-span-line")
-            .unwrap();
-        let r = &ground.rules.rules[0];
-        assert!((r.required(Some(380.0)).vertical.unwrap() - 11.3).abs() < 1e-9);
-        assert!((r.required(None).vertical.unwrap() - 7.5).abs() < 1e-9);
-        assert!(ground.weather.is_some());
-        // Without a parameter file it says what it needs.
-        let e = rule_presets(&host, &dir, "").unwrap_err();
-        assert!(e.contains("parameter file"), "{e}");
+            .flat_map(|p| &p.rules.rules)
+            .filter(|r| r.target == ohl_clearance::rules::Target::Ground)
+            .collect();
+        assert!(!ground.is_empty(), "no ground rule in the presets");
+        let most = |kv: Option<f64>| {
+            ground
+                .iter()
+                .filter_map(|r| r.required(kv).vertical)
+                .fold(0.0f64, f64::max)
+        };
+        assert!(most(Some(380.0)) >= 11.3 - 1e-9, "{}", most(Some(380.0)));
+        assert!(most(None) >= 7.5 - 1e-9, "{}", most(None));
+        assert!(list.iter().any(|p| p.weather.is_some()));
+        // Without a parameter file: its built-in values, said in each
+        // preset's description.
+        let bare = rule_presets(&host, &dir, "").unwrap();
+        assert!(!bare.is_empty());
+        assert!(
+            bare.iter()
+                .all(|p| p.description.contains("No parameter file chosen")),
+            "{:?}",
+            bare.iter().map(|p| &p.description).collect::<Vec<_>>()
+        );
     }
 
     /// The other codes' first wind cases, by hand from their examples.
@@ -1085,6 +1107,16 @@ mod tests {
         let iced = "format = \"ohl-weather-cases\"\nversion = 1\nname = \"W\"\n\n[[case]]\nname = \"iced\"\ntemperature = \"0 °C\"\nice_load = \"20 N/m\"\n";
         let only_tension = check_rule_presets("code", vec![preset("t", tension, iced)]).unwrap();
         assert_eq!(only_tension[0].rules.tension_rules.len(), 1);
+        // One of the string check alone too (2026-10-24).
+        let strings = "checks = [\"strings\"]\n[[string_rule]]\nname = \"Swing\"\n\
+                       strings = \"suspension\"\nmax_swing_across_deg = 55.0\n";
+        let only_strings = check_rule_presets("code", vec![preset("s", strings, "")]).unwrap();
+        assert_eq!(only_strings[0].rules.string_rules.len(), 1);
+        assert!(
+            only_strings[0]
+                .rules
+                .is_for(ohl_clearance::rules::PresetCheck::Strings)
+        );
         let e = check_rule_presets(
             "code",
             vec![preset("g", ground, ""), preset("g", ground, "")],

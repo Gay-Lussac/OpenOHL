@@ -30,14 +30,15 @@
 //! - A string carries no compression unless it allows some
 //!   ([`InsulatorString::compression`]): it then acts both ways, and the
 //!   solve flags it when the compression exceeds that limit.
-//! - A string may carry **limits nobody checks here** ([`StringLimits`]:
-//!   the tension it is rated for, `max_load`, and the swing angles it may
-//!   take, `max_swing_deg` from straight down in any direction,
+//! - A string may carry **limits** ([`StringLimits`]: the tension it is
+//!   rated for, `max_load`, and the swing angles it may take,
+//!   `max_swing_deg` from straight down in any direction,
 //!   `max_swing_across_deg` / `max_swing_along_deg` projected across /
-//!   along the line): absent, not given; given, OpenOHL keeps and shows
-//!   them but checks nothing — a plugin or a report compares them with the
-//!   solved forces and angles ([`crate::solve::StringState::limits`],
-//!   [`swing`]). A string naming an insulator of the library takes the
+//!   along the line): absent, not given; given, the solve passes them on
+//!   with the solved forces and angles
+//!   ([`crate::solve::StringState::limits`], [`swing`]) and the string
+//!   check (`ohl_clearance::strings`, 2026-10-24) compares them; the solve
+//!   itself does not use them. A string naming an insulator of the library takes the
 //!   assembly's limits where it gives none ([`crate::Line::resolve`]).
 //!
 //! Files written before (line file version 1) gave each string as one
@@ -198,8 +199,8 @@ pub struct InsulatorString {
     /// given one from its position.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strain: bool,
-    /// The tension it is rated for, N (not checked by OpenOHL;
-    /// [`StringLimits`]). None: not given.
+    /// The tension it is rated for, N ([`StringLimits`], checked by the
+    /// string check). None: not given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_load: Option<f64>,
     /// The swing it may take from straight down, any direction, degrees

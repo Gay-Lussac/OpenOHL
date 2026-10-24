@@ -21,6 +21,7 @@ mod project;
 mod safety_run;
 mod sagtension_job;
 mod sheet_run;
+mod strings_run;
 mod structure_app_run;
 mod structure_fe;
 mod surface;
@@ -116,6 +117,12 @@ enum Command {
     /// (factor × RTS), usage, pass or fail. Exit status 0: all within,
     /// 1: some above, 2: an error.
     Tensions(Box<tensions_run::TensionsArgs>),
+    /// The string check: every string in each weather case of the
+    /// `[[string_rule]]` tables of a rule file — its load against its own
+    /// maximum load, its swing against its own and the rule's limits, the
+    /// suspension strings' uplift (going slack). Exit status 0: all
+    /// within, 1: some beyond, 2: an error.
+    Strings(Box<strings_run::StringsArgs>),
     /// Galloping ellipses and blowout against the right of way.
     Clearance {
         #[command(subcommand)]
@@ -918,6 +925,14 @@ fn main() -> ExitCode {
         Some(Command::Line(args)) => line(&args, None),
         Some(Command::Zones(args)) => zones_run::command(&args),
         Some(Command::Tensions(args)) => match tensions_run::run(&args) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some(Command::Strings(args)) => match strings_run::run(&args) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::from(1),
             Err(e) => {

@@ -584,6 +584,17 @@ pub(super) fn menus(
             r.wire_tensions.show(&r.model);
             ui.close();
         }
+        if ui
+            .button("String checks…")
+            .on_hover_text(
+                "Every string as solved: its load and swing against its own limits and the \
+                 rules', and the suspension strings' uplift, per weather case",
+            )
+            .clicked()
+        {
+            r.string_checks.show(&r.model);
+            ui.close();
+        }
         // The checks of the check plugins in use, in their own submenus
         // (none without them).
         let checks: Vec<(Vec<String>, ohl_io::checks::PluginCheck)> = r
@@ -627,8 +638,6 @@ pub(super) fn menus(
             r.wirefit.open = true;
             ui.close();
         }
-        ui.separator();
-        ui.add_enabled(false, egui::Button::new("String swing (to come)"));
     });
     // A tick menu (the option below): ticking it keeps the menu open;
     // choosing a tool closes it.

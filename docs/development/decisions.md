@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**String checks (owner, 2026-10-24)**
+
+- Checks › String checks… and `ohl strings` (`ohl_clearance::strings`):
+  every string as solved against limits, by rules (`[[string_rule]]` in
+  a rule file); a design-code plugin may give the rules as a preset (its
+  template of the values to respect, `checks = ["strings"]`).
+- The maximum load is the string's own (owner: defined in the string),
+  a plain comparison with the solved axial force (owner: no factor). The
+  swing limits stay on the string too (owner) and a rule may give its
+  own: each limit given is checked, a row each.
+- Uplift is a suspension string **going slack** (owner: some suspension
+  strings hang upside down by design, so not the geometry); one given a
+  compression limit, pushed beyond it, is uplift too.
+- A rule takes strings by kind and by the voltage of their sections
+  (owner). The kind is the solve's: a dead end is a string flagged
+  strain, a lone string the solve treats as one, or the string holding
+  the clamp at a section's end (`StringState::strain`, new); the others
+  are suspension strings (a TAK's suspension string among them).
+- The menu's greyed "String swing (to come)" is replaced by the check.
+
 **Weather cases: no duplicates (owner, 2026-10-24)**
 
 - Criteria › Design code no longer puts in a case the project already

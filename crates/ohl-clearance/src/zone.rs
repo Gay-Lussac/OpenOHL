@@ -221,6 +221,7 @@ pub fn to_rule_set(
         vegetation: None,
         checks: Vec::new(),
         tension_rules: Vec::new(),
+        string_rules: Vec::new(),
     }
 }
 

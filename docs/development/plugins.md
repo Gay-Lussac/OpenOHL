@@ -294,7 +294,11 @@ before load unchanged and give none. What a plugin returns, per preset:
 A **preset of the wire tension check** holds only `[[tension_rule]]`
 tables (and `checks = ["tension"]`), each naming the weather cases it
 applies to, given in the preset's `weather-cases` (2026-10-22: accepted
-without any `[[rule]]`; hosts before refuse it).
+without any `[[rule]]`; hosts before refuse it). A **preset of the
+string check** likewise holds only `[[string_rule]]` tables (and
+`checks = ["strings"]`, 2026-10-24): the values a code asks the strings
+to respect (the rule's swing limits, the cases, the kinds and voltages);
+the strings' maximum load is their own.
 
 - `name`, `description` (the source of its values, shown in the
   dropdown's hover and the preview);
@@ -366,7 +370,7 @@ with its own cases) plus a `[vegetation]` table.
   classified by content as above):
 
   ```toml
-  checks = ["vertical", "radial", "vegetation", "tension"]
+  checks = ["vertical", "radial", "vegetation", "tension", "strings"]
   ```
 
   (`ohl_clearance::rules::PresetCheck`, `RuleSet::checks`,
