@@ -174,6 +174,18 @@ per case, the solution before drawn meanwhile (a drag started a full
 solve of the line per case and frame). A click picks in about 25 ms on
 the real line (the 3 s once measured were before the fix of 2026-10-22).
 
+A third round (2026-10-24): the jumpers' structures compared without
+their stick drawing (views only; it was most of an update with the
+jumpers' pull), the sections at each wire point indexed once per update,
+the line checked (`Line::validate`) with its structures indexed by id,
+the solved results walked once per case, the line hashed as JSON for the
+results' revision (4.9 → 2.5 ms after an edit; 67 ms only the first
+time, the library files), and the weather case tables of the Properties
+panel laying out only the rows in view (two hundred with both wind
+sides). A span edit on the real line stays about 79 ms (the solver's
+update of the case shown, 53–57 ms with the jumpers' pull, 11 ms with
+their estimate, is most of it).
+
 The comparison with a full solve shows two sections on a real line whose
 clamps differ by up to 0.17 m between the case brought up to date edit by
 edit and a full solve (−20 °C, taut jumpers with their pull); the same

@@ -3146,6 +3146,13 @@ impl Line {
 
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
+        // The structures by id (the first of an id, as `Line::structure`
+        // finds it): looked up for every section point.
+        let mut by_id: std::collections::HashMap<&str, &Structure> =
+            std::collections::HashMap::with_capacity(self.structures.len());
+        for s in &self.structures {
+            by_id.entry(s.id.as_str()).or_insert(s);
+        }
         let invalid = |m: String| Err(LineError::Invalid(m));
         self.bimetallic.validate().map_err(LineError::Invalid)?;
         ohl_core::files::check_header(
@@ -3266,7 +3273,7 @@ impl Line {
                 return invalid(format!("section {}: needs at least two points", sec.id));
             }
             for p in &sec.points {
-                let Some(structure) = self.structure(&p.structure) else {
+                let Some(structure) = by_id.get(p.structure.as_str()).copied() else {
                     return invalid(format!(
                         "section {}: unknown structure {}",
                         sec.id, p.structure
@@ -3274,7 +3281,7 @@ impl Line {
                 };
                 // Typed structures get their wire points from the library
                 // (`resolve`), which validates again afterwards.
-                if structure.structure_type.is_none() && self.wire_point(p).is_none() {
+                if structure.structure_type.is_none() && structure.wire_at_set(p.set).is_none() {
                     return invalid(format!(
                         "section {}: no wire point with set {} on structure {}",
                         sec.id, p.set, p.structure
@@ -3378,10 +3385,10 @@ impl Line {
                     }
                     JumperEnd::Wire(p) => p,
                 };
-                let Some(structure) = self.structure(&end.structure) else {
+                let Some(structure) = by_id.get(end.structure.as_str()).copied() else {
                     return bad(&format!("unknown structure {}", end.structure));
                 };
-                if structure.structure_type.is_none() && self.wire_point(end).is_none() {
+                if structure.structure_type.is_none() && structure.wire_at_set(end.set).is_none() {
                     return bad(&format!(
                         "no wire point with set {} on structure {}",
                         end.set, end.structure

@@ -981,7 +981,40 @@ fn edit_benchmark() {
     let t = Instant::now();
     m.line_version += 1;
     let _ = m.revision();
+    println!("the results' revision, first: {:.1?}", t.elapsed());
+    let t = Instant::now();
+    m.line_version += 1;
+    let _ = m.revision();
     println!("the results' revision after an edit: {:.1?}", t.elapsed());
+    {
+        let stored = m.stored_line().unwrap().clone();
+        let t = Instant::now();
+        let _ = crate::revision::hash_debug(&stored);
+        let a = t.elapsed();
+        let t = Instant::now();
+        let _ = crate::revision::hash_debug(&m.library);
+        let b = t.elapsed();
+        let t = Instant::now();
+        let _ = stored.clone();
+        let c = t.elapsed();
+        struct W(std::collections::hash_map::DefaultHasher);
+        impl std::io::Write for W {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                std::hash::Hasher::write(&mut self.0, b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let t = Instant::now();
+        let mut w = W(Default::default());
+        serde_json::to_writer(&mut w, &stored).unwrap();
+        let d = t.elapsed();
+        println!(
+            "  of it: line written out {a:.1?}, wire library {b:.1?}, line copied {c:.1?}; line as JSON {d:.1?}"
+        );
+    }
     // The case brought up to date edit by edit against a full solve of
     // the line as it is now: the largest difference of a clamp and of a
     // jumper point, m.
