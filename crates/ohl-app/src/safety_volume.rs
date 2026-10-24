@@ -191,12 +191,7 @@ pub fn scope_items(line: &ohl_line::Line, scope: Scope) -> Vec<crate::tick_list:
                 .collect()
         }
         Scope::Spans => {
-            let at = |id: &str| {
-                line.structures
-                    .iter()
-                    .find(|x| x.id == id)
-                    .map(|x| [x.position[0], x.position[1]])
-            };
+            let at = |id: &str| line.structure(id).map(|x| [x.position[0], x.position[1]]);
             let mut out = Vec::new();
             for x in &line.sections {
                 for (k, w) in x.points.windows(2).enumerate() {

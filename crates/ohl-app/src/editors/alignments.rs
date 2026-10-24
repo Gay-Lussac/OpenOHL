@@ -51,7 +51,7 @@ pub fn alignments_command(
         .is_some_and(|k| k < kept.len());
     let reordered = kept != before || inserted;
     for (k, a) in alignments.iter().enumerate() {
-        let same = stored.alignments.iter().find(|x| x.id == a.id);
+        let same = stored.alignment_by_id(&a.id);
         if same == Some(a) && !reordered {
             continue;
         }

@@ -798,7 +798,8 @@ impl Structure {
     }
 }
 
-fn distance(a: Point, b: Point) -> f64 {
+/// Distance between two points in space.
+pub(crate) fn distance(a: Point, b: Point) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 

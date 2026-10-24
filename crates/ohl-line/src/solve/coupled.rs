@@ -314,7 +314,7 @@ pub(crate) fn jumper_pull_with(
     used
 }
 
-pub(super) fn cable_of<'a>(
+pub(crate) fn cable_of<'a>(
     library: &'a ohl_cables::Library,
     section: &Section,
 ) -> Result<&'a Cable, LineError> {
