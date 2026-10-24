@@ -10,6 +10,28 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**Weather cases: no duplicates (owner, 2026-10-24)**
+
+- Criteria › Design code no longer puts in a case the project already
+  has: its cases are matched to the project's as the clearance presets'
+  are (by weather, then by name; `preset_cases::Plan`), the load cases
+  naming the project's case; only the others are added, after the
+  project's (the code's file holds both; the project's own file is left
+  as it is). Before, the code's file replaced the model's cases.
+- **Criteria › Merge duplicate weather cases…** (the roadmap item of
+  2026-10-21, owner: go ahead): the cases of the same physics in groups,
+  each merged into the case kept; one command (`Command::Batch`: the
+  library files through `Session::library_puts`, checked as one put
+  is, and the line's settings), undone as one. Renamed where a file
+  names weather cases (keys `cases`, `case_pairs`, `weather`,
+  `creep_case`, `weather_cases`, a `[cases]` table), each name once in
+  a list; patterns left as written. Saved check reports are not
+  rewritten: they are records of a run as it was made.
+- Roadmap: U3 (sheet breaks at structures off the alignment) and U9
+  (project lines as full copies) taken off — built (owner); what U3
+  still held, background maps imported into the project, is O16. U11
+  kept, said in the jumpers' theory (owner: unless a fix is fast).
+
 **The distance between conductors under unequal wind (owner, 2026-10-24)**
 
 - A second check in the same plugin submenu as the distance between

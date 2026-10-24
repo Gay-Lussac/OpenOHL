@@ -213,9 +213,17 @@ Install a code plugin or add its folder in Plugins › Plugin manager
 
 The two files (named as given, default the plugin's name) go into the
 project's libraries — kept in the project file like any library file —
-or next to a line file; a file of that name is replaced. The model then
-uses them: the weather cases are solved, and Structure loads uses the
-load cases. The code's clearance presets go into the project's rule and
+or next to a line file; a file of that name is replaced. With a weather
+case file already in use, the code's cases are matched to yours by
+weather first (2026-10-24, the owner's request: no case created twice):
+one with the same weather as one of yours (temperature, ice, wind and
+what else a calculation reads — not the name) **is yours**, and the
+code's load cases name it; only the others are added, after your cases,
+under their names (one taken by a case of other values: `"<name>
+(preset)"`). The window says how many were already yours. Your own case
+file is left as it is: the code's file holds your cases and the new
+ones. The model then uses them: the weather cases are solved, and
+Structure loads uses the load cases. The code's clearance presets go into the project's rule and
 weather case files (for the clearance windows' Load preset…; its rule
 presets are read when the Clearances tab's Load preset… opens), its wind
 factors for structures into the project line's cross-section library. The

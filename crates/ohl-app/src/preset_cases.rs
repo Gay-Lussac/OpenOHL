@@ -328,6 +328,55 @@ impl Plan {
         Ok(doc.to_string())
     }
 
+    /// A load case file's text with each case's `weather` naming the
+    /// project's case; the rest as written.
+    pub fn load_cases_text(&self, text: &str) -> Result<String, String> {
+        let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+        if let Some(list) = doc.get_mut("case").and_then(Item::as_array_of_tables_mut) {
+            for t in list.iter_mut() {
+                let name = t.get("weather").and_then(Item::as_str).map(str::to_owned);
+                let to = self
+                    .cases
+                    .iter()
+                    .find(|m| Some(&m.preset) == name.as_ref())
+                    .map(|m| m.target.name().to_owned());
+                if let (Some(name), Some(to)) = (name, to)
+                    && name != to
+                {
+                    t["weather"] = toml_edit::value(to);
+                }
+            }
+        }
+        Ok(doc.to_string())
+    }
+
+    /// The project's weather case file `project` with the cases to create
+    /// of `preset` (a weather case file's text) added at its end, under
+    /// their project names; the project's cases, comments and order kept.
+    pub fn add_to_project(&self, project: &str, preset: &str) -> Result<String, String> {
+        let created: DocumentMut = self
+            .weather_text(preset)?
+            .parse()
+            .map_err(|e| format!("{e}"))?;
+        project
+            .parse::<DocumentMut>()
+            .map_err(|e| format!("the project's weather case file: {e}"))?;
+        let mut out = project.to_owned();
+        // Appended as text: the project's file as written, the new cases
+        // after its own.
+        if let Some(new) = created.get("case").and_then(Item::as_array_of_tables) {
+            for t in new.iter() {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                let mut t = t.clone();
+                t.decor_mut().clear();
+                out.push_str(&format!("\n[[case]]\n{t}"));
+            }
+        }
+        Ok(out)
+    }
+
     /// The preset as applied to the project: its rules naming the
     /// project's cases, its weather cases only those to create (under
     /// their project names).
@@ -757,6 +806,45 @@ case_pairs = [["ice by load", "Utility*"]]
     }
 
     /// Nothing the project has: the preset as it is.
+    /// A design code's cases into the project's file: only those to
+    /// create added after the project's (its text as written); the load
+    /// cases naming the project's case of the same physics.
+    #[test]
+    fn code_cases_join_the_project_and_load_cases_follow() {
+        let p = plan();
+        let merged = p.add_to_project(PROJECT, PRESET).unwrap();
+        assert!(merged.starts_with(PROJECT), "{merged}");
+        let names: Vec<String> = WeatherCases::parse(&merged)
+            .unwrap()
+            .cases
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "80 °C",
+                "max temperature",
+                "ice",
+                "cold",
+                "cold (preset)",
+                "ice by load"
+            ]
+        );
+        let loads = "format = \"ohl-load-cases\"\nversion = 1\n# kept\n\
+                     [[case]]\nname = \"hot\"\nweather = \"Utility vegetation 80 °C\"\n\
+                     [[case]]\nname = \"c\"\nweather = \"cold\"\n";
+        let t = p.load_cases_text(loads).unwrap();
+        assert!(t.contains("# kept"), "{t}");
+        let w: Vec<String> = ohl_loads::LoadCases::parse(&t)
+            .unwrap()
+            .cases
+            .into_iter()
+            .map(|c| c.weather)
+            .collect();
+        assert_eq!(w, ["80 °C", "cold (preset)"]);
+    }
+
     #[test]
     fn nothing_to_match_changes_nothing() {
         let set = WeatherCases::parse(PRESET).unwrap();

@@ -364,6 +364,18 @@ pub(super) fn menus(
             out.push(Command::Table(TableKind::WeatherCases));
             ui.close();
         }
+        if ui
+            .button("Merge duplicate weather cases…")
+            .on_hover_text(
+                "Weather cases with the same weather under other names merged into one, \
+                 everything naming them following",
+            )
+            .clicked()
+        {
+            r.merge_cases.open = true;
+            r.merge_cases.groups = None;
+            ui.close();
+        }
         item(ui, Command::Library(LibraryKind::WeatherCases), out);
         item(ui, Command::Library(LibraryKind::LoadCases), out);
         if ui

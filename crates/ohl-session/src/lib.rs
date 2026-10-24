@@ -1622,6 +1622,42 @@ impl Session {
         Ok(())
     }
 
+    /// The puts of library files changed by `user` (kind, name, text),
+    /// for a command of several changes (one log entry, undone as one):
+    /// checked as [`Session::put_library_file`] checks one (the role, the
+    /// "library" edit grant, the names); files unchanged left out.
+    pub fn library_puts(
+        &self,
+        user: &str,
+        changes: &[(String, String, String)],
+    ) -> Result<Vec<Command>, SessionError> {
+        self.require(user, Role::Designer)?;
+        self.check_library_edit(user)?;
+        let mut out = Vec::new();
+        for (kind, name, text) in changes {
+            if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
+                return Err(refused(format!(
+                    "library file \"{name}\" of \"{kind}\": bad name"
+                )));
+            }
+            let id = library_id(kind, name);
+            let value = library_value(kind, name, text);
+            if self
+                .objects
+                .get(&(Kind::Library, id.clone()))
+                .is_none_or(|o| *o.value != value)
+            {
+                out.push(Command::Put {
+                    kind: Kind::Library,
+                    id,
+                    value,
+                    ord: None,
+                });
+            }
+        }
+        Ok(out)
+    }
+
     /// Keeps library files with the current project line as one log entry
     /// of kind `library` — what a program does on its own (files next to
     /// the project copied in when it opens, an older form converted):

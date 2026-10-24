@@ -190,8 +190,9 @@ The comparison with a full solve shows two sections on a real line whose
 clamps differ by up to 0.17 m between the case brought up to date edit by
 edit and a full solve (−20 °C, taut jumpers with their pull); the same
 without the kept jumper solutions, so it comes from the pull's
-iteration (different starting points), not from the speed work — on the
-roadmap to look into.
+iteration (different starting points), not from the speed work — kept as
+it is for now (owner, 2026-10-24: unless a fix is fast), said in the
+[jumpers' theory](../theory/jumpers.md#after-an-edit); on the roadmap (U11).
 
 ## Time budgets and exit clauses
 
