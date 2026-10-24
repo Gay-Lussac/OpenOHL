@@ -449,9 +449,10 @@ pub(crate) fn stringing_table(
     let pen = t.pen(Layer::Stringing, Pen::new(Color::BLACK, 0.25));
     let h = spec.row_height.0;
     let size = spec.size.0;
-    let mut rows: Vec<[String; 5]> = Vec::new();
+    let mut rows: Vec<[String; 6]> = Vec::new();
     for st in d.stringing.iter().filter(|st| st.to > s0 && st.from < s1) {
-        for (circuit, lo, hi) in &st.tensions {
+        // One row per phase of each circuit (the earth wires last).
+        for (circuit, phase, lo, hi) in &st.phases {
             let name = match circuit {
                 Some(c) => c.clone(),
                 None => t.legend.label("earth_wires", &[]),
@@ -462,6 +463,7 @@ pub(crate) fn stringing_table(
                 name,
                 tension_text(*lo, *hi),
                 st.case.clone(),
+                phase.clone(),
             ]);
         }
     }
@@ -482,7 +484,7 @@ pub(crate) fn stringing_table(
     let shown = rows.len() + usize::from(left_out > 0);
     let r = [r[0], r[1], r[2], h * (shown as f64 + 1.0)];
     items.push(rect_path(Layer::Stringing, r, pen.clone()));
-    let get = |row: &[String; 5], n: &str, f: &str| match crate::template::STRINGING_FIELDS
+    let get = |row: &[String; 6], n: &str, f: &str| match crate::template::STRINGING_FIELDS
         .iter()
         .position(|k| *k == n)
     {
@@ -559,6 +561,24 @@ pub(crate) fn stringing_table(
 pub(crate) fn stringing_table_height(t: &SheetTemplate) -> f64 {
     let st = &t.stringing_table;
     st.row_height.0 * (st.rows.max(1) as f64 + 1.0)
+}
+
+/// The tension of `circuit` in tension section `st` for the band row: per
+/// phase (`L1 36.6, L2 37.2–37.4, L3 38.4`) where its wires have phase
+/// labels, else its range `lo`–`hi` ([`tension_text`]).
+fn phases_text(st: &crate::Stringing, circuit: &Option<String>, lo: f64, hi: f64) -> String {
+    let of: Vec<&(Option<String>, String, f64, f64)> = st
+        .phases
+        .iter()
+        .filter(|p| &p.0 == circuit && !p.1.is_empty())
+        .collect();
+    if of.is_empty() {
+        return tension_text(lo, hi);
+    }
+    of.iter()
+        .map(|p| format!("{} {}", p.1, tension_text(p.2, p.3)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A tension range `lo`–`hi`, N, as the band and the table write it: kN
@@ -1396,7 +1416,7 @@ pub(crate) fn bands(
                             Some(c) => c.clone(),
                             None => t.legend.label("earth_wires", &[]),
                         };
-                        let value = tension_text(*lo, *hi);
+                        let value = phases_text(st, circuit, *lo, *hi);
                         items.push(Item::Text(Text {
                             layer: Layer::Bands,
                             at: [f.x(0.5 * (a + b2)), 0.5 * (y0 + y1) + 0.36 * text_size],
@@ -1408,6 +1428,40 @@ pub(crate) fn bands(
                             bold: false,
                             color,
                         }));
+                    }
+                }
+            }
+            BandKind::Sag => {
+                // One line per circuit (the order of the stringing row);
+                // on it each span's sag at its middle.
+                let circuits = sag_circuits(d);
+                let n = circuits.len().max(1) as f64;
+                let step = h / n;
+                let text_size = size.min(step / 1.15);
+                let dec = b.decimals.unwrap_or(2);
+                for sp in d.sags.iter().filter(|sp| sp.to > f.s0 && sp.from < f.s1) {
+                    let at = 0.5 * (sp.from + sp.to);
+                    if !within(at) {
+                        continue;
+                    }
+                    for (circuit, sag, _) in &sp.sags {
+                        let Some(k) = circuits.iter().position(|c| c == circuit) else {
+                            continue;
+                        };
+                        let y0 = y + k as f64 * step;
+                        items.push(Item::Text(Text {
+                            layer: Layer::Bands,
+                            at: [f.x(at), y0 + 0.5 * step + 0.36 * text_size],
+                            text: format!("{sag:.dec$}"),
+                            size: text_size,
+                            anchor: Anchor::Middle,
+                            bold: false,
+                            color,
+                        }));
+                    }
+                    let x = f.x(sp.from);
+                    if within(sp.from) {
+                        items.push(line(Layer::Bands, [x, y], [x, y + h], tick.clone()));
                     }
                 }
             }
@@ -1483,6 +1537,18 @@ pub(crate) fn bands_height(t: &SheetTemplate, o: &Options, d: &RouteDrawing) -> 
 
 /// The circuits of the route's stringing tensions, one band line each:
 /// the systems by name, the earth wires (none) last.
+/// The circuits of the route's sags, by name, the earth wires last.
+fn sag_circuits(d: &RouteDrawing) -> Vec<Option<String>> {
+    let mut v: Vec<Option<String>> = d
+        .sags
+        .iter()
+        .flat_map(|s| s.sags.iter().map(|t| t.0.clone()))
+        .collect();
+    v.sort_by(|a, b| (a.is_none(), a).cmp(&(b.is_none(), b)));
+    v.dedup();
+    v
+}
+
 fn stringing_circuits(d: &RouteDrawing) -> Vec<Option<String>> {
     let mut v: Vec<Option<String>> = d
         .stringing
@@ -1503,10 +1569,11 @@ pub(crate) fn band_height(
     b: &crate::template::BandSpec,
     d: &RouteDrawing,
 ) -> f64 {
-    if b.kind != BandKind::Stringing {
-        return b.height.0;
-    }
-    let lines = stringing_circuits(d).len() as f64;
+    let lines = match b.kind {
+        BandKind::Stringing => stringing_circuits(d).len() as f64,
+        BandKind::Sag => sag_circuits(d).len() as f64,
+        _ => return b.height.0,
+    };
     let size = t.text.size.0 * 0.8;
     b.height.0.max(lines * size * 1.25 + 1.5)
 }

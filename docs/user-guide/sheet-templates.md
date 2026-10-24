@@ -72,7 +72,8 @@ built-in look).
 | `[title_block]` | `corner` (`bottom_right`, `bottom_left`), `width` (`"auto"`: across the frame), `columns` (a length, `"*"` the room left, `"logos"` the export's logos), `rows`, `line`, `grid` | a grid in a corner |
 | `[[title_block.cell]]` | `at = [row, column]`, `span`, `text`, `size`, `bold`, `align` (`left`, `centre`, `right`), `image` (an image's name, or `"{logos}"`) | its cells |
 | `[revisions]` | `place` (`"above_title_block"`, `"off"`), `rows`, `row_height`, `size`, `columns = [{ title, width, value }]` | the last revisions, newest at the top |
-| `[stringing_table]` | `place` (`"bottom"`: in the bottom row beside the title block, after the key map; `"above_title_block"`; `"off"`, the default), `rows` (8; the room kept on every sheet), `row_height`, `size`, `columns = [{ title, width, value }]` | the tension sections on the sheet, one row per section and circuit (the earth wires last), with their stringing tension; more rows than `rows`: the last says how many are left out, with a warning |
+| `[sag_labels]` | `show` (default off), `circuits` (by name, `earth_wires`' word for the earth wires; default every one), `label` (`{sag}` m with two decimals, `{circuit}`; default `f = {sag} m`), `size`, `gap` (under the wire, default 1.5 mm) | the sag written in each span of the profile under each circuit's lowest wire at mid-span (in its drawn case); a label that would touch another goes under it |
+| `[stringing_table]` | `place` (`"bottom"`: in the bottom row beside the title block, after the key map; `"above_title_block"`; `"off"`, the default), `rows` (8; the room kept on every sheet), `row_height`, `size`, `columns = [{ title, width, value }]` | the tension sections on the sheet, one row per section, circuit and phase (the earth wires last; field `{st.phase}`, since 2026-10-24), with their stringing tension; more rows than `rows`: the last says how many are left out, with a warning |
 | `[[note]]` | `at = [x, y]` (negative: from the right / bottom), `width`, `size`, `bold`, `text` | free texts |
 | `[[field]]` | `key`, `label`, `default`, `required`, `per_sheet` | values the user gives |
 | `[if_empty]` | `height_datum = "…"`, any field, `"*"` (every other) | what a field that comes out empty is written as |
@@ -176,12 +177,18 @@ clearance check's results; for now always empty: neither the app nor
 the earth wires last — and on it each of the circuit's tension sections
 (between a section's two end structures, ticked on that line) with its
 horizontal tension in the stringing case, kN per subconductor, the
-lowest and highest of its spans as a range, `380 kV …: 36.6–38.4 kN`;
+lowest and highest of its spans as a range, per phase where the wires
+have phase labels (since 2026-10-24), `380 kV …: L1 36.6–36.7, L2 38.4,
+L3 36.7–36.8 kN`;
 the row is at least as tall as its lines need, whatever the number of
 circuits (the template's `height` its minimum), the same on every sheet
 of a route; the stringing
 case from `[cases]` or the export window, none chosen: empty; its words
-`[legend.labels]` `stringing` and `earth_wires`). The export window and
+`[legend.labels]` `stringing` and `earth_wires`), `sag` (since
+2026-10-24: one line per circuit in the stringing row's order, the earth
+wires last, and on it each span's sag, m — the largest of the circuit's
+wires in the span, in the case each circuit is drawn in; `decimals`,
+default 2; as tall as its lines need). The export window and
 `--no-bands` switch them off.
 
 A `structures` row writes its `format` for each structure (default

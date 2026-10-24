@@ -757,8 +757,26 @@ pub struct Stringing {
     /// lowest and highest horizontal tension of its wires' spans, N per
     /// subconductor.
     pub tensions: Vec<(Option<String>, f64, f64)>,
+    /// The same per phase of each circuit (its phase label; the earth
+    /// wires': theirs, maybe empty): (circuit, phase, lowest N, highest
+    /// N), by circuit as `tensions`, then by phase.
+    pub phases: Vec<(Option<String>, String, f64, f64)>,
     /// The weather case.
     pub case: String,
+}
+
+/// The sag of one span along a route: per circuit (its system's name;
+/// `None`: the earth wires) the largest sag of its wires in the span and
+/// where its lowest wire is at mid-span, in the cases the wires are drawn.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SpanSag {
+    /// Where the span starts and ends, stations, m.
+    pub from: f64,
+    /// Its end.
+    pub to: f64,
+    /// Per circuit: the largest sag, m, and the lowest mid-span point of
+    /// its wires (station, z), m.
+    pub sags: Vec<(Option<String>, f64, [f64; 2])>,
 }
 
 /// Drawing data of one route.
@@ -803,6 +821,8 @@ pub struct RouteDrawing {
     /// The stringing tension of each tension section along the route
     /// ([`RouteDrawing::set_stringing`]), by station.
     pub stringing: Vec<Stringing>,
+    /// The sag of each span, per circuit ([`RouteDrawing::set_sags`]).
+    pub sags: Vec<SpanSag>,
     /// The project's drawings near the route, straightened along it
     /// ([`RouteDrawing::add_background_drawing`]): drawn under the plan
     /// when the options ask ([`Options::plan_drawings`]).
@@ -1127,6 +1147,7 @@ pub fn build(
         corridor_ground,
         lidar: Vec::new(),
         stringing: Vec::new(),
+        sags: Vec::new(),
         background: Arc::default(),
         key_background: Arc::default(),
         photo: None,
@@ -1282,6 +1303,77 @@ impl RouteDrawing {
         d
     }
 
+    /// Gives it the sag of each span of `line` along the route, from its
+    /// sections `shapes` (in the cases they are drawn in): per span
+    /// between two structures of the route and circuit (the earth wires
+    /// apart), the largest sag of the circuit's wires there
+    /// ([`ohl_line::solve::SpanShape::sag`]) and the lowest of their
+    /// mid-span points. Spans whose ends are not both on the route are
+    /// left out.
+    pub fn set_sags(&mut self, line: &Line, shapes: &[SectionShape]) {
+        let station: std::collections::HashMap<&str, f64> = self
+            .structures
+            .iter()
+            .map(|m| (m.id.as_str(), m.station))
+            .collect();
+        let sections: std::collections::HashMap<&str, &ohl_line::Section> =
+            line.sections.iter().map(|s| (s.id.as_str(), s)).collect();
+        let mut out: Vec<SpanSag> = Vec::new();
+        for shape in shapes {
+            let Some(section) = sections.get(shape.section.as_str()) else {
+                continue;
+            };
+            for (k, span) in shape.spans.iter().enumerate() {
+                let (Some(a), Some(b)) = (section.points.get(k), section.points.get(k + 1)) else {
+                    continue;
+                };
+                let (Some(&sa), Some(&sb)) = (
+                    station.get(a.structure.as_str()),
+                    station.get(b.structure.as_str()),
+                ) else {
+                    continue;
+                };
+                let (from, to) = (sa.min(sb), sa.max(sb));
+                if to - from < 1e-6 || !span.sag.is_finite() {
+                    continue;
+                }
+                let mid = [0.5 * (from + to), span.mid_point[2]];
+                let k = match out
+                    .iter()
+                    .position(|s| (s.from - from).abs() < 1e-6 && (s.to - to).abs() < 1e-6)
+                {
+                    Some(k) => k,
+                    None => {
+                        out.push(SpanSag {
+                            from,
+                            to,
+                            sags: Vec::new(),
+                        });
+                        out.len() - 1
+                    }
+                };
+                let circuit = section.system.clone();
+                let sags = &mut out[k].sags;
+                match sags.iter_mut().find(|x| x.0 == circuit) {
+                    Some(x) => {
+                        x.1 = x.1.max(span.sag);
+                        if mid[1] < x.2[1] {
+                            x.2 = mid;
+                        }
+                    }
+                    None => sags.push((circuit, span.sag, mid)),
+                }
+            }
+        }
+        for s in &mut out {
+            // The circuits by name, the earth wires last.
+            s.sags
+                .sort_by(|a, b| (a.0.is_none(), &a.0).cmp(&(b.0.is_none(), &b.0)));
+        }
+        out.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
+        self.sags = out;
+    }
+
     /// Gives it the stringing tension of each tension section of `line`
     /// along the route, from its sections `shapes` solved in weather case
     /// `case` (the stringing case): per stretch between a section's end
@@ -1334,11 +1426,21 @@ impl RouteDrawing {
                         from_structure: from_structure.clone(),
                         to_structure: to_structure.clone(),
                         tensions: Vec::new(),
+                        phases: Vec::new(),
                         case: case.to_owned(),
                     });
                     out.len() - 1
                 }
             };
+            let phase = section.phase_label.trim().to_owned();
+            let p = &mut out[k].phases;
+            match p.iter_mut().find(|x| x.0 == circuit && x.1 == phase) {
+                Some(x) => {
+                    x.2 = x.2.min(lo);
+                    x.3 = x.3.max(hi);
+                }
+                None => p.push((circuit.clone(), phase, lo, hi)),
+            }
             let t = &mut out[k].tensions;
             match t.iter_mut().find(|x| x.0 == circuit) {
                 Some(x) => {
@@ -1349,9 +1451,11 @@ impl RouteDrawing {
             }
         }
         for s in &mut out {
-            // The circuits by name, the earth wires last.
+            // The circuits by name, the earth wires last; then the phases.
             s.tensions
                 .sort_by(|a, b| (a.0.is_none(), &a.0).cmp(&(b.0.is_none(), &b.0)));
+            s.phases
+                .sort_by(|a, b| (a.0.is_none(), &a.0, &a.1).cmp(&(b.0.is_none(), &b.0, &b.1)));
         }
         out.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
         self.stringing = out;
@@ -2281,6 +2385,60 @@ pub(crate) mod tests {
         assert_eq!(CasesSpec::pick("80 °C", &cases), None);
     }
 
+    /// The sag of each span per circuit: the largest of its wires'
+    /// (the solver's), written by a `sag` band row and, with
+    /// `[sag_labels]`, under each circuit's lowest wire at mid-span.
+    #[test]
+    fn the_sags_are_given_per_span_and_circuit() {
+        let (line, shapes, ..) = solved();
+        let mut d = main_route(&Options::default());
+        d.set_sags(&line, &shapes);
+        assert!(!d.sags.is_empty());
+        for sp in &d.sags {
+            assert!(sp.to > sp.from);
+            for (circuit, sag, mid) in &sp.sags {
+                // One of the circuit's spans' own sags (the largest there).
+                let of_circuit = shapes
+                    .iter()
+                    .filter(|s| {
+                        line.sections
+                            .iter()
+                            .find(|x| x.id == s.section)
+                            .is_some_and(|x| &x.system == circuit)
+                    })
+                    .flat_map(|s| &s.spans)
+                    .any(|x| x.sag == *sag);
+                assert!(*sag > 0.0 && of_circuit, "{sp:?}");
+                assert!((mid[0] - 0.5 * (sp.from + sp.to)).abs() < 1e-9);
+            }
+        }
+        let first = d.sags[0].sags[0].1;
+        let mut t = SheetTemplate::builtin();
+        t.bands.push(
+            toml::from_str("kind = \"sag\"\nheight = \"8 mm\"\nlabel = \"Sag (m)\"").unwrap(),
+        );
+        t.sag_labels = toml::from_str("show = true\nlabel = \"f = {sag} m\"").unwrap();
+        let o = Options {
+            template: Arc::new(t),
+            ..Options::default()
+        };
+        let svg: String = sheets(&d, &o, &page_format("A1").unwrap())
+            .iter()
+            .map(Sheet::svg)
+            .collect();
+        assert!(
+            svg.contains(&format!(">{first:.2}<")),
+            "the band row's value"
+        );
+        assert!(svg.contains(&format!(">f = {first:.2} m<")), "the label");
+        // Not asked for: neither.
+        let plain: String = sheets(&d, &Options::default(), &page_format("A1").unwrap())
+            .iter()
+            .map(Sheet::svg)
+            .collect();
+        assert!(!plain.contains(">f = "));
+    }
+
     /// The stringing table: one row per tension section on the sheet and
     /// circuit, from its first structure along the route to its last,
     /// with the tension in kN; in the bottom row or above the title block;
@@ -2295,7 +2453,7 @@ pub(crate) mod tests {
             assert!(at(&s.from_structure) < at(&s.to_structure), "{s:?}");
         }
         let first = d.stringing[0].clone();
-        let rows: usize = d.stringing.iter().map(|s| s.tensions.len()).sum();
+        let rows: usize = d.stringing.iter().map(|s| s.phases.len()).sum();
         let table = |place: &str, n: usize| {
             let mut t = SheetTemplate::builtin();
             t.stringing_table = toml::from_str(&format!(

@@ -1198,6 +1198,22 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
     {
         out.extend(b.sections.iter().map(|s| s.id.clone()));
     }
+    // The routes give each section the side the wind comes from (the
+    // line's direction where it is): the sections whose side changed.
+    if changed
+        .iter()
+        .any(|(k, _)| matches!(k, Kind::Route | Kind::Alignment | Kind::AlignmentPoint))
+        && (a.routes != b.routes
+            || a.alignments != b.alignments
+            || a.alignment_points != b.alignment_points)
+    {
+        let before = ohl_line::solve::sections_against_the_line(a);
+        for (id, now) in ohl_line::solve::sections_against_the_line(b) {
+            if before.get(&id) != Some(&now) {
+                out.insert(id);
+            }
+        }
+    }
     for line in lines {
         for (kind, id) in changed {
             match kind {

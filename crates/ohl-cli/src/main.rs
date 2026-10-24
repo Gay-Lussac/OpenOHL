@@ -2443,6 +2443,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 if let Some(k) = k_string {
                     d.set_stringing(&line, &solved_cases[k].1, &solved_cases[k].0.name);
                 }
+                // The sags of the wires as drawn (each in its case).
+                d.set_sags(&line, &shapes);
                 d.set_members(|id| members(&line, id));
                 d.set_poles(|id| poles(&line, id));
                 d.set_case(&first_case.name);
