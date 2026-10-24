@@ -233,6 +233,74 @@ pub fn offers(model: &Model, plugins: &PluginTemplates) -> Vec<Offer> {
 }
 
 /// The template `key` names.
+/// How long a template read from a file or the project is used again
+/// without reading it (the window and the preview ask every frame).
+const TEMPLATES_KEPT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Templates read lately, by key: when, for which library revision of the
+/// project, and what came out.
+type Kept<T> = std::collections::HashMap<String, (std::time::Instant, u64, T)>;
+
+/// A template read, or why not.
+type Read = Result<Arc<SheetTemplate>, String>;
+
+static RESOLVED: std::sync::Mutex<Option<Kept<Read>>> = std::sync::Mutex::new(None);
+static OFFERED: std::sync::Mutex<Option<Kept<Vec<Offer>>>> = std::sync::Mutex::new(None);
+
+/// [`resolve`] for what is drawn every frame: a template read from the
+/// project, the library folder or a file kept for up to a second, and while
+/// the project's libraries are unchanged (the plugins' are in memory).
+pub fn resolve_kept(
+    model: &Model,
+    key: &str,
+    plugins: &PluginTemplates,
+) -> Result<Arc<SheetTemplate>, String> {
+    if key.starts_with("plugin:") {
+        return resolve(model, key, plugins);
+    }
+    let stamp = model.revisions.libraries;
+    let now = std::time::Instant::now();
+    if let Ok(m) = RESOLVED.lock()
+        && let Some((at, s, r)) = m.as_ref().and_then(|m| m.get(key))
+        && *s == stamp
+        && now.duration_since(*at) < TEMPLATES_KEPT
+    {
+        return r.clone();
+    }
+    let r = resolve(model, key, plugins);
+    if let Ok(mut m) = RESOLVED.lock() {
+        m.get_or_insert_with(Default::default)
+            .insert(key.to_owned(), (now, stamp, r.clone()));
+    }
+    r
+}
+
+/// [`offers`] kept as [`resolve_kept`] keeps templates.
+pub fn offers_kept(model: &Model, plugins: &PluginTemplates) -> Vec<Offer> {
+    let stamp = model.revisions.libraries;
+    let now = std::time::Instant::now();
+    // The plugins' templates are part of it: their keys too.
+    let key: String = plugins
+        .iter()
+        .map(|(k, ..)| k.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Ok(m) = OFFERED.lock()
+        && let Some((at, s, o)) = m.as_ref().and_then(|m| m.get(&key))
+        && *s == stamp
+        && now.duration_since(*at) < TEMPLATES_KEPT
+    {
+        return o.clone();
+    }
+    let o = offers(model, plugins);
+    if let Ok(mut m) = OFFERED.lock() {
+        let m = m.get_or_insert_with(Default::default);
+        m.clear();
+        m.insert(key, (now, stamp, o.clone()));
+    }
+    o
+}
+
 pub fn resolve(
     model: &Model,
     key: &str,

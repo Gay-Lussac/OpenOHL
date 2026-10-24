@@ -21,6 +21,9 @@ pub struct ProfileView {
     /// What it shows (none yet: the route with most structures).
     pub(crate) show: Option<Show>,
     pub(crate) drawing: Option<(Key, Built)>,
+    /// Each route's corridor as last made, kept while what it is made from
+    /// is unchanged (an edit of the line leaves it).
+    corridors: Vec<(CorridorKey, Built)>,
     /// Visible stations.
     range: Option<[f64; 2]>,
     /// At a fixed aspect ratio: the height at the middle of the view.
@@ -144,7 +147,36 @@ pub(crate) fn default_show(
         .map_or(Show::All, |r| Show::Route(r.id.clone()))
 }
 
+/// What a route's corridor ([`corridor`]) is made from: its centreline
+/// (bits), the width (bits), the ground surface, the LiDAR points loaded
+/// (where, how many, their revision) and the drawings.
+type CorridorKey = (Vec<u64>, u64, usize, (usize, usize, u64), Vec<usize>);
+
+/// What `corridor` would be made from now.
+fn corridor_key(model: &Model, centre: &[[f64; 3]], depth: f64) -> CorridorKey {
+    (
+        centre.iter().flatten().map(|v| v.to_bits()).collect(),
+        depth.to_bits(),
+        model
+            .ground
+            .as_ref()
+            .map_or(0, |g| std::sync::Arc::as_ptr(g) as usize),
+        (
+            model.points.as_ptr() as usize,
+            model.points.len(),
+            model.revisions.points,
+        ),
+        model
+            .backgrounds
+            .drawings
+            .iter()
+            .map(|d| std::sync::Arc::as_ptr(&d.drawing) as usize)
+            .collect(),
+    )
+}
+
 /// The profile drawing and what is seen in the corridor around it.
+#[derive(Clone)]
 pub(crate) struct Built {
     pub(crate) drawing: RouteDrawing,
     /// Survey (ground surface) points in the corridor: station, z.
@@ -538,7 +570,17 @@ impl ProfileView {
                 match d {
                     Ok(mut d) => {
                         crate::scene::set_drawn_members(&mut d, &model.line, &model.bodies);
-                        let mut b = corridor(model, &d.centreline, d.length, depth);
+                        let ck = corridor_key(model, &d.centreline, depth);
+                        let kept = self.corridors.iter().find(|(k, _)| *k == ck);
+                        let mut b = match kept {
+                            Some((_, b)) => b.clone(),
+                            None => {
+                                let b = corridor(model, &d.centreline, d.length, depth);
+                                self.corridors.retain(|(k, _)| k.0 != ck.0);
+                                self.corridors.push((ck, b.clone()));
+                                b
+                            }
+                        };
                         // What the drawings show along the line: a
                         // connection beside it only within the width.
                         b.drawing = d.shown(depth);

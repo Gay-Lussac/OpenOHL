@@ -157,6 +157,23 @@ panels' slabs no longer made again after an edit; the sheet preview over
 the views redrawn once the edits settle (500 ms), the old one shown
 meanwhile.
 
+Then (2026-10-24, from the same review): the sheet templates the
+Export drawings window and the sheet preview ask for every frame kept for
+a second and while the project's libraries are unchanged (they were read
+and parsed from their files twice a frame); the profile's corridor (the
+survey points, LiDAR points and 3D drawings projected onto the line)
+kept while its centreline, width, ground, points and drawings are
+unchanged (an edit made it again); the comparison of a project line shown
+with the line worked on indexed by id; the thermal table's ratings
+computed when what they come from changes, not every frame; the routes of
+the structures, sections and jumpers worked out once per version of the
+line (the Properties panel and the route worked on asked every frame);
+the other wind side of the lines on the ground brought up to date from
+its solution before (only the sections that differ), one solve at a time
+per case, the solution before drawn meanwhile (a drag started a full
+solve of the line per case and frame). A click picks in about 25 ms on
+the real line (the 3 s once measured were before the fix of 2026-10-22).
+
 The comparison with a full solve shows two sections on a real line whose
 clamps differ by up to 0.17 m between the case brought up to date edit by
 edit and a full solve (−20 °C, taut jumpers with their pull); the same

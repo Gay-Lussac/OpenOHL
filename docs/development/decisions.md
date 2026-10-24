@@ -25,6 +25,14 @@ of Parts A, B and C).
   a case never shown.
 - The menu of the loads sent to the structures keeps its height: its
   load cases and weather cases each scroll in a box of their own.
+- What the windows and views ask for every frame (sheet templates, the
+  profile's corridor, the thermal table's ratings, the routes) is kept
+  while what it comes from is unchanged; the lines on the ground keep
+  showing their other wind side's solution before while the new one is
+  computed (display only, computed again as before).
+- A jumper on a real line that does not solve in a narrow band of
+  temperatures is left to the project's engineer (its design), not
+  worked around in the solver (owner, 2026-10-24).
 
 ## 2026-10-23
 

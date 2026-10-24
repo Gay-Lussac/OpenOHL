@@ -504,8 +504,43 @@ struct Other {
 
 #[derive(Debug)]
 enum OtherState {
-    Solving(std::sync::mpsc::Receiver<Solved>),
-    Done(Arc<Solved>),
+    /// Being solved for this line (of the version it was started for);
+    /// the solution before drawn meanwhile.
+    Solving(
+        std::sync::mpsc::Receiver<Solved>,
+        Option<Arc<Solved>>,
+        Arc<ohl_line::Line>,
+    ),
+    /// Solved, for this line.
+    Done(Arc<Solved>, Arc<ohl_line::Line>),
+    /// To be solved again from the start (its solve stopped); the
+    /// solution before drawn meanwhile.
+    Waiting(Option<Arc<Solved>>),
+}
+
+/// `case` solved for `line`: from the solution `start` (solved for its
+/// line) re-solving only the sections that differ (their own data, or a
+/// structure they hang on), as the line worked on is after an edit; else
+/// every section.
+fn bring_up_to_date(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    case: WeatherCase,
+    start: Option<(Arc<Solved>, Arc<ohl_line::Line>)>,
+) -> Solved {
+    match start {
+        Some((s, from)) => {
+            let dirty: Vec<String> =
+                crate::model::Differences::between_with(&from, line, &Default::default())
+                    .sections
+                    .into_iter()
+                    .collect();
+            let mut live = s.live.clone();
+            live.update(line, library, &dirty);
+            Solved::from_live(line, case, live)
+        }
+        None => Solved::new(line, library, case),
+    }
 }
 
 /// A LiDAR ground of the lines' own, wider than the model's.
@@ -627,8 +662,10 @@ impl GroundLines {
                 .iter()
                 .filter(|o| o.line.as_deref() == line)
                 .filter_map(|o| match &o.state {
-                    OtherState::Done(s) => Some((o.case, s.clone())),
-                    OtherState::Solving(_) => None,
+                    OtherState::Done(s, _)
+                    | OtherState::Solving(_, Some(s), _)
+                    | OtherState::Waiting(Some(s)) => Some((o.case, s.clone())),
+                    OtherState::Solving(_, None, _) | OtherState::Waiting(None) => None,
                 })
                 .collect()
         };
@@ -689,7 +726,7 @@ impl GroundLines {
                     _ => {}
                 }
                 for o in &self.others {
-                    if matches!(o.state, OtherState::Solving(_)) {
+                    if !matches!(o.state, OtherState::Done(..)) {
                         d.notes.push(match &o.line {
                             None => format!(
                                 "weather case {}: the wind from the other side is being solved",
@@ -729,8 +766,11 @@ impl GroundLines {
 
     /// The other wind sides wanted for `chosen`, of the working line and
     /// of the project lines `projects`: kept when solved for that line
-    /// (its version), started otherwise (in the background with `ctx`,
-    /// else now); those finished taken; those no longer wanted dropped.
+    /// (its version); else brought up to date from the solution before
+    /// (only the sections that differ re-solved; it stays drawn
+    /// meanwhile), one solve at a time per case (in the background with
+    /// `ctx`, else now); those finished taken; those no longer wanted
+    /// dropped.
     fn solve_others(
         &mut self,
         model: &Model,
@@ -759,70 +799,82 @@ impl GroundLines {
                 sides_wanted(p.cases, chosen),
             ));
         }
+        // Kept while wanted: solved for an older version, drawn until it
+        // is brought up to date.
         self.others.retain(|o| {
-            lines.iter().any(|(name, _, version, wanted)| {
+            lines.iter().any(|(name, _, _, wanted)| {
                 o.line.as_deref() == *name
-                    && o.version == *version
                     && wanted.iter().any(|(k, w)| *k == o.case && *w == o.weather)
             })
         });
+        // Those finished taken (solved for the line they were started
+        // for: brought up to date below when it changed since).
+        for o in &mut self.others {
+            let next = match &o.state {
+                OtherState::Solving(rx, before, from) => match rx.try_recv() {
+                    Ok(s) => Some(OtherState::Done(Arc::new(s), from.clone())),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        Some(OtherState::Waiting(before.clone()))
+                    }
+                },
+                _ => None,
+            };
+            if let Some(n) = next {
+                o.state = n;
+            }
+        }
         for (name, line, version, wanted) in &lines {
             for (k, weather) in wanted {
-                if self
+                let at = self
                     .others
                     .iter()
-                    .any(|o| o.line.as_deref() == *name && o.case == *k)
-                {
-                    continue;
-                }
+                    .position(|o| o.line.as_deref() == *name && o.case == *k);
+                // Solved for this version, or being solved (one at a time:
+                // the next started when it is in); else started, from
+                // the solution before when there is one.
+                let (before, from) = match at.map(|i| &self.others[i]) {
+                    Some(o) => match &o.state {
+                        OtherState::Solving(..) => continue,
+                        OtherState::Done(..) if o.version == *version => continue,
+                        OtherState::Done(s, l) => (Some(s.clone()), Some(l.clone())),
+                        OtherState::Waiting(b) => (b.clone(), None),
+                    },
+                    None => (None, None),
+                };
                 let state = match ctx {
                     Some(ctx) => {
                         let (line, library) = ((*line).clone(), model.library.clone());
                         let (tx, rx) = std::sync::mpsc::channel();
                         let (ctx, case) = (ctx.clone(), weather.clone());
+                        let start = before.clone().zip(from);
+                        let started_for = Arc::new(line.clone());
                         std::thread::spawn(move || {
-                            let _ = tx.send(Solved::new(&line, &library, case));
+                            let _ = tx.send(bring_up_to_date(&line, &library, case, start));
                             ctx.request_repaint();
                         });
-                        OtherState::Solving(rx)
+                        OtherState::Solving(rx, before, started_for)
                     }
-                    None => OtherState::Done(Arc::new(Solved::new(
-                        line,
-                        &model.library,
-                        weather.clone(),
-                    ))),
+                    None => OtherState::Done(
+                        Arc::new(bring_up_to_date(
+                            line,
+                            &model.library,
+                            weather.clone(),
+                            before.zip(from),
+                        )),
+                        Arc::new((*line).clone()),
+                    ),
                 };
-                self.others.push(Other {
+                let o = Other {
                     line: name.map(str::to_owned),
                     case: *k,
                     weather: weather.clone(),
                     version: *version,
                     state,
-                });
-            }
-        }
-        for o in &mut self.others {
-            if let OtherState::Solving(rx) = &o.state {
-                match rx.try_recv() {
-                    Ok(s) => o.state = OtherState::Done(Arc::new(s)),
-                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
-                    // The thread stopped without one: solved now.
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        let line = match &o.line {
-                            None => Some(&model.line),
-                            Some(name) => projects
-                                .iter()
-                                .find(|p| p.name == name.as_str())
-                                .map(|p| p.line),
-                        };
-                        if let Some(line) = line {
-                            o.state = OtherState::Done(Arc::new(Solved::new(
-                                line,
-                                &model.library,
-                                o.weather.clone(),
-                            )));
-                        }
-                    }
+                };
+                match at {
+                    Some(i) => self.others[i] = o,
+                    None => self.others.push(o),
                 }
             }
         }
@@ -940,7 +992,7 @@ impl GroundLines {
     pub fn solving(&self) -> bool {
         self.others
             .iter()
-            .any(|o| matches!(o.state, OtherState::Solving(_)))
+            .any(|o| !matches!(o.state, OtherState::Done(..)))
     }
 }
 
