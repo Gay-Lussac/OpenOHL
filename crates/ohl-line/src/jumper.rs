@@ -1734,7 +1734,7 @@ pub(crate) fn solve_jumpers_memo(
     let global = memo.map(|_| {
         (
             crate::incremental::JumperMemo::global(line, case),
-            crate::incremental::Lookup::of(line),
+            crate::incremental::Lookup::of(line, library),
         )
     });
     let levels = line
@@ -1847,9 +1847,11 @@ static CUTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Stri
 const MAX_CUTS: usize = 20_000;
 
 /// Everything a jumper's cut depends on: the jumper; the sections at its
-/// ends, the structures they and the jumper hang on and the cables (they
-/// are solved in its design case); the line's creep-stretch and bimetallic
-/// settings and creep cases. Equal keys, equal cuts.
+/// ends, the structures they and the jumper hang on (without their stick
+/// drawing, for views only) and the cables (they are solved in its design
+/// case); the line's defaults (the jumpers' stiffness factor and exit
+/// angle, the insulators' stiffness), solver settings, creep-stretch and
+/// bimetallic settings and creep cases. Equal keys, equal cuts.
 fn design_key(line: &Line, library: &ohl_cables::Library, jumper: &Jumper) -> String {
     let ends = |p: &SectionPoint| jumper.is_at(p);
     let sections: Vec<&crate::Section> = line
@@ -1866,10 +1868,14 @@ fn design_key(line: &Line, library: &ohl_cables::Library, jumper: &Jumper) -> St
     for c in &supports {
         ids.insert(c.structure_id(jumper));
     }
-    let structures: Vec<&crate::Structure> = line
+    let structures: Vec<crate::Structure> = line
         .structures
         .iter()
         .filter(|s| ids.contains(s.id.as_str()))
+        .map(|s| crate::Structure {
+            members: Vec::new(),
+            ..s.clone()
+        })
         .collect();
     let cables: Vec<Option<&Cable>> = std::iter::once(&jumper.cable)
         .chain(sections.iter().map(|s| &s.cable))
@@ -1882,6 +1888,8 @@ fn design_key(line: &Line, library: &ohl_cables::Library, jumper: &Jumper) -> St
             sections,
             structures,
             cables,
+            &line.defaults,
+            &line.solver,
             &line.creep_stretch,
             &line.bimetallic,
             &line.condition_cases

@@ -88,6 +88,8 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
+        // A drag let go (or anything done): background solves again.
+        self.previewing = false;
         // (Library files changed come as library objects: read again
         // below, their hash taken again there.)
         // Points of the cloud changed: the points in memory follow, the
@@ -189,6 +191,8 @@ impl Model {
 
     /// Applies a command as the editing user.
     pub fn apply(&mut self, what: &str, command: Command) -> Result<String, EditError> {
+        // (A drag ends with a command, done or refused.)
+        self.previewing = false;
         if self.remote.is_some() {
             return self.remote_request(what, ohl_server::Op::Do { command });
         }
@@ -253,6 +257,7 @@ impl Model {
         };
         self.line.structures[k] = self.line.structures[k].moved_to(position);
         self.line_version += 1;
+        self.previewing = true;
         let dirty = self.sections_through(id);
         if let Some(c) = self.cases.get_mut(case) {
             c.update(&self.line, &self.library, &dirty);
@@ -261,6 +266,7 @@ impl Model {
 
     /// Ends a preview without a command: back to the session's line.
     pub fn cancel_preview(&mut self, case: usize, id: &str) {
+        self.previewing = false;
         let Ok(line) = self.session_line() else {
             return;
         };

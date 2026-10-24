@@ -232,7 +232,6 @@ pub fn offers(model: &Model, plugins: &PluginTemplates) -> Vec<Offer> {
     out
 }
 
-/// The template `key` names.
 /// How long a template read from a file or the project is used again
 /// without reading it (the window and the preview ask every frame).
 const TEMPLATES_KEPT: std::time::Duration = std::time::Duration::from_secs(1);
@@ -260,8 +259,10 @@ pub fn resolve_kept(
     }
     let stamp = model.revisions.libraries;
     let now = std::time::Instant::now();
+    // Per project (another one opened reads its own).
+    let kept_as = format!("{}\n{key}", model.sources.file.display());
     if let Ok(m) = RESOLVED.lock()
-        && let Some((at, s, r)) = m.as_ref().and_then(|m| m.get(key))
+        && let Some((at, s, r)) = m.as_ref().and_then(|m| m.get(&kept_as))
         && *s == stamp
         && now.duration_since(*at) < TEMPLATES_KEPT
     {
@@ -270,7 +271,7 @@ pub fn resolve_kept(
     let r = resolve(model, key, plugins);
     if let Ok(mut m) = RESOLVED.lock() {
         m.get_or_insert_with(Default::default)
-            .insert(key.to_owned(), (now, stamp, r.clone()));
+            .insert(kept_as, (now, stamp, r.clone()));
     }
     r
 }
@@ -280,9 +281,8 @@ pub fn offers_kept(model: &Model, plugins: &PluginTemplates) -> Vec<Offer> {
     let stamp = model.revisions.libraries;
     let now = std::time::Instant::now();
     // The plugins' templates are part of it: their keys too.
-    let key: String = plugins
-        .iter()
-        .map(|(k, ..)| k.as_str())
+    let key: String = std::iter::once(model.sources.file.display().to_string())
+        .chain(plugins.iter().map(|(k, ..)| k.clone()))
         .collect::<Vec<_>>()
         .join("\n");
     if let Ok(m) = OFFERED.lock()
@@ -301,6 +301,7 @@ pub fn offers_kept(model: &Model, plugins: &PluginTemplates) -> Vec<Offer> {
     o
 }
 
+/// The template `key` names.
 pub fn resolve(
     model: &Model,
     key: &str,

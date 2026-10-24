@@ -58,6 +58,8 @@ pub struct SolvedLine {
 /// What the jumpers' inputs are looked up in, made once for all of them:
 /// the line's routes and the sections at each wire point.
 pub(crate) struct Lookup<'a> {
+    /// The wire library the line is solved with.
+    library: &'a ohl_cables::Library,
     /// [`Line::alignment_views`].
     views: Vec<crate::route::AlignmentView>,
     /// The sections holding each section point (indices, in line order).
@@ -65,8 +67,8 @@ pub(crate) struct Lookup<'a> {
 }
 
 impl<'a> Lookup<'a> {
-    /// Of `line`.
-    pub(crate) fn of(line: &'a Line) -> Self {
+    /// Of `line`, solved with `library`.
+    pub(crate) fn of(line: &'a Line, library: &'a ohl_cables::Library) -> Self {
         let mut at_point: std::collections::HashMap<&crate::SectionPoint, Vec<usize>> =
             Default::default();
         for (k, s) in line.sections.iter().enumerate() {
@@ -78,6 +80,7 @@ impl<'a> Lookup<'a> {
             }
         }
         Self {
+            library,
             views: line.alignment_views(),
             at_point,
         }
@@ -89,8 +92,8 @@ impl<'a> Lookup<'a> {
 /// again only when something its solution depends on changed — its
 /// inputs ([`JumperInputs`]), the solved shapes of the sections at its
 /// ends and of those its taps hang on, the points of the jumpers its taps
-/// hang on, the loads on its points, the cables, the line's solver,
-/// creep and bimetallic settings and the weather case. Equal inputs,
+/// hang on, the loads on its points, the cables, the line's defaults,
+/// solver, creep and bimetallic settings and the weather case. Equal inputs,
 /// equal solution: the result is the one a new solve gives.
 #[derive(Debug, Default)]
 pub(crate) struct JumperMemo {
@@ -125,6 +128,7 @@ impl JumperMemo {
         format!(
             "{:?}",
             (
+                &line.defaults,
                 &line.solver,
                 &line.creep_stretch,
                 &line.bimetallic,
@@ -210,12 +214,14 @@ impl JumperMemo {
     }
 }
 
-/// What a jumper's solution depends on: itself, the sections at its ends,
-/// the structures it hangs on, and the line's direction there (its wind
-/// side).
+/// What a jumper's solution depends on: itself and its cable's data, the
+/// sections at its ends, the structures it hangs on, and the line's
+/// direction there (its wind side).
 #[derive(Debug, Clone, PartialEq)]
 struct JumperInputs {
     jumper: Jumper,
+    /// Its cable's data (a library edit changes it).
+    cable: Option<ohl_cables::Cable>,
     sections: Vec<Section>,
     structures: Vec<Structure>,
     direction: Option<[f64; 2]>,
@@ -226,6 +232,7 @@ impl JumperInputs {
     fn of(line: &Line, jumper: &Jumper, look: &Lookup<'_>) -> Self {
         Self {
             jumper: jumper.clone(),
+            cable: look.library.get(&jumper.cable).cloned(),
             sections: Self::sections_of(line, jumper, look).cloned().collect(),
             // (Without their stick drawing: for views only.)
             structures: Self::structures_of(line, jumper)
@@ -242,7 +249,11 @@ impl JumperInputs {
     /// would make them, compared without copying them).
     fn matches(&self, line: &Line, jumper: &Jumper, look: &Lookup<'_>) -> bool {
         self.jumper == *jumper
-            && self.sections.iter().eq(Self::sections_of(line, jumper, look))
+            && self.cable.as_ref() == look.library.get(&jumper.cable)
+            && self
+                .sections
+                .iter()
+                .eq(Self::sections_of(line, jumper, look))
             && self.structures.len() == Self::structures_of(line, jumper).count()
             && self
                 .structures
@@ -298,11 +309,7 @@ impl JumperInputs {
     }
 
     /// The line's direction at its middle.
-    fn direction_of(
-        line: &Line,
-        jumper: &Jumper,
-        look: &Lookup<'_>,
-    ) -> Option<[f64; 2]> {
+    fn direction_of(line: &Line, jumper: &Jumper, look: &Lookup<'_>) -> Option<[f64; 2]> {
         match (
             jumper.from.point().and_then(|p| line.wire_point(p)),
             jumper.to.point().and_then(|p| line.wire_point(p)),
@@ -481,13 +488,22 @@ impl SolvedLine {
             }
         }
         // Sections sharing an assembly with one solved again: solved
-        // together.
-        for group in crate::solve::coupled_groups(line) {
+        // together, from each solved alone (as a full solve starts, so the
+        // result does not depend on the edits before).
+        let coupled = crate::solve::coupled_groups(line);
+        for group in &coupled {
             if !group
                 .iter()
                 .any(|&k| resolved.contains(line.sections[k].id.as_str()))
             {
                 continue;
+            }
+            for &k in group {
+                let id = &line.sections[k].id;
+                if !resolved.contains(id.as_str()) {
+                    let r = solve_one(line, library, &self.case, id, &weights);
+                    self.sections.insert(id.clone(), r);
+                }
             }
             let mut results: Vec<Result<SectionShape, LineError>> = line
                 .sections
@@ -503,24 +519,34 @@ impl SolvedLine {
                 line,
                 library,
                 &self.case,
-                &group,
+                group,
                 &mut results,
                 &default_fe_budget(),
                 &weights,
             );
-            for &k in &group {
+            for &k in group {
                 let id = &line.sections[k].id;
                 self.sections.insert(id.clone(), results[k].clone());
                 resolved.insert(id);
             }
         }
-        // Sections joined by spacers with one solved again: solved together.
+        // Sections joined by spacers with one solved again: solved together,
+        // from each solved alone where it is in no assembly shared (else
+        // as its assembly's group left it, as in a full solve).
+        let in_coupled: HashSet<usize> = coupled.iter().flatten().copied().collect();
         for group in crate::solve::spacer_groups(line) {
             if !group
                 .iter()
                 .any(|&k| resolved.contains(line.sections[k].id.as_str()))
             {
                 continue;
+            }
+            for &k in &group {
+                let id = &line.sections[k].id;
+                if !resolved.contains(id.as_str()) && !in_coupled.contains(&k) {
+                    let r = solve_one(line, library, &self.case, id, &weights);
+                    self.sections.insert(id.clone(), r);
+                }
             }
             let mut results: Vec<Result<SectionShape, LineError>> = line
                 .sections
@@ -587,7 +613,7 @@ impl SolvedLine {
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut stale: Vec<&Jumper> = Vec::new();
-        let look = Lookup::of(line);
+        let look = Lookup::of(line, library);
         let mut before = std::mem::take(&mut self.jumper_inputs);
         for j in &line.jumpers {
             // The inputs kept when they are still these (no copy made).
@@ -715,6 +741,33 @@ mod tests {
             .map(Result::unwrap)
             .collect();
         assert_eq!(solved.jumper_shapes(line), jumpers);
+    }
+
+    /// The line's defaults the jumpers are solved with (their stiffness
+    /// factor and exit angle) changed, every section said dirty as the
+    /// session says them after such an edit: the jumper solved again, as
+    /// a full solve gives it (its cut and its kept solution are keyed on
+    /// the defaults too).
+    #[test]
+    fn a_change_of_the_defaults_is_solved_again() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = crate::tests::example();
+        line.jumpers[0].sag = Some(1.5);
+        line.jumpers[0].length = None;
+        let mut solved = SolvedLine::solve(&line, &lib, &case);
+        assert_same_as_full(&line, &solved);
+        let before = solved.jumper_shapes(&line);
+        line.defaults.jumper_exit_angle_deg += 25.0;
+        line.defaults.jumper_stiffness_factor *= 3.0;
+        let all: Vec<String> = line.sections.iter().map(|s| s.id.clone()).collect();
+        solved.update(&line, &lib, &all);
+        assert_same_as_full(&line, &solved);
+        assert_ne!(
+            solved.jumper_shapes(&line),
+            before,
+            "the defaults change it"
+        );
     }
 
     #[test]

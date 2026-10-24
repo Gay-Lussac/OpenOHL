@@ -16248,3 +16248,31 @@ fn a_project_line_shown_uses_its_own_library_files() {
     let full = model::Solved::new(&o.line, &own, m.cases[0].case.clone());
     assert_eq!(o.cases[0].shapes, full.shapes);
 }
+
+/// What differs between two versions of a line, as the sections to solve
+/// again: a setting every solve reads (the solver's, the defaults) makes
+/// every section differ; a spacer changed, the sections it joins; a
+/// jumper on a cable whose data differ, that jumper.
+#[test]
+fn the_differences_of_two_lines_say_what_to_solve_again() {
+    use crate::model::Differences;
+    let ours = synthetic().line;
+    let same = Differences::between_with(&ours, &ours, &Default::default());
+    assert!(same.sections.is_empty() && same.jumpers.is_empty());
+    let mut other = ours.clone();
+    other.defaults.jumper_exit_angle_deg += 10.0;
+    let d = Differences::between_with(&ours, &other, &Default::default());
+    assert_eq!(d.sections.len(), ours.sections.len());
+    let mut other = ours.clone();
+    other.solver.loads_per = match ours.solver.loads_per {
+        ohl_line::LoadsPer::Stretched => ohl_line::LoadsPer::Unstretched,
+        ohl_line::LoadsPer::Unstretched => ohl_line::LoadsPer::Stretched,
+    };
+    let d = Differences::between_with(&ours, &other, &Default::default());
+    assert_eq!(d.sections.len(), ours.sections.len());
+    if let Some(j) = ours.jumpers.first() {
+        let cables: std::collections::BTreeSet<String> = [j.cable.clone()].into();
+        let d = Differences::between_with(&ours, &ours, &cables);
+        assert!(d.jumpers.contains(&j.id));
+    }
+}

@@ -44,7 +44,7 @@ const PROTOCOL_VERSION: u32 = 1;
 pub struct StructureRunArgs {
     /// Structure file (.ohls).
     pub file: PathBuf,
-    /// Cross-cross-section library files (.ohlsec) or folders; the first giving an id
+    /// Cross-section library files (.ohlsec) or folders; the first giving an id
     /// wins (default: the `Sections` folder beside the file, if any).
     #[arg(long, num_args = 1..)]
     pub sections: Vec<PathBuf>,

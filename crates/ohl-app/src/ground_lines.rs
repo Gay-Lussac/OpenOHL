@@ -253,6 +253,9 @@ pub struct ProjectLine<'a> {
     pub cases: &'a [Solved],
     /// When it was shown ([`crate::model::OtherLine::serial`]).
     pub serial: u64,
+    /// Its own wire library, where its library files differ (none: the
+    /// model's).
+    pub library: Option<&'a ohl_cables::Library>,
 }
 
 impl<'a> ProjectLine<'a> {
@@ -266,6 +269,7 @@ impl<'a> ProjectLine<'a> {
                 line: &o.line,
                 cases: &o.cases,
                 serial: o.serial,
+                library: o.library.as_ref(),
             })
             .collect()
     }
@@ -496,8 +500,9 @@ struct Other {
     /// The case solved (its wind from the other side).
     weather: WeatherCase,
     /// The line's version it is solved for (a project line: when it was
-    /// shown, [`crate::model::OtherLine::serial`]).
-    version: u64,
+    /// shown, [`crate::model::OtherLine::serial`]) and the libraries'
+    /// (they were read again: the cables' data may differ).
+    version: (u64, u64),
     /// Solving, or solved.
     state: OtherState,
 }
@@ -778,31 +783,36 @@ impl GroundLines {
         projects: &[ProjectLine<'_>],
         ctx: Option<&egui::Context>,
     ) {
-        // (the line's name, the line, its version, the sides wanted).
+        // (the line's name, the line, its version — with the version of
+        // the libraries —, the sides wanted, its wire library).
         type Wanted<'a> = (
             Option<&'a str>,
             &'a ohl_line::Line,
-            u64,
+            (u64, u64),
             Vec<(usize, WeatherCase)>,
+            &'a ohl_cables::Library,
         );
+        let libraries = model.revisions.libraries;
         let mut lines: Vec<Wanted<'_>> = vec![(
             None,
             &model.line,
-            model.line_version,
+            (model.line_version, libraries),
             other_sides_wanted(model, chosen),
+            &model.library,
         )];
         for p in projects {
             lines.push((
                 Some(p.name),
                 p.line,
-                p.serial,
+                (p.serial, libraries),
                 sides_wanted(p.cases, chosen),
+                p.library.unwrap_or(&model.library),
             ));
         }
         // Kept while wanted: solved for an older version, drawn until it
         // is brought up to date.
         self.others.retain(|o| {
-            lines.iter().any(|(name, _, _, wanted)| {
+            lines.iter().any(|(name, _, _, wanted, _)| {
                 o.line.as_deref() == *name
                     && wanted.iter().any(|(k, w)| *k == o.case && *w == o.weather)
             })
@@ -824,7 +834,7 @@ impl GroundLines {
                 o.state = n;
             }
         }
-        for (name, line, version, wanted) in &lines {
+        for (name, line, version, wanted, library) in &lines {
             for (k, weather) in wanted {
                 let at = self
                     .others
@@ -837,6 +847,11 @@ impl GroundLines {
                     Some(o) => match &o.state {
                         OtherState::Solving(..) => continue,
                         OtherState::Done(..) if o.version == *version => continue,
+                        // The libraries read again (cable data may differ):
+                        // solved from the start, the one before drawn.
+                        OtherState::Done(s, _) if o.version.1 != version.1 => {
+                            (Some(s.clone()), None)
+                        }
                         OtherState::Done(s, l) => (Some(s.clone()), Some(l.clone())),
                         OtherState::Waiting(b) => (b.clone(), None),
                     },
@@ -844,7 +859,7 @@ impl GroundLines {
                 };
                 let state = match ctx {
                     Some(ctx) => {
-                        let (line, library) = ((*line).clone(), model.library.clone());
+                        let (line, library) = ((*line).clone(), (*library).clone());
                         let (tx, rx) = std::sync::mpsc::channel();
                         let (ctx, case) = (ctx.clone(), weather.clone());
                         let start = before.clone().zip(from);
@@ -858,7 +873,7 @@ impl GroundLines {
                     None => OtherState::Done(
                         Arc::new(bring_up_to_date(
                             line,
-                            &model.library,
+                            library,
                             weather.clone(),
                             before.zip(from),
                         )),
