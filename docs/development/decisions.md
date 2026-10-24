@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**The stringing table smaller (owner, 2026-10-24)**
+
+- Without a `{st.phase}` column the table has one row per tension
+  section and circuit, its phases' tensions in one cell (as the band row
+  writes them); the plan-submission template drops its Phase and "bei"
+  columns (the case in the heading) and its rows are smaller. A bottom
+  row that runs into the title block is now said as a warning (it
+  overlapped on smaller papers).
+
 **String checks (owner, 2026-10-24)**
 
 - Checks › String checks… and `ohl strings` (`ohl_clearance::strings`):

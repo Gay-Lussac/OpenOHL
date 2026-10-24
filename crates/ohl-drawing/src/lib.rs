@@ -2453,11 +2453,27 @@ pub(crate) mod tests {
             assert!(at(&s.from_structure) < at(&s.to_structure), "{s:?}");
         }
         let first = d.stringing[0].clone();
-        let rows: usize = d.stringing.iter().map(|s| s.phases.len()).sum();
-        let table = |place: &str, n: usize| {
+        // Without a phase column a row per circuit (its phases in one
+        // cell), with one a row per phase.
+        let rows: usize = d
+            .stringing
+            .iter()
+            .map(|s| {
+                let mut c: Vec<&Option<String>> = s.phases.iter().map(|p| &p.0).collect();
+                c.dedup();
+                c.len()
+            })
+            .sum();
+        let phases: usize = d.stringing.iter().map(|s| s.phases.len()).sum();
+        let table_with = |place: &str, n: usize, phase: bool| {
             let mut t = SheetTemplate::builtin();
+            let extra = if phase {
+                ", { title = \"Phase\", width = \"10 mm\", value = \"{st.phase}\" }"
+            } else {
+                ""
+            };
             t.stringing_table = toml::from_str(&format!(
-                "place = \"{place}\"\nrows = {n}\ncolumns = [{{ title = \"From\", width =                  \"20 mm\", value = \"{{st.from}}\" }}, {{ title = \"To\", width = \"20 mm\",                  value = \"{{st.to}}\" }}, {{ title = \"Tension\", width = \"30 mm\", value =                  \"{{st.tension}} kN at {{st.case}}\" }}]"
+                "place = \"{place}\"\nrows = {n}\ncolumns = [{{ title = \"From\", width =                  \"20 mm\", value = \"{{st.from}}\" }}, {{ title = \"To\", width = \"20 mm\",                  value = \"{{st.to}}\" }}, {{ title = \"Tension\", width = \"30 mm\", value =                  \"{{st.tension}} kN at {{st.case}}\" }}{extra}]"
             ))
             .unwrap();
             let o = Options {
@@ -2466,6 +2482,16 @@ pub(crate) mod tests {
             };
             sheets(&d, &o, &page_format("A1").unwrap())
         };
+        let table = |place: &str, n: usize| table_with(place, n, false);
+        let texts = |s: &[Sheet]| {
+            s.iter()
+                .flat_map(|x| &x.drawing.items)
+                .filter(|i| matches!(i, crate::model::Item::Text(t) if t.layer == crate::model::Layer::Stringing))
+                .count()
+        };
+        // A row per phase: four columns each.
+        assert!(texts(&table_with("bottom", 200, true)) >= 4 * (phases + 1));
+        assert!(rows <= phases);
         for place in ["bottom", "above_title_block"] {
             let s = table(place, 40);
             let svg: String = s.iter().map(Sheet::svg).collect();
