@@ -350,11 +350,10 @@ impl Solved {
             before.insert(shape.section.clone(), shape);
         }
         self.shapes = self.live.shapes(line);
-        self.unsolved = self
-            .live
-            .results(line)
-            .into_iter()
-            .filter_map(|(id, r)| r.as_ref().err().map(|e| (id.to_owned(), e.to_string())))
+        let results = self.live.results(line);
+        self.unsolved = results
+            .iter()
+            .filter_map(|(id, r)| r.as_ref().err().map(|e| ((*id).to_owned(), e.to_string())))
             .collect();
         self.last_solved = self
             .unsolved
@@ -362,10 +361,8 @@ impl Solved {
             .filter_map(|(id, _)| before.remove(id).map(|shape| (id.clone(), shape)))
             .collect();
         self.jumpers = self.live.jumper_shapes(line);
-        self.failed = self
-            .live
-            .results(line)
-            .into_iter()
+        self.failed = results
+            .iter()
             .filter_map(|(id, r)| r.as_ref().err().map(|e| format!("{id}: {e}")))
             .collect();
         self.failed.extend(

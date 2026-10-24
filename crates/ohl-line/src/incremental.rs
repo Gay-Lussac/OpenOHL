@@ -55,6 +55,35 @@ pub struct SolvedLine {
     memo: JumperMemo,
 }
 
+/// What the jumpers' inputs are looked up in, made once for all of them:
+/// the line's routes and the sections at each wire point.
+pub(crate) struct Lookup<'a> {
+    /// [`Line::alignment_views`].
+    views: Vec<crate::route::AlignmentView>,
+    /// The sections holding each section point (indices, in line order).
+    at_point: std::collections::HashMap<&'a crate::SectionPoint, Vec<usize>>,
+}
+
+impl<'a> Lookup<'a> {
+    /// Of `line`.
+    pub(crate) fn of(line: &'a Line) -> Self {
+        let mut at_point: std::collections::HashMap<&crate::SectionPoint, Vec<usize>> =
+            Default::default();
+        for (k, s) in line.sections.iter().enumerate() {
+            for p in &s.points {
+                let v = at_point.entry(p).or_default();
+                if v.last() != Some(&k) {
+                    v.push(k);
+                }
+            }
+        }
+        Self {
+            views: line.alignment_views(),
+            at_point,
+        }
+    }
+}
+
 /// Jumper solutions of one weather case kept between solves (the passes
 /// of the jumpers' pull, the updates after edits): a jumper is solved
 /// again only when something its solution depends on changed — its
@@ -107,8 +136,7 @@ impl JumperMemo {
 
     /// Jumper `jumper` solved as [`crate::jumper::solve_one_jumper_in`]
     /// solves it, or its kept solution when nothing it depends on changed
-    /// (`global`: [`Self::global`]; `views`: the line's routes,
-    /// [`Line::alignment_views`]).
+    /// (`global`: [`Self::global`]; `look`: [`Lookup::of`] the line).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn solve(
         &self,
@@ -119,7 +147,7 @@ impl JumperMemo {
         jumper: &Jumper,
         context: &crate::jumper::TapContext,
         global: &str,
-        views: &[crate::route::AlignmentView],
+        look: &Lookup<'_>,
     ) -> Result<JumperShape, LineError> {
         let taps = || {
             jumper.taps().filter_map(|t| match t {
@@ -137,7 +165,7 @@ impl JumperMemo {
         let same = |k: &JumperKey| {
             k.global == global
                 && k.loads == context.loads
-                && k.inputs.matches(line, jumper, views)
+                && k.inputs.matches(line, jumper, look)
                 && k.shapes.len() == k.inputs.sections.len()
                 && k.inputs
                     .sections
@@ -158,7 +186,7 @@ impl JumperMemo {
         {
             return r.clone();
         }
-        let inputs = JumperInputs::of(line, jumper, views);
+        let inputs = JumperInputs::of(line, jumper, look);
         let key = JumperKey {
             shapes: inputs
                 .sections
@@ -194,36 +222,65 @@ struct JumperInputs {
 }
 
 impl JumperInputs {
-    /// Its inputs, the line's direction found on the routes `views`
-    /// ([`Line::alignment_views`], made once for every jumper).
-    fn of(line: &Line, jumper: &Jumper, views: &[crate::route::AlignmentView]) -> Self {
+    /// Its inputs, looked up in `look` (made once for every jumper).
+    fn of(line: &Line, jumper: &Jumper, look: &Lookup<'_>) -> Self {
         Self {
             jumper: jumper.clone(),
-            sections: Self::sections_of(line, jumper).cloned().collect(),
-            structures: Self::structures_of(line, jumper).cloned().collect(),
-            direction: Self::direction_of(line, jumper, views),
+            sections: Self::sections_of(line, jumper, look).cloned().collect(),
+            // (Without their stick drawing: for views only.)
+            structures: Self::structures_of(line, jumper)
+                .map(|s| Structure {
+                    members: Vec::new(),
+                    ..s.clone()
+                })
+                .collect(),
+            direction: Self::direction_of(line, jumper, look),
         }
     }
 
     /// Whether these are `jumper`'s inputs in `line` now (as [`Self::of`]
     /// would make them, compared without copying them).
-    fn matches(&self, line: &Line, jumper: &Jumper, views: &[crate::route::AlignmentView]) -> bool {
+    fn matches(&self, line: &Line, jumper: &Jumper, look: &Lookup<'_>) -> bool {
         self.jumper == *jumper
-            && self.sections.iter().eq(Self::sections_of(line, jumper))
-            && self.structures.iter().eq(Self::structures_of(line, jumper))
-            && self.direction == Self::direction_of(line, jumper, views)
+            && self.sections.iter().eq(Self::sections_of(line, jumper, look))
+            && self.structures.len() == Self::structures_of(line, jumper).count()
+            && self
+                .structures
+                .iter()
+                .zip(Self::structures_of(line, jumper))
+                .all(|(a, b)| same_but_drawing(a, b))
+            && self.direction == Self::direction_of(line, jumper, look)
     }
 
-    /// The sections at its ends and those its taps hang on.
-    fn sections_of<'a>(line: &'a Line, jumper: &'a Jumper) -> impl Iterator<Item = &'a Section> {
-        // The sections its taps hang on (and so the jumpers too).
+    /// The sections at its ends and those its taps hang on, in line
+    /// order.
+    fn sections_of<'a>(
+        line: &'a Line,
+        jumper: &'a Jumper,
+        look: &Lookup<'_>,
+    ) -> impl Iterator<Item = &'a Section> {
+        let mut at: std::collections::BTreeSet<usize> = jumper
+            .points()
+            .filter_map(|p| look.at_point.get(p))
+            .flatten()
+            .copied()
+            .collect();
+        // The sections its taps hang on (and so the jumpers too): every
+        // section of that id, as a filter by id finds them.
         let hosts: Vec<String> = jumper
             .taps()
             .filter_map(|t| line.tap_section(t, 0).map(|s| s.id.clone()))
             .collect();
-        line.sections
-            .iter()
-            .filter(move |s| s.points.iter().any(|p| jumper.is_at(p)) || hosts.contains(&s.id))
+        if !hosts.is_empty() {
+            at.extend(
+                line.sections
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| hosts.contains(&s.id))
+                    .map(|(k, _)| k),
+            );
+        }
+        at.into_iter().map(|k| &line.sections[k])
     }
 
     /// The structures it hangs on.
@@ -244,14 +301,14 @@ impl JumperInputs {
     fn direction_of(
         line: &Line,
         jumper: &Jumper,
-        views: &[crate::route::AlignmentView],
+        look: &Lookup<'_>,
     ) -> Option<[f64; 2]> {
         match (
             jumper.from.point().and_then(|p| line.wire_point(p)),
             jumper.to.point().and_then(|p| line.wire_point(p)),
         ) {
             (Some(a), Some(b)) => line.direction_at_in(
-                views,
+                &look.views,
                 [
                     0.5 * (a.position[0] + b.position[0]),
                     0.5 * (a.position[1] + b.position[1]),
@@ -260,6 +317,43 @@ impl JumperInputs {
             _ => None,
         }
     }
+}
+
+/// Whether structures `a` and `b` are the same but for their stick
+/// drawing ([`Structure::members`], for views only: no solution reads
+/// it). Every other field compared (a field added must be added here).
+fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
+    let Structure {
+        id,
+        position,
+        orientation_deg,
+        structure_type,
+        extension,
+        description,
+        height_adjust,
+        points,
+        strings,
+        wires,
+        omit,
+        omit_sets,
+        members: _,
+        routes,
+        fields,
+    } = a;
+    *id == b.id
+        && *position == b.position
+        && *orientation_deg == b.orientation_deg
+        && *structure_type == b.structure_type
+        && *extension == b.extension
+        && *description == b.description
+        && *height_adjust == b.height_adjust
+        && *points == b.points
+        && *strings == b.strings
+        && *wires == b.wires
+        && *omit == b.omit
+        && *omit_sets == b.omit_sets
+        && *routes == b.routes
+        && *fields == b.fields
 }
 
 fn solve_one(
@@ -493,13 +587,13 @@ impl SolvedLine {
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut stale: Vec<&Jumper> = Vec::new();
-        let views = line.alignment_views();
+        let look = Lookup::of(line);
         let mut before = std::mem::take(&mut self.jumper_inputs);
         for j in &line.jumpers {
             // The inputs kept when they are still these (no copy made).
             let (now, same) = match before.remove(&j.id) {
-                Some(b) if b.matches(line, j, &views) => (b, true),
-                _ => (JumperInputs::of(line, j, &views), false),
+                Some(b) if b.matches(line, j, &look) => (b, true),
+                _ => (JumperInputs::of(line, j, &look), false),
             };
             let kept = same
                 && !now
@@ -542,7 +636,7 @@ impl SolvedLine {
                     j,
                     &crate::jumper::TapContext::default(),
                     &global,
-                    &views,
+                    &look,
                 )
             });
             update.jumpers = stale.len();

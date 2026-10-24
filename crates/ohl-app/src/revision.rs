@@ -321,6 +321,27 @@ pub fn hash_debug(value: &impl std::fmt::Debug) -> u64 {
     h.finish()
 }
 
+/// A hash of `value` written as JSON (what it holds, as [`hash_debug`]
+/// hashes it, faster for a whole line).
+pub fn hash_json(value: &(impl serde::Serialize + std::fmt::Debug)) -> u64 {
+    struct W(std::collections::hash_map::DefaultHasher);
+    impl std::io::Write for W {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            std::hash::Hasher::write(&mut self.0, b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut w = W(Default::default());
+    // (A value that cannot be written: its Debug text instead.)
+    if serde_json::to_writer(&mut w, value).is_err() {
+        return hash_debug(value);
+    }
+    std::hash::Hasher::finish(&w.0)
+}
+
 /// A hash of a stored point of cloud `cloud` (its part of the cloud's
 /// hash).
 pub fn point_hash(cloud: &str, p: &ohl_pointcloud::edit::StoredPoint) -> u64 {
@@ -406,7 +427,10 @@ impl Model {
                 l.set_weather_cases(&cases);
                 // Said on its own (Revision::loads_per).
                 l.solver.loads_per = ohl_line::LoadsPer::default();
-                let h = hash_debug(&(&l, &self.library, &cases));
+                // The line as JSON (written out faster than as text: no
+                // field names twice, numbers by the fast writer), the
+                // wire library and the cases as text.
+                let h = hash_debug(&(hash_json(&l), &self.library, &cases));
                 r.line_cache.set(Some((self.line_version, h)));
                 h
             }

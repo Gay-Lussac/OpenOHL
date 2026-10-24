@@ -1104,64 +1104,63 @@ pub fn ui(
             );
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
-            cases_box(ui, "jumper-cases-scroll", |ui| {
-                egui::Grid::new("jumper-cases")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for h in [
-                            "case",
-                            "length (m)",
-                            "sag (m)",
-                            "max T (N)",
-                            "of RTS",
-                            "low z (m)",
-                        ] {
-                            ui.label(egui::RichText::new(h).small());
+            // The case of the copy clicked (else the one shown).
+            let shown = model.selection_case.unwrap_or(case);
+            case_table(
+                ui,
+                "jumper-cases-scroll",
+                &[
+                    "case",
+                    "length (m)",
+                    "sag (m)",
+                    "max T (N)",
+                    "of RTS",
+                    "low z (m)",
+                ],
+                model.cases.len(),
+                |ui, k| {
+                    let solved = &model.cases[k];
+                    let mut cells: Vec<Cell> = vec![(
+                        case_name(
+                            &solved.case.name,
+                            k == shown,
+                            model.selection_case.is_some(),
+                        ),
+                        None,
+                    )];
+                    match solved.jumpers.iter().find(|x| x.jumper == id) {
+                        Some(js) => {
+                            let plain = |v: String| (egui::RichText::new(v), None);
+                            cells.push(plain(format!("{:.3}", js.unstressed_length)));
+                            cells.push(plain(format!("{:.3}", js.sag)));
+                            cells.push(plain(format!("{:.0}", js.max_tension)));
+                            // Taut: stretched between its clamps; over the
+                            // cable's strength: red.
+                            let used = egui::RichText::new(format!(
+                                "{:.0} %{}",
+                                js.strength_use * 100.0,
+                                if js.taut { " taut" } else { "" }
+                            ));
+                            cells.push(if js.strength_use > 1.0 {
+                                (used.color(ui.visuals().error_fg_color), None)
+                            } else if js.taut {
+                                (
+                                    used.color(ui.visuals().warn_fg_color),
+                                    Some(
+                                        "Taut: shorter than its clamps' distance — \
+                                         stretched, its pull holding the clamps back",
+                                    ),
+                                )
+                            } else {
+                                (used, None)
+                            });
+                            cells.push(plain(format!("{:.2}", js.low_point[2])));
                         }
-                        ui.end_row();
-                        // The case of the copy clicked (else the one shown).
-                        let shown = model.selection_case.unwrap_or(case);
-                        for (k, solved) in model.cases.iter().enumerate() {
-                            let name = case_name(
-                                &solved.case.name,
-                                k == shown,
-                                model.selection_case.is_some(),
-                            );
-                            ui.label(name);
-                            match solved.jumpers.iter().find(|x| x.jumper == id) {
-                                Some(js) => {
-                                    ui.label(format!("{:.3}", js.unstressed_length));
-                                    ui.label(format!("{:.3}", js.sag));
-                                    ui.label(format!("{:.0}", js.max_tension));
-                                    // Taut: stretched between its clamps;
-                                    // over the cable's strength: red.
-                                    let used = format!(
-                                        "{:.0} %{}",
-                                        js.strength_use * 100.0,
-                                        if js.taut { " taut" } else { "" }
-                                    );
-                                    let text = egui::RichText::new(used);
-                                    if js.strength_use > 1.0 {
-                                        crate::menu::error_label(ui, text.text().to_owned());
-                                    } else if js.taut {
-                                        ui.label(text.color(ui.visuals().warn_fg_color))
-                                            .on_hover_text(
-                                                "Taut: shorter than its clamps' distance — \
-                                                 stretched, its pull holding the clamps back",
-                                            );
-                                    } else {
-                                        ui.label(text);
-                                    }
-                                    ui.label(format!("{:.2}", js.low_point[2]));
-                                }
-                                None => {
-                                    ui.label("not solved");
-                                }
-                            }
-                            ui.end_row();
-                        }
-                    });
-            });
+                        None => cells.push((egui::RichText::new("not solved"), None)),
+                    }
+                    cells
+                },
+            );
             // Its supports in the case shown: each clamp's strings.
             if let Some(js) = model
                 .cases
@@ -1279,53 +1278,57 @@ pub fn ui(
             }
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
-            cases_box(ui, "span-cases-scroll", |ui| {
-                egui::Grid::new("cases").striped(true).show(ui, |ui| {
-                    for h in ["case", "H (kN)", "max T (kN)", "sag (m)", "low z (m)"] {
-                        ui.label(egui::RichText::new(h).small());
-                    }
-                    ui.end_row();
-                    // The case of the copy clicked (else the one shown).
-                    let shown = model
-                        .selection_case
-                        .unwrap_or_else(|| model.section_case(&section, case));
-                    // Both wind sides shown: the mirror after each case.
-                    let rows =
-                        model.cases.iter().enumerate().flat_map(|(k, c)| {
-                            c.drawn().enumerate().map(move |(m, d)| (k, m > 0, d))
-                        });
-                    for (k, mirrored, solved) in rows {
-                        let text = if mirrored {
-                            format!("{} (wind from the left)", solved.case.name)
-                        } else {
-                            solved.case.name.clone()
-                        };
-                        let name = case_name(
+            // The case of the copy clicked (else the one shown); both wind
+            // sides shown: the mirror after each case.
+            let shown = model
+                .selection_case
+                .unwrap_or_else(|| model.section_case(&section, case));
+            let rows: Vec<(usize, bool, &crate::model::Solved)> = model
+                .cases
+                .iter()
+                .enumerate()
+                .flat_map(|(k, c)| c.drawn().enumerate().map(move |(m, d)| (k, m > 0, d)))
+                .collect();
+            case_table(
+                ui,
+                "span-cases-scroll",
+                &["case", "H (kN)", "max T (kN)", "sag (m)", "low z (m)"],
+                rows.len(),
+                |_, i| {
+                    let (k, mirrored, solved) = rows[i];
+                    let text = if mirrored {
+                        format!("{} (wind from the left)", solved.case.name)
+                    } else {
+                        solved.case.name.clone()
+                    };
+                    let mut cells: Vec<Cell> = vec![(
+                        case_name(
                             &text,
                             k == shown && !mirrored,
                             model.selection_case.is_some(),
-                        );
-                        ui.label(name);
-                        match solved
-                            .shapes
-                            .iter()
-                            .find(|x| x.section == section)
-                            .and_then(|x| x.spans.get(span))
-                        {
-                            Some(sp) => {
-                                ui.label(format!("{:.2}", sp.horizontal_tension / 1e3));
-                                ui.label(format!("{:.2}", sp.max_tension / 1e3));
-                                ui.label(format!("{:.3}", sp.sag));
-                                ui.label(format!("{:.2}", sp.low_point[2]));
-                            }
-                            None => {
-                                ui.label("not solved");
-                            }
-                        }
-                        ui.end_row();
+                        ),
+                        None,
+                    )];
+                    match solved
+                        .shapes
+                        .iter()
+                        .find(|x| x.section == section)
+                        .and_then(|x| x.spans.get(span))
+                    {
+                        Some(sp) => cells.extend(
+                            [
+                                format!("{:.2}", sp.horizontal_tension / 1e3),
+                                format!("{:.2}", sp.max_tension / 1e3),
+                                format!("{:.3}", sp.sag),
+                                format!("{:.2}", sp.low_point[2]),
+                            ]
+                            .map(|v| (egui::RichText::new(v), None)),
+                        ),
+                        None => cells.push((egui::RichText::new("not solved"), None)),
                     }
-                });
-            });
+                    cells
+                },
+            );
             // Not solved in the case of the copy clicked (else the one
             // shown): why, and where its dashed red copy comes from.
             let shown = model
@@ -1462,6 +1465,62 @@ pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
             .max_height(CASES_HEIGHT)
             .auto_shrink([false, false])
             .show(ui, add);
+    });
+}
+
+/// A cell of [`case_table`]: its text, and what its hover says.
+type Cell = (egui::RichText, Option<&'static str>);
+
+/// Width of the case column of [`case_table`], points.
+const CASE_WIDTH: f32 = 190.0;
+
+/// Width of a value column of [`case_table`], points.
+const VALUE_WIDTH: f32 = 68.0;
+
+/// A table of `rows` rows (one per weather case) in a box of its own: the
+/// heading `headers` above, the rows scrolled, only those in view laid out
+/// (a line with a hundred cases and both wind sides has two hundred);
+/// columns of fixed width (the case's, then the values'), so the heading
+/// and the rows line up. `row` gives row `k`'s cells.
+fn case_table(
+    ui: &mut egui::Ui,
+    id: &str,
+    headers: &[&str],
+    rows: usize,
+    row: impl Fn(&egui::Ui, usize) -> Vec<Cell>,
+) {
+    let width = |c: usize| if c == 0 { CASE_WIDTH } else { VALUE_WIDTH };
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        let height = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
+        ui.horizontal(|ui| {
+            for (c, h) in headers.iter().enumerate() {
+                ui.add_sized(
+                    [width(c), height],
+                    egui::Label::new(egui::RichText::new(*h).small()).truncate(),
+                );
+            }
+        });
+        egui::ScrollArea::vertical()
+            .id_salt(id)
+            .min_scrolled_height(CASES_HEIGHT)
+            .max_height(CASES_HEIGHT)
+            .auto_shrink([false, false])
+            .show_rows(ui, height, rows, |ui, range| {
+                for k in range {
+                    let cells = row(ui, k);
+                    ui.horizontal(|ui| {
+                        for (c, (text, hover)) in cells.into_iter().enumerate() {
+                            let r = ui.add_sized(
+                                [width(c), height - ui.spacing().item_spacing.y],
+                                egui::Label::new(text).truncate(),
+                            );
+                            if let Some(h) = hover {
+                                r.on_hover_text(h);
+                            }
+                        }
+                    });
+                }
+            });
     });
 }
 

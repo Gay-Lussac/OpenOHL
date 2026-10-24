@@ -1734,7 +1734,7 @@ pub(crate) fn solve_jumpers_memo(
     let global = memo.map(|_| {
         (
             crate::incremental::JumperMemo::global(line, case),
-            line.alignment_views(),
+            crate::incremental::Lookup::of(line),
         )
     });
     let levels = line
@@ -1761,8 +1761,8 @@ pub(crate) fn solve_jumpers_memo(
                     .collect(),
             };
             match (memo, &global) {
-                (Some(m), Some((g, views))) => {
-                    m.solve(line, library, case, shapes, jumper, &context, g, views)
+                (Some(m), Some((g, look))) => {
+                    m.solve(line, library, case, shapes, jumper, &context, g, look)
                 }
                 _ => solve_one_jumper_in(line, library, case, shapes, jumper, &context),
             }
