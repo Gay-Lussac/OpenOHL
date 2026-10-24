@@ -301,8 +301,8 @@ impl RouteDrawing {
     }
 
     /// Adds the project's drawing `drawing` named `name` under the key
-    /// map: its lines within the square around the route
-    /// ([`key_square`]), north up, each line's points closer than 1/3000
+    /// map: its lines within the square around the route (centred on the
+    /// route's box, 1.6 times its longer side), north up, each line's points closer than 1/3000
     /// of the square to the last one kept left out (≈ 0.04 mm on a key
     /// map 110 mm wide); what lies on layers switched off is left out.
     ///
