@@ -20,6 +20,12 @@ of Parts A, B and C).
   template shows both. The necessary ground clearance is the existing
   line under each circuit's lowest conductor, lowered by its rule's
   clearance (`[conductor_clearance]`).
+- The necessary ground clearance as **one line for the whole line**
+  (owner: not always the lowest conductor's limit governs): at each
+  station the lowest of the circuits' lines (each circuit's lowest
+  conductor lowered by its rule's distance), the crossings where another
+  circuit governs added — the ground must stay under it
+  (`[conductor_clearance] envelope`, on in the plan-submission template).
 - The stringing tension is given per phase of each circuit (owner): the
   band row lists the phases on the circuit's line, the stringing table
   has a row per phase (`{st.phase}`).

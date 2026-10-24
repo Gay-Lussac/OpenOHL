@@ -1456,7 +1456,14 @@ fn conductor_curves(d: &RouteDrawing, o: &Options) -> Vec<crate::curves::Curve> 
     if !spec.show || o.conductor_clearance.is_empty() {
         return Vec::new();
     }
-    crate::curves::curves(d, &o.conductor_clearance, &spec.circuits, &spec.label).0
+    let curves = crate::curves::curves(d, &o.conductor_clearance, &spec.circuits, &spec.label).0;
+    if spec.envelope {
+        // One line for the whole line: the lowest of them.
+        return crate::curves::envelope(&curves, &spec.envelope_label)
+            .into_iter()
+            .collect();
+    }
+    curves
 }
 
 /// What to warn about the lines below the lowest conductor.
