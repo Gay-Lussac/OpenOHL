@@ -26,23 +26,7 @@ use std::collections::{BinaryHeap, HashSet};
 use ohl_core::budget::Budget;
 
 use super::mesher::{Field, Mesh, PrimShape};
-use crate::geometry::P3;
-
-fn sub(a: P3, b: P3) -> P3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: P3, b: P3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: P3, b: P3) -> P3 {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
+use crate::geometry::{P3, cross, dot, sub};
 
 fn mid(a: P3, b: P3) -> P3 {
     [

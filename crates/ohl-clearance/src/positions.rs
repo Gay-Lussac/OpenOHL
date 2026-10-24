@@ -23,30 +23,14 @@ use ohl_line::solve::SectionShape;
 use ohl_weather::{WeatherCase, WindSide};
 
 use crate::checks::{Wire, wires_of};
-use crate::geometry::{P3, closest_on_segment, distance};
+use crate::geometry::{P3, closest_on_segment, cross, distance, dot, sub};
 use ohl_line::jumper::JumperShape;
-
-fn sub(a: P3, b: P3) -> P3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: P3, b: P3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
 
 fn lerp(a: P3, b: P3, t: f64) -> P3 {
     [
         a[0] + t * (b[0] - a[0]),
         a[1] + t * (b[1] - a[1]),
         a[2] + t * (b[2] - a[2]),
-    ]
-}
-
-fn cross(a: P3, b: P3) -> P3 {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
     ]
 }
 

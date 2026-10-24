@@ -99,6 +99,19 @@ fn next_piece(id: &str, taken: &mut std::collections::BTreeSet<String>) -> Strin
     piece
 }
 
+/// The id a point labelled `label` gets as a new joint: `label`, else
+/// `<label>-a`, `<label>-a2`, `<label>-a3`… (the first not taken, then
+/// taken).
+pub(crate) fn free_point_id(label: &str, taken: &mut std::collections::BTreeSet<String>) -> String {
+    let id = std::iter::once(label.to_owned())
+        .chain(std::iter::once(format!("{label}-a")))
+        .chain((2..).map(|n| format!("{label}-a{n}")))
+        .find(|id| !taken.contains(id))
+        .expect("a free id");
+    taken.insert(id.clone());
+    id
+}
+
 /// Splits `members` at the joints `at` (member id, fraction, joint id):
 /// each member's pieces in order, the first keeping its id.
 pub fn split_members(
@@ -196,12 +209,7 @@ pub fn plan(
             continue;
         }
         let (a, b) = (pos(m.nodes[0]).map_err(bad)?, pos(m.nodes[1]).map_err(bad)?);
-        let id = std::iter::once(label.to_owned())
-            .chain(std::iter::once(format!("{label}-a")))
-            .chain((2..).map(|n| format!("{label}-a{n}")))
-            .find(|id| !taken.contains(id))
-            .expect("a free id");
-        taken.insert(id.clone());
+        let id = free_point_id(label, &mut taken);
         out.joints.push(MemberJoint {
             id: id.clone(),
             member: member.to_owned(),

@@ -490,15 +490,7 @@ pub fn point_joints(
 ) -> Vec<String> {
     let mut taken: std::collections::BTreeSet<String> =
         joints.iter().map(|(id, _, _)| (*id).to_owned()).collect();
-    let own = |label: &str, taken: &mut std::collections::BTreeSet<String>| {
-        let id = std::iter::once(label.to_owned())
-            .chain(std::iter::once(format!("{label}-a")))
-            .chain((2..).map(|n| format!("{label}-a{n}")))
-            .find(|id| !taken.contains(id))
-            .expect("a free id");
-        taken.insert(id.clone());
-        id
-    };
+    let own = crate::on_members::free_point_id;
     points
         .iter()
         .map(|(label, place)| match *place {
