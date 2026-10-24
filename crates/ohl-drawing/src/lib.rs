@@ -58,6 +58,7 @@ pub mod model;
 mod outline;
 pub mod paper;
 pub mod pdf;
+pub mod plans;
 pub mod png;
 pub mod style;
 mod table;
@@ -830,6 +831,10 @@ pub struct RouteDrawing {
     /// The project's drawings around the route for the key map, north up
     /// ([`RouteDrawing::add_key_map_drawing`]).
     pub key_background: Arc<Vec<background::KeyMapDrawing>>,
+    /// The project's drawings around the route for the route and
+    /// situation plans ([`RouteDrawing::add_map_drawing`]): north up, in
+    /// full detail within a band along the route.
+    pub map_background: Arc<Vec<background::KeyMapDrawing>>,
     /// The project's orthophotos, resampled along the route on each sheet
     /// ([`RouteDrawing::set_photo`]) when the options ask
     /// ([`Options::plan_photos`]).
@@ -1150,6 +1155,7 @@ pub fn build(
         sags: Vec::new(),
         background: Arc::default(),
         key_background: Arc::default(),
+        map_background: Arc::default(),
         photo: None,
     })
 }

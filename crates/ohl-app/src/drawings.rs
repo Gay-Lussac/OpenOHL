@@ -789,6 +789,9 @@ pub struct Input {
     pub plan_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
     /// The project's drawings drawn under the key map (none unless asked).
     pub key_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
+    /// The project's drawings drawn under the route and situation plans
+    /// (every one; none unless those plans are asked: [`Input::for_plans`]).
+    pub map_drawings: Vec<(String, Arc<ohl_background::Drawing>)>,
     /// The project file whose orthophotos are drawn under the plan and
     /// the image layers (none: every one); none unless asked.
     pub plan_photo: Option<(PathBuf, Option<Vec<String>>)>,
@@ -1266,6 +1269,7 @@ impl Input {
             stringing,
             plan_drawings,
             key_drawings,
+            map_drawings: Vec::new(),
             plan_photo,
             photo_source: PhotoSource::new(),
             out,
@@ -1306,6 +1310,10 @@ impl Input {
         }
         for (name, drawing) in &self.key_drawings {
             d.add_key_map_drawing(name, drawing);
+        }
+        // The route and situation plans': within 1 km, 5 cm apart.
+        for (name, drawing) in &self.map_drawings {
+            d.add_map_drawing(name, drawing, 1000.0, 0.05);
         }
         if let Some((name, source)) = self.photo() {
             d.set_photo(name, Some(source.clone()));
@@ -1399,6 +1407,147 @@ impl Input {
             ..self.options.clone()
         }
     }
+}
+
+/// Which of the other plans (Export › Plans; owner, 2026-10-24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanKind {
+    /// The route plan (north up, 1:5000 to 1:25 000).
+    Route,
+    /// The situation plans (north up, 1:500 to 1:2000).
+    Situation,
+    /// The phase plan (the structures where the arrangement changes).
+    Phase,
+}
+
+impl PlanKind {
+    /// In words.
+    pub fn title(self) -> &'static str {
+        match self {
+            PlanKind::Route => "Route plan",
+            PlanKind::Situation => "Situation plans",
+            PlanKind::Phase => "Phase plan",
+        }
+    }
+}
+
+/// One of the other plans to write: which, its paper and, for the route
+/// and situation plans, scale and backgrounds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanRequest {
+    /// Which plan.
+    pub kind: PlanKind,
+    /// Its paper (a standard size).
+    pub page: String,
+    /// Its scale (1:…; the route and situation plans).
+    pub scale: f64,
+    /// The project's drawings under it.
+    pub drawings: bool,
+    /// The orthophotos under it.
+    pub photo: bool,
+    /// The corridor drawn at the line width.
+    pub corridor: bool,
+}
+
+impl Input {
+    /// The export of the other plans: the Drawings window's settings
+    /// (template, title fields, routes, cases), every project drawing and
+    /// the orthophotos read for the route and situation plans.
+    pub fn for_plans(
+        model: &Model,
+        case: usize,
+        w: &DrawingsWindow,
+        out: PathBuf,
+        req: &PlanRequest,
+    ) -> Result<Self, String> {
+        let mut input = Self::prepare(model, case, w, out)?;
+        if req.kind != PlanKind::Phase {
+            if req.drawings {
+                input.map_drawings = model
+                    .backgrounds
+                    .drawings
+                    .iter()
+                    .map(|d| (d.info.name.clone(), d.drawing.clone()))
+                    .collect();
+            }
+            if req.photo && input.plan_photo.is_none() && !model.backgrounds.images.is_empty() {
+                input.plan_photo = Some((model.sources.file.clone(), None));
+            }
+        }
+        Ok(input)
+    }
+}
+
+/// Writes plan `req` of every route of `input`, reporting progress per
+/// route. Exit clause: 30 minutes per route.
+pub fn run_plans(
+    input: &Input,
+    req: &PlanRequest,
+    report: &dyn Fn(String, f32),
+) -> Result<String, String> {
+    let started = std::time::Instant::now();
+    let budget =
+        ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(30 * 60));
+    let page = ohl_drawing::page_format(&req.page)
+        .ok_or_else(|| format!("paper \"{}\": not a size", req.page))?;
+    let options = input.route_options();
+    let (mut files, mut warnings) = (0, Vec::new());
+    let n = input.routes.len();
+    for (r, route) in input.routes.iter().enumerate() {
+        report(
+            format!("route {} ({} of {n})", route.id, r + 1),
+            r as f32 / n as f32,
+        );
+        let d = input.drawing_with_backgrounds(route)?;
+        let (sheets, what) = match req.kind {
+            PlanKind::Phase => (
+                ohl_drawing::plans::phase_plan(&d, &options, &page),
+                "phase-plan",
+            ),
+            PlanKind::Route | PlanKind::Situation => {
+                use ohl_drawing::plans::{MapKind, MapPlan, map_plan};
+                let kind = if req.kind == PlanKind::Route {
+                    MapKind::Route
+                } else {
+                    MapKind::Situation
+                };
+                let plan = MapPlan {
+                    scale: req.scale,
+                    drawings: req.drawings,
+                    photo: req.photo.then_some(0.4),
+                    ..MapPlan::new(kind, req.corridor.then_some(options.plan_half_width))
+                };
+                (map_plan(&d, &options, &page, &plan), kind.file_name())
+            }
+        };
+        let written = ohl_drawing::export::write_plan(
+            &sheets,
+            &input.export,
+            &format!("{}-{what}", route.id),
+            &format!("{} — {}", req.kind.title(), d.name),
+            &input.out,
+            &budget,
+        )?;
+        files += written.files.len();
+        warnings.extend(
+            written
+                .warnings
+                .into_iter()
+                .map(|w| format!("route {}: {w}", route.id)),
+        );
+    }
+    report("done".into(), 1.0);
+    let mut text = format!(
+        "{}: {files} files written to {} in {:.1?}",
+        req.kind.title(),
+        input.out.display(),
+        started.elapsed()
+    );
+    for w in warnings {
+        text.push_str("\n⚠ ");
+        text.push_str(&w);
+    }
+    Ok(text)
 }
 
 /// Writes the drawings of `input`, reporting progress per route.

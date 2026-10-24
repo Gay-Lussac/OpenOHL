@@ -594,6 +594,7 @@ pub(super) fn tool_windows(
     survey_window(ctx, r);
     survey_io_windows(ctx, r);
     r.drawings.show(ctx, &mut r.model, r.case);
+    r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
     if std::mem::take(&mut r.model.drawings_setting_changed) {
         r.drawings.load(&r.model);
     }

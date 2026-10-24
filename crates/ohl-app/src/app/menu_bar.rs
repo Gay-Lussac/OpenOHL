@@ -72,6 +72,37 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
             r.drawings.open();
             ui.close();
         }
+        // The other plans, apart from the sheets (owner, 2026-10-24).
+        ui.menu_button("Plans", |ui| {
+            use crate::drawings::PlanKind;
+            for (kind, hover) in [
+                (
+                    PlanKind::Route,
+                    "The whole route north up at a small scale over the project's drawings and \
+                     orthophotos",
+                ),
+                (
+                    PlanKind::Situation,
+                    "The route in parts north up at a large scale over the cadastral survey and \
+                     orthophotos",
+                ),
+                (
+                    PlanKind::Phase,
+                    "The structures where the phase arrangement changes, each wire labelled",
+                ),
+            ] {
+                if ui
+                    .button(format!("{}…", kind.title()))
+                    .on_hover_text(hover)
+                    .clicked()
+                {
+                    let (rules, markers) = drawing_checks(r);
+                    r.drawings.set_checks(rules, markers);
+                    r.plans.show(kind);
+                    ui.close();
+                }
+            }
+        });
         if ui
             .add_enabled(
                 !busy && r.model.cloud.is_some(),

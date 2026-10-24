@@ -3463,3 +3463,71 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
         items,
     }
 }
+
+/// A page of `page` for the other plans (owner, 2026-10-24: phase plan,
+/// route and situation plans): the template's frame and title block,
+/// its values as a sheet of route `d` from `from` to `to` (between the
+/// structures `ends`) would have them, sheet `number` of `n`; and the
+/// room above the title block's row (mm) for the plan's drawing.
+pub(crate) fn framed_page(
+    d: &RouteDrawing,
+    o: &Options,
+    page: &Page,
+    (number, n): (usize, usize),
+    (from, to): (f64, f64),
+    ends: (String, String),
+) -> (Drawing, furniture::Rect, furniture::Values) {
+    let t = &o.template;
+    let paper = Paper::new(d, o, page);
+    let sl = SheetLayout {
+        number,
+        from,
+        to,
+        reach: to - from,
+        structures: ends,
+        warnings: Vec::new(),
+        page: page.clone(),
+        parts: Vec::new(),
+    };
+    let values = sheet_values(d, o, page, &sl, n);
+    let mut drawing = Drawing::sheet(page.width, page.height);
+    let items = &mut drawing.items;
+    for b in &t.frame.border {
+        let r = paper.frame;
+        items.push(rect(
+            Layer::Frame,
+            r[0] + b.inset.0,
+            r[1] + b.inset.0,
+            r[2] - 2.0 * b.inset.0,
+            r[3] - 2.0 * b.inset.0,
+            o.template.pen(Layer::Frame, pen("#000", b.width.0)),
+        ));
+    }
+    furniture::title_block(items, t, paper.title_block, &values, &o.logos);
+    let inner = paper.inner;
+    let room = [
+        inner[0],
+        inner[1],
+        inner[2],
+        (paper.title_block[1] - 3.0 - inner[1]).max(10.0),
+    ];
+    (drawing, room, values)
+}
+
+/// A text item for the other plans.
+pub(crate) fn plan_text(
+    layer: Layer,
+    at: [f64; 2],
+    size: f64,
+    anchor: Anchor,
+    t: impl Into<String>,
+    is_bold: bool,
+) -> Item {
+    let item = text(layer, at, size, anchor, t);
+    if is_bold { bold(item) } else { item }
+}
+
+/// A polyline item for the other plans.
+pub(crate) fn plan_path(layer: Layer, points: Vec<[f64; 2]>, color: &str, width: f64) -> Item {
+    path(layer, points, pen(color, width), None)
+}

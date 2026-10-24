@@ -515,6 +515,46 @@ profile alone, the other cases): nothing is computed a second way, and it
 follows the settings as they change. Without a sheet format it says that
 the export writes one continuous drawing.
 
+## Plans: route plan, situation plans, phase plan
+
+Beside the plan-and-profile sheets (2026-10-24, the owner's request,
+roadmap O14; built, in active development (not approved yet)), three
+plans in a menu of their own, **Export › Plans**, each written for every
+route with the sheet template, title fields, routes and cases of Export ›
+Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
+
+- **Route plan** — the whole route **north up** at a small scale
+  (1:5000 to 1:25 000, 1:10 000 by default), over the project's drawings
+  (e.g. municipal boundaries) and orthophotos: the line's axis, its wires,
+  its structures numbered, the corridor (at the drawings' line width), a
+  north arrow, a scale bar and a legend, in the template's frame and
+  title block. The sheets follow the route, each taking what fits.
+- **Situation plans** — the same at a large scale (1:500 to 1:2000,
+  1:1000 by default), the sheets overlapping (a tenth of their width),
+  over the cadastral survey loaded as a drawing (its lines and its texts,
+  the parcel numbers) and the orthophotos (under a white veil).
+- **Phase plan** — each structure's figure seen along the line (its
+  members, else its stick drawing), every wire position a dot in its
+  colour labelled with its circuit's **number** (the key under the
+  figures lists the circuits) and its phase, drawn only where the
+  arrangement of the wires **leaving it ahead** differs from the
+  structure before (a transposition, a circuit joining or leaving,
+  another arm — compared by level and place, not by height); the first
+  and the last always. Between, "from A to B: arrangement unchanged"
+  (the template's legend label `phase_unchanged`). Nothing typed twice:
+  taken from the line.
+
+The drawings come within 1 km of the line in full detail (5 cm), north
+up; the orthophotos are read at the template's background resolution.
+
+From the command line: `ohl drawing … --plans route,situation,phase`
+(`--route-plan-scale`, `--situation-scale`; the sheets' `--page`, else
+A3) writes `<route>-route-plan`, `-situation-plan`, `-phase-plan` beside
+the sheets (the project's drawings and orthophotos read for them).
+
+Not there yet: plan sets (several drawings exported at once), links to
+public map services, the corridor's land use.
+
 ## What is not there yet
 
 - No DWG files (DXF only); DXF has no line
