@@ -347,20 +347,7 @@ pub fn removal(t: &StructureType, h: &Handle) -> Removal {
         _ => Vec::new(),
     };
     for i in images {
-        let more = edits::removal(t, &i);
-        for (all, add) in [
-            (&mut r.joints, more.joints),
-            (&mut r.members, more.members),
-            (&mut r.points, more.points),
-            (&mut r.wires, more.wires),
-            (&mut r.strings, more.strings),
-        ] {
-            for x in add {
-                if !all.contains(&x) {
-                    all.push(x);
-                }
-            }
-        }
+        r.merge(edits::removal(t, &i));
     }
     r
 }

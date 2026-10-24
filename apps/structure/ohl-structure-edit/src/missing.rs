@@ -253,31 +253,55 @@ fn advice(t: &StructureType) -> Vec<Missing> {
             Place::Joints,
         ));
     }
-    let at = |id: &str| {
-        t.nodes
-            .iter()
-            .find(|n| n.id == id)
-            .map(|n| n.point.map(|v| v.si()))
-    };
+    // The joints by id (the first of an id, as a search finds it).
+    let mut joints: std::collections::HashMap<&str, [f64; 3]> = Default::default();
+    for n in &t.nodes {
+        joints
+            .entry(n.id.as_str())
+            .or_insert_with(|| n.point.map(|v| v.si()));
+    }
+    let at = |id: &str| joints.get(id).copied();
     // Each member with its two ends.
     let ends: Vec<(&ohl_structures::structures::TypeMember, [[f64; 3]; 2])> = t
         .members
         .iter()
         .filter_map(|m| Some((m, [at(&m.nodes[0])?, at(&m.nodes[1])?])))
         .collect();
+    // Crossings within one group (the X panels a generator made): one
+    // line per group; across groups, each pair.
+    let mut in_group: std::collections::BTreeMap<&str, (usize, &str)> = Default::default();
     for (i, (a, pa)) in ends.iter().enumerate() {
         for (b, pb) in &ends[i + 1..] {
             if a.nodes.iter().any(|n| b.nodes.contains(n)) {
                 continue;
             }
             if crosses(pa[0], pa[1], pb[0], pb[1]) {
-                out.push(Missing::advice(
-                    format!("members {} and {} cross without a joint", a.id, b.id),
-                    Some(Handle::Member(a.id.clone())),
-                    Place::Members,
-                ));
+                match (a.group.as_deref(), b.group.as_deref()) {
+                    (Some(g), Some(h)) if g == h => {
+                        in_group.entry(g).or_insert((0, a.id.as_str())).0 += 1;
+                    }
+                    _ => out.push(Missing::advice(
+                        format!("members {} and {} cross without a joint", a.id, b.id),
+                        Some(Handle::Member(a.id.clone())),
+                        Place::Members,
+                    )),
+                }
             }
         }
+    }
+    for (g, (n, first)) in in_group {
+        out.push(Missing::advice(
+            if n == 1 {
+                format!("two members of group {g} cross without a joint")
+            } else {
+                format!(
+                    "group {g}: {n} crossings without a joint (X bracing bolted at the \
+                     crossing is common)"
+                )
+            },
+            Some(Handle::Member(first.to_owned())),
+            Place::Members,
+        ));
     }
     out
 }

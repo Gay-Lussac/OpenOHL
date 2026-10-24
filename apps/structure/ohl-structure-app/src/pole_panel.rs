@@ -30,9 +30,16 @@ pub struct PoleState {
 }
 
 impl PoleState {
-    /// The section library of the folder `dir`, read when first asked.
-    fn library(&mut self, dir: &Path) -> &Result<SectionLibrary, String> {
-        if self.library.as_ref().is_none_or(|l| l.0 != dir) {
+    /// The section library given (`--sections`, as the members read it),
+    /// else that of the folder `dir` (it and its Sections folder), read
+    /// when first asked.
+    fn library(&mut self, dir: &Path, given: Option<&Path>) -> &Result<SectionLibrary, String> {
+        let from = given.unwrap_or(dir);
+        if self.library.as_ref().is_none_or(|l| l.0 != from) {
+            if let Some(g) = given {
+                self.library = Some((g.to_path_buf(), ohl_structure_link::section_library(g)));
+                return &self.library.as_ref().expect("read above").1;
+            }
             let mut lib = SectionLibrary::default();
             let mut err = None;
             for d in [dir.to_path_buf(), dir.join("Sections")] {
@@ -335,11 +342,11 @@ impl StructureApp {
             ui.end_row();
             // A hollow section of the section library, when one fits.
             ui.strong("cross-section").on_hover_text(
-                "A hollow cross-section of the cross-section library next to the file, of the pole's shape \
+                "A hollow cross-section of the cross-section library (the one given, else next to the file), of the pole's shape \
                  (polygonal with its sides, or circular): its wall, and its material's \
                  elasticity and density when not typed",
             );
-            let fits: Vec<(String, String)> = match self.pole.library(&dir) {
+            let fits: Vec<(String, String)> = match self.pole.library(&dir, self.sections_path.as_deref()) {
                 Ok(lib) => lib
                     .sections
                     .iter()
@@ -448,7 +455,7 @@ impl StructureApp {
                 error_label(ui, l);
             }
         }
-        if let Err(e) = self.pole.library(&dir) {
+        if let Err(e) = self.pole.library(&dir, self.sections_path.as_deref()) {
             error_label(ui, format!("cross-section library not read: {e}"));
         }
     }

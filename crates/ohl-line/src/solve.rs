@@ -5617,6 +5617,31 @@ mod spacer_tests {
         line
     }
 
+    /// Sections joined by a spacer, one of them changed edit after edit
+    /// and brought up to date incrementally: the same shapes as a full
+    /// solve (the group coupled again from each solved alone, so the
+    /// result does not depend on the edits before).
+    #[test]
+    fn a_spacer_group_brought_up_to_date_is_a_full_solve() {
+        let lib = library();
+        let case = WeatherCase::still("15", Temperature::from_celsius(15.0));
+        let mut line = spaced(Some(0.3), None);
+        let mut live = crate::incremental::SolvedLine::solve(&line, &lib, &case);
+        let id = line.sections[0].id.clone();
+        for h in [22_000.0, 26_000.0, 24_000.0] {
+            line.sections[0].stringing = crate::Stringing::Tension {
+                horizontal_tension: h,
+                temperature: 15.0,
+            };
+            live.update(&line, &lib, std::slice::from_ref(&id));
+            let full: Vec<SectionShape> = solve_line(&line, &lib, &case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(live.shapes(&line), full, "after H = {h}");
+        }
+    }
+
     fn mid(shape: &SectionShape) -> Vector3<f64> {
         v(shape.span_points[0].1)
     }

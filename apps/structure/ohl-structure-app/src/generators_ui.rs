@@ -225,8 +225,8 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
             .response
             .on_hover_text(
                 "At the levels where a panel's width changes the slope, and at the two levels \
-                 each crossarm generator of the file starts from (Rebuild all after adding a \
-                 crossarm). A panel's own plan bracing goes first.",
+                 each crossarm generator of the file starts from (the body is built again by \
+                 itself when a crossarm is added). A panel's own plan bracing goes first.",
             );
             let mut drop = None;
             egui::Grid::new("panels-form").striped(true).show(ui, |ui| {
@@ -575,6 +575,28 @@ impl StructureApp {
                 };
                 self.message = Some((what.clone(), false));
                 self.body.report = Some((what, r.kept));
+                // A crossarm added: a body bracing in plan at the arms'
+                // levels (`plan_auto`) built again, so it knows the new
+                // level (its own undo step).
+                if let Action::Apply(g) = &a
+                    && matches!(g.kind, Kind::Crossarm(_))
+                {
+                    let bodies: Vec<String> = generators(f.structure())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|b| matches!(&b.kind, Kind::Panels(p) if p.plan_auto != Plan::None))
+                        .map(|b| b.id)
+                        .collect();
+                    for id in bodies {
+                        if let Err(e) = f.edit(
+                            &format!("rebuild {id} (plan bracing at the arms)"),
+                            |doc, t| rebuild(doc, t, &id),
+                        ) {
+                            self.message = Some((e, true));
+                            return;
+                        }
+                    }
+                }
                 match &a {
                     Action::Apply(_) => self.body.form = None,
                     Action::Remove(id) if self.body.form.as_ref().is_some_and(|x| &x.id == id) => {

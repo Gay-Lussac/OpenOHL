@@ -64,11 +64,22 @@ pub(crate) struct Lookup<'a> {
     views: Vec<crate::route::AlignmentView>,
     /// The sections holding each section point (indices, in line order).
     at_point: std::collections::HashMap<&'a crate::SectionPoint, Vec<usize>>,
+    /// The solved shapes the jumpers are solved between, by section (the
+    /// first of a section, as a search finds it).
+    shape_at: std::collections::HashMap<&'a str, &'a SectionShape>,
 }
 
 impl<'a> Lookup<'a> {
-    /// Of `line`, solved with `library`.
-    pub(crate) fn of(line: &'a Line, library: &'a ohl_cables::Library) -> Self {
+    /// Of `line`, solved with `library`, its sections solved as `shapes`.
+    pub(crate) fn of(
+        line: &'a Line,
+        library: &'a ohl_cables::Library,
+        shapes: &'a [SectionShape],
+    ) -> Self {
+        let mut shape_at = std::collections::HashMap::with_capacity(shapes.len());
+        for s in shapes {
+            shape_at.entry(s.section.as_str()).or_insert(s);
+        }
         let mut at_point: std::collections::HashMap<&crate::SectionPoint, Vec<usize>> =
             Default::default();
         for (k, s) in line.sections.iter().enumerate() {
@@ -83,6 +94,7 @@ impl<'a> Lookup<'a> {
             library,
             views: line.alignment_views(),
             at_point,
+            shape_at,
         }
     }
 }
@@ -164,7 +176,7 @@ impl JumperMemo {
                 crate::Tap::Span(_) => None,
             })
         };
-        let shape_of = |id: &str| shapes.iter().find(|x| x.section == id);
+        let shape_of = |id: &str| look.shape_at.get(id).copied();
         // Kept: compared in place (nothing copied).
         let same = |k: &JumperKey| {
             k.global == global
@@ -614,7 +626,7 @@ impl SolvedLine {
         let mut jumpers = BTreeMap::new();
         let mut inputs = BTreeMap::new();
         let mut stale: Vec<&Jumper> = Vec::new();
-        let look = Lookup::of(line, library);
+        let look = Lookup::of(line, library, &shapes);
         let mut before = std::mem::take(&mut self.jumper_inputs);
         for j in &line.jumpers {
             // The inputs kept when they are still these (no copy made).
@@ -673,6 +685,13 @@ impl SolvedLine {
         }
         self.jumpers = jumpers;
         self.jumper_inputs = inputs;
+        // The kept solutions of jumpers no longer in the line forgotten.
+        if let Ok(mut m) = self.memo.kept.write()
+            && m.len() > line.jumpers.len()
+        {
+            let ids: HashSet<&str> = line.jumpers.iter().map(|j| j.id.as_str()).collect();
+            m.retain(|id, _| ids.contains(id.as_str()));
+        }
         update
     }
 

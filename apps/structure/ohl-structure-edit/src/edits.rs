@@ -106,6 +106,23 @@ pub struct Removal {
 }
 
 impl Removal {
+    /// `more` added (each item once).
+    pub fn merge(&mut self, more: Removal) {
+        for (all, add) in [
+            (&mut self.joints, more.joints),
+            (&mut self.members, more.members),
+            (&mut self.points, more.points),
+            (&mut self.wires, more.wires),
+            (&mut self.strings, more.strings),
+        ] {
+            for x in add {
+                if !all.contains(&x) {
+                    all.push(x);
+                }
+            }
+        }
+    }
+
     /// One line per kind, for the confirmation.
     pub fn lines(&self) -> Vec<String> {
         [
