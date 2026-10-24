@@ -3467,8 +3467,10 @@ pub fn plan_model(d: &RouteDrawing, o: &Options) -> Drawing {
 /// A page of `page` for the other plans (owner, 2026-10-24: phase plan,
 /// route and situation plans): the template's frame and title block,
 /// its values as a sheet of route `d` from `from` to `to` (between the
-/// structures `ends`) would have them, sheet `number` of `n`; and the
-/// room above the title block's row (mm) for the plan's drawing.
+/// structures `ends`) would have them, sheet `number` of `n`, its scale
+/// written `scale` (`{scales}`, the sheets' own scales otherwise wrong
+/// there); and the room above the title block's row (mm) for the plan's
+/// drawing.
 pub(crate) fn framed_page(
     d: &RouteDrawing,
     o: &Options,
@@ -3476,6 +3478,7 @@ pub(crate) fn framed_page(
     (number, n): (usize, usize),
     (from, to): (f64, f64),
     ends: (String, String),
+    scale: &str,
 ) -> (Drawing, furniture::Rect, furniture::Values) {
     let t = &o.template;
     let paper = Paper::new(d, o, page);
@@ -3489,7 +3492,8 @@ pub(crate) fn framed_page(
         page: page.clone(),
         parts: Vec::new(),
     };
-    let values = sheet_values(d, o, page, &sl, n);
+    let mut values = sheet_values(d, o, page, &sl, n);
+    values.text.insert("scales".into(), scale.to_owned());
     let mut drawing = Drawing::sheet(page.width, page.height);
     let items = &mut drawing.items;
     for b in &t.frame.border {
