@@ -461,9 +461,9 @@ impl StructureApp {
         if item(
             ui,
             "Delete what is selected…",
-            self.selected.len() == 1,
-            "Delete it, with what goes with it (asks first)",
-            "Select one thing",
+            !self.selected.is_empty(),
+            "Delete it all, with what goes with each (asks first; one undo step)",
+            "Select something first",
         ) {
             self.ask_delete();
         }

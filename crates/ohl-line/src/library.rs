@@ -442,6 +442,14 @@ impl Line {
                 m.insert(s.id.clone(), (stored, s.clone()));
             }
         }
+        // Structures no longer in the line forgotten.
+        if let Some(m) = kept.as_deref_mut()
+            && m.len() > line.structures.len()
+        {
+            let ids: std::collections::HashSet<&str> =
+                line.structures.iter().map(|s| s.id.as_str()).collect();
+            m.retain(|id, _| ids.contains(id.as_str()));
+        }
         drop(kept);
 
         // Wind areas of library assemblies (a V's shared by its legs), for
@@ -863,6 +871,47 @@ mod tests {
         let on: Vec<_> = r.strings_to(&w.label).collect();
         assert_eq!(on.len(), 1);
         assert_eq!(r.point(&on[0].top).unwrap().position, top.position);
+    }
+
+    /// Resolved through a cache, edit after edit (a structure moved,
+    /// turned, given another extension, deleted, added again): the same
+    /// line as resolved without it.
+    #[test]
+    fn a_resolve_through_the_cache_is_a_resolve() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let mut line = Line::load(&root.join("synthetic-line-typed.ohl.json")).unwrap();
+        let structures = StructureLibrary::load_dir(&root.join("Structures")).unwrap();
+        let insulators = InsulatorLibrary::default();
+        let cache = ResolveCache::default();
+        let check = |line: &Line| {
+            let kept = line
+                .resolve_with(&structures, &insulators, Some(&cache))
+                .unwrap();
+            assert_eq!(kept, line.resolve(&structures, &insulators).unwrap());
+        };
+        check(&line);
+        line.structures[1].position[0] += 2.0;
+        check(&line);
+        line.structures[1].orientation_deg += 5.0;
+        check(&line);
+        line.structures[2].height_adjust += 1.0;
+        check(&line);
+        let gone = line.structures.remove(3);
+        let sections = std::mem::take(&mut line.sections);
+        line.sections = sections
+            .iter()
+            .filter(|s| s.points.iter().all(|p| p.structure != gone.id))
+            .cloned()
+            .collect();
+        let jumpers = std::mem::take(&mut line.jumpers);
+        line.jumpers = jumpers
+            .into_iter()
+            .filter(|j| j.points().all(|p| p.structure != gone.id))
+            .collect();
+        check(&line);
+        line.structures.insert(3, gone);
+        line.sections = sections;
+        check(&line);
     }
 
     /// The committed typed example resolves from its simple pylon files

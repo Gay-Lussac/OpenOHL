@@ -701,6 +701,29 @@ fn crossing_members_are_found() {
         .map(|m| m.reason.as_str())
         .collect();
     assert_eq!(crossing, vec!["members M1 and M3 cross without a joint"]);
+    // An X of one group (as a generator makes them): one line for it.
+    let x = format!(
+        "{text}\n[[node]]\nid = \"X1\"\npoint = [\"-1 m\", \"0 m\", \"40 m\"]\n\n\
+         [[node]]\nid = \"X2\"\npoint = [\"1 m\", \"0 m\", \"42 m\"]\n\n\
+         [[node]]\nid = \"X3\"\npoint = [\"1 m\", \"0 m\", \"40 m\"]\n\n\
+         [[node]]\nid = \"X4\"\npoint = [\"-1 m\", \"0 m\", \"42 m\"]\n\n\
+         [[member]]\nid = \"D1\"\nnodes = [\"X1\", \"X2\"]\ngroup = \"body-x\"\n\n\
+         [[member]]\nid = \"D2\"\nnodes = [\"X3\", \"X4\"]\ngroup = \"body-x\"\n"
+    );
+    let t = StructureType::parse(Path::new("p.ohls"), &x).unwrap();
+    let m = missing(&t, 2);
+    let crossing: Vec<&str> = m
+        .iter()
+        .filter(|m| m.reason.contains("cross"))
+        .map(|m| m.reason.as_str())
+        .collect();
+    assert_eq!(
+        crossing,
+        vec![
+            "members M1 and M3 cross without a joint",
+            "two members of group body-x cross without a joint"
+        ]
+    );
 }
 
 #[test]

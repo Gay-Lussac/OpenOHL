@@ -425,9 +425,19 @@ impl StructureApp {
     }
 
     /// Delete…: what is picked, asked first.
+    /// Asks before deleting what is picked (all of it, with what goes
+    /// with each: one confirmation, one undo step).
     pub fn ask_delete(&mut self) {
-        if let (Some(f), [h]) = (&self.file, self.selected.as_slice()) {
-            self.confirm = Some(edit::symmetry::removal(f.structure(), h));
+        let Some(f) = &self.file else {
+            return;
+        };
+        let mut picked = self.selected.iter();
+        if let Some(first) = picked.next() {
+            let mut r = edit::symmetry::removal(f.structure(), first);
+            for h in picked {
+                r.merge(edit::symmetry::removal(f.structure(), h));
+            }
+            self.confirm = Some(r);
         }
     }
 
@@ -523,9 +533,11 @@ impl StructureApp {
                 self.toggle_link_tool();
             }
             if ui
-                .add_enabled(self.selected.len() == 1, egui::Button::new("Delete…"))
-                .on_hover_text("Delete what is picked, with what goes with it (asks first)")
-                .on_disabled_hover_text("Pick one thing")
+                .add_enabled(!self.selected.is_empty(), egui::Button::new("Delete…"))
+                .on_hover_text(
+                    "Delete what is picked, with what goes with each (asks first; one undo step)",
+                )
+                .on_disabled_hover_text("Pick something first")
                 .clicked()
             {
                 self.ask_delete();

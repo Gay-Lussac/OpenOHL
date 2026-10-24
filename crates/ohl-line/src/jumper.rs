@@ -1734,7 +1734,7 @@ pub(crate) fn solve_jumpers_memo(
     let global = memo.map(|_| {
         (
             crate::incremental::JumperMemo::global(line, case),
-            crate::incremental::Lookup::of(line, library),
+            crate::incremental::Lookup::of(line, library, shapes),
         )
     });
     let levels = line
