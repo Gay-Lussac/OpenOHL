@@ -498,7 +498,8 @@ geometry, and fast), the code's numbers and its formulas stay out of it.
 
 - `checks()` lists the checks it runs: the **id** of what OpenOHL
   measures for it (today `phase-distance`, the distance between
-  conductors in the span), its title and **its Checks submenu** (the app
+  conductors in the span, and `unequal-wind`, the distance under
+  unequal wind: one station per pair, d and β, no sag or string), its title and **its Checks submenu** (the app
   builds the Checks menu from the plugins in use: a check's entry is
   there only while its plugin is; a check OpenOHL does not measure for is
   listed, greyed), an

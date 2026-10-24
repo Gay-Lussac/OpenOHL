@@ -208,6 +208,102 @@ pub(super) fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
     true
 }
 
+/// Checks › LeV/OLEI › Distance between conductors under unequal wind:
+/// its own page, one weather case with wind (the windiest), run in the
+/// background with a coarse step; each pair's two winds 60 … 100 % apart;
+/// a result clicked draws its line and the pair's two conductors as
+/// measured (at their winds, labelled; the case shown kept, nothing
+/// solved); the page closed: both gone.
+#[test]
+fn the_unequal_wind_check_draws_the_pair_at_its_winds() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    if !lev_plugin(&mut harness) {
+        return;
+    }
+    harness.get_by_label("Checks").click();
+    harness.run();
+    harness.get_by_label_contains("LeV/OLEI").hover();
+    harness.run();
+    harness
+        .get_by_label("Distance between conductors under unequal wind (LeV)…")
+        .click();
+    harness.run();
+    assert!(
+        harness
+            .state_mut()
+            .dock()
+            .find_tab(&crate::app::Tab::UnequalWind)
+            .is_some(),
+        "its page"
+    );
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.unequal_wind;
+        assert!(w.check().is_ok(), "{:?}", w.check().err());
+        assert_eq!(w.cases.len(), 1, "one case");
+        let k = *w.cases.first().unwrap();
+        assert!(r.model.cases[k].case.wind_pressure.si() > 0.0, "with wind");
+        w.wind_step = 1000.0;
+    }
+    harness.get_by_label("Run").click();
+    let started = std::time::Instant::now();
+    let row = loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if let (Some(rep), false) = r.unequal_wind.report() {
+            let rep = rep.as_ref().unwrap();
+            assert!(!rep.rows.is_empty());
+            for x in &rep.rows {
+                let [a, b] = x.pressure.expect("the winds");
+                assert!(a.min(b) >= 0.6 * a.max(b) - 1e-6, "{a} {b}");
+                assert!(x.side.is_some());
+                assert!(x.rule.contains("unequal wind"), "{}", x.rule);
+            }
+            break rep.rows[0].clone();
+        }
+        assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    harness.state_mut().ready().unwrap().unequal_wind.only_below = false;
+    harness.run();
+    let shown = harness.state_mut().ready().unwrap().case;
+    let label = format!("{} span {}", row.span[0].0, row.span[0].1 + 1);
+    harness.query_all_by_label(&label).next().unwrap().click();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .view3d
+            .measure
+            .clone()
+            .map(|m| [m.0, m.1]),
+        Some(row.at)
+    );
+    // The two conductors as measured, drawn at once (nothing solved);
+    // the case shown kept.
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.case, shown);
+    let w = &r.view3d.measure_wires;
+    assert_eq!(w.len(), 2);
+    assert_eq!(w[0].0, row.wires[0]);
+    let [a, _] = row.pressure.unwrap();
+    if a > 0.0 {
+        assert!(w[0].1.contains(&format!("{a:.0} Pa")), "{}", w[0].1);
+    }
+    let dock = harness.state_mut().dock();
+    let at = dock.find_tab(&crate::app::Tab::UnequalWind).unwrap();
+    dock.remove_tab(at);
+    harness.run();
+    let v = &harness.state_mut().ready().unwrap().view3d;
+    assert!(v.measure.is_none() && v.measure_wires.is_empty());
+}
+
 /// Checks › LeV/OLEI › Distance between conductors (the menu the lev-ch
 /// plugin defines; none without it): the window opens with the
 /// shipped LeV values, checks the ticked case in the background (pairs
@@ -234,16 +330,18 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     if !lev_plugin(&mut harness) {
         return;
     }
+    let original;
     {
         let m = &harness.state_mut().ready().unwrap().model;
-        assert_eq!(m.checks.len(), 1, "{:?}", m.check_problems);
+        // In the span and under unequal wind.
+        assert_eq!(m.checks.len(), 2, "{:?}", m.check_problems);
     }
     harness.get_by_label("Checks").click();
     harness.run();
     harness.get_by_label_contains("LeV/OLEI").hover();
     harness.run();
     harness
-        .get_by_label_contains("Distance between conductors")
+        .get_by_label("Distance between conductors (LeV)…")
         .click();
     harness.run();
     // A page of its own, floating first (it may be docked).
@@ -260,6 +358,7 @@ fn the_checks_menu_opens_the_phase_distance_window() {
         assert!(w.check().is_ok(), "{:?}", w.check().err());
         assert!(w.circuits.is_none(), "every circuit");
         // A case other than the one shown: a click shows it.
+        original = r.case;
         let other = (r.case + 1) % r.model.cases.len();
         assert_ne!(other, r.case);
         w.cases = std::iter::once(other).collect();
@@ -317,15 +416,10 @@ fn the_checks_menu_opens_the_phase_distance_window() {
     let at = dock.find_tab(&crate::app::Tab::PhaseDistance).unwrap();
     dock.remove_tab(at);
     harness.run();
-    assert!(
-        harness
-            .state_mut()
-            .ready()
-            .unwrap()
-            .view3d
-            .measure
-            .is_none()
-    );
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.view3d.measure.is_none());
+    // The case shown before the check's, back.
+    assert_eq!(r.case, original);
 }
 
 /// The library of performed checks: a run of the LeV distance between

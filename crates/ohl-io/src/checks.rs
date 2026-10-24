@@ -6,7 +6,9 @@
 //! OpenOHL measures the line, the plugin holds the values and the rules.
 //! The first: the distance between conductors in the span
 //! (`phase-distance`, [`ohl_clearance::phase_distance`]), its stations
-//! handed to the plugin pair by pair, one plugin instance per core.
+//! handed to the plugin pair by pair, one plugin instance per core; and
+//! the distance between conductors under unequal wind (`unequal-wind`,
+//! [`ohl_clearance::unequal_wind`]), the plugin asked once per pair.
 //!
 //! Exit clauses: each plugin call has the plugin's limits (ADR-0003); the
 //! measuring has the budget given.
@@ -16,11 +18,15 @@ use std::path::{Path, PathBuf};
 use ohl_clearance::phase_distance::{
     Conductor, Evaluator, PairGeometry, PhaseDistancePair, PhaseDistanceSettings, Required, check,
 };
+use ohl_clearance::unequal_wind::{self, UnequalWindPair, UnequalWindSettings, WindLevel};
 use ohl_core::budget::Budget;
 use ohl_plugins::{CheckInfo, ConductorPair, ValueTable, WasmCheckPlugin, WasmHost};
 
 /// The id of the distance between conductors in the span.
 pub const PHASE_DISTANCE: &str = "phase-distance";
+
+/// The id of the distance between conductors under unequal wind.
+pub const UNEQUAL_WIND: &str = "unequal-wind";
 
 /// A check a plugin runs.
 #[derive(Debug, Clone)]
@@ -145,18 +151,51 @@ pub fn phase_distance(
     // Compiled once; an instance (its own store) per core.
     let first = host.load_check(&check.dir).map_err(|e| e.to_string())?;
     let first = std::sync::Mutex::new(first);
-    let make = || -> Result<PluginEvaluator, String> {
-        let plugin = host
-            .another_check(&first.lock().expect("not poisoned"))
-            .map_err(|e| e.to_string())?;
-        Ok(PluginEvaluator {
-            plugin,
-            check: &check.info.id,
-            values,
-            choices,
-        })
-    };
+    let make = || evaluator(host, &first, check, values, choices);
     check_with(settings, conductors, budget, make)
+}
+
+/// Another instance of the plugin compiled in `first`, as an evaluator.
+fn evaluator<'a>(
+    host: &WasmHost,
+    first: &std::sync::Mutex<WasmCheckPlugin>,
+    check: &'a PluginCheck,
+    values: &'a str,
+    choices: &'a [u32],
+) -> Result<PluginEvaluator<'a>, String> {
+    let plugin = host
+        .another_check(&first.lock().expect("not poisoned"))
+        .map_err(|e| e.to_string())?;
+    Ok(PluginEvaluator {
+        plugin,
+        check: &check.info.id,
+        values,
+        choices,
+    })
+}
+
+/// The distance between conductors under unequal wind: measured here on
+/// the line solved at `levels` ([`unequal_wind::levels`]), required by
+/// the plugin of `check` with `values` and `choices`.
+pub fn unequal_wind(
+    host: &WasmHost,
+    check: &PluginCheck,
+    values: &str,
+    choices: &[u32],
+    settings: &UnequalWindSettings,
+    levels: &[WindLevel],
+    budget: &Budget,
+) -> Result<Vec<UnequalWindPair>, String> {
+    if check.info.id != UNEQUAL_WIND {
+        return Err(format!(
+            "{} is not the distance between conductors under unequal wind",
+            check.info.id
+        ));
+    }
+    let first = host.load_check(&check.dir).map_err(|e| e.to_string())?;
+    let first = std::sync::Mutex::new(first);
+    let make = || evaluator(host, &first, check, values, choices);
+    unequal_wind::check(settings, levels, budget, make)
 }
 
 fn check_with<'a>(
@@ -286,5 +325,88 @@ mod tests {
         assert!(df[0] > 0.0 && df[1] > 0.0);
         assert!(joined.worst.required >= 0.9);
         assert!(pairs.iter().filter(|p| p.rule.starts_with("2.2.4")).count() == 1);
+    }
+
+    /// The LeV plugin's unequal wind check on the synthetic line at 10 °C,
+    /// 500 Pa in steps of 100 Pa: each pair's closest approach under one
+    /// conductor at p, the other at 60 … 100 % of p, required C₃ / C₄
+    /// (the plugin's numbers: z, C); closer than in still air.
+    #[test]
+    fn the_lev_plugin_checks_unequal_wind() {
+        let dir = root().join("local-data/plugins/lev-ch");
+        let built = dir
+            .join("target/wasm32-wasip2/release/lev_ch.wasm")
+            .is_file();
+        if !dir.is_dir() || !built {
+            assert!(
+                !dir.is_dir() || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+                "lev-ch plugin not built"
+            );
+            eprintln!("skipping: the lev-ch plugin is not here or not built");
+            return;
+        }
+        let host = WasmHost::new().unwrap();
+        let (checks, _) = list(&host, std::slice::from_ref(&dir));
+        let check = checks.iter().find(|c| c.info.id == UNEQUAL_WIND).unwrap();
+        assert_eq!(check.info.menu, vec!["LeV/OLEI".to_owned()]);
+        let values = &check.info.values;
+        assert!(!value_tables(&host, check, values).unwrap().is_empty());
+
+        let ex = root().join("examples/synthetic-line");
+        let line = ohl_line::Line::load(&ex.join("synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root().join("libraries/cables")).unwrap();
+        let mut case = ohl_weather::WeatherCase::still("wind", Temperature::from_celsius(10.0));
+        case.wind_pressure = ohl_core::units::Stress::from_pascals(500.0);
+        let solve = |c: &ohl_weather::WeatherCase| {
+            let (mut shapes, mut failed) = (Vec::new(), Vec::new());
+            for r in ohl_line::solve::solve_line(&line, &library, c) {
+                match r {
+                    Ok(s) => shapes.push(s),
+                    Err(e) => failed.push(e.to_string()),
+                }
+            }
+            (shapes, failed)
+        };
+        let (levels, notes) =
+            unequal_wind::solve_levels(&line, &library, &case, 100.0, 0.6, solve).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+        // 0 once; 60, 100, 120, 180, 200, 240, 300, 400, 500 from each
+        // side.
+        assert_eq!(levels.len(), 1 + 2 * 9);
+        let settings = UnequalWindSettings::default();
+        let pairs = unequal_wind(
+            &host,
+            check,
+            values,
+            &[],
+            &settings,
+            &levels,
+            &Budget::new(),
+        )
+        .unwrap();
+        assert!(!pairs.is_empty());
+        let still = phase_distance(
+            &host,
+            checks.iter().find(|c| c.info.id == PHASE_DISTANCE).unwrap(),
+            values,
+            &[0],
+            &PhaseDistanceSettings::default(),
+            &levels[0].conductors,
+            &Budget::new(),
+        )
+        .unwrap();
+        for p in &pairs {
+            assert!(p.rule.starts_with("2.2 unequal wind"), "{}", p.rule);
+            assert_eq!(p.values, vec![p.required]);
+            let [hi, lo] = if p.pressure[0] >= p.pressure[1] {
+                p.pressure
+            } else {
+                [p.pressure[1], p.pressure[0]]
+            };
+            assert!(lo >= 0.6 * hi - 1e-6, "{:?}", p.pressure);
+            // Never farther than in still air.
+            let s = still.iter().find(|s| (s.a, s.b) == (p.a, p.b)).unwrap();
+            assert!(p.distance <= s.worst.distance + 0.05, "{p:?} {:?}", s.worst);
+        }
     }
 }

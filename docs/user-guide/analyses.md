@@ -141,7 +141,8 @@ plugin's own and the rule it applied, with a note when it is at a clamp
 or on a nearby span. Clicking a span, or a distance, selects the span,
 shows the result's weather case and draws the worst station's line in
 the 3D view, labelled with d and the required distance; the line goes
-when the window is closed (or a new run starts). **Export CSV…** writes
+when the window is closed (or a new run starts), and closing it shows
+again the cases shown before (unless you chose another meanwhile). **Export CSV…** writes
 every pair with the points. Below the settings, the window explains the
 computation (the plugin's "How it is computed") and shows the **values
 used** as tables, for transparency, and where they come from (the
@@ -160,6 +161,27 @@ results and whether the line changed since (*stale*); **Run** runs it
 again with its parameters, shows each pair against the saved run (new,
 fixed, worse, better) and asks whether to replace the saved report.
 
+
+### Under unequal wind
+
+With a plugin that runs it (e.g. **Checks › LeV/OLEI › Distance between
+conductors under unequal wind…**), the same window checks the distance
+two conductors keep while the wind blows them unequally: one at a wind
+p, the other at a share of p up to p (LeV: 60 … 100 %), p from none up
+to the wind of the **weather case** chosen (its temperature and ice
+kept), in **steps** you set (default 50 Pa; the case's wind always
+included), from each side. The line is solved at each step and at the
+share of each (a few seconds per level on a long line, side by side on
+the cores). The pairs are chosen as above (circuits, nearby spans).
+Per pair: the closest approach, d, the required distance (the plugin's,
+e.g. C₃ / C₄), the margin, the wind on each conductor and the side.
+Clicking it draws the line between the two points and the pair's two
+conductors as they were measured, each at its wind, labelled with it
+and the side — only that span's pair, on top of the view; the weather
+case shown stays as it is and nothing is solved (a saved run keeps the
+pair's conductors to draw them too). Values, saved runs
+and CSV as above. How it is measured: [the core's
+part](../development/phase-distance-check.md#under-unequal-wind).
 ## The library of performed checks
 
 **Checks › Performed checks…** (a page like the check's, floating

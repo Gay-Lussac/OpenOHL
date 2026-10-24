@@ -284,7 +284,13 @@ impl TabViewer for Viewer<'_> {
             Tab::PhaseDistance => {
                 let out = r.phase_distance.ui(ui, &r.model);
                 r.phase_distance.apply_values(&mut r.model);
-                r.phase_distance_out(out);
+                r.phase_distance_out(out, crate::phase_distance::Kind::Span);
+                None
+            }
+            Tab::UnequalWind => {
+                let out = r.unequal_wind.ui(ui, &r.model);
+                r.unequal_wind.apply_values(&mut r.model);
+                r.phase_distance_out(out, crate::phase_distance::Kind::UnequalWind);
                 None
             }
             Tab::CheckLibrary => {
@@ -449,7 +455,7 @@ pub fn open_page(dock: &mut DockState<Tab>, tab: Tab) {
         Tab::Table(_) => 2,
         Tab::Python => 3,
         Tab::StructureEditor => 4,
-        Tab::PhaseDistance | Tab::CheckLibrary => 5,
+        Tab::PhaseDistance | Tab::UnequalWind | Tab::CheckLibrary => 5,
         _ => 0,
     };
     if group(&tab) > 0 {

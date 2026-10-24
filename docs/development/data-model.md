@@ -2206,6 +2206,13 @@ version, the values file's name, text and SHA-256, the plugin's
 choices, spacing, nearby pairs, the circuits, the weather cases with
 their values and each circuit's plugin-column values; as results the
 counts and the pairs below the required distance or within 1 m of it.
+The distance under unequal wind (`check` `unequal-wind`, 2026-10-24)
+keeps the same, with one weather case, and in the parameters
+`wind_step_pa` and `low_share` (the other conductor's least share of
+the wind); each pair adds `pressure` (the wind on each conductor, Pa)
+and `side` (`left` / `right`) and `wires` (the two conductors' points
+as measured, each at its wind, to draw the pair), its sag, l_k and
+length below 0.
 
 The vegetation check (`check` `ohl.vegetation`, title "Vegetation and
 danger trees", 2026-10-20; `ohl-app` `vegetation::saved`) keeps as
