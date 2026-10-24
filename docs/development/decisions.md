@@ -10,6 +10,13 @@ of Parts A, B and C).
 
 ## 2026-10-24
 
+**The ground rule of the sheets chosen (owner, 2026-10-24)**
+
+- Export › Drawings…: the ground rule the clearance line and the lines
+  below the lowest conductor take is chosen by name (default as before:
+  for each circuit the largest of its voltage); kept with the project's
+  drawing settings (`ground_rule`).
+
 **The stringing table smaller (owner, 2026-10-24)**
 
 - Without a `{st.phase}` column the table has one row per tension

@@ -110,6 +110,9 @@ pub struct DrawingsWindow {
     /// The clearance line from the project's ground rule (when there is
     /// one), else [`DrawingsWindow::clearance`].
     pub clearance_rule: bool,
+    /// The ground rule the clearance lines take, by name (none: for each
+    /// circuit the largest of its voltage; owner, 2026-10-24).
+    pub ground_rule: Option<String>,
     /// The violations of the last clearance check drawn as markers.
     pub markers_on: bool,
     /// The project's clearance rules for the ground (Checks › Ground
@@ -164,6 +167,7 @@ impl Default for DrawingsWindow {
             plan_scale: None,
             logos: Vec::new(),
             clearance_rule: true,
+            ground_rule: None,
             markers_on: true,
             ground_rules: Arc::default(),
             markers: Arc::default(),
@@ -189,6 +193,20 @@ pub fn ground_rule_clearance(rules: &[ohl_clearance::Rule], line: &Line) -> Opti
         .filter_map(|r| Some((r.vertical.as_ref()?.largest(&kvs), r.name.clone())))
         .filter(|(d, _)| d.is_finite() && *d > 0.0)
         .max_by(|a, b| a.0.total_cmp(&b.0))
+}
+
+/// The ground rules the drawings take: the one called `chosen` (none, or
+/// not among them: all of them, each circuit its largest).
+pub fn chosen_ground_rules(
+    rules: &[ohl_clearance::Rule],
+    chosen: Option<&str>,
+) -> Vec<ohl_clearance::Rule> {
+    match chosen {
+        Some(n) if rules.iter().any(|r| r.name == n) => {
+            rules.iter().filter(|r| r.name == n).cloned().collect()
+        }
+        _ => rules.to_vec(),
+    }
 }
 
 /// Isoclearance lines: (clearance m, points on the ground), and the top
@@ -271,6 +289,10 @@ pub struct DrawingSettings {
     pub logos: Vec<LogoSetting>,
     /// The clearance line from the project's ground rule.
     pub clearance_rule: bool,
+    /// The ground rule the clearance lines take, by name (none: the
+    /// largest for each circuit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ground_rule: Option<String>,
     /// The last clearance check's violations as markers.
     pub markers: bool,
     /// The sheet template, its fields, the revisions, the versions drawn.
@@ -328,6 +350,7 @@ impl DrawingSettings {
                 })
                 .collect(),
             clearance_rule: w.clearance_rule,
+            ground_rule: w.ground_rule.clone(),
             markers: w.markers_on,
             sheet: w.sheet.clone(),
         }
@@ -415,6 +438,7 @@ impl DrawingSettings {
             .map(|l| (l.file.clone(), l.width))
             .collect();
         w.clearance_rule = self.clearance_rule;
+        w.ground_rule = self.ground_rule.clone();
         w.markers_on = self.markers;
         w.sheet = self.sheet.clone();
         if w.sheet.template.is_empty() {
@@ -994,13 +1018,14 @@ impl Input {
             .iter()
             .map(|(file, width)| ohl_drawing::Logo::from_file(file, *width))
             .collect::<Result<Vec<_>, _>>()?;
-        let clearance = match ground_rule_clearance(&w.ground_rules, &model.line) {
+        let ground_rules = chosen_ground_rules(&w.ground_rules, w.ground_rule.as_deref());
+        let clearance = match ground_rule_clearance(&ground_rules, &model.line) {
             Some((d, _)) if w.clearance_rule => Some(d),
             _ => w.clearance,
         };
         let s = &w.sheet;
         let conductor_clearance = if s.conductor_clearance || template.conductor_clearance.show {
-            ohl_drawing::curves::conductor_clearances(&model.line, &w.ground_rules).0
+            ohl_drawing::curves::conductor_clearances(&model.line, &ground_rules).0
         } else {
             Vec::new()
         };
@@ -1871,7 +1896,9 @@ impl DrawingsWindow {
                         ui.label("Clearance line");
                         ui.horizontal(|ui| {
                             let mut on = self.clearance.is_some();
-                            let rule = ground_rule_clearance(&self.ground_rules, &model.line);
+                            let chosen =
+                                chosen_ground_rules(&self.ground_rules, self.ground_rule.as_deref());
+                            let rule = ground_rule_clearance(&chosen, &model.line);
                             let from_rule = self.clearance_rule && rule.is_some();
                             ui.add_enabled(!from_rule, egui::Checkbox::new(&mut on, "ground +"));
                             let mut c = self.clearance.unwrap_or(7.0);
@@ -1883,6 +1910,39 @@ impl DrawingsWindow {
                                     .speed(0.1),
                             );
                             self.clearance = on.then_some(c);
+                            // Which ground rule (owner, 2026-10-24): the
+                            // largest for each circuit, or one by name.
+                            let names: Vec<String> =
+                                self.ground_rules.iter().map(|r| r.name.clone()).collect();
+                            if !names.is_empty() {
+                                let shown = self
+                                    .ground_rule
+                                    .clone()
+                                    .filter(|n| names.contains(n))
+                                    .unwrap_or_else(|| "the largest for each circuit".into());
+                                egui::ComboBox::from_id_salt("drawings-ground-rule")
+                                    .selected_text(shown)
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.ground_rule,
+                                            None,
+                                            "the largest for each circuit",
+                                        );
+                                        for n in &names {
+                                            ui.selectable_value(
+                                                &mut self.ground_rule,
+                                                Some(n.clone()),
+                                                n,
+                                            );
+                                        }
+                                    })
+                                    .response
+                                    .on_hover_text(
+                                        "The ground rule the clearance line and the lines below \
+                                         the lowest conductor take: one of the project's, or for \
+                                         each circuit the largest of its voltage",
+                                    );
+                            }
                             if let Some((d, name)) = rule {
                                 ui.checkbox(
                                     &mut self.clearance_rule,
@@ -2989,3 +3049,24 @@ pub const PREVIEW_TICK: &str = "Show the export's sheets over the profile and th
 const PREVIEW_HELP: &str = "Sheet edges (match lines), sheet numbers and the export's warnings \
      over the continuous profile and the plan, laid out by the export itself with the settings \
      of File › Export › Drawings…; nothing is computed differently";
+
+#[cfg(test)]
+mod ground_rule_tests {
+    use super::*;
+
+    /// The ground rule chosen for the drawings: that one alone; none (or
+    /// one no longer among the project's): every rule, the largest taken.
+    #[test]
+    fn the_chosen_ground_rule_is_taken() {
+        let mut rules = ohl_clearance::RuleSet::ground(7.0).rules;
+        let mut nine = rules[0].clone();
+        nine.name = "roads".into();
+        nine.vertical = Some(ohl_clearance::rules::Requirement::Fixed(9.0));
+        rules.push(nine);
+        let line = crate::tests::synthetic().line;
+        let take = |c: Option<&str>| ground_rule_clearance(&chosen_ground_rules(&rules, c), &line);
+        assert_eq!(take(None), Some((9.0, "roads".into())));
+        assert_eq!(take(Some("ground")), Some((7.0, "ground".into())));
+        assert_eq!(take(Some("gone")), Some((9.0, "roads".into())));
+    }
+}

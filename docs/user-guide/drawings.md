@@ -440,7 +440,10 @@ width: the same setting as the Profile page's **line width ±**, see
 [Line width](#line-width)), **sheet breaks** (the break clearance, mm on
 paper), station range, clearance line (typed, or **from the ground
 rule** of the project: Checks › Ground clearances, else the rule file
-chosen), **side profiles**, the plan's own scale across the line,
+chosen; **which ground rule** — by default for each circuit the largest
+of its voltage, or one of the project's chosen by name, which the lines
+below the lowest conductor take too, kept with the project's drawing
+settings; 2026-10-24), **side profiles**, the plan's own scale across the line,
 **logos**, the structures' [elevations](#elevations) (off, above or
 below; base offset in mm; rotation), PNG resolution; then the template's
 **values** (required ones marked `*`, per-sheet values), the
