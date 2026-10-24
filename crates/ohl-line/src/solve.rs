@@ -2826,7 +2826,8 @@ fn core_branch(
 }
 
 /// Per section of `line` (by id), whether it runs against the line's
-/// direction ([`against_the_line`], the routes made once): the sections
+/// direction (its first to last wire point against the line's direction
+/// at their middle, the routes made once): the sections
 /// solved with the wind's side swapped. A section whose answer differs
 /// between two versions of a line is solved again (its wind's side).
 pub fn sections_against_the_line(line: &Line) -> std::collections::BTreeMap<String, bool> {
