@@ -342,7 +342,8 @@ impl Workspace {
                         "The body (joints, members, sections, materials, supports, generators, \
                          pole, extensions) and its design (load cases, analysis) are edited \
                          in OHL-Structure, a window of its own; saved there, the \
-                         line follows",
+                         line follows. The type alone, without loads: for a placed \
+                         structure's loads use Open in OHL-Structure… on that structure",
                     )
                     .clicked()
             {

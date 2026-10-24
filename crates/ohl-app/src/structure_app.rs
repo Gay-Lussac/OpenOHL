@@ -653,14 +653,36 @@ impl StructureApps {
         sections: Option<&Path>,
         placed: Option<Placed>,
     ) -> Result<(), String> {
-        if self.watched.iter_mut().any(|w| {
+        if let Some(k) = self.watched.iter_mut().position(|w| {
             w.path == path
                 && w.child
                     .as_mut()
                     .is_some_and(|c| c.child.try_wait().ok().flatten().is_none())
         }) {
-            log::info!("structure {id} is open in the structure application already");
-            return Err(format!("structure {id} is open in OHL-Structure already"));
+            // Open already: with another place's loads, or none (opened
+            // from the structure library), said with what to do.
+            let open_with = self.watched[k].placed.as_ref().map(|p| p.structure.clone());
+            let asked = placed.as_ref().map(|p| p.structure.clone());
+            let text = match (&open_with, &asked) {
+                (o, Some(a)) if o.as_ref() != Some(a) => format!(
+                    "structure type {id} is open in OHL-Structure already, {}: close it there, \
+                     then Open in OHL-Structure… on {a} again to have the loads of {a}",
+                    match o {
+                        Some(o) => format!("with the loads of {o}"),
+                        None => "without loads (opened from the structure library)".into(),
+                    }
+                ),
+                _ => format!("structure {id} is open in OHL-Structure already"),
+            };
+            log::info!("{text}");
+            if open_with != asked && asked.is_some() {
+                self.reports.push(Report {
+                    title: "OHL-Structure is open already".into(),
+                    text: text.clone(),
+                    error: false,
+                });
+            }
+            return Err(text);
         }
         if let Some(p) = &placed {
             p.prepare()?;

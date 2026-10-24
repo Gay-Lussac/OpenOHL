@@ -1227,7 +1227,10 @@ impl LibraryPage {
                         )
                         .on_hover_text(
                             "Open this structure in OHL-Structure (its own \
-                             window: the body and the design); saved there, the line follows",
+                             window: the body and the design); saved there, the line follows. \
+                             The type alone, without loads: for a placed structure's loads use \
+                             Open in OHL-Structure… on that structure (Properties, Structures \
+                             table)",
                         )
                         .on_disabled_hover_text("Save or discard the changes here first")
                         .clicked()
