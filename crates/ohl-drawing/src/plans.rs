@@ -241,6 +241,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         (1, 1),
         (0.0, d.length),
         (String::new(), String::new()),
+        "–",
     );
     let room = [room[0], room[1], room[2], room[3] - key_h];
     let mut placed: Vec<(usize, [f64; 2], f64)> = Vec::new();
@@ -283,8 +284,15 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         };
         let (first, s0) = on.first().map(|(s, _)| ids(s)).unwrap_or_default();
         let (last, s1) = on.last().map(|(s, _)| ids(s)).unwrap_or_default();
-        let (mut drawing, _, _) =
-            framed_page(d, o, page, (page_no + 1, pages), (s0, s1), (first, last));
+        let (mut drawing, _, _) = framed_page(
+            d,
+            o,
+            page,
+            (page_no + 1, pages),
+            (s0, s1),
+            (first, last),
+            "–",
+        );
         let items = &mut drawing.items;
         // The key of the circuits, under the figures.
         let key_top = room[1] + room[3] + 3.0;
@@ -557,6 +565,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
         return Vec::new();
     }
     let k = 1000.0 / m.scale; // mm per m
+    let scale_text = format!("1:{}", crate::template::format_number(m.scale, ""));
     let (_, room, _) = framed_page(
         d,
         o,
@@ -564,6 +573,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
         (1, 1),
         (0.0, d.length),
         (String::new(), String::new()),
+        &scale_text,
     );
     let (w, h) = (room[2] / k, room[3] / k);
     let line = densified(&d.centreline, w.min(h) / 8.0);
@@ -602,6 +612,7 @@ pub fn map_plan(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> Vec<
                 first.map_or(String::new(), |s| s.id.clone()),
                 last.map_or(String::new(), |s| s.id.clone()),
             ),
+            &scale_text,
         );
         let items = &mut drawing.items;
         let mut legend: Vec<(String, String)> = Vec::new();
@@ -877,5 +888,7 @@ mod tests {
         }
         let first: String = situation[0].svg();
         assert!(first.contains(">Parcel 4711<"), "the drawing's text");
+        // Its own scale in the title block, not the sheets'.
+        assert!(first.contains(">1:1000<"), "the plan's scale");
     }
 }
