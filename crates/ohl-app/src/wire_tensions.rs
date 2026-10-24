@@ -129,6 +129,7 @@ impl WireTensionsWindow {
             vegetation: None,
             checks: vec![PresetCheck::Tension],
             tension_rules: self.rules.clone(),
+            string_rules: Vec::new(),
         }
     }
 

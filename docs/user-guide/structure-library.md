@@ -484,7 +484,7 @@ weight = "1.4 kN"            # total weight (default 0)
 axial_stiffness = "50e6 N"   # per string (default 5e7 N)
 wind_area = "0.6 m²"         # projected area for wind (default 0)
 # half_width = "3 m"         # legs = 2 only: centre to each string's top
-# version 2: limits, not checked by OpenOHL (see String limits)
+# version 2: limits, checked by String checks (see String limits)
 # max_load = "120 kN"        # the tension it is rated for (legs = 2: each string's)
 # max_swing = "60 deg"       # from straight down, any direction
 # max_swing_across = "55 deg"
@@ -497,9 +497,9 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | `suspension` with `legs = 2` | two strings from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only strings to a free clamp; the leeward one goes slack in strong wind (a version 1 attachment; in structure files of version 2 and later each of the two is a string naming the assembly, which gives each half its wind area) |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
 
-### String limits (not checked)
+### String limits
 
-A string may carry **limits that OpenOHL does not check**: kept with the string, shown and edited, but nothing is coloured or flagged by them — a plugin or a report that needs them compares them with the solved forces and swings. Each is optional; absent means *not given* (not zero, not unlimited):
+A string may carry **limits**: kept with the string, shown and edited, and compared with the solved forces and swings by **Checks › String checks…** and `ohl strings` (2026-10-24, [String checks](desktop-app.md#string-checks)) in the weather cases of its rules — the solve itself does not use them, and nothing is coloured by them outside that check. A jumper's helping strings are not checked yet. Each is optional; absent means *not given* (not zero, not unlimited):
 
 | Key | Unit | Meaning |
 |---|---|---|

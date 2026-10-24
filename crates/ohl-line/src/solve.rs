@@ -179,12 +179,18 @@ pub struct StringState {
     pub slack: bool,
     /// In more compression than it may take.
     pub over: bool,
-    /// Its limits, not checked by OpenOHL (its own, else its insulator's;
-    /// absent: not given): for a plugin or a report to compare with
-    /// `force` and `swing`.
+    /// Its limits (its own, else its insulator's; absent: not given),
+    /// compared with `force` and `swing` by the string check
+    /// (`ohl_clearance::strings`); the solve does not use them.
     pub limits: crate::StringLimits,
     /// Its swing as solved ([`crate::swing`], in its structure's axes).
     pub swing: crate::Swing,
+    /// A dead end as solved: flagged so
+    /// ([`crate::InsulatorString::strain`]), a lone string the solve
+    /// treats as one, or a string holding the clamp at a section's end;
+    /// else a suspension string (or one of a V, below a V, a TAK's
+    /// suspension string).
+    pub strain: bool,
 }
 
 /// A point of a structure the section pulls on.
@@ -456,6 +462,8 @@ struct Member {
     compression: Option<f64>,
     /// Its limits (reported, not checked).
     limits: crate::StringLimits,
+    /// A dead end (a tension string).
+    strain: bool,
     /// Its structure's orientation, degrees (for its swing).
     orientation_deg: f64,
 }
@@ -599,7 +607,7 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     .position(|f| f.0 == wire.label)
                     .expect("the wire point is free"),
             );
-            let members: Vec<Member> = members
+            let mut members: Vec<Member> = members
                 .into_iter()
                 .map(|(st, top, bottom)| Member {
                     label: st.label.clone(),
@@ -611,6 +619,7 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     stiffness: st.stiffness.unwrap_or(line.defaults.insulator_stiffness),
                     compression: st.compression,
                     limits: st.limits(),
+                    strain: st.strain,
                     orientation_deg: structure.orientation_deg,
                 })
                 .collect();
@@ -641,6 +650,12 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                 }
                 _ => Shape::General,
             };
+            // Dead ends as solved: flagged, a lone string treated as one,
+            // or a string holding the clamp at a section's end (a TAK's
+            // suspension string, its bottom the node, is not).
+            for m in &mut members {
+                m.strain |= shape == Shape::Strain || (!middle && m.bottom == clamp);
+            }
             // A strain assembly given only as geometry, without a weight,
             // would line up with its conductor and lose the droop the data
             // shows (freed without weights, a 930-span comparison got worse:
@@ -2248,6 +2263,7 @@ fn solve_fe(
                         slack,
                         over,
                         limits: m.limits,
+                        strain: m.strain,
                         swing: crate::swing(m.orientation_deg, p(top), p(bottom)),
                     }
                 })

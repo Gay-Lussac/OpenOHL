@@ -43,6 +43,7 @@ pub mod phase_distance;
 pub mod positions;
 pub mod rules;
 pub mod safety_volume;
+pub mod strings;
 pub mod tension;
 pub mod unequal_wind;
 pub mod vegetation;

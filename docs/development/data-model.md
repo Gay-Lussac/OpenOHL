@@ -910,6 +910,18 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   clearance rules. Since 2026-10-22 too, a span above its wire's RTS
   adds a warning to `SectionShape::flags` (`solve::rts_flags`,
   `solve::above_rts`).
+- **String rules** (2026-10-24, additive): a rule file may hold optional
+  `[[string_rule]]` tables — `name`, `cases` (patterns; none: every
+  case), `strings` (`all`, the default, `suspension` or `strain`),
+  `voltages` (kV of the strings' sections; none: every voltage), `load`,
+  `swing`, `uplift` (booleans, default true: the strings' own maximum
+  load and swing limits, the suspension strings going slack), and the
+  rule's own `max_swing_deg`, `max_swing_across_deg`,
+  `max_swing_along_deg` (optional, above 0° and at most 180°) — read as
+  `RuleSet::string_rules` (`ohl_clearance::strings`); a preset declares
+  the check with `checks = ["strings"]`. The solved strings
+  (`SectionShape::strings`, `StringState`) carry `strain` (a dead end as
+  the solve treats it), new.
 - **Requirements** (`ohl_clearance::rules::Requirement`): `vertical` /
   `radial` are a distance (`"7 m"`, `Fixed`), a table
   (`{ by_voltage = [[up to kV, "m"], …] }`, `ByVoltage`: voltages ≥ 0

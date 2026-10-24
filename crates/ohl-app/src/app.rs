@@ -182,6 +182,9 @@ pub enum MarksFrom {
     /// The wire tension check (its spans above the allowed tension, else
     /// the worst, at their most tensioned support).
     Tensions,
+    /// The string check (its strings beyond a limit, else the worst, at
+    /// their wire points).
+    Strings,
 }
 
 /// What is shown once the model is loaded.
@@ -327,6 +330,8 @@ pub struct Ready {
     pub galloping: crate::galloping::GallopingWindow,
     /// Checks › Wire tensions (2026-10-22).
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
+    /// Checks › String checks….
+    pub string_checks: crate::string_checks::StringChecksWindow,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
     /// The distance between conductors under unequal wind (the same
@@ -499,6 +504,7 @@ impl Ready {
             pylon_builder: None,
             galloping: Default::default(),
             wire_tensions: Default::default(),
+            string_checks: Default::default(),
             phase_distance: Default::default(),
             cases_before_check: None,
             unequal_wind: crate::phase_distance::PhaseDistanceWindow::new(
@@ -2081,6 +2087,7 @@ impl eframe::App for App {
                     || ready.vertical_clearances.open
                     || ready.radial_clearances.open
                     || ready.wire_tensions.open
+                    || ready.string_checks.open
                 {
                     crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
                 }
@@ -2175,6 +2182,11 @@ impl eframe::App for App {
                         .wire_tensions
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 wire_tensions_out(ready, out);
+                let out =
+                    ready
+                        .string_checks
+                        .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
+                string_checks_out(ready, out);
                 // Layers drawn from results out of date: dimmed.
                 crate::revision::frame(ready);
                 if let Some(mut w) = ready.class_window.take() {
