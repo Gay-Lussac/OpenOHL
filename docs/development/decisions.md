@@ -26,6 +26,10 @@ of Parts A, B and C).
   conductor lowered by its rule's distance), the crossings where another
   circuit governs added — the ground must stay under it
   (`[conductor_clearance] envelope`, on in the plan-submission template).
+- The band row `ground_clearance` (Bodenabstand) gives per span the
+  least distance from the ground up to that limit line (owner: agreed
+  2026-10-24), in red below 0: the sheet shows the line is not hitting
+  the ground.
 - The stringing tension is given per phase of each circuit (owner): the
   band row lists the phases on the circuit's line, the stringing table
   has a row per phase (`{st.phase}`).

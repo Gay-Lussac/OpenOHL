@@ -1383,8 +1383,49 @@ pub(crate) fn bands(
                 }
             }
             BandKind::GroundClearance => {
-                for (s, c) in d.clearances.iter().filter(|(s, _)| within(*s)) {
-                    put(items, *s, format!("{c:.dec$}"), true);
+                // Per span, the least distance from the ground up to the
+                // ground clearance limit (the one line for the whole
+                // line: the lowest of the circuits' lines below their
+                // lowest conductors, by the rules); below 0 (in red) the
+                // ground reaches above it. Without rules: a clearance
+                // check's values, if given.
+                let spec = &t.conductor_clearance;
+                let curves = if o.conductor_clearance.is_empty() {
+                    Vec::new()
+                } else {
+                    crate::curves::curves(d, &o.conductor_clearance, &spec.circuits, "").0
+                };
+                match crate::curves::envelope(&curves, "") {
+                    Some(limit) => {
+                        let red = Color(0xd0, 0x10, 0x10);
+                        let ground_points: Vec<f64> =
+                            d.ground.iter().flatten().map(|p| p[0]).collect();
+                        for w in run.windows(2) {
+                            let (a, b) = (w[0].station, w[1].station);
+                            let x = f.x(a);
+                            items.push(line(Layer::Bands, [x, y], [x, y + h], tick.clone()));
+                            let Some(reserve) =
+                                least_reserve(&limit, &ground_at, &ground_points, a, b)
+                            else {
+                                continue;
+                            };
+                            let s = 0.5 * (a + b);
+                            items.push(Item::Text(Text {
+                                layer: Layer::Bands,
+                                at: [f.x(s), mid + 0.36 * size],
+                                text: format!("{reserve:.dec$}"),
+                                size,
+                                anchor: Anchor::Middle,
+                                bold: reserve < 0.0,
+                                color: if reserve < 0.0 { red } else { color },
+                            }));
+                        }
+                    }
+                    None => {
+                        for (s, c) in d.clearances.iter().filter(|(s, _)| within(*s)) {
+                            put(items, *s, format!("{c:.dec$}"), true);
+                        }
+                    }
                 }
             }
             BandKind::Stringing => {
@@ -1537,6 +1578,46 @@ pub(crate) fn bands_height(t: &SheetTemplate, o: &Options, d: &RouteDrawing) -> 
 
 /// The circuits of the route's stringing tensions, one band line each:
 /// the systems by name, the earth wires (none) last.
+/// The least distance, m, from the ground (`ground_at` a station) up to
+/// the line `limit` between stations `a` and `b`, exactly: both are
+/// polylines, so the least distance is at a vertex of one of them (the
+/// limit's points, the ground's `ground_points` stations) or at `a`, `b`;
+/// none where neither is known there.
+fn least_reserve(
+    limit: &crate::curves::Curve,
+    ground_at: &dyn Fn(f64) -> Option<f64>,
+    ground_points: &[f64],
+    a: f64,
+    b: f64,
+) -> Option<f64> {
+    let at = |s: f64| -> Option<f64> {
+        limit.runs.iter().find_map(|r| {
+            r.windows(2).find_map(|w| {
+                (s >= w[0][0] - 1e-9 && s <= w[1][0] + 1e-9).then(|| {
+                    let k = if w[1][0] > w[0][0] {
+                        (s - w[0][0]) / (w[1][0] - w[0][0])
+                    } else {
+                        0.0
+                    };
+                    w[0][1] + k * (w[1][1] - w[0][1])
+                })
+            })
+        })
+    };
+    let stations = limit
+        .runs
+        .iter()
+        .flatten()
+        .map(|p| p[0])
+        .chain(ground_points.iter().copied())
+        .filter(|s| *s >= a && *s <= b)
+        .chain([a, b]);
+    stations
+        .into_iter()
+        .filter_map(|s| Some(at(s)? - ground_at(s)?))
+        .reduce(f64::min)
+}
+
 /// The circuits of the route's sags, by name, the earth wires last.
 fn sag_circuits(d: &RouteDrawing) -> Vec<Option<String>> {
     let mut v: Vec<Option<String>> = d
