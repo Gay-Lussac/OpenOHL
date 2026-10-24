@@ -32,6 +32,7 @@ pub mod circuits;
 pub mod condition;
 pub mod electrical;
 pub mod export;
+pub mod finite;
 pub mod incremental;
 pub mod jumper;
 pub mod legacy;
@@ -3146,6 +3147,9 @@ impl Line {
 
     /// Checks references and basic consistency.
     pub fn validate(&self) -> Result<(), LineError> {
+        // Every number finite (a NaN or an infinity stored as JSON would no
+        // longer read).
+        finite::check(self).map_err(LineError::Invalid)?;
         // The structures by id (the first of an id, as `Line::structure`
         // finds it): looked up for every section point.
         let mut by_id: std::collections::HashMap<&str, &Structure> =

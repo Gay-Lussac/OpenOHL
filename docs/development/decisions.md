@@ -45,7 +45,10 @@ of Parts A, B and C).
   before); nothing is solved in the background while a structure is
   dragged. Tests compare a kept result with a fresh solve after such
   edits. Weather cases solved in the background: four at a time (each
-  spreads over the cores; the next starts when one is in).
+  spreads over the cores; the next starts when one is in). A line with
+  a number that is not finite (NaN, infinity) is refused when checked
+  (`Line::validate`, every edit), saying where it is: stored as JSON it
+  would no longer read.
 - A jumper on a real line that does not solve in a narrow band of
   temperatures is left to the project's engineer (its design), not
   worked around in the solver (owner, 2026-10-24).
