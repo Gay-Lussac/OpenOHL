@@ -650,3 +650,55 @@ fn a_note_over_the_furniture_is_warned() {
     let s = sheets(&main_route(&o), &o, &page_format("A1").unwrap());
     assert!(s[0].warnings.iter().all(|w| !w.starts_with("note ")));
 }
+
+/// The ground clearance band row: per span, the least distance from the
+/// ground up to the one limit line (the lowest of the circuits' lines
+/// below their lowest conductors), as found between the two lines'
+/// vertices.
+#[test]
+fn the_ground_clearance_row_gives_the_reserve_to_the_limit() {
+    let mut text = example_text();
+    text.push_str(
+        "\n[[band]]\nkind = \"ground_clearance\"\nheight = \"8 mm\"\nlabel = \"Reserve\"\ndecimals = 2\n",
+    );
+    let o = options(template(&text));
+    let d = main_route(&o);
+    let curves = crate::curves::curves(&d, &o.conductor_clearance, &[], "").0;
+    let limit = crate::curves::envelope(&curves, "").expect("the example has ground rules");
+    // The reserve over the whole route, by brute force every 10 cm.
+    let ground = |s: f64| {
+        d.ground.iter().find_map(|r| {
+            r.windows(2).find_map(|w| {
+                (s >= w[0][0] && s <= w[1][0])
+                    .then(|| w[0][1] + (s - w[0][0]) / (w[1][0] - w[0][0]) * (w[1][1] - w[0][1]))
+            })
+        })
+    };
+    let lim = |s: f64| {
+        limit.runs.iter().find_map(|r| {
+            r.windows(2).find_map(|w| {
+                (s >= w[0][0] && s <= w[1][0])
+                    .then(|| w[0][1] + (s - w[0][0]) / (w[1][0] - w[0][0]) * (w[1][1] - w[0][1]))
+            })
+        })
+    };
+    let s = sheets(&d, &o, &page_format("A1").unwrap());
+    let svg: String = s.iter().map(crate::Sheet::svg).collect();
+    let mut found = 0;
+    for w in d.stations.windows(2) {
+        let (a, b) = (w[0].station, w[1].station);
+        let n = ((b - a) * 10.0) as usize;
+        let brute = (0..=n)
+            .filter_map(|k| {
+                let s = a + (b - a) * k as f64 / n as f64;
+                Some(lim(s)? - ground(s)?)
+            })
+            .reduce(f64::min);
+        if let Some(r) = brute
+            && svg.contains(&format!(">{r:.2}<"))
+        {
+            found += 1;
+        }
+    }
+    assert!(found > 0, "no reserve written");
+}

@@ -170,9 +170,7 @@ Kinds, all from what the drawing holds (no new engineering number):
 `structures` (names and types), `stations`, `ground_height` (at the
 structures and every `every`), `span_length`, `structure_height`,
 `line_angle` (at the alignment's alignment points), `lowest_wire_height` (the
-solid case's lowest wire in each span), `ground_clearance` (only from a
-clearance check's results; for now always empty: neither the app nor
-`ohl drawing` passes them yet), `text` (a field of the user, per sheet), `stringing` (since
+solid case's lowest wire in each span), `ground_clearance` (since 2026-10-24: per span the least distance from the ground up to the ground clearance limit — the one line for the whole line, the lowest of the circuits' lines below their lowest conductors by the ground rules —, in red below 0, where the ground reaches above it; without ground rules a clearance check's values, if given), `text` (a field of the user, per sheet), `stringing` (since
 2026-10-23: one line per circuit of the route — its systems by name,
 the earth wires last — and on it each of the circuit's tension sections
 (between a section's two end structures, ticked on that line) with its
