@@ -439,8 +439,9 @@ impl SolvedLine {
     ) -> Update {
         let mut update = Update::default();
         let before = self.sections.len();
-        self.sections
-            .retain(|id, _| line.sections.iter().any(|s| &s.id == id));
+        let ids: HashSet<&str> = line.sections.iter().map(|s| s.id.as_str()).collect();
+        let dirty_set: HashSet<&str> = dirty.iter().map(String::as_str).collect();
+        self.sections.retain(|id, _| ids.contains(id.as_str()));
         update.dropped = before - self.sections.len();
         let mut resolved: HashSet<&str> = HashSet::new();
         // The jumpers' load on the clamps now: a section whose jumpers
@@ -475,7 +476,7 @@ impl SolvedLine {
             .map(|s| s.id.as_str())
             .collect();
         for section in &line.sections {
-            if dirty.contains(&section.id)
+            if dirty_set.contains(section.id.as_str())
                 || !self.sections.contains_key(&section.id)
                 || reweighed.contains(section.id.as_str())
             {

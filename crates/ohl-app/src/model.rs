@@ -163,6 +163,9 @@ pub struct UnsolvedDrawn {
     pub reason: String,
 }
 
+/// Weather cases solved in the background at once at most ([`Model::want`]).
+const SOLVING_AT_ONCE: usize = 4;
+
 /// One solved weather case.
 #[derive(Debug, Clone)]
 pub struct Solved {
@@ -1571,6 +1574,11 @@ impl Model {
                 continue;
             };
             if c.solved_for(self.wind) || self.solving.iter().any(|(j, _, _)| *j == k) {
+                continue;
+            }
+            // A few at a time (each spreads over the cores): the next
+            // started when one is in (asked again every frame).
+            if self.solving.len() >= SOLVING_AT_ONCE {
                 continue;
             }
             let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());

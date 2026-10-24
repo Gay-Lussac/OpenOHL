@@ -44,7 +44,8 @@ of Parts A, B and C).
   alone, as a full solve does (the result no longer depends on the edits
   before); nothing is solved in the background while a structure is
   dragged. Tests compare a kept result with a fresh solve after such
-  edits.
+  edits. Weather cases solved in the background: four at a time (each
+  spreads over the cores; the next starts when one is in).
 - A jumper on a real line that does not solve in a narrow band of
   temperatures is left to the project's engineer (its design), not
   worked around in the solver (owner, 2026-10-24).

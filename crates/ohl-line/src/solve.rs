@@ -3232,9 +3232,15 @@ pub fn coupled_groups(line: &Line) -> Vec<Vec<usize>> {
             at.entry((p.structure.as_str(), p.set)).or_default().push(k);
         }
     }
+    // The structures by id (the first of an id, as `Line::structure`
+    // finds it).
+    let mut by_id: std::collections::HashMap<&str, &crate::Structure> = Default::default();
+    for s in &line.structures {
+        by_id.entry(s.id.as_str()).or_insert(s);
+    }
     for (k, sec) in line.sections.iter().enumerate() {
         for p in &sec.points {
-            let Some(s) = line.structure(&p.structure) else {
+            let Some(s) = by_id.get(p.structure.as_str()).copied() else {
                 continue;
             };
             let Some(w) = s.wire_at_set(p.set) else {
