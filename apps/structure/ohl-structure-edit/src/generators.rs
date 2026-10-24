@@ -786,6 +786,15 @@ fn arm_roots(
 /// Crossarms: for each point, from the face of the body on its side (with
 /// `one_arm`: one arm for the points sharing their roots).
 fn crossarm(t: &StructureType, id: &str, c: &Crossarm) -> Result<Body, String> {
+    // A pole's points are checked where they are (the pole check):
+    // crossarms are built on a lattice body.
+    if t.pole.is_some() && t.members.is_empty() {
+        return Err(
+            "a pole: its points are checked where they are (Pole design); crossarms are built \
+             on a lattice body (legs and panels)"
+                .into(),
+        );
+    }
     let mut b = Build::new(id);
     if c.one_arm {
         return one_arm(t, id, c, b);

@@ -15,6 +15,14 @@ use ohl_structures::{AssemblyKind, InsulatorLibrary, StructureType};
 use crate::app::{Sheet, StructureApp, error_label};
 use crate::layout::{Area, Panel};
 
+/// A new material's values: structural steel (S355).
+const STEEL: [(&str, &str); 4] = [
+    ("elasticity", "210 GPa"),
+    ("shear_modulus", "81 GPa"),
+    ("density", "7850 kg/m3"),
+    ("yield", "355 MPa"),
+];
+
 /// A length typed or dragged in a table.
 fn coord(ui: &mut egui::Ui, v: &mut f64) -> egui::Response {
     ui.add(
@@ -447,7 +455,7 @@ impl StructureApp {
                 }
                 let tops = self.picked_tops();
                 ui.separator();
-                ui.label("insulator");
+                ui.label("string length");
                 ui.add(
                     egui::DragValue::new(&mut self.string_length)
                         .range(0.05..=50.0)
@@ -1431,7 +1439,43 @@ impl StructureApp {
         }
     }
 
+    /// Every joint at the lowest level pinned (one undoable edit); whether
+    /// there was a joint.
+    pub fn support_feet(&mut self) -> bool {
+        let Some(f) = &mut self.file else {
+            return false;
+        };
+        let lowest = f
+            .structure()
+            .nodes
+            .iter()
+            .map(|n| n.point[2].si())
+            .fold(f64::INFINITY, f64::min);
+        if !lowest.is_finite() {
+            return false;
+        }
+        f.edit("support the feet", |doc, t| {
+            for n in t
+                .nodes
+                .iter()
+                .filter(|n| (n.point[2].si() - lowest).abs() < 1e-6)
+            {
+                edit::set_support(doc, &n.id, Some("pinned"));
+            }
+        });
+        true
+    }
+
     fn supports_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
+        // Above the table (a tower has many joints).
+        if !t.nodes.is_empty()
+            && ui
+                .button("Support the feet (pinned)")
+                .on_hover_text("Every joint at the lowest level pinned")
+                .clicked()
+        {
+            self.support_feet();
+        }
         let Some(f) = &mut self.file else {
             return;
         };
@@ -1469,27 +1513,6 @@ impl StructureApp {
                 ui.end_row();
             }
         });
-        let lowest = t
-            .nodes
-            .iter()
-            .map(|n| n.point[2].si())
-            .fold(f64::INFINITY, f64::min);
-        if lowest.is_finite()
-            && ui
-                .button("Support the feet (pinned)")
-                .on_hover_text("Every joint at the lowest level pinned")
-                .clicked()
-        {
-            f.edit("support the feet", |doc, t| {
-                for n in t
-                    .nodes
-                    .iter()
-                    .filter(|n| (n.point[2].si() - lowest).abs() < 1e-6)
-                {
-                    edit::set_support(doc, &n.id, Some("pinned"));
-                }
-            });
-        }
     }
 
     fn design_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
@@ -1783,28 +1806,25 @@ impl StructureApp {
         );
         if ui.button(label).clicked() {
             let id = if key == "section" {
+                // Its material: the first there is; none: steel added
+                // with it (a section without one cannot be analysed).
                 let material = edit::item_ids(f.doc(), "material").into_iter().next();
-                let mut fields = vec![("area", "1000 mm2"), ("i_min", "40 cm4")];
-                let m = material.unwrap_or_default();
-                if !m.is_empty() {
-                    fields.insert(0, ("material", m.as_str()));
-                }
+                let add_steel = material.is_none();
+                let m = material.unwrap_or_else(|| "steel".to_owned());
+                let fields = vec![
+                    ("material", m.as_str()),
+                    ("area", "1000 mm2"),
+                    ("i_min", "40 cm4"),
+                ];
                 f.edit("add section", |doc, _| {
+                    if add_steel {
+                        edit::add_item(doc, "material", "steel", &STEEL);
+                    }
                     edit::add_item(doc, key, "S1", &fields)
                 })
             } else {
                 f.edit("add material", |doc, _| {
-                    edit::add_item(
-                        doc,
-                        key,
-                        "steel",
-                        &[
-                            ("elasticity", "210 GPa"),
-                            ("shear_modulus", "81 GPa"),
-                            ("density", "7850 kg/m3"),
-                            ("yield", "355 MPa"),
-                        ],
-                    )
+                    edit::add_item(doc, key, "steel", &STEEL)
                 })
             };
             self.message = Some((format!("added {key} {id}: type its values"), false));

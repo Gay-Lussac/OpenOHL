@@ -306,7 +306,22 @@ impl StructureApp {
         match area {
             Area::Geometry => self.geometry_actions(ui),
             Area::Body => self.body_actions(ui),
-            Area::Design => {}
+            Area::Design => {
+                let joints = self
+                    .file
+                    .as_ref()
+                    .is_some_and(|f| !f.structure().nodes.is_empty());
+                if item(
+                    ui,
+                    "Support the feet (pinned)",
+                    joints,
+                    "Every joint at the lowest level pinned (Supports)",
+                    "No joint yet: build the body first",
+                ) {
+                    self.support_feet();
+                    self.focus(Panel::Supports);
+                }
+            }
             Area::LoadCases => self.load_actions(ui),
             Area::Results => self.results_actions(ui),
             Area::InTheLine => {

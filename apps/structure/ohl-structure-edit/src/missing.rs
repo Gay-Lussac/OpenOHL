@@ -91,7 +91,10 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
             (Some(_), _) => {
                 "no pole outline: diameters at two heights at least (Body › Pole), or members"
             }
-            (None, true) => "no member: add joints and members (Body), or a 3D [[body]]",
+            (None, true) => {
+                "no member: build the body (Body › Generators › legs and panels), or add joints \
+                 and members"
+            }
             (None, false) => "the [[body]] polylines lie in one plane: members (Body) or a 3D body",
         };
         let place = if pole.is_some() {
@@ -118,19 +121,69 @@ pub fn missing(t: &StructureType, level: u8) -> Vec<Missing> {
                 ));
             }
         } else {
-            for m in t.members.iter().filter(|m| m.section.is_none()) {
+            let bare: Vec<_> = t.members.iter().filter(|m| m.section.is_none()).collect();
+            if bare.len() > 3 {
+                // Many (a body just built): one line, set per group.
+                let groups: std::collections::BTreeSet<&str> =
+                    bare.iter().filter_map(|m| m.group.as_deref()).collect();
                 out.push(Missing::level(
-                    format!("member {}: no cross-section", m.id),
-                    Some(Handle::Member(m.id.clone())),
+                    format!(
+                        "{} members without a cross-section{}: set them per group (Design › \
+                         Groups)",
+                        bare.len(),
+                        if groups.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", in {} group(s)", groups.len())
+                        }
+                    ),
+                    None,
                     Place::Members,
                 ));
+            } else {
+                for m in bare {
+                    out.push(Missing::level(
+                        format!("member {}: no cross-section", m.id),
+                        Some(Handle::Member(m.id.clone())),
+                        Place::Members,
+                    ));
+                }
             }
             if !t.nodes.iter().any(|n| n.support.is_some()) {
                 out.push(Missing::level(
-                    "no supported joint: a support on the feet (Design)",
+                    "no supported joint: Support the feet (Design › Joints)",
                     None,
                     Place::Joints,
                 ));
+            }
+            // As the level asks (`StructureType::missing_for_design`):
+            // every attachment point on a joint of the members, every
+            // support joint supported.
+            let joints = t.joints();
+            for p in &t.points {
+                if joints
+                    .iter()
+                    .any(|j| j.id == p.joint && j.source == ohl_structures::JointSource::Point)
+                {
+                    out.push(Missing::level(
+                        format!(
+                            "point {} is on no joint of the members: tick it in the peak or \
+                             crossarm generator, or link it to a joint (Link tool)",
+                            p.label
+                        ),
+                        Some(Handle::Point(p.label.clone())),
+                        Place::Points,
+                    ));
+                }
+            }
+            for n in &t.nodes {
+                if n.kind == Some(ohl_structures::JointKind::Support) && n.support.is_none() {
+                    out.push(Missing::level(
+                        format!("joint {} is a support joint without a support", n.id),
+                        Some(Handle::Joint(n.id.clone())),
+                        Place::Joints,
+                    ));
+                }
             }
         }
     }
