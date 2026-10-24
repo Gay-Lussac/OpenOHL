@@ -212,6 +212,20 @@ Proposed (to discuss; nothing built yet):
 structure body) and O7 (the line and its structures solved together).
 *In Part C:* O9 (design-code loads, the broken-wire case of a section).
 
+### O15. Local winds given per span
+Today a weather case has one wind pressure for the whole line. Some
+spans see another wind (an exposed ridge, a sheltered valley, a wind
+study for a stretch): the wind to be given **per span**, overriding the
+case's there. Proposed (to discuss; nothing built yet): per span (or a
+run of spans) a local wind — a pressure, or a factor on the case's —
+kept with the line, shown and edited in the sections table and on the
+profile; used wherever the case's wind is (the wire solve, the
+structure loads, the blowout and clearances, the checks such as the
+distance under unequal wind, which then steps each span up to its own
+wind). To decide: pressure or factor, per weather case or for all, how
+it is set on many spans at once, whether a direction can be given too.
+> **Owner:** (2026-10-24) Be able to have local winds, given per span.
+
 ## Unfinished or approximate (known limitations)
 
 - **U3. Profile sheets**: a sheet break can still fall at a structure that
