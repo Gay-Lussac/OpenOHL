@@ -387,12 +387,7 @@ fn solve_one(
         .iter()
         .find(|s| s.id == id)
         .ok_or_else(|| LineError::Invalid(format!("no section {id}")))?;
-    let cable = library.get(&section.cable).ok_or_else(|| {
-        LineError::Invalid(format!(
-            "section {}: wire type \"{}\" not in the libraries",
-            section.id, section.cable
-        ))
-    })?;
+    let cable = crate::solve::cable_of(library, section)?;
     // The jumpers hanging on its clamps, with their own cables.
     let coupling = crate::solve::Coupling {
         jumpers: Some(jumpers.clone()),

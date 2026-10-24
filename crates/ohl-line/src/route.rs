@@ -1156,14 +1156,11 @@ fn distance_to(line: &[Point], p: Point) -> f64 {
     }
     line.windows(2)
         .map(|w| {
-            let (dx, dy) = horizontal(w[0], w[1]);
-            let len2 = dx * dx + dy * dy;
-            let t = if len2 > 0.0 {
-                (((p[0] - w[0][0]) * dx + (p[1] - w[0][1]) * dy) / len2).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            (w[0][0] + t * dx - p[0]).hypot(w[0][1] + t * dy - p[1])
+            ohl_core::geometry::distance_to_segment(
+                [p[0], p[1]],
+                [w[0][0], w[0][1]],
+                [w[1][0], w[1][1]],
+            )
         })
         .fold(f64::INFINITY, f64::min)
 }

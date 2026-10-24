@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use ohl_structures::derive::{Derived, SourceAttachment, SourceStructure, derive};
 use ohl_structures::{AssemblyKind, InsulatorLibrary, StructureLibrary};
 
-use crate::assembly::{AttachmentV1, from_v1};
+use crate::assembly::{AttachmentV1, distance, from_v1};
 use crate::{InsulatorString, Line, LineError, Structure, StructurePoint, WirePoint};
 
 /// Result of comparing a line's strings with a re-resolved version.
@@ -30,10 +30,6 @@ pub struct AttachmentCheck {
     pub worst: f64,
     /// Where the largest deviation is.
     pub at: String,
-}
-
-fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
 /// The tops and lengths of the strings each set hangs on directly, in

@@ -1757,14 +1757,7 @@ fn len(a: [f64; 2]) -> f64 {
 
 /// Distance in plan from `p` to the segment `s`.
 fn point_segment(p: [f64; 2], s: [[f64; 2]; 2]) -> f64 {
-    let e = sub(s[1], s[0]);
-    let l2 = dot(e, e);
-    let t = if l2 > 0.0 {
-        (dot(sub(p, s[0]), e) / l2).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    len(sub(p, [s[0][0] + e[0] * t, s[0][1] + e[1] * t]))
+    ohl_core::geometry::distance_to_segment(p, s[0], s[1])
 }
 
 /// Whether two segments cross (or touch); where along `a` (0–1).

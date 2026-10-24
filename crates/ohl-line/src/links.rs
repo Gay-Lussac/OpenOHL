@@ -17,11 +17,8 @@
 use ohl_structures::structures::{to_global, to_local};
 use ohl_structures::{Joint, JointKind, StructureType};
 
+use crate::assembly::distance;
 use crate::{Point, Structure, StructurePoint};
-
-fn distance(a: Point, b: Point) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
-}
 
 /// Where a structure's type stands: its position raised by its height
 /// adjustment (the type's feet).
