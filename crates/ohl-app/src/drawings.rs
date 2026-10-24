@@ -1550,6 +1550,131 @@ pub fn run_plans(
     Ok(text)
 }
 
+/// The plan sets of the plugins `dirs` (name, folder): plugin, set name,
+/// the set or why it does not read.
+pub fn plugin_plan_sets(
+    dirs: &[(String, PathBuf)],
+) -> Vec<(
+    String,
+    String,
+    Result<ohl_drawing::plan_set::PlanSet, String>,
+)> {
+    let mut out = Vec::new();
+    for (plugin, dir) in dirs {
+        match ohl_plugins::plan_sets(dir) {
+            Ok(list) => {
+                for (name, text) in list {
+                    let set = ohl_drawing::plan_set::PlanSet::parse(&text)
+                        .map_err(|e| format!("{plugin}/{name}: {e}"));
+                    out.push((plugin.clone(), name, set));
+                }
+            }
+            Err(e) => out.push((plugin.clone(), String::new(), Err(e.to_string()))),
+        }
+    }
+    out
+}
+
+/// The template key of template `name` for a set of `plugin`: that
+/// plugin's, else another plugin's of that name, else the project's.
+fn set_template_key(w: &DrawingsWindow, plugin: &str, name: &str) -> String {
+    let own = format!("plugin:{plugin}/{name}");
+    if w.plugin_templates.iter().any(|(k, ..)| *k == own) {
+        return own;
+    }
+    w.plugin_templates
+        .iter()
+        .map(|(k, ..)| k)
+        .find(|k| k.starts_with("plugin:") && k.ends_with(&format!("/{name}")))
+        .cloned()
+        .unwrap_or_else(|| format!("project:{name}"))
+}
+
+/// What a set's drawing is written with: the export's input, and for a
+/// plan its request (none: the plan-and-profile sheets).
+pub type SetJob = Vec<(String, Input, Option<PlanRequest>)>;
+
+/// The inputs of plan set `set` (of `plugin`): each drawing with the
+/// Drawings window's settings, its template, paper and scales over them,
+/// written in `formats` into `out`.
+pub fn plan_set_inputs(
+    model: &Model,
+    case: usize,
+    w: &DrawingsWindow,
+    plugin: &str,
+    set: &ohl_drawing::plan_set::PlanSet,
+    formats: &[Format],
+    out: PathBuf,
+) -> Result<SetJob, String> {
+    use ohl_drawing::plan_set::SetKind;
+    let mut jobs = Vec::new();
+    for (k, d) in set.drawings.iter().enumerate() {
+        let at = |e: String| format!("{} drawing {} ({}): {e}", set.name, k + 1, d.kind.as_str());
+        let mut ww = w.clone();
+        ww.formats = formats.to_vec();
+        if let Some(t) = &d.template {
+            ww.sheet.template = set_template_key(w, plugin, t);
+        }
+        match d.kind {
+            SetKind::Sheets => {
+                if let Some(p) = &d.page {
+                    ww.page = p.clone();
+                }
+                if let Some(h) = d.scale {
+                    ww.hscale = h;
+                }
+                if let Some(v) = d.vertical_scale {
+                    ww.vscale = v;
+                }
+                let input = Input::new(model, case, &{
+                    let mut x = ww;
+                    x.out = Some(out.clone());
+                    x
+                })
+                .map_err(at)?;
+                jobs.push(("plan and profile".to_owned(), input, None));
+            }
+            SetKind::Route | SetKind::Situation | SetKind::Phase => {
+                let kind = match d.kind {
+                    SetKind::Route => PlanKind::Route,
+                    SetKind::Situation => PlanKind::Situation,
+                    _ => PlanKind::Phase,
+                };
+                let req = PlanRequest {
+                    kind,
+                    page: d.page.clone().unwrap_or_else(|| "A3".into()),
+                    scale: d.scale.unwrap_or(match kind {
+                        PlanKind::Route => 10_000.0,
+                        _ => 1000.0,
+                    }),
+                    drawings: true,
+                    photo: true,
+                    corridor: true,
+                };
+                let input = Input::for_plans(model, case, &ww, out.clone(), &req).map_err(at)?;
+                jobs.push((kind.title().to_lowercase(), input, Some(req)));
+            }
+        }
+    }
+    Ok(jobs)
+}
+
+/// Writes every drawing of a plan set, in order, reporting progress.
+pub fn run_plan_set(jobs: &SetJob, report: &dyn Fn(String, f32)) -> Result<String, String> {
+    let n = jobs.len();
+    let mut texts = Vec::new();
+    for (k, (what, input, req)) in jobs.iter().enumerate() {
+        let part = |t: String, f: f32| report(format!("{what}: {t}"), (k as f32 + f) / n as f32);
+        let text = match req {
+            None => run(input, &part)?,
+            Some(r) => run_plans(input, r, &part)?,
+        };
+        texts.push(format!("{what} — {text}"));
+    }
+    report("done".into(), 1.0);
+    Ok(texts.join("\n"))
+}
+
 /// Writes the drawings of `input`, reporting progress per route.
 ///
 /// Expected cost: under a second per route for SVG, DXF, PDF, CSV and
@@ -3019,6 +3144,11 @@ impl Drawings {
     #[cfg(test)]
     pub fn sheet_drawing(&self) -> bool {
         self.sheet_job.is_some() || self.sheet_pending.is_some()
+    }
+
+    /// The plugins giving sheet templates or plan sets: name, folder.
+    pub fn template_plugin_dirs(&self) -> &[(String, PathBuf)] {
+        &self.template_plugins
     }
 
     /// Reads the sheet templates of the plugins `dirs` (name, folder) in

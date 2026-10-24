@@ -89,7 +89,12 @@ Texts take placeholders `{name}` or `{name:format}`:
   `ends` (`(T1 – T3)`, nothing for a station range), `hscale`, `vscale`,
   `plan_scale`, `exaggeration`, `scales`, `format`, `page_width`,
   `page_height`, `date` (the export's), `cases` (the weather cases drawn),
-  `crs`, `program`, `height_datum`;
+  `crs`, `program`, `height_datum`, `plan_kind` (what the drawing is:
+  the legend label `plan_sheets`, `plan_route`, `plan_situation` or
+  `plan_phase` — "plan and profile", "route plan", "situation plan",
+  "phase plan" unless the template words them; 2026-10-24: one title
+  block for every plan, e.g. `text = "{plan_kind}"`; the plans write
+  their own scale in `scales`);
 - **the template's own** (`[[field]]`): given in the export window, or
   `--field KEY=VALUE` (`KEY@SHEET=VALUE` for one sheet), `--fields
   FILE.toml` (`KEY = "value"`, `[per_sheet.KEY] 2 = "value"`,
@@ -150,6 +155,7 @@ without):
 | `conductor_clearance_note` | — the rule names no weather case: the case drawn with the largest sag, {case} | `{case}` |
 | `match_line` | match line (sheet's end) | |
 | `phase_unchanged` | from {from} to {to}: arrangement unchanged (the phase plan, between the structures drawn) | `from`, `to` |
+| `plan_sheets`, `plan_route`, `plan_situation`, `plan_phase` | plan and profile, route plan, situation plan, phase plan (the field `{plan_kind}`) | |
 | `isoclearance` | isoclearance {level} | `{level}` |
 | `lidar` | {name} (LiDAR class {class}) | `{name}`, `{class}` (a code or a group's key) |
 | `version` | {label}: {words} | `{label}`, `{words}` |

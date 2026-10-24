@@ -593,7 +593,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 25] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 29] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -628,6 +628,11 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 25] = [
         &["case"],
     ),
     ("match_line", "match line (sheet's end)", &[]),
+    // What the drawing is (the computed field {plan_kind}, 2026-10-24).
+    ("plan_sheets", "plan and profile", &[]),
+    ("plan_route", "route plan", &[]),
+    ("plan_situation", "situation plan", &[]),
+    ("plan_phase", "phase plan", &[]),
     (
         "phase_unchanged",
         "from {from} to {to}: arrangement unchanged",
@@ -1795,7 +1800,7 @@ pub const COMPUTED_FIELDS: [&str; 26] = [
 ];
 
 /// More computed fields: the coordinate system and the program.
-pub const MORE_FIELDS: [&str; 3] = ["crs", "program", "height_datum"];
+pub const MORE_FIELDS: [&str; 4] = ["crs", "program", "height_datum", "plan_kind"];
 
 /// The computed fields that may say nothing (a station range's ends, the
 /// title lines not given): left empty unless `[if_empty]` names them.

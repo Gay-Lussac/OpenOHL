@@ -17,6 +17,18 @@ of Parts A, B and C).
   for each circuit the largest of its voltage); kept with the project's
   drawing settings (`ground_rule`).
 
+**Plan sets in the plugins; the plan's name in the title block (owner, 2026-10-24)**
+
+- A plan set (`.ohlset`) lists the drawings to make in one go, each with
+  its template (by name), paper and scales; plugins ship them beside
+  their sheet templates (manifest `[[plan-set]]`), Export › Plans ›
+  Plan set… writes one. The LeV plugin gives the ESTI 235 plan
+  submission (sheets A1 1:2000/1:200, route plan 1:10 000, situation
+  plans A1 1:1000, phase plan).
+- The computed field `{plan_kind}` names the drawing in the title block
+  (legend labels `plan_sheets`, `plan_route`, `plan_situation`,
+  `plan_phase`, worded by the template); the LeV template uses it.
+
 **The route, situation and phase plans (owner, 2026-10-24; roadmap O14)**
 
 - A menu of their own, Export › Plans (owner: apart from the sheets),

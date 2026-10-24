@@ -150,7 +150,9 @@ in, and as plugin presets — a utility's own templates in its plugin).
 *Built 2026-10-24, in active development (not approved yet): the route
 plan, the situation plans and the phase plan (Export › Plans, `ohl
 drawing --plans`), see [Drawings](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/drawings.md#plans-route-plan-situation-plans-phase-plan);
-still to come: plan sets (3), links to public map services, the
+and plan sets from plugins (Export › Plans › Plan set…, `.ohlset`,
+the plugin manifest's `[[plan-set]]`); still to come: one PDF of a set,
+`ohl drawing --set`, links to public map services, the
 corridor's protection zones and land use as their own layers (today:
 the project's drawings).* Proposed (to discuss):
 

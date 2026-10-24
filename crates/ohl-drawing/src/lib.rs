@@ -58,6 +58,7 @@ pub mod model;
 mod outline;
 pub mod paper;
 pub mod pdf;
+pub mod plan_set;
 pub mod plans;
 pub mod png;
 pub mod style;

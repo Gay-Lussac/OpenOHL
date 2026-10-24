@@ -452,7 +452,16 @@ manifest):
 
   [[sheet-template]]
   file = "templates/a1.ohlsheet"
+
+  [[plan-set]]                   # 2026-10-24, optional
+  file = "templates/submission.ohlset"
   ```
+
+  A **plan set** (`.ohlset`, [Drawings](../user-guide/drawings.md#plan-sets))
+  lists drawings to make in one go — the sheets, the route, situation
+  and phase plans — each with a template (by name: the plugin's own
+  first), paper and scales; Export › Plans › Plan set… offers the sets
+  of the plugins in use.
 
 - **Code**: the optional export `sheet-templates` of `plugin.wit`
   (world `sheet-template-plugin`: `describe` and `sheet-templates`, or

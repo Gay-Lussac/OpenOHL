@@ -552,7 +552,38 @@ From the command line: `ohl drawing … --plans route,situation,phase`
 A3) writes `<route>-route-plan`, `-situation-plan`, `-phase-plan` beside
 the sheets (the project's drawings and orthophotos read for them).
 
-Not there yet: plan sets (several drawings exported at once), links to
+### Plan sets
+
+**Export › Plans › Plan set…** (2026-10-24) writes several drawings in one
+go, as a **plan set** lists them — a plugin's (its manifest's
+`[[plan-set]]`, beside its sheet templates; e.g. a code's plan
+submission). Each drawing of the set is made with the Drawings window's
+settings and the set's own over them: its sheet template (by name, the
+plugin's first), paper and scales; the window lists them before Export.
+
+```toml
+format = "ohl-plan-set"
+version = 1
+name = "Plan submission"
+description = "The sheets, the route plan, the situation plans, the phase plan"
+
+[[drawing]]
+kind = "sheets"            # sheets, route, situation or phase
+template = "a1-sheet"      # a sheet template's name (optional)
+page = "A1"                # optional (the plans: A3)
+scale = 2000               # the sheets' horizontal, the plans' own
+vertical_scale = 200       # the sheets only
+
+[[drawing]]
+kind = "situation"
+page = "A1"
+scale = 1000               # 1:500 to 1:2000 (route plan: 1:5000 to 1:25 000)
+```
+
+Each drawing is written as before (the sheets as `<route>-sheet-NN`,
+the plans as `<route>-situation-plan` …), in the formats ticked.
+
+Not there yet: one PDF of a whole set, `ohl drawing --set`, links to
 public map services, the corridor's land use.
 
 ## What is not there yet

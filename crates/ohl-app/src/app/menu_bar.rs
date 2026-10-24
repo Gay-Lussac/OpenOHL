@@ -102,6 +102,21 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
                     ui.close();
                 }
             }
+            ui.separator();
+            if ui
+                .button("Plan set…")
+                .on_hover_text(
+                    "Several drawings in one go (the sheets, the route, situation and phase \
+                     plans), as a plugin's plan set lists them",
+                )
+                .clicked()
+            {
+                let (rules, markers) = drawing_checks(r);
+                r.drawings.set_checks(rules, markers);
+                let dirs = r.drawings.template_plugin_dirs().to_vec();
+                r.plans.show_sets(&dirs);
+                ui.close();
+            }
         });
         if ui
             .add_enabled(
