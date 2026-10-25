@@ -652,6 +652,18 @@ pub(super) fn menus(
             r.string_checks.show(&r.model);
             ui.close();
         }
+        if ui
+            .button("Internal clearances…")
+            .on_hover_text(
+                "At each structure with a body (detail 2 or 3): the conductors near it, its \
+                 jumpers and its strings' live ends against its members, by rules, per weather \
+                 case",
+            )
+            .clicked()
+        {
+            r.internal_clearances.show(&r.model);
+            ui.close();
+        }
         // The checks of the check plugins in use, in their own submenus
         // (none without them).
         let checks: Vec<(Vec<String>, ohl_io::checks::PluginCheck)> = r

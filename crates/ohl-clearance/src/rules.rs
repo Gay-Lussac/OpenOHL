@@ -894,7 +894,7 @@ impl WindSteps {
 }
 
 /// A set of rules.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct RuleSet {
     /// Name.
     pub name: String,

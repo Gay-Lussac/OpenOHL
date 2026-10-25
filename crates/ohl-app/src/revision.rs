@@ -293,6 +293,7 @@ pub fn frame(r: &mut crate::app::Ready) {
         }
         crate::app::MarksFrom::Tensions => r.wire_tensions.out_of_date(&r.model).is_some(),
         crate::app::MarksFrom::Strings => r.string_checks.out_of_date(&r.model).is_some(),
+        crate::app::MarksFrom::Internal => r.internal_clearances.out_of_date(&r.model).is_some(),
     };
     if r.view3d.marks_stale != marks {
         r.view3d.marks_stale = marks;

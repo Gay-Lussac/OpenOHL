@@ -46,6 +46,7 @@ mod ground_lines;
 mod handles;
 mod help;
 mod icons;
+mod internal_clearances;
 mod job;
 mod library;
 mod lidar_edit;
