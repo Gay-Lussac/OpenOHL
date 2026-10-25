@@ -277,11 +277,11 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     );
     ui.add_space(4.0);
     let mut chosen = None;
-    // The titles a width of their own: in a grid a cell takes the least
-    // it can, and they broke every few letters (2026-10-25).
-    let title_width = (ui.available_width() * 0.45).clamp(110.0, 260.0);
+    // Each step's link under its title, in one column beside the mark:
+    // the titles keep the panel's width (2026-10-25: three columns broke
+    // them every few letters, or pushed the links off the panel).
     egui::Grid::new("next-steps")
-        .num_columns(3)
+        .num_columns(2)
         .spacing([8.0, 6.0])
         .show(ui, |ui| {
             for (k, s) in list.iter().enumerate() {
@@ -299,18 +299,17 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     title = title.italics();
                 }
                 ui.vertical(|ui| {
-                    ui.set_width(title_width);
                     ui.label(title);
                     ui.label(egui::RichText::new(&s.detail).small().weak());
+                    let link = if Some(k) == next {
+                        egui::RichText::new(format!("Next: {}", s.link)).strong()
+                    } else {
+                        egui::RichText::new(s.link)
+                    };
+                    if ui.link(link).clicked() {
+                        chosen = Some(s.go);
+                    }
                 });
-                let link = if Some(k) == next {
-                    egui::RichText::new(format!("Next: {}", s.link)).strong()
-                } else {
-                    egui::RichText::new(s.link)
-                };
-                if ui.link(link).clicked() {
-                    chosen = Some(s.go);
-                }
                 ui.end_row();
             }
         });
