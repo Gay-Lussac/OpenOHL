@@ -25,6 +25,7 @@ mod session_edits;
 mod strings_colours;
 mod strings_picking;
 mod structures_menus;
+mod tutorial;
 mod types_drawings;
 mod window;
 use clearances::*;

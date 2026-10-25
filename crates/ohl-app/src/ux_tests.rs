@@ -226,8 +226,9 @@ fn the_example_is_copied_before_it_opens() {
     assert_ne!(again.file, s.file, "a second copy beside the first");
 }
 
-/// Help: the user guide opens the manual on this computer (nothing
-/// started in tests: the file is noted); About shows the version.
+/// Help: the user guide, the glossary and the tutorial open the manual
+/// on this computer (nothing started in tests: the file is noted); About
+/// shows the version.
 #[test]
 fn help_opens_the_manual_and_about() {
     let model = crate::tests::synthetic_project("help");
@@ -248,6 +249,17 @@ fn help_opens_the_manual_and_about() {
         opened
             .iter()
             .any(|p| p.is_file() && p.to_string_lossy().contains("glossary")),
+        "{opened:?}"
+    );
+    h.get_by_label("Help").click();
+    h.run();
+    h.get_by_label("Start from scratch (tutorial)…").click();
+    h.run();
+    let opened = crate::help::OPENED.lock().unwrap().clone();
+    assert!(
+        opened
+            .iter()
+            .any(|p| p.is_file() && p.to_string_lossy().contains("tutorial")),
         "{opened:?}"
     );
     h.get_by_label("Help").click();

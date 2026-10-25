@@ -83,7 +83,10 @@ impl Page {
                 "The manual is not on this computer: build it with `mdbook build` in the \
                  OpenOHL folder (target/book), or read docs/ there"
             }
-            Page::Tutorial => "The tutorial is planned, not written yet",
+            Page::Tutorial => {
+                "The tutorial is not on this computer: build the manual with `mdbook build` \
+                 in the OpenOHL folder (target/book), or read docs/tutorial/index.md"
+            }
             Page::Glossary => {
                 "The glossary is not on this computer: build the manual with `mdbook build` \
                  in the OpenOHL folder (target/book), or read docs/user-guide/glossary.md"
@@ -218,19 +221,17 @@ pub fn about_ui(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
-    /// The user guide is found (the book or its sources); the tutorial
-    /// too once its chapters are in docs/tutorial.
+    /// The user guide, the glossary and the tutorial are found (the book
+    /// or its sources).
     #[test]
     fn help_pages_resolve_to_files() {
-        let guide = Page::UserGuide.file().expect("the user guide");
-        assert!(guide.is_file(), "{}", guide.display());
-        let glossary = Page::Glossary.file().expect("the glossary");
-        assert!(glossary.is_file(), "{}", glossary.display());
-        let tutorial = shipped("docs/tutorial");
-        match Page::Tutorial.file() {
-            Some(f) => assert!(f.is_file(), "{}", f.display()),
-            None => assert!(tutorial.is_none(), "docs/tutorial has no first page"),
+        for page in Page::ALL {
+            let f = page
+                .file()
+                .unwrap_or_else(|| panic!("{}: not found", page.name()));
+            assert!(f.is_file(), "{}", f.display());
         }
+        assert!(shipped("docs/tutorial/index.md").is_some());
         assert!(shipped("examples/starter/README.md").is_some());
     }
 }

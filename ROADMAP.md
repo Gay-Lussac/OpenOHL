@@ -66,6 +66,17 @@ Proposed to start once the starter template has landed.
 > **Owner:** Later: the tutorial comes once most features are done, just
 > before a release. Other work goes first.
 
+*Built (in active development, not approved yet), 2026-10-25, at the
+owner's request: [Start from scratch — your first
+line](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/tutorial/index.md),
+eleven short chapters (0–10) on the starter template — the ground, the
+route and alignment, six structures, their strings, three phases strung
+in two sections, the jumpers, the results, the checks, saving; Help ›
+Start from scratch opens it in both applications. Chapter 9
+(OHL-Structure) is a placeholder until the new structure load cases
+land. An end-to-end test does its steps through the UI
+(`crates/ohl-app/src/tests/tutorial.rs`).*
+
 ### O3. Usability review — items not yet decided
 From the review of 2026-10-18 (quick wins are being done now):
 - **3D and Plan side by side** by default (today Plan is a tab behind 3D).

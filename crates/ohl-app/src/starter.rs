@@ -7,7 +7,7 @@
 //! invented or typical, clearly marked — cables, structure types, pylon
 //! templates, insulators, weather cases, load cases, clearance rules and a
 //! survey of invented ground — but no route, alignment, structure or wire:
-//! you add those (a tutorial, Help › Start from scratch, is planned). The
+//! you add those (the tutorial, Help › Start from scratch, docs/tutorial). The
 //! files are `examples/starter/` of the source tree (its README lists
 //! them).
 
