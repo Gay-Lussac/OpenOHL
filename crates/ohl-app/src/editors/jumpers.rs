@@ -15,6 +15,9 @@ pub struct JumperForm {
     pub jumper: ohl_line::Jumper,
     /// A support clamp to be removed, waiting for its confirmation.
     pub remove: Option<usize>,
+    /// Not in the line yet: put on Apply, nothing on Cancel (a jumper
+    /// between two wire ends, its way of being given asked first).
+    pub new: bool,
 }
 
 /// How a jumper is given.
@@ -33,13 +36,36 @@ impl JumperForm {
         Some(Self {
             jumper,
             remove: None,
+            new: false,
         })
+    }
+
+    /// New jumper `jumper`, not yet put: given by its length, offered as
+    /// the least it can have, the straight distance between its ends in
+    /// still air (rounded up to the cm); sag or rigid chosen in the window.
+    pub fn new(model: &Model, mut jumper: ohl_line::Jumper) -> Self {
+        let end = |e: &ohl_line::JumperEnd| ohl_line::jumper::approximate_end(&model.line, e, 0);
+        if let (Some(a), Some(b)) = (end(&jumper.from), end(&jumper.to)) {
+            let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+            jumper.sag = None;
+            jumper.rigid = false;
+            jumper.length = Some((chord * 100.0).ceil() / 100.0);
+        }
+        Self {
+            jumper,
+            remove: None,
+            new: true,
+        }
     }
 
     pub(super) fn command(&self) -> Result<(String, Command), String> {
         let j = &self.jumper;
         Ok((
-            format!("changed jumper {}", j.id),
+            if self.new {
+                format!("added jumper {}", j.id)
+            } else {
+                format!("changed jumper {}", j.id)
+            },
             Command::Put {
                 kind: Kind::Jumper,
                 id: j.id.clone(),

@@ -403,6 +403,7 @@ impl Form {
             Form::Section(f) if f.new => "String wire: new section".into(),
             Form::Section(f) => format!("Section {}", f.id),
             Form::Alignment(f) => format!("Alignment point {}", f.id),
+            Form::Jumper(f) if f.new => format!("New jumper {}", f.jumper.id),
             Form::Jumper(f) => format!("Jumper {}", f.jumper.id),
             Form::Span(f) => match (&f.editing, &f.jumper) {
                 (Some(l), Some(j)) => format!("Point {l} of jumper {j}"),

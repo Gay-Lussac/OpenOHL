@@ -732,11 +732,45 @@ fn jumpers_are_added_where_none_are() {
             .len(),
         n + 1
     );
-    // Two strings.
+    // Two strings: its window first, given by its length, the least
+    // between its ends offered; added on Apply.
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.jumpers.len(), n + 1, "nothing added yet");
+        let Some(crate::editors::Form::Jumper(f)) = &r.editor else {
+            panic!("its window: {:?}", r.status)
+        };
+        assert!(f.new);
+        let (a, b) = (
+            r.model
+                .line
+                .wire_point(&ohl_line::SectionPoint::new("T5", 1))
+                .unwrap()
+                .position,
+            r.model
+                .line
+                .wire_point(&ohl_line::SectionPoint::new("T5", 11))
+                .unwrap()
+                .position,
+        );
+        let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+        let l = f.jumper.length.expect("given by its length");
+        assert!(l >= chord && l < chord + 0.011, "{l} for {chord}");
+        assert!(f.jumper.sag.is_none());
+        // Its sag chosen instead: still the user's choice.
+        if let Some(crate::editors::Form::Jumper(f)) = &mut r.editor {
+            f.jumper.length = None;
+            f.jumper.sag = Some(0.5);
+        }
+    }
+    harness.run();
+    harness.get_by_label("Apply").click();
+    harness.run();
     let r = harness.state_mut().ready().unwrap();
     assert_eq!(r.model.line.jumpers.len(), n + 2, "{:?}", r.status);
+    assert!(r.editor.is_none());
     assert!(matches!(r.selection, Selection::Jumper(_)));
 }
 
@@ -763,6 +797,12 @@ fn a_jumper_joining_two_circuits_asks_which_stays() {
     // S1 (L1) and S2 (L2) at T5: different phases.
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
+    let apply = |harness: &mut Harness<'_, App>| {
+        harness.run();
+        harness.get_by_label("Apply").click();
+        harness.run();
+    };
+    apply(&mut harness);
     {
         let r = harness.state_mut().ready().unwrap();
         let join = r.circuit_join.as_ref().expect("asked first");
@@ -777,7 +817,7 @@ fn a_jumper_joining_two_circuits_asks_which_stays() {
     assert!(harness.state_mut().ready().unwrap().circuit_join.is_none());
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 1), None);
     use_tool(&mut harness, Tool::AddJumper, string_at("T5", 11), None);
-    harness.run();
+    apply(&mut harness);
     harness.get_by_label("Continue").click();
     harness.run();
     harness.get_by_label_contains("system's phases");
