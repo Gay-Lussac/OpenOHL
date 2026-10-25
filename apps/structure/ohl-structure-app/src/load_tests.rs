@@ -253,6 +253,8 @@ fn results_of_a_typed_case() {
         };
         h.state_mut().loads.type_value(&own, force);
     }
+    // The editor's window closed (it lies over the panels).
+    crate::layout::close_panel(&mut h.state_mut().dock, crate::layout::Panel::LoadRecipes);
     h.run();
     menu(&mut h, "Results", "FE results…");
     h.state_mut().results.case = "typed".into();

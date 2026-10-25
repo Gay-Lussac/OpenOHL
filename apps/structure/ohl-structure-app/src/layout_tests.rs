@@ -25,7 +25,7 @@ fn rect_of(app: &crate::app::StructureApp, panel: Panel) -> eframe::egui::Rect {
 }
 
 /// The default arrangement: the level and the tables on the left, the 3D
-/// view on the right (about 45 / 55).
+/// view on the right (about 45 / 55); the Load case editor not open.
 #[test]
 fn the_3d_view_is_on_the_right_by_default() {
     let path = copy_of("type-02.ohls", "layout-default");
@@ -41,7 +41,6 @@ fn the_3d_view_is_on_the_right_by_default() {
         Panel::Level,
         Panel::PointsInsulators,
         Panel::Supports,
-        Panel::LoadRecipes,
         Panel::Results,
     ] {
         let r = rect_of(app, p);
@@ -52,8 +51,10 @@ fn the_3d_view_is_on_the_right_by_default() {
     assert!(level.bottom() <= tables.top() + 1.0);
     let share = view.width() / (view.right() - level.left());
     assert!((0.5..0.6).contains(&share), "{share}");
-    // Closed until asked for.
+    // Closed until asked for; the Load case editor then in a window of
+    // its own.
     assert!(!app.is_open(Panel::StructureFields));
+    assert!(!app.is_open(Panel::LoadRecipes));
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 

@@ -95,6 +95,16 @@ fn harness(path: &Path, values: &Path) -> Harness<'static, StructureApp> {
     h
 }
 
+/// Saves the window as `name` in `OHL_RENDER_PNG` (a GPU rendering).
+fn shot(h: &mut Harness<'static, StructureApp>, name: &str) {
+    if ohl_render::headless_device().is_ok()
+        && let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+    {
+        let image = h.render().unwrap();
+        image.save(Path::new(&dir).join(name)).unwrap();
+    }
+}
+
 fn last_case(h: &Harness<'static, StructureApp>) -> ohl_structure_loads::LoadCaseRecipe {
     let f = h.state().file.as_ref().unwrap();
     ohl_structure_loads::StructureLoadCases::from_structure(f.structure())
@@ -201,6 +211,7 @@ fn mirror_wind_turns_the_body_wind_too() {
         .unwrap();
     h.state_mut().loads.recipe = k;
     h.run();
+    shot(&mut h, "load-case-editor.png");
     press(&mut h, "Mirror wind");
     let m = last_case(&h);
     assert_eq!(m.name, "high wind, from the right");

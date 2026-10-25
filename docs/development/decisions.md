@@ -72,6 +72,7 @@ of Parts A, B and C).
 - Timings (Development › Performance, *Kept measurements and notes*):
   300 kept, others' hidden: computed again 5.4 → 3.4 ms; the overlay
   233 → 2 µs a frame; from 2 km 1 000 → 600 shapes drawn.
+
 **Structure load cases: line forces and loads on the structure itself,
 built (within the agreed spec, 2026-10-25)**
 
