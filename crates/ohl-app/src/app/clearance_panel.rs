@@ -187,6 +187,40 @@ pub(crate) fn string_checks_out(r: &mut Ready, out: crate::string_checks::Out) {
     }
 }
 
+/// What the Internal clearances window asks: go to a structure, its
+/// preset's weather cases added, its marks drawn (the parts too near,
+/// else the nearest) or taken off.
+pub(crate) fn internal_clearances_out(r: &mut Ready, out: crate::internal_clearances::Out) {
+    if let Some(target) = out.go {
+        r.go_to(target);
+    }
+    if let Some((plugin, p)) = out.plugin_preset
+        && let Some(wc) = &p.weather
+        && let Err(e) = crate::rule_editor::preset_cases(r, &plugin, &p.name, &p.weather_text, wc)
+    {
+        r.status = Some((
+            format!("preset {plugin} {}: weather cases: {e}", p.name),
+            true,
+        ));
+    }
+    if let Some(marks) = out.marks {
+        if marks.is_empty() {
+            if r.marks_from == MarksFrom::Internal {
+                r.plan.marks.clear();
+                r.view3d.marks.clear();
+                r.profile.marks.clear();
+                r.view3d.dirty.insert(Layer::Clearances);
+            }
+        } else {
+            r.marks_from = MarksFrom::Internal;
+            r.plan.marks.clone_from(&marks);
+            r.view3d.marks = marks.iter().map(|p| (*p, *p)).collect();
+            r.profile.marks.clone_from(&r.view3d.marks);
+            r.view3d.dirty.insert(Layer::Clearances);
+        }
+    }
+}
+
 pub(crate) fn clearance_zone_out(
     r: &mut Ready,
     measure: ohl_clearance::Measure,

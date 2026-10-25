@@ -531,6 +531,17 @@ you (what is checked, against which part of the body, in which cases).
   body).
 > Details confirmed by the owner (2026-10-19).
 
+**Status (2026-10-25):** first part in active development — Checks ›
+Internal clearances… and `ohl internal`: the conductors near each
+structure (within a reach along the span), its jumpers and its strings'
+live ends (their wire points, as points) as solved, against every member
+of its body (levels 2 and 3), to the member's surface where its solid is
+known, else its centre line (said: on the unsafe side); rules
+`[[internal_rule]]` (distance fixed or by voltage, plugin presets), the
+cases' structure and section overrides. **Next part:** the volumes on the
+strings (shapes, their electrical state and freedoms, several strings in
+one assembly) and the live-end fittings' size (owner, 2026-10-25).
+
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from
 level 3 structures. Level 4: structures and line iterated until both

@@ -185,6 +185,8 @@ pub enum MarksFrom {
     /// The string check (its strings beyond a limit, else the worst, at
     /// their wire points).
     Strings,
+    /// The internal clearances (the parts too near, else the nearest).
+    Internal,
 }
 
 /// What is shown once the model is loaded.
@@ -332,6 +334,8 @@ pub struct Ready {
     pub wire_tensions: crate::wire_tensions::WireTensionsWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
+    /// Checks › Internal clearances….
+    pub internal_clearances: crate::internal_clearances::InternalClearancesWindow,
     /// Export › Plans: the route, situation and phase plans.
     pub plans: crate::plans_window::PlansWindow,
     /// Criteria › Weather case groups….
@@ -518,6 +522,7 @@ impl Ready {
             galloping: Default::default(),
             wire_tensions: Default::default(),
             string_checks: Default::default(),
+            internal_clearances: Default::default(),
             plans: Default::default(),
             measuring: Default::default(),
             case_groups: Default::default(),
@@ -2129,6 +2134,7 @@ impl eframe::App for App {
                     || ready.radial_clearances.open
                     || ready.wire_tensions.open
                     || ready.string_checks.open
+                    || ready.internal_clearances.open
                 {
                     crate::rule_editor::ensure_presets(&ctx, ready, &self.plugins);
                 }
@@ -2228,6 +2234,12 @@ impl eframe::App for App {
                         .string_checks
                         .ui(&ctx, &mut ready.model, &ready.rule_editor.presets.list);
                 string_checks_out(ready, out);
+                let out = ready.internal_clearances.ui(
+                    &ctx,
+                    &mut ready.model,
+                    &ready.rule_editor.presets.list,
+                );
+                internal_clearances_out(ready, out);
                 // Layers drawn from results out of date: dimmed.
                 crate::revision::frame(ready);
                 if let Some(mut w) = ready.class_window.take() {

@@ -536,6 +536,29 @@ The drawing beside shows the vertical zone (the width each side, a point and its
 
 Without the window: `ohl tensions` ([Wire tension rules](terrain.md#wire-tension-rules-tension_rule)).
 
+### Internal clearances
+
+**Checks › Internal clearances…** (2026-10-25; roadmap O6, first part): at
+each structure with a body (detail level 2 or 3), the electrified parts as
+solved in each weather case of the rules — the **conductors** near it
+(within each rule's **reach** along the span, 20 m by default), its
+**jumpers** and its strings' **live ends** (their wire points; the
+fittings' size not counted yet, on the unsafe side) — against **every
+member** of its body: to the member's **surface** where its section's
+solid is known, else to its centre line (each structure where that is so
+said: on the unsafe side). Earth wires are not electrified, not checked.
+Structures without a body are listed as not checked. The rules
+(`[[internal_rule]]`, kept with the project as a rule file): name, weather
+cases (groups' buttons), voltages, which parts, reach, and the required
+distance — fixed or by voltage (the clearance rules' editor); a
+design-code plugin's preset brings its own. The structure and section
+overrides beside **Run**. Results: every part per rule and case, the
+nearest first (structure — a link to it —, part, member, rule, case,
+distance, required, to the surface or the centre line, pass or too near),
+**only those**, **Export CSV…**; the parts too near (else the nearest)
+marked in the views while the window is open. `ohl internal` runs the same
+from the command line. The volumes on the strings come next.
+
 ### String checks
 
 **Checks › String checks…** (2026-10-24, the owner's request; built, in active development (not approved yet)) checks **every string as solved**, by rules:
