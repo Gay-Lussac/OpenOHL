@@ -781,6 +781,20 @@ pub struct SpanSag {
     pub sags: Vec<(Option<String>, f64, [f64; 2])>,
 }
 
+/// A circuit of the line, as the phase plan's table lists it: its
+/// name (what the wires' `circuit` gives) and its system's.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CircuitInfo {
+    /// The circuit's name.
+    pub name: String,
+    /// Its system's owner (empty: not given).
+    pub owner: String,
+    /// Its system's number (empty: not given).
+    pub number: String,
+    /// Its system's nominal voltage, kV (none: earthed or no system).
+    pub voltage_kv: Option<f64>,
+}
+
 /// Drawing data of one route.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RouteDrawing {
@@ -802,6 +816,9 @@ pub struct RouteDrawing {
     pub sides: Vec<(f64, Profile)>,
     /// Wires.
     pub wires: Vec<Trace>,
+    /// The line's circuits (in the order of its sections), with their
+    /// systems' owner and number.
+    pub circuits: Vec<CircuitInfo>,
     /// Isoclearance lines on the ground (each labelled with its
     /// clearance, coloured by it): [`RouteDrawing::set_isoclearance`].
     pub isoclearance: Vec<Trace>,
@@ -1135,6 +1152,22 @@ pub fn build(
         })
         .collect();
     alignment.sort_by(|a, b| a.station.total_cmp(&b.station));
+    let mut circuits: Vec<CircuitInfo> = Vec::new();
+    for s in &line.sections {
+        if s.circuit_name.is_empty() || circuits.iter().any(|c| c.name == s.circuit_name) {
+            continue;
+        }
+        let system = s
+            .system
+            .as_deref()
+            .and_then(|id| line.systems.iter().find(|x| x.id == id));
+        circuits.push(CircuitInfo {
+            name: s.circuit_name.clone(),
+            owner: system.map_or_else(String::new, |x| x.owner.clone()),
+            number: system.map_or_else(String::new, |x| x.number.clone()),
+            voltage_kv: system.map(|x| x.voltage_kv),
+        });
+    }
     Ok(RouteDrawing {
         route: route.id.clone(),
         name: route.name.clone(),
@@ -1146,6 +1179,7 @@ pub fn build(
         ground,
         sides,
         wires,
+        circuits,
         isoclearance: Vec::new(),
         markers,
         versions: Vec::new(),

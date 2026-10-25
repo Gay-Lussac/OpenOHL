@@ -463,6 +463,8 @@ impl TableKind {
                             .count()
                             .to_string(),
                         s.description.clone(),
+                        s.owner.clone(),
+                        s.number.clone(),
                     ],
                 })
                 .collect(),

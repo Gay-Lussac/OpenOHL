@@ -238,6 +238,7 @@ fn corridor(model: &Model, centre: &[[f64; 3]], length: f64, depth: f64) -> Buil
             ground: Vec::new(),
             sides: Vec::new(),
             wires: Vec::new(),
+            circuits: Vec::new(),
             isoclearance: Vec::new(),
             markers: Vec::new(),
             alignment: Vec::new(),

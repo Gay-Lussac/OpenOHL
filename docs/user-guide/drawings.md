@@ -533,17 +533,23 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   1:1000 by default), the sheets overlapping (a tenth of their width),
   over the cadastral survey loaded as a drawing (its lines and its texts,
   the parcel numbers) and the orthophotos (under a white veil).
-- **Phase plan** — each structure's figure seen along the line (its
-  members, else its stick drawing), every wire position a dot in its
-  colour labelled with its circuit's **number** (the key under the
-  figures lists the circuits) and its phase, drawn only where the
-  arrangement of the wires **leaving it ahead** differs from the
-  structure before (a transposition, a circuit joining or leaving,
-  another arm — compared by level and place, not by height); the first
-  and the last always. Between, "from A to B: arrangement unchanged"
-  (the template's legend label `phase_unchanged`). Nothing typed twice:
-  taken from the line.  A schematic: drawn in the weather case shown, whatever the cases the
-  sheets take.
+- **Phase plan** (2026-10-25, after a utility's phase plan) — every wire
+  a **track** along the page at its place across the line, in its
+  phase's colour (each circuit's phase labels in order red, green, blue;
+  earth wires dark grey) and its circuit's dashes. Each run of
+  structures whose wires **leaving ahead** have the same arrangement
+  (compared by level and place, not by height) is one **column**,
+  headed by its structure or "first–last", with the structure seen from
+  above: the earth at its foot, an arm per level across the tracks, a
+  dot where each wire hangs. Where the phases change places the tracks
+  cross between the columns; a circuit leaving or joining the line turns
+  away with an arrow and its name; at the line's ends each track ends
+  in an arrow with its phase and its circuit's name. Under the tracks
+  the **table of the circuits**: line type, name, and the owner and
+  number of their electrical systems (Tables › Systems, columns
+  `owner` and `number`) when any is given. Nothing typed twice: taken
+  from the line. A schematic: drawn in the weather case shown, whatever
+  the cases the sheets take; jumpers are not tracks.
 
 The route and situation plans draw the wires in the sheets' cases; those
 not solved yet are solved while the window is open, and an Export asked

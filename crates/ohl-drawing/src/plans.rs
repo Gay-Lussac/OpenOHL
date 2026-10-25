@@ -3,14 +3,14 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The plans beside the plan-and-profile sheets (owner, 2026-10-23/24,
-//! roadmap O14). The **phase plan**: where the phase arrangement changes
-//! along the line, and nothing else — each structure's stick figure seen
-//! along the line, every wire position labelled with its circuit and
-//! phase, drawn only where the arrangement differs from the structure
-//! before (a transposition, a circuit leaving or joining, another arm);
-//! between, a text "from A to B: arrangement unchanged". Taken from the
-//! line as it is drawn (its wires' circuits and phases at the
-//! structures): nothing typed twice.
+//! roadmap O14). The **phase plan** (redrawn after a utility's, owner
+//! 2026-10-25): every wire a track along the page at its place across the
+//! line, in its phase's colour and its circuit's dashes; each run of
+//! structures with the same arrangement one column with the structure
+//! seen from above; tracks crossing where the phases change places,
+//! turning away where a circuit leaves or joins; the circuits' table.
+//! Taken from the line as it is drawn (its wires' circuits and phases at
+//! the structures): nothing typed twice.
 
 use crate::Page;
 use crate::furniture;
@@ -94,8 +94,9 @@ pub fn arrangements(d: &RouteDrawing) -> Vec<Arrangement> {
                 let (Some(first), Some(last)) = (t.points.first(), t.points.last()) else {
                     continue;
                 };
-                // A span (a jumper stays at its structure).
-                if (last[0] - first[0]).abs() < 1.0 {
+                // A span: not a jumper (at a dead end with long strings
+                // a jumper reaches metres along the line).
+                if t.label.starts_with("jumper") || (last[0] - first[0]).abs() < 1.0 {
                     continue;
                 }
                 for (end, other) in [(first, last), (last, first)] {
@@ -109,10 +110,13 @@ pub fn arrangements(d: &RouteDrawing) -> Vec<Arrangement> {
                         continue;
                     }
                     let [offset, height] = rel(end);
+                    // One wire once (a strain structure's two clamps of a
+                    // phase a few decimetres apart: one).
                     let same = wires.iter().any(|w| {
-                        (w.offset - offset).abs() < 0.05
-                            && (w.height - height).abs() < 0.05
+                        (w.offset - offset).abs() < 0.5
+                            && (w.height - height).abs() < 1.0
                             && w.circuit == t.circuit
+                            && w.phase == t.phase
                     });
                     if !same {
                         wires.push(WirePosition {
@@ -147,39 +151,26 @@ pub fn arrangements(d: &RouteDrawing) -> Vec<Arrangement> {
         .collect()
 }
 
-/// What the phase plan shows, in order.
+/// One column of the phase plan: a run of structures in a row with the
+/// same arrangement (one structure, or "first–last"), drawn as its first.
 #[derive(Debug, Clone, PartialEq)]
-pub enum PhaseStep {
-    /// A structure drawn (index in the arrangements): the first, the
-    /// last, and each whose arrangement differs from the one before.
-    Drawn(usize),
-    /// The structures from `from` to `to` (ids) with the arrangement of
-    /// the one drawn before.
-    Unchanged {
-        /// The first.
-        from: String,
-        /// The last.
-        to: String,
-    },
+pub struct PhaseColumn {
+    /// The first structure (index in the arrangements).
+    pub first: usize,
+    /// The last.
+    pub last: usize,
 }
 
-/// The steps of the phase plan of `a`.
-pub fn phase_steps(a: &[Arrangement]) -> Vec<PhaseStep> {
-    let mut out = Vec::new();
-    let mut run: Option<(String, String)> = None;
+/// The columns of the phase plan of `a`: each run of structures in a row
+/// whose arrangements are the same ([`Arrangement::signature`]) one
+/// column; a change (a transposition, a circuit leaving or joining,
+/// another arm) starts the next.
+pub fn phase_columns(a: &[Arrangement]) -> Vec<PhaseColumn> {
+    let mut out: Vec<PhaseColumn> = Vec::new();
     for (k, x) in a.iter().enumerate() {
-        let changed = k == 0 || x.signature() != a[k - 1].signature();
-        let last = k + 1 == a.len();
-        if changed || last {
-            if let Some((from, to)) = run.take() {
-                out.push(PhaseStep::Unchanged { from, to });
-            }
-            out.push(PhaseStep::Drawn(k));
-        } else {
-            match &mut run {
-                Some((_, to)) => *to = x.structure.clone(),
-                None => run = Some((x.structure.clone(), x.structure.clone())),
-            }
+        match out.last_mut() {
+            Some(c) if a[c.first].signature() == x.signature() => c.last = k,
+            _ => out.push(PhaseColumn { first: k, last: k }),
         }
     }
     out
@@ -189,51 +180,208 @@ pub fn phase_steps(a: &[Arrangement]) -> Vec<PhaseStep> {
 /// dead end's clamp at the end of its tension string; spans are longer).
 const NEAR: f64 = 15.0;
 
-/// One cell's width and height on paper, mm.
-const CELL: [f64; 2] = [90.0, 110.0];
+/// A column's width on paper (the structure's figure), mm.
+const COLUMN: f64 = 14.0;
 
-/// The width of a cell between two drawn structures, mm.
-const BETWEEN: f64 = 40.0;
+/// The space between two columns (the spans, where tracks cross), mm.
+const GAP: f64 = 24.0;
+
+/// The room at each end of a page (the tracks' ends, their labels), mm.
+const END: f64 = 40.0;
+
+/// The least distance between two tracks, mm.
+const LANE: f64 = 2.4;
+
+/// The phases' colours, by the phase label's place among its circuit's.
+const PHASE_COLORS: [&str; 3] = ["#d62728", "#2ca02c", "#1f5fd6"];
+
+/// The earth wires' colour.
+const EARTH_COLOR: &str = "#444444";
+
+/// The dash patterns of the circuits' tracks, by the circuit's place in
+/// the table (repeating), mm.
+const CIRCUIT_DASHES: [&[f64]; 6] = [
+    &[],
+    &[3.0, 1.2],
+    &[4.0, 1.0, 1.0, 1.0],
+    &[1.0, 0.8],
+    &[6.0, 1.5],
+    &[4.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+];
+
+/// The y of each wire of `x` on paper, mm from the axis (positive: to the
+/// right looking ahead, down the page): its offset at `k` mm per m; wires
+/// above one another (offsets within 0.75 m) spread about their mean,
+/// the highest first, and every two tracks at least [`LANE`] apart.
+fn lanes(x: &Arrangement, k: f64) -> Vec<f64> {
+    let n = x.wires.len();
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&i, &j| {
+        x.wires[i]
+            .offset
+            .total_cmp(&x.wires[j].offset)
+            .then(x.wires[j].height.total_cmp(&x.wires[i].height))
+    });
+    let mut y = vec![0.0; n];
+    let mut g = 0;
+    while g < n {
+        let mut e = g + 1;
+        while e < n && x.wires[order[e]].offset - x.wires[order[e - 1]].offset < 0.75 {
+            e += 1;
+        }
+        let mut group: Vec<usize> = order[g..e].to_vec();
+        // The highest first: on the side the group leans to, outward.
+        group.sort_by(|&i, &j| x.wires[j].height.total_cmp(&x.wires[i].height));
+        let mean = group.iter().map(|&i| x.wires[i].offset).sum::<f64>() / group.len() as f64;
+        let m = group.len() as f64;
+        for (r, &i) in group.iter().enumerate() {
+            y[i] = mean * k + (r as f64 - (m - 1.0) / 2.0) * LANE;
+        }
+        g = e;
+    }
+    // At least a lane apart, pushed outward from the middle.
+    let mut by: Vec<usize> = (0..n).collect();
+    by.sort_by(|&i, &j| y[i].total_cmp(&y[j]));
+    for w in 1..n {
+        let (a, b) = (by[w - 1], by[w]);
+        if y[b] - y[a] < LANE {
+            y[b] = y[a] + LANE;
+        }
+    }
+    y
+}
+
+/// Each wire's track key at a structure: its circuit, phase and which of
+/// the wires of that circuit and phase it is (from the left).
+fn track_keys(x: &Arrangement) -> Vec<(String, String, usize)> {
+    let mut order: Vec<usize> = (0..x.wires.len()).collect();
+    order.sort_by(|&i, &j| x.wires[i].offset.total_cmp(&x.wires[j].offset));
+    let mut keys = vec![(String::new(), String::new(), 0); x.wires.len()];
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for i in order {
+        let w = &x.wires[i];
+        let id = (w.circuit.clone(), w.phase.clone());
+        let n = seen.iter().filter(|s| **s == id).count();
+        seen.push(id.clone());
+        keys[i] = (id.0, id.1, n);
+    }
+    keys
+}
+
+/// A track's pen: the wire's colour, its circuit's dashes.
+fn track_pen(color: &str, dash: &[f64], width: f64) -> crate::model::Pen {
+    crate::model::Pen {
+        color: crate::model::Color::hex_or_black(color),
+        width,
+        dash: (!dash.is_empty()).then(|| dash.to_vec()),
+    }
+}
+
+fn track(items: &mut Vec<Item>, points: Vec<[f64; 2]>, pen: crate::model::Pen) {
+    items.push(Item::Path(crate::model::Path {
+        layer: Layer::Wires,
+        points,
+        closed: false,
+        pen,
+        title: None,
+    }));
+}
+
+/// An open arrowhead at `tip`, pointing away from `from`.
+fn arrow(items: &mut Vec<Item>, from: [f64; 2], tip: [f64; 2], color: &str) {
+    let (dx, dy) = (tip[0] - from[0], tip[1] - from[1]);
+    let l = dx.hypot(dy).max(1e-9);
+    let (ux, uy) = (dx / l, dy / l);
+    let (a, w) = (1.6, 0.8);
+    for s in [-1.0, 1.0] {
+        items.push(plan_path(
+            Layer::Wires,
+            vec![
+                [tip[0] - ux * a - uy * w * s, tip[1] - uy * a + ux * w * s],
+                tip,
+            ],
+            color,
+            0.25,
+        ));
+    }
+}
 
 /// The phase plan of route `d` on pages of `page` (the template's frame
-/// and title block): the steps left to right, row by row, page by page;
-/// every figure at one scale (the largest structure filling its cell).
+/// and title block), after a utility's phase plan (owner, 2026-10-25):
+/// every wire a track along the page in its phase's colour and its
+/// circuit's dashes, at its place across the line; each run of
+/// structures with the same arrangement one column (its id, or
+/// "first–last") with the structure seen from above — an arm per level
+/// across the tracks, a dot where each wire hangs, the earth at its foot;
+/// tracks crossing between columns where the phases change places; a
+/// circuit leaving or joining the line a track turning away with an
+/// arrow and its name; at the line's ends each track's phase and its
+/// circuit's name. The table of the circuits (owner, line type, name,
+/// number; the owner and number when given) under the tracks. A
+/// schematic: drawn in the case shown.
 pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
-    let a = arrangements(d);
-    let steps = phase_steps(&a);
-    if steps.is_empty() {
+    let mut a = arrangements(d);
+    // The phases' colours, as phase plans have them: each circuit's
+    // phase labels in order red, green, blue (then again); the earth
+    // wires dark grey.
+    let mut labels: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for w in a.iter().flat_map(|x| &x.wires) {
+        let l = labels.entry(w.circuit.clone()).or_default();
+        if !l.contains(&w.phase) {
+            l.push(w.phase.clone());
+        }
+    }
+    for l in labels.values_mut() {
+        l.sort();
+    }
+    for w in a.iter_mut().flat_map(|x| &mut x.wires) {
+        w.color = if w.earth {
+            EARTH_COLOR.to_owned()
+        } else {
+            let k = labels[&w.circuit]
+                .iter()
+                .position(|p| *p == w.phase)
+                .unwrap_or(0);
+            PHASE_COLORS[k % PHASE_COLORS.len()].to_owned()
+        };
+    }
+    let columns = phase_columns(&a);
+    if columns.is_empty() {
         return Vec::new();
     }
-    // One scale for every figure, m → mm.
-    let (mut w, mut h) = (1.0f64, 1.0f64);
-    for x in &a {
-        for p in x.figure.iter().flatten().chain(
-            x.wires
-                .iter()
-                .map(|w| [w.offset, w.height])
-                .collect::<Vec<_>>()
-                .iter(),
-        ) {
-            w = w.max(2.0 * p[0].abs());
-            h = h.max(p[1]);
-        }
-    }
-    let k = ((CELL[0] - 30.0) / w).min((CELL[1] - 22.0) / h);
+    let t = &o.template;
     let size = 1.8;
-    // The circuits numbered in the order they first appear: the key.
-    let mut circuits: Vec<String> = Vec::new();
-    for x in &a {
-        for w in &x.wires {
-            if !circuits.contains(&w.circuit) {
-                circuits.push(w.circuit.clone());
-            }
+    // The circuits drawn, in the line's order (then as they appear).
+    let mut circuits: Vec<crate::CircuitInfo> = Vec::new();
+    for c in &d.circuits {
+        if a.iter().flat_map(|x| &x.wires).any(|w| w.circuit == c.name) {
+            circuits.push(c.clone());
         }
     }
-    let number = |c: &str| circuits.iter().position(|x| x == c).map_or(0, |k| k + 1);
-    let key_cols = 3usize;
-    let key_rows = circuits.len().div_ceil(key_cols).max(1);
-    let key_h = key_rows as f64 * size * 1.6 + 6.0;
-    // The steps laid out on pages: (page, x, y, width) of each.
+    for w in a.iter().flat_map(|x| &x.wires) {
+        if !w.circuit.is_empty() && !circuits.iter().any(|c| c.name == w.circuit) {
+            circuits.push(crate::CircuitInfo {
+                name: w.circuit.clone(),
+                ..Default::default()
+            });
+        }
+    }
+    let dash_of = |c: &str| -> &'static [f64] {
+        circuits
+            .iter()
+            .position(|x| x.name == c)
+            .map_or(&[], |k| CIRCUIT_DASHES[k % CIRCUIT_DASHES.len()])
+    };
+    // The table of the circuits: its columns (the owner's and the
+    // number's when any is given) and height.
+    let owners = circuits.iter().any(|c| !c.owner.is_empty());
+    let numbers = circuits.iter().any(|c| !c.number.is_empty());
+    let row_h = 5.0;
+    let table_h = if circuits.is_empty() {
+        0.0
+    } else {
+        7.0 + row_h * (circuits.len() + 1) as f64
+    };
     let (_, room, _) = framed_page(
         d,
         o,
@@ -243,112 +391,354 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
         (String::new(), String::new()),
         ("–", "plan_phase"),
     );
-    let room = [room[0], room[1], room[2], room[3] - key_h];
-    let mut placed: Vec<(usize, [f64; 2], f64)> = Vec::new();
-    let (mut p, mut x, mut y) = (0usize, room[0], room[1]);
-    for s in &steps {
-        let width = match s {
-            PhaseStep::Drawn(_) => CELL[0],
-            PhaseStep::Unchanged { .. } => BETWEEN,
-        };
-        if x + width > room[0] + room[2] {
-            x = room[0];
-            y += CELL[1];
+    // The band of the tracks: under the structures' ids, over the table.
+    let band = [room[1] + 12.0, room[1] + room[3] - table_h - 8.0];
+    let middle = (band[0] + band[1]) / 2.0;
+    let widest = a
+        .iter()
+        .flat_map(|x| &x.wires)
+        .map(|w| w.offset.abs())
+        .fold(1.0f64, f64::max);
+    let k = ((band[1] - band[0]) / 2.0 - 6.0).max(5.0) / widest;
+    let k = k.min(6.0);
+    let ys: Vec<Vec<f64>> = a.iter().map(|x| lanes(x, k)).collect();
+    let keys: Vec<Vec<(String, String, usize)>> = a.iter().map(track_keys).collect();
+    // Columns per page.
+    let per_page = (((room[2] - 2.0 * END + GAP) / (COLUMN + GAP)).floor() as usize).max(1);
+    let pages = columns.len().div_ceil(per_page);
+    let label_of = |c: &PhaseColumn| {
+        if c.first == c.last {
+            a[c.first].structure.clone()
+        } else {
+            format!("{}–{}", a[c.first].structure, a[c.last].structure)
         }
-        if y + CELL[1] > room[1] + room[3] {
-            p += 1;
-            x = room[0];
-            y = room[1];
-        }
-        placed.push((p, [x, y], width));
-        x += width;
-    }
-    let pages = p + 1;
-    let t = &o.template;
+    };
     let mut out = Vec::new();
     for page_no in 0..pages {
-        let on: Vec<(&PhaseStep, [f64; 2])> = steps
-            .iter()
-            .zip(&placed)
-            .filter(|(_, (pp, ..))| *pp == page_no)
-            .map(|(s, (_, at, _))| (s, *at))
-            .collect();
-        let ids = |s: &PhaseStep| match s {
-            PhaseStep::Drawn(i) => (a[*i].structure.clone(), a[*i].station),
-            PhaseStep::Unchanged { from, .. } => (
-                from.clone(),
-                a.iter()
-                    .find(|x| &x.structure == from)
-                    .map_or(0.0, |x| x.station),
-            ),
-        };
-        let (first, s0) = on.first().map(|(s, _)| ids(s)).unwrap_or_default();
-        let (last, s1) = on.last().map(|(s, _)| ids(s)).unwrap_or_default();
+        let on = &columns[page_no * per_page..((page_no + 1) * per_page).min(columns.len())];
+        let first = &a[on[0].first];
+        let last = &a[on[on.len() - 1].last];
         let (mut drawing, _, _) = framed_page(
             d,
             o,
             page,
             (page_no + 1, pages),
-            (s0, s1),
-            (first, last),
+            (first.station, last.station),
+            (first.structure.clone(), last.structure.clone()),
             ("–", "plan_phase"),
         );
         let items = &mut drawing.items;
-        // The key of the circuits, under the figures.
-        let key_top = room[1] + room[3] + 3.0;
-        let col_w = room[2] / key_cols as f64;
-        for (c, name) in circuits.iter().enumerate() {
-            let (r, col) = (c % key_rows, c / key_rows);
-            items.push(plan_text(
-                Layer::Labels,
-                [
-                    room[0] + col as f64 * col_w,
-                    key_top + (r as f64 + 1.0) * size * 1.6,
-                ],
-                size,
-                Anchor::Start,
-                format!("{}  {}", c + 1, name),
-                false,
-            ));
-        }
-        for (s, at) in on {
-            match s {
-                PhaseStep::Drawn(i) => draw_arrangement(items, &a[*i], at, k, size, &number),
-                PhaseStep::Unchanged { from, to } => {
-                    let text = t
-                        .legend
-                        .label("phase_unchanged", &[("from", from), ("to", to)]);
-                    let c = [at[0] + BETWEEN / 2.0, at[1] + CELL[1] / 2.0];
-                    for (n, line) in furniture::wrap(&text, size, false, BETWEEN - 6.0)
-                        .iter()
-                        .enumerate()
-                    {
-                        items.push(plan_text(
-                            Layer::Labels,
-                            [c[0], c[1] + n as f64 * size * 1.4],
-                            size,
-                            Anchor::Middle,
-                            line.clone(),
-                            false,
-                        ));
+        let x_of = |j: usize| room[0] + END + j as f64 * (COLUMN + GAP) + COLUMN / 2.0;
+        let line_start = page_no == 0;
+        let line_end = page_no + 1 == pages;
+        for (j, c) in on.iter().enumerate() {
+            let xc = x_of(j);
+            let (xl, xr) = (xc - COLUMN / 2.0, xc + COLUMN / 2.0);
+            let x = &a[c.first];
+            let y = |i: usize| middle + ys[c.first][i];
+            // The tracks through the column.
+            for (i, w) in x.wires.iter().enumerate() {
+                track(
+                    items,
+                    vec![[xl, y(i)], [xr, y(i)]],
+                    track_pen(&w.color, dash_of(&w.circuit), 0.3),
+                );
+            }
+            // To the next column: matched by track key; the others turn
+            // away (leaving) or come in (joining).
+            let next = on.get(j + 1).map(|n| (n, x_of(j + 1)));
+            let ahead = columns.get(page_no * per_page + j + 1);
+            let mut turned: Vec<(String, [f64; 2])> = Vec::new();
+            for (i, w) in x.wires.iter().enumerate() {
+                let key = &keys[c.first][i];
+                let to = ahead.and_then(|n| keys[n.first].iter().position(|q| q == key));
+                let pen = track_pen(&w.color, dash_of(&w.circuit), 0.3);
+                match (to, next) {
+                    (Some(q), Some((n, xn))) => track(
+                        items,
+                        vec![[xr, y(i)], [xn - COLUMN / 2.0, middle + ys[n.first][q]]],
+                        pen,
+                    ),
+                    // On the next page: to the page's edge.
+                    (Some(_), None) => track(
+                        items,
+                        vec![[xr, y(i)], [room[0] + room[2] - 4.0, y(i)]],
+                        pen,
+                    ),
+                    (None, _) if ahead.is_none() => {}
+                    (None, _) => {
+                        let s = if w.offset < 0.0 { -1.0 } else { 1.0 };
+                        let tip = [xr + GAP * 0.55, y(i) + s * GAP * 0.45];
+                        track(items, vec![[xr, y(i)], tip], pen);
+                        arrow(items, [xr, y(i)], tip, &w.color);
+                        turned.push((w.circuit.clone(), tip));
                     }
-                    items.push(plan_path(
-                        Layer::Centreline,
-                        vec![
-                            [at[0] + 3.0, c[1] - 6.0],
-                            [at[0] + BETWEEN - 3.0, c[1] - 6.0],
+                }
+            }
+            // Wires joining here: coming in from beside the line.
+            let before = (page_no * per_page + j).checked_sub(1).map(|p| &columns[p]);
+            if let Some(b) = before {
+                for (i, w) in x.wires.iter().enumerate() {
+                    if keys[b.first].contains(&keys[c.first][i]) {
+                        continue;
+                    }
+                    let s = if w.offset < 0.0 { -1.0 } else { 1.0 };
+                    let tip = [xl - GAP * 0.55, y(i) + s * GAP * 0.45];
+                    track(
+                        items,
+                        vec![tip, [xl, y(i)]],
+                        track_pen(&w.color, dash_of(&w.circuit), 0.3),
+                    );
+                    arrow(items, [xl, y(i)], tip, &w.color);
+                    turned.push((w.circuit.clone(), tip));
+                }
+                // From the previous page: from the page's edge.
+                if j == 0 {
+                    for (i, w) in x.wires.iter().enumerate() {
+                        if keys[b.first].contains(&keys[c.first][i]) {
+                            track(
+                                items,
+                                vec![[room[0] + 4.0, y(i)], [xl, y(i)]],
+                                track_pen(&w.color, dash_of(&w.circuit), 0.3),
+                            );
+                        }
+                    }
+                }
+            }
+            // The names of the circuits turning away, once each, beyond
+            // their arrows.
+            let mut named: Vec<String> = Vec::new();
+            for (circuit, _) in &turned {
+                if named.contains(circuit) || circuit.is_empty() {
+                    continue;
+                }
+                named.push(circuit.clone());
+                let tips: Vec<[f64; 2]> = turned
+                    .iter()
+                    .filter(|(c, _)| c == circuit)
+                    .map(|(_, p)| *p)
+                    .collect();
+                let cx = tips.iter().map(|p| p[0]).sum::<f64>() / tips.len() as f64;
+                let below = tips.iter().map(|p| p[1]).sum::<f64>() / tips.len() as f64 > middle;
+                let cy = if below {
+                    tips.iter().map(|p| p[1]).fold(f64::MIN, f64::max) + size * 1.6
+                } else {
+                    tips.iter().map(|p| p[1]).fold(f64::MAX, f64::min) - size * 0.8
+                };
+                items.push(plan_text(
+                    Layer::Labels,
+                    [cx, cy],
+                    size,
+                    Anchor::Middle,
+                    circuit.clone(),
+                    false,
+                ));
+            }
+            draw_column(items, x, &ys[c.first], [xl, middle]);
+            // The column's structures, above the tracks.
+            let label = label_of(c);
+            for (n, line) in furniture::wrap(&label, size * 1.15, true, COLUMN + GAP - 4.0)
+                .iter()
+                .enumerate()
+            {
+                items.push(plan_text(
+                    Layer::Structures,
+                    [xc, room[1] + 5.0 + n as f64 * size * 1.5],
+                    size * 1.15,
+                    Anchor::Middle,
+                    line.clone(),
+                    true,
+                ));
+            }
+        }
+        // The line's ends (arrows, each track's phase, the circuits'
+        // names) and the pages' joins (the phase only).
+        let ends = [
+            (true, &a[on[0].first], x_of(0) - COLUMN / 2.0, line_start),
+            (
+                false,
+                &a[on[on.len() - 1].first],
+                x_of(on.len() - 1) + COLUMN / 2.0,
+                line_end,
+            ),
+        ];
+        for (left, x, edge, at_line_end) in ends {
+            let i0 = if left {
+                on[0].first
+            } else {
+                on[on.len() - 1].first
+            };
+            let s = if left { -1.0 } else { 1.0 };
+            let tip = edge + s * 8.0;
+            for (i, w) in x.wires.iter().enumerate() {
+                let yy = middle + ys[i0][i];
+                if at_line_end {
+                    track(
+                        items,
+                        vec![[edge, yy], [tip, yy]],
+                        track_pen(&w.color, dash_of(&w.circuit), 0.3),
+                    );
+                    arrow(items, [edge, yy], [tip, yy], &w.color);
+                }
+                let at = if at_line_end {
+                    tip + s * 1.2
+                } else {
+                    edge + s * 1.2
+                };
+                let at = if !at_line_end && !left {
+                    room[0] + room[2] - 3.0
+                } else if !at_line_end {
+                    room[0] + 3.0
+                } else {
+                    at
+                };
+                if !w.phase.is_empty() {
+                    items.push(plan_text(
+                        Layer::Labels,
+                        [at, yy + 0.35 * size],
+                        size * 0.9,
+                        if left { Anchor::End } else { Anchor::Start },
+                        w.phase.clone(),
+                        false,
+                    ));
+                }
+            }
+            if !at_line_end {
+                continue;
+            }
+            // The circuits' names beyond their phases, at their tracks'
+            // middle.
+            let mut named: Vec<&str> = Vec::new();
+            for w in &x.wires {
+                if w.circuit.is_empty() || named.contains(&w.circuit.as_str()) {
+                    continue;
+                }
+                named.push(&w.circuit);
+                let mine: Vec<f64> = x
+                    .wires
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.circuit == w.circuit)
+                    .map(|(i, _)| middle + ys[i0][i])
+                    .collect();
+                let cy = mine.iter().sum::<f64>() / mine.len() as f64;
+                let lines = furniture::wrap(&w.circuit, size, false, END - 14.0);
+                for (n, line) in lines.iter().enumerate() {
+                    items.push(plan_text(
+                        Layer::Labels,
+                        [
+                            tip + s * 7.0,
+                            cy + 0.35 * size
+                                + (n as f64 - (lines.len() as f64 - 1.0) / 2.0) * size * 1.3,
                         ],
-                        "#888",
-                        0.25,
+                        size,
+                        if left { Anchor::End } else { Anchor::Start },
+                        line.clone(),
+                        false,
                     ));
                 }
             }
         }
+        // The table of the circuits.
+        if !circuits.is_empty() {
+            let mut cols: Vec<(&str, f64)> = Vec::new();
+            if owners {
+                cols.push(("phase_owner", 34.0));
+            }
+            cols.push(("phase_line_type", 22.0));
+            cols.push(("phase_circuit", 62.0));
+            if numbers {
+                cols.push(("phase_number", 22.0));
+            }
+            let width: f64 = cols.iter().map(|c| c.1).sum();
+            let x0 = room[0] + 2.0;
+            let y0 = room[1] + room[3] - table_h;
+            items.push(plan_text(
+                Layer::Labels,
+                [x0, y0 + 4.5],
+                size * 1.2,
+                Anchor::Start,
+                t.legend.label("phase_circuits", &[]),
+                true,
+            ));
+            let top = y0 + 7.0;
+            let rows = circuits.len() + 1;
+            for r in 0..=rows {
+                let yy = top + r as f64 * row_h;
+                items.push(plan_path(
+                    Layer::Labels,
+                    vec![[x0, yy], [x0 + width, yy]],
+                    "#000",
+                    if r <= 1 || r == rows { 0.3 } else { 0.15 },
+                ));
+            }
+            let mut cx = x0;
+            for (n, (key, w)) in cols.iter().enumerate() {
+                items.push(plan_path(
+                    Layer::Labels,
+                    vec![[cx, top], [cx, top + rows as f64 * row_h]],
+                    "#000",
+                    if n == 0 { 0.3 } else { 0.15 },
+                ));
+                items.push(plan_text(
+                    Layer::Labels,
+                    [cx + 1.2, top + row_h - 1.5],
+                    size,
+                    Anchor::Start,
+                    t.legend.label(key, &[]),
+                    true,
+                ));
+                for (r, c) in circuits.iter().enumerate() {
+                    let yy = top + (r + 1) as f64 * row_h;
+                    let text = match *key {
+                        "phase_owner" => c.owner.clone(),
+                        "phase_circuit" => c.name.clone(),
+                        "phase_number" => c.number.clone(),
+                        _ => {
+                            // A sample of its tracks: each phase's colour.
+                            let mut colors: Vec<&str> = Vec::new();
+                            for w in a.iter().flat_map(|x| &x.wires) {
+                                if w.circuit == c.name && !colors.contains(&w.color.as_str()) {
+                                    colors.push(&w.color);
+                                }
+                            }
+                            let m = colors.len().max(1) as f64;
+                            for (q, color) in colors.iter().enumerate() {
+                                let ly = yy + row_h / 2.0 + (q as f64 - (m - 1.0) / 2.0) * 0.9;
+                                track(
+                                    items,
+                                    vec![[cx + 2.0, ly], [cx + w - 2.0, ly]],
+                                    track_pen(color, dash_of(&c.name), 0.3),
+                                );
+                            }
+                            String::new()
+                        }
+                    };
+                    if !text.is_empty() {
+                        items.push(plan_text(
+                            Layer::Labels,
+                            [cx + 1.2, yy + row_h - 1.5],
+                            size,
+                            Anchor::Start,
+                            text,
+                            false,
+                        ));
+                    }
+                }
+                cx += w;
+            }
+            items.push(plan_path(
+                Layer::Labels,
+                vec![[cx, top], [cx, top + rows as f64 * row_h]],
+                "#000",
+                0.3,
+            ));
+        }
         out.push(Sheet {
             number: page_no + 1,
-            from: s0,
-            to: s1,
-            structures: (String::new(), String::new()),
+            from: first.station,
+            to: last.station,
+            structures: (first.structure.clone(), last.structure.clone()),
             page: page.clone(),
             drawing,
             warnings: Vec::new(),
@@ -357,70 +747,76 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     out
 }
 
-/// One structure's figure in its cell at `at` (top left), `k` mm per m:
-/// its id on top, its stick figure, each wire position a dot in its
-/// colour with its circuit and phase beside it, outward.
-fn draw_arrangement(
-    items: &mut Vec<Item>,
-    x: &Arrangement,
-    at: [f64; 2],
-    k: f64,
-    size: f64,
-    number: &dyn Fn(&str) -> usize,
-) {
-    let base = [at[0] + CELL[0] / 2.0, at[1] + CELL[1] - 8.0];
-    let to = |p: [f64; 2]| [base[0] + p[0] * k, base[1] - p[1] * k];
-    items.push(plan_text(
-        Layer::Labels,
-        [base[0], at[1] + 5.0],
-        size * 1.3,
-        Anchor::Middle,
-        x.structure.clone(),
-        true,
-    ));
-    for l in &x.figure {
-        if l.len() >= 2 {
-            items.push(plan_path(
-                Layer::Structures,
-                l.iter().map(|p| to(*p)).collect(),
-                "#000",
-                0.25,
-            ));
+/// A column's structure seen from above, its left edge and the axis at
+/// `at`: the earth at its foot (left), the body along the axis, an arm
+/// per level (from the lowest, left, to the highest) across the tracks
+/// of its wires, a dot where each wire hangs (`ys`: their tracks).
+fn draw_column(items: &mut Vec<Item>, x: &Arrangement, ys: &[f64], at: [f64; 2]) {
+    let mut levels: Vec<f64> = Vec::new();
+    for w in &x.wires {
+        if !levels.iter().any(|z| (z - w.height).abs() < 1.0) {
+            levels.push(w.height);
         }
     }
+    levels.sort_by(f64::total_cmp);
+    let n = levels.len().max(1);
+    let step = if n > 1 {
+        ((COLUMN - 5.0) / (n - 1) as f64).min(2.5)
+    } else {
+        0.0
+    };
+    let foot = at[0] + 1.0;
+    let x_of = |l: usize| at[0] + 3.5 + l as f64 * step;
+    let level = |h: f64| levels.iter().position(|z| (z - h).abs() < 1.0).unwrap_or(0);
+    // The earth: a bar across, hatched on its outer side.
     items.push(plan_path(
-        Layer::Ground,
-        vec![[base[0] - 12.0, base[1]], [base[0] + 12.0, base[1]]],
+        Layer::Structures,
+        vec![[foot, at[1] - 2.5], [foot, at[1] + 2.5]],
         "#000",
         0.35,
     ));
-    for w in &x.wires {
-        let c = to([w.offset, w.height]);
+    for q in 0..4 {
+        let yy = at[1] - 2.0 + q as f64 * 1.4;
+        items.push(plan_path(
+            Layer::Structures,
+            vec![[foot, yy], [foot - 1.0, yy + 1.0]],
+            "#000",
+            0.2,
+        ));
+    }
+    // The body, to the highest arm.
+    items.push(plan_path(
+        Layer::Structures,
+        vec![[foot, at[1]], [x_of(n - 1), at[1]]],
+        "#000",
+        0.5,
+    ));
+    for l in 0..levels.len() {
+        let on: Vec<f64> = x
+            .wires
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| level(w.height) == l)
+            .map(|(i, _)| at[1] + ys[i])
+            .collect();
+        let lo = on.iter().copied().fold(at[1], f64::min);
+        let hi = on.iter().copied().fold(at[1], f64::max);
+        items.push(plan_path(
+            Layer::Structures,
+            vec![[x_of(l), lo - 0.6], [x_of(l), hi + 0.6]],
+            "#000",
+            0.45,
+        ));
+    }
+    for (i, w) in x.wires.iter().enumerate() {
         items.push(Item::Circle(crate::model::Circle {
             layer: Layer::Wires,
-            centre: c,
-            radius: 0.9,
+            centre: [x_of(level(w.height)), at[1] + ys[i]],
+            radius: 0.65,
             stroke: None,
             fill: Some(crate::model::Color::hex_or_black(&w.color)),
             title: None,
         }));
-        // The circuit by its number in the key, then the phase.
-        let label = format!("{} {}", number(&w.circuit), w.phase)
-            .trim()
-            .to_owned();
-        let (dx, anchor) = if w.offset < 0.0 {
-            (-1.6, Anchor::End)
-        } else {
-            (1.6, Anchor::Start)
-        };
-        items.push(plan_text(
-            Layer::Labels,
-            [c[0] + dx, c[1] + 0.35 * size],
-            size,
-            anchor,
-            label,
-            false,
-        ));
     }
 }
 
@@ -789,28 +1185,22 @@ mod tests {
     use crate::tests::main_route;
 
     /// The example line's phase plan: every structure on the line has its
-    /// wires; the first and the last are drawn; a structure with the same
-    /// arrangement as the one before is not drawn but said; one with its
-    /// wires swapped (a transposition) is drawn; the sheets carry the
-    /// template's frame and the figures' labels.
+    /// wires; each run with the same arrangement one column, every
+    /// structure in one; a transposition starts a column; the sheets
+    /// carry the structures' ids and the circuits' table.
     #[test]
-    fn the_phase_plan_draws_the_changes_only() {
+    fn the_phase_plan_draws_runs_and_changes() {
         let d = main_route(&Options::default());
         let a = arrangements(&d);
         assert!(a.len() >= 3, "{}", a.len());
         assert!(a.iter().all(|x| !x.wires.is_empty()), "{a:?}");
-        let steps = phase_steps(&a);
-        assert_eq!(steps.first(), Some(&PhaseStep::Drawn(0)));
-        assert_eq!(steps.last(), Some(&PhaseStep::Drawn(a.len() - 1)));
-        // Every structure either drawn or in a run said unchanged.
-        for (k, x) in a.iter().enumerate() {
-            let drawn = steps.contains(&PhaseStep::Drawn(k));
-            let said = steps
-                .iter()
-                .any(|s| matches!(s, PhaseStep::Unchanged { .. }));
-            assert!(drawn || said, "{} neither", x.structure);
+        let cols = phase_columns(&a);
+        assert_eq!(cols[0].first, 0);
+        assert_eq!(cols.last().unwrap().last, a.len() - 1);
+        for w in cols.windows(2) {
+            assert_eq!(w[0].last + 1, w[1].first);
         }
-        // The same arrangements throughout: only the ends drawn.
+        // The same arrangements throughout: one column.
         let same: Vec<Arrangement> = (0..4)
             .map(|k| Arrangement {
                 structure: format!("T{k}"),
@@ -818,35 +1208,41 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            phase_steps(&same),
-            vec![
-                PhaseStep::Drawn(0),
-                PhaseStep::Unchanged {
-                    from: "T1".into(),
-                    to: "T2".into()
-                },
-                PhaseStep::Drawn(3)
-            ]
+            phase_columns(&same),
+            vec![PhaseColumn { first: 0, last: 3 }]
         );
-        // Two wires of one level swapped (a transposition): drawn.
+        // Two wires swapped at T2 (a transposition): T0–T1, T2, T3.
         let mut swapped = same.clone();
         let w = &mut swapped[2].wires;
         if w.len() >= 2 {
             let (p0, p1) = (w[0].phase.clone(), w[1].phase.clone());
-            let (c0, c1) = (w[0].circuit.clone(), w[1].circuit.clone());
-            w[0].phase = format!("{p1}x");
-            w[1].phase = format!("{p0}x");
-            w[0].circuit = c1;
-            w[1].circuit = c0;
-            assert!(phase_steps(&swapped).contains(&PhaseStep::Drawn(2)));
+            w[0].phase = p1;
+            w[1].phase = p0;
+            if w[0].phase != w[1].phase {
+                assert_eq!(
+                    phase_columns(&swapped),
+                    vec![
+                        PhaseColumn { first: 0, last: 1 },
+                        PhaseColumn { first: 2, last: 2 },
+                        PhaseColumn { first: 3, last: 3 },
+                    ]
+                );
+            }
+        }
+        // Every track at least a lane apart.
+        for x in &a {
+            let mut y = lanes(x, 4.0);
+            y.sort_by(f64::total_cmp);
+            assert!(y.windows(2).all(|p| p[1] - p[0] >= LANE - 1e-9), "{y:?}");
         }
         let sheets = phase_plan(&d, &Options::default(), &crate::page_format("A3").unwrap());
         assert!(!sheets.is_empty());
         let svg: String = sheets.iter().map(Sheet::svg).collect();
-        assert!(
-            svg.contains(&format!(">{}<", a[0].structure)),
-            "the first's id"
-        );
+        assert!(svg.contains(&a[0].structure), "the first's id");
+        if !d.circuits.is_empty() {
+            assert!(svg.contains(">Circuits<"), "the table");
+            assert!(svg.contains(&d.circuits[0].name), "a circuit's name");
+        }
     }
 
     /// The route and situation plans of the example line: every structure

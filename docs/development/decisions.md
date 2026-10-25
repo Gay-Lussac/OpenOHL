@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**The phase plan redrawn after a utility's (owner, 2026-10-25)**
+
+- The owner gave a utility's phase plan as the model: every wire a
+  track along the page at its place across the line, coloured by phase,
+  dashed by circuit; each run of structures with the same arrangement
+  one column ("first–last") with the structure seen from above (arms
+  across the tracks, a dot per wire, the earth at its foot); tracks
+  crossing where the phases change places; circuits leaving or joining
+  turning away with an arrow and their name; at the line's ends each
+  track's phase and its circuit's name; the table of the circuits.
+  It replaces the figures drawn only at the changes (owner: replace).
+- The table's owner and number are new optional fields of the
+  electrical system (`owner`, `number`; Tables › Systems, the line file,
+  OHL XML): owner's choice, on the system rather than the circuit (one
+  system per circuit in practice).
+- The ends show an arrow and the circuit's name per circuit for now; the
+  substations' portals (with their phase labels) come later (owner).
+- Phase colours on this plan: each circuit's phase labels in order red,
+  green, blue (the usual phase-plan colours), not the line's display
+  colours; earth wires dark grey.
+- Jumpers are not tracks (a dead end's jumper may reach metres along the
+  line); a strain structure's two clamps of one phase count once.
+- Legend labels: `phase_unchanged` gone; `phase_circuits`,
+  `phase_owner`, `phase_line_type`, `phase_circuit`, `phase_number`
+  added.
+
 **The plans' weather cases (owner, 2026-10-25)**
 
 - The phase plan is a schematic: it is drawn in the case shown, never

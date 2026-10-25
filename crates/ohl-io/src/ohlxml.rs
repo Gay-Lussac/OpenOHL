@@ -824,6 +824,8 @@ fn write_system(out: &mut String, s: &System) {
         description,
         id,
         name,
+        owner,
+        number,
         kind,
         voltage_kv,
         frequency_hz,
@@ -835,6 +837,8 @@ fn write_system(out: &mut String, s: &System) {
     attr(out, "id", id);
     nonempty(out, "description", description);
     nonempty(out, "name", name);
+    nonempty(out, "owner", owner);
+    nonempty(out, "number", number);
     attr(out, "kind", &enum_name(kind));
     attr(out, "voltage_kv", &num(*voltage_kv));
     opt_num(out, "frequency_hz", *frequency_hz);
@@ -1811,6 +1815,8 @@ fn read_system(e: &Element) -> Result<System, String> {
         &[
             "id",
             "name",
+            "owner",
+            "number",
             "kind",
             "voltage_kv",
             "frequency_hz",
@@ -1828,6 +1834,8 @@ fn read_system(e: &Element) -> Result<System, String> {
         description: owned(e, "description").unwrap_or_default(),
         id: text(e, "id")?.to_owned(),
         name: owned(e, "name").unwrap_or_default(),
+        owner: owned(e, "owner").unwrap_or_default(),
+        number: owned(e, "number").unwrap_or_default(),
         kind,
         voltage_kv: number(e, "voltage_kv")?,
         frequency_hz: optional(e, "frequency_hz")?,

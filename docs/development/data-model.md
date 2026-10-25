@@ -547,6 +547,8 @@ whichever section passes through `from`.
 | `System.id` | string | — | unique id | referred to by `Section.system` |
 | `System.name` | string | — | display name | — |
 | `System.description` | string | — | free text | — |
+| `System.owner` | string | — | who owns it (free text; the phase plan's table of circuits, 2026-10-25) | — |
+| `System.number` | string | — | its number in the owner's register (free text; the phase plan's table) | — |
 | `System.kind` | `ac` / `dc` | — | default `ac` | — |
 | `System.voltage_kv` | f64 | kV | AC: between phases (rms); DC: pole to earth | — |
 | `System.frequency_hz` | f64? | Hz | AC frequency | — |
