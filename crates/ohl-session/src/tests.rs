@@ -1935,3 +1935,80 @@ fn the_routes_upgrade_keeps_library_files() {
         vec![("a.ohlw".to_owned(), "x = 1".to_owned())]
     );
 }
+
+/// Annotations (owner, 2026-10-25): apart from the line (its export and
+/// its state unchanged), checked when put, and deleted with the object
+/// they are attached to in the same entry — one undo brings both back.
+#[test]
+fn annotations_are_kept_apart_and_go_with_their_object() {
+    use crate::annotations::{Anchor, Annotation, AnnotationKind};
+    let (_, mut s) = project("annotations");
+    let before = s.check_state().unwrap().objects;
+    let a = |id: &str, anchors: Vec<Anchor>| Annotation {
+        id: id.into(),
+        kind: AnnotationKind::Dimension,
+        tool: "distance".into(),
+        anchors,
+        text: String::new(),
+        author: "ben".into(),
+        time: String::new(),
+        last: None,
+    };
+    let free = Anchor::Point {
+        at: [0.0, 0.0, 0.0],
+        what: "ground".into(),
+    };
+    let on_t1 = a(
+        "a1",
+        vec![
+            Anchor::Structure {
+                structure: "T1".into(),
+            },
+            free.clone(),
+        ],
+    );
+    let on_s1 = a(
+        "a2",
+        vec![
+            Anchor::Wire {
+                section: "S1".into(),
+                span: 0,
+                fraction: 0.5,
+            },
+            free.clone(),
+        ],
+    );
+    s.apply("ben", on_t1.put()).unwrap();
+    s.apply("ana", on_s1.put()).unwrap();
+    assert_eq!(s.annotations().len(), 2);
+    assert_eq!(s.export(), example(), "not in the line");
+    assert_eq!(s.check_state().unwrap().objects, before, "nor its state");
+    // Refused: one anchor for a distance; a fraction beyond the span.
+    let mut bad = a("a3", vec![free.clone()]);
+    assert!(s.apply("ben", bad.put()).is_err());
+    bad.anchors = vec![
+        Anchor::Wire {
+            section: "S1".into(),
+            span: 0,
+            fraction: 1.5,
+        },
+        free,
+    ];
+    assert!(s.apply("ben", bad.put()).is_err());
+    // T3 deleted takes every section: the wire's annotation goes with it,
+    // T1's stays.
+    s.apply(
+        "ben",
+        Command::DeleteStructure {
+            id: "T3".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    let ids: Vec<String> = s.annotations().into_iter().map(|x| x.id).collect();
+    assert_eq!(ids, vec!["a1"]);
+    s.undo("ben").unwrap();
+    let ids: Vec<String> = s.annotations().into_iter().map(|x| x.id).collect();
+    assert_eq!(ids, vec!["a1", "a2"]);
+    assert!(s.line().structure("T3").is_some());
+}

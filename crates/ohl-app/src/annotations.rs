@@ -82,6 +82,13 @@ pub struct SectionDisplay {
     /// default, [`DEFAULT_LABEL_DISTANCE`]).
     #[serde(default)]
     pub label_distance: Option<f64>,
+    /// Measurements other users kept in the project not drawn (owner,
+    /// 2026-10-25: shared, others' hidden on a tick).
+    #[serde(default)]
+    pub hide_others_measurements: bool,
+    /// Notes other users kept in the project not drawn.
+    #[serde(default)]
+    pub hide_others_notes: bool,
 }
 
 /// In 3D, labels are written within this distance of the eye, m, unless

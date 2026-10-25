@@ -172,6 +172,24 @@ impl Ready {
     pub(super) fn use_tool_at(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
+        // The Note tool: a note's window on what was clicked.
+        if tool == Tool::Note {
+            let anchor = crate::measure::anchor_of(&self.model, self.case, &u);
+            let pick = anchor
+                .as_ref()
+                .and_then(|a| crate::measure::pick_of(&self.model, self.case, a));
+            match (anchor, pick) {
+                (Some(anchor), Some(pick)) => {
+                    self.measuring.note = Some(crate::measure::NoteDraft {
+                        anchor,
+                        what: pick.what,
+                        text: String::new(),
+                    });
+                }
+                _ => self.hint(tool),
+            }
+            return;
+        }
         // A measuring tool: a pick (no editing rights needed).
         if let Some(kind) = tool.measure() {
             let case_name = self

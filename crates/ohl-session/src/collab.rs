@@ -386,7 +386,7 @@ impl Session {
         }
         for key in changed {
             // Reports of checks change nothing of the design.
-            if key.0 == Kind::Report {
+            if matches!(key.0, Kind::Report | Kind::Annotation) {
                 continue;
             }
             // Library files: by the "library" grant.

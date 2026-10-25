@@ -63,12 +63,14 @@ pub enum Tool {
     /// Right-click two points: their stations and offsets along the
     /// route.
     MeasureStations,
+    /// Right-click an object or a point: a note kept there.
+    Note,
 }
 
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Tools menu list them in this order.
-    pub const ALL: [Tool; 18] = [
+    pub const ALL: [Tool; 19] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -87,6 +89,7 @@ impl Tool {
         Tool::MeasureDistance,
         Tool::MeasureHeight,
         Tool::MeasureStations,
+        Tool::Note,
     ];
 
     /// Its theme, by its name in [`THEMES`].
@@ -98,7 +101,9 @@ impl Tool {
                 "Structures"
             }
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
-            Tool::MeasureDistance | Tool::MeasureHeight | Tool::MeasureStations => "Measure",
+            Tool::MeasureDistance | Tool::MeasureHeight | Tool::MeasureStations | Tool::Note => {
+                "Measure"
+            }
         }
     }
 
@@ -123,6 +128,7 @@ impl Tool {
             Tool::MeasureDistance => "Distance",
             Tool::MeasureHeight => "Height above ground",
             Tool::MeasureStations => "Stations",
+            Tool::Note => "Note",
         }
     }
 
@@ -150,6 +156,7 @@ impl Tool {
             Tool::MeasureDistance => "↔",
             Tool::MeasureHeight => "↕",
             Tool::MeasureStations => "📏",
+            Tool::Note => "🖹",
         }
     }
 
@@ -210,6 +217,9 @@ impl Tool {
             }
             Tool::MeasureStations => {
                 "right-click two points: their stations and offsets on the nearest alignment, and the difference along it (Escape: start again)"
+            }
+            Tool::Note => {
+                "right-click an object or a point: write a note kept there in the project (shared; deleted with the object)"
             }
         }
     }
@@ -295,6 +305,7 @@ impl Tool {
             Tool::MeasureDistance => "measure_distance",
             Tool::MeasureHeight => "measure_height",
             Tool::MeasureStations => "measure_stations",
+            Tool::Note => "note",
         }
     }
 }

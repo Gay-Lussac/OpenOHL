@@ -128,8 +128,12 @@ impl TabViewer for Viewer<'_> {
         // A measuring tool held: the views find what is under the cursor
         // and draw the measurement.
         let measuring = r.hotbar.tool().measure().is_some();
-        let overlay = if measuring || !r.measuring.done.is_empty() {
-            r.measuring.overlay()
+        let overlay = if measuring || !r.measuring.done.is_empty() || !r.measuring.kept.is_empty() {
+            let d = &r.model.section_display;
+            r.measuring.overlay(crate::measure::Others {
+                measurements: !d.hide_others_measurements,
+                notes: !d.hide_others_notes,
+            })
         } else {
             Default::default()
         };

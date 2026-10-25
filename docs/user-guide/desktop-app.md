@@ -346,7 +346,7 @@ suggests ticking weather cases here.
 
 ## Tools: hotbar and inventory
 
-As in Minecraft, the bottom of the 3D view holds a **hotbar** (it goes with the 3D view when another page is in front; the inventory shows it to arrange it) of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair) — or a left-click, with the option [**Tools act on left-click**](#tools-act-on-left-click). The tools by theme — **General**: Select, Edit, Delete, Go to structure (G); **Alignments**: New alignment, Add alignment point, Edit alignment; **Structures**: Add structure, Move structure (M), Replace structure, Link attachment point, Add string; **Wires**: String wire, Add jumper, Add on span; **Measure**: Distance, Height above ground, Stations (see [Editing](#editing), [Routes and alignments](#routes-and-alignments) and [Measuring](#measuring)). A new user's hotbar holds Select, Move structure, Delete, Go to structure, Edit, Add structure, Add string, String wire and **New alignment**; the others wait in the inventory. Holding a tool that is not in the hotbar (from the Tools menu, a key, a link of Next steps) puts it into an empty slot — the active one if it is empty — else into the last slot: never over the first slot (Select) nor over the tool held. A left click selects (a right-click with the option on); a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person), also when it replaces a window already open for another object; it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool, grouped by these themes (the **Tools** menu lists them in the same order, a line between themes) (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come. Each tool has its icon (the drawings of `assets/icons/tools/`) in its slot, in the inventory, in the **Tools** menu and on the quick bar; in the menus it takes the text colour of the theme (light or dark). The window and the start page show the OpenOHL mark and OHL-Design's icon; **Help › About** shows the mark with the version.
+As in Minecraft, the bottom of the 3D view holds a **hotbar** (it goes with the 3D view when another page is in front; the inventory shows it to arrange it) of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair) — or a left-click, with the option [**Tools act on left-click**](#tools-act-on-left-click). The tools by theme — **General**: Select, Edit, Delete, Go to structure (G); **Alignments**: New alignment, Add alignment point, Edit alignment; **Structures**: Add structure, Move structure (M), Replace structure, Link attachment point, Add string; **Wires**: String wire, Add jumper, Add on span; **Measure**: Distance, Height above ground, Stations, Note (see [Editing](#editing), [Routes and alignments](#routes-and-alignments) and [Measuring](#measuring)). A new user's hotbar holds Select, Move structure, Delete, Go to structure, Edit, Add structure, Add string, String wire and **New alignment**; the others wait in the inventory. Holding a tool that is not in the hotbar (from the Tools menu, a key, a link of Next steps) puts it into an empty slot — the active one if it is empty — else into the last slot: never over the first slot (Select) nor over the tool held. A left click selects (a right-click with the option on); a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person), also when it replaces a window already open for another object; it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool, grouped by these themes (the **Tools** menu lists them in the same order, a line between themes) (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come. Each tool has its icon (the drawings of `assets/icons/tools/`) in its slot, in the inventory, in the **Tools** menu and on the quick bar; in the menus it takes the text colour of the theme (light or dark). The window and the start page show the OpenOHL mark and OHL-Design's icon; **Help › About** shows the mark with the version.
 
 ## Measuring
 
@@ -380,8 +380,24 @@ panel; it opens with the first one): its value to 0.01 m (or °), the
 details folded under it (every part, the picks with their coordinates, the
 weather case, how each end was taken). **Copy** and **Copy all** give the
 values in full as tab-separated text, **Save CSV…** a file; **Delete** and
-**Clear**. The measurements are this session's; keeping them in the project
-(annotations) comes next.
+**Clear**.
+
+**Keep** puts a measurement into the project (2026-10-25): **shared** —
+every user sees it, with its author —, kept with the project line apart
+from the line itself (no check marked out of date, not in the line file),
+and **computed again** from what it is attached to whenever the line, the
+weather case shown or its solution changes: a wire by the point of it
+clicked (its share of the span), a structure, a wire point, a span point,
+an alignment point by id, a LiDAR point or a free point by its
+coordinates. Deleting what it is attached to **deletes it too**, in the
+same change (one undo brings both back). The **Note** tool (Tools ›
+Measure) writes a note on an object or a point: its window, Enter keeps
+it. Kept measurements are drawn in orange in the plan, the profile and the
+3D view, notes with a short leader; both are listed under **Kept in the
+project** in the panel (**Delete** there; a measurement not drawn in the
+case shown gives its last value). **Others' measurements** and **Others'
+notes** — ticks in the panel and in Tools › Display options, yours only —
+hide those of the other users.
 
 ## Clearances
 

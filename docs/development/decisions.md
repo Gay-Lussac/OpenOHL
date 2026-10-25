@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Measuring tools, phase 2: annotations (owner: "go ahead", 2026-10-25)**
+
+- A new object kind `annotation` in the project, apart from the line (as
+  reports): not in the line, its hash, the line file or the checks' line
+  state; shared; ids `user-n`.
+- Deleted with its object in the session itself, after any command
+  (tools, tables, the command line, the server alike): an anchor whose
+  object the command removed deletes the annotation in the same log
+  entry; undo restores both. Only object anchors count; a LiDAR or free
+  point stays.
+- Picks and kept annotations share one path: a click becomes an anchor,
+  the anchor gives the point (so a kept value is computed exactly as it
+  was measured). A wire's anchor is its share of the span's length in the
+  case measured.
+- Measurements = dimensions, notes = notes; the two ticks hide others'
+  of each (a user's view preference). Leaders are notes with a fixed
+  short leader for now.
+
 **Measuring tools, phase 1 built (owner: "please start", 2026-10-25)**
 
 - Three tools in a new Measure theme: Distance, Height above ground,
