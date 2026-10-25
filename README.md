@@ -8,7 +8,7 @@ An open-source, modular set of desktop applications and engines for designing an
 
 ![OHL-Design, the line application, with the synthetic example line](docs/images/ohl-design-window.png)
 
-**Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (structures and their loading) and `ohl` the command line. The project was formerly called "OLS CAD": the old program names `ols-cad`, `ols-structure` and `ols` still work for a while (they say so and run the new ones), and the launchers are now `Start OHL-Design.command` and `Start OHL-Structure.command`. File extensions and format ids changed from ols to ohl on 2026-10-18 (`.ohl`, `.ohls`, `.ohlw`…, `ohl-structure`…); older files still open.
+**Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (structures and their loading) and `ohl` the command line. The launchers are `Start OHL-Design.command` and `Start OHL-Structure.command`.
 
 OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open and documented in a theory manual; validation cases with reference results check them (88 cases so far).
 
