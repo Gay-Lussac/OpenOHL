@@ -76,7 +76,7 @@ change) and **picked as one** — a group's button adds its cases — in
 **Criteria › Loads for structures** and in the checks' case lists
 (vertical and radial clearances, vegetation, safety volumes, wire
 tensions, string checks, distance between conductors). **Structures and sections** take groups of their own — the **weather
-groups** column of the Structures and Sections tables, comma-separated
+groups** column of the Structures and Sections tables, ticked in its dropdown (the case file's groups only, nothing typed; a group name has no semicolon)
 (a wind study's lower winds at some pylons; the snow load varying along
 the line by section). Every check has two ticks — beside **Run**, in the vertical and radial
 clearance windows under *What is solved*:

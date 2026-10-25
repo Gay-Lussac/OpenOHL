@@ -112,6 +112,20 @@ pub(super) fn choices(
             model.line.routes.iter().map(|r| r.id.clone()).collect(),
             true,
         ),
+        // The weather case file's groups, ticked (nothing typed); a name
+        // the file no longer has stays listed, to untick.
+        (TableKind::Structures | TableKind::Sections, "weather groups") => {
+            let mut v: Vec<String> = crate::case_groups::groups(model)
+                .into_iter()
+                .map(|g| g.name)
+                .collect();
+            for t in cells[column].split(';').map(str::trim) {
+                if !t.is_empty() && !v.iter().any(|x| x == t) {
+                    v.push(t.to_owned());
+                }
+            }
+            (v, true)
+        }
         _ => return None,
     })
 }

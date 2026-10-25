@@ -819,9 +819,9 @@ pub(super) fn structure_cells(
     Ok(())
 }
 
-/// The weather case groups typed in a row's "weather groups" cell,
-/// separated by commas; each one of the case file's groups (checked when
-/// typed: one renamed later stays as written).
+/// The weather case groups ticked in a row's "weather groups" cell
+/// (joined with `; `); each one of the case file's groups (checked when
+/// changed: one renamed later stays as it is).
 fn group_list(
     c: &Cells,
     kind: TableKind,
@@ -831,7 +831,7 @@ fn group_list(
     let col = kind.column("weather groups");
     let list: Vec<String> = c
         .get(col)
-        .split(',')
+        .split(';')
         .map(str::trim)
         .filter(|g| !g.is_empty())
         .map(str::to_owned)
