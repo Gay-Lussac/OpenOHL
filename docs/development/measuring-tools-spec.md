@@ -1,7 +1,9 @@
 # Measuring tools and annotations (proposal)
 
-Status: **proposed** (draft for the owner, 2026-10-25). Nothing here is
-built or approved. The owner decided four of the first draft's questions
+Status: **proposed** (draft for the owner, 2026-10-25); **phase 1 built**
+(2026-10-25: Distance, Height above ground, Stations, the status bar's
+station and offset, the Measurements panel — in active development, not
+approved). Nothing else here is built or approved. The owner decided four of the first draft's questions
 (2026-10-25: stored apart from the line; wire distances to the surface;
 an annotation deleted with its object; shared by everyone, others' hidden
 in the display options) and asked for one more tool (T11, follow an

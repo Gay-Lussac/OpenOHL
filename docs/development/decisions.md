@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Measuring tools, phase 1 built (owner: "please start", 2026-10-25)**
+
+- Three tools in a new Measure theme: Distance, Height above ground,
+  Stations; read-only (no editing rights needed). The point under the
+  cursor is found every frame the pointer moves while one is held (the
+  same search as the tool click), named and measured live; the status
+  bar gives its station and offset on the nearest alignment (shown only
+  while a measuring tool is held — spec question 9 still open).
+- A pick: a wire where clicked (case shown) to its surface; a structure
+  its base; an attachment point as placed (still air, said so); LiDAR,
+  survey and alignment points; else the ground (plan, 3D) or the point
+  on the axis at the cursor's height (profile, one alignment shown —
+  several joined: no free point, their stations do not map back).
+- Stations from the nearest alignment by offset (the alignments' centre
+  lines kept per line version).
+- The measurements are the session's (the panel: copy, CSV); keeping them
+  is phase 2. Key M is Move's: the measuring tools have no key yet.
+- Cost on a real line with its LiDAR (3D view, pointer moving): the
+  median frame unchanged with Distance held (0.6 ms, as with Select).
+
 **Measuring tools and annotations: the spec's first decisions (owner, 2026-10-25)**
 
 - Draft in [measuring-tools-spec.md](measuring-tools-spec.md) (a

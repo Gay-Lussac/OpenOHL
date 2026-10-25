@@ -50,6 +50,7 @@ mod lidar_edit;
 mod link_tool;
 mod loads;
 mod lod;
+mod measure;
 mod menu;
 mod merge_cases;
 mod model;

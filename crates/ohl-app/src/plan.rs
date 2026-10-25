@@ -43,6 +43,14 @@ pub struct PlanView {
     alignments: AlignmentViews,
     /// The sheet preview's sheets drawn in the last frame.
     pub sheets_drawn: usize,
+    /// A measuring tool is held: what is under the cursor is found every
+    /// frame the pointer moves ([`PlanView::hover_use`]).
+    pub measuring: bool,
+    /// What is under the cursor, as a click of the tool button would
+    /// find it (a measuring tool held).
+    pub hover_use: Option<selection::Use>,
+    /// The measuring tools' lines and points.
+    pub measure: crate::measure::Overlay,
 }
 
 /// What Checks › Vegetation found, on the layers shown: isoclearance lines
@@ -497,10 +505,8 @@ impl PlanView {
                 mid.y - ((p[1] - c[1]) * scale) as f32,
             )
         };
-        // A click of the tool button uses the held tool on what is there.
-        let used = if response.clicked_by(tool_button)
-            && let Some(pos) = response.interact_pointer_pos()
-        {
+        // What a click of the tool button at `pos` finds there.
+        let use_at = |pos: egui::Pos2| {
             // The plan view draws no LiDAR points: none can be clicked.
             let target = selection::pick_shown(
                 model,
@@ -542,14 +548,30 @@ impl PlanView {
                     Some([f64::from(q.x), f64::from(q.y)])
                 },
             );
-            Some(selection::Use {
+            selection::Use {
                 target,
                 at: Some([x, y, z]),
                 on,
-            })
+            }
+        };
+        // A click of the tool button uses the held tool on what is there.
+        let used = if response.clicked_by(tool_button)
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            Some(use_at(pos))
         } else {
             None
         };
+        // A measuring tool held: what is under the cursor, when it moved.
+        if !self.measuring {
+            self.hover_use = None;
+        } else if let Some(pos) = response.hover_pos() {
+            if ui.input(|i| i.pointer.is_moving()) || self.hover_use.is_none() {
+                self.hover_use = Some(use_at(pos));
+            }
+        } else {
+            self.hover_use = None;
+        }
         if (response.clicked_by(select_button) || response.double_clicked_by(select_button))
             && let Some(pos) = response.interact_pointer_pos()
         {
@@ -937,6 +959,7 @@ impl PlanView {
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
+        self.measure.paint(&painter, &|p| Some(to_screen(p)));
         // Scale bar.
         let target = 120.0 / scale;
         let nice = [1.0, 2.0, 5.0]

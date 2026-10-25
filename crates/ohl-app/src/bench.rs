@@ -1162,3 +1162,84 @@ fn unequal_wind_benchmark() {
         pairs.len()
     );
 }
+
+/// The measuring tools' cost while the pointer moves over the 3D view
+/// (owner, 2026-10-25: responsive first): frame times with Select held,
+/// then with Distance held after a first pick (each frame finds what is
+/// under the cursor and measures to it). The project of `OHL_BENCH_FILE`,
+/// else the synthetic line. Prints the median and slowest frame of each.
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn measuring_benchmark() {
+    let model = from_env().unwrap_or_else(synthetic);
+    let state: std::rc::Rc<std::cell::RefCell<Option<eframe::egui_wgpu::RenderState>>> =
+        Default::default();
+    let keep = state.clone();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .with_max_steps(10_000)
+        .wgpu()
+        .build_eframe(move |cc| {
+            *keep.borrow_mut() = cc.wgpu_render_state.clone();
+            App::with_model(model, cc.wgpu_render_state.clone())
+        });
+    let device = state.borrow().as_ref().expect("a GPU").device.clone();
+    h.step();
+    h.state_mut().show_tab(Tab::View3d);
+    let (mid, first) = {
+        let r = h.state_mut().ready().unwrap();
+        let st = &r.model.line.structures;
+        (st[st.len() / 2].position, st[st.len() / 2].id.clone())
+    };
+    h.state_mut().ready().unwrap().view3d.camera = Some(ohl_render::Camera {
+        target: [mid[0], mid[1], mid[2] + 20.0],
+        distance: 250.0,
+        yaw: std::f64::consts::PI,
+        pitch: 20f64.to_radians(),
+        fov_y: 45f64.to_radians(),
+        exaggeration: 1.0,
+        ortho: false,
+    });
+    for _ in 0..300 {
+        h.step();
+        if h.state_mut().ready().unwrap().view3d.pending() == 0 {
+            break;
+        }
+    }
+    let frames = 120;
+    let run = |h: &mut Harness<'_, App>| {
+        let mut times = Vec::new();
+        for k in 0..frames {
+            let x = 500.0 + 600.0 * (k as f32 / frames as f32);
+            h.input_mut()
+                .events
+                .push(egui::Event::PointerMoved(egui::pos2(x, 520.0)));
+            let t = Instant::now();
+            h.step();
+            let _ = device.poll(eframe::wgpu::PollType::wait_indefinitely());
+            times.push(t.elapsed().as_secs_f64() * 1e3);
+        }
+        let max = times.iter().copied().fold(0.0, f64::max);
+        (median(&mut times), max)
+    };
+    let (select, select_max) = run(&mut h);
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.hotbar.hold(crate::tools::Tool::MeasureDistance);
+        r.use_tool(crate::selection::Use {
+            target: crate::selection::Selection::Structure(first),
+            at: None,
+            on: None,
+        });
+    }
+    let (measuring, measuring_max) = run(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    println!(
+        "measuring: frames with Select {select:.1} ms (slowest {select_max:.1}), with Distance \
+         held {measuring:.1} ms (slowest {measuring_max:.1}); live value {}",
+        r.measuring
+            .live
+            .as_ref()
+            .map_or("none".into(), |m| m.label())
+    );
+}

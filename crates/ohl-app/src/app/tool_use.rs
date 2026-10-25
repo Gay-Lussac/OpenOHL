@@ -172,6 +172,22 @@ impl Ready {
     pub(super) fn use_tool_at(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
+        // A measuring tool: a pick (no editing rights needed).
+        if let Some(kind) = tool.measure() {
+            let case_name = self
+                .model
+                .cases
+                .get(self.case)
+                .map_or(String::new(), |c| c.case.name.clone());
+            match crate::measure::resolve(&self.model, self.case, &u) {
+                Some(pick) => {
+                    self.measuring.click(&self.model, kind, &case_name, pick);
+                    self.status = None;
+                }
+                None => self.hint(tool),
+            }
+            return;
+        }
         let target = u.target;
         match tool {
             Tool::Select => {

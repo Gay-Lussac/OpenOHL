@@ -334,6 +334,12 @@ pub struct Ready {
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Export › Plans: the route, situation and phase plans.
     pub plans: crate::plans_window::PlansWindow,
+    /// The measuring tools: picks, the point under the cursor, the
+    /// measurements made (Tools › Measure).
+    pub measuring: crate::measure::Measuring,
+    /// What a view found under the cursor while a measuring tool is held
+    /// (the last frame's), taken each frame.
+    pub measure_hover: Option<crate::selection::Use>,
     /// Checks › Distance between conductors (LeV).
     pub phase_distance: crate::phase_distance::PhaseDistanceWindow,
     /// The distance between conductors under unequal wind (the same
@@ -508,6 +514,8 @@ impl Ready {
             wire_tensions: Default::default(),
             string_checks: Default::default(),
             plans: Default::default(),
+            measuring: Default::default(),
+            measure_hover: None,
             phase_distance: Default::default(),
             cases_before_check: None,
             unequal_wind: crate::phase_distance::PhaseDistanceWindow::new(
@@ -1975,6 +1983,12 @@ impl eframe::App for App {
                                 egui::RichText::new(format!("solving {}…", names.join(", ")))
                                     .small(),
                             );
+                        }
+                        if ready.hotbar.tool().measure().is_some()
+                            && let Some(text) = ready.measuring.readout()
+                        {
+                            ui.separator();
+                            ui.label(egui::RichText::new(text).small());
                         }
                         if let Some((text, error)) = &ready.status {
                             ui.separator();

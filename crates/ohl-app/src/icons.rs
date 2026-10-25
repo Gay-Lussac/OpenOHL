@@ -48,6 +48,9 @@ impl Tool {
             Tool::OnSpan => tool!("on-span"),
             Tool::Replace => tool!("replace"),
             Tool::Link => tool!("link"),
+            Tool::MeasureDistance => tool!("measure-distance"),
+            Tool::MeasureHeight => tool!("measure-height"),
+            Tool::MeasureStations => tool!("measure-stations"),
         }
     }
 
