@@ -115,116 +115,90 @@ fn the_line_values_file_gives_the_same_table() {
     assert!(g.iter().all(|g| g.largest.iter().all(Option::is_some)));
 }
 
-/// The weather cases chosen for the structures, with no load case: one
-/// case each, `weather: <name>`, whose values are the line's structure
-/// loads in that weather case with every factor 1 (factored =
-/// unfactored), marked as weather cases.
+/// The weather cases chosen for the structures (owner, 2026-10-25): each
+/// a line result, unfactored (factored = unfactored), marked as weather
+/// cases; a case with wind twice, the wind from the left and from the
+/// right, the wires pushed to opposite sides; a chosen case not in the
+/// line named in the note.
 #[test]
-fn weather_cases_alone_are_sent_with_factors_one() {
+fn weather_cases_are_sent_unfactored_and_wind_on_both_sides() {
     let (line, library, weather, _) = example();
-    let names: Vec<String> = weather.iter().map(|w| w.name.clone()).collect();
     let choice = ohl_line::StructureLoads {
-        load_cases: None,
-        weather_cases: vec!["high wind".into(), "glaze ice".into()],
+        load_cases: Some(vec!["wind".into()]),
+        weather_cases: vec!["high wind".into(), "glaze ice".into(), "gone".into()],
+        condition: None,
     };
-    let cases = structure_cases(&[], &choice, &names);
-    assert!(cases.load.is_empty() && cases.missing.is_empty());
-    // In the order of the line's weather cases.
+    let cases = structure_cases(&choice, &weather);
+    assert_eq!(cases.missing, ["weather case \"gone\""]);
     let budget = ohl_wirefe::default_fe_budget();
-    let loads = structure_case_loads(&line, &library, &weather, cases, &budget).unwrap();
-    let placed = placed_values(
-        &loads.load,
-        &loads.weather,
-        &loads.missing,
-        &line,
-        "T2",
-        "synthetic",
+    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    let placed = placed_values(&[], &loads.weather, &loads.missing, &line, "T2", "synthetic");
+    // In the order of the line's weather cases; the line's load cases are
+    // not sent.
+    assert_eq!(
+        placed.cases,
+        [
+            "glaze ice",
+            "high wind — wind from the left",
+            "high wind — wind from the right"
+        ]
     );
-    assert_eq!(placed.cases, ["weather: glaze ice", "weather: high wind"]);
-    assert_eq!(placed.sources, [CaseSource::WeatherCase; 2]);
-    assert_eq!(placed.note, None);
-    // The same as the core's structure loads of those weather cases with
+    assert_eq!(placed.sources, [CaseSource::WeatherCase; 3]);
+    assert!(placed.note.as_deref().unwrap().contains("\"gone\""));
+    // The same as the core's structure loads of that weather case with
     // unit factors.
-    let unit: Vec<ohl_loads::LoadCase> = ["glaze ice", "high wind"]
-        .map(ohl_loads::LoadCase::from_weather)
-        .into();
+    let unit = [ohl_loads::LoadCase::from_weather("glaze ice")];
     let direct = ohl_loads::structure_loads(&line, &library, &weather, &unit, &budget).unwrap();
-    assert_eq!(placed.values, line_values(&direct, &line, "T2"));
-    assert!(!placed.values.values.is_empty());
+    let p = &placed.values.points[0];
+    for q in [LineQuantity::Vertical, LineQuantity::Transverse] {
+        assert_eq!(
+            placed.values.get("glaze ice", &p.label, &p.sets, q),
+            line_values(&direct, &line, "T2").get("weather: glaze ice", &p.label, &p.sets, q)
+        );
+    }
     for (q, f) in [
         (LineQuantity::Transverse, LineQuantity::TransverseFactored),
         (LineQuantity::Vertical, LineQuantity::VerticalFactored),
     ] {
         for c in &placed.cases {
-            let p = &placed.values.points[0];
             assert_eq!(
                 placed.values.get(c, &p.label, &p.sets, q),
                 placed.values.get(c, &p.label, &p.sets, f)
             );
         }
     }
-}
-
-/// Load cases and weather cases chosen together: the load cases chosen
-/// first (one left out), then the weather cases, each marked with its
-/// source; a chosen case not in the line is named in the note.
-#[test]
-fn load_cases_and_weather_cases_are_sent_with_their_sources() {
-    let (line, library, weather, set) = example();
-    let names: Vec<String> = weather.iter().map(|w| w.name.clone()).collect();
-    let choice = ohl_line::StructureLoads {
-        load_cases: Some(vec!["wind".into(), "ice".into(), "gone".into()]),
-        weather_cases: vec!["everyday".into()],
-    };
-    let cases = structure_cases(&set.cases, &choice, &names);
-    assert_eq!(cases.missing, ["load case \"gone\""]);
-    let budget = ohl_wirefe::default_fe_budget();
-    let loads = structure_case_loads(&line, &library, &weather, cases, &budget).unwrap();
-    let placed = placed_values(
-        &loads.load,
-        &loads.weather,
-        &loads.missing,
-        &line,
-        "T2",
-        "synthetic",
+    // The two sides of the wind.
+    let at = |case: &str, q| placed.values.get(case, &p.label, &p.sets, q).unwrap();
+    let (l, r) = (
+        "high wind — wind from the left",
+        "high wind — wind from the right",
     );
-    assert_eq!(placed.cases, ["wind", "ice", "weather: everyday"]);
+    // The transverse forces opposite (what both share — the line angle's
+    // pull at T2 — is small beside the wind), the vertical about the
+    // same (the strings swing to either side).
+    let (tl, tr) = (
+        at(l, LineQuantity::Transverse),
+        at(r, LineQuantity::Transverse),
+    );
+    assert!(tl > 0.0 && tr < 0.0, "{tl} {tr}");
+    assert!((tl + tr).abs() < 0.1 * (tl - tr), "{tl} {tr}");
+    let (vl, vr) = (at(l, LineQuantity::Vertical), at(r, LineQuantity::Vertical));
+    assert!((vl - vr).abs() < 0.1 * vl, "{vl} {vr}");
+    // The body wind of each side blows its way.
+    let w: Vec<ohl_structure_loads::Direction> = placed
+        .values
+        .structure_wind
+        .iter()
+        .filter(|w| w.case.starts_with("high wind"))
+        .map(|w| w.towards)
+        .collect();
     assert_eq!(
-        placed.sources,
+        w,
         [
-            CaseSource::LoadCase,
-            CaseSource::LoadCase,
-            CaseSource::WeatherCase
+            ohl_structure_loads::Direction::Right,
+            ohl_structure_loads::Direction::Left
         ]
     );
-    assert_eq!(placed.source("weather: everyday"), CaseSource::WeatherCase);
-    assert!(placed.note.as_deref().unwrap().contains("\"gone\""));
-    // The weather case on its own gives the values of the load case of
-    // the same weather case with factors 1 ("everyday").
-    let p = &placed.values.points[0];
-    let everyday =
-        ohl_loads::structure_loads(&line, &library, &weather, &set.cases[..1], &budget).unwrap();
-    let direct = line_values(&everyday, &line, "T2");
-    assert_eq!(
-        placed.values.get(
-            "weather: everyday",
-            &p.label,
-            &p.sets,
-            LineQuantity::Vertical
-        ),
-        direct.get("everyday", &p.label, &p.sets, LineQuantity::Vertical)
-    );
-    // A weather case named as a load case is told apart.
-    let clash = ohl_loads::LoadCase {
-        name: "weather: everyday".into(),
-        ..set.cases[0].clone()
-    };
-    let all = ohl_line::StructureLoads {
-        load_cases: None,
-        ..choice
-    };
-    let c = structure_cases(&[clash], &all, &names);
-    assert_eq!(c.weather[0].name, "weather case: everyday");
 }
 
 /// A mast of one vertical member, a tube of 100 mm from the section

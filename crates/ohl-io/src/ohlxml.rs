@@ -1057,8 +1057,12 @@ pub fn to_xml(line: &Line) -> String {
         let ohl_line::StructureLoads {
             load_cases,
             weather_cases,
+            condition,
         } = structure_loads;
         out.push_str("  <structure_loads");
+        if let Some(c) = condition {
+            attr(&mut out, "condition", c);
+        }
         attr(
             &mut out,
             "load_cases",
@@ -1205,10 +1209,11 @@ fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
     })
 }
 
-/// `<structure_loads load_cases="all|listed">` with its `<load_case
-/// name>` and `<weather_case name>`.
+/// `<structure_loads load_cases="all|listed" condition?>` with its
+/// `<load_case name>` (not used since 2026-10-25) and `<weather_case
+/// name>`.
 fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String> {
-    check(e, &["load_cases"], &["load_case", "weather_case"])?;
+    check(e, &["load_cases", "condition"], &["load_case", "weather_case"])?;
     let names = |tag: &str| {
         e.children_named(tag)
             .map(|c| {
@@ -1229,6 +1234,7 @@ fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String>
     Ok(ohl_line::StructureLoads {
         load_cases,
         weather_cases: names("weather_case")?,
+        condition: owned(e, "condition"),
     })
 }
 

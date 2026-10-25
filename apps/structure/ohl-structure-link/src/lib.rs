@@ -129,105 +129,122 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
     out
 }
 
-/// The cases the line sends to the placed structures.
+/// The cases the line sends to the placed structures: its **line
+/// results** (owner, 2026-10-25): each weather case chosen, unfactored,
+/// the wires in the chosen condition; a weather case with wind twice,
+/// the wind from the left and from the right ([`line_result_name`]). The
+/// factors are the structure load cases' (one place for them); the line's
+/// `.ohllc` load cases are not sent.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StructureCases {
-    /// The load cases chosen, in the file's order.
-    pub load: Vec<LoadCase>,
-    /// The weather cases chosen, each on its own (all factors 1), in the
-    /// order of the line's weather cases.
+    /// The line results, as load cases of factor 1 (in the order of the
+    /// line's weather cases, the left before the right).
     pub weather: Vec<LoadCase>,
-    /// What was chosen and is not there (a load case or weather case
-    /// since removed), in words.
+    /// Their weather cases, each named as its result (the wind on its
+    /// side).
+    pub weather_cases: Vec<ohl_weather::WeatherCase>,
+    /// What was chosen and is not there (a weather case since removed),
+    /// in words.
     pub missing: Vec<String>,
 }
 
 impl StructureCases {
     /// No case to send.
     pub fn is_empty(&self) -> bool {
-        self.load.is_empty() && self.weather.is_empty()
+        self.weather.is_empty()
     }
 }
 
-/// The cases the line sends to the placed structures as `choice` says
-/// (the line's `structure_loads`): of `load_cases` (the line's `.ohllc`)
-/// those chosen (all by default), then each weather case chosen on its own
-/// ([`LoadCase::from_weather`]: `weather: <name>`, all factors 1; named
-/// `weather case: <name>` if a load case has that name), in the order of
-/// `weather` (the names of the line's weather cases). Chosen names not
-/// there are listed in [`StructureCases::missing`].
+/// The name of a line result: weather case `weather` with the wind from
+/// `side` (none: a weather case without wind, its own name).
+pub fn line_result_name(weather: &str, side: Option<ohl_weather::WindSide>) -> String {
+    match side {
+        None => weather.to_owned(),
+        Some(ohl_weather::WindSide::Left) => format!("{weather} — wind from the left"),
+        Some(ohl_weather::WindSide::Right) => format!("{weather} — wind from the right"),
+    }
+}
+
+/// The line results ([`StructureCases`]) of the weather cases `choice`
+/// sends, of `weather` (the line's weather cases, in their order), the
+/// wires in `choice`'s condition (as strung by default). A chosen name
+/// not there is listed in [`StructureCases::missing`].
 pub fn structure_cases(
-    load_cases: &[LoadCase],
     choice: &StructureLoads,
-    weather: &[String],
+    weather: &[ohl_weather::WeatherCase],
 ) -> StructureCases {
-    let load: Vec<LoadCase> = load_cases
+    let condition = choice
+        .condition
+        .as_deref()
+        .and_then(ohl_loads::WireCondition::parse)
+        .unwrap_or_default();
+    let missing = choice
+        .weather_cases
         .iter()
-        .filter(|c| choice.sends_load_case(&c.name))
-        .cloned()
+        .filter(|n| !weather.iter().any(|w| &w.name == *n))
+        .map(|n| format!("weather case \"{n}\""))
         .collect();
-    let mut missing: Vec<String> = choice
-        .load_cases
-        .iter()
-        .flatten()
-        .filter(|n| !load_cases.iter().any(|c| &c.name == *n))
-        .map(|n| format!("load case \"{n}\""))
-        .collect();
-    missing.extend(
-        choice
-            .weather_cases
-            .iter()
-            .filter(|n| !weather.contains(n))
-            .map(|n| format!("weather case \"{n}\"")),
-    );
-    let weather = weather
-        .iter()
-        .filter(|w| choice.weather_cases.contains(w))
-        .map(|w| {
-            let mut c = LoadCase::from_weather(w);
-            if load.iter().any(|l| l.name == c.name) {
-                c.name = format!("weather case: {w}");
-            }
-            c
-        })
-        .collect();
-    StructureCases {
-        load,
-        weather,
+    let mut out = StructureCases {
         missing,
+        ..Default::default()
+    };
+    for w in weather.iter().filter(|w| choice.weather_cases.contains(&w.name)) {
+        let sides: Vec<Option<ohl_weather::WindSide>> = if w.wind_pressure.si() > 0.0 {
+            vec![
+                Some(ohl_weather::WindSide::Left),
+                Some(ohl_weather::WindSide::Right),
+            ]
+        } else {
+            vec![None]
+        };
+        for side in sides {
+            let name = line_result_name(&w.name, side);
+            let mut case = w.clone();
+            case.name = name.clone();
+            if let Some(side) = side {
+                case.wind_from = side;
+            }
+            let mut c = LoadCase::from_weather(&name);
+            c.name = name.clone();
+            c.description = match side {
+                Some(_) => format!(
+                    "weather case \"{}\", the wind from the {}, unfactored",
+                    w.name,
+                    side.map_or("", |s| s.as_str())
+                ),
+                None => format!("weather case \"{}\", unfactored", w.name),
+            };
+            c.condition = condition;
+            out.weather.push(c);
+            out.weather_cases.push(case);
+        }
     }
+    out
 }
 
-/// The loads of the cases sent to the placed structures: of the load
-/// cases, then of the weather cases on their own.
+/// The loads of the line results sent to the placed structures.
 #[derive(Debug, Clone, Default)]
 pub struct StructureCaseLoads {
-    /// Per load case sent.
-    pub load: Vec<CaseLoads>,
-    /// Per weather case sent on its own.
+    /// Per line result.
     pub weather: Vec<CaseLoads>,
     /// What was chosen and is not there ([`StructureCases::missing`]).
     pub missing: Vec<String>,
 }
 
 /// The structure loads (`ohl_loads::structure_loads`, every case solved
-/// in one go) of `cases` on `line` with its cables `library` and weather
-/// cases `weather`. Expected cost: that of the structure loads, about one
-/// solve of every section per case (seconds for a long line), bounded by
-/// `budget` per section.
+/// in one go) of the line results `cases` on `line` with its cables
+/// `library`. Expected cost: that of the structure loads, about one solve
+/// of every section per line result (a wind case counts twice; seconds
+/// for a long line), bounded by `budget` per section.
 pub fn structure_case_loads(
     line: &Line,
     library: &ohl_cables::Library,
-    weather: &[ohl_weather::WeatherCase],
     cases: StructureCases,
     budget: &Budget,
 ) -> Result<StructureCaseLoads, String> {
-    let n = cases.load.len();
-    let all: Vec<LoadCase> = cases.load.into_iter().chain(cases.weather).collect();
-    let mut load = ohl_loads::structure_loads(line, library, weather, &all, budget)?;
-    let weather = load.split_off(n);
+    let weather =
+        ohl_loads::structure_loads(line, library, &cases.weather_cases, &cases.weather, budget)?;
     Ok(StructureCaseLoads {
-        load,
         weather,
         missing: cases.missing,
     })

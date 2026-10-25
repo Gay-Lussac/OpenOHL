@@ -113,11 +113,13 @@ using one is version 6, a `.ohlslc` version 2 (OHL-Structure raises the
 file when a load takes one; older programs say "newer version").
 
 The line's [structure loads](loads.md#structure-loads) give the first six
-at every point, in each case the line sends (Criteria › Loads for
-structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
-its load cases (all by default) and the weather cases ticked to be sent
-on their own, named `weather: <name>`, every factor 1 (factored =
-unfactored). A recipe names the line's case by that name. A value the line does not give makes a row marked **no
+at every point, in each **line result** the line sends (Criteria › Loads
+for structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
+each weather case ticked there, unfactored (factored = unfactored), named
+as the weather case; one with wind twice, `<case> — wind from the left`
+and `<case> — wind from the right` (since 2026-10-25; before, the line's
+load cases and `weather: <name>`). A recipe names the line result by that
+name. A value the line does not give makes a row marked **no
 line value** (its force 0); so does every line value of a structure
 opened on its own. Such values can be typed into the table.
 

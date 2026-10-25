@@ -321,34 +321,37 @@ After an edit only the sections it touched are re-solved, in every weather case 
 
 What the line sends to its placed structures (**Open in OHL-Structure…** on a placed
 structure starts the [structure application](structure-app.md#started-for-a-placed-structure)
-with that place's loads) is set up in three places of the **Criteria**
-menu:
+with that place's loads) is **forces, unfactored** (2026-10-25,
+[spec](../development/structure-load-cases-spec.md)):
 
-- **Weather cases**: the wind, ice and temperatures. Each one can be sent
-  on its own.
-- **Load cases** (a `.ohllc` file) or **Design code** (a plugin writes the
-  load cases): a weather case with a wire condition and factors on the
-  vertical, transverse and longitudinal loads. They add factors and
-  combinations on top of the weather cases.
-- **Loads for structures**: a tick menu (it stays open while ticking)
-  with two lists. **Load cases**: those sent (all by default, also those
-  added later; **all** / **none**) — it says which file they come from
-  (the line's load case file and its name; a project made from another
-  program's export has the cases that export gave, under their names
-  there), and each case's hover gives its weather case, the wires'
-  condition, its factors and its description. **Weather cases on their
-  own (all factors 1)**: those sent on their own, each as a case
-  `weather: <name>` with every factor 1 and the wires as strung (none by
-  default; **none**; a weather case's hover gives its values); the
-  **groups'** buttons add a group's cases (2026-10-25). A ticked
-  case no longer in the line stays listed, marked, to be unticked. Each
-  tick is one edit of the project line's settings (undoable, the
-  `structure_loads` row), so every project line keeps its own choice.
+```
+weather cases ticked ──► line results: the wires' and strings' forces at each
+                         attachment point, unfactored
+                         · a case without wind: one result, "<case>"
+                         · a case with wind: two, "<case> — wind from the left"
+                           and "<case> — wind from the right"
+                     ──► OHL-Structure: its load cases take these results with
+                         their factors, and add the loads on the structure itself
+```
 
-The structure application gets the load cases sent, then the weather
-cases sent, each marked with its source. A line with no load case and no
-weather case ticked sends nothing: the structure application says so and
-suggests ticking weather cases here.
+**Criteria › Loads for structures** is a tick menu (it stays open while
+ticking): **Wires** — the wires' condition in every result (as strung,
+the default; after creep; after the heaviest load; whichever sags more);
+**Weather cases sent** — the line's weather cases (Criteria › Weather
+cases), a hover giving each one's values; **none**; the **groups'**
+buttons add a group's cases. A ticked case no longer in the line stays
+listed, marked, to be unticked. Each change is one edit of the project
+line's settings (undoable, the `structure_loads` row), so every project
+line keeps its own choice.
+
+All the factors — on the weight, the wind, the tensions — are given in
+the structure's load cases ([Structure load
+cases](structure-load-cases.md)), one place for them. The line's load
+cases (Criteria › Load cases library, Design code) are no longer sent to
+the structures (load cases ticked before are said, not sent); they stay
+for the line's own checks (Checks › Compute structure loads, the
+structure usage). A line with no weather case ticked sends nothing: the
+structure application says so and points here.
 
 ## Tools: hotbar and inventory
 

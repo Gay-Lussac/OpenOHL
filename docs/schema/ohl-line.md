@@ -98,8 +98,8 @@ The names are those of the line file:
   <defaults spacer_compression="10000"/>        <!-- the project's default values -->
   <solver jumper_loads="pull" taps="once" loads_per="unstretched"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
-  <structure_loads load_cases="listed">         <!-- Criteria › Loads for structures; default all, no weather case -->
-    <load_case name="…"/> <weather_case name="…"/>
+  <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
+    <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
   </structure_loads>
 </line>
 ```

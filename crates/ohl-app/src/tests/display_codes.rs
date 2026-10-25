@@ -715,7 +715,7 @@ fn the_bimetallic_model_is_chosen_for_the_line() {
 }
 
 /// Criteria › Loads for structures: a tick menu that stays open while two
-/// weather cases are ticked and a load case unticked in a row; each tick
+/// weather cases are ticked in a row; each tick
 /// kept in the project (the line's `structure_loads` settings row),
 /// undone like any edit.
 #[test]
@@ -736,12 +736,11 @@ fn loads_for_structures_are_ticked_in_a_menu_that_stays_open() {
     // Still open: the next boxes can be ticked.
     harness.get_by_label("high wind").click();
     harness.run();
-    harness.get_by_label("wind").click();
-    harness.run();
     let r = harness.state_mut().ready().unwrap();
     let want = ohl_line::StructureLoads {
-        load_cases: Some(vec!["everyday".into(), "ice".into()]),
+        load_cases: None,
         weather_cases: vec!["glaze ice".into(), "high wind".into()],
+        condition: None,
     };
     assert_eq!(r.model.line.structure_loads, want);
     // Kept in the project: the session's line has it.
@@ -749,8 +748,7 @@ fn loads_for_structures_are_ticked_in_a_menu_that_stays_open() {
     assert_eq!(e.session.line().structure_loads, want);
     // Undone like any edit (one tick each).
     r.model.undo().unwrap();
-    assert_eq!(r.model.line.structure_loads.load_cases, None);
-    assert_eq!(r.model.line.structure_loads.weather_cases.len(), 2);
+    assert_eq!(r.model.line.structure_loads.weather_cases, ["glaze ice"]);
 }
 
 /// A transverse Mercator projection centred on the synthetic line's origin

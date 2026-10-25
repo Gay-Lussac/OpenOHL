@@ -301,6 +301,7 @@ fn rich_line() -> Line {
     line.structure_loads = ohl_line::StructureLoads {
         load_cases: Some(vec!["wind 90°".into()]),
         weather_cases: vec!["ice 25 mm".into(), "wind <&>".into()],
+        condition: Some("creep".into()),
     };
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
