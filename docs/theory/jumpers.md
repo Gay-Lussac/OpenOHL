@@ -50,6 +50,10 @@ If neither end is clamped (both ends are taps on through wires), or `bending_sti
 
 Where an end is the first or last point of a section, the clamp holds the jumper. It leaves at `angle_from_deg` / `angle_to_deg` (default 30°) from its tension string's line (from the clamp towards the string's top; two strings: the middle of their tops; none: the conductor's axis at the clamp), turned within the conductor's plane towards the weather case's load on it (straight down in still air, tilted with the wind as the conductor swings): with the string's base direction \\( \\hat s \\) and the load per metre \\( \\mathbf q \\), the exit direction is \\( \\hat s\\cos\\alpha + \\hat n\\sin\\alpha \\), \\( \\hat n \\) the unit part of \\( \\mathbf q \\) square to \\( \\hat s \\) (along the string: no turn). The load is the jumper's own wire's in the case (a jumper of the line's wire: the conductor's). The wire's bending stiffness \\( EI \\) carries that direction into the jumper. The jumper can therefore not swing in the wind as if hinged.
 
+![A jumper between the clamps A and B of two tension strings, leaving each clamp at the angle alpha from its string's line towards the load, made of short straight pieces, its sag below the chord](../images/theory/jumper-rod.svg)
+
+*A clamped jumper: the exit direction at each clamp and the rod of short straight pieces between \\( A \\) and \\( B \\) (schematic, not to scale).*
+
 The model is an **inextensible elastic rod**:
 
 - **Pieces.** \\( n \\) straight pieces of equal length \\( \ell \approx 0.12 \\) m, with \\( 16 \le n \le 40 \\). The unknowns are the pieces' unit directions \\( d_0 \dots d_{n-1} \\). Node \\( m \\) is at \\( A + \ell \sum_{i<m} d_i \\).
@@ -67,6 +71,10 @@ The model is an **inextensible elastic rod**:
 ## Support clamps: a rod with rigid pieces
 
 A jumper can pass through clamps between its ends (`supports`), each hanging on **suspension strings of the structure** — ordinary strings, nothing of their own ("helping strings" is only a name for what they do): one string or two strings to one wire point (a V). The clamp is free to swing and turn, so no angle is assumed for it. The wire runs straight through it: over the clamp's few centimetres it cannot bend, so the direction it leaves in is the direction it enters in.
+
+![Left: a jumper through a support clamp, one straight piece held at its middle by a string. Right: a clamp on two strings in wind, the lee leg slack](../images/theory/jumper-support.svg)
+
+*A support clamp is one straight piece held at its middle; in wind the lee leg of a V may go slack (schematic).*
 
 **Which wire points a jumper passes through.** A clamp hangs on a **wire point without a set**. A wire point with a set is where a wire ends: a section's end, or a jumper's. So:
 

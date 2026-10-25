@@ -28,6 +28,10 @@ with \\( T \\), as the rule says:
   of the span);
 - **the horizontal tension** \\( H \\) of the span.
 
+![An inclined span: H at the low point z_0 and the tension T = H + w (z_s − z_0) at the higher support, the most tensioned one](../images/theory/max-tension.svg)
+
+*The maximum tension of a span is at its most tensioned support, the higher end (schematic).*
+
 Each case is solved as the line is (each section by its own
 calculation: ruling span or finite elements, its condition), in the
 background. The rows — rule, case, section, span, tension, allowed,

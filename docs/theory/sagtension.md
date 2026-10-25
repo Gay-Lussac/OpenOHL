@@ -13,6 +13,10 @@ Left support at \\( (0,0) \\), right support at \\( (S,h) \\); uniform load \\( 
 
 The product forms avoid cancellation for taut spans. Maximum sag is where the wire is parallel to the chord: \\( x^\* = x_m + C\operatorname{asinh}(h/S) \\). For taut spans the sag tends to \\( wS^2 / (8H\cos\theta) \\) (\\( \theta \\): chord angle — the weight acts per unit of wire length).
 
+![An inclined span from (0, 0) to (S, h): the chord, the low point at x_m, the point x* where the wire is parallel to the chord with the sag there, H at the low point and the support tensions T_A and T_B](../images/theory/catenary-span.svg)
+
+*One span: the low point at \\( x_m \\), the largest sag where the wire is parallel to the chord, and the tensions at the supports (schematic, not to scale).*
+
 *Validation:* `catenary-001…004`; textbook cases `tbcat-001…005` (the parabola's error: 0.08 % of sag at C = 2000 m on 400 m, 2 % at C = 1000 m on 1000 m; a low point beyond the support) and CIGRE TB 324's examples `tb324-001…010`, `tb324-015` ([Textbook and published cases](../validation/textbook.md)).
 
 ## Change of state
@@ -102,6 +106,10 @@ Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w 
 
 Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \\): \\( w_i = \rho_i g \frac{\pi}{4}[(d+2t)^2 - d^2] \\). Wind pressure \\( q \\) on the iced diameter: \\( w_h = q(d + 2t) \\). Resultant \\( \sqrt{(w_c + w_i)^2 + w_h^2} \\), in a plane swung by \\( \arctan(w_h / w_v) \\). Sag-tension uses the resultant in the span plane (exact for level spans).
 
+![The conductor of diameter d with radial ice t and the wind q on the iced diameter; the vertical load, the wind load w_h and their resultant at the angle arctan(w_h/w_v)](../images/theory/weather-loads.svg)
+
+*Ice and wind on a wire: the resultant lies in a plane swung from the vertical by \\( \arctan(w_h/w_v) \\).*
+
 **Simplification:** in an inclined span the swung plane of the resultant is not the plane through the chord, so the plane-curve solution is approximate there; the error grows with the incline and the wind, either way. Exact: the 3D finite-element span (`ohl-wirefe`), which solves any load direction.
 
 **Simplification:** ice as a concentric cylinder of uniform thickness along the whole span. Real ice is often eccentric (on the windward or top side) and uneven along the span; the weight is what the case gives, but the wind area and the twist of the wire differ. Exact: an ice shape per case (not modelled); uneven ice along a span can be given as distributed loads (below). No design-code factors are applied here: load factors belong to the load cases ([Load cases](../user-guide/loads.md)), and design-code plugins generate weather and load cases ([Design codes](../user-guide/design-codes.md)).
@@ -175,6 +183,10 @@ The finite-element model follows the same curves: each span's unstressed length 
 \\[ f(x_t) = y(x_t) + y'(x_t)(x_i - x_t) - z_i = 0, \qquad f'(x_t) = y''(x_t)(x_i - x_t) < 0 \quad (x_t > x_i) \\]
 
 so beyond the instrument there is one tangent point (bisection). The angle is \\( \arctan y'(x_t) \\); the target goes where the line meets the far support's vertical, \\( z_i + y'(x_t)(S - x_i) \\). Hand check, the parabola of a level span with the instrument \\( a \\) below one support and the target \\( b \\) below the other: \\( \sqrt a + \sqrt b = 2\sqrt D \\), tangent at \\( x_t = S\sqrt{a/4D} \\) (`sag-001`: the parabola 0.01 % off the exact catenary). An instrument above the wire, or a tangent beyond the far support, is refused with the reason.
+
+![A level span with the instrument a below one support, the line of sight tangent to the wire at x_t and the target b below the far support](../images/theory/transit.svg)
+
+*Transit on a level span: the line of sight from the instrument touches the wire at \\( x_t \\) and meets the far support's vertical at the target (schematic).*
 
 **Inclined-span correction.** A level-span sag chart gives \\( D_{level} = C(\cosh(S/2C) - 1) \\); the inclined span's sag (vertical, where the wire is parallel to the chord) is larger, about \\( D_{level}/\cos\theta \\) since the load is per metre of wire. The correction is the exact difference, \\( D - D_{level} \\) (`sag-002`: 0.0883 m on 300 m +50 m; \\( D_{level}(1/\cos\theta - 1) \\) gives 0.0885 m).
 
