@@ -376,6 +376,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
     // number's when any is given) and height.
     let owners = circuits.iter().any(|c| !c.owner.is_empty());
     let numbers = circuits.iter().any(|c| !c.number.is_empty());
+    let conductors = circuits.iter().any(|c| !c.conductor.is_empty());
     let row_h = 5.0;
     let table_h = if circuits.is_empty() {
         0.0
@@ -448,7 +449,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             // away (leaving) or come in (joining).
             let next = on.get(j + 1).map(|n| (n, x_of(j + 1)));
             let ahead = columns.get(page_no * per_page + j + 1);
-            let mut turned: Vec<(String, [f64; 2])> = Vec::new();
+            let mut turned: Vec<(String, [f64; 2], bool)> = Vec::new();
             for (i, w) in x.wires.iter().enumerate() {
                 let key = &keys[c.first][i];
                 let to = ahead.and_then(|n| keys[n.first].iter().position(|q| q == key));
@@ -468,10 +469,10 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     (None, _) if ahead.is_none() => {}
                     (None, _) => {
                         let s = if w.offset < 0.0 { -1.0 } else { 1.0 };
-                        let tip = [xr + GAP * 0.55, y(i) + s * GAP * 0.45];
+                        let tip = [xr + GAP * 0.4, y(i) + s * GAP * 0.45];
                         track(items, vec![[xr, y(i)], tip], pen);
                         arrow(items, [xr, y(i)], tip, &w.color);
-                        turned.push((w.circuit.clone(), tip));
+                        turned.push((w.circuit.clone(), tip, true));
                     }
                 }
             }
@@ -483,22 +484,24 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                         continue;
                     }
                     let s = if w.offset < 0.0 { -1.0 } else { 1.0 };
-                    let tip = [xl - GAP * 0.55, y(i) + s * GAP * 0.45];
+                    let tip = [xl - GAP * 0.4, y(i) + s * GAP * 0.45];
                     track(
                         items,
                         vec![tip, [xl, y(i)]],
                         track_pen(&w.color, dash_of(&w.circuit), 0.3),
                     );
                     arrow(items, [xl, y(i)], tip, &w.color);
-                    turned.push((w.circuit.clone(), tip));
+                    turned.push((w.circuit.clone(), tip, false));
                 }
-                // From the previous page: from the page's edge.
+                // From the previous page: from the page's edge at the
+                // previous column's place, crossing here if they change.
                 if j == 0 {
                     for (i, w) in x.wires.iter().enumerate() {
-                        if keys[b.first].contains(&keys[c.first][i]) {
+                        if let Some(q) = keys[b.first].iter().position(|k| *k == keys[c.first][i]) {
+                            let from = middle + ys[b.first][q];
                             track(
                                 items,
-                                vec![[room[0] + 4.0, y(i)], [xl, y(i)]],
+                                vec![[room[0] + 4.0, from], [xl - GAP, from], [xl, y(i)]],
                                 track_pen(&w.color, dash_of(&w.circuit), 0.3),
                             );
                         }
@@ -507,16 +510,20 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             }
             // The names of the circuits turning away, once each, beyond
             // their arrows.
-            let mut named: Vec<String> = Vec::new();
-            for (circuit, _) in &turned {
-                if named.contains(circuit) || circuit.is_empty() {
+            // (A circuit leaving: its name ending at its arrows; one
+            // joining: starting at them — apart where one ends and the
+            // next begins.)
+            let mut named: Vec<(String, bool)> = Vec::new();
+            for (circuit, _, leaving) in &turned {
+                let id = (circuit.clone(), *leaving);
+                if named.contains(&id) || circuit.is_empty() {
                     continue;
                 }
-                named.push(circuit.clone());
+                named.push(id);
                 let tips: Vec<[f64; 2]> = turned
                     .iter()
-                    .filter(|(c, _)| c == circuit)
-                    .map(|(_, p)| *p)
+                    .filter(|(c, _, l)| c == circuit && l == leaving)
+                    .map(|(_, p, _)| *p)
                     .collect();
                 let cx = tips.iter().map(|p| p[0]).sum::<f64>() / tips.len() as f64;
                 let below = tips.iter().map(|p| p[1]).sum::<f64>() / tips.len() as f64 > middle;
@@ -525,11 +532,16 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 } else {
                     tips.iter().map(|p| p[1]).fold(f64::MAX, f64::min) - size * 0.8
                 };
+                let (x, anchor) = if *leaving {
+                    (cx + 1.0, Anchor::End)
+                } else {
+                    (cx - 1.0, Anchor::Start)
+                };
                 items.push(plan_text(
                     Layer::Labels,
-                    [cx, cy],
+                    [x, cy],
                     size,
-                    Anchor::Middle,
+                    anchor,
                     circuit.clone(),
                     false,
                 ));
@@ -570,8 +582,17 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
             };
             let s = if left { -1.0 } else { 1.0 };
             let tip = edge + s * 8.0;
+            // A page's start: the tracks enter at the previous column's
+            // place.
+            let before = (left && !at_line_end && page_no * per_page > 0)
+                .then(|| &columns[page_no * per_page - 1]);
             for (i, w) in x.wires.iter().enumerate() {
-                let yy = middle + ys[i0][i];
+                let yy = before
+                    .and_then(|b| {
+                        let q = keys[b.first].iter().position(|k| *k == keys[i0][i])?;
+                        Some(middle + ys[b.first][q])
+                    })
+                    .unwrap_or(middle + ys[i0][i]);
                 if at_line_end {
                     track(
                         items,
@@ -622,7 +643,12 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     .map(|(i, _)| middle + ys[i0][i])
                     .collect();
                 let cy = mine.iter().sum::<f64>() / mine.len() as f64;
-                let lines = furniture::wrap(&w.circuit, size, false, END - 14.0);
+                let mut lines = furniture::wrap(&w.circuit, size, false, END - 14.0);
+                if let Some(c) = circuits.iter().find(|c| c.name == w.circuit)
+                    && !c.conductor.is_empty()
+                {
+                    lines.extend(furniture::wrap(&c.conductor, size, false, END - 14.0));
+                }
                 for (n, line) in lines.iter().enumerate() {
                     items.push(plan_text(
                         Layer::Labels,
@@ -639,20 +665,30 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 }
             }
         }
-        // The table of the circuits.
-        if !circuits.is_empty() {
+        // The table of the circuits on this sheet.
+        let here: Vec<&crate::CircuitInfo> = circuits
+            .iter()
+            .filter(|c| {
+                on.iter()
+                    .any(|col| a[col.first].wires.iter().any(|w| w.circuit == c.name))
+            })
+            .collect();
+        if !here.is_empty() {
             let mut cols: Vec<(&str, f64)> = Vec::new();
             if owners {
                 cols.push(("phase_owner", 34.0));
             }
             cols.push(("phase_line_type", 22.0));
             cols.push(("phase_circuit", 62.0));
+            if conductors {
+                cols.push(("phase_conductor", 62.0));
+            }
             if numbers {
                 cols.push(("phase_number", 22.0));
             }
             let width: f64 = cols.iter().map(|c| c.1).sum();
             let x0 = room[0] + 2.0;
-            let y0 = room[1] + room[3] - table_h;
+            let y0 = room[1] + room[3] - (7.0 + row_h * (here.len() + 1) as f64);
             items.push(plan_text(
                 Layer::Labels,
                 [x0, y0 + 4.5],
@@ -662,7 +698,7 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                 true,
             ));
             let top = y0 + 7.0;
-            let rows = circuits.len() + 1;
+            let rows = here.len() + 1;
             for r in 0..=rows {
                 let yy = top + r as f64 * row_h;
                 items.push(plan_path(
@@ -688,11 +724,12 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     t.legend.label(key, &[]),
                     true,
                 ));
-                for (r, c) in circuits.iter().enumerate() {
+                for (r, c) in here.iter().enumerate() {
                     let yy = top + (r + 1) as f64 * row_h;
                     let text = match *key {
                         "phase_owner" => c.owner.clone(),
                         "phase_circuit" => c.name.clone(),
+                        "phase_conductor" => c.conductor.clone(),
                         "phase_number" => c.number.clone(),
                         _ => {
                             // A sample of its tracks: each phase's colour.

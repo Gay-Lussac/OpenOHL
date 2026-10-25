@@ -33,8 +33,15 @@ of Parts A, B and C).
 - Jumpers are not tracks (a dead end's jumper may reach metres along the
   line); a strain structure's two clamps of one phase count once.
 - Legend labels: `phase_unchanged` gone; `phase_circuits`,
-  `phase_owner`, `phase_line_type`, `phase_circuit`, `phase_number`
-  added.
+  `phase_owner`, `phase_line_type`, `phase_circuit`, `phase_conductor`,
+  `phase_number` added.
+- Then (owner: "add what you can"): the conductors per circuit (phases
+  × subconductors × cable of its first section; no cross-section, the
+  drawing has no cable library) at the line's ends and in the table; the
+  table lists the circuits of its sheet only; a sheet's tracks enter at
+  the places the sheet before left them (a change at the break drawn on
+  the new sheet); a circuit ending where the next begins: their arrows
+  and names apart.
 
 **The plans' weather cases (owner, 2026-10-25)**
 
