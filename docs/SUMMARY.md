@@ -14,7 +14,7 @@
   - [6. Jumpers](tutorial/06-jumpers.md)
   - [7. Results](tutorial/07-results.md)
   - [8. Checks](tutorial/08-checks.md)
-  - [9. OHL-Structure](tutorial/09-ohl-structure.md)
+  - [9. Loads for the structures](tutorial/09-ohl-structure.md)
   - [10. Saving and what next](tutorial/10-saving.md)
 
 # User guide

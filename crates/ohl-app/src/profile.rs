@@ -409,13 +409,22 @@ fn joined(parts: Vec<(String, Built)>) -> Option<Built> {
     let mut iter = parts.into_iter();
     let (name, first) = iter.next()?;
     let mut out = first;
+    // Each by its drawing's name, else (an alignment without a name: one
+    // made by New alignment) its id, from the name it joins with.
+    let named = |d: &str, joint: &str| {
+        if d.trim().is_empty() {
+            joint.trim_start_matches("alignment ").to_owned()
+        } else {
+            d.to_owned()
+        }
+    };
+    let mut names = vec![named(&out.drawing.name, &name)];
     out.joints.push((0.0, name));
-    let mut names = vec![out.drawing.name.clone()];
     for (name, b) in iter {
         let at = out.drawing.length;
         let b = shifted(b, at);
+        names.push(named(&b.drawing.name, &name));
         out.joints.push((at, name));
-        names.push(b.drawing.name.clone());
         let (d, e) = (&mut out.drawing, b.drawing);
         d.length += e.length;
         d.centreline.extend(e.centreline);

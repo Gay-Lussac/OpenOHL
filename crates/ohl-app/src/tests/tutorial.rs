@@ -597,17 +597,37 @@ fn the_tutorial_builds_a_first_line() {
     }
     h.run();
 
-    // Chapter 9: Criteria › Loads for structures: the load cases sent
-    // (all, the default), no weather case on its own.
+    // Chapter 9: Criteria › Loads for structures: everyday and high wind
+    // ticked (the menu stays open), as strung; the line results: everyday
+    // once, high wind from the left and from the right.
     click(&mut h, "Criteria");
     h.get_by_label_contains("Loads for structures").hover();
     h.run();
-    h.get_by_label("Weather cases on their own (all factors 1)");
+    h.get_by_label("Weather cases sent");
+    let tick = egui::accesskit::Role::CheckBox;
+    h.get_by_role_and_label(tick, "everyday").click();
+    h.run();
+    h.get_by_role_and_label(tick, "high wind").click();
+    h.run();
     {
         let r = h.state_mut().ready().unwrap();
-        assert!(r.model.sources.load_cases.is_some());
-        assert_eq!(r.model.line.structure_loads.load_cases, None);
-        assert!(r.model.line.structure_loads.weather_cases.is_empty());
+        assert_eq!(
+            r.model.line.structure_loads.weather_cases,
+            ["everyday", "high wind"]
+        );
+        assert_eq!(r.model.line.structure_loads.condition, None);
+        let loads = crate::structure_app::LineInputs::of(&r.model)
+            .compute()
+            .unwrap();
+        let names: Vec<&str> = loads.weather.iter().map(|c| c.case.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "everyday",
+                "high wind — wind from the left",
+                "high wind — wind from the right"
+            ]
+        );
     }
     press(&mut h, egui::Key::Escape, egui::Modifiers::NONE);
 
