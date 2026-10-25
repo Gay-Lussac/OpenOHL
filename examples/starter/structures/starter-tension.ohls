@@ -1,7 +1,7 @@
 format = "ohl-structure"
 version = 2
-id = "starter-strain"
-name = "Starter strain (delta, one circuit; invented)"
+id = "starter-tension"
+name = "Starter tension (delta, one circuit; invented)"
 kind = "lattice"
 height = "34 m"
 source = "structure template delta-1c, strain"
