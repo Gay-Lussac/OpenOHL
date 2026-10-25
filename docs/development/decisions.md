@@ -10,6 +10,25 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**A plugin's presets edited in the project (owner, 2026-10-25)**
+
+- Plugin manager › **Presets…** on a plugin: a **Presets** tab (its rule
+  presets, their weather cases and its sheet templates, value by value,
+  editable) and a **Changes** tab (each value changed: the plugin's, the
+  project's, its status, a note; CSV; reset) — "to ensure the tests are
+  done properly".
+- Kept **in the project** (owner's choice), not in the plugin: library
+  kind `plugin-preset-edits`, one file per plugin, one undoable change
+  each. Taken wherever the presets are read (the rule presets every
+  window offers, the plugin's sheet templates); rule files loaded before
+  keep their values.
+- A value is found by its path (keys; a rule by its name); a newer plugin
+  whose value differs from the one the change was made from: the change
+  still applied and flagged; a path gone: not applied, flagged. A preset
+  the changes make invalid is taken as the plugin gives it, said.
+- A library write through `project_op` counts as a library change (what
+  reads the libraries reads again).
+
 **LeV weather groups and the wind study per pylon (owner, 2026-10-25)**
 
 - The lev-ch plugin's rule presets write weather case groups with their

@@ -261,6 +261,10 @@ impl Model {
     /// here (the same code). Libraries, users, project lines and settings
     /// too.
     pub fn project_op(&mut self, what: &str, op: Op) -> Result<String, EditError> {
+        // A library file written: what reads the libraries reads again.
+        if matches!(op, Op::PutLibrary { .. } | Op::DeleteLibrary { .. }) {
+            self.revisions.libraries += 1;
+        }
         if self.remote.is_some() {
             return self.remote_request(what, op);
         }

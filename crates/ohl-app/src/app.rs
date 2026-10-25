@@ -419,6 +419,8 @@ pub struct Ready {
     pub design_code: crate::codes::DesignCodeWindow,
     /// The Clearances tab's rule editor and its rule presets.
     pub rule_editor: crate::rule_editor::RuleEditor,
+    /// Plugin manager › Presets…: a plugin's presets edited in the project.
+    pub preset_editor: crate::preset_edits::PresetEditor,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ohl_line::SectionPoint>,
     /// Add jumper: the first end right-clicked when it is a tap (a clamp
@@ -569,6 +571,7 @@ impl Ready {
             open_project: None,
             design_code: Default::default(),
             rule_editor: Default::default(),
+            preset_editor: Default::default(),
             jumper_from: None,
             spacer_from: None,
             link_from: None,
@@ -2115,11 +2118,16 @@ impl eframe::App for App {
                     ready.model.plugin_columns = columns;
                 }
                 ready.model.set_check_plugins(self.plugins.check_dirs());
-                ready
-                    .drawings
-                    .set_template_plugins(self.plugins.sheet_template_dirs());
+                ready.drawings.set_template_plugins(
+                    self.plugins.sheet_template_dirs(),
+                    crate::preset_edits::of_model(&ready.model).0,
+                );
+                if let Some((plugin, dir)) = self.plugins.edit_presets.take() {
+                    ready.preset_editor.open_on(&plugin, Some(dir));
+                }
                 crate::codes::window(&ctx, ready, &self.plugins);
                 crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
+                crate::preset_edits::window(&ctx, ready, &self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
                     ready.wirefit.ui(&ctx, &ready.model),

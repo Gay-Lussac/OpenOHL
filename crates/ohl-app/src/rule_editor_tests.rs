@@ -705,3 +705,122 @@ fn the_clearances_tab_runs_from_its_footer() {
     let r = harness.state_mut().ready().unwrap();
     assert!(r.clearances.running() || r.clearances.report.is_some());
 }
+
+/// A plugin's preset value changed in the project (Plugin manager ›
+/// Presets…): the edit kept in the project's library is taken by every
+/// window's presets (the preview at 220 kV: 7 m + 0.01 m/kV → 9.20 m
+/// instead of 8.20 m), listed in the Changes tab as applied, and Reset all
+/// takes the plugin's value back.
+#[test]
+fn a_preset_value_changed_in_the_project() {
+    let dir = root().join("plugins/tests/code-presets");
+    let built = ohl_plugins::Manifest::load(&dir)
+        .unwrap()
+        .entry_path()
+        .is_file();
+    assert!(
+        built || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+        "code-presets test plugin not built"
+    );
+    if !built {
+        eprintln!("skipping: plugins/tests/code-presets not built");
+        return;
+    }
+    let (mut harness, _file) = harness_with_rules("preset-edit");
+    {
+        let app = harness.state_mut();
+        app.plugins = crate::plugins::Plugins::load(None, None);
+        app.plugins.folders = vec![dir];
+        app.plugins.refresh();
+        app.plugins.open = true;
+    }
+    harness.run();
+    harness.get_by_label("Presets…").click();
+    let started = std::time::Instant::now();
+    loop {
+        harness.step();
+        let r = harness.state_mut().ready().unwrap();
+        if !r.rule_editor.presets.busy() && !r.rule_editor.presets.original.is_empty() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 60, "no presets in 60 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    harness.run();
+    harness.get_by_label("ground — rules");
+    let edit = crate::preset_edits::Edit {
+        item: "rules:ground".into(),
+        path: vec!["rule".into(), "name=Test ground".into(), "vertical".into()],
+        original: "{ base = \"6 m\", per_kv = \"0.01 m\", above_kv = 0.0 }".into(),
+        value: "{ base = \"7 m\", per_kv = \"0.01 m\", above_kv = 0.0 }".into(),
+        note: "the utility's".into(),
+    };
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.model
+            .project_op(
+                "preset values",
+                ohl_server::Op::PutLibrary {
+                    kind: crate::preset_edits::KIND.into(),
+                    name: crate::preset_edits::file_name("code-presets"),
+                    text: crate::preset_edits::to_text("code-presets", &[edit]),
+                },
+            )
+            .unwrap();
+    }
+    harness.run();
+    harness.run();
+    shot(&mut harness, "preset-editor-presets");
+    harness.get_by_label("Changes (1)").click();
+    harness.run();
+    harness.get_by_label("applied");
+    shot(&mut harness, "preset-editor-changes");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let p = &r.rule_editor.presets.list[0].presets.as_ref().unwrap()[0];
+        let g = p
+            .rules
+            .rules
+            .iter()
+            .find(|x| x.name == "Test ground")
+            .unwrap();
+        assert!((g.required(Some(220.0)).vertical.unwrap() - 9.2).abs() < 1e-9);
+        assert!(
+            p.description.contains("1 value changed"),
+            "{}",
+            p.description
+        );
+        let o = &r.rule_editor.presets.original[0].presets.as_ref().unwrap()[0];
+        let g = o
+            .rules
+            .rules
+            .iter()
+            .find(|x| x.name == "Test ground")
+            .unwrap();
+        assert!((g.required(Some(220.0)).vertical.unwrap() - 8.2).abs() < 1e-9);
+    }
+    harness.get_by_label("Reset all").click();
+    harness.run();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(crate::preset_edits::of_model(&r.model).0.is_empty());
+    let p = &r.rule_editor.presets.list[0].presets.as_ref().unwrap()[0];
+    let g = p
+        .rules
+        .rules
+        .iter()
+        .find(|x| x.name == "Test ground")
+        .unwrap();
+    assert!((g.required(Some(220.0)).vertical.unwrap() - 8.2).abs() < 1e-9);
+}
+
+/// Saves the window as `name`.png in `OHL_RENDER_PNG` (when set and the
+/// harness renders).
+fn shot(h: &mut Harness<'_, App>, name: &str) {
+    if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+        && let Ok(image) = h.render()
+    {
+        let path = std::path::PathBuf::from(dir).join(format!("{name}.png"));
+        crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+    }
+}

@@ -338,7 +338,12 @@ pub fn resolve(
 
 /// Reads the plugins' templates in the background (WebAssembly plugins
 /// are compiled: under a second each).
-pub fn read_plugins(dirs: Vec<(String, PathBuf)>) -> Receiver<PluginTemplates> {
+/// The project's `edits` of their values are applied
+/// ([`crate::preset_edits`]).
+pub fn read_plugins(
+    dirs: Vec<(String, PathBuf)>,
+    edits: crate::preset_edits::Edits,
+) -> Receiver<PluginTemplates> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
         let host = ohl_plugins::WasmHost::new();
@@ -360,12 +365,23 @@ pub fn read_plugins(dirs: Vec<(String, PathBuf)>) -> Receiver<PluginTemplates> {
                                 bytes,
                             })
                             .collect();
+                        let mut description = t.description;
+                        let item = format!("sheet:{}", t.name);
+                        let mine = edits.get(&plugin).map_or(&[][..], Vec::as_slice);
+                        let (text, _) = crate::preset_edits::apply(&t.template, &item, mine);
+                        let n = mine.iter().filter(|e| e.item == item).count();
+                        if n > 0 {
+                            description = format!(
+                                "{description} ({n} value{} changed in this project)",
+                                if n == 1 { "" } else { "s" }
+                            );
+                        }
                         out.push((
                             format!("plugin:{plugin}/{}", t.name),
-                            SheetTemplate::parse(&t.template, t.dir.as_deref(), &images)
+                            SheetTemplate::parse(&text, t.dir.as_deref(), &images)
                                 .map(Arc::new)
                                 .map_err(|e| format!("plugin {plugin}, {}: {e}", t.name)),
-                            t.description,
+                            description,
                         ));
                     }
                 }
