@@ -2406,6 +2406,7 @@ mod tests {
             name: "warm".into(),
             description: String::new(),
             cases: vec!["everyday".into()],
+            ..Default::default()
         }];
         let warm = ["warm".to_owned()];
         let filter = ohl_weather::CaseFilter {

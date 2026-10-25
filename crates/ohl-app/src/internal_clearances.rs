@@ -94,6 +94,64 @@ pub fn project_file(model: &Model) -> PathBuf {
     dir.join(format!("{stem}.internal-rules.ohlr"))
 }
 
+/// A wind study's winds (ESTI 240 Art. 33, owner 2026-10-25): the cases of
+/// the groups that take a structure column's pressure, and per pressure
+/// (its bits) the structures with a body that have it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WindStudy {
+    /// The cases solved again at the structures' own wind.
+    pub cases: std::collections::BTreeSet<String>,
+    /// Per pressure, Pa (as `f64::to_bits`), the structures.
+    pub at: std::collections::BTreeMap<u64, Vec<String>>,
+    /// Values taken at a group's least pressure, values not read.
+    pub notes: Vec<String>,
+}
+
+/// The wind study of the model's case groups and structures with a body:
+/// a group with `structure_wind` names the structure column; a structure
+/// with a value there is checked in the group's cases at that pressure
+/// (raised to the group's least, said); without a value, at the case's.
+pub fn wind_study(model: &Model, bodies: &[StructureBody]) -> WindStudy {
+    let mut out = WindStudy::default();
+    for g in crate::case_groups::groups(model) {
+        if g.structure_wind.is_empty() {
+            continue;
+        }
+        let mut any = false;
+        for st in &model.line.structures {
+            if !bodies.iter().any(|b| b.structure == st.id) {
+                continue;
+            }
+            let Some(text) = st
+                .fields
+                .get(&g.structure_wind)
+                .filter(|t| !t.trim().is_empty())
+            else {
+                continue;
+            };
+            let Some((pa, warn)) = g.structure_pressure(text) else {
+                out.notes.push(format!(
+                    "{}: wind study \"{text}\" is not a pressure: the case's wind taken",
+                    st.id
+                ));
+                continue;
+            };
+            if let Some(w) = warn {
+                out.notes.push(format!("{}: {w}", st.id));
+            }
+            let ids = out.at.entry(pa.to_bits()).or_default();
+            if !ids.contains(&st.id) {
+                ids.push(st.id.clone());
+            }
+            any = true;
+        }
+        if any {
+            out.cases.extend(g.cases.iter().cloned());
+        }
+    }
+    out
+}
+
 /// The bodies of the line's structures at detail level 2 or 3, placed in
 /// project coordinates (the same way `ohl internal` places them, and the
 /// views draw them): each member's centre line and solid; a pole one
@@ -234,9 +292,14 @@ impl InternalClearancesWindow {
         let rules = self.rules.clone();
         let bodies = structure_bodies(model);
         let filter = self.overrides.filter(model);
+        let study = if self.overrides.structures {
+            wind_study(model, &bodies)
+        } else {
+            WindStudy::default()
+        };
         self.job.start_at(ctx, model.revision(), move || {
             let mut solved = Vec::new();
-            let mut notes = Vec::new();
+            let mut notes = study.notes.clone();
             for case in &cases {
                 let s = crate::model::Solved::new(&line, &library, case.clone());
                 notes.extend(
@@ -258,6 +321,57 @@ impl InternalClearancesWindow {
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
             let mut report = internal::check(&line, &views, &bodies, &rules, &filter, &budget)?;
+            // The wind study's structures (the override): their rows of the
+            // group's cases taken from a run at their own wind instead.
+            let studied = |st: &str| study.at.values().any(|ids| ids.iter().any(|i| i == st));
+            report
+                .rows
+                .retain(|r| !(study.cases.contains(&r.case) && studied(&r.structure)));
+            for (pressure, ids) in &study.at {
+                let pa = f64::from_bits(*pressure);
+                let mut solved = Vec::new();
+                for case in cases.iter().filter(|c| study.cases.contains(&c.name)) {
+                    let mut case = case.clone();
+                    case.wind_pressure = ohl_core::units::Stress::from_si(pa);
+                    let s = crate::model::Solved::new(&line, &library, case.clone());
+                    notes.extend(s.failed.iter().map(|f| {
+                        format!("\"{}\" at {pa} Pa (wind study): not solved: {f}", case.name)
+                    }));
+                    solved.push((case.name.clone(), s.shapes, s.jumpers));
+                }
+                let views: Vec<(
+                    &str,
+                    &[ohl_line::solve::SectionShape],
+                    &[ohl_line::jumper::JumperShape],
+                )> = solved
+                    .iter()
+                    .map(|(n, s, j)| (n.as_str(), s.as_slice(), j.as_slice()))
+                    .collect();
+                let these: Vec<StructureBody> = bodies
+                    .iter()
+                    .filter(|b| ids.contains(&b.structure))
+                    .cloned()
+                    .collect();
+                let part = internal::check(&line, &views, &these, &rules, &filter, &budget)?;
+                for n in part.notes {
+                    if !report.notes.contains(&n) {
+                        report.notes.push(n);
+                    }
+                }
+                report.rows.extend(part.rows.into_iter().map(|mut r| {
+                    r.case = format!("{} (wind study {pa} Pa)", r.case);
+                    r
+                }));
+            }
+            if !study.at.is_empty() {
+                report.rows.sort_by(|a, b| {
+                    (a.distance - a.required)
+                        .total_cmp(&(b.distance - b.required))
+                        .then_with(|| {
+                            (&a.structure, &a.case, &a.part).cmp(&(&b.structure, &b.case, &b.part))
+                        })
+                });
+            }
             report.notes.splice(0..0, notes);
             Ok(Report { report, rules })
         });
@@ -718,6 +832,50 @@ mod tests {
             assert!(st.structure_type.is_some());
             assert!(!b.members.is_empty());
         }
+    }
+
+    /// A wind study (ESTI 240 Art. 33): a structure with a value in the
+    /// group's column is checked in the group's cases at that pressure, a
+    /// value under the group's least raised to it (said); one without a
+    /// value, or of a group without the column, stays at the case's wind.
+    #[test]
+    fn wind_study_per_structure() {
+        let mut m = crate::tests::typed_project("internal-wind-study");
+        let dir = m.sources.file.parent().unwrap().to_path_buf();
+        let weather = dir.join("cases.ohlwc");
+        std::fs::write(
+            &weather,
+            "format = \"ohl-weather-cases\"\nversion = 1\n\
+             [[case]]\nname = \"wind\"\ntemperature = \"10 °C\"\nwind_pressure = \"650 Pa\"\n\
+             [[case]]\nname = \"rest\"\ntemperature = \"10 °C\"\n\
+             [[group]]\nname = \"short\"\ncases = [\"wind\"]\n\
+             structure_wind = \"p.wind_study\"\nstructure_wind_min = \"300 Pa\"\n\
+             [[group]]\nname = \"at rest\"\ncases = [\"rest\"]\n",
+        )
+        .unwrap();
+        m.sources.weather = Some(weather);
+        let bodies = structure_bodies(&m);
+        assert!(bodies.len() >= 2, "the typed line has bodies");
+        let (a, b) = (bodies[0].structure.clone(), bodies[1].structure.clone());
+        for st in &mut m.line.structures {
+            if st.id == a {
+                st.fields.insert("p.wind_study".into(), "450 Pa".into());
+            } else if st.id == b {
+                st.fields.insert("p.wind_study".into(), "200".into());
+            }
+        }
+        let s = wind_study(&m, &bodies);
+        assert_eq!(s.cases.iter().collect::<Vec<_>>(), ["wind"]);
+        assert_eq!(s.at.get(&450f64.to_bits()), Some(&vec![a]));
+        assert_eq!(s.at.get(&300f64.to_bits()), Some(&vec![b.clone()]));
+        assert_eq!(s.at.len(), 2);
+        assert!(
+            s.notes
+                .iter()
+                .any(|n| n.starts_with(&b) && n.contains("300 Pa")),
+            "{:?}",
+            s.notes
+        );
     }
 }
 

@@ -476,6 +476,7 @@ mod tests {
             name: "snow".into(),
             description: String::new(),
             cases: vec!["heavy snow".into()],
+            ..Default::default()
         }];
         let snow = ["snow".to_owned()];
         let first = &line.sections[0];

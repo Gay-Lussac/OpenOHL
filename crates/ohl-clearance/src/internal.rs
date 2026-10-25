@@ -993,6 +993,7 @@ mod tests {
             name: "g".into(),
             description: String::new(),
             cases: vec!["other".into()],
+            ..Default::default()
         }];
         let names = vec!["g".to_owned()];
         let filter = ohl_weather::CaseFilter {
