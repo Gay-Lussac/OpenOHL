@@ -793,6 +793,9 @@ pub struct CircuitInfo {
     pub number: String,
     /// Its system's nominal voltage, kV (none: earthed or no system).
     pub voltage_kv: Option<f64>,
+    /// Its conductors: phases × subconductors × cable, as its first
+    /// section gives them (e.g. `3×2×Aldrey 600`).
+    pub conductor: String,
 }
 
 /// Drawing data of one route.
@@ -1161,7 +1164,16 @@ pub fn build(
             .system
             .as_deref()
             .and_then(|id| line.systems.iter().find(|x| x.id == id));
+        let mut phases: Vec<&str> = line
+            .sections
+            .iter()
+            .filter(|x| x.circuit_name == s.circuit_name)
+            .map(|x| x.phase_label.as_str())
+            .collect();
+        phases.sort_unstable();
+        phases.dedup();
         circuits.push(CircuitInfo {
+            conductor: format!("{}×{}×{}", phases.len(), s.bundle.max(1), s.cable),
             name: s.circuit_name.clone(),
             owner: system.map_or_else(String::new, |x| x.owner.clone()),
             number: system.map_or_else(String::new, |x| x.number.clone()),

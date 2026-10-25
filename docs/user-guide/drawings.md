@@ -544,10 +544,14 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   dot where each wire hangs. Where the phases change places the tracks
   cross between the columns; a circuit leaving or joining the line turns
   away with an arrow and its name; at the line's ends each track ends
-  in an arrow with its phase and its circuit's name. Under the tracks
-  the **table of the circuits**: line type, name, and the owner and
-  number of their electrical systems (Tables › Systems, columns
-  `owner` and `number`) when any is given. Nothing typed twice: taken
+  in an arrow with its phase, its circuit's name and its conductors
+  (phases × subconductors × cable, as its first section gives them).
+  A sheet starts where the one before ended: its tracks enter at the
+  places they left, crossing on the new sheet where the phases change
+  there. Under the tracks the **table of the circuits** on that sheet:
+  line type, name, conductors, and the owner and number of their
+  electrical systems (Tables › Systems, columns `owner` and `number`)
+  when any is given. Nothing typed twice: taken
   from the line. A schematic: drawn in the weather case shown, whatever
   the cases the sheets take; jumpers are not tracks.
 
