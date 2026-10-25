@@ -13,6 +13,11 @@
 //! | PDF | `R.pdf` (one page) | `R.pdf` (a page per sheet) |
 //! | DXF model space | `R-plan-model.dxf`, `R-profile-model.dxf` | the same |
 //! | CSV, XML | `R-profile.csv`, `R-profile.xml` | the same |
+//!
+//! [`Export::suffix`] goes after `R` in every name (a plan set's second
+//! drawing of a kind: `R-2-sheet-01.svg`, `R-2.pdf` …). The pages of a
+//! plan set's one PDF are kept when asked ([`Export::keep_pages`],
+//! [`Written::pages`]) and written by [`write_one_pdf`].
 
 use std::path::{Path, PathBuf};
 
@@ -94,6 +99,14 @@ pub struct Export {
     pub optimise: Option<crate::paper::Optimise>,
     /// Resolution of PNG images, dots per inch.
     pub dpi: f64,
+    /// After the route's (or the plan's) name in every file name: a plan
+    /// set's second drawing of a kind `-2`, its third `-3` … (empty: the
+    /// names as always).
+    pub suffix: String,
+    /// The pages drawn kept in [`Written::pages`] (sheets only: a
+    /// continuous drawing is not kept), for a plan set's one PDF. Off by
+    /// default: the pages hold the orthophotos under the plan.
+    pub keep_pages: bool,
 }
 
 impl Export {
@@ -110,6 +123,8 @@ impl Default for Export {
             page: None,
             optimise: None,
             dpi: 150.0,
+            suffix: String::new(),
+            keep_pages: false,
         }
     }
 }
@@ -126,6 +141,9 @@ pub struct Written {
     pub warnings: Vec<String>,
     /// The optimised layout chosen ([`Export::optimise`]), in words.
     pub paper: Option<String>,
+    /// The pages drawn, in order, when [`Export::keep_pages`] asks for
+    /// them and the export writes sheets (else none).
+    pub pages: Vec<crate::model::Drawing>,
 }
 
 /// `id` as part of a file name: characters other than letters, digits,
@@ -142,6 +160,15 @@ pub fn file_stem(id: &str) -> String {
         })
         .collect();
     if s.is_empty() { "route".into() } else { s }
+}
+
+/// `suffix` as part of a file name (empty stays empty).
+fn file_stem_part(suffix: &str) -> String {
+    if suffix.is_empty() {
+        String::new()
+    } else {
+        file_stem(suffix)
+    }
 }
 
 /// Writes route `d`'s drawings and profile into `dir` (created) in the
@@ -167,7 +194,7 @@ pub fn write_route(
     std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let mut run = budget.start();
     let mut written = Written::default();
-    let route = file_stem(&d.route);
+    let route = format!("{}{}", file_stem(&d.route), file_stem_part(&e.suffix));
     let stem = if o.plan {
         route.clone()
     } else {
@@ -316,15 +343,19 @@ pub fn write_route(
             crate::png::MAX_PIXELS / 1e6
         ));
     }
+    if e.keep_pages && paged {
+        written.pages = drawings;
+    }
     Ok(written)
 }
 
 /// Writes the sheets of one of the other plans (the phase plan, the route
 /// and situation plans: [`crate::plans`]) into `dir` as `stem`-NN.svg /
 /// .dxf / .png and one `stem`.pdf, the formats of `e` that hold sheets
-/// (CSV and XML are the profile's: not written).
+/// (CSV and XML are the profile's: not written); [`Export::suffix`] after
+/// `stem`, the sheets' drawings kept when [`Export::keep_pages`] asks.
 pub fn write_plan(
-    sheets: &[crate::Sheet],
+    sheets: Vec<crate::Sheet>,
     e: &Export,
     stem: &str,
     title: &str,
@@ -337,12 +368,12 @@ pub fn write_plan(
         sheets: sheets.len(),
         ..Written::default()
     };
-    for s in sheets {
+    for s in &sheets {
         for w in &s.warnings {
             written.warnings.push(format!("sheet {}: {w}", s.number));
         }
     }
-    let stem = file_stem(stem);
+    let stem = format!("{}{}", file_stem(stem), file_stem_part(&e.suffix));
     let mut put = |file: String, bytes: &[u8], run: &mut ohl_core::budget::Run| {
         run.step().map_err(|s| format!("export {s}"))?;
         let path = dir.join(file);
@@ -356,13 +387,13 @@ pub fn write_plan(
     for format in formats {
         match format {
             Format::Svg => {
-                for s in sheets {
+                for s in &sheets {
                     let name = format!("{stem}-{:02}.svg", s.number);
                     put(name, s.drawing.svg().as_bytes(), &mut run)?;
                 }
             }
             Format::Dxf => {
-                for s in sheets {
+                for s in &sheets {
                     let name = format!("{stem}-{:02}.dxf", s.number);
                     put(name, crate::dxf::write(&s.drawing).as_bytes(), &mut run)?;
                 }
@@ -377,7 +408,7 @@ pub fn write_plan(
                 )?;
             }
             Format::Png => {
-                for s in sheets {
+                for s in &sheets {
                     let (png, _) = crate::png::render(&s.drawing, e.dpi)?;
                     put(format!("{stem}-{:02}.png", s.number), &png, &mut run)?;
                 }
@@ -385,7 +416,28 @@ pub fn write_plan(
             Format::Csv | Format::Xml => {}
         }
     }
+    if e.keep_pages {
+        written.pages = sheets.into_iter().map(|s| s.drawing).collect();
+    }
     Ok(written)
+}
+
+/// Writes `pages` (a plan set's drawings, in order) into `dir` as one PDF,
+/// `name`.pdf, titled `name`; its path.
+pub fn write_one_pdf(
+    pages: &[crate::model::Drawing],
+    name: &str,
+    dir: &Path,
+) -> Result<PathBuf, String> {
+    if pages.is_empty() {
+        return Err("no sheets to put into one PDF".into());
+    }
+    std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
+    let refs: Vec<&crate::model::Drawing> = pages.iter().collect();
+    let path = dir.join(format!("{}.pdf", file_stem(name)));
+    std::fs::write(&path, crate::pdf::write(&refs, name.trim()))
+        .map_err(|err| format!("{}: {err}", path.display()))?;
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -457,5 +509,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(file_stem("a/b c"), "a_b_c");
         assert_eq!(Format::parse("PDF"), Some(Format::Pdf));
+    }
+
+    /// A plan set's one PDF (owner, 2026-10-25): the pages of two drawings
+    /// kept (the sheets, a set's second phase plan named apart) and
+    /// written in order into one file; a continuous drawing keeps none.
+    #[test]
+    fn one_pdf_holds_the_pages_of_two_drawings() {
+        let o = Options {
+            vertical_scale: 500.0,
+            stations: Some([100.0, 1000.0]),
+            ..Options::default()
+        };
+        let d = main_route(&o);
+        let dir = std::env::temp_dir().join(format!("ohl-drawing-one-pdf-{}", std::process::id()));
+        let a3 = page_format("A3").unwrap();
+        let e = Export {
+            formats: vec![Format::Svg],
+            page: Some(a3.clone()),
+            keep_pages: true,
+            ..Default::default()
+        };
+        let sheets = write_route(&d, &o, &e, &dir, &Budget::new()).unwrap();
+        assert_eq!(sheets.pages.len(), 2);
+        let second = Export {
+            suffix: "-2".into(),
+            ..e.clone()
+        };
+        let plan = crate::plans::phase_plan(&d, &o, &a3);
+        let phase =
+            write_plan(plan, &second, "main-phase-plan", "t", &dir, &Budget::new()).unwrap();
+        assert!(!phase.pages.is_empty());
+        assert!(
+            phase.files[0].ends_with("main-phase-plan-2-01.svg"),
+            "{:?}",
+            phase.files
+        );
+        let pages: Vec<_> = sheets.pages.into_iter().chain(phase.pages).collect();
+        let path = write_one_pdf(&pages, "Plan set", &dir).unwrap();
+        assert!(path.ends_with("Plan_set.pdf"));
+        let read = crate::pdf::read_back(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(read.len(), pages.len());
+        // Not kept unless asked, nor for one continuous drawing.
+        let off = Export {
+            keep_pages: false,
+            ..e.clone()
+        };
+        assert!(
+            write_route(&d, &o, &off, &dir, &Budget::new())
+                .unwrap()
+                .pages
+                .is_empty()
+        );
+        let continuous = Export { page: None, ..e };
+        assert!(
+            write_route(&d, &o, &continuous, &dir, &Budget::new())
+                .unwrap()
+                .pages
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

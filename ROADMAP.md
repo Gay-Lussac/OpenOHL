@@ -162,10 +162,12 @@ in, and as plugin presets — a utility's own templates in its plugin).
 plan, the situation plans and the phase plan (Export › Plans, `ohl
 drawing --plans`), see [Drawings](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/drawings.md#plans-route-plan-situation-plans-phase-plan);
 and plan sets from plugins (Export › Plans › Plan set…, `.ohlset`,
-the plugin manifest's `[[plan-set]]`); still to come: one PDF of a set,
-`ohl drawing --set`, links to public map services, the
-corridor's protection zones and land use as their own layers (today:
-the project's drawings).* Proposed (to discuss):
+the plugin manifest's `[[plan-set]]`); *built 2026-10-25, in active
+development (not approved yet):* one PDF of a set (Plan set… › also as
+one PDF, `--set-pdf`) and `ohl drawing --set FILE|PLUGIN/NAME`, a set's
+second drawing of a kind named apart (`-2`); still to come: links to
+public map services, the corridor's protection zones and land use as
+their own layers (today: the project's drawings).* Proposed (to discuss):
 
 1. **Route plan and situation plans** — the plan alone, the line drawn
    on a background, at two scales (owner, 2026-10-23):

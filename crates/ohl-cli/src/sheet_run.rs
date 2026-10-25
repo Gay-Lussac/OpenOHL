@@ -170,6 +170,67 @@ pub fn resolve(
     ))
 }
 
+/// The plan set `spec` names (`ohl drawing --set`): a `.ohlset` file, or
+/// `PLUGIN/NAME` — set NAME of plugin PLUGIN of `plugins` (its manifest's
+/// `[[plan-set]]`); the set, and the plugin giving it.
+pub fn plan_set(
+    spec: &str,
+    plugins: &[PathBuf],
+) -> Result<(ohl_drawing::plan_set::PlanSet, Option<String>), String> {
+    use ohl_drawing::plan_set::PlanSet;
+    let path = Path::new(spec);
+    if path.is_file() {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let set = PlanSet::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok((set, None));
+    }
+    let mut known = Vec::new();
+    for f in ohl_plugins::discover_sheet_templates(plugins) {
+        let plugin = f.name();
+        let Ok(sets) = ohl_plugins::plan_sets(&f.dir) else {
+            continue;
+        };
+        for (name, text) in sets {
+            let full = format!("{plugin}/{name}");
+            if full == spec {
+                let set = PlanSet::parse(&text).map_err(|e| format!("{full}: {e}"))?;
+                return Ok((set, Some(plugin)));
+            }
+            known.push(full);
+        }
+    }
+    Err(format!(
+        "plan set \"{spec}\": not a file{}{} (plugins' sets: PLUGIN/NAME with --plugin)",
+        if known.is_empty() {
+            ""
+        } else {
+            ", nor one of "
+        },
+        known.join(", ")
+    ))
+}
+
+/// The template a plan set's drawing names, as [`resolve`] reads it: of
+/// the set's `plugin` first, else another plugin's of that name, else
+/// `name` as given (a file, `default`, the project's or the library
+/// folder's) — as the app chooses it.
+pub fn set_template(name: &str, plugin: Option<&str>, plugins: &[PathBuf]) -> String {
+    if name == "default" || Path::new(name).is_file() || name.contains('/') {
+        return name.to_owned();
+    }
+    let found: Vec<String> = plugin_templates(plugins)
+        .into_iter()
+        .map(|f| f.name)
+        .filter(|n| n.ends_with(&format!("/{name}")))
+        .collect();
+    if let Some(p) = plugin
+        && let Some(own) = found.iter().find(|n| **n == format!("{p}/{name}"))
+    {
+        return own.clone();
+    }
+    found.into_iter().next().unwrap_or_else(|| name.to_owned())
+}
+
 /// The values of the template's fields: from a fields file (TOML: keys, or
 /// `[values]`, `[per_sheet.<key>]`, `[[revision]]`), then each
 /// `KEY=VALUE` (`KEY@SHEET=VALUE` for one sheet), then the revisions

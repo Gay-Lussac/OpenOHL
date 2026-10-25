@@ -22,6 +22,35 @@ of Parts A, B and C).
   missing, as before).
 - Partial factors typed as `name = value, …` (an inline table).
 
+**Plan sets: one PDF, `ohl drawing --set` (owner, 2026-10-25)**
+
+- Roadmap O14, the rest of item 3: a plan set also as **one PDF**
+  (the Plan set window's tick "also as one PDF", `ohl drawing --set-pdf`)
+  and written from the command line (`ohl drawing --set FILE` or
+  `--set PLUGIN/NAME`).
+- What goes into the one PDF: every sheet of the set's drawings in the
+  set's order, each drawing for every route (the plan-and-profile
+  sheets of every route, then each plan of every route), named
+  `<set name>.pdf` in the output folder, written besides the files of
+  the formats chosen. Only sheets: a plan-and-profile drawing without
+  paper (one continuous drawing) is left out, and the result says so.
+  The pages are the ones drawn for the files (kept, not drawn again),
+  and kept only when the one PDF is asked for (they hold the
+  orthophotos).
+- Naming of a kind given twice (e.g. situation plans at two scales):
+  the first drawing of a kind keeps its usual names, the second gets
+  `-2` after the route's name, the third `-3` … (`main-2-sheet-01.svg`,
+  `main-2.pdf`, `main-situation-plan-2.pdf`). Chosen over the scale in
+  the name: a set with each kind once writes exactly the files of a
+  single export, and two drawings of a kind may differ in paper or
+  template rather than scale.
+- On the command line the line is solved once for the whole set; each
+  drawing's template, paper and scales go over the command's own
+  options; the set's plans write no plan-and-profile sheets. A set's
+  template name is looked for as in the app: the set's plugin's first,
+  else another plugin's of that name, else as `--sheet-template` reads
+  it. No file format changed.
+
 **Another project imported into an existing one (owner, 2026-10-25)**
 
 - Owner: "import other lines or project in an existing project. It should
