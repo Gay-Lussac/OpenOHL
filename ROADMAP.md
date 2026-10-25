@@ -568,8 +568,9 @@ and the String library's columns edit them; Structures › Display
 options › Volumes on the strings (3D) draws them. Theory:
 [Internal clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md). OHL-Structure draws
 them too (View › Volumes on the strings: in still air, placed by
-`ohl-structure-link` as the line places them; owner, 2026-10-25). Not
-yet: a structure type's own strings (`.ohls`) carrying shape overrides.
+`ohl-structure-link` as the line places them; owner, 2026-10-25). A
+structure type's own strings carry shape overrides too (`.ohls` 7,
+`[[string.shape]]`).
 
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from

@@ -12,6 +12,11 @@ of Parts A, B and C).
 
 **Volumes on the strings in OHL-Structure (owner, 2026-10-25)**
 
+- A structure type's string may carry its own volumes too
+  (`[[string.shape]]` in the `.ohls`, version 7, values with units), each
+  replacing its assembly's shape of the same name or added, for every
+  structure of the type — the gap the second part of O6 left.
+
 - Owner: OHL-Structure may use the core's placement through the link
   crate. `ohl_structure_link::string_volumes` places each string's shapes
   (its assembly's) on the string in still air, in the structure's own
