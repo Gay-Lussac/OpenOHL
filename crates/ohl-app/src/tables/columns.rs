@@ -549,6 +549,18 @@ pub(super) const SYSTEMS: &[Column] = &[
         Yes,
         "what it is, in words (free text)",
     ),
+    (
+        "owner",
+        120.0,
+        Yes,
+        "who owns it (free text; the phase plan's table of circuits)",
+    ),
+    (
+        "number",
+        90.0,
+        Yes,
+        "its number in the owner's register (free text; the phase plan's table of circuits)",
+    ),
 ];
 
 pub(super) const ALIGNMENTS: &[Column] = &[

@@ -1193,6 +1193,8 @@ pub(super) fn system_cells(
         .trim()
         .to_owned();
     s.name = c.get(1);
+    s.owner = c.get(TableKind::Systems.column("owner")).trim().to_owned();
+    s.number = c.get(TableKind::Systems.column("number")).trim().to_owned();
     s.kind = match c.get(2).trim().to_uppercase().as_str() {
         "AC" => ohl_line::electrical::SystemKind::Ac,
         "DC" => ohl_line::electrical::SystemKind::Dc,

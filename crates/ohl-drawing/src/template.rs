@@ -593,7 +593,7 @@ pub struct LegendSpec {
 
 /// The entries the export puts in the legend: kind, English default,
 /// placeholders.
-pub const LEGEND_LABELS: [(&str, &str, &[&str]); 29] = [
+pub const LEGEND_LABELS: [(&str, &str, &[&str]); 33] = [
     ("axis", "axis of the line", &[]),
     (
         "corridor_near",
@@ -633,11 +633,11 @@ pub const LEGEND_LABELS: [(&str, &str, &[&str]); 29] = [
     ("plan_route", "route plan", &[]),
     ("plan_situation", "situation plan", &[]),
     ("plan_phase", "phase plan", &[]),
-    (
-        "phase_unchanged",
-        "from {from} to {to}: arrangement unchanged",
-        &["from", "to"],
-    ),
+    ("phase_circuits", "Circuits", &[]),
+    ("phase_owner", "Owner", &[]),
+    ("phase_line_type", "Line type", &[]),
+    ("phase_circuit", "Circuit name", &[]),
+    ("phase_number", "No.", &[]),
     ("isoclearance", "isoclearance {level}", &["level"]),
     ("lidar", "{name} (LiDAR class {class})", &["name", "class"]),
     ("version", "{label}: {words}", &["label", "words"]),

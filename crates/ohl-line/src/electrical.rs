@@ -89,6 +89,13 @@ pub struct System {
     /// Name, e.g. `380 kV Alpha–Beta 1`.
     #[serde(default)]
     pub name: String,
+    /// Who owns it (free text; the phase plan's table of circuits).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub owner: String,
+    /// Its number in the owner's register (free text, e.g. a circuit
+    /// number; the phase plan's table of circuits).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub number: String,
     /// AC (default) or DC.
     #[serde(default)]
     pub kind: SystemKind,
@@ -736,6 +743,8 @@ mod tests {
             description: Default::default(),
             id: "s".into(),
             name: String::new(),
+            owner: String::new(),
+            number: String::new(),
             kind,
             voltage_kv: kv,
             frequency_hz: None,

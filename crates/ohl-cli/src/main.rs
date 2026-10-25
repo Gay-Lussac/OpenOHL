@@ -538,8 +538,9 @@ struct DrawingArgs {
     profile_only: bool,
     /// Also the other plans of each route (comma-separated), on the
     /// sheets' paper (else A3) with the template's frame and title block:
-    /// `phase` — the phase plan, the structures drawn where the phase
-    /// arrangement changes (`<route>-phase-plan-NN`); `route` — the route
+    /// `phase` — the phase plan, every wire a track along the line and
+    /// each run of structures with the same arrangement a column, with
+    /// the circuits' table (`<route>-phase-plan-NN`); `route` — the route
     /// plan, north up at --route-plan-scale; `situation` — the situation
     /// plans at --situation-scale; both over the project's drawings and
     /// orthophotos, with the corridor at the line width.

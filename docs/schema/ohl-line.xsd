@@ -452,6 +452,8 @@
             <xs:attribute name="id" type="xs:string" use="required"/>
             <xs:attribute name="description" type="xs:string"/>
             <xs:attribute name="name" type="xs:string"/>
+            <xs:attribute name="owner" type="xs:string"/>
+            <xs:attribute name="number" type="xs:string"/>
             <xs:attribute name="kind" type="ohl:systemKind" default="ac"/>
             <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
             <xs:attribute name="frequency_hz" type="xs:double"/>
