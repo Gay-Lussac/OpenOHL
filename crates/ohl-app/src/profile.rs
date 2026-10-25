@@ -93,6 +93,9 @@ pub struct ProfileView {
     pub hover_use: Option<crate::selection::Use>,
     /// The measuring tools' lines and points.
     pub measure: crate::measure::Overlay,
+    /// The kept measurement or note under the last tool click (its
+    /// annotation's id); taken by the app.
+    pub annotation_hit: Option<String>,
 }
 
 /// The stations and offsets of the vegetation points along a route: the
@@ -1563,6 +1566,15 @@ impl ProfileView {
         if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
+            if single {
+                self.annotation_hit = self.measure.hit(
+                    &|p| {
+                        let (s, _) = ohl_line::route::project(&d.centreline, p);
+                        Some(to_screen(s, p[2]))
+                    },
+                    pos,
+                );
+            }
             return Some(use_at(pos));
         }
         None

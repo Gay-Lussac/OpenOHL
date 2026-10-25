@@ -41,11 +41,15 @@ pub enum Panel {
     DisplayCases,
     /// Checks › Vegetation (the danger-tree panel).
     Vegetation,
+    /// Tools › Measurements panel.
+    Measurements,
+    /// The Follow and snap tool's panel.
+    Follow,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 7] = [
+    pub const ALL: [Panel; 9] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -53,6 +57,8 @@ impl Panel {
         Panel::RadialClearances,
         Panel::DisplayCases,
         Panel::Vegetation,
+        Panel::Measurements,
+        Panel::Follow,
     ];
 
     /// A name until its window gave its title.
@@ -65,6 +71,8 @@ impl Panel {
             Panel::RadialClearances => "Radial clearances",
             Panel::DisplayCases => "Display weather cases",
             Panel::Vegetation => "Vegetation and danger trees",
+            Panel::Measurements => "Measurements",
+            Panel::Follow => "Follow and snap",
         }
     }
 }

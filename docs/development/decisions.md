@@ -88,6 +88,20 @@ of Parts A, B and C).
   load cases can be seen and edited. The type alone is a smaller button
   beside it; the page opened otherwise is unchanged.
 
+**Measuring tools in use (owner, 2026-10-25)**
+
+- The Measurements panel and the Follow and snap panel are dockable as
+  Properties is; closing Follow and snap's tab puts the tool away.
+- A measuring tool's click that opens the panel, a note's window or a
+  kept one's window frees a locked mouse (first person).
+- The Edit tool on a kept measurement or note (hit on screen within 8
+  pixels) opens it: its label/text, Save, Delete.
+- Follow and snap: a right-click on nothing takes the selected object
+  (a span point's or spread's span, a string's or point's structure).
+- The movement keys move the 3D camera only while the mouse is locked
+  (first-person scheme); otherwise only over the view with no field being
+  typed in — the camera moved while typing in a table.
+
 **Follow and snap (T11) built (owner, 2026-10-25)**
 
 - Objects followed: a span's wire, a jumper, a structure (its members or

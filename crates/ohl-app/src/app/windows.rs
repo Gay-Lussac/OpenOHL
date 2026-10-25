@@ -597,6 +597,9 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
                 .and_then(|m| m.picks.first().cloned());
             r.measuring.kind = None;
             r.measuring.follow.panel(ctx, &r.model);
+            if std::mem::take(&mut r.measuring.follow.closed) {
+                r.hotbar.hold(crate::tools::Tool::Select);
+            }
         }
         None => {
             if r.measuring.kind.is_some() || r.measuring.live.is_some() {
@@ -606,6 +609,14 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
         }
     }
     r.measuring.refresh_kept(&r.model, r.case);
+    // The Measurements panel or a note's window just opened (a measuring
+    // tool's click in first person): the mouse is freed to use it.
+    let opened = (r.measuring.open && !r.measuring.was_open) || r.measuring.note_opened;
+    if opened {
+        r.release_mouse = true;
+        r.measuring.note_opened = false;
+    }
+    r.measuring.was_open = r.measuring.open;
     let user = r.model.user_name();
     // The time a kept one is stamped with (asked only while it can be
     // kept).
