@@ -153,6 +153,7 @@ impl StringChecksWindow {
             checks: vec![PresetCheck::Strings],
             tension_rules: Vec::new(),
             string_rules: self.rules.clone(),
+            internal_rules: Vec::new(),
         }
     }
 

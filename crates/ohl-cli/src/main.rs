@@ -15,6 +15,7 @@ mod analysis_run;
 mod clearance_run;
 mod code_run;
 mod cost_run;
+mod internal_run;
 mod io_run;
 mod links_run;
 mod project;
@@ -123,6 +124,13 @@ enum Command {
     /// suspension strings' uplift (going slack). Exit status 0: all
     /// within, 1: some beyond, 2: an error.
     Strings(Box<strings_run::StringsArgs>),
+    /// The internal clearances: at every structure with a body (levels 2
+    /// and 3), the conductors near it, its jumpers and its strings' wire
+    /// points as solved in each weather case of the `[[internal_rule]]`
+    /// tables of a rule file, against every member of the body (to the
+    /// members' surfaces where their profiles are known). Exit status 0:
+    /// all kept, 1: some too near, 2: an error.
+    Internal(Box<internal_run::InternalArgs>),
     /// Galloping ellipses and blowout against the right of way.
     Clearance {
         #[command(subcommand)]
@@ -958,6 +966,14 @@ fn main() -> ExitCode {
             }
         },
         Some(Command::Strings(args)) => match strings_run::run(&args) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::from(1),
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::from(2)
+            }
+        },
+        Some(Command::Internal(args)) => match internal_run::run(&args) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::from(1),
             Err(e) => {

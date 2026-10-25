@@ -926,6 +926,27 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   the check with `checks = ["strings"]`. The solved strings
   (`SectionShape::strings`, `StringState`) carry `strain` (a dead end as
   the solve treats it), new.
+- **Internal clearance rules** (2026-10-25, additive): a rule file may
+  hold optional `[[internal_rule]]` tables — `name`, `cases` (patterns;
+  none: every case), `voltages` (kV of the parts' sections; none: every
+  electrified part), `distance` (a requirement, required), `conductors`,
+  `jumpers`, `string_ends` (booleans, default true) and `reach` (a
+  length above 0, default `"20 m"`) — read as `RuleSet::internal_rules`
+  (`ohl_clearance::internal::InternalRule`), written back by
+  `RuleSet::to_toml` (defaults left out); a preset declares the check
+  with `checks = ["internal"]` (`PresetCheck::Internal`). The check
+  (`internal::check`) takes the solved sections and jumpers per case,
+  the bodies (`StructureBody`: per structure its `BodyMember`s — id,
+  centre line, solid triangles, project coordinates; the CLI builds them
+  from `ohl_structures_fe::drawn::Bodies`, a pole as one member `pole`),
+  the rules, the case overrides (`ohl_weather::CaseFilter`) and a
+  budget; it gives `InternalReport` — `rows` (`InternalRow`: rule, case,
+  structure, `Part` = `Conductor { section, span }` / `Jumper(id)` /
+  `StringEnd { label }`, nearest member, distance to the wire's surface,
+  required, `to_surface`, the two nearest points; the smallest margin
+  first), `not_checked` (structure, why: level 1) and `notes`. CSV
+  `rule, case, structure, part, member, distance_m, required_m,
+  margin_m, to, status, x, y, z, member_x, member_y, member_z`.
 - **Requirements** (`ohl_clearance::rules::Requirement`): `vertical` /
   `radial` are a distance (`"7 m"`, `Fixed`), a table
   (`{ by_voltage = [[up to kV, "m"], …] }`, `ByVoltage`: voltages ≥ 0

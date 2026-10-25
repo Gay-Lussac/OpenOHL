@@ -247,6 +247,9 @@ impl Plan {
         for r in &mut set.string_rules {
             r.cases = self.entries(&r.cases);
         }
+        for r in &mut set.internal_rules {
+            r.cases = self.entries(&r.cases);
+        }
     }
 
     /// A rule file's text with its rules naming the project's cases; the
@@ -254,7 +257,7 @@ impl Plan {
     pub fn rules_text(&self, text: &str) -> Result<String, String> {
         let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
         // The clearance rules and (2026-10-22) the tension rules.
-        for key in ["rule", "tension_rule", "string_rule"] {
+        for key in ["rule", "tension_rule", "string_rule", "internal_rule"] {
             if let Some(list) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {
                 self.rename_tables(list);
             }
@@ -439,9 +442,12 @@ impl Part {
             Part::Rules => true,
             Part::Check(PresetCheck::Vertical) => r.vertical.is_some(),
             Part::Check(PresetCheck::Radial) => r.radial.is_some(),
-            Part::Check(PresetCheck::Vegetation | PresetCheck::Tension | PresetCheck::Strings) => {
-                false
-            }
+            Part::Check(
+                PresetCheck::Vegetation
+                | PresetCheck::Tension
+                | PresetCheck::Strings
+                | PresetCheck::Internal,
+            ) => false,
         }
     }
 
@@ -496,6 +502,12 @@ impl Part {
                     rules.string_rules.iter().flat_map(|r| &r.cases).collect();
                 matching(&named)
             }
+            // The internal clearance check: the cases its rules name.
+            Part::Check(PresetCheck::Internal) => {
+                let named: Vec<&String> =
+                    rules.internal_rules.iter().flat_map(|r| &r.cases).collect();
+                matching(&named)
+            }
             _ => matching(&named_by(&|r| self.takes(r))),
         }
     }
@@ -514,7 +526,14 @@ impl Part {
             // The string rules are the string check's only.
             doc.remove("string_rule");
         }
-        if self == Part::Check(PresetCheck::Tension) || self == Part::Check(PresetCheck::Strings) {
+        if self != Part::Rules && self != Part::Check(PresetCheck::Internal) {
+            // The internal rules are the internal clearance check's only.
+            doc.remove("internal_rule");
+        }
+        if self == Part::Check(PresetCheck::Tension)
+            || self == Part::Check(PresetCheck::Strings)
+            || self == Part::Check(PresetCheck::Internal)
+        {
             // Its own rules only (2026-10-22, 2026-10-24).
             for key in ["rule", "check", "wind", "vegetation"] {
                 doc.remove(key);

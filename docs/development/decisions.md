@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Internal clearances, first part: the computation (owner, 2026-10-25)**
+
+- Measured at each structure at level 2 or 3: the conductors from their
+  clamps out to a rule's `reach` (default 20 m, in plan along the solved
+  wire), the jumpers at the structure and the strings' wire points, all
+  as solved in the case (the swing included); level 1 (no body): listed
+  as not checked. Earthed wires are not checked.
+- Against every member of the body: to its surface where its solid is
+  known (the drawn profile, a pole's outline), else to its centre line —
+  the member's size left out, on the unsafe side, said per structure and
+  per row. A wire end inside a closed solid counts as 0 (into it).
+- Exact on the solved polylines (segment–segment, segment–triangle), to
+  the wire's surface (radius and polyline bound taken off:
+  conservative); a string's wire point is a point (fittings not counted:
+  on the unsafe side). The volumes on the strings are a later part.
+- Rules: `[[internal_rule]]` in the rule file (`name`, `cases`,
+  `voltages`, `distance`, `conductors`, `jumpers`, `string_ends`,
+  `reach`), `checks = ["internal"]`; the structure and section overrides
+  apply. `ohl internal` runs it; the desktop window is written apart.
+
 **Weather case groups of structures and sections; the overrides (owner, 2026-10-25)**
 
 - First a structure's single group and a maximum wind pressure from a wind
