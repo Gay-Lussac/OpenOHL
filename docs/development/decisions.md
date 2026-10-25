@@ -10,6 +10,21 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Measuring tools and annotations: the spec's first decisions (owner, 2026-10-25)**
+
+- Draft in [measuring-tools-spec.md](measuring-tools-spec.md) (a
+  proposal; nothing built). Decided: annotations stored apart from the
+  line (no effect on its hash, not in the line file); wire distances to
+  the surface by default; an annotation deleted with its object (one
+  undo); shared by everyone, others' annotations and measurements hidden
+  by ticks in the Display options.
+- A tool added on the owner's request (T11): select an object, choose
+  LiDAR classes, the measurement follows the cursor along the object
+  snapping to the nearest point of those classes; a click locks it as an
+  annotation.
+- The main goal of these tools: responsive, fast and intuitive; never by
+  coarsening computed values.
+
 **The phase plan redrawn after a utility's (owner, 2026-10-25)**
 
 - The owner gave a utility's phase plan as the model: every wire a
