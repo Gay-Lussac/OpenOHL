@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Kept measurements and notes: labels by the label distance, faster (owner, 2026-10-25)**
+
+- 3D: a kept measurement's label and a note's text are written within
+  the 3D label distance of the eye (Display options, default 1.5 km), as
+  the other 3D labels; beyond it only the line and its ends, the note's
+  point and leader are drawn (still clicked there with the Edit tool; a
+  note's text only where it is written). Before, every kept label was
+  written at any distance.
+- In every view the kept ones' labels no longer overlap: what is being
+  measured and the point under the cursor are written first, then the
+  kept ones — in 3D the nearest first —, a label that would overlap one
+  written is left out (its line or point still drawn). A display choice:
+  no value changes.
+- Others' measurements hidden (the tick): they are no longer computed
+  again (a kept clearance sweeps its span); ticked again, they are.
+- The views' overlay of the kept ones is made once when they change, not
+  three times a frame, and only for the views that draw it.
+- Follow and snap: with the point under the cursor, the points read and
+  the case unchanged (a frame asked for by something else), the
+  measurement found for it is taken again instead of being searched and
+  measured again (the same value); the alignments are no longer copied
+  every frame.
+- Timings (Development › Performance, *Kept measurements and notes*):
+  300 kept, others' hidden: computed again 5.4 → 3.4 ms; the overlay
+  233 → 2 µs a frame; from 2 km 1 000 → 600 shapes drawn.
+
 **A plugin's presets edited in the project (owner, 2026-10-25)**
 
 - Plugin manager › **Presets…** on a plugin: a **Presets** tab (its rule

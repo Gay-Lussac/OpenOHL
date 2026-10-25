@@ -608,7 +608,8 @@ impl Placer {
     /// Takes the place `rect` when nothing written overlaps it; whether
     /// it did.
     pub fn reserve(&mut self, rect: egui::Rect) -> bool {
-        if self.taken.iter().any(|r| r.intersects(rect.expand(1.0))) {
+        let grown = rect.expand(1.0);
+        if self.taken.iter().any(|r| r.intersects(grown)) {
             return false;
         }
         self.taken.push(rect);

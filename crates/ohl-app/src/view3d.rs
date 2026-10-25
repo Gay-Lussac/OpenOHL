@@ -1264,6 +1264,7 @@ impl View3d {
             self.annotation_hit = self.user_measure.hit(
                 &|p| project(p).map(|(q, _)| egui::pos2(q[0] as f32, q[1] as f32)),
                 egui::pos2(at[0] as f32, at[1] as f32),
+                Some((camera.eye(), model.section_display.label_range())),
             );
         }
         let used = use_at.map(|at| {
@@ -1688,7 +1689,8 @@ impl View3d {
                 painter.galley(at, galley, colour);
             }
         }
-        self.user_measure.paint(&painter, &|p| screen(p));
+        // The kept ones' labels within the label distance, as the others.
+        self.user_measure.paint(&painter, &|p| screen(p), near);
         // Structures coloured by usage: the legend.
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);

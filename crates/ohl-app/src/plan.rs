@@ -561,7 +561,7 @@ impl PlanView {
         let used = if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
-            self.annotation_hit = self.measure.hit(&|p| Some(to_screen(p)), pos);
+            self.annotation_hit = self.measure.hit(&|p| Some(to_screen(p)), pos, None);
             Some(use_at(pos))
         } else {
             None
@@ -963,7 +963,7 @@ impl PlanView {
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
-        self.measure.paint(&painter, &|p| Some(to_screen(p)));
+        self.measure.paint(&painter, &|p| Some(to_screen(p)), None);
         // Scale bar.
         let target = 120.0 / scale;
         let nice = [1.0, 2.0, 5.0]

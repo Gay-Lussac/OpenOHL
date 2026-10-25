@@ -1496,10 +1496,14 @@ impl ProfileView {
         // alignment shown).
         if single && !self.measure.is_empty() {
             let painter = ui.painter_at(rect);
-            self.measure.paint(&painter, &|p| {
-                let (s, _) = ohl_line::route::project(&d.centreline, p);
-                Some(to_screen(s, p[2]))
-            });
+            self.measure.paint(
+                &painter,
+                &|p| {
+                    let (s, _) = ohl_line::route::project(&d.centreline, p);
+                    Some(to_screen(s, p[2]))
+                },
+                None,
+            );
         }
         let (select_button, tool_button) = buttons;
         if let Some(area) = area_done {
@@ -1573,6 +1577,7 @@ impl ProfileView {
                         Some(to_screen(s, p[2]))
                     },
                     pos,
+                    None,
                 );
             }
             return Some(use_at(pos));

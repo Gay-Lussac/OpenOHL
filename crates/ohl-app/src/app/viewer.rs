@@ -126,21 +126,22 @@ impl TabViewer for Viewer<'_> {
             _ => "tab other",
         });
         // A measuring tool held: the views find what is under the cursor
-        // and draw the measurement.
+        // and draw the measurement (made only for the views drawing it;
+        // the kept ones shared, made when they change).
         let measuring = r.hotbar.tool().measuring();
-        let overlay = if measuring || !r.measuring.done.is_empty() || !r.measuring.kept.is_empty() {
-            let d = &r.model.section_display;
-            r.measuring.overlay(crate::measure::Others {
-                measurements: !d.hide_others_measurements,
-                notes: !d.hide_others_notes,
-            })
+        let draws = matches!(tab, Tab::View3d | Tab::Plan | Tab::Profile);
+        let overlay = if draws
+            && (measuring || !r.measuring.done.is_empty() || !r.measuring.kept.is_empty())
+        {
+            r.measuring
+                .overlay(crate::measure::Others::of(&r.model.section_display))
         } else {
             Default::default()
         };
         let used = match tab {
             Tab::View3d => {
                 r.view3d.measuring = measuring;
-                r.view3d.user_measure = overlay.clone();
+                r.view3d.user_measure = overlay;
                 r.view3d.link = r.link_overlay();
                 let used = r.view3d.ui(
                     ui,
@@ -167,7 +168,7 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::Plan => {
                 r.plan.measuring = measuring;
-                r.plan.measure = overlay.clone();
+                r.plan.measure = overlay;
                 r.plan.ui(
                     ui,
                     &r.model,
@@ -187,7 +188,7 @@ impl TabViewer for Viewer<'_> {
                     r.visible.contains(&Layer::FallIn),
                 ];
                 r.profile.measuring = measuring;
-                r.profile.measure = overlay.clone();
+                r.profile.measure = overlay;
                 r.profile.ui(
                     ui,
                     &r.model,

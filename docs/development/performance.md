@@ -212,6 +212,21 @@ first).
 The search runs only when the pointer moved; the alignments' centre lines
 for the stations are kept until the line changes.
 
+**Kept measurements and notes**: `cargo test -p ohl-app
+kept_annotations_benchmark -- --ignored --nocapture` keeps 300 annotations
+on the synthetic line (100 clearances, 100 distances, 100 notes; three of
+four another user's) and times computing them again, the views' overlay
+and drawing them in 3D from 300 m and 2 km above the line's middle. Debug
+build on the development machine, 2026-10-25, before → after: computed
+again with others' measurements hidden 5.4 → 3.4 ms (shown: 5.6 ms, the
+same); the overlay for the three views each frame 233 → about 2 µs (made
+when the kept ones change, shared); drawn from 2 km 1 000 → 600 shapes
+(no label beyond the label distance), from 300 m 1 000 → 668 shapes (the
+overlapping labels and those off the view left out; 190 → 270 µs in the
+debug build, the placement). A cursor standing still with Follow and snap
+(frames asked for by something else): 108 → 1.6 µs a frame (debug,
+synthetic span; the measurement found for that point taken again).
+
 **Follow and snap**: `OHL_BENCH_FILE=… cargo test --release -p ohl-app
 follow_benchmark -- --ignored --nocapture` follows a span in the middle of
 the line (the default classes and radius): on a real line the span's

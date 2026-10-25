@@ -310,6 +310,10 @@ impl Cloud {
 /// the case (their change reads again).
 type Key = (Subject, BTreeSet<u8>, u64, u64, usize);
 
+/// What a measurement under the cursor was found for: the point under
+/// the cursor, the points read and whether the case was solved.
+type Found = (Use, Key, bool);
+
 /// The tool's state.
 #[derive(Default)]
 pub struct Follow {
@@ -334,6 +338,12 @@ pub struct Follow {
     pub closed: bool,
     /// The point under the cursor last measured from.
     last_hover: Option<Use>,
+    /// The last measurement under the cursor (the live one and what the
+    /// tool said) and what it was found for: the point under the cursor,
+    /// the points read (the object, classes, radius, line version, case)
+    /// and whether the case was solved. Taken again while they stay the
+    /// same (frames asked for by something else: points streaming).
+    measured: Option<(Found, Option<Measurement>, String)>,
 }
 
 impl std::fmt::Debug for Follow {
@@ -502,10 +512,39 @@ impl Follow {
             self.status = format!("{}: move the cursor along it", subject.name());
             return;
         };
+        let ready = model.cases.get(case).is_some_and(|c| c.ready);
+        let Some((read, _)) = &self.cloud else {
+            return;
+        };
+        let key: Found = (u.clone(), read.clone(), ready);
+        if let Some((k, live, status)) = &self.measured
+            && *k == key
+        {
+            self.live = live.clone();
+            self.status = status.clone();
+            return;
+        }
+        self.under(model, case, lines_of, case_name, &cloud, &subject, u);
+        self.measured = Some((key, self.live.clone(), self.status.clone()));
+    }
+
+    /// The measurement from the object's point at `u` (the point under
+    /// the cursor).
+    #[allow(clippy::too_many_arguments)]
+    fn under(
+        &mut self,
+        model: &Model,
+        case: usize,
+        lines_of: &Centrelines,
+        case_name: &str,
+        cloud: &Cloud,
+        subject: &Subject,
+        u: &Use,
+    ) {
         let lines = subject.lines(model, case);
         // On the object itself: the point of it clicked; elsewhere the
         // object's point nearest (in plan) to the point under the cursor.
-        let on_it = Subject::of(&u.target).as_ref() == Some(&subject);
+        let on_it = Subject::of(&u.target).as_ref() == Some(subject);
         let (k, p) = match (on_it, u.on, u.at) {
             (true, Some(on), _) => match nearest_on(&lines, on, false) {
                 Some(x) => x,
@@ -518,7 +557,7 @@ impl Follow {
             _ => return,
         };
         self.measure_from(
-            model, case, lines_of, case_name, &cloud, &subject, &lines, k, p,
+            model, case, lines_of, case_name, cloud, subject, &lines, k, p,
         );
     }
 
@@ -747,6 +786,49 @@ mod tests {
                 assert_eq!(got.map(|g| g.1), brute.map(|b| b.1), "{p:?} {r}");
             }
         }
+    }
+
+    /// The point under the cursor unchanged (a frame asked for by
+    /// something else): the measurement found for it is taken again, the
+    /// same as measured.
+    #[test]
+    fn the_same_point_is_taken_again() {
+        let m = crate::tests::synthetic();
+        let ctx = egui::Context::default();
+        let section = m.line.sections[0].id.clone();
+        let points = m.shape(&section, 0).unwrap().spans[0].points.clone();
+        let mid = crate::measure::point_along(&points, 0.5).unwrap();
+        let subject = Subject::Span {
+            section: section.clone(),
+            span: 0,
+        };
+        let mut f = Follow {
+            subject: Some(subject.clone()),
+            ..Follow::default()
+        };
+        let key: Key = (
+            subject,
+            f.classes(&m),
+            f.radius().to_bits(),
+            m.line_version,
+            0,
+        );
+        let cloud = Cloud::new(vec![([mid[0], mid[1], mid[2] - 10.0], 2)], 2.0);
+        f.cloud = Some((key, Ok(Arc::new(cloud))));
+        let lines = Centrelines::of(&m);
+        let u = Use {
+            target: Selection::Span { section, span: 0 },
+            at: None,
+            on: Some(mid),
+        };
+        f.hover(&m, 0, &lines, "c", Some(&u), &ctx);
+        let first = f.live.as_ref().expect("a point within reach").label();
+        assert!(f.measured.is_some());
+        // Taken away meanwhile (N found another, unpinned): the same
+        // point gives its measurement back.
+        f.live = None;
+        f.hover(&m, 0, &lines, "c", Some(&u), &ctx);
+        assert_eq!(f.live.as_ref().map(Measurement::label), Some(first));
     }
 
     /// The object's point nearest to a point, in plan and in 3D.
