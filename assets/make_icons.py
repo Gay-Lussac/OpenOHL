@@ -47,6 +47,7 @@ tools.update({
  'symmetry': ('<path d="M12 2.5v19" stroke-dasharray="2 2.2"/><path d="M9 6 4 18h5zM15 6l5 12h-5z"/>', 'Symmetry'),
  'measure-distance': ('<path d="M4 7v10M20 7v10M4 12h16"/><path d="M7.5 9.5 4 12l3.5 2.5M16.5 9.5 20 12l-3.5 2.5"/>', 'Distance'),
  'measure-height': ('<path d="M3 20h18"/><path d="M5 23l2.5-3M10 23l2.5-3M15 23l2.5-3" stroke-width="1.4"/><circle cx="12" cy="4" r="1.8" fill="currentColor"/><path d="M12 6.5v12M9.5 9 12 6.5 14.5 9M9.5 16 12 18.5 14.5 16"/>', 'Height above ground'),
+ 'note': ('<path d="M4 4h16v11h-9l-5 4.5V15H4z"/><path d="M8 8.5h8M8 11.5h5"/>', 'Note'),
  'measure-stations': ('<path d="M3 17h18M5 14v6M12 15v4M19 14v6"/><path d="M5 8h14M7.5 5.5 5 8l2.5 2.5M16.5 5.5 19 8l-2.5 2.5"/>', 'Stations'),
  'support': ('<path d="M12 4v8"/><path d="M12 12 7 19h10z"/><path d="M5 21.5h14M6.5 21.5l-1.5 1.5M10 21.5l-1.5 1.5M13.5 21.5 12 23M17 21.5 15.5 23" stroke-width="1.4"/>', 'Support'),
 })

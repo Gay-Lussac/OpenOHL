@@ -569,7 +569,37 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
             }
         }
     }
-    r.measuring.window(ctx, r.view3d.controls.tools_on_left);
+    r.measuring.refresh_kept(&r.model, r.case);
+    let user = r.model.user_name();
+    // The time a kept one is stamped with (asked only while it can be
+    // kept).
+    let time = if r.measuring.open || r.measuring.note.is_some() {
+        r.model
+            .session()
+            .and_then(|s| s.now().ok())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let before = r.model.section_display.clone();
+    r.measuring.window(
+        ctx,
+        r.view3d.controls.tools_on_left,
+        &mut r.model.section_display,
+        &user,
+        &|| time.clone(),
+    );
+    if r.model.section_display != before {
+        r.refresh_views();
+    }
+    // Kept and deleted: one command each (undo as any edit).
+    let actions = std::mem::take(&mut r.measuring.actions);
+    if !actions.is_empty() {
+        for (what, command) in actions {
+            r.perform(crate::edit::Action::Command { what, command });
+        }
+        r.measuring.refresh_kept(&r.model, r.case);
+    }
 }
 
 pub(super) fn tool_windows(

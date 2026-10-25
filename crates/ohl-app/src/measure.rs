@@ -23,6 +23,7 @@ use eframe::egui;
 
 use crate::model::Model;
 use crate::selection::{Selection, Use};
+use ohl_session::annotations::Anchor;
 
 /// A measuring tool's kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,22 @@ impl Kind {
             Kind::Height => 1,
             Kind::Distance | Kind::Stations => 2,
         }
+    }
+
+    /// Its key in a kept annotation (`tool`).
+    pub fn key(self) -> &'static str {
+        match self {
+            Kind::Distance => "distance",
+            Kind::Height => "height",
+            Kind::Stations => "stations",
+        }
+    }
+
+    /// From its key.
+    pub fn of_key(key: &str) -> Option<Kind> {
+        [Kind::Distance, Kind::Height, Kind::Stations]
+            .into_iter()
+            .find(|k| k.key() == key)
     }
 
     /// Its name.
@@ -74,6 +91,8 @@ pub struct Pick {
     pub what: String,
     /// On a wire: its subconductors and radius.
     pub wire: Option<OnWire>,
+    /// What it is attached to (kept with a measurement).
+    pub anchor: Anchor,
 }
 
 /// One line of a result: its name, value and unit (empty: a text).
@@ -147,10 +166,112 @@ pub fn fmt(v: f64, unit: &str) -> String {
     }
 }
 
-/// The point clicked as a pick, in weather case `case` of `model`: on a
-/// span or jumper the point of its wire clicked; an object its point
-/// (a structure: its base); else the ground under the cursor.
+/// The point clicked as a pick, in weather case `case` of `model`: what
+/// it is attached to ([`anchor_of`]), then its point from that
+/// ([`pick_of`]) — the same way a kept measurement is computed again.
 pub fn resolve(model: &Model, case: usize, u: &Use) -> Option<Pick> {
+    pick_of(model, case, &anchor_of(model, case, u)?)
+}
+
+/// What a click is attached to: on a span or a jumper the point of its
+/// wire clicked (by its share of the wire's length); an object by id; a
+/// LiDAR point by its coordinates and class; else the point under the
+/// cursor (the ground; in the profile, the point of its plane).
+pub fn anchor_of(model: &Model, case: usize, u: &Use) -> Option<Anchor> {
+    Some(match (&u.target, u.on) {
+        (Selection::Span { section, span }, Some(on)) => {
+            let points = &model.shape(section, case)?.spans.get(*span)?.points;
+            Anchor::Wire {
+                section: section.clone(),
+                span: *span,
+                fraction: fraction_along(points, on),
+            }
+        }
+        (Selection::Jumper(id), Some(on)) => Anchor::Jumper {
+            jumper: id.clone(),
+            fraction: fraction_along(&model.jumper_shape(id, case)?.points, on),
+        },
+        (Selection::Structure(id), _) => Anchor::Structure {
+            structure: id.clone(),
+        },
+        (Selection::Attachment { structure, set }, _) => Anchor::Attachment {
+            structure: structure.clone(),
+            set: *set,
+        },
+        (Selection::SpanPoint { section, label }, _) => Anchor::SpanPoint {
+            section: section.clone(),
+            label: label.clone(),
+        },
+        (Selection::AlignmentPoint { id }, _) => Anchor::AlignmentPoint { id: id.clone() },
+        (Selection::LidarPoint((_, class)), _) => Anchor::Lidar {
+            at: u.target.focus(model, case)?,
+            class: *class,
+        },
+        (Selection::None, _) => Anchor::Point {
+            at: u.at?,
+            what: String::new(),
+        },
+        (t, _) => Anchor::Point {
+            at: t.focus(model, case)?,
+            what: match t {
+                Selection::SurveyPoint(k) => format!("survey point {}", k + 1),
+                other => other.describe(),
+            },
+        },
+    })
+}
+
+/// The share of `points`' length (a polyline) from its start to the
+/// point of it nearest to `p`, 0 to 1.
+pub fn fraction_along(points: &[[f64; 3]], p: [f64; 3]) -> f64 {
+    let d = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    let total: f64 = points.windows(2).map(|w| d(w[0], w[1])).sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let (mut best, mut at, mut start) = (f64::INFINITY, 0.0, 0.0);
+    for w in points.windows(2) {
+        let l = d(w[0], w[1]);
+        let u = if l > 0.0 {
+            ((0..3)
+                .map(|k| (p[k] - w[0][k]) * (w[1][k] - w[0][k]))
+                .sum::<f64>()
+                / (l * l))
+                .clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let q = [0, 1, 2].map(|k| w[0][k] + u * (w[1][k] - w[0][k]));
+        let e = d(q, p);
+        if e < best {
+            best = e;
+            at = start + u * l;
+        }
+        start += l;
+    }
+    (at / total).clamp(0.0, 1.0)
+}
+
+/// The point at share `f` of `points`' length.
+pub fn point_along(points: &[[f64; 3]], f: f64) -> Option<[f64; 3]> {
+    let d = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    let total: f64 = points.windows(2).map(|w| d(w[0], w[1])).sum();
+    let mut left = f.clamp(0.0, 1.0) * total;
+    for w in points.windows(2) {
+        let l = d(w[0], w[1]);
+        if left <= l && l > 0.0 {
+            let u = left / l;
+            return Some([0, 1, 2].map(|k| w[0][k] + u * (w[1][k] - w[0][k])));
+        }
+        left -= l;
+    }
+    points.last().copied()
+}
+
+/// The point `anchor` is at in weather case `case` (a wire: with its
+/// subconductors and radius, for its surface); none when its object is
+/// not there (deleted, not solved in that case).
+pub fn pick_of(model: &Model, case: usize, anchor: &Anchor) -> Option<Pick> {
     let wire = |section: &str, points: &[[f64; 3]], at: [f64; 3]| {
         let sec = model.line.sections.iter().find(|s| s.id == section)?;
         let mut axes = crate::scene::subconductors_at(sec, points, at);
@@ -163,17 +284,29 @@ pub fn resolve(model: &Model, case: usize, u: &Use) -> Option<Pick> {
             .map_or(0.0, |c| 0.5 * c.diameter.si());
         Some(OnWire { axes, radius })
     };
-    match (&u.target, u.on) {
-        (Selection::Span { section, span }, Some(on)) => {
+    let plain = |at: [f64; 3], what: String| Pick {
+        at,
+        what,
+        wire: None,
+        anchor: anchor.clone(),
+    };
+    Some(match anchor {
+        Anchor::Wire {
+            section,
+            span,
+            fraction,
+        } => {
             let points = &model.shape(section, case)?.spans.get(*span)?.points;
-            Some(Pick {
-                at: on,
+            let at = point_along(points, *fraction)?;
+            Pick {
+                at,
                 what: format!("wire {section} span {}", span + 1),
-                wire: wire(section, points, on),
-            })
+                wire: wire(section, points, at),
+                anchor: anchor.clone(),
+            }
         }
-        (Selection::Jumper(id), Some(on)) => {
-            let j = model.line.jumpers.iter().find(|j| &j.id == id)?;
+        Anchor::Jumper { jumper, fraction } => {
+            let j = model.line.jumpers.iter().find(|j| &j.id == jumper)?;
             let section = model
                 .line
                 .sections
@@ -183,44 +316,48 @@ pub fn resolve(model: &Model, case: usize, u: &Use) -> Option<Pick> {
                     _ => false,
                 })
                 .map(|s| s.id.clone());
-            let points = &model.jumper_shape(id, case)?.points;
-            Some(Pick {
-                at: on,
-                what: format!("jumper {id}"),
-                wire: section.and_then(|s| wire(&s, points, on)),
-            })
-        }
-        (Selection::Structure(id), _) => {
-            let s = model.line.structure(id)?;
-            Some(Pick {
-                at: s.position,
-                what: format!("structure {id} (base)"),
-                wire: None,
-            })
-        }
-        (Selection::None, _) => u.at.map(|at| Pick {
-            at,
-            what: "ground".into(),
-            wire: None,
-        }),
-        (t, _) => {
-            let at = t.focus(model, case)?;
-            let what = match t {
-                Selection::Attachment { structure, set } => {
-                    format!("wire point {structure} set {set} (as placed)")
-                }
-                Selection::LidarPoint((_, class)) => format!("LiDAR point (class {class})"),
-                Selection::SurveyPoint(k) => format!("survey point {}", k + 1),
-                Selection::AlignmentPoint { id } => format!("alignment point {id}"),
-                other => other.describe(),
-            };
-            Some(Pick {
+            let points = &model.jumper_shape(jumper, case)?.points;
+            let at = point_along(points, *fraction)?;
+            Pick {
                 at,
-                what,
-                wire: None,
-            })
+                what: format!("jumper {jumper}"),
+                wire: section.and_then(|s| wire(&s, points, at)),
+                anchor: anchor.clone(),
+            }
         }
-    }
+        Anchor::Structure { structure } => plain(
+            model.line.structure(structure)?.position,
+            format!("structure {structure} (base)"),
+        ),
+        Anchor::Attachment { structure, set } => plain(
+            model
+                .line
+                .wire_point(&ohl_line::SectionPoint::new(structure.clone(), *set))?
+                .position,
+            format!("wire point {structure} set {set} (as placed)"),
+        ),
+        Anchor::SpanPoint { section, label } => plain(
+            Selection::SpanPoint {
+                section: section.clone(),
+                label: label.clone(),
+            }
+            .focus(model, case)?,
+            format!("span point {label} of {section}"),
+        ),
+        Anchor::AlignmentPoint { id } => plain(
+            crate::selection::alignment_point(model, id)?,
+            format!("alignment point {id}"),
+        ),
+        Anchor::Lidar { at, class } => plain(*at, format!("LiDAR point (class {class})")),
+        Anchor::Point { at, what } => plain(
+            *at,
+            if what.is_empty() {
+                "point".to_owned()
+            } else {
+                what.clone()
+            },
+        ),
+    })
 }
 
 /// The point of `p` measured towards `to`: on a wire the surface of the
@@ -459,6 +596,50 @@ pub struct Measuring {
     pub open: bool,
     /// The line's alignments, for the stations.
     pub lines: Centrelines,
+    /// The annotations kept in the project, with what each gives now.
+    pub kept: Vec<Kept>,
+    /// What `kept` was computed from: the annotations' stamp, the line
+    /// version, the case and whether it was solved.
+    kept_key: Option<(u64, u64, usize, bool)>,
+    /// A note being written (the Note tool clicked an object).
+    pub note: Option<NoteDraft>,
+    /// Commands to perform (keep, delete), taken by the app each frame.
+    pub actions: Vec<(String, ohl_session::Command)>,
+}
+
+/// An annotation kept in the project and what it gives now.
+#[derive(Debug, Clone)]
+pub struct Kept {
+    /// As kept.
+    pub ann: ohl_session::annotations::Annotation,
+    /// A dimension computed again (or why it cannot be: its object not
+    /// drawn in the case shown).
+    pub now: Result<Measurement, String>,
+    /// A note's point.
+    pub at: Option<[f64; 3]>,
+    /// Made by the user (else by another: hidden on a tick).
+    pub mine: bool,
+}
+
+/// A note being written.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoteDraft {
+    /// What it is attached to.
+    pub anchor: Anchor,
+    /// What that is.
+    pub what: String,
+    /// Its text so far.
+    pub text: String,
+}
+
+/// Others' kept measurements and notes shown (the Display options' ticks,
+/// [`crate::annotations::SectionDisplay`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Others {
+    /// Others' measurements.
+    pub measurements: bool,
+    /// Others' notes.
+    pub notes: bool,
 }
 
 impl Measuring {
@@ -509,12 +690,37 @@ impl Measuring {
 
     /// What the views draw on top: lines with their labels, and points
     /// (the picks so far and the point under the cursor).
-    pub fn overlay(&self) -> Overlay {
+    pub fn overlay(&self, others: Others) -> Overlay {
         let mut lines = Vec::new();
         if let Some(m) = self.live.as_ref().or(self.done.last())
             && let Some((a, b)) = m.line
         {
             lines.push((a, b, m.label()));
+        }
+        let mut kept = Vec::new();
+        let mut notes = Vec::new();
+        for k in &self.kept {
+            let by = if k.mine {
+                String::new()
+            } else {
+                format!(" ({})", k.ann.author)
+            };
+            match (&k.now, k.at) {
+                (Ok(m), _) if k.mine || others.measurements => {
+                    if let Some((a, b)) = m.line {
+                        let text = if k.ann.text.is_empty() {
+                            m.label()
+                        } else {
+                            format!("{} {}", k.ann.text, m.label())
+                        };
+                        kept.push((a, b, format!("{text}{by}")));
+                    }
+                }
+                (_, Some(at)) if k.mine || others.notes => {
+                    notes.push((at, format!("{}{by}", k.ann.text)));
+                }
+                _ => {}
+            }
         }
         let mut points: Vec<[f64; 3]> = self.picks.iter().map(|p| p.at).collect();
         if let Some(h) = &self.hover {
@@ -524,7 +730,120 @@ impl Measuring {
             lines,
             points,
             hover: self.hover.as_ref().map(|h| (h.at, h.what.clone())),
+            kept,
+            notes,
         }
+    }
+
+    /// The kept annotations computed again when they, the line, the case
+    /// shown or its solution changed.
+    pub fn refresh_kept(&mut self, model: &Model, case: usize) {
+        let Some(session) = model.session() else {
+            self.kept.clear();
+            return;
+        };
+        let ready = model.cases.get(case).is_some_and(|c| c.ready);
+        let key = (session.annotations_stamp(), model.line_version, case, ready);
+        if self.kept_key == Some(key) {
+            return;
+        }
+        self.kept_key = Some(key);
+        self.lines.update(model);
+        let user = model.user_name();
+        let case_name = model
+            .cases
+            .get(case)
+            .map_or(String::new(), |c| c.case.name.clone());
+        self.kept = session
+            .annotations()
+            .into_iter()
+            .map(|ann| {
+                let picks: Option<Vec<Pick>> = ann
+                    .anchors
+                    .iter()
+                    .map(|a| pick_of(model, case, a))
+                    .collect();
+                let (now, at) = match (Kind::of_key(&ann.tool), picks) {
+                    (Some(kind), Some(p)) if p.len() == kind.picks() => {
+                        (Ok(measure(model, &self.lines, kind, &p, &case_name)), None)
+                    }
+                    (None, Some(p)) => (Err(String::new()), p.first().map(|x| x.at)),
+                    _ => (Err(format!("not drawn in weather case {case_name}")), None),
+                };
+                Kept {
+                    mine: ann.author == user,
+                    ann,
+                    now,
+                    at,
+                }
+            })
+            .collect();
+    }
+
+    /// Measurement `k` of the panel kept in the project (a command to
+    /// perform), by `user` at `time`.
+    pub fn keep(&mut self, k: usize, user: &str, time: String) {
+        let Some(m) = self.done.get(k) else {
+            return;
+        };
+        let id = self.next_id(user);
+        let ann = ohl_session::annotations::Annotation {
+            id: id.clone(),
+            kind: ohl_session::annotations::AnnotationKind::Dimension,
+            tool: m.kind.key().to_owned(),
+            anchors: m.picks.iter().map(|p| p.anchor.clone()).collect(),
+            text: String::new(),
+            author: user.to_owned(),
+            time,
+            last: m.rows.first().map(|r| ohl_session::annotations::LastValue {
+                value: r.value,
+                unit: r.unit.to_owned(),
+                case: m.case.clone(),
+            }),
+        };
+        self.actions.push((
+            format!("kept {} {}", m.kind.name().to_lowercase(), m.label()),
+            ann.put(),
+        ));
+        self.done.remove(k);
+    }
+
+    /// The note written kept (a command to perform).
+    pub fn keep_note(&mut self, user: &str, time: String) {
+        let Some(n) = self.note.take() else {
+            return;
+        };
+        if n.text.trim().is_empty() {
+            return;
+        }
+        let ann = ohl_session::annotations::Annotation {
+            id: self.next_id(user),
+            kind: ohl_session::annotations::AnnotationKind::Note,
+            tool: String::new(),
+            anchors: vec![n.anchor],
+            text: n.text.trim().to_owned(),
+            author: user.to_owned(),
+            time,
+            last: None,
+        };
+        self.actions
+            .push((format!("note on {}", n.what), ann.put()));
+    }
+
+    /// A free id for `user`'s next annotation: `user-n`.
+    fn next_id(&self, user: &str) -> String {
+        let prefix = format!("{user}-");
+        let taken = self
+            .kept
+            .iter()
+            .filter_map(|k| k.ann.id.strip_prefix(&prefix)?.parse::<u64>().ok())
+            .chain(self.actions.iter().filter_map(|(_, c)| match c {
+                ohl_session::Command::Put { id, .. } => id.strip_prefix(&prefix)?.parse().ok(),
+                _ => None,
+            }))
+            .max()
+            .unwrap_or(0);
+        format!("{prefix}{}", taken + 1)
     }
 
     /// The status bar's readout while a measuring tool is held: the
@@ -554,12 +873,22 @@ impl Measuring {
 
     /// The Measurements panel: the measurements made, newest first, each
     /// with its rows; copy, CSV, delete, clear.
-    pub fn window(&mut self, ctx: &egui::Context, tools_on_left: bool) {
+    pub fn window(
+        &mut self,
+        ctx: &egui::Context,
+        tools_on_left: bool,
+        display: &mut crate::annotations::SectionDisplay,
+        user: &str,
+        now: &dyn Fn() -> String,
+    ) {
+        self.note_window(ctx, user, now);
         if !self.open {
             return;
         }
         let mut open = true;
         let mut delete = None;
+        let mut keep = None;
+        let mut unkeep = None;
         egui::Window::new("Measurements")
             .open(&mut open)
             .default_width(380.0)
@@ -584,10 +913,66 @@ impl Measuring {
                         self.done.clear();
                     }
                 });
+                others_ticks(ui, display);
                 ui.separator();
                 egui::ScrollArea::vertical()
                     .max_height(420.0)
                     .show(ui, |ui| {
+                        // Kept in the project: every user's (others' on
+                        // their ticks), each computed again in the case
+                        // shown.
+                        let shown: Vec<&Kept> = self
+                            .kept
+                            .iter()
+                            .filter(|k| {
+                                k.mine
+                                    || if k.ann.tool.is_empty() {
+                                        !display.hide_others_notes
+                                    } else {
+                                        !display.hide_others_measurements
+                                    }
+                            })
+                            .collect();
+                        if !shown.is_empty() {
+                            ui.label(egui::RichText::new("Kept in the project").strong());
+                            for k in shown {
+                                ui.horizontal(|ui| {
+                                    let value = match &k.now {
+                                        Ok(m) => m.label(),
+                                        Err(e) if e.is_empty() => k.ann.text.clone(),
+                                        Err(e) => match &k.ann.last {
+                                            Some(l) => format!(
+                                                "{} {} (last, {}; {e})",
+                                                fmt(l.value, &l.unit),
+                                                l.unit,
+                                                l.case
+                                            ),
+                                            None => e.clone(),
+                                        },
+                                    };
+                                    ui.label(egui::RichText::new(value).strong());
+                                    let what = Kind::of_key(&k.ann.tool).map_or("Note", Kind::name);
+                                    ui.label(
+                                        egui::RichText::new(format!("{what} — {}", k.ann.author))
+                                            .small()
+                                            .weak(),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .small_button("Delete")
+                                                .on_hover_text("Delete it from the project (undo brings it back)")
+                                                .clicked()
+                                            {
+                                                unkeep = Some(k.ann.id.clone());
+                                            }
+                                        },
+                                    );
+                                });
+                            }
+                            ui.separator();
+                        }
                         if self.done.is_empty() {
                             ui.label(egui::RichText::new("No measurement yet.").weak());
                         }
@@ -604,6 +989,17 @@ impl Measuring {
                                             }
                                             if ui.small_button("Copy").clicked() {
                                                 ui.ctx().copy_text(m.text());
+                                            }
+                                            if ui
+                                                .small_button("Keep")
+                                                .on_hover_text(
+                                                    "Keep it in the project: shared, computed \
+                                                     again when the line changes, deleted with \
+                                                     what it is attached to",
+                                                )
+                                                .clicked()
+                                            {
+                                                keep = Some(k);
                                             }
                                         },
                                     );
@@ -648,7 +1044,54 @@ impl Measuring {
         if let Some(k) = delete {
             self.done.remove(k);
         }
+        if let Some(k) = keep {
+            self.keep(k, user, now());
+        }
+        if let Some(id) = unkeep {
+            self.actions.push((
+                format!("deleted annotation {id}"),
+                ohl_session::annotations::delete(&id),
+            ));
+        }
         self.open = open;
+    }
+
+    /// The window of a note being written: its text, Keep (Enter) or
+    /// Cancel (Escape).
+    fn note_window(&mut self, ctx: &egui::Context, user: &str, now: &dyn Fn() -> String) {
+        let Some(n) = &mut self.note else {
+            return;
+        };
+        let (mut keep, mut cancel) = (false, false);
+        egui::Window::new("Note")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!("On {}", n.what));
+                let r = ui.text_edit_singleline(&mut n.text);
+                r.request_focus();
+                keep |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
+                ui.horizontal(|ui| {
+                    keep |= ui
+                        .add_enabled(!n.text.trim().is_empty(), egui::Button::new("Keep"))
+                        .clicked();
+                    cancel |= ui.button("Cancel").clicked();
+                });
+                ui.label(
+                    egui::RichText::new(
+                        "Kept in the project, shared; deleted with what it is attached to.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+        if keep {
+            self.keep_note(user, now());
+            self.open = true;
+        } else if cancel {
+            self.note = None;
+        }
     }
 }
 
@@ -661,7 +1104,14 @@ pub struct Overlay {
     pub points: Vec<[f64; 3]>,
     /// The point under the cursor and what it is.
     pub hover: Option<([f64; 3], String)>,
+    /// The kept measurements' lines and labels.
+    pub kept: Vec<([f64; 3], [f64; 3], String)>,
+    /// The kept notes: their point and text.
+    pub notes: Vec<([f64; 3], String)>,
 }
+
+/// The kept measurements' and notes' colour.
+const KEPT: egui::Color32 = egui::Color32::from_rgb(255, 190, 90);
 
 /// The overlay's colour (apart from the checks' yellow).
 const COLOUR: egui::Color32 = egui::Color32::from_rgb(90, 230, 255);
@@ -669,11 +1119,38 @@ const COLOUR: egui::Color32 = egui::Color32::from_rgb(90, 230, 255);
 impl Overlay {
     /// Whether there is nothing to draw.
     pub fn is_empty(&self) -> bool {
-        self.lines.is_empty() && self.points.is_empty()
+        self.lines.is_empty()
+            && self.points.is_empty()
+            && self.kept.is_empty()
+            && self.notes.is_empty()
     }
 
     /// Draws it with `painter`, points to the screen by `screen`.
     pub fn paint(&self, painter: &egui::Painter, screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>) {
+        // The kept ones under what is being measured.
+        for (a, b, label) in &self.kept {
+            let (Some(p), Some(q)) = (screen(*a), screen(*b)) else {
+                continue;
+            };
+            for (w, c) in [(3.5, egui::Color32::from_black_alpha(160)), (1.5, KEPT)] {
+                painter.line_segment([p, q], egui::Stroke::new(w, c));
+            }
+            for x in [p, q] {
+                painter.circle_filled(x, 2.5, KEPT);
+            }
+            let mid = p + (q - p) * 0.5;
+            label_at(painter, mid + egui::vec2(8.0, -8.0), label, KEPT);
+        }
+        // A note: a short leader up to its text.
+        for (at, text) in &self.notes {
+            let Some(p) = screen(*at) else {
+                continue;
+            };
+            let to = p + egui::vec2(18.0, -22.0);
+            painter.line_segment([p, to], egui::Stroke::new(1.5, KEPT));
+            painter.circle_filled(p, 3.0, KEPT);
+            label_at(painter, to + egui::vec2(2.0, 4.0), text, KEPT);
+        }
         for (a, b, label) in &self.lines {
             let (Some(p), Some(q)) = (screen(*a), screen(*b)) else {
                 continue;
@@ -702,6 +1179,29 @@ impl Overlay {
     }
 }
 
+/// The ticks hiding others' kept measurements and notes (the user's view
+/// preference).
+pub fn others_ticks(ui: &mut egui::Ui, display: &mut crate::annotations::SectionDisplay) {
+    let mut m = !display.hide_others_measurements;
+    let mut n = !display.hide_others_notes;
+    ui.horizontal(|ui| {
+        if ui
+            .checkbox(&mut m, "Others' measurements")
+            .on_hover_text("Measurements other users kept in the project")
+            .changed()
+        {
+            display.hide_others_measurements = !m;
+        }
+        if ui
+            .checkbox(&mut n, "Others' notes")
+            .on_hover_text("Notes other users kept in the project")
+            .changed()
+        {
+            display.hide_others_notes = !n;
+        }
+    });
+}
+
 fn label_at(painter: &egui::Painter, at: egui::Pos2, text: &str, colour: egui::Color32) {
     let galley = painter.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), colour);
     let at = egui::pos2(at.x, at.y - galley.size().y);
@@ -717,11 +1217,19 @@ fn label_at(painter: &egui::Painter, at: egui::Pos2, text: &str, colour: egui::C
 mod tests {
     use super::*;
 
+    fn free(at: [f64; 3]) -> Anchor {
+        Anchor::Point {
+            at,
+            what: String::new(),
+        }
+    }
+
     fn point(at: [f64; 3]) -> Pick {
         Pick {
             at,
             what: "p".into(),
             wire: None,
+            anchor: free(at),
         }
     }
 
@@ -769,6 +1277,7 @@ mod tests {
                 axes,
                 radius: 0.015,
             }),
+            anchor: free([0.0, 0.0, 10.0]),
         };
         let r = measure(
             &m,
@@ -827,6 +1336,7 @@ mod tests {
                 ],
                 radius: 0.01,
             }),
+            anchor: free(s.position),
         };
         let r = measure(&m, &Centrelines::of(&m), Kind::Height, &[w], "c");
         assert!(
@@ -950,5 +1460,103 @@ mod app_tests {
         h.key_press(egui::Key::Escape);
         h.run();
         assert!(h.state_mut().ready().unwrap().measuring.picks.is_empty());
+    }
+}
+
+/// Phase 2 in the app: a distance kept goes into the project (computed
+/// again from its anchors), a note is written with the Note tool, and
+/// deleting the structure a measurement is attached to deletes it in the
+/// same command — undo brings both back; others' are hidden on a tick.
+#[cfg(test)]
+mod keep_tests {
+    use eframe::egui;
+    use egui_kittest::Harness;
+
+    use crate::selection::{Selection, Use};
+    use crate::tools::Tool;
+
+    #[test]
+    fn kept_measurements_and_notes() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1400.0, 900.0))
+            .build_eframe(|_| {
+                crate::app::App::with_model(crate::tests::synthetic_project("keep"), None)
+            });
+        h.run();
+        let (t1, t2, mid) = {
+            let r = h.state_mut().ready().unwrap();
+            let s = &r.model.line.sections[0];
+            let mid = r.model.shape(&s.id, r.case).unwrap().spans[0].mid_point;
+            let st = &r.model.line.structures;
+            (st[0].id.clone(), st[st.len() - 1].id.clone(), mid)
+        };
+        let structure = |id: &str| Use {
+            target: Selection::Structure(id.to_owned()),
+            at: None,
+            on: None,
+        };
+        let click = |h: &mut Harness<'_, crate::app::App>, tool: Tool, u: Use| {
+            let r = h.state_mut().ready().unwrap();
+            r.hotbar.hold(tool);
+            r.use_tool(u);
+            h.run();
+        };
+        click(&mut h, Tool::MeasureDistance, structure(&t1));
+        click(
+            &mut h,
+            Tool::MeasureDistance,
+            Use {
+                target: Selection::None,
+                at: Some(mid),
+                on: None,
+            },
+        );
+        {
+            let r = h.state_mut().ready().unwrap();
+            let user = r.model.user_name();
+            r.measuring.keep(0, &user, String::new());
+        }
+        h.run();
+        click(&mut h, Tool::Note, structure(&t2));
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.measuring.note.as_mut().unwrap().text = "access road".into();
+            let user = r.model.user_name();
+            r.measuring.keep_note(&user, String::new());
+        }
+        h.run();
+        let kept = |h: &mut Harness<'_, crate::app::App>| {
+            let r = h.state_mut().ready().unwrap();
+            r.model.session().unwrap().annotations().len()
+        };
+        assert_eq!(kept(&mut h), 2);
+        {
+            let r = h.state_mut().ready().unwrap();
+            assert!(r.measuring.kept.iter().all(|k| k.mine));
+            let m = r.measuring.kept[0].now.as_ref().unwrap();
+            assert!(m.rows[0].value > 0.0);
+            // Others' hidden: one's own still drawn.
+            let o = r.measuring.overlay(super::Others {
+                measurements: false,
+                notes: false,
+            });
+            assert_eq!((o.kept.len(), o.notes.len()), (1, 1));
+        }
+        // T1 deleted: its measurement goes with it, the note stays.
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.perform(crate::edit::Action::Command {
+                what: "delete".into(),
+                command: ohl_session::Command::DeleteStructure {
+                    id: t1.clone(),
+                    confirm: true,
+                },
+            });
+        }
+        h.run();
+        assert_eq!(kept(&mut h), 1);
+        h.state_mut().ready().unwrap().model.undo().unwrap();
+        h.run();
+        assert_eq!(kept(&mut h), 2);
     }
 }

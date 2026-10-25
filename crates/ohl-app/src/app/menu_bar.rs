@@ -722,6 +722,14 @@ pub(super) fn menus(
             r.measuring.open = true;
             ui.close();
         }
+        crate::menu::options_menu(ui, "Display options", |ui| {
+            ui.label(
+                egui::RichText::new("Kept measurements and notes (yours only)")
+                    .small()
+                    .weak(),
+            );
+            crate::measure::others_ticks(ui, &mut r.model.section_display);
+        });
     });
     crate::menu::options_menu(ui, "Versions", |ui| {
         crate::project_lines::menu(ui, r);

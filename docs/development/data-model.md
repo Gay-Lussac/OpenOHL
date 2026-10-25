@@ -1963,8 +1963,8 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 
 - `model_object`: `line` the project line (= `vc_ref.name` of a branch);
   `kind` one of `meta`, `route`, `alignment`, `alignment_point`,
-  `structure`, `section`, `jumper`, `spacer`, `report`, `library`
-  (`ohl_session::Kind`; `point_cloud` is a kind of the log only, it has
+  `structure`, `section`, `jumper`, `spacer`, `report`, `library`,
+  `annotation` (`ohl_session::Kind`; `point_cloud` is a kind of the log only, it has
   no row); `id` the object's id (`line` for the line's own settings row,
   `kind/name` for a library file); `ord` its place among the objects of
   its kind (the line file's order); `version` counts its changes (1 when
@@ -2196,6 +2196,32 @@ the base revision's (in `vc_blob`) with them laid over it. For those use
 the programs: `ohl project checkout` and `ohl project export` (a line's
 whole state as a line file), `ohl project history`, `diff` and `log`,
 `ohl surface export`, `ohl pointcloud info` and `export`.
+
+### Annotations (`ohl_session::annotations`, 2026-10-25)
+
+Measurements kept and notes: a `model_object` of kind `annotation` on the
+project line, **apart from the line** like a report — not in
+`ohl_line::Line`, its hash, the line file or the line state the checks
+compare (`check_state` leaves them out), kept by `replace_line`, not
+limited by restricted edit grants; **shared** (every user's, each with
+its author); put and deleted by the ordinary `put` / `delete` commands
+(logged, undoable). **Deleted with what they are attached to**: a command
+that leaves an anchor without its object (a structure, section, span,
+jumper, wire point, span point or alignment point deleted) deletes the
+annotation in the same log entry, so one undo brings both back.
+
+`Annotation`: `id` (unique on the line; the app writes `user-n`), `kind`
+(`dimension`, `leader`, `note`), `tool` (a dimension's measurement:
+`distance`, `height`, `stations`), `anchors` (a dimension: as many as its
+measurement takes; a note: one), `text`, `author`, `time` (UTC), `last`
+(`value`, `unit`, `case`: the value when kept, for a reader without the
+solved line). An `Anchor` is tagged by `on`: `structure` (`structure`:
+its base), `attachment` (`structure`, `set`), `wire` (`section`, `span`
+from 0, `fraction` of the wire's length 0–1, in the case measured),
+`jumper` (`jumper`, `fraction`), `span_point` (`section`, `label`),
+`alignment_point` (`id`), `lidar` (`at` E, N, H, `class`), `point` (`at`,
+`what`). Checked when put: it reads, the id matches, the anchors are as
+many as its kind takes, fractions within 0–1. Unknown fields refused.
 
 ### Performed checks (`ohl_session::reports`)
 

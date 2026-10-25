@@ -253,7 +253,7 @@ impl Session {
         let objects: BTreeMap<String, String> = self
             .objects
             .iter()
-            .filter(|((k, _), _)| *k != Kind::Report)
+            .filter(|((k, _), _)| !matches!(k, Kind::Report | Kind::Annotation))
             .map(|((k, id), o)| {
                 // A library file by its text (`library:kind/name`, as
                 // fingerprints were before libraries were objects).

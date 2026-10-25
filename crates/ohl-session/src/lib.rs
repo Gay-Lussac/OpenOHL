@@ -323,6 +323,9 @@ pub enum Kind {
     /// [`Command::ChangePoints`] (no object row; not part of the line, kept
     /// by the project for every line, [`points`]).
     PointCloud,
+    /// An annotation ([`annotations`]): a kept measurement, a note or a
+    /// leader; kept with the line's branch, not part of the line itself.
+    Annotation,
 }
 
 impl Kind {
@@ -340,6 +343,7 @@ impl Kind {
             Self::Spacer => "spacer",
             Self::Library => "library",
             Self::PointCloud => "point_cloud",
+            Self::Annotation => "annotation",
         }
     }
 
@@ -356,6 +360,7 @@ impl Kind {
             "spacer" => Self::Spacer,
             "library" => Self::Library,
             "point_cloud" => Self::PointCloud,
+            "annotation" => Self::Annotation,
             other => return Err(SessionError::Store(format!("unknown object kind {other}"))),
         })
     }
@@ -1161,7 +1166,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
                 .jumpers
                 .push(serde_json::from_value::<Jumper>(v).map_err(parse_err)?),
             // Kept with the line, not part of it.
-            Kind::Report | Kind::Library | Kind::PointCloud => {}
+            Kind::Report | Kind::Library | Kind::PointCloud | Kind::Annotation => {}
             Kind::Spacer => line
                 .spacers
                 .push(serde_json::from_value::<ohl_line::Spacer>(v).map_err(parse_err)?),
@@ -1189,10 +1194,12 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
 /// from the other side); none when nothing of the line changed (a report,
 /// a library file, points).
 fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<String> {
-    if changed
-        .iter()
-        .all(|(k, _)| matches!(k, Kind::Report | Kind::Library | Kind::PointCloud))
-    {
+    if changed.iter().all(|(k, _)| {
+        matches!(
+            k,
+            Kind::Report | Kind::Library | Kind::PointCloud | Kind::Annotation
+        )
+    }) {
         return Vec::new();
     }
     let [a, b] = lines;
@@ -1474,7 +1481,10 @@ impl Session {
                 // library files: kept with it, not part of the line).
                 let gone: Vec<(Kind, String)> = objects
                     .keys()
-                    .filter(|k| !keys.contains(*k) && !matches!(k.0, Kind::Report | Kind::Library))
+                    .filter(|k| {
+                        !keys.contains(*k)
+                            && !matches!(k.0, Kind::Report | Kind::Library | Kind::Annotation)
+                    })
                     .cloned()
                     .collect();
                 for (kind, id) in gone {
@@ -2532,7 +2542,7 @@ impl Session {
                     new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
                 for (k, id) in self.objects.keys() {
                     // The reports stay: they are not part of the line.
-                    if !matches!(k, Kind::Report | Kind::Library)
+                    if !matches!(k, Kind::Report | Kind::Library | Kind::Annotation)
                         && !keep.contains(&(*k, id.clone()))
                     {
                         out.push(Command::Delete {
@@ -2794,7 +2804,7 @@ impl Session {
                     .filter(|j| j != id)
                     .collect();
             }
-            Kind::Report | Kind::Spacer | Kind::Library => {
+            Kind::Report | Kind::Spacer | Kind::Library | Kind::Annotation => {
                 if !self.objects.contains_key(&(kind, id.to_owned())) {
                     return Err(refused(format!("no {} {id}", kind.as_str())));
                 }
@@ -3061,7 +3071,7 @@ impl Session {
             return Err(refused("empty command"));
         }
         // Points of the project's clouds: applied in the transaction below.
-        let (point_prims, prims): (Vec<Command>, Vec<Command>) = prims
+        let (point_prims, mut prims): (Vec<Command>, Vec<Command>) = prims
             .into_iter()
             .partition(|c| matches!(c, Command::ChangePoints { .. }));
         // Apply to a copy, collect the inverse (in reverse order).
@@ -3154,12 +3164,48 @@ impl Session {
             {
                 reports::check_value(id, &o.value)?;
             }
+            if *kind == Kind::Annotation
+                && let Some(o) = objects.get(&(*kind, id.clone()))
+            {
+                annotations::check_value(id, &o.value)?;
+            }
         }
         let line = if objects_changed {
             line_of(&objects)?
         } else {
             self.line.clone()
         };
+        // Annotations attached to what the command deleted go with it, in
+        // the same entry (owner, 2026-10-25): one undo brings both back.
+        if cascade && objects_changed {
+            let gone = annotations::orphaned(
+                objects
+                    .iter()
+                    .filter(|((k, _), _)| *k == Kind::Annotation)
+                    .map(|((_, id), o)| (id, &*o.value)),
+                &line,
+            );
+            for id in gone {
+                let key = (Kind::Annotation, id.clone());
+                if let Some(old) = objects.remove(&key) {
+                    inverse.insert(
+                        0,
+                        Command::Put {
+                            kind: Kind::Annotation,
+                            id: id.clone(),
+                            value: Arc::unwrap_or_clone(old.value),
+                            ord: Some(old.ord),
+                        },
+                    );
+                    prims.push(Command::Delete {
+                        kind: Kind::Annotation,
+                        id: id.clone(),
+                        confirm: false,
+                    });
+                    changed.push(key);
+                }
+            }
+        }
         changed.sort();
         changed.dedup();
         let sections = if import {
@@ -3200,7 +3246,6 @@ impl Session {
 
         // Persist atomically: points, objects and log entry.
         let tx = self.conn.transaction()?;
-        let mut prims = prims;
         let mut point_inverses = Vec::new();
         let mut points_changed = Vec::new();
         for p in point_prims {
@@ -3564,6 +3609,7 @@ impl Session {
     }
 }
 
+pub mod annotations;
 pub mod collab;
 pub mod impact;
 pub mod lines;
