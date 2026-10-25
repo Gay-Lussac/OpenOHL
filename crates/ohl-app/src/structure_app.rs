@@ -211,8 +211,7 @@ impl LineInputs {
     /// loads computes them (seconds for a long line). Err: no case to send
     /// (no load case file and no weather case chosen, or none chosen).
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
-        let cases =
-            ohl_structure_link::structure_cases(&self.line.structure_loads, &self.weather);
+        let cases = ohl_structure_link::structure_cases(&self.line.structure_loads, &self.weather);
         if cases.is_empty() {
             return Err(NO_CASES.into());
         }
@@ -1499,7 +1498,10 @@ mod tests {
             1
         );
         let v = PlacedValues::load(&placed.values).unwrap();
-        assert!(v.note.unwrap().contains(NO_CASES), "nothing sent by default");
+        assert!(
+            v.note.unwrap().contains(NO_CASES),
+            "nothing sent by default"
+        );
         // A weather case without wind: one line result, unfactored; one
         // with wind: two, the wind from the left and from the right.
         model.line.structure_loads.weather_cases = vec!["everyday".into(), "high wind".into()];

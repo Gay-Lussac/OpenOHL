@@ -1213,7 +1213,11 @@ fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
 /// `<load_case name>` (not used since 2026-10-25) and `<weather_case
 /// name>`.
 fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String> {
-    check(e, &["load_cases", "condition"], &["load_case", "weather_case"])?;
+    check(
+        e,
+        &["load_cases", "condition"],
+        &["load_case", "weather_case"],
+    )?;
     let names = |tag: &str| {
         e.children_named(tag)
             .map(|c| {
