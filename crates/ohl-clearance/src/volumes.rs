@@ -429,7 +429,7 @@ const MAX_STEPS: usize = 200;
 
 /// The distance between convex shapes `a` and `b` (GJK, van den Bergen's
 /// form, on their support functions; a sphere as its centre grown by its
-/// radius). Exact for polytopes, within [`TOLERANCE`] for curved ones,
+/// radius). Exact for polytopes, within a tolerance (`TOLERANCE`, 1 nm) for curved ones,
 /// never more than the exact distance.
 pub fn separation(a: &Convex, b: &Convex) -> Separation {
     let (ma, mb) = (a.margin(), b.margin());
