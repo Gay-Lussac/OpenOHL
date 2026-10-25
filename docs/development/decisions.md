@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Materials typed in OHL-Structure (roadmap U5, 2026-10-25)**
+
+- Design › Cross-sections & materials › Cross-section library lists the
+  materials and types them as it does the cross-sections (new, edit,
+  duplicate, delete; one undo step each), checked by the section library
+  itself.
+- A material renamed takes along the cross-sections of its file naming
+  it and the file's `default_material`; one used in its file is not
+  deleted (other files' cross-sections: the library reports the material
+  missing, as before).
+- Partial factors typed as `name = value, …` (an inline table).
+
 **Another project imported into an existing one (owner, 2026-10-25)**
 
 - Owner: "import other lines or project in an existing project. It should

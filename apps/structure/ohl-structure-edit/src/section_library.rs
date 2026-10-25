@@ -376,6 +376,229 @@ pub fn copy_id<'a>(taken: impl Iterator<Item = &'a str> + Clone, id: &str) -> St
     }
 }
 
+/// The keys of a material's values, as files write them, with what each
+/// is (in the order of the editor).
+pub const MATERIAL_KEYS: [(&str, &str); 5] = [
+    ("elasticity", "Young's modulus E, e.g. 210 GPa (required)"),
+    (
+        "shear_modulus",
+        "shear modulus G, e.g. 81 GPa (empty: from E and Poisson's 0.3, as the library does)",
+    ),
+    ("density", "density, e.g. 7850 kg/m3 (the members' weight)"),
+    ("yield", "yield strength fy, e.g. 355 MPa"),
+    ("ultimate", "ultimate strength fu, e.g. 510 MPa"),
+];
+
+/// A material as typed (roadmap U5, 2026-10-25): every value text with its
+/// unit; the partial factors as `name = value, …`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MaterialDraft {
+    /// Id sections refer to.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Free text.
+    pub description: String,
+    /// Values by key ([`MATERIAL_KEYS`]), as typed.
+    pub values: BTreeMap<String, String>,
+    /// Partial factors, `gamma_m0 = 1.0, gamma_m1 = 1.1`.
+    pub partial_factors: String,
+}
+
+/// The `[[material]]` table with id `id`.
+fn material_table<'a>(doc: &'a DocumentMut, id: &str) -> Option<&'a Table> {
+    doc.get("material")?
+        .as_array_of_tables()?
+        .iter()
+        .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+}
+
+/// `name = value, …` as an inline table of numbers.
+fn factors_table(text: &str) -> Result<toml_edit::InlineTable, String> {
+    let mut t = toml_edit::InlineTable::new();
+    for part in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let (k, v) = part
+            .split_once('=')
+            .ok_or_else(|| format!("partial factors: \"{part}\": write name = value"))?;
+        let v: f64 = v
+            .trim()
+            .parse()
+            .map_err(|_| format!("partial factors: \"{}\" is not a number", v.trim()))?;
+        t.insert(k.trim(), v.into());
+    }
+    Ok(t)
+}
+
+impl MaterialDraft {
+    /// Material `id` of a library file, as text.
+    pub fn read(doc: &DocumentMut, id: &str) -> Option<Self> {
+        let t = material_table(doc, id)?;
+        let get = |k: &str| t.get(k).map(text_of).unwrap_or_default();
+        let mut d = Self {
+            id: id.to_owned(),
+            name: get("name"),
+            description: get("description"),
+            ..Self::default()
+        };
+        for (k, _) in MATERIAL_KEYS {
+            if let Some(v) = t.get(k) {
+                d.values.insert(k.to_owned(), text_of(v));
+            }
+        }
+        if let Some(f) = t.get("partial_factors").and_then(Item::as_inline_table) {
+            d.partial_factors = f
+                .iter()
+                .map(|(k, v)| format!("{k} = {}", v.to_string().trim()))
+                .collect::<Vec<_>>()
+                .join(", ");
+        }
+        Some(d)
+    }
+
+    /// The `[[material]]` table: `base` (as it is in the file, its
+    /// comments kept) with the fields typed set, empty ones removed.
+    pub fn table(&self, base: Option<&Table>) -> Result<Table, String> {
+        let mut t = base.cloned().unwrap_or_default();
+        set(&mut t, "id", &self.id);
+        set(&mut t, "name", &self.name);
+        set(&mut t, "description", &self.description);
+        for (k, _) in MATERIAL_KEYS {
+            set(&mut t, k, self.values.get(k).map_or("", String::as_str));
+        }
+        let f = factors_table(&self.partial_factors)?;
+        if f.is_empty() {
+            t.remove("partial_factors");
+        } else {
+            t.insert("partial_factors", Item::Value(f.into()));
+        }
+        Ok(t)
+    }
+
+    /// The material as the library reads it (checked by the library).
+    pub fn material(&self, base: Option<&Table>) -> Result<ohl_sections::Material, String> {
+        if self.id.trim().is_empty() {
+            return Err(NO_ID.into());
+        }
+        let mut doc = DocumentMut::new();
+        let mut a = toml_edit::ArrayOfTables::new();
+        a.push(self.table(base)?);
+        doc.insert("material", Item::ArrayOfTables(a));
+        let lib = SectionLibrary::parse(&doc.to_string()).map_err(|e| short_error(&e))?;
+        lib.materials
+            .into_iter()
+            .next()
+            .ok_or_else(|| "no material".to_owned())
+    }
+}
+
+/// The ids of the materials of a library file.
+pub fn material_ids(doc: &DocumentMut) -> Vec<String> {
+    crate::edits::item_ids(doc, "material")
+}
+
+/// Writes `draft` into a library file: over material `old` (in its place,
+/// its comments kept) or, with none, as a new one at the end; a rename
+/// carries the file's sections and `default_material` naming it along.
+/// Refused: an id already in the file (another material's).
+pub fn put_material(
+    doc: &mut DocumentMut,
+    old: Option<&str>,
+    draft: &MaterialDraft,
+) -> Result<(), String> {
+    let id = draft.id.trim();
+    if material_ids(doc)
+        .iter()
+        .any(|m| m == id && Some(m.as_str()) != old)
+    {
+        return Err(format!("material \"{id}\" is in the file already"));
+    }
+    match old {
+        Some(old) => {
+            let a = doc
+                .get_mut("material")
+                .and_then(Item::as_array_of_tables_mut)
+                .ok_or_else(|| format!("no material \"{old}\" in the file"))?;
+            let t = a
+                .iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(old))
+                .ok_or_else(|| format!("no material \"{old}\" in the file"))?;
+            *t = draft.table(Some(t))?;
+            if old != id {
+                if let Some(a) = doc
+                    .get_mut("section")
+                    .and_then(Item::as_array_of_tables_mut)
+                {
+                    for t in a.iter_mut() {
+                        if t.get("material").and_then(Item::as_str) == Some(old) {
+                            set(t, "material", id);
+                        }
+                    }
+                }
+                if doc.get("default_material").and_then(Item::as_str) == Some(old) {
+                    doc["default_material"] = toml_edit::value(id);
+                }
+            }
+        }
+        None => {
+            let t = draft.table(None)?;
+            if doc.get("material").is_none() {
+                doc.insert("material", Item::ArrayOfTables(Default::default()));
+            }
+            doc.get_mut("material")
+                .and_then(Item::as_array_of_tables_mut)
+                .ok_or("[material] is not a list of tables")?
+                .push(t);
+        }
+    }
+    Ok(())
+}
+
+/// The sections of a library file that name material `id` (and whether
+/// it is the file's `default_material`).
+pub fn material_users(doc: &DocumentMut, id: &str) -> (Vec<String>, bool) {
+    let sections = doc
+        .get("section")
+        .and_then(Item::as_array_of_tables)
+        .map(|a| {
+            a.iter()
+                .filter(|t| t.get("material").and_then(Item::as_str) == Some(id))
+                .filter_map(|t| t.get("id").and_then(Item::as_str).map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let default = doc.get("default_material").and_then(Item::as_str) == Some(id);
+    (sections, default)
+}
+
+/// Removes material `id` from a library file. Refused while a section of
+/// the file names it or it is the file's `default_material` (sections of
+/// other files are the library's to report: a material missing).
+pub fn remove_material(doc: &mut DocumentMut, id: &str) -> Result<(), String> {
+    if !material_ids(doc).iter().any(|m| m == id) {
+        return Err(format!("no material \"{id}\" in the file"));
+    }
+    let (sections, default) = material_users(doc, id);
+    if !sections.is_empty() {
+        return Err(format!(
+            "material \"{id}\" is used by {}: give them another first",
+            sections.join(", ")
+        ));
+    }
+    if default {
+        return Err(format!(
+            "material \"{id}\" is the file's default_material: choose another first"
+        ));
+    }
+    crate::edits::remove_item(doc, "material", "id", id);
+    Ok(())
+}
+
+/// The table of material `id` in a library file (for
+/// [`MaterialDraft::table`] and [`MaterialDraft::material`]).
+pub fn material_table_of<'a>(doc: &'a DocumentMut, id: &str) -> Option<&'a Table> {
+    material_table(doc, id)
+}
+
 /// The text of a new, empty section library file.
 pub fn new_library_text(name: &str) -> String {
     format!(
@@ -396,6 +619,59 @@ mod tests {
         [[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\ndensity = \"7850 kg/m3\"\n\n\
         [[section]]\nid = \"A\"\nshape = \"equal_angle\"\nh = \"50 mm\" # leg\nt = \"5 mm\"\n\
         iy = \"11 cm4\"\n";
+
+    /// A material typed: written over the file's (its comment kept),
+    /// renamed (the sections and default_material naming it follow),
+    /// read back; partial factors as name = value; refused to delete while
+    /// used; a value without its unit refused by the library.
+    #[test]
+    fn materials_are_typed() {
+        let mut doc: DocumentMut = FILE
+            .replace(
+                "density = \"7850 kg/m3\"",
+                "density = \"7850 kg/m3\" # steel",
+            )
+            .parse()
+            .unwrap();
+        let mut d = MaterialDraft::read(&doc, "s").unwrap();
+        assert_eq!(d.values["elasticity"], "210 GPa");
+        d.id = "S355".into();
+        d.values.insert("yield".into(), "355 MPa".into());
+        d.partial_factors = "gamma_m0 = 1.0, gamma_m1 = 1.1".into();
+        let m = d.material(material_table_of(&doc, "s")).unwrap();
+        assert_eq!(m.yield_strength, Some(355e6));
+        assert_eq!(m.partial_factors["gamma_m1"], 1.1);
+        put_material(&mut doc, Some("s"), &d).unwrap();
+        let text = doc.to_string();
+        assert!(text.contains("# steel"), "{text}");
+        assert!(text.contains("default_material = \"S355\""), "{text}");
+        let lib = SectionLibrary::parse(&text).unwrap();
+        assert_eq!(lib.section("A").unwrap().material.as_deref(), Some("S355"));
+        assert_eq!(
+            MaterialDraft::read(&doc, "S355").unwrap().partial_factors,
+            d.partial_factors
+        );
+        assert!(remove_material(&mut doc, "S355").is_err());
+        let mut n = MaterialDraft {
+            id: "alu".into(),
+            ..Default::default()
+        };
+        n.values.insert("elasticity".into(), "70".into());
+        assert!(n.material(None).is_err(), "a value without its unit");
+        n.values.insert("elasticity".into(), "70 GPa".into());
+        put_material(&mut doc, None, &n).unwrap();
+        assert!(put_material(&mut doc, None, &n).is_err(), "the id twice");
+        remove_material(&mut doc, "alu").unwrap();
+        assert_eq!(material_ids(&doc), ["S355"]);
+        assert!(
+            MaterialDraft {
+                partial_factors: "gamma".into(),
+                ..n
+            }
+            .table(None)
+            .is_err()
+        );
+    }
 
     fn draft(id: &str, shape: &str, dims: &[(&str, &str)]) -> SectionDraft {
         let mut d = SectionDraft::new(id, shape);

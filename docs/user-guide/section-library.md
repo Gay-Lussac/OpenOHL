@@ -199,7 +199,19 @@ library has.
   **Groups**: their cross-section lists hold the library's cross-sections first, then
   the file's own `[[section]]` tables.
 
-Materials are not typed here: add a `[[material]]` to a library file.
+**Materials** (2026-10-25), below the cross-sections: the library's
+materials with E, G, density, fy and fu and their file. **+ New
+material** opens the form: id, name, description, `elasticity` (E,
+required), `shear_modulus` (G; empty: E / 2.6, Poisson's ratio 0.3, as the
+library takes it), `density`, `yield` (fy), `ultimate` (fu), each typed
+with its unit (`210 GPa`, `7850 kg/m3`), and the **partial factors** as
+`name = value, …` (`gamma_m0 = 1.0`). What is wrong is said in the
+library's words; **Save** writes it into the file chosen for new
+cross-sections. **✏** edits one (its comments kept; renamed, the file's
+cross-sections naming it and its `default_material` follow), **copy**
+duplicates it, **🗑** deletes it — refused while a cross-section of its file
+names it or it is the file's `default_material`. Each change is one step
+of Edit › Undo, as for the cross-sections.
 
 ## Several files
 

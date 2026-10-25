@@ -203,3 +203,65 @@ fn the_section_library_sheet_opens_a_form() {
     h.get_by_value("5.369 kg/m");
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+/// Materials typed (roadmap U5): listed, a new one saved from the form
+/// (the library read again, one undo step), renamed with the sections
+/// naming it following, refused to delete while a section names it.
+#[test]
+fn materials_are_typed_in_the_library_sheet() {
+    use ohl_structure_edit::section_library::MaterialDraft;
+    let path = copy_of("type-02.ohls", "seclib-materials");
+    let sections = path.parent().unwrap().join("Sections");
+    std::fs::create_dir_all(&sections).unwrap();
+    let file = sections.join("a.ohlsec");
+    std::fs::write(&file, MATERIALS).unwrap();
+    let mut h = harness(&path);
+    menu(&mut h, "Design", "Cross-sections & materials…");
+    h.state_mut()
+        .sheets
+        .insert(Panel::SectionsMaterials, Sheet::Library);
+    h.run();
+    h.get_by_label("210 GPa");
+    // Below the sections: scrolled to first.
+    h.get_by_label("+ New material").scroll_to_me();
+    h.run();
+    h.get_by_label("+ New material").click();
+    h.run();
+    let (f, old, _) = h.state().section_editor.material.clone().unwrap();
+    assert_eq!((f, old), (file.clone(), None));
+    // Typed (invented values): saved with the form's button.
+    let mut d = MaterialDraft {
+        id: "alu".into(),
+        ..Default::default()
+    };
+    d.values.insert("elasticity".into(), "70 GPa".into());
+    d.values.insert("density".into(), "2700 kg/m3".into());
+    h.state_mut().section_editor.material = Some((file.clone(), None, d.clone()));
+    h.run();
+    // The form's Save (the window has a Save of its own too).
+    h.state_mut().save_material(&file, None, &d).unwrap();
+    h.state_mut().section_editor.material = None;
+    h.run();
+    h.get_by_label("70 GPa");
+    assert!(h.state().loads.sections.material("alu").is_some());
+    assert_eq!(
+        h.state().undo_name().as_deref(),
+        Some("cross-section library: new material alu")
+    );
+    // The default material renamed: the file's default follows.
+    let app = h.state_mut();
+    let mut st = MaterialDraft::read(
+        &std::fs::read_to_string(&file).unwrap().parse().unwrap(),
+        "st",
+    )
+    .unwrap();
+    st.id = "steel".into();
+    app.save_material(&file, Some("st"), &st).unwrap();
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("default_material = \"steel\""), "{text}");
+    assert!(app.delete_material(&file, "steel").is_err());
+    app.delete_material(&file, "alu").unwrap();
+    app.undo();
+    assert!(app.loads.sections.material("alu").is_some());
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

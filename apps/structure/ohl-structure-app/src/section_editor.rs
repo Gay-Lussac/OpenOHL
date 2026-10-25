@@ -18,7 +18,9 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use ohl_sections::{SECTION_FILE_EXTENSION, Section, SectionLibrary};
-use ohl_structure_edit::section_library::{self as edit, SHAPES, SectionDraft};
+use ohl_structure_edit::section_library::{
+    self as edit, MATERIAL_KEYS, MaterialDraft, SHAPES, SectionDraft,
+};
 use toml_edit::DocumentMut;
 
 use crate::app::{StructureApp, error_label};
@@ -94,6 +96,11 @@ pub struct SectionEditor {
     pub into: Option<PathBuf>,
     /// A deletion waiting for its confirmation: file and id.
     pub confirm_delete: Option<(PathBuf, String)>,
+    /// The material being typed: its file, the material it replaces
+    /// (none: a new one), the fields.
+    pub material: Option<(PathBuf, Option<String>, MaterialDraft)>,
+    /// A material's deletion waiting for its confirmation: file and id.
+    pub confirm_material_delete: Option<(PathBuf, String)>,
     /// The files read, and when.
     files: Option<(Instant, PathBuf, Vec<LibraryFile>)>,
     undo: Vec<LibraryEdit>,
@@ -556,6 +563,8 @@ impl StructureApp {
             egui::Frame::group(ui.style()).show(ui, |ui| self.section_form(ui, ed));
         }
         self.section_list(ui, &files);
+        ui.separator();
+        self.material_list(ui, &files);
     }
 
     /// The section library's wind factors, in one line.
@@ -841,6 +850,243 @@ impl StructureApp {
                     }
                 });
             });
+        }
+    }
+}
+
+impl StructureApp {
+    /// The material being typed written into its file (one undo step);
+    /// the library read again. What was done, or why not.
+    pub fn save_material(
+        &mut self,
+        path: &Path,
+        old: Option<&str>,
+        draft: &MaterialDraft,
+    ) -> Result<String, String> {
+        let before = std::fs::read_to_string(path).ok();
+        let mut doc: DocumentMut = match &before {
+            Some(t) => t
+                .parse()
+                .map_err(|e| format!("{}: not TOML: {e}", path.display()))?,
+            None => edit::new_library_text("Project cross-sections")
+                .parse()
+                .map_err(|e| format!("{e}"))?,
+        };
+        let base = old.and_then(|o| edit::material_table_of(&doc, o)).cloned();
+        draft
+            .material(base.as_ref())
+            .map_err(|e| format!("not saved: {e}"))?;
+        edit::put_material(&mut doc, old, draft)?;
+        let after = doc.to_string();
+        SectionLibrary::parse(&after).map_err(|e| format!("not saved: {e}"))?;
+        write(path, &after)?;
+        let id = draft.id.trim();
+        let what = match old {
+            Some(o) if o != id => format!("material {o} renamed {id}"),
+            Some(_) => format!("material {id}"),
+            None => format!("new material {id}"),
+        };
+        self.library_edited(&what, path, before, after);
+        Ok(format!("{what} saved"))
+    }
+
+    /// Material `id` removed from library file `path` (one undo step);
+    /// refused while a section of the file names it.
+    pub fn delete_material(&mut self, path: &Path, id: &str) -> Result<String, String> {
+        let before =
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut doc: DocumentMut = before
+            .parse()
+            .map_err(|e| format!("{}: not TOML: {e}", path.display()))?;
+        edit::remove_material(&mut doc, id)?;
+        let after = doc.to_string();
+        write(path, &after)?;
+        self.library_edited(&format!("delete material {id}"), path, Some(before), after);
+        Ok(format!("material {id} deleted"))
+    }
+
+    /// The materials of the library (roadmap U5, 2026-10-25): listed,
+    /// typed (new, edit, duplicate, delete), each change one undo step.
+    fn material_list(&mut self, ui: &mut egui::Ui, files: &[LibraryFile]) {
+        ui.horizontal(|ui| {
+            ui.strong("Materials");
+            if let Some(target) = self.section_target()
+                && ui
+                    .button("+ New material")
+                    .on_hover_text("Type a new material of the library")
+                    .clicked()
+            {
+                self.section_editor.material = Some((target, None, MaterialDraft::default()));
+            }
+        });
+        let mut action: Option<(PathBuf, String, char)> = None;
+        egui::Grid::new("library-materials")
+            .striped(true)
+            .show(ui, |ui| {
+                for h in [
+                    "material", "name", "E", "G", "density", "fy", "fu", "file", "",
+                ] {
+                    ui.strong(h);
+                }
+                ui.end_row();
+                for f in files {
+                    let Ok(lib) = &f.read else { continue };
+                    let file = f
+                        .path
+                        .file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                    for m in &lib.materials {
+                        ui.label(&m.id);
+                        ui.label(&m.name);
+                        ui.label(format!("{:.0} GPa", m.elasticity / 1e9));
+                        ui.label(format!("{:.1} GPa", m.shear_modulus / 1e9));
+                        ui.label(format!("{:.0} kg/m³", m.density));
+                        let mpa = |v: Option<f64>| {
+                            v.map_or("—".into(), |v| format!("{:.0} MPa", v / 1e6))
+                        };
+                        ui.label(mpa(m.yield_strength));
+                        ui.label(mpa(m.ultimate));
+                        ui.label(&file);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("✏").on_hover_text("Edit").clicked() {
+                                action = Some((f.path.clone(), m.id.clone(), 'e'));
+                            }
+                            if ui
+                                .small_button("copy")
+                                .on_hover_text("Duplicate: a copy to type")
+                                .clicked()
+                            {
+                                action = Some((f.path.clone(), m.id.clone(), 'c'));
+                            }
+                            if ui.small_button("🗑").on_hover_text("Delete…").clicked() {
+                                action = Some((f.path.clone(), m.id.clone(), 'd'));
+                            }
+                        });
+                        ui.end_row();
+                    }
+                }
+            });
+        if files
+            .iter()
+            .all(|f| f.read.as_ref().map_or(true, |l| l.materials.is_empty()))
+        {
+            ui.label(
+                egui::RichText::new(
+                    "No material in the library yet: + New material (the sections take their \
+                     weight and stiffness from it).",
+                )
+                .weak(),
+            );
+        }
+        let read = |path: &PathBuf, id: &str| {
+            files
+                .iter()
+                .find(|f| &f.path == path)
+                .and_then(LibraryFile::doc)
+                .and_then(|d| MaterialDraft::read(&d, id))
+        };
+        match action {
+            Some((path, id, 'e')) => {
+                if let Some(d) = read(&path, &id) {
+                    self.section_editor.material = Some((path, Some(id), d));
+                }
+            }
+            Some((path, id, 'c')) => {
+                if let Some(mut d) = read(&path, &id) {
+                    let taken: Vec<String> = files
+                        .iter()
+                        .filter_map(|f| f.read.as_ref().ok())
+                        .flat_map(|l| l.materials.iter().map(|m| m.id.clone()))
+                        .collect();
+                    d.id = edit::copy_id(taken.iter().map(String::as_str), &id);
+                    if !d.name.is_empty() {
+                        d.name = format!("{} (copy)", d.name);
+                    }
+                    self.section_editor.material = Some((path, None, d));
+                }
+            }
+            Some((path, id, _)) => self.section_editor.confirm_material_delete = Some((path, id)),
+            None => {}
+        }
+        if let Some((path, id)) = self.section_editor.confirm_material_delete.clone() {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.label(format!("Delete material {id} from the library?"));
+                ui.horizontal(|ui| {
+                    if ui.button("Delete").clicked() {
+                        self.message = Some(match self.delete_material(&path, &id) {
+                            Ok(m) => (m, false),
+                            Err(e) => (e, true),
+                        });
+                        self.section_editor.confirm_material_delete = None;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.section_editor.confirm_material_delete = None;
+                    }
+                });
+            });
+        }
+        if let Some((path, old, mut d)) = self.section_editor.material.clone() {
+            let mut close = false;
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.strong(match &old {
+                    Some(o) => format!("Material {o}"),
+                    None => "New material".to_owned(),
+                });
+                egui::Grid::new("material-form")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        form_field(
+                            ui,
+                            "id",
+                            "What sections name: letters, digits, - _ .",
+                            &mut d.id,
+                            "e.g. S355",
+                        );
+                        form_field(ui, "name", "Display name", &mut d.name, "");
+                        form_field(ui, "description", "Free text", &mut d.description, "");
+                        for (k, what) in MATERIAL_KEYS {
+                            let v = d.values.entry(k.to_owned()).or_default();
+                            form_field(ui, k, what, v, "with its unit");
+                        }
+                        form_field(
+                            ui,
+                            "partial factors",
+                            "As a code check names them: name = value, separated by commas",
+                            &mut d.partial_factors,
+                            "e.g. gamma_m0 = 1.0",
+                        );
+                    });
+                let base = old.as_ref().and_then(|o| {
+                    files
+                        .iter()
+                        .find(|f| f.path == path)
+                        .and_then(LibraryFile::doc)
+                        .and_then(|doc| edit::material_table_of(&doc, o).cloned())
+                });
+                let check = d.material(base.as_ref());
+                if let Err(e) = &check {
+                    error_label(ui, e.as_str());
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(check.is_ok(), egui::Button::new("Save"))
+                        .on_hover_text("Write it into the library file (one undo step)")
+                        .on_disabled_hover_text("Fix what is said above first")
+                        .clicked()
+                    {
+                        let r = self.save_material(&path, old.as_deref(), &d);
+                        close = r.is_ok();
+                        self.message = Some(match r {
+                            Ok(m) => (m, false),
+                            Err(e) => (e, true),
+                        });
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close = true;
+                    }
+                });
+            });
+            self.section_editor.material = if close { None } else { Some((path, old, d)) };
         }
     }
 }
