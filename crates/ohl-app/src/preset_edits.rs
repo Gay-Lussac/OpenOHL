@@ -437,7 +437,8 @@ impl PresetEditor {
         self.sheet_job = None;
     }
 
-    /// Whether the plugin's sheet templates are being read.
+    /// Whether the plugin's sheet templates are being read (tests).
+    #[cfg(test)]
     pub fn reading(&self) -> bool {
         self.sheet_job.is_some()
     }
