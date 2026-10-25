@@ -422,6 +422,17 @@ pub(super) fn menus(
             r.merge_cases.groups = None;
             ui.close();
         }
+        if ui
+            .button("Weather case groups…")
+            .on_hover_text(
+                "Named groups of weather cases with a description, picked as one in Loads for \
+                 structures and in the checks",
+            )
+            .clicked()
+        {
+            r.case_groups.show();
+            ui.close();
+        }
         item(ui, Command::Library(LibraryKind::WeatherCases), out);
         item(ui, Command::Library(LibraryKind::LoadCases), out);
         if ui

@@ -531,7 +531,17 @@ struct Running {
 }
 
 /// The names of a file's load cases, or why they could not be read.
-type CaseNames = Result<Vec<String>, String>;
+type CaseNames = Result<LoadCaseList, String>;
+
+/// A load case file as the menu shows it: its name, and each case's name
+/// and what it is (weather case, wires' condition, factors, description).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadCaseList {
+    /// The file's name (its `name`).
+    pub name: String,
+    /// Each case: its name and what it is.
+    pub cases: Vec<(String, String)>,
+}
 
 /// A structure file being edited in the structure application.
 struct Watched {
@@ -622,13 +632,36 @@ pub struct StructureApps {
 impl StructureApps {
     /// The names of the load cases of `path` (the line's `.ohllc`), read
     /// again when the file changed.
-    pub fn load_case_names(&mut self, path: &Path) -> Result<Vec<String>, String> {
+    pub fn load_case_names(&mut self, path: &Path) -> Result<LoadCaseList, String> {
         let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
         match &self.load_case_names {
             Some((p, m, names)) if p == path && *m == modified => names.clone(),
             _ => {
-                let names = ohl_loads::LoadCases::load(path)
-                    .map(|set| set.cases.into_iter().map(|c| c.name).collect::<Vec<_>>());
+                let names = ohl_loads::LoadCases::load(path).map(|set| LoadCaseList {
+                    name: set.name,
+                    cases: set
+                        .cases
+                        .into_iter()
+                        .map(|c| {
+                            let what = format!(
+                                "weather case \"{}\", wires {}, factors: vertical {}, \
+                                 transverse {}, longitudinal {}; strength {}{}",
+                                c.weather,
+                                c.condition.as_str(),
+                                c.vertical,
+                                c.transverse,
+                                c.longitudinal,
+                                c.strength,
+                                if c.description.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("\n{}", c.description)
+                                }
+                            );
+                            (c.name, what)
+                        })
+                        .collect(),
+                });
                 self.load_case_names = Some((path.to_path_buf(), modified, names.clone()));
                 names
             }
@@ -1098,22 +1131,48 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         ui.add_enabled_ui(editable.is_ok(), |ui| {
             ui.separator();
             ui.label(egui::RichText::new("Load cases").strong());
-            let names = match r.model.sources.load_cases.clone() {
-                None => {
-                    ui.label(
-                        egui::RichText::new("no load case file (Criteria › Load cases library)")
+            // Where they come from: the line's load case file (the project's
+            // copy), its name; each case's weather, condition and factors on
+            // hover.
+            let (names, details): (Vec<String>, Vec<String>) =
+                match r.model.sources.load_cases.clone() {
+                    None => {
+                        ui.label(
+                            egui::RichText::new(
+                                "no load case file (Criteria › Load cases library)",
+                            )
                             .weak(),
-                    );
-                    Vec::new()
-                }
-                Some(path) => match r.structure_apps.load_case_names(&path) {
-                    Ok(n) => n,
-                    Err(e) => {
-                        crate::menu::error_label(ui, e);
-                        Vec::new()
+                        );
+                        (Vec::new(), Vec::new())
                     }
-                },
-            };
+                    Some(path) => match r.structure_apps.load_case_names(&path) {
+                        Ok(list) => {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "From the line's load case file {}{} — edit it in Criteria \
+                                     › Load cases library (or make one from a design code). Each \
+                                     is a weather case with factors on the loads; hover for \
+                                     what it is.",
+                                    path.file_name().map_or(String::new(), |n| n
+                                        .to_string_lossy()
+                                        .into_owned()),
+                                    if list.name.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" (\"{}\")", list.name)
+                                    }
+                                ))
+                                .small()
+                                .weak(),
+                            );
+                            list.cases.into_iter().unzip()
+                        }
+                        Err(e) => {
+                            crate::menu::error_label(ui, e);
+                            (Vec::new(), Vec::new())
+                        }
+                    },
+                };
             if !names.is_empty() {
                 ui.horizontal(|ui| {
                     if ui
@@ -1149,7 +1208,13 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                         } else {
                             name.clone()
                         };
-                        if ui.checkbox(&mut on, text).changed() {
+                        let what = names
+                            .iter()
+                            .position(|n| n == name)
+                            .and_then(|k| details.get(k))
+                            .cloned()
+                            .unwrap_or_default();
+                        if ui.checkbox(&mut on, text).on_hover_text(what).changed() {
                             let mut list: Vec<String> =
                                 choice.load_cases.clone().unwrap_or_else(|| names.clone());
                             list.retain(|n| n != name);
@@ -1167,11 +1232,26 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                     }
                 });
             ui.separator();
-            ui.label(egui::RichText::new("Weather cases (all factors 1)").strong());
+            ui.label(egui::RichText::new("Weather cases on their own (all factors 1)").strong());
+            ui.label(
+                egui::RichText::new(
+                    "Besides the load cases: each weather case ticked is sent as a case of its \
+                     own — the wires solved in it as strung, every factor 1 (no safety factor). \
+                     The weather cases are the line's (Criteria › Weather cases).",
+                )
+                .small()
+                .weak(),
+            );
             if ui.button("none").clicked() {
                 choice.weather_cases.clear();
             }
             let weather: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
+            let groups = crate::case_groups::groups(&r.model);
+            if crate::case_groups::pick_names(ui, &groups, &mut choice.weather_cases) {
+                choice
+                    .weather_cases
+                    .sort_by_key(|n| weather.iter().position(|x| x == n).unwrap_or(usize::MAX));
+            }
             let gone: Vec<String> = choice
                 .weather_cases
                 .iter()
@@ -1189,7 +1269,13 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                         } else {
                             name.clone()
                         };
-                        if ui.checkbox(&mut on, text).changed() {
+                        let summary = r
+                            .model
+                            .cases
+                            .iter()
+                            .find(|c| &c.case.name == name)
+                            .map_or(String::new(), |c| c.case.summary());
+                        if ui.checkbox(&mut on, text).on_hover_text(summary).changed() {
                             choice.weather_cases.retain(|n| n != name);
                             if on {
                                 choice.weather_cases.push(name.clone());
@@ -1428,6 +1514,67 @@ mod tests {
         let page = &r.libraries[&LibraryKind::StructureTypes];
         assert!(page.text().unwrap().contains("name = \"renamed\""));
         assert!(!page.dirty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The Edit tool on structure T2 (owner, 2026-10-25): the structure
+    /// page's button opens T2 in OHL-Structure with the line's loads (its
+    /// load cases), not the type alone; the type alone is beside it.
+    #[test]
+    fn the_edit_tool_opens_the_structure_of_the_line() {
+        use crate::library::LibraryKind;
+        let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let ex = root.join("examples/synthetic-line");
+        let dir = std::env::temp_dir().join(format!("ohl-design-edit-tool-{}", std::process::id()));
+        let structures = dir.join("Structures");
+        std::fs::create_dir_all(&structures).unwrap();
+        for e in std::fs::read_dir(ex.join("Structures")).unwrap() {
+            let p = e.unwrap().path();
+            std::fs::copy(&p, structures.join(p.file_name().unwrap())).unwrap();
+        }
+        let model = model::load(
+            Sources {
+                file: ex.join("synthetic-line-typed.ohl.json"),
+                library: Some(root.join("libraries/cables")),
+                structures: Some(structures.clone()),
+                weather: Some(ex.join("weather-cases.ohlwc")),
+                load_cases: Some(ex.join("load-cases.ohllc")),
+                point_budget: 1000,
+                corridor: 60.0,
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap();
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| App::with_model(model, None));
+        harness.run();
+        {
+            let r = harness.state_mut().ready().unwrap();
+            r.structure_apps.dry_run = Some(Vec::new());
+            // What the Edit tool does on T2 (a line file is read-only: the
+            // tool itself refuses here).
+            r.edit_placed_type("type-02", "T2");
+            let page = r
+                .libraries
+                .get(&LibraryKind::StructureTypes)
+                .unwrap_or_else(|| panic!("{:?}", r.status));
+            assert_eq!(page.workspace.placed.as_deref(), Some("T2"));
+        }
+        harness.run();
+        harness.get_by_label("Open T2 in OHL-Structure…").click();
+        harness.run();
+        let r = harness.state_mut().ready().unwrap();
+        let launched = r.structure_apps.dry_run.take().unwrap();
+        assert_eq!(launched.len(), 1, "{:?}", r.status);
+        let args: Vec<String> = launched[0]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let k = args.iter().position(|a| a == "--structure").unwrap();
+        assert_eq!(args[k + 1], "T2");
+        assert!(args.iter().any(|a| a == "--line-values"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

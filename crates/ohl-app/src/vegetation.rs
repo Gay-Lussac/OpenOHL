@@ -1304,6 +1304,8 @@ impl VegetationWindow {
                 egui::CollapsingHeader::new(format!("Weather cases ({} ticked)", cases.len()))
                     .id_salt("vegetation-cases")
                     .show(ui, |ui| {
+                        let groups = crate::case_groups::groups(model);
+                        crate::case_groups::pick_indices(ui, model, &groups, cases);
                         egui::ScrollArea::vertical()
                             .max_height(140.0)
                             .show(ui, |ui| {

@@ -23,6 +23,7 @@ mod app;
 mod area;
 mod backgrounds;
 mod bom;
+mod case_groups;
 mod check_help;
 mod check_library;
 mod chunks;

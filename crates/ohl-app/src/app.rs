@@ -334,6 +334,8 @@ pub struct Ready {
     pub string_checks: crate::string_checks::StringChecksWindow,
     /// Export › Plans: the route, situation and phase plans.
     pub plans: crate::plans_window::PlansWindow,
+    /// Criteria › Weather case groups….
+    pub case_groups: crate::case_groups::GroupsWindow,
     /// The measuring tools: picks, the point under the cursor, the
     /// measurements made (Tools › Measure).
     pub measuring: crate::measure::Measuring,
@@ -515,6 +517,7 @@ impl Ready {
             string_checks: Default::default(),
             plans: Default::default(),
             measuring: Default::default(),
+            case_groups: Default::default(),
             measure_hover: None,
             phase_distance: Default::default(),
             cases_before_check: None,
@@ -1272,7 +1275,24 @@ impl Ready {
                     },
                     |s| s.id.clone(),
                 );
-            self.edit_file_in_structure_app(&p.clone(), &id);
+            // Opened from a structure of the line (the Edit tool) and that
+            // asked: the structure with the line's loads.
+            let placed = self
+                .libraries
+                .get(&kind)
+                .filter(|p| p.workspace.open_placed)
+                .and_then(|p| p.workspace.placed.clone())
+                .filter(|s| {
+                    self.model
+                        .line
+                        .structure(s)
+                        .and_then(|x| x.structure_type.as_deref())
+                        == Some(id.as_str())
+                });
+            match placed {
+                Some(s) => self.edit_in_structure_app(&id, Some(&s)),
+                None => self.edit_file_in_structure_app(&p.clone(), &id),
+            }
             return;
         }
         // The project keeps its libraries: the working copy saved goes in.

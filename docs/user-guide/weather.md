@@ -58,6 +58,28 @@ The vertical load is w + ice weight, the wind load q·D, and the wire hangs in t
 
 **Simplification:** glaze is the densest ice, so of all ice of that weight it has the smallest iced diameter: for lighter ice (rime, wet snow) given only by its load the wind area and the iced radius are still low (unsafe for such ice). Exact: give the ice density, or the thickness. Ice is a concentric shell of one thickness along the whole span (see [Sag-tension](../theory/sagtension.md#weather-loads)).
 
+## Groups of cases
+
+A case file may name **groups** of its cases (2026-10-25), each with a
+description:
+
+```toml
+[[group]]
+name = "Clearances"
+description = "The cases the clearance checks take"
+cases = ["max temperature", "glaze ice"]
+```
+
+In the app they are made in **Criteria › Weather case groups…** (a name,
+a description, the cases ticked; **Save** writes them into the file, one
+change) and **picked as one** — a group's button adds its cases — in
+**Criteria › Loads for structures** and in the checks' case lists
+(vertical and radial clearances, vegetation, safety volumes, wire
+tensions, string checks, distance between conductors). Renaming a case in
+the Weather cases table renames it in the groups too; a name no case has
+(deleted, or renamed elsewhere) stays in its group, shown as such, not
+refused. Group names are unique in the file.
+
 ## Choosing cases
 
 ```bash

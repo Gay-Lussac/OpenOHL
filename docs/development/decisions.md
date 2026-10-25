@@ -10,6 +10,33 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Weather case groups; Loads for structures explained (owner, 2026-10-25)**
+
+- Groups (a name, a description, cases by name) live in the weather case
+  file beside the cases (owner's choice), `[[group]]`; made in Criteria ›
+  Weather case groups…, saved as one change of the file.
+- Picked in Loads for structures and in the checks' case lists (owner's
+  choice; the display cases not): a group's button adds its cases.
+  Galloping takes one case (no group).
+- A case renamed in the table is renamed in the groups; a name no case
+  has is kept and shown, not refused (a file edited elsewhere stays
+  readable).
+- Loads for structures now says where the load cases come from (the
+  line's load case file and its name) and gives each case's weather case,
+  condition, factors and description on hover, each weather case's
+  values; "weather cases on their own" explained (every factor 1, the
+  wires as strung). The owner had asked what a load case of an imported
+  project was and where it came from.
+
+**The Edit tool opens the line's structure in OHL-Structure (owner, 2026-10-25)**
+
+- The Edit tool on a typed structure opens its type in the structure page
+  as before; that page now remembers the structure it came from, and its
+  button opens **that structure with the line's loads** (as Open in
+  OHL-Structure… in Properties), not the family's type alone, so its
+  load cases can be seen and edited. The type alone is a smaller button
+  beside it; the page opened otherwise is unchanged.
+
 **Follow and snap (T11) built (owner, 2026-10-25)**
 
 - Objects followed: a span's wire, a jumper, a structure (its members or
