@@ -7,7 +7,10 @@ approved); **phase 2 built** (2026-10-25: kept measurements and notes as
 annotations — leaders as notes with a fixed short leader, placement by
 hand not yet); **T11 follow and snap built** (2026-10-25: wires, jumpers
 and structures; a kept one keeps its LiDAR point — open question 2 not
-decided yet). Nothing else here is built or approved. The owner decided four of the first draft's questions
+decided yet); **T4, T5, T6 built** (2026-10-25: Clearance at a point,
+Wire to wire, Wire to object — background drawings not yet pickable,
+per-case results and a wire at a typed station not yet). Nothing else here
+is built or approved. The owner decided four of the first draft's questions
 (2026-10-25: stored apart from the line; wire distances to the surface;
 an annotation deleted with its object; shared by everyone, others' hidden
 in the display options) and asked for one more tool (T11, follow an

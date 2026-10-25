@@ -225,8 +225,11 @@ impl Ready {
                 .map_or(String::new(), |c| c.case.name.clone());
             match crate::measure::resolve(&self.model, self.case, &u) {
                 Some(pick) => {
-                    self.measuring.click(&self.model, kind, &case_name, pick);
-                    self.status = None;
+                    self.status = self
+                        .measuring
+                        .click(&self.model, kind, &case_name, pick)
+                        .err()
+                        .map(|e| (e, true));
                 }
                 None => self.hint(tool),
             }

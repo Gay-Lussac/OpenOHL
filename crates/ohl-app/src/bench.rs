@@ -1301,3 +1301,62 @@ fn follow_benchmark() {
         f.live.as_ref().map_or("none".into(), |m| m.label())
     );
 }
+
+/// The wire tools on a project of your own (`OHL_BENCH_FILE`): Clearance
+/// at a point (with its sweep along the span) and Wire to wire on two
+/// spans in the middle of the line — each computed live under the cursor,
+/// so each should take well under a frame.
+#[test]
+#[ignore = "a benchmark on a project of your own"]
+fn wire_tools_benchmark() {
+    let Some(m) = from_env() else {
+        eprintln!("skipping: set OHL_BENCH_FILE");
+        return;
+    };
+    let lines = crate::measure::Centrelines::of(&m);
+    let case = m.cases[0].case.name.clone();
+    let k = m.line.sections.len() / 2;
+    let pick = |s: usize| {
+        crate::measure::pick_of(
+            &m,
+            0,
+            &ohl_session::annotations::Anchor::Wire {
+                section: m.line.sections[s].id.clone(),
+                span: 0,
+                fraction: 0.5,
+            },
+        )
+        .unwrap()
+    };
+    let (a, b) = (pick(k), pick(k + 1));
+    let n = 20;
+    let t = Instant::now();
+    let mut c = None;
+    for _ in 0..n {
+        c = Some(crate::measure::measure(
+            &m,
+            &lines,
+            crate::measure::Kind::Clearance,
+            std::slice::from_ref(&a),
+            &case,
+        ));
+    }
+    let clearance = t.elapsed() / n;
+    let t = Instant::now();
+    let mut w = None;
+    for _ in 0..n {
+        w = Some(crate::measure::measure(
+            &m,
+            &lines,
+            crate::measure::Kind::WireToWire,
+            &[a.clone(), b.clone()],
+            &case,
+        ));
+    }
+    let wires = t.elapsed() / n;
+    println!(
+        "wire tools: clearance {clearance:.1?} ({}), wire to wire {wires:.1?} ({})",
+        c.unwrap().label(),
+        w.unwrap().label()
+    );
+}

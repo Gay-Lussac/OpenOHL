@@ -63,6 +63,13 @@ pub enum Tool {
     /// Right-click two points: their stations and offsets along the
     /// route.
     MeasureStations,
+    /// Right-click two wires: the shortest distance between them.
+    MeasureWires,
+    /// Right-click a wire: its clearance to the ground there and along
+    /// its span.
+    MeasureClearance,
+    /// Right-click a wire, then an object: the shortest distance.
+    MeasureObject,
     /// Right-click an object or a point: a note kept there.
     Note,
     /// Right-click an object, choose LiDAR classes, move along it: the
@@ -74,7 +81,7 @@ pub enum Tool {
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Tools menu list them in this order.
-    pub const ALL: [Tool; 20] = [
+    pub const ALL: [Tool; 23] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -93,6 +100,9 @@ impl Tool {
         Tool::MeasureDistance,
         Tool::MeasureHeight,
         Tool::MeasureStations,
+        Tool::MeasureWires,
+        Tool::MeasureClearance,
+        Tool::MeasureObject,
         Tool::Follow,
         Tool::Note,
     ];
@@ -109,6 +119,9 @@ impl Tool {
             Tool::MeasureDistance
             | Tool::MeasureHeight
             | Tool::MeasureStations
+            | Tool::MeasureWires
+            | Tool::MeasureClearance
+            | Tool::MeasureObject
             | Tool::Follow
             | Tool::Note => "Measure",
         }
@@ -136,6 +149,9 @@ impl Tool {
             Tool::MeasureHeight => "Height above ground",
             Tool::MeasureStations => "Stations",
             Tool::Note => "Note",
+            Tool::MeasureWires => "Wire to wire",
+            Tool::MeasureClearance => "Clearance at a point",
+            Tool::MeasureObject => "Wire to object",
             Tool::Follow => "Follow and snap",
         }
     }
@@ -165,6 +181,9 @@ impl Tool {
             Tool::MeasureHeight => "↕",
             Tool::MeasureStations => "📏",
             Tool::Note => "🖹",
+            Tool::MeasureWires => "≈",
+            Tool::MeasureClearance => "⬇",
+            Tool::MeasureObject => "↘",
             Tool::Follow => "🎯",
         }
     }
@@ -230,6 +249,15 @@ impl Tool {
             Tool::Note => {
                 "right-click an object or a point: write a note kept there in the project (shared; deleted with the object)"
             }
+            Tool::MeasureWires => {
+                "right-click two wires (spans or jumpers): the shortest distance between them over the whole spans as solved, to their surfaces"
+            }
+            Tool::MeasureClearance => {
+                "right-click a wire: its clearance to the ground there — vertical and shortest — and the smallest along its span"
+            }
+            Tool::MeasureObject => {
+                "right-click a wire (a span or a jumper), then a structure or a point: the shortest distance from the whole span, to the wire's surface"
+            }
             Tool::Follow => {
                 "right-click a wire, a jumper or a structure, tick the LiDAR classes, move the cursor along it: the nearest point of those classes measured live; right-click again: kept in the project (N: the closest spot; Escape: another object)"
             }
@@ -252,6 +280,9 @@ impl Tool {
             Tool::MeasureDistance => Some(crate::measure::Kind::Distance),
             Tool::MeasureHeight => Some(crate::measure::Kind::Height),
             Tool::MeasureStations => Some(crate::measure::Kind::Stations),
+            Tool::MeasureWires => Some(crate::measure::Kind::WireToWire),
+            Tool::MeasureClearance => Some(crate::measure::Kind::Clearance),
+            Tool::MeasureObject => Some(crate::measure::Kind::WireToObject),
             _ => None,
         }
     }
@@ -323,6 +354,9 @@ impl Tool {
             Tool::MeasureHeight => "measure_height",
             Tool::MeasureStations => "measure_stations",
             Tool::Note => "note",
+            Tool::MeasureWires => "measure_wires",
+            Tool::MeasureClearance => "measure_clearance",
+            Tool::MeasureObject => "measure_object",
             Tool::Follow => "follow",
         }
     }

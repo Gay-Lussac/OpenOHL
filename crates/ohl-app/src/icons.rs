@@ -52,6 +52,9 @@ impl Tool {
             Tool::MeasureHeight => tool!("measure-height"),
             Tool::MeasureStations => tool!("measure-stations"),
             Tool::Note => tool!("note"),
+            Tool::MeasureWires => tool!("measure-wires"),
+            Tool::MeasureClearance => tool!("measure-clearance"),
+            Tool::MeasureObject => tool!("measure-object"),
             Tool::Follow => tool!("follow"),
         }
     }

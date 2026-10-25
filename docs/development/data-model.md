@@ -2212,7 +2212,7 @@ annotation in the same log entry, so one undo brings both back.
 
 `Annotation`: `id` (unique on the line; the app writes `user-n`), `kind`
 (`dimension`, `leader`, `note`), `tool` (a dimension's measurement:
-`distance`, `height`, `stations`), `anchors` (a dimension: as many as its
+`distance`, `height`, `stations`, `wire_to_wire`, `clearance`, `wire_to_object`), `anchors` (a dimension: as many as its
 measurement takes; a note: one), `text`, `author`, `time` (UTC), `last`
 (`value`, `unit`, `case`: the value when kept, for a reader without the
 solved line). An `Anchor` is tagged by `on`: `structure` (`structure`:
