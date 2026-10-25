@@ -19,9 +19,10 @@
 //! - [`clipping_offsets`]: the marks at the structures when a section
 //!   sagged in the blocks at one condition is clipped in at another.
 //!
-//! The in-the-blocks model is the engine's (one horizontal tension through
-//! the section, the strings plumb at stringing); these functions do not
-//! change it.
+//! The in-the-blocks state is the caller's: over frictionless sheaves
+//! ([`crate::sheaves`], the wire's tension equal on both sides of each;
+//! the engine's default since 2026-10-25) or one horizontal tension
+//! through the section (simplified); these functions do not change it.
 
 use ohl_core::units::{Force, Length, STANDARD_GRAVITY};
 
@@ -177,8 +178,8 @@ pub fn temperature_correction(
 ///
 /// A section sagged in the blocks at one condition keeps, per span, the
 /// unstressed lengths `sagged`; clipped in at another condition, the cable
-/// has rolled through the sheaves to `clipping` (the engine's in-the-blocks
-/// model: one horizontal tension). At structure \\( i \\) (after span
+/// has rolled through the sheaves to `clipping` (the in-the-blocks model:
+/// over the sheaves, or one horizontal tension). At structure \\( i \\) (after span
 /// \\( i \\)) the wire point to clamp lies
 ///
 /// \\[ \delta_i = \sum_{j \le i} (L_{0,j}^{sag} - L_{0,j}^{clip}) \\]

@@ -39,6 +39,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(Nonlinear));
     registry.register(Box::new(NonlinearCriteria));
     registry.register(Box::new(Sagging));
+    registry.register(Box::new(Riser));
     registry.register(Box::new(ThermalSteady));
     registry.register(Box::new(SpottingLevel));
     registry.register(Box::new(StructureFe));
@@ -729,11 +730,12 @@ impl Calculation for Sagging {
         "Sagging outputs of a tension section, linear wire (inputs: spans [{span, rise}], \
          axial_stiffness, thermal_expansion, known_load (own weight), known_temperature, \
          known_tension, optional temperature (sagging, default the known), waves (default 1), \
-         transit = {span (1-based), instrument_x, instrument_z, target_x}, clip_temperature); \
-         outputs per span i (from 0): sag_i_m, level_sag_i_m, inclined_correction_i_m, \
+         transit = {span (1-based), instrument_x, instrument_z, target_x}, clip_temperature, \
+         blocks = sheaves (default: over frictionless sheaves) or equal_h (simplified)); \
+         outputs per span i (from 0): h_i_n, sag_i_m, level_sag_i_m, inclined_correction_i_m, \
          sag_per_k_i_m, stopwatch_i_s, dyno_left_i_n, dyno_right_i_n, clip_offset_i_m (at the \
-         structure after span i); h_n; transit_angle_deg, transit_tangent_x_m, \
-         transit_target_m"
+         structure after span i); h_n (equal H; over sheaves the spans' mean weighted by their \
+         lengths); transit_angle_deg, transit_tangent_x_m, transit_target_m"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -766,10 +768,19 @@ impl Calculation for Sagging {
         )
         .map_err(|e| e.to_string())?;
         let budget = default_solver_budget();
+        let sheaves = match inputs.get("blocks").and_then(|v| v.as_str()) {
+            None | Some("sheaves") => true,
+            Some("equal_h") => false,
+            Some(other) => return Err(format!("blocks \"{other}\": sheaves or equal_h")),
+        };
         let at = |t: Temperature| {
-            section
-                .solve(LoadState::bare(weight, t), &budget)
-                .map_err(|e| e.to_string())
+            let state = LoadState::bare(weight, t);
+            if sheaves {
+                section.solve_over_sheaves(state, &budget)
+            } else {
+                section.solve(state, &budget)
+            }
+            .map_err(|e| e.to_string())
         };
         let sag_t = if inputs.contains_key("temperature") {
             quantity_input::<Temperature>(inputs, "temperature")?
@@ -790,6 +801,7 @@ impl Calculation for Sagging {
         );
         let mut out = outputs([("h_n", solved.horizontal_tension.newtons())]);
         for (i, sp) in solved.spans.iter().enumerate() {
+            out.insert(format!("h_{i}_n"), sp.catenary.horizontal_tension.newtons());
             out.insert(format!("sag_{i}_m"), sp.sag().meters());
             out.insert(format!("level_sag_{i}_m"), sagging::level_sag(sp).meters());
             out.insert(
@@ -839,6 +851,52 @@ impl Calculation for Sagging {
             }
         }
         Ok(out)
+    }
+}
+
+/// `jumper.riser`: a vertical riser (a jumper given by its tension,
+/// [`ohl_line::jumper::taut_riser`]): cut for its tension at the top in
+/// still air, then in a horizontal wind with that length.
+struct Riser;
+
+impl Calculation for Riser {
+    fn id(&self) -> &'static str {
+        "jumper.riser"
+    }
+
+    fn description(&self) -> &'static str {
+        "A vertical riser given by its tension (inputs: height, tension at the top, weight per \
+         metre, axial_stiffness, wind per metre across it); outputs cut_length_m, top_n, \
+         bottom_n (still air), wind_mid_deflection_m (at mid-height), wind_top_n, wind_bottom_n"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let h = quantity_input::<Length>(inputs, "height")?.si();
+        let t = quantity_input::<Force>(inputs, "tension")?.si();
+        let w = quantity_input::<ForcePerLength>(inputs, "weight")?.si();
+        let ea = quantity_input::<Force>(inputs, "axial_stiffness")?.si();
+        let q = quantity_input::<ForcePerLength>(inputs, "wind")?.si();
+        let (a, b) = ([0.0, 0.0, h], [0.0, 0.0, 0.0]);
+        let norm = |f: [f64; 3]| f.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let (l, _, still) = ohl_line::jumper::taut_riser(a, b, t, w, ea, [0.0, 0.0, -w])?;
+        let (_, points, windy) = ohl_line::jumper::taut_riser(a, b, t, w, ea, [q, 0.0, -w])?;
+        // The deflection at mid-height, between the nodes around it.
+        let mid = points
+            .windows(2)
+            .find(|p| p[0][2] >= h / 2.0 && p[1][2] <= h / 2.0)
+            .map(|p| {
+                let f = (p[0][2] - h / 2.0) / (p[0][2] - p[1][2]);
+                p[0][0] + f * (p[1][0] - p[0][0])
+            })
+            .ok_or("no node pair around mid-height")?;
+        Ok(outputs([
+            ("cut_length_m", l),
+            ("top_n", norm(still[0])),
+            ("bottom_n", norm(still[1])),
+            ("wind_mid_deflection_m", mid),
+            ("wind_top_n", norm(windy[0])),
+            ("wind_bottom_n", norm(windy[1])),
+        ]))
     }
 }
 

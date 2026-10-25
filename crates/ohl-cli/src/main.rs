@@ -292,6 +292,13 @@ struct LineArgs {
     /// unsafe side). Default: the line file's (`solver.loads_per`).
     #[arg(long, value_parser = parse_loads_per)]
     loads_per: Option<ohl_line::LoadsPer>,
+    /// How a section in the blocks shares its wire between its spans:
+    /// `sheaves` (over frictionless sheaves, the wire's tension equal on
+    /// both sides of each; the default) or `equal_h` (simplified: one
+    /// horizontal tension in every span). Default: the line file's
+    /// (`solver.blocks`).
+    #[arg(long, value_parser = parse_blocks)]
+    blocks: Option<ohl_line::InTheBlocks>,
     /// Ice density, kg/m³ (default 913, glaze ice): with a thickness, the
     /// ice weight; with a load, the iced diameter for the wind.
     #[arg(long)]
@@ -1663,6 +1670,12 @@ fn sagtension(job: &std::path::Path, units: Units, csv: Option<&std::path::Path>
     }
 }
 
+/// `--blocks`: `sheaves` or `equal_h`.
+fn parse_blocks(text: &str) -> Result<ohl_line::InTheBlocks, String> {
+    ohl_line::InTheBlocks::parse(text)
+        .ok_or_else(|| format!("\"{text}\": write sheaves or equal_h"))
+}
+
 /// `--loads-per`: `stretched` or `unstretched`.
 fn parse_loads_per(text: &str) -> Result<ohl_line::LoadsPer, String> {
     ohl_line::LoadsPer::parse(text)
@@ -1717,6 +1730,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         ice_thickness,
         ice_load,
         loads_per,
+        blocks,
         ice_density,
         weather,
         case,
@@ -1793,7 +1807,14 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         if let Some(per) = loads_per {
             line.solver.loads_per = *per;
         }
-        println!("calculation: {}", line.solver.loads_per.describe());
+        if let Some(b) = blocks {
+            line.solver.blocks = *b;
+        }
+        println!(
+            "calculation: {}; {}",
+            line.solver.loads_per.describe(),
+            line.solver.blocks.describe()
+        );
         let library = ohl_cables::Library::load(library).map_err(|e| e.to_string())?;
         // Formats first: a wrong format or plugin fails before solving.
         let export_options = io_run::options(export_options)?;

@@ -355,8 +355,9 @@ fn the_orientation_at_a_station_and_at_an_angle_structure() {
 /// Mid-span T1–T2 in the case "everyday" (no wind): phase L1 of S1
 /// hangs from A1, 6 m right of the axis. Its clamps (the span's ends)
 /// lie at x = 5.00 m (T1 is a dead end: the strain string reaches 5 m
-/// into the span) and 310.00 m, 5.998 m and 5.901 m right of the axis
-/// (the suspension string at T2 swings a little in the line's plan). In
+/// into the span) and about 310.0 m (the suspension string at T2 swung
+/// 3 cm along the line over the sheaves, 2026-10-25), 5.998 m and
+/// 5.901 m right of the axis (it swings a little in the line's plan). In
 /// still air the wire lies in the vertical plane through its clamps, so
 /// at mid-span (x = 157.5 m) it crosses the cut at the mean of the two
 /// offsets, 5.95 m right; its height there is the chord's middle less
@@ -378,7 +379,7 @@ fn wires_cross_the_plane_where_they_hang() {
     let span = &shape.spans[0];
     let (a, b) = (span.points[0], *span.points.last().unwrap());
     assert!(
-        (a[0] - 5.0).abs() < 0.01 && (b[0] - 310.0).abs() < 0.01,
+        (a[0] - 5.0).abs() < 0.01 && (b[0] - 310.0).abs() < 0.05,
         "{a:?} {b:?}"
     );
     let mid = 0.5 * (a[0] + b[0]);

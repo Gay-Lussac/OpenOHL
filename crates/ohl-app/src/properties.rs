@@ -1043,6 +1043,11 @@ pub fn ui(
                         "defined by",
                         match (j.length, j.sag) {
                             _ if j.rigid => "rigid: straight between its clamps".into(),
+                            _ if j.tension.is_some() => format!(
+                                "tension {:.0} N at its higher end at {} °C (a riser, taut)",
+                                j.tension.unwrap_or_default(),
+                                j.temperature
+                            ),
                             (Some(l), _) => format!("length {l:.3} m at {} °C", j.temperature),
                             (_, Some(s)) => format!("sag {s:.2} m at {} °C", j.temperature),
                             _ => "—".into(),

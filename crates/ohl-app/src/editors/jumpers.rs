@@ -25,6 +25,7 @@ pub struct JumperForm {
 pub(super) enum JumperBy {
     Length,
     Sag,
+    Tension,
     Rigid,
 }
 
@@ -109,6 +110,8 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
             ui.label("given by");
             let mut by = if j.rigid {
                 JumperBy::Rigid
+            } else if j.tension.is_some() {
+                JumperBy::Tension
             } else if j.length.is_some() {
                 JumperBy::Length
             } else {
@@ -120,6 +123,12 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     .on_hover_text("Its unstressed (cut) length at its temperature");
                 ui.radio_value(&mut by, JumperBy::Sag, "sag")
                     .on_hover_text("Its sag in still air at its temperature: cut to that");
+                ui.radio_value(&mut by, JumperBy::Tension, "tension")
+                    .on_hover_text(
+                        "A riser: dead-ended between two wire points and pulled to a tension at \
+                         its higher end in still air at its temperature (any direction, \
+                         vertical too): cut to that, solved as a taut wire",
+                    );
                 ui.radio_value(&mut by, JumperBy::Rigid, "rigid")
                     .on_hover_text("A tube or bar: straight between its clamps");
             });
@@ -128,17 +137,26 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     JumperBy::Length => {
                         j.rigid = false;
                         j.sag = None;
+                        j.tension = None;
                         j.length = Some(j.length.unwrap_or(5.0));
                     }
                     JumperBy::Sag => {
                         j.rigid = false;
                         j.length = None;
+                        j.tension = None;
                         j.sag = Some(j.sag.unwrap_or(1.0));
+                    }
+                    JumperBy::Tension => {
+                        j.rigid = false;
+                        j.length = None;
+                        j.sag = None;
+                        j.tension = Some(j.tension.unwrap_or(2_000.0));
                     }
                     JumperBy::Rigid => {
                         j.rigid = true;
                         j.length = None;
                         j.sag = None;
+                        j.tension = None;
                     }
                 }
             }
@@ -158,12 +176,24 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     }
                     ui.end_row();
                 }
+                JumperBy::Tension => {
+                    ui.label("tension");
+                    if let Some(t) = &mut j.tension {
+                        value(ui, t, 10.0, " N").on_hover_text(
+                            "Per subconductor, at its higher end, in still air at its temperature",
+                        );
+                    }
+                    ui.end_row();
+                }
                 JumperBy::Rigid => {}
             }
             if by != JumperBy::Rigid {
                 ui.label("temperature");
                 value(ui, &mut j.temperature, 0.5, " °C");
                 ui.end_row();
+            }
+            // A taut riser has no bending stiffness or exit angles.
+            if !matches!(by, JumperBy::Rigid | JumperBy::Tension) {
                 ui.label("stiffness EI");
                 let mut given = j.bending_stiffness.is_some();
                 ui.horizontal(|ui| {
@@ -250,7 +280,15 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
     if j.support().is_some() {
         ui.label(egui::RichText::new("Its support string is kept (Jumpers table).").small());
     }
-    if !j.rigid {
+    if j.tension.is_some() {
+        ui.label(
+            egui::RichText::new(
+                "A riser: taut between its two wire points; the jumpers at its top and bottom tap \
+                 onto its points. No helping strings (post insulators along it: later).",
+            )
+            .small(),
+        );
+    } else if !j.rigid {
         clamps_ui(ui, j, &mut f.remove, model);
     }
 }

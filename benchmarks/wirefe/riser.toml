@@ -1,0 +1,35 @@
+# A riser (a jumper given by its tension, owner decision 2026-10-25; theory:
+# Jumpers › A riser): invented data, a wire of 15 N/m and EA = 30 MN
+# dead-ended between two points 30 m one above the other, tensioned to
+# 5000 N at its top in still air; then, with that length, a wind of
+# 10 N/m across it.
+#
+# Reference: benchmarks/wirefe/reference_riser.py — still air exact (the
+# continuous elastic wire hanging straight: the quadratic for its length);
+# the wind by the continuous elastic string integrated along its length
+# (RK4) and shot from the top by Newton. Hand checks: the bottom's tension
+# is the top's less w L0 (5000 - 15 x 29.9952 = 4550.07 N); the middle's
+# deflection in the wind q L^2 / 8 T_mean with T_mean the mean tension in
+# the wind (the bow's stretch raises it from 4775 N to about 7050 N:
+# 0.160 m, against 0.236 m at the still-air tension; notes in the script).
+#
+# Tolerances: still air 1e-9 (the code's polygon of bars with the loads at
+# the nodes is exact for a straight wire: the tension is linear along it;
+# the bottom's 1e-8, the solver's equilibrium tolerance of 1e-9 of the
+# loads at each of its ~30 nodes adding up to ~2e-5 N);
+# the wind 2e-3 (the polygon against the continuum, about (l/L)^2 with
+# pieces of about 1 m).
+
+[[case]]
+id = "riser-001"
+title = "Vertical riser 30 m tensioned to 5 kN at its top: still air, then a 10 N/m wind across it"
+calculation = "jumper.riser"
+reference = "Independent numerics (benchmarks/wirefe/reference_riser.py) + hand checks (notes)"
+max_seconds = 5.0
+inputs = { height = "30 m", tension = "5000 N", weight = "15 N/m", axial_stiffness = "30e6 N", wind = "10 N/m" }
+expected.cut_length_m = { value = 29.99522572, rel_tol = 1e-9 }
+expected.top_n = { value = 5000.0, rel_tol = 1e-9 }
+expected.bottom_n = { value = 4550.071614, rel_tol = 1e-8 }
+expected.wind_mid_deflection_m = { value = 0.1597194958, rel_tol = 2e-3 }
+expected.wind_top_n = { value = 7269.953134, rel_tol = 2e-3 }
+expected.wind_bottom_n = { value = 6820.058784, rel_tol = 2e-3 }

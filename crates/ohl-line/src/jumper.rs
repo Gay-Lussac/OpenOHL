@@ -48,6 +48,8 @@ use ohl_wirefe::catenary_element::default_element_budget;
 use ohl_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, default_fe_budget};
 
 use crate::rod::{Rod, RodHold, RodShape, RodString};
+
+mod riser;
 use crate::solve::{SectionShape, p, v, wire_load_in_line_wind};
 use crate::{Jumper, Line, LineError, Point, SectionPoint};
 
@@ -1244,9 +1246,9 @@ fn support_shapes(
         .collect()
 }
 
-/// The unstressed length, at the jumper's temperature, giving its sag in
-/// still air between the section ends solved in `shapes` (its design
-/// case: still air at that temperature).
+/// The unstressed length, at the jumper's temperature, giving its sag (or,
+/// a riser, its tension) in still air between the section ends solved in
+/// `shapes` (its design case: still air at that temperature).
 fn cut_length(
     line: &Line,
     jumper: &Jumper,
@@ -1255,15 +1257,26 @@ fn cut_length(
 ) -> Result<f64, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
     let cable = &cut_cable(cable, jumper);
-    let sag = jumper
-        .sag
-        .ok_or_else(|| invalid("needs a length or a sag".into()))?;
     let at = |end: &crate::JumperEnd| {
         let p = end
             .point()
             .ok_or_else(|| invalid("on a tap: give its length".into()))?;
         end_position(line, shapes, p).map_err(|e| invalid(e.to_string()))
     };
+    if let Some(tension) = jumper.tension {
+        return riser::design_length(
+            line,
+            jumper,
+            cable,
+            tension,
+            at(&jumper.from)?,
+            at(&jumper.to)?,
+        )
+        .map_err(invalid);
+    }
+    let sag = jumper
+        .sag
+        .ok_or_else(|| invalid("needs a length or a sag".into()))?;
     let a = at(&jumper.from)?;
     let b = at(&jumper.to)?;
     let still = CableProperties {
@@ -1287,6 +1300,25 @@ fn cut_length(
 pub fn cut_cable(cable: &Cable, jumper: &Jumper) -> Cable {
     let t = ohl_core::units::Temperature::from_celsius(jumper.temperature);
     cable.with_mass_at(t, cable.weight_factor_at(t))
+}
+
+/// A riser alone (a jumper given by its tension, the module `riser`; for
+/// validation): its cut length for `tension` at its higher end between
+/// `a` and `b` in still air (own weight `w` N/m, axial stiffness `ea` N),
+/// and with that length its shape under `load` (N per unstressed metre):
+/// the length, the nodes and the forces it exerts on its two ends.
+pub fn taut_riser(
+    a: Point,
+    b: Point,
+    tension: f64,
+    w: f64,
+    ea: f64,
+    load: Point,
+) -> Result<(f64, Vec<Point>, [Point; 2]), String> {
+    let (a, b) = (v(a), v(b));
+    let l = riser::cut_length(a, b, tension, w, ea, &[])?;
+    let s = riser::solve_taut(a, b, l, ea, v(load), &[])?;
+    Ok((l, s.points.iter().map(|q| p(*q)).collect(), s.ends.map(p)))
 }
 
 /// Solves one jumper in a weather case, between the solved section ends.
@@ -1388,9 +1420,21 @@ pub fn solve_jumper_in(
             polyline_error: 0.0,
         });
     }
+    // Given by its tension: a taut wire, any direction (the riser).
+    if let Some(tension) = jumper.tension {
+        let cut = match jumper.length {
+            Some(l) => l,
+            // Not cut yet: in this case's ends, still air at its
+            // temperature (the design case; other cases get the length
+            // cut there, see [`solve_jumpers`]).
+            None => riser::design_length(line, jumper, cable, tension, a, b).map_err(invalid)?,
+        };
+        return riser::shape(line, jumper, cable, case, a, b, cut, &hanging).map_err(invalid);
+    }
     if d.xy().norm() < 0.1 {
         return Err(invalid(
-            "ends less than 0.1 m apart horizontally (a vertical jumper is not supported yet)"
+            "ends less than 0.1 m apart horizontally: a vertical jumper is given by its tension \
+             (a riser)"
                 .into(),
         ));
     }
@@ -1836,7 +1880,7 @@ pub fn solve_one_jumper_in(
             jumper.id, jumper.cable
         ))
     })?;
-    if jumper.length.is_none() && jumper.sag.is_some() {
+    if jumper.length.is_none() && (jumper.sag.is_some() || jumper.tension.is_some()) {
         let mut cut = jumper.clone();
         cut.length = Some(cut_once(line, library, jumper, cable)?);
         return solve_jumper_in(line, &cut, shapes, cable, case, context);
@@ -2254,7 +2298,7 @@ mod tests {
             line.validate()
                 .unwrap_err()
                 .to_string()
-                .contains("no length or sag")
+                .contains("no length, sag or tension")
         );
     }
 

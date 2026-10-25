@@ -43,12 +43,10 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 
 # Part A — OHL-Design (the line)
 
-**Next up** (2026-10-25): the broken-wire case (O9) and local winds per
-span (O15) are built; next the sheave model for sections in the
-blocks (equal tension along the wire over frictionless sheaves, the
-default; owner, 2026-10-25), the lyre pylons' risers (a jumper given by
-its tension, vertical allowed) and background maps in the project
-(O16). Still open: O13 (the conductor jump, to be evaluated), the
+**Next up** (2026-10-25): the broken-wire case (O9), local winds per
+span (O15), the sheave model for sections in the blocks and the lyre
+pylons' risers are built (in active development, not approved yet);
+next background maps in the project (O16). Still open: O13 (the conductor jump, to be evaluated), the
 jumpers' swing band margin (left to the owner, Phase 4) and the items
 not built in the record below (`[ ]`).
 
@@ -353,7 +351,8 @@ public map services.
 - [x] CLI: `ohl sagtension job.toml` (report in metric or US units, CSV chart)
 - [x] Non-linear model after the evaluation of a public-domain sag-tension library (2026-10-22, built, in active development (not approved yet)): the permanent set signed (a core steeper than its final modulus: after load, final equals initial at the load-stretch case); both final states reported, the governing one per weather case (the longer wire); tension criteria on the non-linear model, each in a condition (initial, after creep, after load), the governing one by iteration; warnings for states beyond a curve's `max_strain` (only where the cable gives one, owner 2026-10-22); validated on synthetic and invented cables against independent re-implementations (`nlstate-001…005`, `nlcrit-001…005`) — the Drake-like cross-check on curves of unstated source removed (owner, 2026-10-22)
 - [x] Sagging outputs (2026-10-22, built, in active development (not approved yet)): stopwatch, dynamometer, transit angle of sight, level sag and inclined-span correction, sag per kelvin, clipping offsets (clipped in at another temperature than sagged) — `ohl sagtension` `[sagging]`, the section window's Sagging panel; see [Sagging outputs](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/sagging.md)
-- [x] ~~A sheave model in the blocks~~: **not wanted (owner, 2026-10-22)** — the in-the-blocks model keeps one horizontal tension through the section (the simplification stays, marked in the theory page)
+- [x] Sections in the blocks over frictionless sheaves (owner, 2026-10-25 — reversing "not wanted" of 2026-10-22; built, in active development (not approved yet)): the default — the wire's tension equal on both sides of each suspension clamp's sheave in every weather case, each span its own horizontal tension, the strings swinging along the line to balance; the section's length as before (every span at the given tension, strings plumb); the equal-H model the option *simplified (equal H)* (Criteria › Calculation options, `solver.blocks`, line file version 10); the sagging outputs, clipping in and `ohl sagtension` `[sagging]` follow; the ruling-span method keeps one H; every in-the-blocks result changes slightly (the example: H within 0.6 %, sags within 4 cm); validation `sag-004` *(the sheave's size left out)*
+- [ ] Sheave friction in the blocks (later): needs a tension ratio per sheave and the pulling end
 - [x] Performance: single section re-solve < 10 ms *(~60 µs for 20 spans; loaded span change of state ~1 ms)*
 - [x] Validation: CIGRE TB 324 examples, textbook cases, hand calcs (2026-10-20, built, in active development (not approved yet)): 47 cases — catenary and the parabola's error, inclined spans and uplift, Irvine's elastic catenary, change of state (temperature, ice, wind, 150 °C, creep as a temperature), ruling span against the exact section and the FE strings, ice and wind loads, a point load's slope jump, a bimetallic knee point, blowout, the swing of one string and the forces of two strings to one wire point — each with a hand derivation and `benchmarks/reference/textbook_reference.py`; TB 324 sec. 2 (Table 2, dead-end strings), 5.2 and 6.1 *(TB 324's non-linear examples wait for published curves; see [Textbook and published cases](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/validation/textbook.md))*; 2026-10-21: the wire's own weight conserved in every calculation (a heated, crept or stretched span weighs what it weighs when strung; ice and wind per metre of the real conductor), 3 cases (`tbheat-001…003`: closed form, FE and ruling span at 150 °C), tb324-016 within the printed rounding; the weight from the data sheet's reference temperature (a wire type's optional `reference_temperature`, else 20 °C) taken at the stringing temperature, and a stringing temperature of 20 °C for new sections and jumpers (`tbwref-001…002`); the FE's ice and wind per metre of the stretched conductor, iterated with the solution (`tbice-001`; built, in active development (not approved yet)); strain strings with a resolved weight of 0 N keep the estimated weight, and the string catalogue no longer makes 0 N entries
 
@@ -424,6 +423,7 @@ public map services.
 - [x] Project lines: frozen states of the line (as built, as planned) saved in the project, shown next to the working line in 3D and plan, made the working line (one undoable command); since 2026-10-20 drawn on the plan and profile sheets in their roles (built, in active development, not approved yet) *(on the app's Profile page still open)*
 - [x] Add jumper tool (missing jumpers at a structure, or between two strings); ⌘S / Ctrl+S saves
 - [x] Jumpers held by their clamps: bending stiffness (estimated from the wire type or set) and the angle each end leaves its clamp at; solved as an inextensible elastic rod; project lines drawn like the working line (bundles, yokes, strings, jumpers)
+- [x] Lyre pylons' risers (owner, 2026-10-25; built, in active development (not approved yet)): a jumper given **by its tension** (at its higher end, in still air at its temperature), dead-ended between two wire points, any direction (vertical too): cut from the tension and kept, solved as a taut wire of bars in every weather case (bowing in the wind, its tension following the weather; slack refused); the jumpers at its top and bottom tap onto its points; its pull in the structure loads; clearances and drawings as a jumper; the jumper window's *tension* choice; line file version 10, OHL XML; validation `riser-001` *(post insulators along the riser — its helping strings — later)*
 - [x] Jumpers held by support clamps between their ends: each clamp on one or two of a structure's strings, free to swing and turn, the jumper straight through it (a rigid piece of the rod, also with EI = 0); tension-only strings (a leg goes slack in the wind); edited in the jumper's window, shown in the tables, properties and 3D view, written to OHL XML; their strings' pull in the structure loads; a clamp may also hang on a string below another string (e.g. a V with a string below, `chained_top`)
 - [x] Strain assemblies always free members (move with the weather, in the calculation); weights of geometry-only strings estimated from their data position in the stringing state
 - [x] Libraries (wires, structure types, insulators, weather cases) kept in the project file; export to files to share or compare; Terrain / Structures / Sections menus; LiDAR classes shown; table defaults shown
@@ -829,8 +829,9 @@ server and version control, validation and docs, 1.0 and further ahead.
   pages illustrated, background maps (O16), the broken-wire case (O9) and
   local winds per span (O15).
 
-**Running now:** the sheave model for sections in the blocks and the
-lyre pylons' risers (a jumper given by its tension).
+**Just built** (in active development, not approved yet): the sheave
+model for sections in the blocks (the default; equal H an option) and
+the lyre pylons' risers (a jumper given by its tension).
 
 > **Owner:**
 

@@ -132,30 +132,68 @@ impl NonlinearSection {
         let mut total = 0.0;
         let mut solved = Vec::with_capacity(self.spans.len());
         for &g in &self.spans {
-            let (solution, stretch) = match span_at(h, state, g, |s| {
-                let strain = self
-                    .mechanics
-                    .strain(Force::from_si(mean_tension(s)), state.temperature, material)
-                    .map_err(cable_error)?;
-                Ok((1.0 + strain) / (1.0 + self.weight_strain))
-            }) {
+            let (solution, stretch) = match self.span(h, state, material, g) {
                 Ok(x) => x,
                 Err(SagTensionError::TooSlack { .. }) => return Ok(None),
-                // A trial far too slack (the catenary parameter below half
-                // the span: a sag over a quarter of it) whose stretch does
-                // not settle (strains far beyond any curve) is too slack,
-                // not an error: the bracket moves on.
-                Err(SagTensionError::InvalidInput(_))
-                    if 2.0 * h < state.load.si() * g.span.si() =>
-                {
-                    return Ok(None);
-                }
                 Err(e) => return Err(e),
             };
-            total += solution.length().si() / stretch / (1.0 + self.weight_strain);
+            total += solution.length().si() / stretch;
             solved.push(solution);
         }
         Ok(Some((solved, total)))
+    }
+
+    /// One span at tension `h` in `state` with its stretch (its length over
+    /// its unstressed, zero-strain length). Too slack:
+    /// [`SagTensionError::TooSlack`].
+    fn span(
+        &self,
+        h: f64,
+        state: &LoadState,
+        material: &MaterialState,
+        g: SpanGeometry,
+    ) -> Result<(SpanSolution, f64), SagTensionError> {
+        match span_at(h, state, g, |s| {
+            let strain = self
+                .mechanics
+                .strain(Force::from_si(mean_tension(s)), state.temperature, material)
+                .map_err(cable_error)?;
+            Ok((1.0 + strain) / (1.0 + self.weight_strain))
+        }) {
+            Ok((s, stretch)) => Ok((s, stretch * (1.0 + self.weight_strain))),
+            // A trial far too slack (the catenary parameter below half
+            // the span: a sag over a quarter of it) whose stretch does
+            // not settle (strains far beyond any curve) is too slack,
+            // not an error: the bracket moves on.
+            Err(SagTensionError::InvalidInput(_)) if 2.0 * h < state.load.si() * g.span.si() => {
+                Err(SagTensionError::TooSlack {
+                    ratio: f64::INFINITY,
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Solves the section in the blocks over frictionless sheaves under
+    /// `state` with the material in `material` ([`crate::sheaves`], owner
+    /// decision 2026-10-25): the same unstressed length, shared so that
+    /// the wire's tension is equal on both sides of every sheave.
+    ///
+    /// Expected cost: about 10–20 × [`Self::solve`].
+    pub fn solve_over_sheaves(
+        &self,
+        state: LoadState,
+        material: &MaterialState,
+        budget: &Budget,
+    ) -> Result<SectionSolution, SagTensionError> {
+        let equal = self.solve(state, material, budget)?;
+        crate::section::over_sheaves(
+            &self.spans,
+            self.unstressed_length.si(),
+            equal.horizontal_tension.si(),
+            |i, h| self.span(h, &state, material, self.spans[i]),
+            budget,
+        )
     }
 
     /// Unstressed length the section would need at tension `h` (∞ if too

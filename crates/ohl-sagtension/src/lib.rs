@@ -8,6 +8,8 @@
 //! - [`change_of_state`]: tension at another load and temperature (linear elastic).
 //! - [`criteria`]: tension limits and the governing stringing tension.
 //! - [`section`]: tension sections — ruling span and exact equal-H solution.
+//! - [`sheaves`]: a section in the blocks over frictionless sheaves (equal tension along
+//!   the wire at each sheave).
 //! - [`loaded`]: spans with additional point and distributed loads (segmented catenary).
 //! - [`nonlinear`]: non-linear stress-strain and creep; initial and final conditions.
 //! - [`sagging`]: sagging outputs (stopwatch, dynamometer, transit, sag corrections,
@@ -20,6 +22,7 @@ pub mod loaded;
 pub mod nonlinear;
 pub mod sagging;
 pub mod section;
+pub mod sheaves;
 
 pub use catenary::{Catenary, SagTensionError, SpanGeometry, SpanSolution};
 pub use change_of_state::{ElasticCable, InstalledSpan, LoadState};

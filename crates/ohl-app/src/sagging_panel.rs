@@ -160,12 +160,18 @@ fn optional(ui: &mut egui::Ui, label: &str, value: &mut Option<f64>, default: f6
 }
 
 fn table_ui(ui: &mut egui::Ui, t: &SaggingTable, id: &str) {
-    ui.label(format!(
-        "At {:.1} °C: H = {:.2} kN; clipped in at {:.1} °C",
-        t.temperature,
-        t.horizontal_tension / 1000.0,
-        t.clip_temperature
-    ));
+    ui.label(match t.blocks {
+        ohl_line::InTheBlocks::EqualH => format!(
+            "At {:.1} °C: H = {:.2} kN in every span (simplified: equal H); clipped in at {:.1} °C",
+            t.temperature,
+            t.horizontal_tension / 1000.0,
+            t.clip_temperature
+        ),
+        ohl_line::InTheBlocks::Sheaves => format!(
+            "At {:.1} °C over sheaves: each span its own H; clipped in at {:.1} °C",
+            t.temperature, t.clip_temperature
+        ),
+    });
     egui::ScrollArea::both()
         .id_salt(("sagging-table", id))
         .max_height(240.0)
@@ -177,6 +183,7 @@ fn table_ui(ui: &mut egui::Ui, t: &SaggingTable, id: &str) {
                         "span",
                         "length m",
                         "rise m",
+                        "H kN",
                         "sag m",
                         "level sag m",
                         "incl. corr. m",
@@ -195,6 +202,7 @@ fn table_ui(ui: &mut egui::Ui, t: &SaggingTable, id: &str) {
                         ui.label(format!("{}", k + 1));
                         ui.label(format!("{:.2}", s.span));
                         ui.label(format!("{:.2}", s.rise));
+                        ui.label(format!("{:.3}", s.horizontal_tension / 1000.0));
                         ui.label(format!("{:.3}", s.sag));
                         ui.label(format!("{:.3}", s.level_sag));
                         ui.label(format!("{:.3}", s.inclined_correction));
@@ -226,8 +234,9 @@ fn table_ui(ui: &mut egui::Ui, t: &SaggingTable, id: &str) {
             "Sag: vertical, where the wire is parallel to the chord. Level sag: a level span's \
              of the same length, tension and load (a level-span chart). Clip offset: at the \
              structure ahead, along the unstressed wire, positive into the next span (zero \
-             when clipped at the sagging temperature: one tension in the blocks; sheaves are \
-             not modelled).",
+             when clipped at the sagging temperature: the wire is clipped in as it lies in the \
+             blocks). In the blocks as the calculation options say: over frictionless sheaves \
+             (the wire's tension the same on both sides of each) or simplified (equal H).",
         )
         .small()
         .weak(),
@@ -260,7 +269,9 @@ mod tests {
         h.get_by_label("Calculate").click();
         h.run();
         assert!(
-            h.query_all_by_label_contains("H =").next().is_some(),
+            h.query_all_by_label_contains("each span its own H")
+                .next()
+                .is_some(),
             "the table's heading"
         );
         assert!(h.query_by_label("stopwatch s").is_some());

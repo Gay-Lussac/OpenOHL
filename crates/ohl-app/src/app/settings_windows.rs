@@ -472,6 +472,42 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                     .weak(),
                 );
             }
+            ui.separator();
+            ui.strong("Sections in the blocks");
+            ui.label(
+                "How a section in the blocks shares its wire between its spans in each weather \
+                 case (its length is the same either way: every span sagged at the stringing \
+                 tension with the strings plumb).",
+            );
+            for (choice, text, help) in [
+                (
+                    ohl_line::InTheBlocks::Sheaves,
+                    "Over sheaves (default)",
+                    "The wire runs over a frictionless sheave at every suspension clamp: its \
+                     tension along the wire is the same on both sides, the strings swing along \
+                     the line to balance (the sheave's size and friction left out)",
+                ),
+                (
+                    ohl_line::InTheBlocks::EqualH,
+                    "Simplified (equal H)",
+                    "Every span the same horizontal tension, the strings plumb along the line \
+                     (the model before 2026-10-25): on unequal or inclined spans the spans' \
+                     tensions differ from the sheaves' by the load per metre times the \
+                     difference of their ends' heights above their low points",
+                ),
+            ] {
+                ui.radio_value(&mut draft.blocks, choice, text)
+                    .on_hover_text(help);
+            }
+            ui.label(
+                egui::RichText::new(
+                    "The effect of the choice on the example line: the spans' horizontal \
+                     tensions within about 0.6 %, sags within about 4 cm, clipping offsets \
+                     within about 1 mm. Clipped-in sections are not affected.",
+                )
+                .small()
+                .weak(),
+            );
             if let Err(why) = r.model.can_edit() {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
             }

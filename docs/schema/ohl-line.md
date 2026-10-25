@@ -72,7 +72,7 @@ The names are those of the line file:
     <spread label="heated" from="P1" to="P2" type="heated-stretch" load="12.5"/>  <!-- N/m, the whole bundle's;
                                                   per_subconductor="true": on each subconductor -->
   </section>
-  <jumper id="…" cable="…" length="…" sag="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
+  <jumper id="…" cable="…" length="…" sag="…" tension="…" temperature="15" bending_stiffness="…" stiffness_factor="…"
           angle_from_deg="…" angle_to_deg="…" color="…" bundle="…" bundle_spacing="…"
           bundle_rotation_deg="…">
     <from structure="T3" set="2"/>               <!-- or <from_tap section="S1" point="C1"/>, <from_tap jumper="J2" point="K"/> -->
@@ -100,7 +100,7 @@ The names are those of the line file:
     <load_case name="…"/>
   </creep_stretch>
   <defaults spacer_compression="10000"/>        <!-- the project's default values -->
-  <solver jumper_loads="pull" taps="once" loads_per="unstretched"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched -->
+  <solver jumper_loads="pull" taps="once" loads_per="unstretched" blocks="equal_h"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched, sheaves (blocks: version 10) -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
   <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->

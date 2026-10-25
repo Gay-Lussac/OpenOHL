@@ -1578,3 +1578,42 @@ fn load_types_are_the_templates_and_the_projects_own() {
         70.0
     );
 }
+
+/// Criteria › Calculation options: the simplified in-the-blocks model
+/// (equal H) chosen (2026-10-25; over sheaves the default) — one command,
+/// undoable and redoable, kept in the line's settings.
+#[test]
+fn calculation_options_choose_the_simplified_blocks() {
+    let model = synthetic_project("blocks");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .model
+            .line
+            .solver
+            .blocks,
+        ohl_line::InTheBlocks::Sheaves
+    );
+    harness.get_by_label("Criteria").click();
+    harness.run();
+    harness.get_by_label("Calculation options…").click();
+    harness.run();
+    harness.get_by_label("Simplified (equal H)").click();
+    harness.run();
+    harness.get_by_label("OK").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.line.solver.blocks, ohl_line::InTheBlocks::EqualH);
+    let stored = r.model.stored_line().unwrap();
+    assert_eq!(stored.solver.blocks, ohl_line::InTheBlocks::EqualH);
+    r.perform(crate::edit::Action::Undo);
+    assert_eq!(r.model.line.solver.blocks, ohl_line::InTheBlocks::Sheaves);
+    r.perform(crate::edit::Action::Redo);
+    assert_eq!(r.model.line.solver.blocks, ohl_line::InTheBlocks::EqualH);
+}
