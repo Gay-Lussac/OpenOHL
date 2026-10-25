@@ -618,13 +618,16 @@ fn tension_text(lo: f64, hi: f64) -> String {
     }
 }
 
-/// Draws the template's notes, placed from the frame `inner`'s edges.
-/// Each note is broken to its width, at most to the frame's padding on
-/// the right. Returns the rectangle each note covers.
+/// Draws the template's notes, placed from the frame `inner`'s edges (a
+/// note `from = "drawing"`: its height down from `drawing_bottom`, the
+/// drawing's lower edge). Each note is broken to its width, at most to
+/// the frame's padding on the right. Returns the rectangle each note
+/// covers.
 pub(crate) fn notes(
     items: &mut Vec<Item>,
     t: &SheetTemplate,
     inner: Rect,
+    drawing_bottom: f64,
     values: &Values,
 ) -> Vec<Rect> {
     let color = Color::hex_or_black(&t.text.colour);
@@ -635,10 +638,10 @@ pub(crate) fn notes(
         } else {
             inner[0] + inner[2] + n.at[0].0
         };
-        let y = if n.at[1].0 >= 0.0 {
-            inner[1] + n.at[1].0
-        } else {
-            inner[1] + inner[3] + n.at[1].0
+        let y = match n.from {
+            crate::template::NoteFrom::Drawing => drawing_bottom + n.at[1].0,
+            crate::template::NoteFrom::Frame if n.at[1].0 >= 0.0 => inner[1] + n.at[1].0,
+            crate::template::NoteFrom::Frame => inner[1] + inner[3] + n.at[1].0,
         };
         let size = n.size.0;
         let width = n.width.0.min(inner[0] + inner[2] - x).max(1.0);
@@ -1033,9 +1036,14 @@ pub(crate) fn key_map(
     }
     let inner = [r[0] + 2.0, r[1] + 2.0, r[2] - 4.0, r[3] - 4.0];
     let (ew, eh) = ((ext[2] - ext[0]).max(1.0), (ext[3] - ext[1]).max(1.0));
+    // Fitted with 2 mm of air inside the clip: the sheet's box (1 mm
+    // around its stretch) and the highlight's width are drawn whole where
+    // the stretch reaches the map's edge (2026-10-25: cut at the route's
+    // ends).
+    const AIR: f64 = 2.0;
     let k = match spec.scale {
         Some(den) => 1000.0 / den,
-        None => (inner[2] / ew).min(inner[3] / eh),
+        None => ((inner[2] - 2.0 * AIR).max(1.0) / ew).min((inner[3] - 2.0 * AIR).max(1.0) / eh),
     };
     let cx = 0.5 * (ext[0] + ext[2]);
     let cy = 0.5 * (ext[1] + ext[3]);

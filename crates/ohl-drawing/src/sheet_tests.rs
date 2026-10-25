@@ -651,6 +651,51 @@ fn a_note_over_the_furniture_is_warned() {
     assert!(s[0].warnings.iter().all(|w| !w.starts_with("note ")));
 }
 
+/// A note `from = "drawing"` stands its `at` height under the drawing's
+/// lowest row (the bands' station labels), whatever the frame: below every
+/// band text and above the frame's bottom.
+#[test]
+fn a_note_from_the_drawing_stands_under_the_bands() {
+    let mut text = example_text();
+    text.push_str(
+        "\n[[note]]\nfrom = \"drawing\"\nat = [\"4 mm\", \"3 mm\"]\nwidth = \"100 mm\"\nsize = \"2 mm\"\ntext = \"UNDER THE BANDS\"\n",
+    );
+    let o = options(template(&text));
+    let s = sheets(&main_route(&o), &o, &page_format("A1").unwrap());
+    let flat = s[0].drawing.flat();
+    let note = flat
+        .iter()
+        .find_map(|(i, _)| match i {
+            Item::Text(x) if x.text == "UNDER THE BANDS" => Some(x.at[1]),
+            _ => None,
+        })
+        .expect("the note is drawn");
+    let lowest_band = flat
+        .iter()
+        .filter_map(|(i, _)| match i {
+            Item::Text(x) if x.layer == Layer::Bands => Some(x.at[1]),
+            _ => None,
+        })
+        .fold(f64::MIN, f64::max);
+    assert!(lowest_band > f64::MIN, "the example has bands");
+    assert!(
+        note > lowest_band,
+        "the note at {note:.1} mm, the bands down to {lowest_band:.1} mm"
+    );
+    assert!(
+        note < lowest_band + 20.0,
+        "the note right under the bands, at {note:.1} mm"
+    );
+    assert!(
+        SheetTemplate::parse(
+            "format = \"ohl-sheet-template\"\nversion = 1\n[[note]]\nfrom = \"page\"\nat = [\"0 mm\", \"0 mm\"]\ntext = \"x\"",
+            None,
+            &[]
+        )
+        .is_err()
+    );
+}
+
 /// The ground clearance band row: per span, the least distance from the
 /// ground up to the one limit line (the lowest of the circuits' lines
 /// below their lowest conductors), as found between the two lines'
