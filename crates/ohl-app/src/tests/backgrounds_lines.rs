@@ -21,8 +21,16 @@ pub(super) fn project_with_backgrounds(name: &str) -> model::Model {
     .save(&png)
     .unwrap();
     std::fs::write(dir.join("ortho.pgw"), "2\n0\n0\n-2\n-49\n609\n").unwrap();
-    let report =
-        crate::backgrounds::import_images(&file, "Ortho", &[png], "", "", &|_, _| {}).unwrap();
+    let report = crate::backgrounds::import_images(
+        &file,
+        "Ortho",
+        ohl_background::LayerKind::Orthophoto,
+        &[png],
+        "",
+        "",
+        &|_, _| {},
+    )
+    .unwrap();
     assert!(report.starts_with("1 image(s)"), "{report}");
     let dxf = dir.join("cadastre.dxf");
     std::fs::write(
@@ -278,8 +286,16 @@ fn image_import_failures_are_grouped_by_reason() {
     let model = synthetic_project("grouped");
     let dir = model.sources.file.parent().unwrap().to_path_buf();
     let files: Vec<PathBuf> = (0..8).map(|k| dir.join(format!("t{k}.ecw"))).collect();
-    let e = crate::backgrounds::import_images(&model.sources.file, "O", &files, "", "", &|_, _| {})
-        .unwrap_err();
+    let e = crate::backgrounds::import_images(
+        &model.sources.file,
+        "O",
+        ohl_background::LayerKind::Orthophoto,
+        &files,
+        "",
+        "",
+        &|_, _| {},
+    )
+    .unwrap_err();
     assert_eq!(e.lines().count(), 2, "{e}");
     assert!(
         e.contains("8 file(s): an ECW file needs a converter"),
@@ -1156,4 +1172,51 @@ fn a_surface_imported_under_the_remembered_name_is_drawn_at_once() {
     assert!(r.model.ground.is_some());
     assert!(r.view3d.dirty.contains(&crate::scene::Layer::Ground));
     assert!(r.visible.contains(&crate::scene::Layer::Ground));
+}
+
+/// A map loaded into the project (roadmap O16): imported as a layer of
+/// kind map beside an orthophoto layer, the kind kept in the project; the
+/// route and situation plans and the key map take the maps first (every
+/// layer when there is none); turned back to an orthophoto, none.
+#[test]
+fn a_map_is_taken_first_by_the_plans() {
+    let mut model = project_with_backgrounds("map-layer");
+    let file = model.sources.file.clone();
+    assert_eq!(model.backgrounds.plan_layers(), None, "no map: every layer");
+    let dir = file.parent().unwrap().to_path_buf();
+    let png = dir.join("map.png");
+    image::RgbImage::from_fn(70, 35, |_, _| image::Rgb([200, 200, 180]))
+        .save(&png)
+        .unwrap();
+    std::fs::write(dir.join("map.pgw"), "20\n0\n0\n-20\n-49\n609\n").unwrap();
+    crate::backgrounds::import_images(
+        &file,
+        "Map",
+        ohl_background::LayerKind::Map,
+        &[png],
+        "",
+        "",
+        &|_, _| {},
+    )
+    .unwrap();
+    let mut log = Vec::new();
+    model.backgrounds = crate::backgrounds::load(&file, &mut log);
+    assert_eq!(
+        model.backgrounds.kind("Map"),
+        ohl_background::LayerKind::Map
+    );
+    assert_eq!(
+        model.backgrounds.kind("Ortho"),
+        ohl_background::LayerKind::Orthophoto
+    );
+    assert_eq!(
+        model.backgrounds.plan_layers(),
+        Some(vec!["Map".to_owned()])
+    );
+    ohl_background::Store::open(&file)
+        .unwrap()
+        .set_layer_kind("Map", ohl_background::LayerKind::Orthophoto)
+        .unwrap();
+    model.backgrounds = crate::backgrounds::load(&file, &mut log);
+    assert_eq!(model.backgrounds.plan_layers(), None);
 }

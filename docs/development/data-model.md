@@ -1859,7 +1859,7 @@ are missing (`CREATE TABLE IF NOT EXISTS`):
 |---|---|---|
 | `ohl_session::Session::open` | `ols_meta`, `session_user`, `model_object`, `oplog`, `spatial_index`, `surface`, `vc_blob`, `vc_revision`, `vc_ref`, `edit_grant`, `vc_review`, `vc_review_note` | `ols_meta` `session_schema` = `6` (`ohl_session::SCHEMA_VERSION`) |
 | `ohl_pointcloud::Store::open` | `pointcloud`, `pointcloud_source`, `pointcloud_block`, `pointcloud_lod` (and `ols_meta`, if missing) | `ols_meta` `pointcloud_schema` = `2` |
-| `ohl_background::Store::open` | `background_image`, `background_tile`, `background_drawing` | none (tables only added) |
+| `ohl_background::Store::open` | `background_image`, `background_tile`, `background_drawing`, `background_layer` (2026-10-25) | none (tables only added) |
 
 The file is kept in SQLite's WAL journal mode: while a program has it
 open, `project.ohl-wal` and `project.ohl-shm` lie next to it and hold the
@@ -2008,6 +2008,7 @@ background_image  (id INTEGER PRIMARY KEY, layer TEXT NOT NULL, name TEXT NOT NU
 background_tile   (image INTEGER NOT NULL REFERENCES background_image(id) ON DELETE CASCADE,
                    level INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL,
                    data BLOB NOT NULL, PRIMARY KEY (image, level, tx, ty))
+background_layer  (layer TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'orthophoto')
 background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NULL DEFAULT '',
                    items INTEGER NOT NULL, bounds TEXT NOT NULL, data BLOB NOT NULL, created TEXT)
 ```
@@ -2087,6 +2088,11 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
   `ohl_pointcloud::codec` (integers relative to the chunk, byte planes
   shuffled, zstd). `pointcloud_lod`: the block's points of levels 1 to 3
   (about a 4th, 16th, 64th) and `z1`, its highest point.
+- `background_layer` (2026-10-25, roadmap O16): an image layer's kind,
+  `orthophoto` or `map` (`ohl_background::LayerKind`); a layer without a
+  row is an orthophoto. The route and situation plans and the sheets' key
+  map take the maps first (`Store::map_layers`; every layer when there is
+  none).
 - `background_image`: `x0`, `y0` the image's top-left corner, `px`, `py`
   the pixel size, m; `levels` the pyramid's levels; `background_tile`:
   JPEG tiles of 256 pixels (blank tiles not kept). `background_drawing`:

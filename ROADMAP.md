@@ -265,7 +265,13 @@ on the other views and the sheets (the key map, the plan); later, links
 to public map services.
 > **Owner:** (2026-10-23) Asked, with the key map's backgrounds.
 > **Owner:** (2026-10-25) A map loaded into the project is fine; shown on
-> the plan, the sheets and the plans (not draped in 3D). *Being built.*
+> the plan, the sheets and the plans (not draped in 3D).
+
+**Built 2026-10-25, in active development (not approved yet):** an image
+layer is an orthophoto or a map (Terrain › Backgrounds › Import
+orthophotos or maps…, the kind turned in the menu); the route and
+situation plans and the key map take the maps first. Later: links to
+public map services.
 
 ## Unfinished or approximate (known limitations)
 

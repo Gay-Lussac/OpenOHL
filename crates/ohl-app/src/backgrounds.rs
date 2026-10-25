@@ -61,9 +61,34 @@ pub struct Loaded {
     pub images: Vec<ImageInfo>,
     /// Drawings.
     pub drawings: Vec<LoadedDrawing>,
+    /// The kind of each image layer given one (the others: orthophotos).
+    pub kinds: std::collections::BTreeMap<String, ohl_background::LayerKind>,
 }
 
 impl Loaded {
+    /// Image layer `layer`'s kind.
+    pub fn kind(&self, layer: &str) -> ohl_background::LayerKind {
+        self.kinds.get(layer).copied().unwrap_or_default()
+    }
+
+    /// The image layers that are maps (2026-10-25, roadmap O16), in
+    /// their order.
+    pub fn map_layers(&self) -> Vec<String> {
+        self.image_layers()
+            .into_iter()
+            .map(|(l, _)| l)
+            .filter(|l| self.kind(l) == ohl_background::LayerKind::Map)
+            .collect()
+    }
+
+    /// The layers the route and situation plans and the sheets' key map
+    /// take when none are named: the maps, when the project has any (none:
+    /// every layer).
+    pub fn plan_layers(&self) -> Option<Vec<String>> {
+        let maps = self.map_layers();
+        (!maps.is_empty()).then_some(maps)
+    }
+
     /// The image layers, with their number of images.
     pub fn image_layers(&self) -> Vec<(String, usize)> {
         let mut out: Vec<(String, usize)> = Vec::new();
@@ -108,6 +133,10 @@ pub fn load(file: &Path, log: &mut Vec<String>) -> Loaded {
         log.push(format!("images not read: {e}"));
         Vec::new()
     });
+    let kinds = store.layer_kinds().unwrap_or_else(|e| {
+        log.push(format!("image layers' kinds not read: {e}"));
+        Default::default()
+    });
     let mut drawings = Vec::new();
     for info in store.drawings().unwrap_or_default() {
         match store.drawing(&info.name) {
@@ -122,7 +151,11 @@ pub fn load(file: &Path, log: &mut Vec<String>) -> Loaded {
             drawings.len()
         ));
     }
-    Loaded { images, drawings }
+    Loaded {
+        images,
+        drawings,
+        kinds,
+    }
 }
 
 /// Tiles to read per frame at most (the rest on the next frames).
@@ -458,13 +491,15 @@ fn is_ecw(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ecw"))
 }
 
-/// Terrain › Backgrounds › Import orthophotos.
+/// Terrain › Backgrounds › Import orthophotos or maps.
 #[derive(Debug, Clone)]
 pub struct ImageImport {
     /// The files.
     pub files: Vec<PathBuf>,
     /// Their layer.
     pub layer: String,
+    /// An orthophoto or a map.
+    pub kind: ohl_background::LayerKind,
     /// The ECW converter (when ECW files are given).
     pub converter: String,
     /// Why it cannot start.
@@ -483,6 +518,7 @@ impl ImageImport {
         Self {
             files: Vec::new(),
             layer: "Orthophoto".into(),
+            kind: ohl_background::LayerKind::Orthophoto,
             converter,
             error: None,
         }
@@ -538,12 +574,16 @@ fn epsg(spec: &str) -> Option<u16> {
 pub fn import_images(
     file: &Path,
     layer: &str,
+    kind: ohl_background::LayerKind,
     files: &[PathBuf],
     crs: &str,
     converter: &str,
     report: &dyn Fn(String, f32),
 ) -> Result<String, String> {
     let mut store = ohl_background::Store::open(file).map_err(|e| e.to_string())?;
+    store
+        .set_layer_kind(layer, kind)
+        .map_err(|e| e.to_string())?;
     let scratch = std::env::temp_dir().join(format!("ohl-ecw-{}", std::process::id()));
     let budget = ohl_core::budget::Budget::new();
     let mut done = 0;
@@ -661,7 +701,7 @@ impl Windows {
         if let Some(w) = &mut self.images {
             let mut open = true;
             let mut start = false;
-            egui::Window::new("Import orthophotos")
+            egui::Window::new("Import orthophotos or maps")
                 .open(&mut open)
                 .default_width(560.0)
                 .show(ctx, |ui| {
@@ -671,6 +711,28 @@ impl Windows {
                          copied into the project as tiles with a zoom pyramid and drawn under \
                          the plan view.",
                     );
+                    ui.horizontal(|ui| {
+                        ui.label("They are");
+                        let before = w.kind;
+                        ui.radio_value(
+                            &mut w.kind,
+                            ohl_background::LayerKind::Orthophoto,
+                            "orthophotos",
+                        );
+                        ui.radio_value(&mut w.kind, ohl_background::LayerKind::Map, "a map")
+                            .on_hover_text(
+                                "A map loaded into the project: under the plan view like an \
+                                 orthophoto, and taken first by the route and situation plans \
+                                 and the sheets' key map",
+                            );
+                        // The default layer name follows the kind.
+                        if w.kind != before && (w.layer == "Orthophoto" || w.layer == "Map") {
+                            w.layer = match w.kind {
+                                ohl_background::LayerKind::Map => "Map".into(),
+                                ohl_background::LayerKind::Orthophoto => "Orthophoto".into(),
+                            };
+                        }
+                    });
                     ui.horizontal(|ui| {
                         if ui.button("Add files…").clicked()
                             && let Some(fs) = rfd::FileDialog::new()
@@ -776,17 +838,20 @@ impl Windows {
                     ));
                 } else if let Ok(file) = project(model) {
                     set_converter(&w.converter);
-                    let (layer, files, crs, conv) = (
+                    let (layer, kind, files, crs, conv) = (
                         w.layer.trim().to_owned(),
+                        w.kind,
                         w.files.clone(),
                         model.line.crs.clone(),
                         w.converter.clone(),
                     );
                     self.job = Some(crate::survey_io::Job::start(
-                        format!("Import orthophotos into {layer}"),
+                        format!("Import images into {layer}"),
                         true,
                         ctx,
-                        move |report| import_images(&file, &layer, &files, &crs, &conv, report),
+                        move |report| {
+                            import_images(&file, &layer, kind, &files, &crs, &conv, report)
+                        },
                     ));
                     open = false;
                 }
@@ -982,8 +1047,11 @@ impl Windows {
 pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     let busy = r.backgrounds.job.is_some();
     if ui
-        .add_enabled(!busy, egui::Button::new("Import orthophotos…"))
-        .on_hover_text("GeoTIFF, or TIFF/JPEG/PNG with a world file; ECW through a converter")
+        .add_enabled(!busy, egui::Button::new("Import orthophotos or maps…"))
+        .on_hover_text(
+            "GeoTIFF, or TIFF/JPEG/PNG with a world file; ECW through a converter. A map is \
+             taken first by the route and situation plans and the key map",
+        )
         .clicked()
     {
         r.backgrounds.images = Some(ImageImport::new());
@@ -1024,16 +1092,62 @@ pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     if layers.is_empty() {
         ui.add_enabled(false, egui::Button::new("Orthophotos: none"));
     } else {
-        layer(ui, Layer::Orthophotos, "Orthophotos (plan view)", r);
+        layer(
+            ui,
+            Layer::Orthophotos,
+            "Orthophotos and maps (plan view)",
+            r,
+        );
+        let mut turn: Option<(String, ohl_background::LayerKind)> = None;
         for (l, n) in layers {
             let key = image_key(&l);
+            let kind = r.model.backgrounds.kind(&l);
             let mut on = !r.model.hidden_backgrounds.contains(&key);
-            if ui.checkbox(&mut on, format!("   {l} ({n})")).changed() {
-                if on {
-                    r.model.hidden_backgrounds.remove(&key);
-                } else {
-                    r.model.hidden_backgrounds.insert(key);
+            ui.horizontal(|ui| {
+                if ui.checkbox(&mut on, format!("   {l} ({n})")).changed() {
+                    if on {
+                        r.model.hidden_backgrounds.remove(&key);
+                    } else {
+                        r.model.hidden_backgrounds.insert(key.clone());
+                    }
                 }
+                // Its kind, turned with a click (kept in the project).
+                let (now, other) = match kind {
+                    ohl_background::LayerKind::Map => {
+                        ("map", ohl_background::LayerKind::Orthophoto)
+                    }
+                    ohl_background::LayerKind::Orthophoto => {
+                        ("orthophoto", ohl_background::LayerKind::Map)
+                    }
+                };
+                if ui
+                    .add_enabled(project(&r.model).is_ok(), egui::Button::new(now).small())
+                    .on_hover_text(format!(
+                        "A {now}; click to make it a{} (maps are taken first by the route \
+                         and situation plans and the key map)",
+                        if other == ohl_background::LayerKind::Map {
+                            " map"
+                        } else {
+                            "n orthophoto"
+                        }
+                    ))
+                    .clicked()
+                {
+                    turn = Some((l.clone(), other));
+                }
+            });
+        }
+        if let Some((l, kind)) = turn {
+            let done = project(&r.model).and_then(|file| {
+                ohl_background::Store::open(&file)
+                    .and_then(|s| s.set_layer_kind(&l, kind))
+                    .map_err(|e| e.to_string())
+            });
+            match done {
+                Ok(()) => {
+                    r.model.backgrounds.kinds.insert(l, kind);
+                }
+                Err(e) => r.status = Some((format!("layer {l}: {e}"), true)),
             }
         }
     }

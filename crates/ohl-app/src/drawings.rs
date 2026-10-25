@@ -1245,11 +1245,13 @@ impl Input {
             ((photos.on() || key_photo) && !model.backgrounds.images.is_empty()).then(|| {
                 (
                     model.sources.file.clone(),
-                    // The plan's layers; the key map's alone: every one.
-                    photos
-                        .on()
-                        .then(|| photos.names().map(<[String]>::to_vec))
-                        .flatten(),
+                    // The plan's layers; the key map's alone: the maps,
+                    // else every one.
+                    if photos.on() {
+                        photos.names().map(<[String]>::to_vec)
+                    } else {
+                        model.backgrounds.plan_layers()
+                    },
                 )
             });
         Ok(Self {
@@ -1481,8 +1483,11 @@ impl Input {
                     .map(|d| (d.info.name.clone(), d.drawing.clone()))
                     .collect();
             }
+            // The route and situation plans: the maps, when the project
+            // has any, else every layer (2026-10-25, roadmap O16).
             if req.photo && input.plan_photo.is_none() && !model.backgrounds.images.is_empty() {
-                input.plan_photo = Some((model.sources.file.clone(), None));
+                input.plan_photo =
+                    Some((model.sources.file.clone(), model.backgrounds.plan_layers()));
             }
         }
         Ok(input)
