@@ -1619,6 +1619,22 @@ pub struct NoteSpec {
     /// Bold.
     #[serde(default)]
     pub bold: bool,
+    /// What its height is measured from: the frame (default) or
+    /// `"drawing"` — down from the drawing's lower edge (under the bands,
+    /// whatever the profile's height on that paper; 2026-10-25).
+    #[serde(default)]
+    pub from: NoteFrom,
+}
+
+/// What a note's height is measured from ([`NoteSpec::from`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteFrom {
+    /// The frame's top (negative: its bottom).
+    #[default]
+    Frame,
+    /// The drawing's lower edge (under the bands), downwards.
+    Drawing,
 }
 
 fn hundred() -> Mm {

@@ -2568,6 +2568,9 @@ pub(crate) struct Paper {
     available: f64,
     /// The band rows' height under the profile, mm.
     bands_h: f64,
+    /// The drawing's lower edge (under the bands and the station labels),
+    /// mm from the paper's top.
+    drawing_bottom: f64,
     /// The frame: inside the margins.
     frame: furniture::Rect,
     /// Inside the frame's padding.
@@ -2764,6 +2767,11 @@ impl Paper {
             prof_top,
             available: (prof_bottom - prof_top).max(10.0),
             bands_h,
+            drawing_bottom: if o.plan && t.layout.plan_below() {
+                plan_top + plan_h
+            } else {
+                prof_top + (prof_bottom - prof_top).max(10.0) + bands_h + labels
+            },
             frame,
             inner,
             title_block,
@@ -3217,7 +3225,7 @@ fn draw_some(
             if let Some(r) = paper.key_map {
                 furniture::key_map(items, t, r, d, o, s0, s1);
             }
-            let notes = furniture::notes(items, t, paper.inner, &values);
+            let notes = furniture::notes(items, t, paper.inner, paper.drawing_bottom, &values);
             let mut warnings = sl.warnings.clone();
             warnings.extend(paper.bottom_row_overlap.clone());
             if let Some(r) = paper.stringing_table {
