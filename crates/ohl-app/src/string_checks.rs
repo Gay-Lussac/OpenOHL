@@ -109,7 +109,16 @@ impl StringChecksWindow {
         let file = self.file.get_or_insert_with(|| project_file(model)).clone();
         if file.exists() {
             match RuleSet::load(&file) {
-                Ok(set) => self.rules = set.string_rules,
+                Ok(set) => {
+                    self.rules = set.string_rules;
+                    // The overrides ticked, from its [check].
+                    if let Some(c) = set.check {
+                        self.overrides = crate::case_groups::Overrides {
+                            structures: c.structure_override,
+                            sections: c.section_override,
+                        };
+                    }
+                }
                 Err(e) => self.status = Some((e, true)),
             }
         } else {
@@ -132,7 +141,14 @@ impl StringChecksWindow {
             name: "String checks".into(),
             rules: Vec::new(),
             wind: None,
-            check: None,
+            // The overrides ticked.
+            check: (self.overrides.structures || self.overrides.sections).then(|| {
+                ohl_clearance::CheckScope {
+                    structure_override: self.overrides.structures,
+                    section_override: self.overrides.sections,
+                    ..Default::default()
+                }
+            }),
             vegetation: None,
             checks: vec![PresetCheck::Strings],
             tension_rules: Vec::new(),
@@ -294,7 +310,7 @@ impl StringChecksWindow {
                     self.results_ui(ui, &stale, &mut run, &mut out);
                 });
                 help::footer(ui, "string-checks-window", |ui| {
-                    self.overrides.ui(ui);
+                    changed |= self.overrides.ui(ui);
                     let why = self.why_not_run();
                     run |= help::run_button(
                         ui,

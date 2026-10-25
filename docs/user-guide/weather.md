@@ -90,7 +90,10 @@ count where. Checks with them: vertical and radial clearances, vegetation,
 safety volumes, wire tensions, string checks, distance between conductors
 (also under unequal wind: a pair only in a case both its spans take),
 galloping, and the structure loads (the structure override only: their
-loads are summed per structure from every section). Renaming a case in
+loads are summed per structure from every section). The ticks of the
+clearance windows, wire tensions and string checks are kept in their
+rule files (`[check]` `structure_override`, `section_override`); the
+others' for the session. Renaming a case in
 the Weather cases table renames it in the groups too; a name no case has
 (deleted, or renamed elsewhere) stays in its group, shown as such, not
 refused. Group names are unique in the file.

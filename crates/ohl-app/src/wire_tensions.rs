@@ -106,7 +106,16 @@ impl WireTensionsWindow {
         let file = self.file.get_or_insert_with(|| project_file(model)).clone();
         if file.exists() {
             match RuleSet::load(&file) {
-                Ok(set) => self.rules = set.tension_rules,
+                Ok(set) => {
+                    self.rules = set.tension_rules;
+                    // The overrides ticked, from its [check].
+                    if let Some(c) = set.check {
+                        self.overrides = crate::case_groups::Overrides {
+                            structures: c.structure_override,
+                            sections: c.section_override,
+                        };
+                    }
+                }
                 Err(e) => self.status = Some((e, true)),
             }
         }
@@ -127,7 +136,14 @@ impl WireTensionsWindow {
             name: "Wire tensions".into(),
             rules: Vec::new(),
             wind: None,
-            check: None,
+            // The overrides ticked.
+            check: (self.overrides.structures || self.overrides.sections).then(|| {
+                ohl_clearance::CheckScope {
+                    structure_override: self.overrides.structures,
+                    section_override: self.overrides.sections,
+                    ..Default::default()
+                }
+            }),
             vegetation: None,
             checks: vec![PresetCheck::Tension],
             tension_rules: self.rules.clone(),
@@ -293,7 +309,7 @@ impl WireTensionsWindow {
                     self.results_ui(ui, &stale, &mut run, &mut out);
                 });
                 help::footer(ui, "wire-tensions-window", |ui| {
-                    self.overrides.ui(ui);
+                    changed |= self.overrides.ui(ui);
                     let why = self.why_not_run();
                     run |= help::run_button(
                         ui,
@@ -616,6 +632,27 @@ fn ticks(ui: &mut egui::Ui, all: &[String], chosen: &mut Vec<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The overrides ticked are kept in the rule file's [check] and read
+    /// back from it (owner, 2026-10-25).
+    #[test]
+    fn the_overrides_are_kept_in_the_rule_file() {
+        let mut w = WireTensionsWindow::default();
+        w.overrides.sections = true;
+        let text = w.rule_set().to_toml();
+        assert!(text.contains("section_override = true"), "{text}");
+        assert!(!text.contains("structure_override"), "{text}");
+        let back = RuleSet::parse(&text).unwrap();
+        let c = back.check.unwrap();
+        assert!(c.section_override && !c.structure_override);
+        // None ticked: no [check] at all.
+        assert!(
+            !WireTensionsWindow::default()
+                .rule_set()
+                .to_toml()
+                .contains("[check]")
+        );
+    }
     use eframe::egui;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;

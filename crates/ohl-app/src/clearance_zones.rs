@@ -106,8 +106,6 @@ type Marks = Vec<([f64; 3], [f64; 3])>;
 pub struct ZoneWindow {
     /// Shown.
     pub open: bool,
-    /// The structure and section overrides of its cases.
-    pub overrides: crate::case_groups::Overrides,
     /// The zone.
     pub zone: Zone,
     /// The wind.
@@ -185,7 +183,6 @@ impl ZoneWindow {
     pub fn new(measure: Measure) -> Self {
         Self {
             open: false,
-            overrides: Default::default(),
             zone: Zone::new(measure),
             wind: WindSteps::default(),
             rules: Vec::new(),
@@ -363,6 +360,15 @@ impl ZoneWindow {
         self.status = (!notes.is_empty()).then(|| (notes.join("\n"), false));
     }
 
+    /// The structure and section overrides ticked (kept in the rule
+    /// file's `[check]`).
+    pub fn overrides(&self) -> crate::case_groups::Overrides {
+        crate::case_groups::Overrides {
+            structures: self.check.structure_override,
+            sections: self.check.section_override,
+        }
+    }
+
     /// The rules as a rule file (those whose distance is set: a
     /// placeholder is never written).
     pub fn rule_set(&self) -> RuleSet {
@@ -537,7 +543,7 @@ impl ZoneWindow {
         );
         let zone = self.zone;
         let check = self.check.clone();
-        let filter = self.overrides.filter(model);
+        let filter = self.overrides().filter(model);
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.sections);
         let done = Arc::new(AtomicUsize::new(0));
@@ -812,7 +818,13 @@ impl ZoneWindow {
                     // The structure and section overrides of the cases
                     // (in the body here: the footer stays one line).
                     ui.horizontal_wrapped(|ui| {
-                        self.overrides.ui(ui);
+                        let mut o = self.overrides();
+                        if o.ui(ui) {
+                            // Kept in the rule file's [check].
+                            self.check.structure_override = o.structures;
+                            self.check.section_override = o.sections;
+                            self.dirty = true;
+                        }
                     });
                 }
             });
