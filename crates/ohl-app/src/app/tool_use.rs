@@ -618,10 +618,21 @@ impl Ready {
                             Err(e) => self.status = Some((e, true)),
                         }
                     }
+                    // Its window first (owner, 2026-10-25): how it is
+                    // given always asked, the length offered the least
+                    // between its ends; added on Apply.
                     Some(from) => match crate::editors::new_jumper(model, &from, &p, &[]) {
                         Ok(j) => {
-                            let what = format!("added jumper {}", j.id);
-                            self.add_jumper(j, what, false);
+                            self.status = Some((
+                                format!(
+                                    "Add jumper {}: choose how it is given (length, sag or rigid) in its window, then Apply",
+                                    j.id
+                                ),
+                                false,
+                            ));
+                            self.editor = Some(crate::editors::Form::Jumper(Box::new(
+                                crate::editors::JumperForm::new(model, j),
+                            )));
                         }
                         Err(e) => self.status = Some((e, true)),
                     },

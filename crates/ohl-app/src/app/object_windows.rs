@@ -281,6 +281,7 @@ pub(super) fn editor_window(
                         set: f.wires.iter().find_map(|w| w.set).unwrap_or(f.set),
                     }),
                     // The point where it is now.
+                    Form::Jumper(f) if f.new => r.select(Selection::Jumper(f.jumper.id.clone())),
                     Form::Points(f) => {
                         if let Some(p) = f.drawn_after(&r.model) {
                             r.select(Selection::LidarPoint(p));
@@ -314,6 +315,28 @@ pub(super) fn editor_window(
     }
     if outcome.is_some() {
         r.circuit_warned = None;
+    }
+    // A new jumper joining two different circuits: the join window first
+    // (as [`Ready::add_jumper`]).
+    if let (Some(Outcome::Apply), Form::Jumper(f)) = (&outcome, &form)
+        && f.new
+        && let Some(join) = crate::circuit_join::CircuitJoin::check(
+            &r.model,
+            &f.jumper,
+            &format!("added jumper {}", f.jumper.id),
+            false,
+        )
+    {
+        r.status = Some((
+            format!(
+                "Add jumper: {} joins two different circuits — choose in the window",
+                f.jumper.id
+            ),
+            false,
+        ));
+        r.circuit_join = Some(join);
+        r.editor = None;
+        return;
     }
     match outcome {
         Some(Outcome::Apply) => apply(r, form, false),

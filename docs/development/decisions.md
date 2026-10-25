@@ -10,6 +10,25 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
+
+- A sheet template's stringing table repeated the band row's values: a
+  template may turn it off (`place = "off"`), and a note may stand under
+  the drawing (`[[note]] from = "drawing"`, `at`'s y down from the
+  drawing's lowest row) so the additional data follows the profile on
+  every sheet instead of a fixed place over the plan's header.
+- The key map is fitted with 2 mm of air inside its cell, so the
+  sheet's box at the route's ends is drawn whole, not clipped.
+
+**A jumper between two wire ends: its window first (owner, 2026-10-25)**
+
+- Owner: the window opens to set a length, "the minimum between the 2
+  points by default but still always ask for a choice of method"; a sag
+  may not solve in special cases (a large height difference). The jumper
+  is put on Apply only, given by its length (the straight distance
+  between its ends, rounded up to the cm), sag or rigid chosen there; a
+  refused solve keeps the window open with the reason.
+
 **Background maps in the project (owner, 2026-10-25, roadmap O16)**
 
 - Owner: "a map loaded into the project is fine"; shown on the plan, the
