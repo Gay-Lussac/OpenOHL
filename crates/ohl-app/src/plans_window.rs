@@ -55,6 +55,9 @@ pub struct PlansWindow {
     pub sets: Vec<(String, String, Result<PlanSet, String>)>,
     /// The set chosen (index in `sets`).
     pub set: usize,
+    /// The set's sheets also as one PDF, `<set name>.pdf` (owner,
+    /// 2026-10-25).
+    pub one_pdf: bool,
     /// Export asked while its weather cases were being solved: started
     /// once they are.
     pub waiting: bool,
@@ -78,6 +81,7 @@ impl Default for PlansWindow {
             set_mode: false,
             sets: Vec::new(),
             set: 0,
+            one_pdf: false,
             waiting: false,
         }
     }
@@ -308,6 +312,16 @@ impl PlansWindow {
                             }
                         });
                         ui.end_row();
+                        if self.set_mode {
+                            ui.label("");
+                            ui.checkbox(&mut self.one_pdf, "also as one PDF")
+                                .on_hover_text(
+                                    "Every sheet of the set's drawings, in the set's order, in \
+                                     one PDF named after the set, besides the files of the \
+                                     formats ticked (a drawing without paper is not in it)",
+                                );
+                            ui.end_row();
+                        }
                         ui.label("Folder");
                         ui.horizontal(|ui| {
                             if ui.button("Choose…").clicked()
@@ -360,7 +374,7 @@ impl PlansWindow {
             let out = self.out.clone().or_else(|| drawings.out.clone());
             match out {
                 None => self.error = Some("choose a folder".into()),
-                Some(out) if self.formats.is_empty() => {
+                Some(out) if self.formats.is_empty() && !(self.set_mode && self.one_pdf) => {
                     let _ = out;
                     self.error = Some("tick a format".into());
                 }
@@ -372,15 +386,24 @@ impl PlansWindow {
                         .collect();
                     match self.sets.get(self.set) {
                         Some((plugin, name, Ok(set))) => {
-                            match plan_set_inputs(model, case, drawings, plugin, set, &formats, out)
-                            {
+                            let one_pdf = self.one_pdf;
+                            match plan_set_inputs(
+                                model, case, drawings, plugin, set, &formats, one_pdf, out,
+                            ) {
                                 Ok(jobs) => {
                                     self.error = None;
+                                    let set_name = set.name.clone();
                                     self.job = Some(Job::start(
                                         format!("Exporting the plan set {name}"),
                                         false,
                                         ctx,
-                                        move |report| run_plan_set(&jobs, report),
+                                        move |report| {
+                                            run_plan_set(
+                                                &jobs,
+                                                one_pdf.then_some(set_name.as_str()),
+                                                report,
+                                            )
+                                        },
                                     ));
                                 }
                                 Err(e) => self.error = Some(e),
@@ -491,8 +514,9 @@ mod tests {
     }
 
     /// A plan set written in one go: the sheets and the phase plan of
-    /// the example line, each with the set's paper; and the LeV plugin's
-    /// set (when this checkout has it) reads.
+    /// the example line, each with the set's paper, and all their sheets
+    /// in one PDF; and the LeV plugin's set (when this checkout has it)
+    /// reads.
     #[test]
     fn a_plan_set_is_written() {
         let model = crate::tests::synthetic();
@@ -500,7 +524,8 @@ mod tests {
         let set = PlanSet::parse(
             "format = \"ohl-plan-set\"\nversion = 1\nname = \"S\"\n\
              [[drawing]]\nkind = \"sheets\"\npage = \"A3\"\n\
-             [[drawing]]\nkind = \"phase\"\npage = \"A4\"\n",
+             [[drawing]]\nkind = \"phase\"\npage = \"A4\"\n\
+             [[drawing]]\nkind = \"phase\"\npage = \"A3\"\n",
         )
         .unwrap();
         let dir = std::env::temp_dir().join(format!("ohl-app-{}-plan-set", std::process::id()));
@@ -512,11 +537,13 @@ mod tests {
             "",
             &set,
             &[ohl_drawing::export::Format::Pdf],
+            true,
             dir.clone(),
         )
         .unwrap();
-        assert_eq!(jobs.len(), 2);
-        let done = run_plan_set(&jobs, &|_, _| {}).unwrap();
+        assert_eq!(jobs.len(), 3);
+        let done = run_plan_set(&jobs, Some("S"), &|_, _| {}).unwrap();
+        assert!(done.contains("one PDF"), "{done}");
         assert!(done.contains("phase plan"), "{done}");
         let names: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
@@ -527,9 +554,23 @@ mod tests {
             "{names:?}"
         );
         assert!(
-            names.iter().filter(|n| n.ends_with(".pdf")).count() >= 2,
-            "{names:?}"
+            names.iter().any(|n| n.ends_with("phase-plan-2.pdf")),
+            "the second phase plan named apart: {names:?}"
         );
+        // The one PDF: as many pages as the set's PDFs together.
+        let count = |n: &str| {
+            ohl_drawing::pdf::read_back(&std::fs::read(dir.join(n)).unwrap())
+                .unwrap()
+                .len()
+        };
+        let parts: usize = names
+            .iter()
+            .filter(|n| n.ends_with(".pdf") && n.as_str() != "S.pdf")
+            .map(|n| count(n))
+            .sum();
+        assert!(names.iter().any(|n| n == "S.pdf"), "{names:?}");
+        assert!(parts >= 3, "{names:?}");
+        assert_eq!(count("S.pdf"), parts);
         let _ = std::fs::remove_dir_all(&dir);
         let lev = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../local-data/plugins/lev-ch");

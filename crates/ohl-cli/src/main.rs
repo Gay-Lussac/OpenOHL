@@ -78,7 +78,9 @@ enum Command {
     Spot(Box<cost_run::SpotArgs>),
     /// Plan and profile drawings and profile exports of a solved line:
     /// SVG, DXF, PDF, PNG sheets and the profile as CSV or XML, for a
-    /// station range at chosen scales. Takes every option of `ohl line`.
+    /// station range at chosen scales; the route, situation and phase
+    /// plans (--plans); a plan set's drawings in one go (--set, one PDF
+    /// with --set-pdf). Takes every option of `ohl line`.
     Drawing(Box<DrawingArgs>),
     /// The sheet templates the drawings may use: built in, the project's,
     /// the library folder's (libraries/sheet-templates) and the plugins'
@@ -560,6 +562,22 @@ struct DrawingArgs {
     /// The situation plans' scale, 1:500 to 1:2000.
     #[arg(long, default_value = "1000")]
     situation_scale: String,
+    /// A plan set (roadmap O14): a .ohlset file, or PLUGIN/NAME — a set of
+    /// a plugin of --plugin. Writes each of its drawings in order (the
+    /// line solved once), with its own template, paper and scales over
+    /// --sheet-template, --page, --hscale, --vscale, --route-plan-scale
+    /// and --situation-scale; instead of the sheets and --plans. A
+    /// set's second drawing of a kind is named apart: `-2` after the
+    /// route's name (`<route>-2-sheet-01.svg`, `<route>-situation-plan-2.pdf`),
+    /// the third `-3` ….
+    #[arg(long, conflicts_with = "plans", value_name = "FILE|PLUGIN/NAME")]
+    set: Option<String>,
+    /// With --set: also every sheet of the set's drawings — the
+    /// plan-and-profile sheets of every route, then the plans, in the
+    /// set's order — in one PDF, `<set name>.pdf` in --out, besides the
+    /// files of --format (a drawing without paper is not in it).
+    #[arg(long, requires = "set")]
+    set_pdf: bool,
     /// Resolution of PNG images, dots per inch.
     #[arg(long, default_value_t = 150.0)]
     dpi: f64,
@@ -647,6 +665,15 @@ struct DrawingSpec {
     to: Option<f64>,
     /// The profile alone.
     profile_only: bool,
+    /// The plan-and-profile sheets written (a plan set's plan: not).
+    sheets: bool,
+    /// The sheet template over --sheet-template (a plan set's).
+    template: Option<String>,
+    /// The paper over --page (a plan set's).
+    page: Option<String>,
+    /// The horizontal and vertical scales over --hscale and --vscale (a
+    /// plan set's).
+    scales: (Option<f64>, Option<f64>),
     /// The other plans (`phase`, `route`, `situation`).
     plans: Vec<String>,
     /// The route plan's and the situation plans' scales.
@@ -721,10 +748,15 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
             page: None, // from --page, read with the other drawing options
             optimise: None,
             dpi: args.dpi,
+            ..Default::default()
         },
         from: args.from,
         to: args.to,
         profile_only: args.profile_only,
+        sheets: true,
+        template: None,
+        page: None,
+        scales: (None, None),
         plans: args.plans.clone(),
         map_scales: (
             ohl_drawing::parse_scale(&args.route_plan_scale).unwrap_or(10_000.0),
@@ -751,7 +783,72 @@ fn drawing_command(args: &DrawingArgs) -> ExitCode {
         }),
         out: args.out.clone(),
     };
-    line(&args.line, Some(&spec))
+    let Some(given) = &args.set else {
+        return line(&args.line, &[spec], None);
+    };
+    match set_specs(given, &spec, &args.line) {
+        Ok((name, specs)) => line(&args.line, &specs, args.set_pdf.then_some(name.as_str())),
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// The drawings of plan set `given` (a file, or PLUGIN/NAME of a plugin of
+/// --plugin), each `base` with the set's template, paper and scales over
+/// it; and the set's name. A set's second drawing of a kind is named
+/// apart ([`ohl_drawing::plan_set::suffixes`]).
+fn set_specs(
+    given: &str,
+    base: &DrawingSpec,
+    line: &LineArgs,
+) -> Result<(String, Vec<DrawingSpec>), String> {
+    use ohl_drawing::plan_set::SetKind;
+    let (set, plugin) = sheet_run::plan_set(given, &line.plugin)?;
+    let suffixes = ohl_drawing::plan_set::suffixes(&set);
+    let mut specs = Vec::new();
+    for (k, d) in set.drawings.iter().enumerate() {
+        let template = d
+            .template
+            .as_ref()
+            .map(|t| sheet_run::set_template(t, plugin.as_deref(), &line.plugin));
+        let sheets = d.kind == SetKind::Sheets;
+        let mut map_scales = base.map_scales;
+        match d.kind {
+            SetKind::Route => map_scales.0 = d.scale.unwrap_or(map_scales.0),
+            SetKind::Situation => map_scales.1 = d.scale.unwrap_or(map_scales.1),
+            _ => {}
+        }
+        specs.push(DrawingSpec {
+            routes: base.routes.clone(),
+            export: ohl_drawing::export::Export {
+                suffix: suffixes[k].clone(),
+                ..base.export.clone()
+            },
+            from: base.from,
+            to: base.to,
+            profile_only: base.profile_only,
+            sheets,
+            template,
+            page: d.page.clone(),
+            scales: if sheets {
+                (d.scale, d.vertical_scale)
+            } else {
+                (None, None)
+            },
+            plans: if sheets {
+                Vec::new()
+            } else {
+                vec![d.kind.as_str().to_owned()]
+            },
+            map_scales,
+            elevations: base.elevations.clone(),
+            isoclearance: base.isoclearance,
+            out: base.out.clone(),
+        });
+    }
+    Ok((set.name, specs))
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -955,7 +1052,7 @@ fn main() -> ExitCode {
         }
         Some(Command::Validate { path, report, list }) => validate(&path, report.as_deref(), list),
         Some(Command::Sagtension { job, units, csv }) => sagtension(&job, units, csv.as_deref()),
-        Some(Command::Line(args)) => line(&args, None),
+        Some(Command::Line(args)) => line(&args, &[], None),
         Some(Command::Zones(args)) => zones_run::command(&args),
         Some(Command::Tensions(args)) => match tensions_run::run(&args) {
             Ok(true) => ExitCode::SUCCESS,
@@ -1572,7 +1669,11 @@ fn parse_loads_per(text: &str) -> Result<ohl_line::LoadsPer, String> {
         .ok_or_else(|| format!("\"{text}\": write stretched or unstretched"))
 }
 
-fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
+/// `ohl line`, and with `drawing_specs` `ohl drawing`: the line solved
+/// once, then each spec's drawings written in order; with `one_pdf` (a
+/// plan set's name) every sheet of them also in one PDF `<name>.pdf` in
+/// the first spec's folder.
+fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -> ExitCode {
     // A project's own libraries (unless given), and its own weather case,
     // load case and rule files by name; the working copies are removed
     // when `libs` is dropped, at the end.
@@ -2117,6 +2218,10 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             from: None,
             to: None,
             profile_only: false,
+            sheets: true,
+            template: None,
+            page: None,
+            scales: (None, None),
             plans: Vec::new(),
             map_scales: (10_000.0, 1000.0),
             elevations: Default::default(),
@@ -2125,7 +2230,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
         });
         // Structures at levels 2 and 3: their members on their own layer
         // (profiles from the cross-section library the checks read).
-        let bodies = if legacy.is_some() || drawing_spec.is_some() {
+        let bodies = if legacy.is_some() || !drawing_specs.is_empty() {
             let sections = match sections_arg
                 .clone()
                 .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
@@ -2163,7 +2268,15 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             ];
             Some(b.placed_pole_rings(at, st.orientation_deg)).filter(|r| !r.is_empty())
         };
-        for spec in legacy.iter().chain(drawing_spec) {
+        // A plan set's one PDF: the sheets of every drawing, in order.
+        let mut set_pages: Vec<ohl_drawing::model::Drawing> = Vec::new();
+        for spec in legacy.iter().chain(drawing_specs) {
+            let sheet_template = spec.template.as_ref().or(sheet_template.as_ref());
+            let page = spec.page.as_deref().or(page.as_deref());
+            let (hscale, vscale) = (
+                &spec.scales.0.unwrap_or(*hscale),
+                &spec.scales.1.unwrap_or(*vscale),
+            );
             let logos = logo
                 .iter()
                 .map(|spec| {
@@ -2180,7 +2293,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 None => ohl_drawing::SheetTemplate::builtin(),
             });
             // The optimised layout (--page optimised, or the template's).
-            let mut optimise = match page.as_deref() {
+            let mut optimise = match page {
                 Some("optimised") => {
                     let names = if paper_sizes.is_empty() {
                         ohl_drawing::paper::default_sizes()
@@ -2202,7 +2315,7 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     _ => {}
                 }
             }
-            let page = match page.as_deref() {
+            let page = match page {
                 Some("optimised") => None,
                 Some(name) => Some(ohl_drawing::page_format(name).ok_or_else(|| {
                     format!(
@@ -2372,8 +2485,15 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
             let mut target = ohl_drawing::export::Export {
                 page: page.clone(),
                 optimise: optimise.clone(),
+                keep_pages: one_pdf.is_some(),
                 ..spec.export.clone()
             };
+            if one_pdf.is_some() && spec.sheets && !target.paged() {
+                println!(
+                    "  warning: the plan-and-profile drawing has no paper (--page or the \
+                     set's page): one continuous drawing, not in the one PDF"
+                );
+            }
             // Isoclearance lines: once for every route of the drawing.
             let isolines = match &spec.isoclearance {
                 None => Vec::new(),
@@ -2569,8 +2689,12 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                 // hundreds of PNG sheets).
                 let budget = ohl_core::budget::Budget::new()
                     .time_limit(std::time::Duration::from_secs(3600));
-                let written =
-                    ohl_drawing::export::write_route(d, options, &target, &spec.out, &budget)?;
+                let mut written = ohl_drawing::export::Written::default();
+                if spec.sheets {
+                    written =
+                        ohl_drawing::export::write_route(d, options, &target, &spec.out, &budget)?;
+                    set_pages.append(&mut written.pages);
+                }
                 for w in &written.warnings {
                     println!("  warning: {w}");
                 }
@@ -2612,8 +2736,8 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                             return Err(format!("--plans {other}: use phase, route, situation"));
                         }
                     };
-                    let w = ohl_drawing::export::write_plan(
-                        &sheets,
+                    let mut w = ohl_drawing::export::write_plan(
+                        sheets,
                         &target,
                         &format!("{}-{what}", route.id),
                         &format!("Route {} {} — {what}", route.id, d.name),
@@ -2624,6 +2748,10 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                         "  route {}: {what}, {} sheet(s) {}",
                         route.id, w.sheets, plan_page.name
                     );
+                    set_pages.append(&mut w.pages);
+                }
+                if !spec.sheets {
+                    continue;
                 }
                 if let Some(page) = &page {
                     println!(
@@ -2643,6 +2771,18 @@ fn line(args: &LineArgs, drawing_spec: Option<&DrawingSpec>) -> ExitCode {
                     d.wires.len(),
                     written.files.len(),
                     spec.out.display()
+                );
+            }
+        }
+        if let (Some(name), Some(spec)) = (one_pdf, drawing_specs.first()) {
+            if set_pages.is_empty() {
+                println!("  warning: one PDF: no sheets to put into it");
+            } else {
+                let path = ohl_drawing::export::write_one_pdf(&set_pages, name, &spec.out)?;
+                println!(
+                    "plan set {name}: {} pages in one PDF → {}",
+                    set_pages.len(),
+                    path.display()
                 );
             }
         }

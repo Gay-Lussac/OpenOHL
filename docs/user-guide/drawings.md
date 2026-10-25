@@ -598,10 +598,42 @@ scale = 1000               # 1:500 to 1:2000 (route plan: 1:5000 to 1:25 000)
 ```
 
 Each drawing is written as before (the sheets as `<route>-sheet-NN`,
-the plans as `<route>-situation-plan` …), in the formats ticked.
+the plans as `<route>-situation-plan` …), in the formats ticked. A set
+with two drawings of one kind (e.g. situation plans at 1:1000 and
+1:500) names the second apart with `-2` after the route's name, the
+third `-3` … (`<route>-2-sheet-01.svg`, `<route>-2.pdf`,
+`<route>-situation-plan-2.pdf`); the first keeps its usual names, so a
+set with each kind once writes the files a single export would.
 
-Not there yet: one PDF of a whole set, `ohl drawing --set`, links to
-public map services, the corridor's land use.
+**One PDF of the set** (2026-10-25): tick **also as one PDF** in the
+Plan set window (it works with no format ticked too). Every sheet of
+the set's drawings — the plan-and-profile sheets of every route, then
+the plans, in the set's order, each drawing for every route — goes into
+one PDF named after the set, `<set name>.pdf` in the output folder,
+besides the files written as above. Only sheets go into it: a
+plan-and-profile drawing without paper (one continuous drawing) is left
+out, and the result says so. The sheets are kept in memory until the
+PDF is written (with their orthophotos), only when the tick is on.
+
+From the command line:
+
+```sh
+ohl drawing line.ohl.json --terrain survey.csv --format pdf \
+  --set submission.ohlset --set-pdf --out plans/
+ohl drawing project.ohl --plugin plugins/utility \
+  --set utility/plan-submission --out plans/
+```
+
+`--set` takes a `.ohlset` file, or `PLUGIN/NAME` — a set of a plugin of
+`--plugin`. The line is solved once; then each drawing of the set is
+written in order with its own template (the set's plugin's first, else
+another plugin's of that name, else as `--sheet-template` reads it),
+paper and scales over `--sheet-template`, `--page`, `--hscale`,
+`--vscale`, `--route-plan-scale` and `--situation-scale`; the set's
+plans write no plan-and-profile sheets of their own. `--set` replaces
+`--plans`; `--set-pdf` writes the one PDF.
+
+Not there yet: links to public map services, the corridor's land use.
 
 ## What is not there yet
 

@@ -199,6 +199,29 @@ impl PlanSet {
     }
 }
 
+/// The file-name suffix of each drawing of `set` (owner, 2026-10-25): the
+/// first drawing of a kind none (its files named as when written alone),
+/// the second of that kind `-2`, the third `-3` …, so that two drawings
+/// of a kind (e.g. situation plans at two scales) do not overwrite each
+/// other.
+pub fn suffixes(set: &PlanSet) -> Vec<String> {
+    set.drawings
+        .iter()
+        .enumerate()
+        .map(|(k, d)| {
+            let before = set.drawings[..k]
+                .iter()
+                .filter(|x| x.kind == d.kind)
+                .count();
+            if before == 0 {
+                String::new()
+            } else {
+                format!("-{}", before + 1)
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +249,12 @@ mod tests {
             assert!(PlanSet::parse(&format!("{head}{bad}")).is_err(), "{bad}");
         }
         assert!(PlanSet::parse("format = \"x\"\nversion = 1\nname = \"S\"\n").is_err());
+        // Two situation plans: the second named apart.
+        let two = PlanSet::parse(&format!(
+            "{head}[[drawing]]\nkind = \"situation\"\n[[drawing]]\nkind = \"sheets\"\n\
+             [[drawing]]\nkind = \"situation\"\nscale = 500\n"
+        ))
+        .unwrap();
+        assert_eq!(suffixes(&two), ["", "", "-2"]);
     }
 }

@@ -1270,6 +1270,7 @@ impl Input {
                 page,
                 optimise,
                 dpi: w.dpi,
+                ..Export::default()
             },
             same_paper: w.same_paper,
             cases,
@@ -1495,6 +1496,17 @@ pub fn run_plans(
     req: &PlanRequest,
     report: &dyn Fn(String, f32),
 ) -> Result<String, String> {
+    run_plans_kept(input, req, report, &mut Vec::new())
+}
+
+/// [`run_plans`], the sheets drawn added to `pages` when the export keeps
+/// them ([`Export::keep_pages`]).
+fn run_plans_kept(
+    input: &Input,
+    req: &PlanRequest,
+    report: &dyn Fn(String, f32),
+    pages: &mut Vec<ohl_drawing::model::Drawing>,
+) -> Result<String, String> {
     let started = std::time::Instant::now();
     let budget =
         ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(30 * 60));
@@ -1530,14 +1542,15 @@ pub fn run_plans(
                 (map_plan(&d, &options, &page, &plan), kind.file_name())
             }
         };
-        let written = ohl_drawing::export::write_plan(
-            &sheets,
+        let mut written = ohl_drawing::export::write_plan(
+            sheets,
             &input.export,
             &format!("{}-{what}", route.id),
             &format!("{} — {}", req.kind.title(), d.name),
             &input.out,
             &budget,
         )?;
+        pages.append(&mut written.pages);
         files += written.files.len();
         warnings.extend(
             written
@@ -1606,7 +1619,11 @@ pub type SetJob = Vec<(String, Input, Option<PlanRequest>)>;
 
 /// The inputs of plan set `set` (of `plugin`): each drawing with the
 /// Drawings window's settings, its template, paper and scales over them,
-/// written in `formats` into `out`.
+/// written in `formats` into `out`; their sheets kept for the set's one
+/// PDF with `one_pdf` ([`run_plan_set`]). A set's second drawing of a
+/// kind is named apart, `-2` after the route's name, its third `-3` …
+/// (owner, 2026-10-25).
+#[allow(clippy::too_many_arguments)]
 pub fn plan_set_inputs(
     model: &Model,
     case: usize,
@@ -1614,11 +1631,18 @@ pub fn plan_set_inputs(
     plugin: &str,
     set: &ohl_drawing::plan_set::PlanSet,
     formats: &[Format],
+    one_pdf: bool,
     out: PathBuf,
 ) -> Result<SetJob, String> {
     use ohl_drawing::plan_set::SetKind;
     let mut jobs = Vec::new();
+    let suffixes = ohl_drawing::plan_set::suffixes(set);
     for (k, d) in set.drawings.iter().enumerate() {
+        let keep = |mut input: Input| {
+            input.export.keep_pages = one_pdf;
+            input.export.suffix = suffixes[k].clone();
+            input
+        };
         let at = |e: String| format!("{} drawing {} ({}): {e}", set.name, k + 1, d.kind.as_str());
         let mut ww = w.clone();
         ww.formats = formats.to_vec();
@@ -1642,7 +1666,7 @@ pub fn plan_set_inputs(
                     x
                 })
                 .map_err(at)?;
-                jobs.push(("plan and profile".to_owned(), input, None));
+                jobs.push(("plan and profile".to_owned(), keep(input), None));
             }
             SetKind::Route | SetKind::Situation | SetKind::Phase => {
                 let kind = match d.kind {
@@ -1662,24 +1686,50 @@ pub fn plan_set_inputs(
                     corridor: true,
                 };
                 let input = Input::for_plans(model, case, &ww, out.clone(), &req).map_err(at)?;
-                jobs.push((kind.title().to_lowercase(), input, Some(req)));
+                jobs.push((kind.title().to_lowercase(), keep(input), Some(req)));
             }
         }
     }
     Ok(jobs)
 }
 
-/// Writes every drawing of a plan set, in order, reporting progress.
-pub fn run_plan_set(jobs: &SetJob, report: &dyn Fn(String, f32)) -> Result<String, String> {
+/// Writes every drawing of a plan set, in order, reporting progress; with
+/// `one_pdf` (the set's name; its inputs made with it, [`plan_set_inputs`])
+/// also every sheet of them, in order, into one PDF `<name>.pdf` in the
+/// first drawing's folder. A continuous drawing (no paper) is not in it:
+/// said in the result.
+pub fn run_plan_set(
+    jobs: &SetJob,
+    one_pdf: Option<&str>,
+    report: &dyn Fn(String, f32),
+) -> Result<String, String> {
     let n = jobs.len();
     let mut texts = Vec::new();
+    let mut pages = Vec::new();
     for (k, (what, input, req)) in jobs.iter().enumerate() {
         let part = |t: String, f: f32| report(format!("{what}: {t}"), (k as f32 + f) / n as f32);
         let text = match req {
-            None => run(input, &part)?,
-            Some(r) => run_plans(input, r, &part)?,
+            None => run_kept(input, &part, &mut pages)?,
+            Some(r) => run_plans_kept(input, r, &part, &mut pages)?,
         };
         texts.push(format!("{what} — {text}"));
+        if one_pdf.is_some() && req.is_none() && !input.export.paged() {
+            texts.push(format!(
+                "⚠ {what}: one continuous drawing (no paper chosen): not in the one PDF"
+            ));
+        }
+    }
+    if let (Some(name), Some((_, input, _))) = (one_pdf, jobs.first()) {
+        if pages.is_empty() {
+            texts.push("⚠ one PDF: no sheets to put into it".into());
+        } else {
+            let path = ohl_drawing::export::write_one_pdf(&pages, name, &input.out)?;
+            texts.push(format!(
+                "one PDF — {} pages in {}",
+                pages.len(),
+                path.display()
+            ));
+        }
     }
     report("done".into(), 1.0);
     Ok(texts.join("\n"))
@@ -1690,6 +1740,16 @@ pub fn run_plan_set(jobs: &SetJob, report: &dyn Fn(String, f32)) -> Result<Strin
 /// Expected cost: under a second per route for SVG, DXF, PDF, CSV and
 /// XML; ≈ 0.5 s per sheet for PNG. Exit clause: 30 minutes per route.
 pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String> {
+    run_kept(input, report, &mut Vec::new())
+}
+
+/// [`run`], the sheets drawn added to `pages` when the export keeps them
+/// ([`Export::keep_pages`]).
+fn run_kept(
+    input: &Input,
+    report: &dyn Fn(String, f32),
+    pages: &mut Vec<ohl_drawing::model::Drawing>,
+) -> Result<String, String> {
     let started = std::time::Instant::now();
     let budget =
         ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(30 * 60));
@@ -1703,7 +1763,9 @@ pub fn run(input: &Input, report: &dyn Fn(String, f32)) -> Result<String, String
             r as f32 / n as f32,
         );
         let d = input.drawing_with_backgrounds(route)?;
-        let written = ohl_drawing::export::write_route(&d, &options, &export, &input.out, &budget)?;
+        let mut written =
+            ohl_drawing::export::write_route(&d, &options, &export, &input.out, &budget)?;
+        pages.append(&mut written.pages);
         if let Some(paper) = &written.paper {
             warnings.push(format!("route {}: optimised layout {paper}", route.id));
         }
