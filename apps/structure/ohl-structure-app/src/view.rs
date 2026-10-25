@@ -94,9 +94,10 @@ pub struct ViewInput<'a> {
     pub ahead: f64,
     /// What the last action did (or why not: `true`).
     pub message: &'a mut Option<(String, bool)>,
-    /// A panel's drawing over the structure (loads, results) and its key
-    /// (built again when the key changes).
-    pub overlay: Option<(u64, Scene)>,
+    /// A panel's drawing over the structure (loads, results) and its key:
+    /// the scene only when the key is not the one drawn
+    /// ([`View::overlay_key`]; none: keep it).
+    pub overlay: Option<(u64, Option<Scene>)>,
     /// What a generator would build: lines drawn over the structure.
     pub preview: &'a [[[f64; 3]; 2]],
     /// The Link tool, when held.
@@ -114,6 +115,12 @@ pub struct ViewInput<'a> {
 }
 
 impl View {
+    /// The key of the overlay drawn now (its scene is not built again
+    /// while the key stays).
+    pub fn overlay_key(&self) -> Option<u64> {
+        self.overlay.as_ref().map(|o| o.0)
+    }
+
     /// Draws the scene again on the next frame.
     pub fn redraw(&mut self) {
         self.dirty = true;
@@ -361,7 +368,7 @@ impl View {
             (rect.height() * ppp).round().max(1.0) as u32,
         ];
         match v.overlay {
-            Some((key, scene)) if self.overlay.as_ref().is_none_or(|o| o.0 != key) => {
+            Some((key, Some(scene))) if self.overlay.as_ref().is_none_or(|o| o.0 != key) => {
                 self.overlay = Some((key, GpuScene::new(device, &scene)));
             }
             Some(_) => {}

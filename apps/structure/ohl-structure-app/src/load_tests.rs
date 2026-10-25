@@ -290,6 +290,6 @@ fn results_of_a_typed_case() {
     h.get_by_label_contains(&format!("member {} — ", g.id));
     h.get_by_label("equilibrium");
     // Drawn: the deformed shape over the structure.
-    assert!(h.state().results.overlay().is_some());
+    assert!(h.state().results.overlay(None).is_some());
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }

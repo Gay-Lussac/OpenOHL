@@ -20,6 +20,22 @@ of Parts A, B and C).
 - The key map is fitted with 2 mm of air inside its cell, so the
   sheet's box at the route's ends is drawn whole, not clipped.
 
+**OHL-Structure kept fast on a large lattice (owner, 2026-10-25)**
+
+- Owner: OHL-Structure slows down once the line's forces are in. Timed
+  on a real 3700-joint-and-member tension tower with its 5500 load rows:
+  60–130 ms a frame before, 5–8 ms after (the Members table about 22 ms:
+  egui drawing every row).
+- What a frame did again and again, now kept until the file changes
+  (`StructureFile::revision`, unique among files; its text written once
+  per revision): the geometry (twice), the level's list of what is
+  missing (a search per joint through every member; now by maps and a
+  sweep over the members by height, the same advice in the same order),
+  a copy of the whole structure per panel (`structure_arc`), the 3D
+  view's key (the whole text compared). The loads' and the results'
+  arrows are built only when their key changes, the rows' points found by
+  id. The Members and Joints tables find lengths, kinds and counts by id.
+
 **A jumper between two wire ends: its window first (owner, 2026-10-25)**
 
 - Owner: the window opens to set a length, "the minimum between the 2

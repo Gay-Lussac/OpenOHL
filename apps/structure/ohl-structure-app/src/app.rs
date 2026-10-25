@@ -14,7 +14,8 @@ use std::time::{Duration, Instant, SystemTime};
 use eframe::egui;
 use eframe::egui_wgpu;
 use ohl_structure_edit::{
-    Handle, Missing, Need, Place, Removal, StructureFile, geometry_with, missing, next_level,
+    Geometry, Handle, Missing, Need, Place, Removal, StructureFile, geometry_with, missing,
+    next_level,
 };
 use ohl_structure_loads::PlacedValues;
 use ohl_structures::InsulatorLibrary;
@@ -67,6 +68,14 @@ pub enum Sheet {
     /// Height extensions, their pieces and legs.
     Extensions,
 }
+
+/// What a geometry is kept for: the file's revision, the libraries'
+/// stamp, the extension shown.
+type GeometryKey = (u64, u64, Option<String>);
+
+/// What the list of what the next level lacks is kept for: the file's
+/// revision, the level.
+type MissingKey = (u64, u8);
 
 /// The structure application.
 pub struct StructureApp {
@@ -129,8 +138,18 @@ pub struct StructureApp {
     values_seen: Option<(Option<SystemTime>, Instant)>,
     view: View,
     rs: Option<egui_wgpu::RenderState>,
-    /// What the view drew last (drawn again when it changes).
-    drawn: Option<(String, Vec<Handle>, u64, usize)>,
+    /// What the view drew last (drawn again when it changes): the file's
+    /// revision, what is picked, the options, the preview.
+    drawn: Option<(u64, Vec<Handle>, u64, usize)>,
+    /// Changes when the libraries are read again (what is kept from them
+    /// is worked out again).
+    libs_stamp: u64,
+    /// The geometry of the file's revision, the libraries' stamp and the
+    /// extension shown (worked out again when one changes, not every
+    /// frame: a large lattice took tens of ms).
+    geometry: Option<(GeometryKey, std::sync::Arc<Geometry>)>,
+    /// What the next level lacks, for the file's revision and that level.
+    missing: Option<(MissingKey, std::sync::Arc<Vec<Missing>>)>,
     /// The window's title as set.
     title: String,
     /// The Body tab's tools: generator form, preview, group filter.
@@ -196,6 +215,9 @@ impl StructureApp {
             view: View::default(),
             rs,
             drawn: None,
+            libs_stamp: 0,
+            geometry: None,
+            missing: None,
             title: String::new(),
             body: Default::default(),
             pole: Default::default(),
@@ -270,6 +292,7 @@ impl StructureApp {
             None => vec![dir.clone(), dir.join("Insulators")],
         };
         self.insulators = InsulatorLibrary::default();
+        self.libs_stamp += 1;
         for d in dirs {
             match InsulatorLibrary::load_dir(&d) {
                 Ok(lib) => {
@@ -574,7 +597,16 @@ impl StructureApp {
             }
         }
         let next = next_level(d);
-        let items = missing(t, next.unwrap_or(3));
+        let level = next.unwrap_or(3);
+        let key = (f.revision(), level);
+        let items = match &self.missing {
+            Some((k, items)) if *k == key => std::sync::Arc::clone(items),
+            _ => {
+                let items = std::sync::Arc::new(missing(t, level));
+                self.missing = Some((key, std::sync::Arc::clone(&items)));
+                items
+            }
+        };
         let (needed, advice): (Vec<&Missing>, Vec<&Missing>) =
             items.iter().partition(|m| m.need == Need::Level);
         if let Some(n) = next {
@@ -855,19 +887,43 @@ impl StructureApp {
         }
     }
 
+    /// The geometry of structure `t` (the file's at `revision`), standing
+    /// on extension `shown`: kept until one of them or the libraries
+    /// change.
+    pub(crate) fn geometry_of(
+        &mut self,
+        t: &ohl_structures::StructureType,
+        revision: u64,
+        shown: Option<String>,
+    ) -> std::sync::Arc<Geometry> {
+        let key = (revision, self.libs_stamp, shown);
+        if let Some((k, g)) = &self.geometry
+            && *k == key
+        {
+            return std::sync::Arc::clone(g);
+        }
+        let g = std::sync::Arc::new(geometry_with(t, &self.insulators, key.2.as_deref()));
+        self.geometry = Some((key, std::sync::Arc::clone(&g)));
+        g
+    }
+
     /// The 3D view, with the loads or the results of the menu worked in
     /// drawn over the structure.
     fn view_ui(&mut self, ui: &mut egui::Ui) {
         let Some(f) = &mut self.file else {
             return;
         };
-        let t = f.structure().clone();
+        let t = f.structure_arc();
         let shown = self.ext.shown.clone().filter(|n| t.extension(n).is_some());
-        let g = geometry_with(&t, &self.insulators, shown.as_deref());
+        let revision = f.revision();
+        let g = self.geometry_of(&t, revision, shown.clone());
+        let Some(f) = &mut self.file else {
+            return;
+        };
         // Drawn again when the file, what is picked, the compass, the
         // preview or the extension shown change.
         let key = (
-            f.text(),
+            f.revision(),
             self.selected.clone(),
             self.ahead.to_bits()
                 ^ u64::from(self.rigid_links)
@@ -881,15 +937,19 @@ impl StructureApp {
         if std::mem::take(&mut self.view_fit) {
             self.view.fit();
         }
+        let drawn = self.view.overlay_key();
         let overlay = match self.area {
-            Area::LoadCases => self.loads.overlay(&g),
-            Area::Results => self.results.overlay(),
+            Area::LoadCases => self.loads.overlay(&g, drawn),
+            Area::Results => self.results.overlay(drawn),
             _ => None,
         };
-        let mut g = g;
-        if !self.rigid_links {
+        let g = if self.rigid_links || g.links.is_empty() {
+            g
+        } else {
+            let mut g = (*g).clone();
             g.links.clear();
-        }
+            std::sync::Arc::new(g)
+        };
         let linkable = crate::link_tool::linkable(&t);
         // The volumes on the strings, in still air (placed by the link
         // crate as the line places them).

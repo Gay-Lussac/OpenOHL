@@ -208,7 +208,7 @@ impl ResultsTab {
 
     /// The deformed shape coloured by usage, and the reactions, of the
     /// case shown. Its key changes with what it shows.
-    pub fn overlay(&self) -> Option<(u64, Scene)> {
+    pub fn overlay(&self, drawn: Option<u64>) -> Option<(u64, Option<Scene>)> {
         let r = self.shown()?;
         let mut h = DefaultHasher::new();
         (
@@ -221,6 +221,10 @@ impl ResultsTab {
             self.took,
         )
             .hash(&mut h);
+        let key = h.finish();
+        if drawn == Some(key) {
+            return Some((key, None));
+        }
         let scale = if self.deformed { self.scale } else { 0.0 };
         let at = |k: usize| {
             let j = &r.joints[k];
@@ -246,7 +250,7 @@ impl ResultsTab {
                 }
             }
         }
-        Some((h.finish(), s))
+        Some((key, Some(s)))
     }
 }
 

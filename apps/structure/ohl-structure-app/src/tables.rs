@@ -7,9 +7,7 @@
 //! edit of the file (one undo step; a value dragged is one step).
 
 use eframe::egui;
-use ohl_structure_edit::{
-    self as edit, Geometry, Handle, StringChange, StructureFile, geometry, polar,
-};
+use ohl_structure_edit::{self as edit, Geometry, Handle, StringChange, StructureFile, polar};
 use ohl_structures::{AssemblyKind, InsulatorLibrary, StructureType};
 
 use crate::app::{Sheet, StructureApp, error_label};
@@ -205,8 +203,9 @@ impl StructureApp {
         let Some(f) = &self.file else {
             return;
         };
-        let t = f.structure().clone();
-        let g = geometry(&t, &self.insulators);
+        let t = f.structure_arc();
+        let revision = f.revision();
+        let g = self.geometry_of(&t, revision, None);
         if panel == Panel::Generators {
             // Shown while the generator's form is.
             self.body.preview.clear();
@@ -1375,6 +1374,30 @@ impl StructureApp {
             return;
         };
         let joints = t.joints();
+        // By joint id (the first of an id, as a search finds it): a search
+        // per row through the joints and members was slow on a large
+        // lattice.
+        use std::collections::HashMap;
+        let worked: HashMap<&str, Option<ohl_structures::JointKind>> = joints
+            .iter()
+            .rev()
+            .map(|j| (j.id.as_str(), j.kind))
+            .collect();
+        let mut meeting: HashMap<&str, usize> = HashMap::new();
+        for m in &t.members {
+            for (k, id) in m.nodes.iter().enumerate() {
+                if !m.nodes[..k].contains(id) {
+                    *meeting.entry(id.as_str()).or_default() += 1;
+                }
+            }
+        }
+        let mut linked: HashMap<&str, Vec<&str>> = HashMap::new();
+        for p in &t.points {
+            linked
+                .entry(p.joint.as_str())
+                .or_default()
+                .push(p.label.as_str());
+        }
         let mut change = None;
         egui::Grid::new("joints").striped(true).show(ui, |ui| {
             for (h, tip) in [
@@ -1416,24 +1439,15 @@ impl StructureApp {
                         edit::symmetry::move_to(doc, t, &h, p)
                     });
                 }
-                let worked_out = joints.iter().find(|j| j.id == n.id).and_then(|j| j.kind);
+                let worked_out = worked.get(n.id.as_str()).copied().flatten();
                 if let Some(kind) = kind_cell(ui, &n.id, n.kind, worked_out) {
                     change = Some((n.id.clone(), kind));
                 }
+                ui.label(meeting.get(n.id.as_str()).copied().unwrap_or(0).to_string());
                 ui.label(
-                    t.members
-                        .iter()
-                        .filter(|m| m.nodes.contains(&n.id))
-                        .count()
-                        .to_string(),
-                );
-                ui.label(
-                    t.points
-                        .iter()
-                        .filter(|p| p.joint == n.id)
-                        .map(|p| p.label.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    linked
+                        .get(n.id.as_str())
+                        .map_or(String::new(), |l| l.join(", ")),
                 );
                 ui.end_row();
             }

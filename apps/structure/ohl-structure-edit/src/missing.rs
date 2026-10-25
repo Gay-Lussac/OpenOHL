@@ -240,8 +240,18 @@ fn advice(t: &StructureType) -> Vec<Missing> {
             Place::Points,
         ));
     }
+    // The members meeting each joint id (a count per joint through every
+    // member was slow on a large lattice).
+    let mut meeting: std::collections::HashMap<&str, usize> = Default::default();
+    for m in &t.members {
+        for (k, id) in m.nodes.iter().enumerate() {
+            if !m.nodes[..k].contains(id) {
+                *meeting.entry(id.as_str()).or_default() += 1;
+            }
+        }
+    }
     for n in &t.nodes {
-        let on = t.members.iter().filter(|m| m.nodes.contains(&n.id)).count();
+        let on = meeting.get(n.id.as_str()).copied().unwrap_or(0);
         let why = match on {
             0 => "is on no member",
             1 => "is on one member only",
@@ -269,9 +279,27 @@ fn advice(t: &StructureType) -> Vec<Missing> {
         .collect();
     // Crossings within one group (the X panels a generator made): one
     // line per group; across groups, each pair.
+    // The pairs whose heights overlap (a sweep up the members sorted by
+    // their lowest point), then taken in the members' order as before.
+    let low = |p: &[[f64; 3]; 2]| p[0][2].min(p[1][2]);
+    let high = |p: &[[f64; 3]; 2]| p[0][2].max(p[1][2]);
+    let mut by_low: Vec<usize> = (0..ends.len()).collect();
+    by_low.sort_by(|&i, &j| low(&ends[i].1).total_cmp(&low(&ends[j].1)));
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for (k, &i) in by_low.iter().enumerate() {
+        let top = high(&ends[i].1) + CROSSING;
+        for &j in &by_low[k + 1..] {
+            if low(&ends[j].1) > top {
+                break;
+            }
+            pairs.push((i.min(j), i.max(j)));
+        }
+    }
+    pairs.sort_unstable();
     let mut in_group: std::collections::BTreeMap<&str, (usize, &str)> = Default::default();
-    for (i, (a, pa)) in ends.iter().enumerate() {
-        for (b, pb) in &ends[i + 1..] {
+    for (i, j) in pairs {
+        let ((a, pa), (b, pb)) = (&ends[i], &ends[j]);
+        {
             if a.nodes.iter().any(|n| b.nodes.contains(n)) {
                 continue;
             }
