@@ -750,7 +750,10 @@ fn a_preset_value_changed_in_the_project() {
     loop {
         harness.step();
         let r = harness.state_mut().ready().unwrap();
-        if !r.rule_editor.presets.busy() && !r.rule_editor.presets.original.is_empty() {
+        if !r.rule_editor.presets.busy()
+            && !r.rule_editor.presets.original.is_empty()
+            && !r.preset_editor.reading()
+        {
             break;
         }
         assert!(started.elapsed().as_secs() < 60, "no presets in 60 s");
