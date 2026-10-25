@@ -1888,6 +1888,7 @@ fn structure_loads_are_a_settings_row() {
     let choice = ohl_line::StructureLoads {
         load_cases: Some(vec!["wind".into()]),
         weather_cases: vec!["ice".into(), "wind".into()],
+        condition: Some("creep".into()),
     };
     let command = s.structure_loads_command(choice.clone());
     let Command::Batch { commands } = &command else {
@@ -1904,7 +1905,7 @@ fn structure_loads_are_a_settings_row() {
     assert_eq!(
         row,
         &serde_json::json!({ "structure_loads": {
-            "load_cases": ["wind"], "weather_cases": ["ice", "wind"]
+            "load_cases": ["wind"], "weather_cases": ["ice", "wind"], "condition": "creep"
         } })
     );
     drop(s);

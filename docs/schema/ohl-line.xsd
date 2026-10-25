@@ -795,10 +795,13 @@
         <xs:element name="structure_loads" minOccurs="0">
           <xs:annotation>
             <xs:documentation>What the line sends to the placed structures
-              (Criteria › Loads for structures): the load cases (all, or
-              those listed as load_case) and the weather cases sent on their
-              own (weather_case, each a case with all factors 1, after the
-              load cases).</xs:documentation>
+              (Criteria › Loads for structures): the weather cases sent
+              (weather_case: the forces unfactored, a wind case twice, the
+              wind from the left and from the right) and the wires'
+              condition in them (condition: initial, the default, creep,
+              load, max_sag). load_cases and load_case are read and not
+              used since 2026-10-25 (the factors are the structure load
+              cases').</xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:sequence>
@@ -818,6 +821,16 @@
                 <xs:restriction base="xs:string">
                   <xs:enumeration value="all"/>
                   <xs:enumeration value="listed"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="condition">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="initial"/>
+                  <xs:enumeration value="creep"/>
+                  <xs:enumeration value="load"/>
+                  <xs:enumeration value="max_sag"/>
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>

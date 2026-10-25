@@ -117,6 +117,24 @@ impl WireCondition {
             Self::MaxSag => "max_sag",
         }
     }
+
+    /// From its name in files.
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.as_str() == name)
+    }
+
+    /// Every condition, in words' order.
+    pub const ALL: [Self; 4] = [Self::Initial, Self::Creep, Self::Load, Self::MaxSag];
+
+    /// In words.
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::Initial => "as strung",
+            Self::Creep => "after creep",
+            Self::Load => "after the heaviest load",
+            Self::MaxSag => "after creep or load, whichever sags more",
+        }
+    }
 }
 
 /// A load case: a weather case, a wire condition, load factors.

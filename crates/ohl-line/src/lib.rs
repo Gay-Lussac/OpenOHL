@@ -257,16 +257,24 @@ impl HeightDatum {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureLoads {
-    /// The load cases sent, by name; none: all of them (the default).
+    /// The load cases sent, by name; none: all of them. Not used since
+    /// 2026-10-25 (the line sends weather cases only, the factors are the
+    /// structure load cases'); kept as read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load_cases: Option<Vec<String>>,
-    /// The weather cases sent on their own, by name (default none).
+    /// The weather cases sent, by name (default none): each gives the
+    /// forces at the structures unfactored, a wind case twice (the wind
+    /// from the left and from the right).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weather_cases: Vec<String>,
+    /// The wires' condition in them: `initial` (as strung, the default),
+    /// `creep`, `load`, `max_sag` (2026-10-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<String>,
 }
 
 impl StructureLoads {
-    /// All load cases, no weather case on its own.
+    /// No weather case sent, the wires as strung.
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
