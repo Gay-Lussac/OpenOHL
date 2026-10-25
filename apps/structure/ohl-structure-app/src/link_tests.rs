@@ -219,3 +219,39 @@ fn make_it_a_frame_joint_is_one_undo_step() {
     h.state_mut().undo();
     assert_eq!(text(&h), before);
 }
+
+/// View › Volumes on the strings: a string of type-02 given the example's
+/// invented assembly with shapes, its shapes drawn on it in still air
+/// (placed by the link crate as the line places them); off, none.
+#[test]
+fn the_volumes_on_the_strings_are_drawn_when_ticked() {
+    let path = copy_of("type-02.ohls", "string-volumes");
+    let dir = path.parent().unwrap();
+    let ex = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../examples/synthetic-line/Insulators/invented-i-volumes.ohli");
+    std::fs::copy(&ex, dir.join("invented-i-volumes.ohli")).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let text = text.replacen(
+        "label = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"3.500 m\"\nweight = \"900.0 N\"\n",
+        "label = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\ninsulator = \"invented-i-volumes\"\n",
+        1,
+    );
+    assert!(text.contains("invented-i-volumes"));
+    std::fs::write(&path, text).unwrap();
+    let mut h = harness(&path);
+    assert!(h.state().file.is_some(), "{:?}", h.state().message);
+    let volumes = |h: &mut egui_kittest::Harness<'_, StructureApp>| {
+        let app = h.state();
+        let f = app.file.as_ref().unwrap();
+        let g = ohl_structure_edit::geometry::geometry_with(f.structure(), &app.insulators, None);
+        ohl_structure_link::string_volumes(f.structure(), &g.strings, &app.insulators)
+    };
+    let v = volumes(&mut h);
+    assert!(!v.is_empty() && v.iter().all(|m| m.string == "S1"));
+    assert!(!h.state().string_volumes, "off by default");
+    menu(&mut h, "View", "Volumes on the strings");
+    assert!(h.state().string_volumes);
+    h.run();
+    shot(&mut h, "string-volumes.png");
+    std::fs::remove_dir_all(dir).ok();
+}

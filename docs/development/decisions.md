@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Volumes on the strings in OHL-Structure (owner, 2026-10-25)**
+
+- Owner: OHL-Structure may use the core's placement through the link
+  crate. `ohl_structure_link::string_volumes` places each string's shapes
+  (its assembly's) on the string in still air, in the structure's own
+  axes (orientation 0: x to the right of the line), with the line's
+  `ohl_clearance::volumes::place`, and hands triangles to the view; the
+  boundary stays the one crate. View › Volumes on the strings, off by
+  default; the line's colours.
+
 **Small usability fixes found by the tutorial (2026-10-25)**
 
 - String wire: a new section takes the circuit and phase of the section

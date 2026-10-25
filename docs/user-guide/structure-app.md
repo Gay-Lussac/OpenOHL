@@ -201,7 +201,12 @@ drag a panel's tab to move it (beside another, above, below, into
 another group, or out as a window of its own), drag the borders to size
 them, close one with its ×. **View** ticks each panel to show or hide it
 (the menu stays open while ticking), **Rigid links** shows or hides the
-rigid links in the 3D view, **Reset layout** puts every panel
+rigid links in the 3D view, **Volumes on the strings** (off by default)
+draws the shapes of the strings' insulator assemblies — fittings, horns,
+rings — on the strings as they hang in still air, grounded grey,
+electrified orange, insulated pale (placed as OHL-Design places them on
+the solved strings; see [Volumes on the
+strings](structure-library.md#volumes-on-the-strings)), **Reset layout** puts every panel
 back, and **Fit the view** shows the whole structure. The arrangement is
 kept for the next start. By default the tables are on the **left** and
 the **3D view on the right** (about 45 / 55): the Level panel at the top

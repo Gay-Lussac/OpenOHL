@@ -249,6 +249,12 @@ impl StructureApp {
                 "The rigid links drawn: from a joint to an attachment point at an offset \
                  (magenta; none at zero offset)",
             );
+        ui.checkbox(&mut self.string_volumes, "Volumes on the strings")
+            .on_hover_text(
+                "The shapes of the strings' insulator assemblies (fittings, horns, rings) on \
+                 the strings as they hang in still air: grounded grey, electrified orange, \
+                 insulated pale",
+            );
         ui.separator();
         ui.label(egui::RichText::new("Panels").small().weak());
         let tick = |ui: &mut egui::Ui, app: &mut StructureApp, p: Panel| {

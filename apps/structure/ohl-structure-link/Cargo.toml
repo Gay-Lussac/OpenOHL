@@ -18,6 +18,7 @@ ohl-cables.workspace = true
 ohl-weather.workspace = true
 ohl-structures-fe.workspace = true
 ohl-sections.workspace = true
+ohl-clearance.workspace = true
 toml.workspace = true
 
 [lints]
