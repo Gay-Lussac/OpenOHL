@@ -75,6 +75,49 @@ impl Arrangement {
     }
 }
 
+/// Where the wire clamped at `clamp` hangs on structure `m`: the top of
+/// its chain of strings — the string ending nearest the clamp (within
+/// 3 m), up through the strings each hangs from, to the structure's
+/// points (a V: the middle of its legs' tops); without a string there:
+/// the clamp itself.
+fn attach_of(m: &crate::Mark, clamp: [f64; 3]) -> [f64; 3] {
+    let d = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    let Some(first) = m
+        .strings
+        .iter()
+        .min_by(|a, b| d(a.bottom, clamp).total_cmp(&d(b.bottom, clamp)))
+        .filter(|s| d(s.bottom, clamp) <= 3.0)
+    else {
+        return clamp;
+    };
+    let mut frontier = vec![first.bottom];
+    let mut tops: Vec<[f64; 3]> = Vec::new();
+    for _ in 0..10 {
+        let mut next = Vec::new();
+        for q in &frontier {
+            for s in m.strings.iter().filter(|s| d(s.bottom, *q) < 0.01) {
+                // Hanging from another string's wire point: up again.
+                if m.strings.iter().any(|x| d(x.bottom, s.top) < 0.01) {
+                    if !next.iter().any(|n| d(*n, s.top) < 0.01) {
+                        next.push(s.top);
+                    }
+                } else if !tops.iter().any(|t| d(*t, s.top) < 0.01) {
+                    tops.push(s.top);
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    if tops.is_empty() {
+        return clamp;
+    }
+    let n = tops.len() as f64;
+    [0, 1, 2].map(|k| tops.iter().map(|t| t[k]).sum::<f64>() / n)
+}
+
 /// The arrangement at every structure on the line (not those beside it),
 /// in station order: the wires drawn solid (the case shown) leaving it
 /// ahead along the route (the last structure: those arriving), their
@@ -109,7 +152,10 @@ pub fn arrangements(d: &RouteDrawing) -> Vec<Arrangement> {
                     if (other[0] > end[0]) != ahead {
                         continue;
                     }
-                    let [offset, height] = rel(end);
+                    // Placed by where its strings hang on the structure,
+                    // not by its clamp (a V with a short string below: one
+                    // arm, not another).
+                    let [offset, height] = rel(&attach_of(m, *end));
                     // One wire once (a strain structure's two clamps of a
                     // phase a few decimetres apart: one).
                     let same = wires.iter().any(|w| {
@@ -644,10 +690,12 @@ pub fn phase_plan(d: &RouteDrawing, o: &Options, page: &Page) -> Vec<Sheet> {
                     .collect();
                 let cy = mine.iter().sum::<f64>() / mine.len() as f64;
                 let mut lines = furniture::wrap(&w.circuit, size, false, END - 14.0);
+                // Its conductors where they fit (always in the table).
                 if let Some(c) = circuits.iter().find(|c| c.name == w.circuit)
                     && !c.conductor.is_empty()
+                    && crate::pdf::text_width(&c.conductor, size, false) <= END - 9.0
                 {
-                    lines.extend(furniture::wrap(&c.conductor, size, false, END - 14.0));
+                    lines.push(c.conductor.clone());
                 }
                 for (n, line) in lines.iter().enumerate() {
                     items.push(plan_text(
@@ -1280,6 +1328,30 @@ mod tests {
             assert!(svg.contains(">Circuits<"), "the table");
             assert!(svg.contains(&d.circuits[0].name), "a circuit's name");
         }
+    }
+
+    /// A wire under a V with a short string below hangs, for the phase
+    /// plan, at the middle of the V's tops on the arm (owner, 2026-10-25),
+    /// not at its clamp; a wire with no string near: at its clamp.
+    #[test]
+    fn a_wire_is_placed_where_its_strings_hang() {
+        let s = |label: &str, top: [f64; 3], bottom: [f64; 3]| crate::StringMark {
+            label: label.into(),
+            top,
+            bottom,
+            length: 1.0,
+            suspension: true,
+        };
+        let m = crate::Mark {
+            strings: vec![
+                s("Va", [0.0, -2.0, 50.0], [0.0, 0.0, 46.0]),
+                s("Vb", [0.0, 2.0, 50.0], [0.0, 0.0, 46.0]),
+                s("I", [0.0, 0.0, 46.0], [0.0, 0.0, 45.5]),
+            ],
+            ..crate::Mark::default()
+        };
+        assert_eq!(attach_of(&m, [0.1, 0.0, 45.4]), [0.0, 0.0, 50.0]);
+        assert_eq!(attach_of(&m, [0.0, 9.0, 30.0]), [0.0, 9.0, 30.0]);
     }
 
     /// The route and situation plans of the example line: every structure

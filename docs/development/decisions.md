@@ -182,6 +182,11 @@ of Parts A, B and C).
   colours; earth wires dark grey.
 - Jumpers are not tracks (a dead end's jumper may reach metres along the
   line); a strain structure's two clamps of one phase count once.
+- A wire is placed by where its strings hang on the structure (the top of
+  its chain: a V's legs' middle), not by its clamp (owner, 2026-10-25: a V
+  with a short string below looked like another arm; a real line's phase
+  plan went from 5 sheets to 2). The conductors at the line's ends only
+  where they fit (always in the table).
 - Legend labels: `phase_unchanged` gone; `phase_circuits`,
   `phase_owner`, `phase_line_type`, `phase_circuit`, `phase_conductor`,
   `phase_number` added.

@@ -538,7 +538,9 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   phase's colour (each circuit's phase labels in order red, green, blue;
   earth wires dark grey) and its circuit's dashes. Each run of
   structures whose wires **leaving ahead** have the same arrangement
-  (compared by level and place, not by height) is one **column**,
+  (compared by level and place, not by height; each wire placed where its
+  strings hang on the structure — the top of its chain of strings, a V's
+  arm, not its clamp, 2026-10-25) is one **column**,
   headed by its structure or "first–last", with the structure seen from
   above: the earth at its foot, an arm per level across the tracks, a
   dot where each wire hangs. Where the phases change places the tracks
