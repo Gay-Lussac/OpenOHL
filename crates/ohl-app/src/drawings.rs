@@ -473,6 +473,8 @@ pub struct Drawings {
     saved: Option<(String, String)>,
     /// The plugins giving sheet templates (name, folder), as last given.
     template_plugins: Vec<(String, PathBuf)>,
+    /// The project's edits of the plugins' templates they were read with.
+    template_edits: crate::preset_edits::Edits,
     /// Their templates being read.
     template_job: Option<std::sync::mpsc::Receiver<PluginTemplates>>,
     /// The sheet previewed in the window: for what, the image (or why
@@ -3161,11 +3163,16 @@ impl Drawings {
 
     /// Reads the sheet templates of the plugins `dirs` (name, folder) in
     /// the background when they changed.
-    pub fn set_template_plugins(&mut self, dirs: Vec<(String, PathBuf)>) {
-        if dirs == self.template_plugins {
+    pub fn set_template_plugins(
+        &mut self,
+        dirs: Vec<(String, PathBuf)>,
+        edits: crate::preset_edits::Edits,
+    ) {
+        if dirs == self.template_plugins && edits == self.template_edits {
             return;
         }
         self.template_plugins = dirs.clone();
+        self.template_edits = edits.clone();
         if dirs.is_empty() {
             self.last.plugin_templates = Arc::default();
             if let Some(w) = &mut self.window {
@@ -3173,7 +3180,7 @@ impl Drawings {
             }
             return;
         }
-        self.template_job = Some(crate::sheet_ui::read_plugins(dirs));
+        self.template_job = Some(crate::sheet_ui::read_plugins(dirs, edits));
     }
 
     /// Opens the window (with the settings it had when last closed); the
@@ -3183,8 +3190,10 @@ impl Drawings {
         if self.window.is_none() {
             self.window = Some(self.last.clone());
             if !self.template_plugins.is_empty() {
-                self.template_job =
-                    Some(crate::sheet_ui::read_plugins(self.template_plugins.clone()));
+                self.template_job = Some(crate::sheet_ui::read_plugins(
+                    self.template_plugins.clone(),
+                    self.template_edits.clone(),
+                ));
             }
         }
     }

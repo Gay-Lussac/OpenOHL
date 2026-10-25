@@ -366,6 +366,8 @@ pub struct Plugins {
     pub status: Option<(String, bool)>,
     /// A removal waiting for confirmation.
     pub confirm_remove: Option<PathBuf>,
+    /// Presets… clicked: the plugin and its folder (taken by the app).
+    pub edit_presets: Option<(String, PathBuf)>,
     /// The formats, once the worker loaded them.
     pub formats: Option<Formats>,
     /// The Import / Export window.
@@ -689,6 +691,7 @@ impl Plugins {
         let mut toggle: Option<String> = None;
         let mut remove: Option<PathBuf> = None;
         let mut drop_folder: Option<usize> = None;
+        let mut edit_presets = None;
         egui::Window::new("Plugin manager")
             .open(&mut open)
             .default_width(900.0)
@@ -821,17 +824,37 @@ impl Plugins {
                                         None if l.installed => ui.label("installed"),
                                         None => ui.label("in its folder"),
                                     };
-                                    if l.installed {
-                                        if ui
-                                            .small_button("Remove")
-                                            .on_hover_text("Delete this installed copy")
-                                            .clicked()
+                                    let presets = problem.is_none()
+                                        && on
+                                        && (l.found.provides(ohl_plugins::DESIGN_CODE)
+                                            || l.found.provides(ohl_plugins::SHEET_TEMPLATES)
+                                            || l.found
+                                                .manifest
+                                                .as_ref()
+                                                .is_ok_and(|m| !m.sheet_templates.is_empty()));
+                                    ui.horizontal(|ui| {
+                                        if presets
+                                            && ui
+                                                .small_button("Presets…")
+                                                .on_hover_text(
+                                                    "Its rule presets, their weather cases and its \
+                                                 sheet templates, value by value; values changed \
+                                                 in this project, and a summary of the changes",
+                                                )
+                                                .clicked()
+                                        {
+                                            edit_presets =
+                                                Some((name.clone(), l.found.dir.clone()));
+                                        }
+                                        if l.installed
+                                            && ui
+                                                .small_button("Remove")
+                                                .on_hover_text("Delete this installed copy")
+                                                .clicked()
                                         {
                                             remove = Some(l.found.dir.clone());
                                         }
-                                    } else {
-                                        ui.label("");
-                                    }
+                                    });
                                     ui.end_row();
                                 }
                             });
@@ -850,6 +873,9 @@ impl Plugins {
                 }
             });
         self.open = open;
+        if edit_presets.is_some() {
+            self.edit_presets = edit_presets;
+        }
         if let Some(name) = toggle {
             if !self.disabled.remove(&name) {
                 self.disabled.insert(name);

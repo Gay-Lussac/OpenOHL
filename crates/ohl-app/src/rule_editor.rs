@@ -205,8 +205,15 @@ pub struct PresetsWindow {
     pub open: bool,
     /// The plugins were asked (read again with [`PresetsWindow::read`]).
     pub asked: bool,
-    /// The presets read, per plugin.
+    /// The presets read, per plugin, with the project's edits of their
+    /// values ([`crate::preset_edits`]).
     pub list: Vec<PluginPresets>,
+    /// The presets as the plugins give them.
+    pub original: Vec<PluginPresets>,
+    /// Presets the project's edits make invalid (kept as the plugin's).
+    pub edit_errors: Vec<String>,
+    /// The project and library revision the edits were applied for.
+    applied: Option<(PathBuf, u64)>,
     /// The preset shown (plugin, preset).
     pub chosen: Option<(usize, usize)>,
     job: Option<Receiver<Vec<PluginPresets>>>,
@@ -236,6 +243,8 @@ impl PresetsWindow {
         });
         self.job = Some(rx);
         self.list.clear();
+        self.original.clear();
+        self.applied = None;
         self.chosen = None;
     }
 
@@ -251,7 +260,9 @@ impl PresetsWindow {
         };
         match rx.recv_timeout(wait) {
             Ok(list) => {
+                self.original = list.clone();
                 self.list = list;
+                self.applied = None;
                 self.job = None;
                 true
             }
@@ -1003,6 +1014,15 @@ pub fn ensure_presets(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
     w.poll(std::time::Duration::ZERO);
     if w.busy() {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    }
+    // The project's edits of the presets' values, again when they change.
+    let stamp = (r.model.sources.file.clone(), r.model.revisions.libraries);
+    if !w.busy() && w.applied.as_ref() != Some(&stamp) {
+        let (edits, _) = crate::preset_edits::of_model(&r.model);
+        let (list, errors) = crate::preset_edits::apply_presets(&w.original, &edits);
+        w.list = list;
+        w.edit_errors = errors;
+        w.applied = Some(stamp);
     }
 }
 

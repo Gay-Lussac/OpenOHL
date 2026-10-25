@@ -67,6 +67,7 @@ mod plan;
 mod plans_window;
 mod plugins;
 mod preset_cases;
+mod preset_edits;
 mod preview3d;
 mod profile;
 mod project_lines;
