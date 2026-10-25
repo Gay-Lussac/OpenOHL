@@ -195,6 +195,18 @@ pub fn with_groups(text: &str, groups: &[CaseGroup]) -> Result<String, String> {
                 cases.push(c.as_str());
             }
             t.insert("cases", toml_edit::value(cases));
+            if !g.structure_wind.is_empty() {
+                t.insert(
+                    "structure_wind",
+                    toml_edit::value(g.structure_wind.as_str()),
+                );
+            }
+            if let Some(m) = g.structure_wind_min {
+                t.insert(
+                    "structure_wind_min",
+                    toml_edit::value(format!("{} Pa", m.si())),
+                );
+            }
             a.push(t);
         }
         doc.insert("group", toml_edit::Item::ArrayOfTables(a));
@@ -316,6 +328,7 @@ impl GroupsWindow {
                             name: format!("Group {}", edit.len() + 1),
                             description: String::new(),
                             cases: Vec::new(),
+                            ..Default::default()
                         });
                     }
                     save = ui
@@ -373,6 +386,7 @@ mod tests {
             name: name.into(),
             description: "for the checks".into(),
             cases: cases.iter().map(|c| (*c).into()).collect(),
+            ..Default::default()
         };
         let one = with_groups(text, &[g("hot", &["b"])]).unwrap();
         assert!(one.contains("# kept"));
@@ -384,5 +398,14 @@ mod tests {
         assert_eq!(set.groups.len(), 1);
         assert_eq!(set.groups[0].name, "all");
         assert!(with_groups(text, &[g("x", &[]), g("x", &[])]).is_err());
+        // A wind study's column and least pressure are kept.
+        let study = CaseGroup {
+            structure_wind: "lev-ch.wind_study".into(),
+            structure_wind_min: Some(ohl_core::units::Stress::from_si(300.0)),
+            ..g("short", &["b"])
+        };
+        let three = with_groups(text, std::slice::from_ref(&study)).unwrap();
+        let set = ohl_weather::WeatherCases::parse(&three).unwrap();
+        assert_eq!(set.groups, vec![study]);
     }
 }

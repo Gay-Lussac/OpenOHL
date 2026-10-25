@@ -380,6 +380,40 @@ impl Plan {
                 out.push_str(&format!("\n[[case]]\n{t}"));
             }
         }
+        // The preset's weather case groups (2026-10-25), their cases under
+        // the project's names; a group of a name the project has stays the
+        // project's.
+        let preset_doc: DocumentMut = preset.parse().map_err(|e| format!("{e}"))?;
+        let have: Vec<String> = ohl_weather::WeatherCases::parse(project)
+            .map(|w| w.groups.into_iter().map(|g| g.name).collect())
+            .unwrap_or_default();
+        if let Some(groups) = preset_doc.get("group").and_then(Item::as_array_of_tables) {
+            for g in groups.iter() {
+                let name = g.get("name").and_then(Item::as_str).unwrap_or_default();
+                if name.is_empty() || have.iter().any(|h| h == name) {
+                    continue;
+                }
+                let mut g = g.clone();
+                g.decor_mut().clear();
+                if let Some(a) = g.get_mut("cases").and_then(Item::as_array_mut) {
+                    for v in a.iter_mut() {
+                        let to = v.as_str().and_then(|n| {
+                            self.cases
+                                .iter()
+                                .find(|m| m.preset == n)
+                                .map(|m| m.target.name().to_owned())
+                        });
+                        if let Some(to) = to {
+                            *v = to.as_str().into();
+                        }
+                    }
+                }
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str(&format!("\n[[group]]\n{g}"));
+            }
+        }
         Ok(out)
     }
 
@@ -878,6 +912,27 @@ case_pairs = [["ice by load", "Utility*"]]
             .map(|c| c.weather)
             .collect();
         assert_eq!(w, ["80 °C", "cold (preset)"]);
+    }
+
+    /// A preset's groups join the project with its cases under the
+    /// project's names; a group of a name the project has stays the
+    /// project's.
+    #[test]
+    fn preset_groups_join_the_project() {
+        let p = plan();
+        let project = format!("{PROJECT}[[group]]\nname = \"mine\"\ncases = [\"cold\"]\n");
+        let preset = format!(
+            "{PRESET}[[group]]\nname = \"sag\"\ncases = [\"Utility vegetation 80 °C\", \"cold\"]\n\
+             structure_wind = \"x.study\"\nstructure_wind_min = \"300 Pa\"\n\
+             [[group]]\nname = \"mine\"\ncases = [\"ice by load\"]\n"
+        );
+        let merged = p.add_to_project(&project, &preset).unwrap();
+        let set = WeatherCases::parse(&merged).unwrap();
+        let names: Vec<&str> = set.groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["mine", "sag"]);
+        assert_eq!(set.groups[0].cases, ["cold"]);
+        assert_eq!(set.groups[1].cases, ["80 °C", "cold (preset)"]);
+        assert_eq!(set.groups[1].structure_wind, "x.study");
     }
 
     #[test]

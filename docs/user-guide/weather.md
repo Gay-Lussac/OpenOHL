@@ -98,6 +98,36 @@ the Weather cases table renames it in the groups too; a name no case has
 (deleted, or renamed elsewhere) stays in its group, shown as such, not
 refused. Group names are unique in the file.
 
+### A wind study per structure
+
+A group may take its wind at each structure from a **Structures table
+column** (2026-10-25): `structure_wind` names the column (a plugin's
+`plugin.column`, e.g. `lev-ch.wind_study`), `structure_wind_min` the
+least pressure it may give.
+
+```toml
+[[group]]
+name = "LeV conductors–structure, short approach"
+cases = ["LeV 10 °C wind (Annex 1 no. 37)"]
+structure_wind = "lev-ch.wind_study"
+structure_wind_min = "300 Pa"
+```
+
+With the **structure override** ticked, the internal clearances check a
+structure with a value in that column in the group's cases at that
+pressure: those cases are solved again at it (for the whole line, the
+results taken at those structures only) and its rows named
+"<case> (wind study 450 Pa)". A value under the least is taken at the
+least, said in the notes; a value that is not a pressure is said and the
+case's own wind taken. Structures without a value keep the case's wind.
+(The LeV's explanations, ESTI 240 Art. 33: a wind study may lower the
+wind for the distances of the conductors to the structures down to
+300 N/m², per EN 50341-1.) Only the internal clearances take it so far.
+
+A rule preset's groups come with its weather cases into the project's
+file (its cases under the project's names), a group of a name the file
+has staying the file's.
+
 ## Choosing cases
 
 ```bash

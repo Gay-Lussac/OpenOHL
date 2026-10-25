@@ -472,7 +472,7 @@ pub struct WeatherCases {
 
 /// A named group of weather cases (`[[group]]` of a case file): picked as
 /// one where cases are chosen (the loads for the structures, the checks).
-#[derive(Debug, Clone, PartialEq, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CaseGroup {
     /// Its name (unique in the file).
@@ -484,6 +484,36 @@ pub struct CaseGroup {
     /// not refused — a case renamed or deleted leaves it).
     #[serde(default)]
     pub cases: Vec<String>,
+    /// A structure column (a plugin's field key, e.g. `lev-ch.wind_study`)
+    /// whose value, a wind pressure in Pa, replaces the wind of the
+    /// group's cases at that structure in a check with the structure
+    /// override (a wind study; owner, 2026-10-25); empty: none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub structure_wind: String,
+    /// The least wind such a value gives: one below is taken at it, with a
+    /// warning (a design code's bound, e.g. 300 Pa).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure_wind_min: Option<Stress>,
+}
+
+impl CaseGroup {
+    /// The wind at a structure whose column holds `text` (Pa, a number
+    /// with or without its unit): none when it does not read or is not
+    /// above 0; raised to the least wind when below it (and said so).
+    pub fn structure_pressure(&self, text: &str) -> Option<(f64, Option<String>)> {
+        let t = text.trim().trim_end_matches("Pa").trim();
+        let v: f64 = t.parse().ok().filter(|v: &f64| v.is_finite() && *v > 0.0)?;
+        match self.structure_wind_min.map(Stress::si) {
+            Some(min) if v < min => Some((
+                min,
+                Some(format!(
+                    "{v} Pa below the least {min} Pa of group \"{}\": taken at {min} Pa",
+                    self.name
+                )),
+            )),
+            _ => Some((v, None)),
+        }
+    }
 }
 
 /// The cases a check takes at each object of the line (a structure, a
@@ -1155,6 +1185,7 @@ mod structure_case_tests {
             name: "wind study".into(),
             description: String::new(),
             cases: vec!["300 Pa".into(), "everyday".into()],
+            ..Default::default()
         }];
         let (t1, t2, t3) = (
             vec!["wind study".to_owned()],
@@ -1168,5 +1199,26 @@ mod structure_case_tests {
         assert!(!s.is_empty());
         let named = "format = \"ohl-weather-cases\"\nversion = 1\n[[group]]\nname = \"a; b\"\n";
         assert!(WeatherCases::parse(named).is_err());
+    }
+
+    /// A wind study's group: its structure column and least pressure read;
+    /// a structure's value parsed with or without "Pa", one under the
+    /// least raised to it (said), one not a pressure none.
+    #[test]
+    fn structure_wind_of_a_group() {
+        let text = "format = \"ohl-weather-cases\"\nversion = 1\n\
+                    [[case]]\nname = \"w\"\ntemperature = \"10 °C\"\nwind_pressure = \"650 Pa\"\n\
+                    [[group]]\nname = \"short\"\ncases = [\"w\"]\n\
+                    structure_wind = \"lev-ch.wind_study\"\nstructure_wind_min = \"300 Pa\"\n";
+        let g = &WeatherCases::parse(text).unwrap().groups[0];
+        assert_eq!(g.structure_wind, "lev-ch.wind_study");
+        assert_eq!(g.structure_wind_min.map(Stress::si), Some(300.0));
+        assert_eq!(g.structure_pressure("450 Pa"), Some((450.0, None)));
+        assert_eq!(g.structure_pressure(" 500 "), Some((500.0, None)));
+        let (pa, warn) = g.structure_pressure("250").unwrap();
+        assert_eq!(pa, 300.0);
+        assert!(warn.unwrap().contains("300 Pa"));
+        assert_eq!(g.structure_pressure("high"), None);
+        assert_eq!(g.structure_pressure("0"), None);
     }
 }

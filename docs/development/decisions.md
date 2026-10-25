@@ -10,6 +10,29 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**LeV weather groups and the wind study per pylon (owner, 2026-10-25)**
+
+- The lev-ch plugin's rule presets write weather case groups with their
+  cases: largest sag (40 °C; 0 °C + 20 N/m), wind deflection (10 °C wind),
+  conductors–structure at rest (a new case, 10 °C without wind — the
+  owner's reading of the LeV, "defined in the LeV is 10 °C no wind"),
+  conductors–structure short approach (10 °C wind), distance in the span,
+  ground and objects; a utility preset gets a group of its own cases.
+  LeV 0 °C without additional load keeps no group ("leave it for now").
+- A wind study is set per pylon only ("only through the pylon value"):
+  the plugin's Structures column **wind study Pa**; the short-approach
+  group (650 Pa by the altitude zone) names it (`structure_wind`) with the
+  least 300 Pa (`structure_wind_min`, ESTI 240 Art. 33). With the structure
+  override ticked, the internal clearances solve the group's cases again at
+  each value and take those results at the pylons that have it; under
+  300 Pa taken as 300 with a warning; pylons without a value keep 650.
+- A preset's groups join the project's case file with its cases (mapped
+  to the project's names); a group name the file has is kept as is.
+- Annex 6's distances C1–C4 are not in the documents at hand: no
+  internal-clearance rule preset is generated from memory.
+- The design-code cases (loads) have no groups: the plugin SDK carries
+  none, and the core is not changed for it.
+
 **Internal clearances, first part: the computation (owner, 2026-10-25)**
 
 - Measured at each structure at level 2 or 3: the conductors from their
