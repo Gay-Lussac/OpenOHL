@@ -661,7 +661,9 @@ plugins).
   *Owner, 2026-10-19:* the choices of U5 confirmed (factors on the FE
   member wind only; only members in a face turned to the wind shielded;
   the face outline as the convex hull of its joints; no factor outside a
-  table's range). **Materials typed in the section editor: planned.**
+  table's range). **Materials typed in the section editor**: built 2026-10-25 (in active
+  development, not approved yet): new, edit, duplicate, delete, a rename
+  carried to the sections and the default material.
 - **U6. Body generators**: redundants, plan bracing, widths per panel and
   several points on one crossarm built (2026-10-19, options off by
   default, in active development, not approved yet). A file using one is
