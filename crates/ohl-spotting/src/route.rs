@@ -349,6 +349,7 @@ pub fn spotted_line(
             color: None,
             calculation: Default::default(),
             weather_groups: Vec::new(),
+            wind_factors: Vec::new(),
             fields: Default::default(),
             spreads: Default::default(),
             span_points: Default::default(),

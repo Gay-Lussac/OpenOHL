@@ -1890,6 +1890,9 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                         )
                     }
                 );
+                if let Some(b) = &r.case.broken {
+                    println!("    broken wire: {}", b.describe());
+                }
             }
             extra_tables.push(ohl_io::tables::Table::from_csv(
                 "Structure loads",
@@ -2069,6 +2072,15 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 case.name,
                 case.summary()
             );
+            if case.wind_pressure.si() > 0.0 {
+                for s in line.sections.iter().filter(|s| s.has_local_wind()) {
+                    println!(
+                        "  local winds of {} (factor by span): {}",
+                        s.id,
+                        s.wind_factors_text()
+                    );
+                }
+            }
             println!(
                 "  {:<12} {:<22} {:>5} {:>12} {:>10} {:>6}",
                 "section", "circuit / phase", "spans", "max T (kN)", "max sag", "iter"

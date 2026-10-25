@@ -127,6 +127,7 @@ fn weather_cases_are_sent_unfactored_and_wind_on_both_sides() {
         load_cases: Some(vec!["wind".into()]),
         weather_cases: vec!["high wind".into(), "glaze ice".into(), "gone".into()],
         condition: None,
+        ..Default::default()
     };
     let cases = structure_cases(&choice, &weather);
     assert_eq!(cases.missing, ["weather case \"gone\""]);
@@ -372,4 +373,103 @@ fn the_line_values_file_lists_the_wires_not_solved() {
     assert!(t2.missing.is_empty(), "{:?}", t2.missing);
     assert!(t2.others.iter().all(|o| o.missing.is_empty()));
     assert_eq!(t2.incomplete("ice"), None);
+}
+
+/// A load case of the line with a broken wire sent to the structures
+/// (roadmap O9): a line result of its weather case with that wire broken,
+/// named so, unfactored, after the weather cases; a wind case twice; the
+/// structure next to the broken span takes the unbalanced pull along the
+/// line (the same as the core's broken-wire loads with unit factors); a
+/// name chosen that is no broken-wire case is named in the note.
+#[test]
+fn broken_wire_cases_are_sent_as_line_results() {
+    let (line, library, weather, _) = example();
+    let lc = LoadCases::parse(
+        "[[case]]\nname = \"S1 broken\"\nweather = \"everyday\"\nlongitudinal = 1.3\n\
+         [case.broken]\nsection = \"S1\"\nspan = 2\n\
+         [[case]]\nname = \"S1 broken in wind\"\nweather = \"high wind\"\n\
+         [case.broken]\nsection = \"S1\"\nspan = 2\n\
+         [[case]]\nname = \"plain\"\nweather = \"everyday\"\n",
+    )
+    .unwrap()
+    .cases;
+    let choice = ohl_line::StructureLoads {
+        weather_cases: vec!["everyday".into()],
+        broken_cases: vec![
+            "S1 broken".into(),
+            "S1 broken in wind".into(),
+            "plain".into(),
+        ],
+        ..Default::default()
+    };
+    let cases = ohl_structure_link::structure_cases_with(&choice, &weather, &lc);
+    assert_eq!(cases.missing, ["load case \"plain\" with a broken wire"]);
+    let budget = ohl_wirefe::default_fe_budget();
+    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    let placed = placed_values(
+        &[],
+        &loads.weather,
+        &loads.missing,
+        &line,
+        "T2",
+        "synthetic",
+    );
+    assert_eq!(
+        placed.cases,
+        [
+            "everyday",
+            "everyday — S1 span 2 broken",
+            "high wind — S1 span 2 broken — wind from the left",
+            "high wind — S1 span 2 broken — wind from the right",
+        ]
+    );
+    assert!(placed.note.as_deref().unwrap().contains("\"plain\""));
+    // Unfactored, and as the core gives it with unit factors.
+    let mut unit = lc[0].clone();
+    unit.longitudinal = 1.0;
+    let direct = ohl_loads::structure_loads(&line, &library, &weather, &[unit], &budget).unwrap();
+    let p = placed
+        .values
+        .points
+        .iter()
+        .find(|p| p.sets.contains(&1) || !p.sets.is_empty())
+        .unwrap();
+    let sent = placed.values.get(
+        "everyday — S1 span 2 broken",
+        &p.label,
+        &p.sets,
+        LineQuantity::Longitudinal,
+    );
+    let core = line_values(&direct, &line, "T2").get(
+        "S1 broken",
+        &p.label,
+        &p.sets,
+        LineQuantity::Longitudinal,
+    );
+    assert_eq!(sent, core);
+    // The broken span pulls T2 along the line where S1 hangs; whole, it is
+    // nearly balanced.
+    let s1 = placed
+        .values
+        .points
+        .iter()
+        .find(|p| {
+            line.sections[0]
+                .points
+                .iter()
+                .any(|x| x.structure == "T2" && p.sets.contains(&x.set))
+        })
+        .unwrap();
+    let along = |case: &str| {
+        placed
+            .values
+            .get(case, &s1.label, &s1.sets, LineQuantity::Longitudinal)
+            .unwrap()
+    };
+    assert!(
+        along("everyday — S1 span 2 broken").abs() > 10.0 * along("everyday").abs().max(1.0),
+        "{} {}",
+        along("everyday — S1 span 2 broken"),
+        along("everyday")
+    );
 }

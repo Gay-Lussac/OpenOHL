@@ -302,6 +302,7 @@ fn rich_line() -> Line {
         load_cases: Some(vec!["wind 90°".into()]),
         weather_cases: vec!["ice 25 mm".into(), "wind <&>".into()],
         condition: Some("creep".into()),
+        broken_cases: vec!["S1 span 2 broken".into()],
     };
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
@@ -368,6 +369,8 @@ fn rich_line() -> Line {
     // system's owner and number.
     line.structures[0].weather_groups = vec!["internal".into(), "wind study".into()];
     line.sections[0].weather_groups = vec!["snow zone 2".into()];
+    // Local winds (line file 9, roadmap O15).
+    line.sections[0].set_wind_factor(0, 0, 1.25);
     if let Some(sys) = line.systems.first_mut() {
         sys.owner = "Utility".into();
         sys.number = "C12".into();

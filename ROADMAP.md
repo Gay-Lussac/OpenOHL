@@ -44,7 +44,7 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 # Part A — OHL-Design (the line)
 
 **Next up** (2026-10-25): the broken-wire case (O9) and local winds per
-span (O15), in progress; then the sheave model for sections in the
+span (O15) are built; next the sheave model for sections in the
 blocks (equal tension along the wire over frictionless sheaves, the
 default; owner, 2026-10-25), the lyre pylons' risers (a jumper given by
 its tension, vertical allowed) and background maps in the project
@@ -242,20 +242,26 @@ structure body) and O7 (the line and its structures solved together).
 *In Part C:* O9 (design-code loads, the broken-wire case of a section).
 
 ### O15. Local winds given per span
-Today a weather case has one wind pressure for the whole line. Some
-spans see another wind (an exposed ridge, a sheltered valley, a wind
-study for a stretch): the wind to be given **per span**, overriding the
-case's there. Proposed (to discuss; nothing built yet): per span (or a
-run of spans) a local wind — a pressure, or a factor on the case's —
-kept with the line, shown and edited in the sections table and on the
-profile; used wherever the case's wind is (the wire solve, the
-structure loads, the blowout and clearances, the checks such as the
-distance under unequal wind, which then steps each span up to its own
-wind). To decide: pressure or factor, per weather case or for all, how
-it is set on many spans at once, whether a direction can be given too.
+A weather case has one wind pressure for the whole line. Some spans see
+another wind (an exposed ridge, a sheltered valley, a wind study for a
+stretch). Built 2026-10-25 (in active development, not approved yet;
+[Line file](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/line-file.md#local-winds-per-span)):
+per span a **factor on the case's wind**, in every weather case with
+wind (`wind_factors` of a section, line file 9), used wherever the case's
+wind acts on the wires — the wire solve (blowout, tensions), the
+strings and jumpers (the larger factor next to them), the structure
+loads, the clearances' blowout and swing arc, the distance under unequal
+wind (each span steps up to its own wind), the wind span — and edited in
+the Sections table (`2–4: 1.2`), a span's Properties (a run of spans)
+and `ohl project apply` (`set_wind_factor`), each one undo step;
+validation `localwind-001…004`. Simplified (said in the theory): the
+same factor on every case with wind, the ice-with-wind cases too; the
+structures' own wind not scaled; the ruling span takes the section's
+largest factor. Still open: a factor per weather case, a direction of
+its own, editing on the profile.
 > **Owner:** (2026-10-24) Be able to have local winds, given per span.
 > **Owner:** (2026-10-25) A factor on the case's wind, for every weather
-> case with wind. *In progress.*
+> case with wind.
 
 ### O16. Background maps imported into the project
 The drawings and orthophotos already show on the plan, the sheets'
@@ -820,10 +826,11 @@ server and version control, validation and docs, 1.0 and further ahead.
   and as one PDF (O14), **another program's project imported into an
   existing one**, **weather case groups** per structure and section,
   plugin presets edited in the project, materials typed (U5), the theory
-  pages illustrated.
+  pages illustrated, background maps (O16), the broken-wire case (O9) and
+  local winds per span (O15).
 
-**Running now:** the broken-wire case (O9) and local winds per span
-(O15).
+**Running now:** the sheave model for sections in the blocks and the
+lyre pylons' risers (a jumper given by its tension).
 
 > **Owner:**
 
@@ -838,12 +845,26 @@ session notes follow the path).
 
 ### O9. Design-code loads still to come
 Security / broken-wire and construction loads, and code-specific wind on
-structures, in the design-code plugins.
+structures, in the design-code plugins. The core's **broken-wire case**
+built 2026-10-25 (in active development, not approved yet;
+[Load cases](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/loads.md#a-broken-wire-casebroken)):
+a load case names the section, the span (or every span, one at a time,
+the worst of each force kept) and optionally the set (`[case.broken]`,
+`.ohllc` 3); the section is solved with that wire gone, its clamps held
+by their strings alone (the strings next to the break swing to the spans
+left), giving the unbalanced longitudinal loads at the structures
+(validation `brokenwire-001…003`, hand-checked); `ohl line
+--load-cases`, the Load cases library, and Criteria › Loads for
+structures sends such a case to OHL-Structure as a line result
+`<weather case> — S3 span 2 broken`. Still to come: the codes' security
+and construction cases written by their plugins (the format is
+documented for them), a single subconductor of a bundle broken, the
+dynamic impact beyond a factor.
 > **Owner:** (2026-10-19) All three, each in its respective design-code
 > plugin. The core gets a **broken-wire case** type (the section solved
 > with the wire gone) for the plugins to use: approved.
 > **Owner:** (2026-10-25) The broken wire given per span and set in a load
-> case (or every span in turn, the worst kept). *In progress.*
+> case (or every span in turn, the worst kept).
 
 ### O11. Validation report
 Phase 1 validation against published examples (CIGRE TB 324, textbooks)

@@ -131,6 +131,7 @@ fn a_case_of_two_parts_goes_from_the_line_to_the_solve() {
         load_cases: None,
         weather_cases: vec!["high wind".into()],
         condition: None,
+        ..Default::default()
     };
     let budget = ohl_wirefe::default_fe_budget();
     let loads =

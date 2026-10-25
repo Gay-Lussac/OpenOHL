@@ -193,6 +193,20 @@ pub struct LineInputs {
     line: ohl_line::Line,
     library: ohl_cables::Library,
     weather: Vec<ohl_weather::WeatherCase>,
+    /// The line's load cases (for the broken-wire cases sent).
+    load_cases: Vec<ohl_loads::LoadCase>,
+}
+
+/// The line's load cases (its `.ohllc` file; none when there is none or
+/// it does not read: the Load cases library says why).
+pub fn line_load_cases(model: &Model) -> Vec<ohl_loads::LoadCase> {
+    model
+        .sources
+        .load_cases
+        .as_deref()
+        .and_then(|p| ohl_loads::LoadCases::load(p).ok())
+        .map(|s| s.cases)
+        .unwrap_or_default()
 }
 
 impl LineInputs {
@@ -202,6 +216,11 @@ impl LineInputs {
             line: model.line.clone(),
             library: model.library.clone(),
             weather: model.cases.iter().map(|c| c.case.clone()).collect(),
+            load_cases: if model.line.structure_loads.broken_cases.is_empty() {
+                Vec::new()
+            } else {
+                line_load_cases(model)
+            },
         }
     }
 
@@ -211,7 +230,11 @@ impl LineInputs {
     /// loads computes them (seconds for a long line). Err: no case to send
     /// (no load case file and no weather case chosen, or none chosen).
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
-        let cases = ohl_structure_link::structure_cases(&self.line.structure_loads, &self.weather);
+        let cases = ohl_structure_link::structure_cases_with(
+            &self.line.structure_loads,
+            &self.weather,
+            &self.load_cases,
+        );
         if cases.is_empty() {
             return Err(NO_CASES.into());
         }
@@ -1140,7 +1163,7 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                         }
                     }
                 });
-            if choice.weather_cases.is_empty() {
+            if choice.weather_cases.is_empty() && choice.broken_cases.is_empty() {
                 ui.label(
                     egui::RichText::new(
                         "No weather case ticked: the structures get no values from the line.",
@@ -1149,6 +1172,7 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                     .color(ui.visuals().warn_fg_color),
                 );
             }
+            broken_cases_ui(ui, &line_load_cases(&r.model), &mut choice);
         });
         if choice != before
             && let Ok(e) = &r.model.editing
@@ -1160,6 +1184,80 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
             });
         }
     });
+}
+
+/// The broken-wire cases sent (roadmap O9): a tick per load case of the
+/// line with a broken wire (Criteria › Load cases library, `[case.broken]`),
+/// each sent as its weather case with that wire broken, unfactored (a
+/// wind case twice); one ticked and since gone is listed to untick.
+pub(crate) fn broken_cases_ui(
+    ui: &mut egui::Ui,
+    load_cases: &[ohl_loads::LoadCase],
+    choice: &mut ohl_line::StructureLoads,
+) {
+    ui.separator();
+    ui.label(egui::RichText::new("Broken-wire cases sent").strong());
+    let broken: Vec<&ohl_loads::LoadCase> =
+        load_cases.iter().filter(|c| c.broken.is_some()).collect();
+    if broken.is_empty() && choice.broken_cases.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "None in the line's load cases: a load case with a broken wire \
+                 ([case.broken] in Criteria › Load cases library, or from a design code) is \
+                 listed here.",
+            )
+            .small()
+            .weak(),
+        );
+        return;
+    }
+    let gone: Vec<String> = choice
+        .broken_cases
+        .iter()
+        .filter(|n| !broken.iter().any(|c| &c.name == *n))
+        .cloned()
+        .collect();
+    egui::ScrollArea::vertical()
+        .id_salt("loads-broken-cases")
+        .max_height(160.0)
+        .show(ui, |ui| {
+            for c in &broken {
+                let mut on = choice.broken_cases.contains(&c.name);
+                let what = c.broken.as_ref().map_or(String::new(), |b| b.describe());
+                if ui
+                    .checkbox(&mut on, format!("{} ({}, {what})", c.name, c.weather))
+                    .on_hover_text(
+                        "Sent as its weather case with this wire broken, unfactored: the \
+                         section solved with the wire of that span gone, the strings at its \
+                         ends swung to the spans left",
+                    )
+                    .changed()
+                {
+                    choice.broken_cases.retain(|n| n != &c.name);
+                    if on {
+                        choice.broken_cases.push(c.name.clone());
+                        choice.broken_cases.sort_by_key(|n| {
+                            broken
+                                .iter()
+                                .position(|x| &x.name == n)
+                                .unwrap_or(usize::MAX)
+                        });
+                    }
+                }
+            }
+            for name in &gone {
+                let mut on = true;
+                if ui
+                    .checkbox(
+                        &mut on,
+                        format!("{name} (not a load case with a broken wire)"),
+                    )
+                    .changed()
+                {
+                    choice.broken_cases.retain(|n| n != name);
+                }
+            }
+        });
 }
 
 /// The file's time and text (none and empty when it cannot be read).

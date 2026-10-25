@@ -18,6 +18,7 @@ mod checks_spacers;
 mod clearances;
 mod display_codes;
 mod lidar;
+mod local_winds;
 mod objects;
 mod plugins_hosting;
 mod project;

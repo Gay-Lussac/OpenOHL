@@ -128,6 +128,24 @@ A rule preset's groups come with its weather cases into the project's
 file (its cases under the project's names), a group of a name the file
 has staying the file's.
 
+### Local winds per span
+
+A weather case's wind is the same along the whole line. Spans that see
+another (an exposed ridge, a sheltered valley, a wind study for a
+stretch) are given a **local wind factor** with the line, not in the
+weather case file: a section's spans, each a factor on the wind of every
+case with wind (roadmap O15, owner 2026-10-25) — see
+[Line file: local winds per span](line-file.md#local-winds-per-span). The
+factor applies to the pressure of the case as solved: in a check that
+steps the wind (the swing arc, the distance under unequal wind) each
+step is times the span's factor; in a wind study per structure (above)
+the pressure of the study is taken as the case's, and the spans' factors
+apply on it too.
+
+**Simplification:** one factor for every case with wind — the ice with
+wind as the wind alone — and the case's side; a factor per case or a
+direction of its own is not given (to decide).
+
 ## Choosing cases
 
 ```bash

@@ -322,6 +322,16 @@ line sends to its structures. *German:* Lastfall.
 from the line with the structure's own loads, for its analysis.
 *German:* Mastlastfall (to confirm).
 
+**Broken wire** — a load case's wire gone in one span of a section
+(`[case.broken]`): the section solved without it, the strings next to the
+break swung to the spans left ([Load
+cases](loads.md#a-broken-wire-casebroken)). *Replaces:* broken conductor,
+broken span. *German:* Seilriss (to confirm).
+
+**Local wind** — a span's factor on the weather case's wind, in every
+case with wind ([Line file](line-file.md#local-winds-per-span)).
+*Replaces:* span wind, wind zone. *German:* örtlicher Wind (to confirm).
+
 ## Clearances
 
 ![Sag, vertical clearance; a span cut across with the swing band and the

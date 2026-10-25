@@ -115,6 +115,142 @@ to 10⁻⁷.
 
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 
+## Local winds per span (2026-10-25)
+
+*Built, in active development (not approved yet).* Roadmap O15 (owner,
+2026-10-25: "a factor, for every wind case"). A section's spans may be
+given a **local wind factor** (`wind_factors` in the line file,
+[`Section::wind_factor`](../user-guide/line-file.md#local-winds-per-span)):
+in every weather case with wind, the wind pressure on that span is the
+case's times the factor — 1.2 on an exposed ridge, 0.7 in a sheltered
+valley, 0 where the span sees none. A span without a factor takes the
+case's wind. The solver gives each such span its case with the pressure
+scaled (a weather case per span, above), so everything the wind does on
+the span follows: its load per metre (on its iced diameter), its blowout
+and tension, the forces of the wind on the bodies on it, the spacers on
+it. With every factor 1 (or none) the section is solved exactly as
+before, bit for bit (tested on every section of the example line); the
+same factor on every span is the case's wind times it (tested to
+rounding, strings included).
+
+What takes the local wind besides the spans (every place in the code that
+takes the case's wind for the wires):
+
+- **the strings** at a point: the larger of its two spans' factors;
+- **the jumpers** and the strings holding them: the largest factor of the
+  spans next to the structures at their ends (`Line::jumper_wind_factor`);
+- **the rolling** of a section in the blocks: each span its own wind while
+  the length is shared out (the spans' own cases of unequal ice still
+  roll in the section's case, as before);
+- **the ruling-span method** (one tension for all spans): the case's wind
+  times the section's largest factor, on every span;
+- **the permanent stretch** after creep or after the heaviest load (one
+  per section): its weather cases' wind times the section's largest
+  factor;
+- every check that solves the line in a case — the clearances' blowout
+  and swing arc, the distance under unequal wind (each wind level taken
+  times each span's factor: each span steps up to its own wind), the
+  structure loads, the string and tension checks, galloping (the ellipses
+  on the sag solved in the case) — through the solver;
+- **the wind span** of the allowable-spans check (Method 1): each half
+  span times its factor.
+
+**Conservative:** the strings take the larger factor of their two spans
+(they swing at least as far as with either; the exact wind on a string is
+between the two); a jumper and the strings holding it, the largest at
+its structures.
+
+**Conservative:** the ruling-span method and the permanent stretch take
+the section's largest factor on every span: the tension, the blowout
+and the stretch are those of the windiest span; on the spans with less
+the swing is overestimated (on the safe side towards objects beside the
+line, more than real towards the wires on the other side). Exact: the
+finite elements (the default), which take each span's own.
+
+**Simplification:** one factor for every weather case with wind, the same
+on the ice-with-wind cases as on the wind alone; the side and the
+temperature stay the case's. A wind study that gives another ratio for
+another case, or another direction, is not modelled (owner, to decide:
+a factor per case, a direction). The structures' own wind (the wind
+bands, the member wind, the pole) is the case's, not scaled by the
+spans' factors: a structure on a ridge gets its own through the load
+case's `[case.structure]` or a wind study per structure.
+
+Checked against an independent evaluation (validation
+`localwind-001`…`004`, `benchmarks/wirefe/local_wind.toml`): one level
+300 m span between fixed points in 500 Pa with factors 1, 1.5, 0.6 and 0
+— the load constant along the span in a plane tilted by
+\\( \arctan(f\,p\,d\,k / w) \\) from the vertical (\\( k \\) the span's
+stretch, the wind per stretched metre), the closed-form elastic catenary
+in that plane; the solver agrees to 10⁻⁷ (blowout 41.26° at factor 1,
+52.77° at 1.5, plumb at 0).
+
+## A broken wire (2026-10-25)
+
+*Built, in active development (not approved yet).* Roadmap O9 (owner,
+2026-10-19: the core gets a broken-wire case type for the design-code
+plugins; 2026-10-25: "per span and set, in a load case"). A section is
+solved with the wire of one span **gone**
+(`ohl_line::solve::solve_section_broken`): the section as it is in the
+case — each span's unstressed length that of the whole section in the
+case's condition (a section in the blocks rolled in the case first, then
+held in its clamps) — with no element in the broken span. Its two clamps
+are each a **free end held by its strings alone**: the section falls
+into two independent pieces, each with its remaining spans, joined to the
+other only through the structures. A suspension string at the broken
+span's back end swings back towards the spans left behind it until the
+string, its weight and the remaining span's end force are in equilibrium
+(the moment about its top: \\( \tan\varphi = H / (V + W/2) \\), \\( V \\)
+the wire's vertical pull at the clamp, \\( W \\) the string's weight); the
+remaining spans of that piece re-solve with the clamp where it went
+(each span its own tension, the strings further along swinging less and
+less). The other wires stay as they are. The structure next to the break
+takes the remaining span's pull along the line: the **unbalanced
+longitudinal load** of the design codes' security cases. A section end
+next to the broken span (its first or last point) holds no wire: its
+strings hang under their own weight, with the wind on them.
+
+A **bundle**'s broken wire is its whole phase: every subconductor broken
+in that span (the solve follows one subconductor for the bundle).
+
+(The plain section model of the sag-tension jobs had a broken span
+before — `ohl_wirefe::State::broken_spans`, a job's `[[fe.broken]]` —
+in one weather case for a section of its own; this is the line's: its
+structures, strings, condition and load cases.)
+
+**Conservative:** a bundle broken as a whole phase — a code that breaks
+one subconductor leaves the others carrying (less unbalance).
+
+**Simplification:** the static state after the break: the dynamic
+impact of the wire letting go (a code's impact factor goes into the load
+case's longitudinal factor) is not modelled; nor the broken pieces lying
+on the ground (their weight hanging from the clamps); the objects on the
+broken span fall with it. A section sharing strings with others (a TAK)
+is broken with the others as solved whole. A string at a section end
+next to the break hangs plumb (its weight shared equally by its
+structure points: exact for one string, approximate for strings of
+another arrangement). The jumpers on the clamps keep their loads of the
+whole line. Refused: the ruling-span method (one tension for every span),
+a spacer or a jumper on a span point of the broken span.
+
+**Every span, one at a time:** a load case may break every span of the
+section in turn (`span = "every"`): a solve per span, and for each
+structure point the largest of each force component (transverse,
+longitudinal, vertical; by size, its sign kept) with the span that gave
+it. **Conservative:** the components may come from different spans; taken
+together they are an envelope, at least as large as any one break.
+
+Checked against an independent evaluation (validation
+`brokenwire-001`…`003`, `benchmarks/wirefe/broken_wire.toml`): the
+section of `spancases` (two level 300 m spans, a 3 m suspension string
+of 800 N, strung at 28 kN at 15 °C), span 2 broken at 15 °C — the string
+swings 73.27° back into span 1 (\\( \tan\varphi = 9538.5 / (2466.7 + 400)
+\\), by hand), the remaining span slackens to 9.54 kN, and the middle
+structure takes 9.54 kN along the line; at −5 °C; and span 1 broken (the
+mirror image): the closed-form elastic catenary of the remaining span and
+Newton on the clamp's position, its own implementation; the solver agrees
+to 10⁻⁷.
+
 ## Point loads: marker balls and other bodies
 
 A point load in a span is a weight at a fraction of the span, and may also be a body of some size: a marker ball, an obstruction light. It's given a shape — a sphere of diameter \\( D \\), a cylinder, a box, or given areas (a wind area \\( A \\) and the surface \\( S \\) that takes the ice) — and a drag coefficient \\( C_d \\) (default 1). In a weather case it carries:

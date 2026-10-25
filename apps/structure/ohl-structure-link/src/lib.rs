@@ -171,10 +171,97 @@ pub fn line_result_name(weather: &str, side: Option<ohl_weather::WindSide>) -> S
     }
 }
 
+/// The name of the line result of a broken wire: weather case `weather`
+/// with `broken` (`high wind — S3 span 2 broken`), the wind from `side`
+/// ([`line_result_name`]).
+pub fn broken_result_name(
+    weather: &str,
+    broken: &ohl_loads::BrokenWire,
+    side: Option<ohl_weather::WindSide>,
+) -> String {
+    line_result_name(&format!("{weather} — {}", broken.describe()), side)
+}
+
+/// [`structure_cases`] with the line's load cases `load_cases`: then also
+/// the broken-wire cases `choice` sends ([`StructureLoads::broken_cases`],
+/// roadmap O9), after the weather cases — each a line result of its
+/// weather case with its wire broken ([`broken_result_name`]), unfactored
+/// (every factor 1), the wires in `choice`'s condition, a wind case twice
+/// (the wind from the left and from the right). A name chosen that is not
+/// a load case with a broken wire, or whose weather case is not there, is
+/// listed in [`StructureCases::missing`].
+pub fn structure_cases_with(
+    choice: &StructureLoads,
+    weather: &[ohl_weather::WeatherCase],
+    load_cases: &[LoadCase],
+) -> StructureCases {
+    let mut out = structure_cases(choice, weather);
+    let condition = choice
+        .condition
+        .as_deref()
+        .and_then(ohl_loads::WireCondition::parse)
+        .unwrap_or_default();
+    for name in &choice.broken_cases {
+        let Some((lc, broken)) = load_cases
+            .iter()
+            .find(|c| &c.name == name)
+            .and_then(|c| Some((c, c.broken.as_ref()?)))
+        else {
+            out.missing
+                .push(format!("load case \"{name}\" with a broken wire"));
+            continue;
+        };
+        let Some(w) = weather.iter().find(|w| w.name == lc.weather) else {
+            out.missing.push(format!(
+                "weather case \"{}\" of load case \"{name}\"",
+                lc.weather
+            ));
+            continue;
+        };
+        let sides: Vec<Option<ohl_weather::WindSide>> = if w.wind_pressure.si() > 0.0 {
+            vec![
+                Some(ohl_weather::WindSide::Left),
+                Some(ohl_weather::WindSide::Right),
+            ]
+        } else {
+            vec![None]
+        };
+        for side in sides {
+            let result = broken_result_name(&w.name, broken, side);
+            let mut case = w.clone();
+            case.name = result.clone();
+            if let Some(side) = side {
+                case.wind_from = side;
+            }
+            let mut c = LoadCase::from_weather(&result);
+            c.name = result.clone();
+            c.description = format!(
+                "load case \"{name}\": weather case \"{}\"{}, {}, unfactored",
+                w.name,
+                side.map_or(String::new(), |s| format!(
+                    ", the wind from the {}",
+                    s.as_str()
+                )),
+                broken.describe()
+            );
+            c.condition = condition;
+            c.broken = Some(broken.clone());
+            c.tags.push(BROKEN_WIRE_TAG.to_owned());
+            out.weather.push(c);
+            out.weather_cases.push(case);
+        }
+    }
+    out
+}
+
+/// The tag of a line result with a broken wire.
+pub const BROKEN_WIRE_TAG: &str = "broken wire";
+
 /// The line results ([`StructureCases`]) of the weather cases `choice`
 /// sends, of `weather` (the line's weather cases, in their order), the
 /// wires in `choice`'s condition (as strung by default). A chosen name
-/// not there is listed in [`StructureCases::missing`].
+/// not there is listed in [`StructureCases::missing`]. The broken-wire
+/// cases need the line's load cases: [`structure_cases_with`].
 pub fn structure_cases(
     choice: &StructureLoads,
     weather: &[ohl_weather::WeatherCase],
