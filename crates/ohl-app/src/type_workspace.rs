@@ -124,6 +124,13 @@ pub struct Workspace {
     /// Its own **Edit in the structure application…** button (a structure
     /// without a file has its own: make it a file first).
     pub app_button: bool,
+    /// The line's structure it was opened from (the Edit tool on a
+    /// structure): its button opens that structure in OHL-Structure, with
+    /// the loads the line puts on it (owner, 2026-10-25), the type alone
+    /// beside it.
+    pub placed: Option<String>,
+    /// The structure application asked for `placed` (else the type alone).
+    pub open_placed: bool,
     /// The Link tool: held (`Some`), with the point chosen (`Some(Some)`).
     pub link: Option<Option<String>>,
     /// The hotbar holds the Link tool (set by the application each frame):
@@ -161,6 +168,8 @@ impl Default for Workspace {
             ahead: 0.0,
             request: None,
             app_button: true,
+            placed: None,
+            open_placed: false,
             link: None,
             link_held: false,
             rigid_links: true,
@@ -335,7 +344,32 @@ impl Workspace {
             ui.separator();
             ui.label(note);
             ui.separator();
+            // Opened from a structure of the line: that structure, with
+            // its loads, first; the type alone beside it.
             if self.app_button
+                && let Some(placed) = self.placed.clone()
+            {
+                if ui
+                    .button(format!("Open {placed} in OHL-Structure…"))
+                    .on_hover_text(format!(
+                        "Structure {placed} in OHL-Structure (its own window) with the loads \
+                         the line puts on it — its load cases, to see and edit; the body is \
+                         its type's: saved there, every structure of the type follows"
+                    ))
+                    .clicked()
+                {
+                    self.open_placed = true;
+                    self.request = Some(Request::EditInStructureApp);
+                }
+                if ui
+                    .small_button("the type alone…")
+                    .on_hover_text("The structure type in OHL-Structure, without the line's loads")
+                    .clicked()
+                {
+                    self.open_placed = false;
+                    self.request = Some(Request::EditInStructureApp);
+                }
+            } else if self.app_button
                 && ui
                     .button(EDIT_IN_APP)
                     .on_hover_text(
@@ -347,6 +381,7 @@ impl Workspace {
                     )
                     .clicked()
             {
+                self.open_placed = false;
                 self.request = Some(Request::EditInStructureApp);
             }
         });

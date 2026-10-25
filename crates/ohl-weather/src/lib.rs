@@ -444,6 +444,11 @@ pub const WEATHER_FILE_VERSION: u32 = 1;
 /// ice_load = "20 N/m"
 /// ice_density = "500 kg/m³"
 /// wind_pressure = "200 Pa"
+///
+/// [[group]]
+/// name = "Clearances"
+/// description = "The cases the clearance checks take"
+/// cases = ["max temperature", "rime ice + wind"]
 /// ```
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -460,6 +465,25 @@ pub struct WeatherCases {
     /// The cases.
     #[serde(rename = "case", default)]
     pub cases: Vec<WeatherCase>,
+    /// Named groups of its cases, to pick together (owner, 2026-10-25).
+    #[serde(rename = "group", default)]
+    pub groups: Vec<CaseGroup>,
+}
+
+/// A named group of weather cases (`[[group]]` of a case file): picked as
+/// one where cases are chosen (the loads for the structures, the checks).
+#[derive(Debug, Clone, PartialEq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaseGroup {
+    /// Its name (unique in the file).
+    pub name: String,
+    /// What it is for.
+    #[serde(default)]
+    pub description: String,
+    /// Its cases, by name (a name no case has: said where it is picked,
+    /// not refused — a case renamed or deleted leaves it).
+    #[serde(default)]
+    pub cases: Vec<String>,
 }
 
 /// Whether `name` matches `pattern`: `*` (any text) and `?` (one
@@ -489,6 +513,18 @@ impl WeatherCases {
                 return Err(format!("weather case \"{}\" is defined twice", c.name));
             }
             c.validate()?;
+        }
+        let mut groups = std::collections::BTreeSet::new();
+        for g in &set.groups {
+            if g.name.trim().is_empty() {
+                return Err("a weather case group needs a name".into());
+            }
+            if !groups.insert(g.name.as_str()) {
+                return Err(format!(
+                    "weather case group \"{}\" is defined twice",
+                    g.name
+                ));
+            }
         }
         Ok(set)
     }

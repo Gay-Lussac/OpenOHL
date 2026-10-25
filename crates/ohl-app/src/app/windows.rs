@@ -697,6 +697,11 @@ pub(super) fn tool_windows(
     }
     r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
     measuring_frame(ctx, r);
+    if let Some((path, text)) = r.case_groups.ui(ctx, &r.model)
+        && r.write_table_file(&path, &text)
+    {
+        r.status = Some(("weather case groups saved".into(), false));
+    }
     if std::mem::take(&mut r.model.drawings_setting_changed) {
         r.drawings.load(&r.model);
     }

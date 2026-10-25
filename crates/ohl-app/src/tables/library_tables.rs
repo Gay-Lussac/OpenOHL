@@ -301,6 +301,7 @@ pub(super) fn weather_file(
         .cloned()
         .unwrap_or_default();
     let mut cases: Vec<(f64, toml_edit::Table)> = Vec::new();
+    let mut renamed: Vec<(String, String)> = Vec::new();
     let write = |t: &mut toml_edit::Table, c: &Cells, all: bool| -> Result<(), String> {
         let name = c.get(W_NAME);
         let label = |col: usize| WEATHER[col].0.replace('\n', " ").trim().to_owned();
@@ -408,6 +409,11 @@ pub(super) fn weather_file(
             defaulted: &row.defaulted,
         };
         write(&mut t, &c, new)?;
+        // Renamed: its groups follow.
+        let after = c.get(W_NAME).trim().to_owned();
+        if after != row.cells[W_NAME] && !after.is_empty() {
+            renamed.push((row.cells[W_NAME].clone(), after));
+        }
         cases.push((
             num(&c.get(W_ORDER), &format!("{} #", row.cells[W_NAME]))?,
             t,
@@ -430,6 +436,24 @@ pub(super) fn weather_file(
         array.push(t);
     }
     doc.insert("case", toml_edit::Item::ArrayOfTables(array));
+    // The weather case groups name the cases renamed by their new names.
+    if let Some(groups) = doc
+        .get_mut("group")
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+    {
+        for g in groups.iter_mut() {
+            if let Some(a) = g.get_mut("cases").and_then(toml_edit::Item::as_array_mut) {
+                for v in a.iter_mut() {
+                    if let Some((_, to)) = renamed
+                        .iter()
+                        .find(|(from, _)| Some(from.as_str()) == v.as_str())
+                    {
+                        *v = to.as_str().into();
+                    }
+                }
+            }
+        }
+    }
     let text = doc.to_string();
     ohl_weather::WeatherCases::parse(&text)?;
     Ok((path, text))

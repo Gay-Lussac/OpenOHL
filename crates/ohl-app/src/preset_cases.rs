@@ -778,6 +778,7 @@ case_pairs = [["ice by load", "Utility*"]]
             version: None,
             name: String::new(),
             cases: vec![as_load.clone()],
+            groups: Vec::new(),
         };
         let p = Plan::new(&project, &set);
         assert!(matches!(p.cases[0].target, Target::Creates { .. }));

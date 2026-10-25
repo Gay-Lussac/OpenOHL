@@ -1168,6 +1168,7 @@ impl ZoneWindow {
         }
         let voltages = line_voltages(model);
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        let groups = crate::case_groups::groups(model);
         let classes = cloud_classes(model, &self.rules);
         let mut remove = None;
         let mut duplicate = None;
@@ -1209,7 +1210,7 @@ impl ZoneWindow {
                                 .add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut r.name))
                                 .changed();
                             self.dirty |= voltage_ui(ui, (self.zone.measure, k), r, &voltages);
-                            self.dirty |= cases_ui(ui, (self.zone.measure, k), r, &cases);
+                            self.dirty |= cases_ui(ui, (self.zone.measure, k), r, &cases, &groups);
                             self.dirty |= crate::requirement_ui::requirement_ui(
                                 ui,
                                 ("zone-distance", self.zone.measure.as_str(), k),
@@ -1298,6 +1299,7 @@ impl ZoneWindow {
                 let classes = cloud_classes(model, std::slice::from_ref(d));
                 let voltages = line_voltages(model);
                 let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+                let groups = crate::case_groups::groups(model);
                 egui::Grid::new((title, "add-rule-grid"))
                     .num_columns(2)
                     .spacing([10.0, 4.0])
@@ -1322,7 +1324,7 @@ impl ZoneWindow {
                         voltage_ui(ui, (measure, usize::MAX), d, &voltages);
                         ui.end_row();
                         ui.label("Weather cases");
-                        cases_ui(ui, (measure, usize::MAX), d, &cases);
+                        cases_ui(ui, (measure, usize::MAX), d, &cases, &groups);
                         ui.end_row();
                     });
                 let why = not_ready(d);
@@ -1645,7 +1647,13 @@ fn voltage_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, voltage
 }
 
 /// The weather cases of a rule, ticked (none ticked: every case).
-fn cases_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, cases: &[String]) -> bool {
+fn cases_ui(
+    ui: &mut egui::Ui,
+    id: (Measure, usize),
+    r: &mut ZoneRule,
+    cases: &[String],
+    groups: &[ohl_weather::CaseGroup],
+) -> bool {
     let mut changed = false;
     let on: Vec<bool> = cases
         .iter()
@@ -1666,6 +1674,13 @@ fn cases_ui(ui: &mut egui::Ui, id: (Measure, usize), r: &mut ZoneRule, cases: &[
                     .small()
                     .weak(),
             );
+            // A group's button: its cases added.
+            let mut named = r.cases.clone();
+            if crate::case_groups::pick_names(ui, groups, &mut named) {
+                r.cases = named;
+                changed = true;
+                return;
+            }
             let mut ticks = on.clone();
             egui::ScrollArea::vertical()
                 .max_height(LIST_HEIGHT)

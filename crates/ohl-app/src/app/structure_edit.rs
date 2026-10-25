@@ -41,7 +41,21 @@ impl Ready {
             page.add_file(&path);
         }
         page.workspace.on = true;
+        page.workspace.placed = None;
         self.open_page = Some((Tab::Library(kind), None));
+    }
+
+    /// Structure `structure`'s type `id` in the structure page, opened
+    /// from that structure (the Edit tool): its OHL-Structure button opens
+    /// the structure with the line's loads (owner, 2026-10-25).
+    pub fn edit_placed_type(&mut self, id: &str, structure: &str) {
+        self.edit_type(id);
+        if let Some(page) = self
+            .libraries
+            .get_mut(&crate::library::LibraryKind::StructureTypes)
+        {
+            page.workspace.placed = Some(structure.to_owned());
+        }
     }
 
     /// **Edit**: structure type `id` in the structure application, on its

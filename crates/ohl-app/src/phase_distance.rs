@@ -1720,6 +1720,11 @@ impl PhaseDistanceWindow {
                             .small()
                             .weak(),
                     );
+                    let mut ticked: Vec<usize> = self.cases.iter().copied().collect();
+                    let groups = crate::case_groups::groups(model);
+                    if crate::case_groups::pick_indices(ui, model, &groups, &mut ticked) {
+                        self.cases = ticked.into_iter().collect();
+                    }
                     egui::ScrollArea::vertical()
                         .max_height(300.0)
                         .show(ui, |ui| {

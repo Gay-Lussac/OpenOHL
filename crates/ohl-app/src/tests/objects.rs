@@ -867,11 +867,12 @@ fn the_weather_case_table_writes_its_file() {
     use crate::tables::TableKind;
     let mut model = synthetic_project("weather-table");
     let path = model.sources.file.parent().unwrap().join("cases.ohlwc");
-    std::fs::copy(
-        root().join("examples/synthetic-line/weather-cases.ohlwc"),
-        &path,
-    )
-    .unwrap();
+    // With a group of two of its cases (2026-10-25): kept by the table,
+    // its cases renamed with them.
+    let text = std::fs::read_to_string(root().join("examples/synthetic-line/weather-cases.ohlwc"))
+        .unwrap()
+        + "\n[[group]]\nname = \"ice\"\ndescription = \"both ices\"\ncases = [\"glaze ice\", \"rime ice + wind\"]\n";
+    std::fs::write(&path, text).unwrap();
     model.sources.weather = Some(path.clone());
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
@@ -906,6 +907,7 @@ fn the_weather_case_table_writes_its_file() {
         "0.6",
     );
     set_cell(&mut harness, kind, "3", "Wind velocity\nm/s", "20");
+    set_cell(&mut harness, kind, "3", "Name\n ", "rime ice and wind");
     set_cell(&mut harness, kind, "0", "Wire temp\n°C", "warm");
     assert!(apply_table(&mut harness, kind, false).is_err());
     set_cell(&mut harness, kind, "0", "Wire temp\n°C", "10.0");
@@ -951,7 +953,7 @@ fn the_weather_case_table_writes_its_file() {
         high.wind_pressure.si()
     );
     assert!((high.wind_velocity() - 40.0).abs() < 1e-9);
-    let rime = case("rime ice + wind");
+    let rime = case("rime ice and wind");
     assert_eq!(rime.air_density_factor, Some(0.6));
     assert!(
         (rime.wind_pressure.si() - 240.0).abs() < 1e-6,
@@ -963,6 +965,9 @@ fn the_weather_case_table_writes_its_file() {
         written.starts_with("# Example weather cases"),
         "comments kept"
     );
+    let groups = ohl_weather::WeatherCases::parse(&written).unwrap().groups;
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].cases, vec!["glaze ice", "rime ice and wind"]);
     assert_solved_fully(&r.model);
 }
 

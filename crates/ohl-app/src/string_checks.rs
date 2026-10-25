@@ -377,6 +377,7 @@ impl StringChecksWindow {
     fn rules_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> bool {
         let mut changed = false;
         let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
+        let groups = crate::case_groups::groups(model);
         let mut voltages: Vec<f64> = ohl_clearance::case::voltages_of(&model.line)
             .unwrap_or_default()
             .into_iter()
@@ -413,6 +414,7 @@ impl StringChecksWindow {
                         r.cases.join(", ")
                     };
                     crate::menu::options_menu(ui, &shown, |ui| {
+                        changed |= crate::case_groups::pick_names(ui, &groups, &mut r.cases);
                         changed |= ticks(ui, &cases, &mut r.cases);
                     });
                     egui::ComboBox::from_id_salt(("string-check-kind", k))

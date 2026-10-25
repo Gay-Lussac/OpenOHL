@@ -321,7 +321,7 @@ impl Ready {
                 );
                 self.select(target);
                 match typed {
-                    Some(t) => self.edit_type(&t),
+                    Some(t) => self.edit_placed_type(&t, &id),
                     None => self.edit_structure(&id),
                 }
                 // The page or the structure screen needs the cursor.
