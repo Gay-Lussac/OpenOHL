@@ -222,6 +222,7 @@ pub fn to_rule_set(
         checks: Vec::new(),
         tension_rules: Vec::new(),
         string_rules: Vec::new(),
+        internal_rules: Vec::new(),
     }
 }
 

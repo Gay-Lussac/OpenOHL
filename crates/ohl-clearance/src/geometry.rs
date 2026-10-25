@@ -125,6 +125,62 @@ pub fn closest_on_triangle(p: P3, a: P3, b: P3, c: P3) -> P3 {
     add(a, add(scale(ab, v), scale(ac, w)))
 }
 
+/// Where segment p–q passes through the triangle a, b, c (both sides,
+/// Möller–Trumbore), if it does; a segment in the triangle's plane is
+/// left to the edge tests of [`closest_segment_triangle`].
+pub fn segment_through_triangle(p: P3, q: P3, a: P3, b: P3, c: P3) -> Option<P3> {
+    let d = sub(q, p);
+    let (e1, e2) = (sub(b, a), sub(c, a));
+    let h = cross(d, e2);
+    let det = dot(e1, h);
+    let scale_ = dot(d, d).sqrt() * dot(e1, e1).sqrt() * dot(e2, e2).sqrt();
+    if det.abs() <= 1e-12 * scale_.max(1e-300) {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let s = sub(p, a);
+    let u = inv * dot(s, h);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let qv = cross(s, e1);
+    let v = inv * dot(d, qv);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = inv * dot(e2, qv);
+    (0.0..=1.0).contains(&t).then(|| add(p, scale(d, t)))
+}
+
+/// Closest points between the segment p–q and the triangle a, b, c: the
+/// point on the segment, then the point on the triangle (the same point
+/// where the segment passes through it). Exact: unless the segment
+/// crosses the triangle, the closest pair has an end of the segment
+/// against the triangle or the segment against one of its edges.
+pub fn closest_segment_triangle(p: P3, q: P3, a: P3, b: P3, c: P3) -> (P3, P3) {
+    if let Some(x) = segment_through_triangle(p, q, a, b, c) {
+        return (x, x);
+    }
+    let mut best = (p, closest_on_triangle(p, a, b, c));
+    let mut d2 = {
+        let d = sub(best.0, best.1);
+        dot(d, d)
+    };
+    let mut keep = |pair: (P3, P3)| {
+        let d = sub(pair.0, pair.1);
+        let e = dot(d, d);
+        if e < d2 {
+            d2 = e;
+            best = pair;
+        }
+    };
+    keep((q, closest_on_triangle(q, a, b, c)));
+    for (u, w) in [(a, b), (b, c), (c, a)] {
+        keep(closest_between_segments(p, q, u, w));
+    }
+    best
+}
+
 /// Where segment a–b passes over or under the point (x, y) within a
 /// horizontal distance `band`: the closest point of the segment in plan,
 /// its height there and its horizontal distance. `None` if farther.
@@ -212,6 +268,50 @@ mod tests {
         );
         let q = closest_on_triangle([3.0, 3.0, 0.0], a, b, c);
         assert!((q[0] - 2.0).abs() < 1e-12 && (q[1] - 2.0).abs() < 1e-12);
+    }
+
+    /// Segment against triangle: through it (0), above its face, beside
+    /// an edge, parallel in its plane, and against a dense sampling.
+    #[test]
+    fn segment_triangle() {
+        let (a, b, c) = ([0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [0.0, 4.0, 0.0]);
+        let d = |p: P3, q: P3| {
+            let (x, y) = closest_segment_triangle(p, q, a, b, c);
+            distance(x, y)
+        };
+        // Through the face.
+        assert!(d([1.0, 1.0, -1.0], [1.0, 1.0, 1.0]) < 1e-12);
+        // Above the face, horizontal: its height.
+        assert!((d([0.5, 0.5, 2.0], [1.5, 1.0, 2.0]) - 2.0).abs() < 1e-12);
+        // Ending above the face, pointing away: the end's height.
+        assert!((d([1.0, 1.0, 0.5], [1.0, 1.0, 3.0]) - 0.5).abs() < 1e-12);
+        // Beside edge a–b, crossing it in plan 1 m below: edge to segment.
+        assert!((d([2.0, -1.0, -1.0], [2.0, -1.0, 1.0]) - 1.0).abs() < 1e-12);
+        // In the plane, beside the hypotenuse.
+        let e = d([4.0, 4.0, 0.0], [5.0, 3.0, 0.0]);
+        assert!((e - 2.0f64.sqrt() * 2.0).abs() < 1e-12, "{e}");
+        // Random segments against sampling the segment finely.
+        let mut seed = 7u64;
+        let mut rnd = || {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((seed >> 11) as f64 / (1u64 << 53) as f64) * 8.0 - 3.0
+        };
+        for _ in 0..200 {
+            let p = [rnd(), rnd(), rnd()];
+            let q = [rnd(), rnd(), rnd()];
+            let exact = d(p, q);
+            let sampled = (0..=4000)
+                .map(|k| {
+                    let t = k as f64 / 4000.0;
+                    let x = add(p, scale(sub(q, p), t));
+                    distance(x, closest_on_triangle(x, a, b, c))
+                })
+                .fold(f64::INFINITY, f64::min);
+            assert!(exact <= sampled + 1e-12, "{exact} {sampled}");
+            assert!(sampled - exact < 5e-3, "{exact} {sampled}");
+        }
     }
 
     #[test]

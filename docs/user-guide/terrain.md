@@ -289,6 +289,70 @@ the string's wire point). Exit status 0: every string within its
 limits, 1: some beyond, 2: an error (a rule file without string rules
 too).
 
+### Internal clearance rules (`[[internal_rule]]`)
+
+Since 2026-10-25 a rule file may hold **internal clearance rules**: the
+electrified parts at each structure against the structure's own body
+(`ohl internal`; the desktop window is in active development). Optional
+`[[internal_rule]]` tables; a file without them reads as before, the
+other checks ignore them. A preset declares the check with `checks =
+["internal"]` (or holds internal rules).
+
+```toml
+[[internal_rule]]
+name = "Body (invented 1.5 m)"
+cases = ["high wind"]          # optional; none: every case
+voltages = [220.0]             # optional; none: every electrified part
+distance = "1.5 m"             # or { by_voltage = [[up to kV, "m"], …] } or { base, per_kv, above_kv }
+conductors = true              # the conductors near the structure (default true)
+jumpers = true                 # the jumpers at it (default true)
+string_ends = true             # the strings' wire points (default true)
+reach = "20 m"                 # how far along each span from its clamp (default 20 m)
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | for the reports |
+| `cases` | weather case names (`*` `?` wildcards); none: every case |
+| `voltages` | the nominal voltages of the parts' sections, kV; none: every electrified part (earth wires are never checked) |
+| `distance` | the distance to keep, required: a distance, a table by voltage or a formula, as the clearance rules' `vertical` / `radial`; a part whose voltage the table does not reach is not checked (a note says so) |
+| `conductors` | each span's conductor from its clamp at the structure out to `reach` (in plan along the solved wire), as solved in the case (the strings' swing included); a bundle subconductor by subconductor |
+| `jumpers` | each jumper with an end on the structure, as solved |
+| `string_ends` | each string's wire point (its bottom) as solved, not in still air |
+| `reach` | above 0 m; default 20 m |
+
+What is measured: only **structures at detail level 2 or 3** (a body:
+members, a pole); a level-1 structure is listed as *not checked*. Each
+part against **every member** of the body, to the member's **surface**
+where its section's profile is known (the member as drawn), else to its
+**centre line** — the member's size then left out, **on the unsafe
+side**: a note names each structure with such members and every row
+says which. The distances are exact on the solved polylines, to the
+wire's surface: its radius in the case (iced with ice) and the bound of
+how far the wire lies off its polyline are taken off (conservative). A
+string's wire point counts as a point (its fittings' size is not
+counted: on the unsafe side). Volumes on the strings (spheres,
+cylinders, boxes, cones) are not checked yet.
+
+```sh
+ohl internal examples/synthetic-line/synthetic-line-typed.ohl.json \
+  --structures examples/synthetic-line/Structures \
+  --weather examples/synthetic-line/weather-cases.ohlwc \
+  --rules my-internal-rules.ohlr --csv internal.csv
+```
+
+prints the structures not checked, the notes, and one row per rule,
+structure, case and part — its smallest distance, the required one, the
+nearest member, whether to its surface or its centre line, pass or
+FAIL — the smallest margin first, and writes them as CSV with `--csv`
+(`rule, case, structure, part, member, distance_m, required_m,
+margin_m, to, status, x, y, z, member_x, member_y, member_z`: the point
+of the part and of the member nearest each other). `--sections` gives
+the cross-section library (the members' profiles); `--time-limit`
+(seconds, default 600) stops a run that takes too long. Exit status 0:
+every part keeps its distance, 1: some too near, 2: an error (a rule
+file without internal rules too). No distance is built in.
+
 ## Vertical and radial clearances without the window (`ohl zones`)
 
 `ohl zones` runs the check of the desktop

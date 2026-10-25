@@ -130,15 +130,17 @@ impl RulePresetChecked {
         let rules = RuleSet::parse(&p.rules).map_err(|e| bad("rules", e))?;
         // A preset of the vegetation check ([vegetation]), of the wire
         // tension check ([[tension_rule]]) or of the string check
-        // ([[string_rule]], 2026-10-24) may hold no clearance rule.
+        // ([[string_rule]], 2026-10-24) or of the internal clearance check
+        // ([[internal_rule]], 2026-10-25) may hold no clearance rule.
         if rules.rules.is_empty()
             && rules.vegetation.is_none()
             && rules.tension_rules.is_empty()
             && rules.string_rules.is_empty()
+            && rules.internal_rules.is_empty()
         {
             return Err(bad(
                 "rules",
-                "no rule (and no [vegetation], [[tension_rule]] or [[string_rule]])".into(),
+                "no rule (and no [vegetation], [[tension_rule]], [[string_rule]] or [[internal_rule]])".into(),
             ));
         }
         let weather = if p.weather_cases.trim().is_empty() {

@@ -728,6 +728,8 @@ struct RawRules {
     tension_rules: Vec<crate::tension::RawTensionRule>,
     #[serde(rename = "string_rule", default)]
     string_rules: Vec<crate::strings::RawStringRule>,
+    #[serde(rename = "internal_rule", default)]
+    internal_rules: Vec<crate::internal::RawInternalRule>,
 }
 
 #[derive(Deserialize)]
@@ -909,7 +911,7 @@ pub struct RuleSet {
     /// steps).
     pub vegetation: Option<VegetationPreset>,
     /// The checks a preset is for, as its file declares them (top-level
-    /// `checks = ["vertical", "radial", "vegetation", "tension", "strings"]`,
+    /// `checks = ["vertical", "radial", "vegetation", "tension", "strings", "internal"]`,
     /// optional); empty: not declared, told from its content
     /// ([`RuleSet::is_for`]).
     pub checks: Vec<PresetCheck>,
@@ -921,6 +923,10 @@ pub struct RuleSet {
     /// 2026-10-24: [`crate::strings`]); a file without them reads as
     /// before.
     pub string_rules: Vec<crate::strings::StringRule>,
+    /// The internal clearance check's rules (`[[internal_rule]]`,
+    /// optional, since 2026-10-25: [`crate::internal`]); a file without
+    /// them reads as before.
+    pub internal_rules: Vec<crate::internal::InternalRule>,
 }
 
 /// A check a rule file (a design code's preset) is for.
@@ -936,10 +942,13 @@ pub enum PresetCheck {
     Tension,
     /// The string check (`[[string_rule]]`, 2026-10-24).
     Strings,
+    /// The internal clearance check (`[[internal_rule]]`, 2026-10-25).
+    Internal,
 }
 
 impl PresetCheck {
-    /// `"vertical"`, `"radial"`, `"vegetation"` or `"tension"`.
+    /// `"vertical"`, `"radial"`, `"vegetation"`, `"tension"`, `"strings"`
+    /// or `"internal"`.
     pub fn as_str(self) -> &'static str {
         match self {
             PresetCheck::Vertical => "vertical",
@@ -947,6 +956,7 @@ impl PresetCheck {
             PresetCheck::Vegetation => "vegetation",
             PresetCheck::Tension => "tension",
             PresetCheck::Strings => "strings",
+            PresetCheck::Internal => "internal",
         }
     }
 
@@ -958,8 +968,9 @@ impl PresetCheck {
             "vegetation" => Ok(PresetCheck::Vegetation),
             "tension" => Ok(PresetCheck::Tension),
             "strings" => Ok(PresetCheck::Strings),
+            "internal" => Ok(PresetCheck::Internal),
             other => Err(format!(
-                "checks: \"{other}\" is not vertical, radial, vegetation, tension or strings"
+                "checks: \"{other}\" is not vertical, radial, vegetation, tension, strings or internal"
             )),
         }
     }
@@ -1438,6 +1449,11 @@ impl RuleSet {
             .into_iter()
             .map(crate::strings::RawStringRule::resolve)
             .collect::<Result<Vec<_>, _>>()?;
+        let internal_rules = raw
+            .internal_rules
+            .into_iter()
+            .map(crate::internal::RawInternalRule::resolve)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             name: raw.name,
             rules,
@@ -1447,6 +1463,7 @@ impl RuleSet {
             checks,
             tension_rules,
             string_rules,
+            internal_rules,
         })
     }
 
@@ -1484,6 +1501,7 @@ impl RuleSet {
             checks: Vec::new(),
             tension_rules: Vec::new(),
             string_rules: Vec::new(),
+            internal_rules: Vec::new(),
         }
     }
 
@@ -1501,6 +1519,7 @@ impl RuleSet {
             PresetCheck::Vegetation => self.vegetation.is_some(),
             PresetCheck::Tension => !self.tension_rules.is_empty(),
             PresetCheck::Strings => !self.string_rules.is_empty(),
+            PresetCheck::Internal => !self.internal_rules.is_empty(),
         }
     }
 
@@ -1573,6 +1592,9 @@ impl RuleSet {
             t.push_str(&r.to_toml());
         }
         for r in &self.string_rules {
+            t.push_str(&r.to_toml());
+        }
+        for r in &self.internal_rules {
             t.push_str(&r.to_toml());
         }
         t

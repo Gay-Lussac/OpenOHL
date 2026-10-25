@@ -209,6 +209,7 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
             ohl_clearance::rules::PresetCheck::Vegetation,
             ohl_clearance::rules::PresetCheck::Tension,
             ohl_clearance::rules::PresetCheck::Strings,
+            ohl_clearance::rules::PresetCheck::Internal,
         ]
         .into_iter()
         .filter(|c| p.rules.is_for(*c))
@@ -248,6 +249,19 @@ fn rule_presets(plugin: &Path, params: Option<&Path>, out: Option<&Path>) -> Res
                     String::new()
                 } else {
                     format!(" — cases {}", s.cases.join(", "))
+                }
+            );
+        }
+        for r in &p.rules.internal_rules {
+            println!(
+                "  {}: internal clearance {} — {}{}",
+                r.name,
+                r.distance,
+                r.describe_parts(),
+                if r.cases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — cases {}", r.cases.join(", "))
                 }
             );
         }
