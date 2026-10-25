@@ -828,6 +828,14 @@ impl StringForm {
                 unlinked: false,
             });
         }
+        // The strings' own volumes (not edited here: the String library
+        // and the line file) kept.
+        let own_shapes: std::collections::BTreeMap<String, Vec<ohl_structures::StringShape>> = s
+            .strings
+            .iter()
+            .filter(|x| !x.shapes.is_empty())
+            .map(|x| (x.label.clone(), x.shapes.clone()))
+            .collect();
         let (strings, wires) = &self.opened;
         s.strings.retain(|x| !strings.contains(&x.label));
         s.wires.retain(|w| !wires.contains(&w.label));
@@ -864,6 +872,7 @@ impl StringForm {
                 max_swing_deg: x.limits.max_swing_deg,
                 max_swing_across_deg: x.limits.max_swing_across_deg,
                 max_swing_along_deg: x.limits.max_swing_along_deg,
+                shapes: own_shapes.get(&x.label).cloned().unwrap_or_default(),
                 // From its wire point as placed here.
                 ..Default::default()
             });

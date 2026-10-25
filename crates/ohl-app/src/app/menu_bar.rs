@@ -352,6 +352,7 @@ pub(super) fn menus(
         item(ui, Command::Table(TableKind::Structures), out);
         item(ui, Command::Table(TableKind::Strings), out);
         item(ui, Command::Table(TableKind::Insulators), out);
+        item(ui, Command::Table(TableKind::StringShapes), out);
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(

@@ -337,6 +337,15 @@ fn rich_line() -> Line {
         max_swing_deg: Some(60.0),
         max_swing_across_deg: Some(55.5),
         max_swing_along_deg: Some(30.0),
+        // Its own volumes (line file version 8; INVENTED sizes): a horn
+        // and a shared yoke survive.
+        shapes: serde_json::from_str(
+            r#"[{"name": "horn", "kind": "cylinder", "state": "grounded", "at": 0.1,
+                 "diameter": 0.02, "length": 0.3, "offset_across": 0.25},
+                {"name": "yoke", "kind": "box", "state": "electrified", "at_fraction": 1.0,
+                 "width": 0.6, "depth": 0.15, "length": 0.05, "shared": true}]"#,
+        )
+        .unwrap(),
         ..Default::default()
     });
     let mut held = line.jumpers[0].clone();
@@ -491,6 +500,11 @@ fn xsd_lists_every_element_written() {
         "max_swing_deg",
         "max_swing_across_deg",
         "max_swing_along_deg",
+        "at_fraction",
+        "end_diameter",
+        "offset_across",
+        "offset_along",
+        "shared",
     ] {
         assert!(xsd.contains(&format!("name=\"{a}\"")), "{a}");
     }

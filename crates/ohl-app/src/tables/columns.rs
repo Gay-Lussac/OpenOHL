@@ -224,6 +224,109 @@ pub(super) const INSULATORS: &[Column] = &[
         Derived,
         "strings with this label in the model (the structures' own and their types')",
     ),
+    (
+        "swing across",
+        85.0,
+        Yes,
+        "free or blocked: whether its shapes (String shapes) turn with the string's swing across the line; blocked: they keep their still-air angle (the internal clearances)",
+    ),
+    (
+        "swing along",
+        85.0,
+        Yes,
+        "free or blocked: whether its shapes turn with the string's swing along the line",
+    ),
+    (
+        "twist",
+        70.0,
+        Yes,
+        "free or blocked: about the string's axis; free: its shapes' across axis is across the conductor at the wire point, blocked: the structure's",
+    ),
+    (
+        "strings",
+        60.0,
+        Yes,
+        "several strings in one assembly (1 to 4): the line's string stands for all of them, on their middle; each string carries a copy of its shapes (a shared one: once)",
+    ),
+    (
+        "arrangement",
+        90.0,
+        Yes,
+        "several strings: across (side by side across the line), along (one behind the other) or triangle (three)",
+    ),
+    (
+        "spacing",
+        70.0,
+        Yes,
+        "m, between the strings' axes (several strings); empty: one string",
+    ),
+    (
+        "shapes",
+        55.0,
+        Derived,
+        "its volumes: edited in Structures › String shapes",
+    ),
+];
+
+pub(super) const STRING_SHAPES: &[Column] = &[
+    (
+        "library label",
+        150.0,
+        New,
+        "the insulator assembly carrying it (String library): every string with that label has it; a line's string may override it by name",
+    ),
+    ("shape", 130.0, Yes, "its name, unique on the assembly"),
+    ("kind", 80.0, Yes, "sphere, cylinder, box or cone"),
+    (
+        "state",
+        90.0,
+        Yes,
+        "grounded (at the structure's potential: top fittings, a tower-side horn), electrified (at the line's: the clamp, a line-side horn, a corona ring, the yoke) or insulated (the insulator itself: drawn, not a clearance target)",
+    ),
+    (
+        "at",
+        70.0,
+        Yes,
+        "its centre along the string from its top: a fraction of the length (0 the top, 1 the wire point), or metres with m (0.3 m)",
+    ),
+    (
+        "diameter",
+        70.0,
+        Yes,
+        "m: sphere, cylinder; a cone's at its end nearer the top",
+    ),
+    (
+        "end diameter",
+        80.0,
+        Yes,
+        "m: a cone's at its end nearer the wire point (0: a point)",
+    ),
+    (
+        "length",
+        65.0,
+        Yes,
+        "m, on the string's axis: cylinder, cone, box",
+    ),
+    ("width", 60.0, Yes, "m, a box's across"),
+    ("depth", 60.0, Yes, "m, a box's along"),
+    (
+        "offset across",
+        85.0,
+        Yes,
+        "m, its centre off the string's axis, across (an arcing horn beside it)",
+    ),
+    (
+        "offset along",
+        85.0,
+        Yes,
+        "m, its centre off the string's axis, along",
+    ),
+    (
+        "shared",
+        60.0,
+        Yes,
+        "yes: one for an assembly of several strings, on its axis (a yoke plate); else one on each string",
+    ),
 ];
 
 pub(super) const STRINGS: &[Column] = &[

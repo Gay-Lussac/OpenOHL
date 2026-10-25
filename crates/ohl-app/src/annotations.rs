@@ -89,6 +89,11 @@ pub struct SectionDisplay {
     /// Notes other users kept in the project not drawn.
     #[serde(default)]
     pub hide_others_notes: bool,
+    /// The volumes on the strings (String shapes) drawn on the solved
+    /// strings in 3D, within the solids distance (off by default: many
+    /// triangles on a long line).
+    #[serde(default)]
+    pub string_volumes: bool,
 }
 
 /// In 3D, labels are written within this distance of the eye, m, unless
@@ -170,6 +175,14 @@ impl SectionDisplay {
             }
         });
         changed |= self.distance_ui(ui);
+        let r = ui
+            .checkbox(&mut self.string_volumes, "Volumes on the strings (3D)")
+            .on_hover_text(
+                "The shapes of the String shapes table on the strings as solved in the cases \
+                 shown: grounded grey, electrified orange, insulated pale; drawn within the \
+                 solids distance (View › Advanced › Level of detail)",
+            );
+        changed |= r.changed();
         changed
     }
 

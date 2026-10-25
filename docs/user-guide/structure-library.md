@@ -510,9 +510,57 @@ A string may carry **limits**: kept with the string, shown and edited, and compa
 
 Angles from 0 to 180°, a load above 0; other values and unknown keys are refused. They go on an **insulator assembly** (`.ohli`, version 2) as defaults and on a **string** (`[[string]]` of a structure type, version 4; a line's own string, line file version 6): a string naming an assembly takes each limit the assembly gives where the string gives none of its own — the string's own value wins. The compression a string may take is not one of them: that is `compression`, which the solve uses (a string with it acts both ways and is flagged beyond it).
 
-The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ohl_line::swing`). OpenOHL writes a file's newer version only when it holds what needs it (an `.ohli` stays version 1 without limits and `legs`; 2 with limits; 3 with `legs = 2`), so an older program still reads the rest.
+The swings they compare with are those of the string as solved, from its top to its wire point: from straight down, and the angles of its projections on the planes across and along the line, positive to the right and ahead (`ohl_line::swing`). OpenOHL writes a file's newer version only when it holds what needs it (an `.ohli` stays version 1 without limits and `legs`; 2 with limits; 3 with `legs = 2`; 4 with volumes on the strings), so an older program still reads the rest.
 
 **Files before version 3** gave two strings to one clamp as `kind = "v_string"`: still read, the same as `kind = "suspension"` with `legs = 2`, and written in the new form when saved (owner decision 2026-10-21: combinations of strings are not types).
+
+### Volumes on the strings
+
+Since 2026-10-25 (version 4, written only when an assembly has any of it; roadmap O6, in active development, not approved yet) an assembly may carry **basic volumes** — spheres, cylinders, boxes and cones — for the [internal clearances](desktop-app.md#internal-clearances): every string with its label has them.
+
+```toml
+format = "ohl-insulator"
+version = 4
+# … the assembly as above …
+swing_across = "free"        # free (default) or blocked
+swing_along = "free"
+twist = "blocked"            # about the string's axis
+strings = 2                  # several strings in one assembly (default 1, at most 4)
+arrangement = "across"       # across, along or triangle (three strings)
+spacing = "0.45 m"           # between the strings' axes
+
+[[shape]]
+name = "line-side horn"      # unique on the assembly
+kind = "cylinder"            # sphere | cylinder | box | cone
+state = "electrified"        # grounded | electrified | insulated
+at = "3.3 m"                 # its centre from the string's top (or at_fraction = 0.95)
+diameter = "0.02 m"
+length = "0.3 m"
+offset_across = "0.25 m"     # off the string's axis (and offset_along)
+
+[[shape]]
+name = "yoke"
+kind = "box"
+state = "electrified"
+at_fraction = 1.0
+width = "0.6 m"              # across; depth: along; length: on the axis
+depth = "0.15 m"
+length = "0.05 m"
+shared = true                # several strings: one for the assembly, on its axis
+```
+
+| Key | Meaning |
+|---|---|
+| `name` | unique on the assembly; a line's string overrides a shape by its name |
+| `kind` | `sphere` (`diameter`), `cylinder` (`diameter`, `length`), `box` (`width` across, `depth` along, `length` on the axis), `cone` (`diameter` at its end nearer the top, `end_diameter` at the other, default 0, `length`); a size the kind does not take is refused |
+| `state` | `grounded`: at the structure's potential (top fittings, a tower-side horn); `electrified`: at the line's (the clamp, a line-side horn, a corona ring, a yoke at the bottom); `insulated`: the insulator itself — drawn, never a clearance target |
+| `at` / `at_fraction` | its centre along the string from its top, in metres (not beyond the length) or as a fraction (0 the top, 1 the wire point): one of them |
+| `offset_across`, `offset_along` | its centre off the string's axis, in the string's own axes (default 0) |
+| `shared` | several strings: one shape for the assembly on its axis (a yoke plate), else one on each string |
+| `swing_across`, `swing_along`, `twist` | whether the shapes turn with the solved string's swing across, along and about its axis (`free`, the default) or keep their still-air orientation (`blocked`); a strain string's shapes always follow its axis |
+| `strings`, `arrangement`, `spacing` | several strings in one assembly (1 to 4): the line's string stands for all of them, on their middle; each carries a copy of the shapes, side by side across, one behind the other along, or (three) at the corners of a triangle of side `spacing` |
+
+How they are placed on a solved string and measured — and what is approximate — is in the theory manual, [Internal clearances](../theory/internal-clearances.md). A line's own string may **override** a shape (line file version 8: its `shapes`, each replacing the assembly's shape of the same name or added; to leave one out at that string, override it as `insulated`). In the desktop application: Structures › **String shapes** (a row per shape of each assembly: label, shape, kind, state, at — a fraction, or metres with `m` —, the sizes, the offsets, shared; added, typed, deleted, one undoable change per Apply) and the String library's columns *swing across*, *swing along*, *twist*, *strings*, *arrangement*, *spacing* and *shapes* (their count); the Libraries editor offers the keys too. Structures › Display options › **Volumes on the strings (3D)** draws them on the solved strings (off by default). The examples' `examples/synthetic-line/Insulators` holds two assemblies with **invented** volumes (one string; two strings and a yoke).
 
 ### Library labels: every string in the library
 

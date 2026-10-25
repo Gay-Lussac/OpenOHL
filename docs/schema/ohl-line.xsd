@@ -359,9 +359,59 @@
                     for, N; max_swing_deg, the swing from straight down in
                     any direction; max_swing_across_deg / max_swing_along_deg,
                     projected across / along the line (degrees, 0 to
-                    180).</xs:documentation>
+                    180). Version 8: its own volumes (shape), each replacing
+                    its insulator assembly's shape of the same name or
+                    added.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="shape" minOccurs="0" maxOccurs="unbounded">
+                      <xs:annotation>
+                        <xs:documentation>A basic volume on the string
+                          (roadmap O6): kind sphere, cylinder, box or cone;
+                          state grounded, electrified or insulated; its
+                          centre along the string from its top, at (m) or
+                          at_fraction (0 to 1); sizes in m (sphere:
+                          diameter; cylinder: diameter, length; box: width,
+                          depth, length; cone: diameter, end_diameter,
+                          length); offset_across / offset_along from the
+                          string's axis (m); shared: one for an assembly of
+                          several strings.</xs:documentation>
+                      </xs:annotation>
+                      <xs:complexType>
+                        <xs:attribute name="name" type="xs:string" use="required"/>
+                        <xs:attribute name="kind" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="sphere"/>
+                              <xs:enumeration value="cylinder"/>
+                              <xs:enumeration value="box"/>
+                              <xs:enumeration value="cone"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                        <xs:attribute name="state" use="required">
+                          <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                              <xs:enumeration value="grounded"/>
+                              <xs:enumeration value="electrified"/>
+                              <xs:enumeration value="insulated"/>
+                            </xs:restriction>
+                          </xs:simpleType>
+                        </xs:attribute>
+                        <xs:attribute name="at" type="xs:double"/>
+                        <xs:attribute name="at_fraction" type="xs:double"/>
+                        <xs:attribute name="diameter" type="xs:double"/>
+                        <xs:attribute name="end_diameter" type="xs:double"/>
+                        <xs:attribute name="length" type="xs:double"/>
+                        <xs:attribute name="width" type="xs:double"/>
+                        <xs:attribute name="depth" type="xs:double"/>
+                        <xs:attribute name="offset_across" type="xs:double" default="0"/>
+                        <xs:attribute name="offset_along" type="xs:double" default="0"/>
+                        <xs:attribute name="shared" type="xs:boolean" default="false"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
                   <xs:attribute name="label" type="xs:string" use="required"/>
                   <xs:attribute name="description" type="xs:string"/>
                   <xs:attribute name="top" type="xs:string" use="required"/>

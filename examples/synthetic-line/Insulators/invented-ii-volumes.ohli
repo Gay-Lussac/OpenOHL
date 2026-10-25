@@ -1,0 +1,45 @@
+# OpenOHL insulator assembly (.ohli): two strings side by side with a yoke
+# plate (version 4, roadmap O6). Every value is INVENTED for the example —
+# not a real assembly, not manufacturer data, not a design code's value.
+# Its length and weight are those of the synthetic line's type-02 strings.
+format = "ohl-insulator"
+version = 4
+id = "invented-ii-volumes"
+name = "Invented double suspension string with volumes (example)"
+kind = "suspension"
+source = "INVENTED for the OpenOHL examples"
+length = "3.5 m"
+weight = "900 N"
+axial_stiffness = "5e7 N"
+wind_area = "0.5 m²"
+# Two strings across the line, 0.45 m between their axes; the line's
+# string stands for both, on their middle.
+strings = 2
+arrangement = "across"
+spacing = "0.45 m"
+
+[[shape]]
+name = "top fitting"
+kind = "sphere"
+state = "grounded"
+at = "0 m"
+diameter = "0.15 m"
+
+[[shape]]
+name = "insulator"
+kind = "cylinder"
+state = "insulated"
+at_fraction = 0.5
+diameter = "0.12 m"
+length = "3 m"
+
+# One yoke plate for both strings, on the assembly's axis.
+[[shape]]
+name = "yoke"
+kind = "box"
+state = "electrified"
+at = "3.4 m"
+width = "0.6 m"
+depth = "0.15 m"
+length = "0.05 m"
+shared = true

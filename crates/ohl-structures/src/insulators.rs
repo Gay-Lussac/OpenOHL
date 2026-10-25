@@ -38,7 +38,16 @@
 //! not given; given, a string naming the assembly takes them where it
 //! gives none of its own, for a plugin or a report to compare with the
 //! solved forces and swings.
+//!
+//! **Volumes on the strings** (version 4, optional,
+//! [`crate::string_volumes`]): the basic shapes the assembly carries
+//! (`[[shape]]`: sphere, cylinder, box or cone, grounded, electrified or
+//! insulated), whether they swing and twist with the string
+//! (`swing_across`, `swing_along`, `twist`: free or blocked) and several
+//! strings in one assembly (`strings`, `arrangement`, `spacing`) — for the
+//! internal clearances (roadmap O6). Written only when given.
 
+use crate::string_volumes::{Arrangement, Freedom, StringShape, StringVolumes};
 use ohl_core::units::{Angle, Area, Force, Length};
 use serde::Deserialize;
 
@@ -46,18 +55,21 @@ use serde::Deserialize;
 pub const INSULATOR_FILE_EXTENSION: &str = "ohli";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
-/// Newest format version read: 3 writes two strings to one clamp as
+/// Newest format version read: 4 adds the optional volumes on the strings
+/// (`[[shape]]`, the freedoms, several strings: [`StringVolumes`]); 3 writes two strings to one clamp as
 /// `kind = "suspension"` with `legs = 2` (`kind = "v_string"` of the
 /// versions before still read); 2 adds the optional limits (`max_load`,
 /// `max_swing`, `max_swing_across`, `max_swing_along`,
 /// [`InsulatorLimits`]); version 1 files read as before.
-pub const INSULATOR_FILE_VERSION: u32 = 3;
+pub const INSULATOR_FILE_VERSION: u32 = 4;
 
 /// The version that brought `legs` (written only by an assembly of two
 /// strings).
 const LEGS_VERSION: u32 = 3;
 /// The version that brought the limits.
 const LIMITS_VERSION: u32 = 2;
+/// The version that brought the volumes on the strings.
+const VOLUMES_VERSION: u32 = 4;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ohl_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
@@ -113,6 +125,20 @@ struct AssemblyFile {
     max_swing_across: Option<Angle>,
     #[serde(default)]
     max_swing_along: Option<Angle>,
+    #[serde(default)]
+    swing_across: Option<Freedom>,
+    #[serde(default)]
+    swing_along: Option<Freedom>,
+    #[serde(default)]
+    twist: Option<Freedom>,
+    #[serde(default)]
+    strings: Option<u32>,
+    #[serde(default)]
+    arrangement: Option<Arrangement>,
+    #[serde(default)]
+    spacing: Option<Length>,
+    #[serde(default)]
+    shape: Vec<StringShape>,
 }
 
 impl TryFrom<AssemblyFile> for InsulatorAssembly {
@@ -145,6 +171,15 @@ impl TryFrom<AssemblyFile> for InsulatorAssembly {
             max_swing: f.max_swing,
             max_swing_across: f.max_swing_across,
             max_swing_along: f.max_swing_along,
+            volumes: StringVolumes {
+                shapes: f.shape,
+                swing_across: f.swing_across.unwrap_or_default(),
+                swing_along: f.swing_along.unwrap_or_default(),
+                twist: f.twist.unwrap_or_default(),
+                strings: f.strings.unwrap_or(1),
+                arrangement: f.arrangement.unwrap_or_default(),
+                spacing: f.spacing.map_or(0.0, |l| l.si()),
+            },
         })
     }
 }
@@ -198,6 +233,10 @@ pub struct InsulatorAssembly {
     /// The swing it may take along the line, either way (not checked).
     #[serde(default)]
     pub max_swing_along: Option<Angle>,
+    /// The volumes on its strings, their freedoms, several strings in one
+    /// assembly (version 4; none given: [`StringVolumes::is_empty`]).
+    #[serde(skip)]
+    pub volumes: StringVolumes,
 }
 
 /// The optional limits of an insulator assembly or a structure type's
@@ -312,6 +351,7 @@ impl InsulatorAssembly {
             return Err("weight must be ≥ 0 and axial stiffness > 0".into());
         }
         self.limits().check()?;
+        self.volumes.check(self.length.si())?;
         match (self.kind, self.half_width) {
             (AssemblyKind::VString, None) => Err("legs = 2 needs half_width".into()),
             (AssemblyKind::VString, Some(hw)) if !(hw.si() > 0.0 && hw < self.length) => {
@@ -325,9 +365,10 @@ impl InsulatorAssembly {
     }
 
     /// The assembly as an `.ohli` file (what [`Library::load_dir`] reads
-    /// back), values in SI units: version 3 for two strings to one clamp
-    /// (`legs = 2`), else 2 when it gives limits, else 1 (the oldest
-    /// version that holds it, so an older program still reads it).
+    /// back), values in SI units: version 4 when it gives volumes on the
+    /// strings, else 3 for two strings to one clamp (`legs = 2`), else 2
+    /// when it gives limits, else 1 (the oldest version that holds it, so
+    /// an older program still reads it).
     ///
     /// [`Library::load_dir`]: crate::Library::load_dir
     pub fn to_toml(&self) -> String {
@@ -336,7 +377,9 @@ impl InsulatorAssembly {
             AssemblyKind::Suspension | AssemblyKind::VString => "suspension",
             AssemblyKind::Strain => "strain",
         };
-        let version = if self.kind == AssemblyKind::VString {
+        let version = if !self.volumes.is_empty() {
+            VOLUMES_VERSION
+        } else if self.kind == AssemblyKind::VString {
             LEGS_VERSION
         } else if !self.limits().is_empty() {
             LIMITS_VERSION
@@ -365,6 +408,7 @@ impl InsulatorAssembly {
             out += &format!("half_width = \"{} m\"\n", h.si());
         }
         out += &self.limits().to_toml();
+        out += &self.volumes.to_toml();
         out
     }
 
@@ -422,6 +466,7 @@ mod tests {
             max_swing: None,
             max_swing_across: None,
             max_swing_along: None,
+            volumes: Default::default(),
         };
         let b: InsulatorAssembly = toml::from_str(&a.to_toml()).unwrap();
         assert_eq!(b.id, a.id);
@@ -551,8 +596,46 @@ mod tests {
         ] {
             assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
         }
-        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 4\n{base}")).unwrap_err();
+        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 5\n{base}")).unwrap_err();
         assert!(e.to_string().contains("newer"), "{e}");
+    }
+
+    /// The volumes on the strings (version 4): absent, the file stays as
+    /// before; given (INVENTED sizes), they survive the round trip in
+    /// version 4; a shape at metres beyond the length, or several strings
+    /// without a spacing, refused.
+    #[test]
+    fn volumes_are_optional_and_round_trip() {
+        use crate::string_volumes::{Along, ElectricalState, ShapeKind};
+        let base = "id = \"I1\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"3 m\"\n";
+        let plain = parse(base).unwrap();
+        assert!(plain.volumes.is_empty());
+        assert!(!plain.to_toml().contains("version = 4"));
+        let given = parse(&format!(
+            "{base}twist = \"blocked\"\nstrings = 2\narrangement = \"along\"\nspacing = \"0.4 m\"\n\
+             [[shape]]\nname = \"top\"\nkind = \"sphere\"\nstate = \"grounded\"\nat = \"0 m\"\ndiameter = \"0.2 m\"\n\
+             [[shape]]\nname = \"yoke\"\nkind = \"box\"\nstate = \"electrified\"\nat_fraction = 1.0\n\
+             width = \"0.6 m\"\ndepth = \"0.5 m\"\nlength = \"0.1 m\"\nshared = true\n"
+        ))
+        .unwrap();
+        let v = &given.volumes;
+        assert_eq!(v.shapes.len(), 2);
+        assert!(v.swing_across.is_free() && !v.twist.is_free());
+        assert_eq!((v.strings, v.spacing), (2, 0.4));
+        assert_eq!(v.shapes[1].kind, ShapeKind::Box);
+        assert_eq!(v.shapes[1].state, ElectricalState::Electrified);
+        assert_eq!(v.shapes[1].at, Along::Fraction(1.0));
+        assert!(v.shapes[1].shared);
+        let text = given.to_toml();
+        assert!(text.contains("version = 4"), "{text}");
+        assert_eq!(parse(&text).unwrap().volumes, given.volumes);
+        for bad in [
+            "[[shape]]\nname = \"x\"\nkind = \"sphere\"\nstate = \"grounded\"\nat = \"4 m\"\ndiameter = \"0.2 m\"",
+            "strings = 2",
+            "twist = \"locked\"",
+        ] {
+            assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -68,7 +68,9 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 7 adds the optional `height_datum`
+/// Latest line file version: 8 adds a string's own volumes (`shapes`,
+/// [`InsulatorString::shapes`]; roadmap O6, 2026-10-25), written only by a
+/// line that has some (else 7, [`Line::to_json`]); 7 adds the optional `height_datum`
 /// ([`HeightDatum`]), an attachment point's link to its joint (`joint`,
 /// `offset`, `unlinked`: [`StructurePoint`]; 2026-10-21, the same unreleased
 /// raise) and the circuits as objects (`circuits`: [`circuits::Circuit`];
@@ -80,7 +82,11 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 7;
+pub const LINE_FILE_VERSION: u32 = 8;
+
+/// The version before the strings' own volumes: what a line without them
+/// is written as.
+const BEFORE_SHAPES_VERSION: u32 = 7;
 
 fn default_format() -> String {
     LINE_FILE_FORMAT.to_owned()
@@ -2971,9 +2977,26 @@ impl Line {
         });
     }
 
-    /// Serialises to pretty JSON.
+    /// Serialises to pretty JSON: as version 7 while no string has volumes
+    /// of its own (the oldest version that holds the line, so an older
+    /// program still reads it), else as its version.
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("line serialises")
+        let text = serde_json::to_string_pretty(self).expect("line serialises");
+        let shapes = self
+            .structures
+            .iter()
+            .any(|s| s.strings.iter().any(|x| !x.shapes.is_empty()));
+        if self.version == LINE_FILE_VERSION && !shapes {
+            // The version is the second key (after the format): its first
+            // occurrence.
+            text.replacen(
+                &format!("\"version\": {LINE_FILE_VERSION},"),
+                &format!("\"version\": {BEFORE_SHAPES_VERSION},"),
+                1,
+            )
+        } else {
+            text
+        }
     }
 
     /// Structure by id.

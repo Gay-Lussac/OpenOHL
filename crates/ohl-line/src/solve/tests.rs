@@ -934,6 +934,7 @@ fn strain_assembly(id: &str, weight: f64) -> ohl_structures::InsulatorAssembly {
         max_swing: None,
         max_swing_across: None,
         max_swing_along: None,
+        volumes: Default::default(),
     }
 }
 

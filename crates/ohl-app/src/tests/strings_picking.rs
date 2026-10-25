@@ -854,6 +854,169 @@ fn the_string_library_is_a_table() {
     }
 }
 
+/// Structures › String shapes (roadmap O6): the volumes of the string
+/// library's assemblies as a table, drawn as a page; a shape added
+/// (INVENTED sizes) goes into its assembly's file (version 4), a kind and
+/// size typed change it, each Apply one undoable change; the freedoms and
+/// several strings typed in the String library; a cell that does not read
+/// refused; a row deleted takes the shape out; the 3D view draws the
+/// shapes when the display option is on.
+#[test]
+fn the_string_shapes_are_a_table() {
+    use crate::tables::TableKind;
+    let k = TableKind::StringShapes;
+    let model = synthetic_project("string-shapes-table");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().catalogue_strings();
+    harness.state_mut().ready().unwrap().open_page = Some((crate::app::Tab::Table(k), None));
+    harness.run();
+    harness.run();
+    let shapes_of = |h: &mut Harness<'_, App>, id: &str| -> Vec<ohl_structures::StringShape> {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .types
+            .as_ref()
+            .unwrap()
+            .1
+            .get(id)
+            .unwrap()
+            .volumes
+            .shapes
+            .clone()
+    };
+    // The suspension entry in use, without shapes yet.
+    let id = {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(k.rows(&r.model, r.case).is_empty());
+        let i = TableKind::Insulators;
+        i.rows(&r.model, r.case)
+            .into_iter()
+            .find(|x| x.cells[i.column("kind")] == "suspension" && x.cells[i.column("used")] != "0")
+            .expect("a suspension entry in use")
+            .key
+    };
+    // A clamp added at the wire point.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut row = k.new_row(&r.model, r.case, &[]);
+        let col = |n: &str| k.column(n);
+        row[col("library label")] = id.clone();
+        row[col("shape")] = "clamp".into();
+        row[col("kind")] = "box".into();
+        row[col("state")] = "electrified".into();
+        row[col("at")] = "1".into();
+        row[col("diameter")] = String::new();
+        row[col("width")] = "0.15".into();
+        row[col("depth")] = "0.3".into();
+        row[col("length")] = "0.1".into();
+        r.tables.entry(k).or_default().added.push(row);
+    }
+    apply_table(&mut harness, k, false).unwrap();
+    let shapes = shapes_of(&mut harness, &id);
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].kind, ohl_structures::ShapeKind::Box);
+    assert_eq!(shapes[0].at, ohl_structures::Along::Fraction(1.0));
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let path = r
+            .model
+            .types
+            .as_ref()
+            .unwrap()
+            .1
+            .path(&id)
+            .unwrap()
+            .to_path_buf();
+        let text = std::fs::read_to_string(path).unwrap();
+        assert!(
+            text.contains("version = 4") && text.contains("[[shape]]"),
+            "{text}"
+        );
+    }
+    let key = k.rows(&harness.state_mut().ready().unwrap().model, 0)[0]
+        .key
+        .clone();
+    // Typed: a sphere of 0.3 m at 0.2 m from the top.
+    set_cell(&mut harness, k, &key, "kind", "sphere");
+    set_cell(&mut harness, k, &key, "diameter", "0.3");
+    set_cell(&mut harness, k, &key, "at", "0.2 m");
+    apply_table(&mut harness, k, false).unwrap();
+    let shapes = shapes_of(&mut harness, &id);
+    assert_eq!(shapes[0].kind, ohl_structures::ShapeKind::Sphere);
+    assert_eq!(shapes[0].at, ohl_structures::Along::Metres(0.2));
+    assert!((shapes[0].diameter - 0.3).abs() < 1e-12 && shapes[0].width == 0.0);
+    // One undo: the box again.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .perform(crate::edit::Action::Undo);
+    assert_eq!(
+        shapes_of(&mut harness, &id)[0].kind,
+        ohl_structures::ShapeKind::Box
+    );
+    // A kind that does not read: refused, nothing written.
+    set_cell(&mut harness, k, &key, "kind", "torus");
+    let e = apply_table(&mut harness, k, false).unwrap_err();
+    assert!(e.contains("sphere, cylinder, box or cone"), "{e}");
+    harness.state_mut().ready().unwrap().tables.remove(&k);
+    // The freedoms and two strings in the String library.
+    let i = TableKind::Insulators;
+    set_cell(&mut harness, i, &id, "twist", "blocked");
+    set_cell(&mut harness, i, &id, "strings", "2");
+    set_cell(&mut harness, i, &id, "spacing", "0.45");
+    apply_table(&mut harness, i, false).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let v = &r.model.types.as_ref().unwrap().1.get(&id).unwrap().volumes;
+        assert!(!v.twist.is_free() && v.swing_across.is_free());
+        assert_eq!((v.strings, v.spacing, v.shapes.len()), (2, 0.45, 1));
+        let row = i
+            .rows(&r.model, r.case)
+            .into_iter()
+            .find(|x| x.key == id)
+            .unwrap();
+        assert_eq!(row.cells[i.column("shapes")], "1");
+    }
+    // Two strings without a spacing: refused.
+    set_cell(&mut harness, i, &id, "spacing", "");
+    assert!(apply_table(&mut harness, i, false).is_err());
+    harness.state_mut().ready().unwrap().tables.remove(&i);
+    // Drawn in 3D with the display option: a filled, near primitive more.
+    let count = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        crate::scene::prims(&r.model, crate::scene::Layer::Structures, r.case)
+            .iter()
+            .filter(|p| p.filled && p.near)
+            .count()
+    };
+    let before = count(&mut harness);
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .section_display
+        .string_volumes = true;
+    assert!(count(&mut harness) > before, "the shapes drawn");
+    // The row deleted: no shape left.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .entry(k)
+        .or_default()
+        .deleted
+        .insert(key);
+    apply_table(&mut harness, k, false).unwrap();
+    assert!(shapes_of(&mut harness, &id).is_empty());
+    harness.run();
+}
+
 /// Add structure on an alignment point without a structure: the window
 /// puts it on that point (tied); its list names the points as the views
 /// do; Display options write the points' names.

@@ -307,7 +307,9 @@ distance = "1.5 m"             # or { by_voltage = [[up to kV, "m"], …] } or {
 conductors = true              # the conductors near the structure (default true)
 jumpers = true                 # the jumpers at it (default true)
 string_ends = true             # the strings' wire points (default true)
+shapes = true                  # the volumes on the strings (default true)
 reach = "20 m"                 # how far along each span from its clamp (default 20 m)
+distance_wind = "1.2 m"        # optional: in the cases with wind (invented)
 ```
 
 | Key | Meaning |
@@ -319,7 +321,9 @@ reach = "20 m"                 # how far along each span from its clamp (default
 | `conductors` | each span's conductor from its clamp at the structure out to `reach` (in plan along the solved wire), as solved in the case (the strings' swing included); a bundle subconductor by subconductor |
 | `jumpers` | each jumper with an end on the structure, as solved |
 | `string_ends` | each string's wire point (its bottom) as solved, not in still air |
+| `shapes` | the volumes on the strings (2026-10-25): each string's electrified shapes as parts, and every part measured against the grounded shapes too; `false`: neither (the first part's check) |
 | `reach` | above 0 m; default 20 m |
+| `distance_wind` | optional (2026-10-25, the owner's rule): the distance to keep in the cases **with wind** (a wind pressure above 0), in the forms of `distance`; none: `distance` in every case |
 
 What is measured: only **structures at detail level 2 or 3** (a body:
 members, a pole); a level-1 structure is listed as *not checked*. Each
@@ -331,8 +335,21 @@ says which. The distances are exact on the solved polylines, to the
 wire's surface: its radius in the case (iced with ice) and the bound of
 how far the wire lies off its polyline are taken off (conservative). A
 string's wire point counts as a point (its fittings' size is not
-counted: on the unsafe side). Volumes on the strings (spheres,
-cylinders, boxes, cones) are not checked yet.
+counted: on the unsafe side, unless they are given as volumes).
+
+**Volumes on the strings** (2026-10-25, the next part): the shapes of
+each string's insulator assembly ([Insulator assemblies](structure-library.md#volumes-on-the-strings)),
+its own overriding them by name, placed on the string as solved by the
+assembly's freedoms and strings. Each **electrified** shape is a part
+(`string S1 clamp`; several strings: `string S1 horn (string 2)`), and
+every part is measured against the body and the **grounded** shapes of
+every string at the structure (`shape string S1 top fitting` in the
+member column); insulated shapes are not clearance targets. The shapes'
+distances are exact on the convex solids (a lower bound within 1 nm:
+conservative); how they are placed and what is approximate is in the
+theory manual, [Internal clearances](../theory/internal-clearances.md).
+The insulator library is `--insulators` (default: the project's, else
+the shipped one); a line without any string carrying volumes says so.
 
 ```sh
 ohl internal examples/synthetic-line/synthetic-line-typed.ohl.json \
@@ -345,7 +362,8 @@ prints the structures not checked, the notes, and one row per rule,
 structure, case and part — its smallest distance, the required one, the
 nearest member, whether to its surface or its centre line, pass or
 FAIL — the smallest margin first, and writes them as CSV with `--csv`
-(`rule, case, structure, part, member, distance_m, required_m,
+(the member column names a grounded shape as `shape string S1 …`;
+`rule, case, structure, part, member, distance_m, required_m,
 margin_m, to, status, x, y, z, member_x, member_y, member_z`: the point
 of the part and of the member nearest each other). `--sections` gives
 the cross-section library (the members' profiles); `--time-limit`

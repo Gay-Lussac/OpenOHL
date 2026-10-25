@@ -88,3 +88,88 @@ fn ohl_internal_checks_the_structures_with_a_body() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("no [[internal_rule]]"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The volumes on the strings: T2 of the typed example given its own
+/// string S1 labelled with the example's INVENTED single string with
+/// volumes (examples/synthetic-line/Insulators), its corona ring
+/// overridden as insulated (left out) and its tower-side horn as a longer
+/// one (INVENTED); `ohl internal --insulators …` reports a row per
+/// electrified shape, the line-side horn 1.15 m from the tower-side one.
+#[test]
+fn ohl_internal_reports_the_volumes_on_the_strings() {
+    let dir = std::env::temp_dir().join(format!("ohl-internal-shapes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut line: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(example("synthetic-line-typed.ohl.json")).unwrap(),
+    )
+    .unwrap();
+    let t2 = line["structures"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s["id"] == "T2")
+        .unwrap();
+    // Its own wire point W1 (set 1: it replaces the type's, placed again
+    // from the string) and string S1.
+    let at = t2["position"].clone();
+    t2["wires"] = serde_json::json!([{
+        "label": "W1", "set": 1,
+        "position": [at[0], at[1], at[2].as_f64().unwrap() + 26.5]
+    }]);
+    t2["strings"] = serde_json::json!([{
+        "label": "S1", "top": "A1", "wire": "W1", "length": 3.5, "weight": 900.0,
+        "insulator": "invented-i-volumes",
+        "shapes": [{"name": "corona ring", "kind": "sphere", "state": "insulated",
+                    "at_fraction": 1.0, "diameter": 0.3},
+                   {"name": "tower-side horn", "kind": "cylinder", "state": "grounded",
+                    "at": 1.0, "diameter": 0.02, "length": 2.0, "offset_across": 0.25}]
+    }]);
+    let file = dir.join("typed-with-volumes.ohl.json");
+    std::fs::write(&file, serde_json::to_string_pretty(&line).unwrap()).unwrap();
+    let rules = dir.join("internal.ohlr");
+    std::fs::write(
+        &rules,
+        "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"invented\"\n\
+         [[internal_rule]]\nname = \"invented 0.5 m\"\ncases = [\"everyday\"]\ndistance = \"0.5 m\"\n",
+    )
+    .unwrap();
+    let csv = dir.join("i.csv");
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("internal")
+        .arg(&file)
+        .arg("--structures")
+        .arg(example("Structures"))
+        .arg("--insulators")
+        .arg(example("Insulators"))
+        .arg("--weather")
+        .arg(example("weather-cases.ohlwc"))
+        .arg("--rules")
+        .arg(&rules)
+        .arg("--csv")
+        .arg(&csv)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.code().is_some_and(|c| c <= 1), "{text}\n{err}");
+    let table = std::fs::read_to_string(&csv).unwrap();
+    let row = |part: &str| {
+        table
+            .lines()
+            .find(|r| r.contains(&format!(",T2,{part},")))
+            .unwrap_or_else(|| panic!("{part} not in\n{table}"))
+    };
+    // The line-side horn (3.15 m to 3.45 m below the top) nearest the
+    // tower-side horn as overridden (down to 2 m, the same offset).
+    let horn = row("string S1 line-side horn");
+    assert!(horn.contains(",shape string S1 tower-side horn,"), "{horn}");
+    assert!(
+        horn.contains(",1.150,") && horn.contains(",surface,"),
+        "{horn}"
+    );
+    row("string S1 clamp");
+    assert!(!table.contains("corona ring"), "{table}");
+    assert!(text.contains("string S1 line-side horn"), "{text}");
+    assert!(text.contains("shape string S1 tower-side horn"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

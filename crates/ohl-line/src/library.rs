@@ -271,6 +271,7 @@ impl Line {
                             max_swing: None,
                             max_swing_across: None,
                             max_swing_along: None,
+                            volumes: Default::default(),
                         });
                         known.insert(key, id.clone());
                         id

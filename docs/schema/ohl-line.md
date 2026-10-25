@@ -40,6 +40,9 @@ The names are those of the line file:
             stiffness="…" compression="…" strain="true"
             max_load="120000" max_swing_deg="60"
             max_swing_across_deg="55" max_swing_along_deg="30"/>  <!-- top: a point or a wire; max_*: limits not checked (version 6) -->
+    <string label="S2" top="A2" wire="W2" insulator="…">  <!-- version 8: its own volumes, over its assembly's by name -->
+      <shape name="clamp" kind="box" state="electrified" at_fraction="1" width="0.15" depth="0.3" length="0.1"/>
+    </string>
     <omit label="…"/> <omit set="2"/>           <!-- typed: the type's left out -->
     <!-- files of version 1: <attachment set phase …> with <insulator_point>,
          <wire_point>, <leg>; <omit set phase>; section points with a phase -->

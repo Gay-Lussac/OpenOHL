@@ -3567,6 +3567,7 @@ dependencies = [
  "ohl-cables",
  "ohl-core",
  "ohl-line",
+ "ohl-structures",
  "ohl-terrain",
  "ohl-weather",
  "ohl-wirefe",
@@ -3941,6 +3942,7 @@ version = "0.0.1"
 dependencies = [
  "ohl-core",
  "serde",
+ "serde_json",
  "toml 0.9.12+spec-1.1.0",
 ]
 

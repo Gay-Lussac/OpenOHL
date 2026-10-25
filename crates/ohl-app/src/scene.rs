@@ -379,6 +379,22 @@ pub fn structures(
     type Drawn = Vec<([f64; 3], [f64; 3], bool)>;
     let mut solved: std::collections::HashMap<(&str, String), Drawn> =
         std::collections::HashMap::new();
+    // The volumes on the strings (a display option): placed on each
+    // string as solved, by structure.
+    let fits: Vec<ohl_clearance::internal::StringFit> = if model.section_display.string_volumes
+        && tint.is_none()
+    {
+        let empty = ohl_structures::InsulatorLibrary::default();
+        ohl_clearance::internal::string_fits(line, model.types.as_ref().map_or(&empty, |(_, i)| i))
+    } else {
+        Vec::new()
+    };
+    let fit_of: ohl_clearance::internal::FitIndex = fits
+        .iter()
+        .map(|f| ((f.structure.as_str(), f.label.as_str()), f))
+        .collect();
+    let mut volumes: std::collections::HashMap<&str, Vec<ohl_clearance::volumes::Placed>> =
+        std::collections::HashMap::new();
     // Each case's shapes by section, made when first wanted (the first
     // shape of a section, as a search finds it).
     let mut by_case: std::collections::HashMap<
@@ -407,12 +423,18 @@ pub fn structures(
             }
         }
         for shape in shapes {
-            for (p, strings) in sec.points.iter().zip(&shape.strings) {
+            for (k, (p, strings)) in sec.points.iter().zip(&shape.strings).enumerate() {
                 for x in strings {
                     solved
                         .entry((p.structure.as_str(), x.label.clone()))
                         .or_default()
                         .push((x.top, x.bottom, x.over));
+                    if let Some(fit) = fit_of.get(&(p.structure.as_str(), x.label.as_str())) {
+                        volumes
+                            .entry(p.structure.as_str())
+                            .or_default()
+                            .extend(ohl_clearance::internal::placed_shapes(fit, x, shape, k));
+                    }
                 }
             }
         }
@@ -500,6 +522,30 @@ pub fn structures(
                     Prim::new(at, vec![p.position], crate::link_tool::UNLINKED, 13.0).at(0, 1);
                 dot.dot = true;
                 out.push(dot);
+            }
+        }
+        // The volumes on the strings: filled, within the solids distance,
+        // by their electrical state.
+        if let Some(placed) = volumes.get(st.id.as_str()) {
+            use ohl_structures::ElectricalState;
+            for (state, color) in [
+                (ElectricalState::Grounded, [150, 150, 155, 255]),
+                (ElectricalState::Electrified, [240, 150, 60, 255]),
+                (ElectricalState::Insulated, [225, 220, 180, 255]),
+            ] {
+                let points: Vec<[f64; 3]> = placed
+                    .iter()
+                    .filter(|p| p.state == state)
+                    .flat_map(|p| p.convex.mesh(12))
+                    .flatten()
+                    .collect();
+                if points.is_empty() {
+                    continue;
+                }
+                let mut s = Prim::new(at, points, pick(color), 0.0).at(0, 0);
+                s.filled = true;
+                s.near = true;
+                out.push(s);
             }
         }
         // The strings, as solved in the cases shown (else as given);
