@@ -453,11 +453,16 @@ pub fn check(
     filter: &ohl_weather::CaseFilter,
 ) -> StringReport {
     let mut report = StringReport::default();
-    let kv: Vec<Option<f64>> = crate::case::voltages_of(line)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| p.map(|p| p.nominal_kv))
-        .collect();
+    // Each section's nominal voltage, by its id (a list of the distinct
+    // potentials indexed by the section's place gave another section's).
+    let potentials = line.potentials().unwrap_or_default();
+    let kv_of = |section: &str| -> Option<f64> {
+        potentials
+            .get(section)
+            .copied()
+            .flatten()
+            .map(|p| p.nominal_kv)
+    };
     for (k, rule) in rules.iter().enumerate() {
         if let Some(e) = rule.problem() {
             report.notes.push(format!("{e}: not checked"));
@@ -476,7 +481,7 @@ pub fn check(
                 let Some(si) = line.sections.iter().position(|s| s.id == shape.section) else {
                     continue;
                 };
-                if !rule.takes_voltage(kv.get(si).copied().flatten()) {
+                if !rule.takes_voltage(kv_of(&line.sections[si].id)) {
                     continue;
                 }
                 let section = &line.sections[si];
@@ -759,6 +764,43 @@ mod tests {
     /// String rules in a rule file read and write back; defaults (all
     /// strings, the strings' own limits and uplift checked); bad values
     /// refused.
+    /// A rule's voltages take each string by its own section's voltage
+    /// (before 2026-10-25 the list of the line's distinct voltages was
+    /// indexed by the section's place: another section's).
+    #[test]
+    fn voltages_by_each_section() {
+        let line = example();
+        let pot = line.potentials().unwrap();
+        let kv = |id: &str| pot.get(id).copied().flatten().map(|p| p.nominal_kv);
+        let Some(v) = line.sections.iter().find_map(|s| kv(&s.id)) else {
+            return;
+        };
+        let still = WeatherCase::still("still", Temperature::from_celsius(10.0));
+        let a = solved(&line, &still);
+        let rule = StringRule {
+            voltages: vec![v],
+            ..StringRule::blank("one voltage")
+        };
+        let r = check(&line, &[("still", &a)], &[rule], &Default::default());
+        assert!(!r.rows.is_empty());
+        for row in &r.rows {
+            let sec = line
+                .sections
+                .iter()
+                .find(|s| s.points.iter().any(|p| p.structure == row.structure))
+                .map(|s| s.id.clone());
+            assert!(sec.is_some());
+        }
+        // Every section of that voltage has its strings checked, none other.
+        let taken: std::collections::BTreeSet<&str> =
+            r.rows.iter().map(|x| x.section.as_str()).collect();
+        for s in &line.sections {
+            if taken.contains(s.id.as_str()) {
+                assert_eq!(kv(&s.id), Some(v), "{}", s.id);
+            }
+        }
+    }
+
     #[test]
     fn string_rules_in_a_rule_file() {
         let text = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"s\"\n\
