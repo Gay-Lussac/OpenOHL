@@ -79,7 +79,12 @@
 //!   section by this calculation method (`"fe"` finite elements, `"rs"`
 //!   ruling span; default each section's own), LiDAR points only within
 //!   `search_distance` of the wires (default: as far as the rules reach);
-//!   `ohl zones` too; `ohl line` ignores it.
+//!   `structure_override`, `section_override` (2026-10-25, default false):
+//!   the checks' structure and section overrides ticked — results at
+//!   objects with weather case groups take only the check's cases in
+//!   them (the desktop windows: clearances, wire tensions, string
+//!   checks; the command line does not apply them yet); the rest `ohl
+//!   zones` too; `ohl line` ignores it.
 //!
 //! ## Clearances by voltage
 //!
@@ -734,6 +739,10 @@ struct RawCheck {
     method: Option<String>,
     #[serde(default)]
     search_distance: Option<Length>,
+    #[serde(default)]
+    structure_override: bool,
+    #[serde(default)]
+    section_override: bool,
 }
 
 #[derive(Deserialize)]
@@ -1147,12 +1156,23 @@ pub struct CheckScope {
     /// LiDAR points farther from the wires are ignored, m (`None`: as
     /// far as the rules reach).
     pub search_distance: Option<f64>,
+    /// The structure override ticked (owner, 2026-10-25): at a structure
+    /// with weather case groups, only the check's cases in them.
+    pub structure_override: bool,
+    /// The section override ticked: on a section with weather case
+    /// groups, only the check's cases in them.
+    pub section_override: bool,
 }
 
 impl CheckScope {
-    /// Whether it changes nothing (every circuit, each section's method).
+    /// Whether it changes nothing (every circuit, each section's method,
+    /// no override).
     pub fn is_empty(&self) -> bool {
-        self.circuits.is_empty() && self.method.is_none() && self.search_distance.is_none()
+        self.circuits.is_empty()
+            && self.method.is_none()
+            && self.search_distance.is_none()
+            && !self.structure_override
+            && !self.section_override
     }
 
     /// Whether a section of circuit `name` is checked.
@@ -1390,6 +1410,8 @@ impl RuleSet {
                 }
                 Ok(CheckScope {
                     search_distance,
+                    structure_override: c.structure_override,
+                    section_override: c.section_override,
                     circuits: c.circuits,
                     method: c
                         .method
@@ -1532,6 +1554,12 @@ impl RuleSet {
             }
             if let Some(d) = c.search_distance {
                 let _ = writeln!(t, "search_distance = {}", length(d));
+            }
+            if c.structure_override {
+                t.push_str("structure_override = true\n");
+            }
+            if c.section_override {
+                t.push_str("section_override = true\n");
             }
         }
         if let Some(v) = &self.vegetation {

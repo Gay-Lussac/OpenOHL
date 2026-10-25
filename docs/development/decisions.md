@@ -36,8 +36,12 @@ of Parts A, B and C).
   no less than 300 N/m², per EN 50341-1 — a group of such cases on the
   structures concerned; the bound is for the LeV plugin to check, not the
   core.
-- The ticks are window settings (not yet kept in the rule files); the
-  internal clearances, when written, take them too.
+- The ticks are kept in the rule files (owner, 2026-10-25), as
+  `structure_override` / `section_override` in `[check]`: the vertical and
+  radial clearance windows, wire tensions and string checks. The checks
+  without a rule file (vegetation, safety volumes, distance between
+  conductors, galloping, structure loads) keep them for the session. The
+  command line does not apply them yet.
 
 **Measuring tools, phase 3: the wire tools (owner, 2026-10-25)**
 

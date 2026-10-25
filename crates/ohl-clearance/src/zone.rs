@@ -1788,6 +1788,8 @@ mod tests {
             circuits: vec!["North".into(), String::new()],
             method: Some(ohl_line::condition::Method::Fe),
             search_distance: None,
+            structure_override: false,
+            section_override: true,
         };
         let set = to_rule_set("Window rules", &zone, &wind, &scope, &rows);
         assert_eq!(set.rules.len(), 4);
@@ -1796,7 +1798,8 @@ mod tests {
         let text = set.to_toml();
         assert!(
             text.contains(
-                "[check]\ncircuits = [\"North\", \"\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\""
+                "[check]\ncircuits = [\"North\", \"\"]\nmethod = \"fe\"\nsearch_distance = \"30 m\"\n\
+                 section_override = true\n"
             ),
             "{text}"
         );
