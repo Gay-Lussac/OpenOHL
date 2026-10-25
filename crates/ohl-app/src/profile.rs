@@ -85,6 +85,14 @@ pub struct ProfileView {
     cut_at: Option<(String, f64)>,
     /// "Cross-section here" chosen: alignment, station; taken by the app.
     pub cut_request: Option<(String, f64)>,
+    /// A measuring tool is held: what is under the cursor is found every
+    /// frame the pointer moves ([`ProfileView::hover_use`]).
+    pub measuring: bool,
+    /// What is under the cursor, as a click of the tool button would
+    /// find it (a measuring tool held).
+    pub hover_use: Option<crate::selection::Use>,
+    /// The measuring tools' lines and points.
+    pub measure: crate::measure::Overlay,
 }
 
 /// The stations and offsets of the vegetation points along a route: the
@@ -479,7 +487,7 @@ impl ProfileView {
         snaps: &crate::selection::Snaps,
         drawings: &mut crate::drawings::Drawings,
         buttons: (egui::PointerButton, egui::PointerButton),
-    ) -> Option<Selection> {
+    ) -> Option<crate::selection::Use> {
         self.sheets_drawn.clear();
         let routes = self.alignments.get(&model.line).to_vec();
         if routes.is_empty() {
@@ -1419,6 +1427,77 @@ impl ProfileView {
             }
             best.map_or(Selection::None, |b| b.1)
         };
+        // One alignment shown (not several one after the other): a point
+        // of the profile's plane is a point on its axis.
+        let single = built.joints.len() <= 1;
+        // What a click of the tool button at `pos` finds: the object, on a
+        // wire the point of it clicked, else the point of the profile's
+        // plane there (on the axis, at the cursor's height).
+        let use_at = |pos: egui::Pos2| {
+            let target = pick(pos);
+            let s = s0 + f64::from(pos.x - rect.min.x) / width * (s1 - s0);
+            let z = z0 + f64::from(rect.max.y - pos.y) / f64::from(rect.height()) * (z1 - z0);
+            let at = single.then(|| {
+                let xy = ohl_line::route::point_at(&d.centreline, s, 0.0);
+                [xy[0], xy[1], z]
+            });
+            let mut on: Option<(f32, [f64; 3])> = None;
+            if matches!(target, Selection::Span { .. } | Selection::Jumper(_)) {
+                for w in d
+                    .wires
+                    .iter()
+                    .filter(|w| trace_selection(&w.label).as_ref() == Some(&target))
+                {
+                    for k in 1..w.points.len().min(w.xy.len()) {
+                        let (p, q) = (w.points[k - 1], w.points[k]);
+                        let (a, b) = (to_screen(p[0], p[2]), to_screen(q[0], q[2]));
+                        let ab = b - a;
+                        let len2 = ab.length_sq();
+                        let u = if len2 > 0.0 {
+                            ((pos - a).dot(ab) / len2).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        let e = (a + ab * u).distance(pos);
+                        if on.is_none_or(|o| e < o.0) {
+                            let u = f64::from(u);
+                            let (xa, xb) = (w.xy[k - 1], w.xy[k]);
+                            on = Some((
+                                e,
+                                [
+                                    xa[0] + u * (xb[0] - xa[0]),
+                                    xa[1] + u * (xb[1] - xa[1]),
+                                    p[2] + u * (q[2] - p[2]),
+                                ],
+                            ));
+                        }
+                    }
+                }
+            }
+            crate::selection::Use {
+                target,
+                at,
+                on: on.map(|o| o.1),
+            }
+        };
+        if !self.measuring {
+            self.hover_use = None;
+        } else if let Some(pos) = response.hover_pos() {
+            if ui.input(|i| i.pointer.is_moving()) || self.hover_use.is_none() {
+                self.hover_use = Some(use_at(pos));
+            }
+        } else {
+            self.hover_use = None;
+        }
+        // The measuring tools' lines and points, at their stations (one
+        // alignment shown).
+        if single && !self.measure.is_empty() {
+            let painter = ui.painter_at(rect);
+            self.measure.paint(&painter, &|p| {
+                let (s, _) = ohl_line::route::project(&d.centreline, p);
+                Some(to_screen(s, p[2]))
+            });
+        }
         let (select_button, tool_button) = buttons;
         if let Some(area) = area_done {
             let started = std::time::Instant::now();
@@ -1484,7 +1563,7 @@ impl ProfileView {
         if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {
-            return Some(pick(pos));
+            return Some(use_at(pos));
         }
         None
     }

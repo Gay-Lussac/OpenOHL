@@ -55,12 +55,20 @@ pub enum Tool {
     /// type: the point linked to it where it is, the distance kept as its
     /// offset (a rigid link) — [`crate::link_tool`].
     Link,
+    /// Right-click two points: the distance between them
+    /// ([`crate::measure`]).
+    MeasureDistance,
+    /// Right-click a point: its height above the ground.
+    MeasureHeight,
+    /// Right-click two points: their stations and offsets along the
+    /// route.
+    MeasureStations,
 }
 
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Tools menu list them in this order.
-    pub const ALL: [Tool; 15] = [
+    pub const ALL: [Tool; 18] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -76,6 +84,9 @@ impl Tool {
         Tool::StringWire,
         Tool::AddJumper,
         Tool::OnSpan,
+        Tool::MeasureDistance,
+        Tool::MeasureHeight,
+        Tool::MeasureStations,
     ];
 
     /// Its theme, by its name in [`THEMES`].
@@ -87,6 +98,7 @@ impl Tool {
                 "Structures"
             }
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
+            Tool::MeasureDistance | Tool::MeasureHeight | Tool::MeasureStations => "Measure",
         }
     }
 
@@ -108,6 +120,9 @@ impl Tool {
             Tool::OnSpan => "Add on span",
             Tool::Replace => "Replace structure",
             Tool::Link => "Link attachment point",
+            Tool::MeasureDistance => "Distance",
+            Tool::MeasureHeight => "Height above ground",
+            Tool::MeasureStations => "Stations",
         }
     }
 
@@ -132,6 +147,9 @@ impl Tool {
             Tool::OnSpan => "◎",
             Tool::Replace => "⬌",
             Tool::Link => "🔗",
+            Tool::MeasureDistance => "↔",
+            Tool::MeasureHeight => "↕",
+            Tool::MeasureStations => "📏",
         }
     }
 
@@ -184,12 +202,31 @@ impl Tool {
             Tool::Link => {
                 "right-click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
             }
+            Tool::MeasureDistance => {
+                "right-click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts (Escape: start again)"
+            }
+            Tool::MeasureHeight => {
+                "right-click a point — a wire (the bottom of its lowest subconductor), a LiDAR point, a structure, or anywhere: its height above the ground under it"
+            }
+            Tool::MeasureStations => {
+                "right-click two points: their stations and offsets on the nearest alignment, and the difference along it (Escape: start again)"
+            }
         }
     }
 
     /// Whether it changes the model (needs editing rights).
     pub fn edits(self) -> bool {
-        !matches!(self, Tool::Select | Tool::GoTo)
+        !matches!(self, Tool::Select | Tool::GoTo) && self.measure().is_none()
+    }
+
+    /// The measurement it makes, if it is a measuring tool.
+    pub fn measure(self) -> Option<crate::measure::Kind> {
+        match self {
+            Tool::MeasureDistance => Some(crate::measure::Kind::Distance),
+            Tool::MeasureHeight => Some(crate::measure::Kind::Height),
+            Tool::MeasureStations => Some(crate::measure::Kind::Stations),
+            _ => None,
+        }
     }
 
     /// Strings (attachment points) can be right-clicked while it is held,
@@ -255,6 +292,9 @@ impl Tool {
             Tool::OnSpan => "on_span",
             Tool::Replace => "replace",
             Tool::Link => "link",
+            Tool::MeasureDistance => "measure_distance",
+            Tool::MeasureHeight => "measure_height",
+            Tool::MeasureStations => "measure_stations",
         }
     }
 }
@@ -510,7 +550,7 @@ impl WheelSteps {
 
 /// The tools' themes, in the order the inventory and the Tools menu show
 /// them.
-pub const THEMES: [&str; 4] = ["General", "Alignments", "Structures", "Wires"];
+pub const THEMES: [&str; 5] = ["General", "Alignments", "Structures", "Wires", "Measure"];
 
 /// The inventory (E): every tool, grouped by theme; drag one onto a slot
 /// of the hotbar, or drag a slot here to empty it.

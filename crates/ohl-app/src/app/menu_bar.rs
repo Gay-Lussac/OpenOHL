@@ -714,6 +714,14 @@ pub(super) fn menus(
                 ui.close();
             }
         }
+        if ui
+            .button("Measurements panel")
+            .on_hover_text("The measurements made: copy, CSV")
+            .clicked()
+        {
+            r.measuring.open = true;
+            ui.close();
+        }
     });
     crate::menu::options_menu(ui, "Versions", |ui| {
         crate::project_lines::menu(ui, r);

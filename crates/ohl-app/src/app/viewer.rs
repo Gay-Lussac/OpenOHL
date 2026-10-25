@@ -125,8 +125,18 @@ impl TabViewer for Viewer<'_> {
             Tab::Clearances => "tab clearances",
             _ => "tab other",
         });
+        // A measuring tool held: the views find what is under the cursor
+        // and draw the measurement.
+        let measuring = r.hotbar.tool().measure().is_some();
+        let overlay = if measuring || !r.measuring.done.is_empty() {
+            r.measuring.overlay()
+        } else {
+            Default::default()
+        };
         let used = match tab {
             Tab::View3d => {
+                r.view3d.measuring = measuring;
+                r.view3d.user_measure = overlay.clone();
                 r.view3d.link = r.link_overlay();
                 let used = r.view3d.ui(
                     ui,
@@ -151,16 +161,20 @@ impl TabViewer for Viewer<'_> {
                 }
                 used
             }
-            Tab::Plan => r.plan.ui(
-                ui,
-                &r.model,
-                r.case,
-                &mut r.selection,
-                &snaps,
-                &r.visible,
-                r.drawings.preview(&r.model, r.case),
-                buttons,
-            ),
+            Tab::Plan => {
+                r.plan.measuring = measuring;
+                r.plan.measure = overlay.clone();
+                r.plan.ui(
+                    ui,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    &snaps,
+                    &r.visible,
+                    r.drawings.preview(&r.model, r.case),
+                    buttons,
+                )
+            }
             Tab::Profile => {
                 // Right-click: "Cross-section here" while Select is held.
                 r.profile.cut_menu = select_held;
@@ -168,21 +182,17 @@ impl TabViewer for Viewer<'_> {
                     r.visible.contains(&Layer::GrowIn),
                     r.visible.contains(&Layer::FallIn),
                 ];
-                r.profile
-                    .ui(
-                        ui,
-                        &r.model,
-                        r.case,
-                        &mut r.selection,
-                        &snaps,
-                        &mut r.drawings,
-                        buttons,
-                    )
-                    .map(|target| crate::selection::Use {
-                        target,
-                        at: None,
-                        on: None,
-                    })
+                r.profile.measuring = measuring;
+                r.profile.measure = overlay.clone();
+                r.profile.ui(
+                    ui,
+                    &r.model,
+                    r.case,
+                    &mut r.selection,
+                    &snaps,
+                    &mut r.drawings,
+                    buttons,
+                )
             }
             Tab::CrossSection(id) => {
                 // A 3D view of the slab: the main view's layers, controls
@@ -413,6 +423,17 @@ impl TabViewer for Viewer<'_> {
             r.select_member(&structure, &member);
         }
         // A right-click uses the held tool on what is there.
+        // What the cursor is on in this page's view, for the measuring
+        // tools.
+        let hovered = match tab {
+            Tab::View3d => r.view3d.hover_use.clone(),
+            Tab::Plan => r.plan.hover_use.clone(),
+            Tab::Profile => r.profile.hover_use.clone(),
+            _ => None,
+        };
+        if hovered.is_some() {
+            r.measure_hover = hovered;
+        }
         if let Some(target) = used {
             r.use_tool(target);
         }

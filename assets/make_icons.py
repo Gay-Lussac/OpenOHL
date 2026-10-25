@@ -45,6 +45,9 @@ tools.update({
  "point-on-joint": ('<path d="M4 21 12 6l8 15" opacity="0.55"/><circle cx="12" cy="6" r="2.2" fill="currentColor"/><path d="M12 8.2V15"/><path d="M10 11h4M10 13.5h4" stroke-width="2"/><circle cx="12" cy="16.3" r="1.3"/>', "Point on the joint"),
  'generator': ('<path d="M7 21 10.5 4M17 21 13.5 4M8 16h8M9 11h6"/><path d="M8 16l7-5M16 16 9 11" opacity="0.6"/><path d="M19.5 3l.7 1.8L22 5.5l-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" fill="currentColor" stroke-width="1"/>', 'Generators'),
  'symmetry': ('<path d="M12 2.5v19" stroke-dasharray="2 2.2"/><path d="M9 6 4 18h5zM15 6l5 12h-5z"/>', 'Symmetry'),
+ 'measure-distance': ('<path d="M4 7v10M20 7v10M4 12h16"/><path d="M7.5 9.5 4 12l3.5 2.5M16.5 9.5 20 12l-3.5 2.5"/>', 'Distance'),
+ 'measure-height': ('<path d="M3 20h18"/><path d="M5 23l2.5-3M10 23l2.5-3M15 23l2.5-3" stroke-width="1.4"/><circle cx="12" cy="4" r="1.8" fill="currentColor"/><path d="M12 6.5v12M9.5 9 12 6.5 14.5 9M9.5 16 12 18.5 14.5 16"/>', 'Height above ground'),
+ 'measure-stations': ('<path d="M3 17h18M5 14v6M12 15v4M19 14v6"/><path d="M5 8h14M7.5 5.5 5 8l2.5 2.5M16.5 5.5 19 8l-2.5 2.5"/>', 'Stations'),
  'support': ('<path d="M12 4v8"/><path d="M12 12 7 19h10z"/><path d="M5 21.5h14M6.5 21.5l-1.5 1.5M10 21.5l-1.5 1.5M13.5 21.5 12 23M17 21.5 15.5 23" stroke-width="1.4"/>', 'Support'),
 })
 for k, (b, t) in tools.items():

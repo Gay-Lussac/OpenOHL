@@ -194,6 +194,24 @@ iteration (different starting points), not from the speed work — kept as
 it is for now (owner, 2026-10-24: unless a fix is fast), said in the
 [jumpers' theory](../theory/jumpers.md#after-an-edit); on the roadmap (U11).
 
+## Measuring benchmark (desktop application)
+
+`cargo test --release -p ohl-app measuring_benchmark -- --ignored
+--nocapture` (with `OHL_BENCH_FILE` for a project of your own, else the
+synthetic line) moves the pointer across the 3D view for 120 frames, first
+with Select held, then with **Distance** held after a first pick — every
+frame then finds what is under the cursor (the tool click's own search)
+and measures to it (owner, 2026-10-25: the measuring tools responsive
+first).
+
+| Project | Select: median (slowest) | Distance held: median (slowest) |
+|---|---|---|
+| synthetic line | 0.2 ms (0.3) | 0.2 ms (0.6) |
+| a real line with its LiDAR (2 M points loaded) | 0.6 ms (18.5) | 0.6 ms (26.1) |
+
+The search runs only when the pointer moved; the alignments' centre lines
+for the stations are kept until the line changes.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

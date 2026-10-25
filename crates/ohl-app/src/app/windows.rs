@@ -541,6 +541,37 @@ pub(super) fn pylon_windows(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// The measuring tools each frame: the point a view found under the
+/// cursor measured live, Escape starting again, the picks given up when
+/// another tool is taken, the panel.
+fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
+    let hover = r.measure_hover.take();
+    match r.hotbar.tool().measure() {
+        Some(kind) => {
+            // (Only with picks to give up: else Escape frees the mouse.)
+            if !r.measuring.picks.is_empty()
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                r.measuring.cancel();
+            }
+            let case_name = r
+                .model
+                .cases
+                .get(r.case)
+                .map_or(String::new(), |c| c.case.name.clone());
+            let pick = hover.and_then(|u| crate::measure::resolve(&r.model, r.case, &u));
+            r.measuring.hover(&r.model, kind, &case_name, pick);
+        }
+        None => {
+            if r.measuring.kind.is_some() {
+                r.measuring.cancel();
+                r.measuring.kind = None;
+            }
+        }
+    }
+    r.measuring.window(ctx, r.view3d.controls.tools_on_left);
+}
+
 pub(super) fn tool_windows(
     ctx: &egui::Context,
     r: &mut Ready,
@@ -599,6 +630,7 @@ pub(super) fn tool_windows(
         r.model.want(wanted, ctx);
     }
     r.plans.ui(ctx, &r.model, r.case, r.drawings.settings());
+    measuring_frame(ctx, r);
     if std::mem::take(&mut r.model.drawings_setting_changed) {
         r.drawings.load(&r.model);
     }

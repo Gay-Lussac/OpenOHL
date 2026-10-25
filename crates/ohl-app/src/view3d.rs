@@ -73,6 +73,14 @@ pub struct View3d {
     /// What a replacement would remove (Replace structure's window open):
     /// polylines drawn red over the line.
     pub removed: Vec<Vec<[f64; 3]>>,
+    /// A measuring tool is held: what is under the cursor is found every
+    /// frame the pointer moves ([`View3d::hover_use`]).
+    pub measuring: bool,
+    /// What is under the cursor, as a click of the tool button would
+    /// find it (a measuring tool held).
+    pub hover_use: Option<selection::Use>,
+    /// The measuring tools' lines and points.
+    pub user_measure: crate::measure::Overlay,
     /// A measured line to draw on top, with its label (the distance
     /// between conductors' worst station: d and z).
     pub measure: Option<crate::phase_distance::Measure>,
@@ -1227,7 +1235,8 @@ impl View3d {
             log::info!("3D view: {total} LiDAR points in the area, found in {took:.1?}");
             self.area_picked = Some((points, total, took));
         }
-        let used = use_at.map(|at| {
+        // What a click of the tool button at `at` (view pixels) finds.
+        let use_point = |at: [f64; 2]| {
             let project = clipped_projector(camera, size, clip);
             let target = selection::pick_shown(model, case, snaps, at, radius, &project, &lidar).0;
             // In a cut's panel: only ground within its slab.
@@ -1235,18 +1244,40 @@ impl View3d {
                 .ray(at, size)
                 .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]))
                 .filter(|p| clip.is_none_or(|c| c.contains(*p)));
-            log::info!(
-                "3D view: tool click (mouse captured: {}) on {}",
-                self.captured,
-                target.describe()
-            );
             let on = selection::on_span(model, case, &target, at, |p| project(p).map(|(q, _)| q));
             selection::Use {
                 target,
                 at: ground,
                 on,
             }
+        };
+        let used = use_at.map(|at| {
+            let u = use_point(at);
+            log::info!(
+                "3D view: tool click (mouse captured: {}) on {}",
+                self.captured,
+                u.target.describe()
+            );
+            u
         });
+        // A measuring tool held: what is under the cursor (the crosshair
+        // when the mouse is captured), found again when it moved.
+        let hover_at = if self.captured {
+            Some(centre)
+        } else {
+            response.hover_pos().map(local)
+        };
+        let moved = ui.input(|i| i.pointer.is_moving()) || self.captured;
+        self.hover_use = match hover_at {
+            Some(at) if self.measuring && (moved || self.hover_use.is_none()) => {
+                let started = std::time::Instant::now();
+                let u = use_point(at);
+                log::trace!("3D view: measuring hover in {:.1?}", started.elapsed());
+                Some(u)
+            }
+            Some(_) if self.measuring => self.hover_use.take(),
+            _ => None,
+        };
         if let Some((at, double)) = pick_at {
             let cam = *camera;
             let project = clipped_projector(&cam, size, clip);
@@ -1642,6 +1673,7 @@ impl View3d {
                 painter.galley(at, galley, colour);
             }
         }
+        self.user_measure.paint(&painter, &|p| screen(p));
         // Structures coloured by usage: the legend.
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
