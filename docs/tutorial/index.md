@@ -26,7 +26,7 @@ program.
 | [6. Jumpers](06-jumpers.md) | Add jumper at the angle structure |
 | [7. Results](07-results.md) | plan, profile, 3D; sags and tensions in the properties and tables |
 | [8. Checks](08-checks.md) | wire clearances, vertical clearances, wire tensions, string checks |
-| [9. OHL-Structure](09-ohl-structure.md) | the loads the line sends to its structures (to be completed) |
+| [9. Loads for the structures](09-ohl-structure.md) | the line's forces sent to its structures, and a load case made of them in OHL-Structure |
 | [10. Saving and what next](10-saving.md) | saving, project lines and versions in brief; where to read on |
 
 The same steps in a few lines, without the explanations: [A new line,

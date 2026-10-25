@@ -56,4 +56,4 @@ radial clearances](../theory/clearances.md), [Wire
 tensions](../theory/wire-tensions.md) and [String
 checks](../user-guide/desktop-app.md#string-checks).
 
-Next: [9. OHL-Structure](09-ohl-structure.md).
+Next: [9. Loads for the structures](09-ohl-structure.md).

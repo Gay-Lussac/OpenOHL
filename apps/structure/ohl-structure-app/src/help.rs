@@ -86,7 +86,10 @@ impl Page {
                 "The manual is not on this computer: build it with `mdbook build` in the \
                  OpenOHL folder (target/book), or read docs/ there"
             }
-            Page::Tutorial => "The tutorial is planned, not written yet",
+            Page::Tutorial => {
+                "The tutorial is not on this computer: build the manual with `mdbook build` \
+                 in the OpenOHL folder (target/book), or read docs/tutorial/index.md"
+            }
             Page::Glossary => {
                 "The glossary is not on this computer: build the manual with `mdbook build` \
                  in the OpenOHL folder (target/book), or read docs/user-guide/glossary.md"
