@@ -72,6 +72,47 @@ of Parts A, B and C).
 - Timings (Development › Performance, *Kept measurements and notes*):
   300 kept, others' hidden: computed again 5.4 → 3.4 ms; the overlay
   233 → 2 µs a frame; from 2 km 1 000 → 600 shapes drawn.
+**Structure load cases: line forces and loads on the structure itself,
+built (within the agreed spec, 2026-10-25)**
+
+Built as the [spec](structure-load-cases-spec.md) says (phases 2 and 3);
+decided within it:
+
+- **Which self weight wins**: `[load_case.structure] self_weight`, when
+  given, is the case's; the case's older `self_weight` must then be 1
+  (else refused: "given twice"). Convert and the editor move it there.
+- **The self weight has no rows** in the load table: the solve puts each
+  member's weight × its dead-load factor × the case's factor on the
+  members, as before (rows of it would count it twice).
+- **Row numbers by part** (column `load`), so a value typed over a row
+  keeps matching when another part changes: older loads 1–999, line
+  forces 1001…, wind 2001…, ice 3001…, point loads 4001… (at most 999 of
+  each, checked). Shown as "line 1", "wind 2", … in the table.
+- **A point turned off keeps its row** (no force, noted "off"): a value
+  typed over it stays on the same row whether the point is off or on.
+- **Line forces act at the points carrying a wire** (a set) or given a
+  value by the line in that result (only those of the row's sets when it
+  names some); a value missing: the row says which.
+- **The body wind's row per member is the member wind's full force**
+  (normal to the member, as the line's checks apply it), not only its
+  component along the wind.
+- **Several ice loads**: each weighs on the bare outline; the widening
+  for the wind is the sum of their 2 t. Faces, solidity and shielding
+  stay those of the bare members (said in the theory page).
+- **Extension and pole**: the body wind and the ice act on an
+  extension's own members as on the body; the body wind (pressure ×
+  factor from its direction) is also the pole's wind; the ice is not on
+  the pole (said in the case's notes).
+- **The recipes' CSV holds the older form only**: a case with the parts
+  is exported as `.ohlslc` (said when CSV is asked).
+- **Take the line's load cases as they are** makes cases of the new
+  form: per line result, its line forces with every factor 1 and, with
+  members, the wind on the body at the pressure of its weather case from
+  its side.
+- **Mirror wind** swaps "left" and "right" in the name, description,
+  line results and body wind; the older loads and the points off stay; a
+  case of the mirrored name there already is not replaced.
+- The editor is the **Load case editor** panel (Load cases menu).
 
 **A plugin's presets edited in the project (owner, 2026-10-25)**
 

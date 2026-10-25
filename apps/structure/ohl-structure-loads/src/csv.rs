@@ -3,7 +3,11 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! CSV of the load table and of the recipes (XLSX later). Forces in N,
-//! pressures in Pa, plain numbers; lists separated by `;`.
+//! pressures in Pa, plain numbers; lists separated by `;`. The table's
+//! `source` column names the part a row comes from (`recipe`, `line`,
+//! `wind`, `ice`, `point`, `typed`); the recipes' CSV holds the older
+//! form only (a case with line forces or loads on the structure itself is
+//! written as a `.ohlslc`).
 
 use std::fmt::Write as _;
 
@@ -191,8 +195,12 @@ impl LoadTable {
                     force: force("")?.unwrap_or_default(),
                     source: match g("source") {
                         "" => Source::Typed,
-                        s => Source::parse(s)
-                            .ok_or_else(|| format!("source \"{s}\": recipe, line or typed"))?,
+                        s => Source::parse(s).ok_or_else(|| {
+                            format!(
+                                "source \"{s}\": {}",
+                                Source::ALL.map(Source::as_str).join(", ")
+                            )
+                        })?,
                     },
                     evaluated: force("evaluated_")?,
                     missing: Some(g("missing").to_owned()).filter(|m| !m.is_empty()),
@@ -212,8 +220,18 @@ impl LoadTable {
 
 impl StructureLoadCases {
     /// The recipes as CSV: one row per load (a case without loads: one row
-    /// with the load columns empty); values in N, pressures in Pa.
-    pub fn cases_to_csv(cases: &[LoadCaseRecipe]) -> String {
+    /// with the load columns empty); values in N, pressures in Pa. The
+    /// older form only: Err (why) when a case has line forces or loads on
+    /// the structure itself (those are written as a `.ohlslc`).
+    pub fn cases_to_csv(cases: &[LoadCaseRecipe]) -> Result<String, String> {
+        if let Some(c) = cases.iter().find(|c| c.has_parts()) {
+            return Err(format!(
+                "load case \"{}\" has line forces or loads on the structure itself: the CSV of \
+                 the recipes holds the older form only — export as a structure load-case file \
+                 (.ohlslc)",
+                c.name
+            ));
+        }
         let mut out = format!("{RECIPE_HEADER}\n");
         for c in cases {
             let head = format!(
@@ -252,7 +270,7 @@ impl StructureLoadCases {
                 );
             }
         }
-        out
+        Ok(out)
     }
 
     /// Reads recipes written by [`StructureLoadCases::cases_to_csv`]: rows

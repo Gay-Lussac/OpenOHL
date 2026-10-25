@@ -201,7 +201,9 @@ structure recipes made `.ohlslc` **2** (`StructureLoadCases::new` writes
 2 only when a load takes one) and `.ohls` **6** (OHL-Structure raises a
 file to 6 after any edit leaving such a load,
 `ohl_structure_edit::raise_for_line_pressures`); the line-values file
-went to **4** (`structure_wind` in the values, always written).
+went to **4** (`structure_wind` in the values, always written). The two parts of a structure load case (`[[load_case.line]]`,
+`[load_case.structure]`, 2026-10-25) made `.ohlslc` **3** and `.ohls`
+**7** (each written only when a case has them).
 
 ### Coordinates and angles
 
@@ -1082,7 +1084,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 
 | Field (TOML key) | Type | Unit | Meaning |
 |---|---|---|---|
-| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 6 (`STRUCTURE_FILE_VERSION`; 6 adds the body generators' options in `[[generator]]`, a member's `bending` and `check` (written only when a member uses them) — and anything else added before the next release —, written only when a generator uses one (`ohl_structure_edit::body::OPTIONS_VERSION`), and the recipe quantities `structure_wind` and `structure_wind_factored` in `[[load_case.load]]`, the file raised to the same 6 after any edit leaving such a load (`raise_for_line_pressures`); 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
+| `format`, `version` | optional | — | `"ohl-structure"`, 1 to 7 (`STRUCTURE_FILE_VERSION`; 7 adds a load case's two parts `[[load_case.line]]` and `[load_case.structure]`, written only when a case has them, the file raised after any edit leaving one (`ohl_structure_edit::PARTS_VERSION`); 6 adds the body generators' options in `[[generator]]`, a member's `bending` and `check` (written only when a member uses them) — and anything else added before the next release —, written only when a generator uses one (`ohl_structure_edit::body::OPTIONS_VERSION`), and the recipe quantities `structure_wind` and `structure_wind_factored` in `[[load_case.load]]`, the file raised to the same 6 after any edit leaving such a load (`raise_for_line_pressures`); 5 adds the member kind `tension`, written only when a member is made `tension`; 4 adds a string's optional limits `max_load`, `max_swing`, `max_swing_across`, `max_swing_along`, not checked — written only where given (the structure application raises the file to 4 when one is set, `ohl_structure_edit::raise_version`); 3 adds `group`, `made_by`, `[[generator]]`, `[[symmetry]]`, the `[pole]` table and an extension's `node`, `member` and `leg` tables, written by the structure application — it raises a file's `version` when it writes them; older versions read as before) |
 | `id`, `name`, `description` | string | — | unique id (referred to by `Structure.type`), display name, free text |
 | `kind` | `lattice` / `pole` / `portal` / `other` | — | family |
 | `height` | length? | m | shaft top for the default stick drawing |
@@ -1373,7 +1375,12 @@ the line's forces as cases of given values — a `value` and `direction`
 (`x`, `y`, `-z`) per point and non-zero component, `line_case`, a
 `description` starting "Stored from the line" — through it;
 `take_line_load_cases` one recipe per line case taking its factored
-values at every point). The pole (`pole`:
+values at every point; `set_case_tables` sets keys of a case — its
+parts `line` and `structure` (`PART_KEYS`), Convert's `load`,
+`self_weight`, `line_case` — from the case's TOML text,
+`LoadCaseRecipe::to_toml`, its other keys and comments kept; the Load
+case editor writes every change of the parts so, one undo step). The
+pole (`pole`:
 `add_outline_row`, `set_outline_row` — refused when the heights would
 not rise —, `remove_outline_row`, `set_shape`, `set_field` — `wall` checked as a
 length or `solid` —, `set_solid` / `is_solid` (`wall = "solid"`, unset
@@ -1580,20 +1587,42 @@ The structure application's recipes
 (`apps/structure/ohl-structure-loads`, [crates](structure-app.md)): in a
 `.ohls` as `[[load_case]]` (the core keeps them as raw tables,
 `StructureType::load_cases`), or on their own in a `.ohlslc` file
-(`format = "ohl-structure-load-cases"`, version 2: the line quantities `structure_wind*`; 1 read too). Full reference:
-[Structure load cases](../user-guide/structure-load-cases.md).
+(`format = "ohl-structure-load-cases"`, version 3: a case's two parts
+`line[]` and `structure`; 2: the line quantities `structure_wind*`; 1
+and 2 read too; written at the lowest version the cases need,
+`written_version`). In a `.ohls` the parts make the file version **7**
+(`ohl_structure_edit::PARTS_VERSION`, raised after any edit leaving a
+case with `line` or `structure`, `raise_for_line_pressures`). Full
+reference: [Structure load cases](../user-guide/structure-load-cases.md);
+spec: [structure-load-cases-spec.md](structure-load-cases-spec.md).
 
 | Item | Fields | Refers to |
 |---|---|---|
-| `LoadCaseRecipe` (`[[load_case]]`) | `name`, `description`, `line_case`, `strength`, `self_weight`, `load[]` | `line_case` ─► a line `LoadCase.name` |
+| `LoadCaseRecipe` (`[[load_case]]`) | `name`, `description` (several lines), `strength`, `line[]`, `structure`, and the older form: `line_case`, `self_weight`, `load[]`; `self_weight_factor()`: `structure.self_weight` when given (the case's `self_weight` must then be 1, checked), else `self_weight` | `line_case` ─► a line result (older loads) |
+| `LineForces` (`[[load_case.line]]`, 1. line forces) | `result`, `vertical`, `transverse`, `longitudinal` (factors, default 1, always written), `sets[]` (default every point), `off[]` (point labels whose line forces are left out) | `result` ─► a line result name (`PlacedValues::cases`, `<weather> — wind from the left/right`) |
+| `OwnLoads` (`[load_case.structure]`, 2. loads on the structure itself) | `self_weight?`, `wind[]`, `ice[]`, `point[]` | — |
+| `BodyWindLoad` (`[[load_case.structure.wind]]`) | `from` (`WindFrom`: `left`, `right`, `ahead`, `back`, `ahead_left`, `ahead_right`, `back_left`, `back_right`), `pressure` (Pa) **or** `pressure_of` (a line result: its `CaseWind.pressure`, unfactored), `factor` | `pressure_of` ─► a line result |
+| `IceLoad` (`[[load_case.structure.ice]]`) | `thickness` (m) + `density` (kg/m³) **or** `load` (N/m); `members` (`"all"`, default, or ids); `factor` | member ids |
+| `PointLoad` (`[[load_case.structure.point]]`) | `value` (N), `direction`, `points` / `sets` / `phases`, `note` | point labels, sets, phases |
 | `LoadRecipe` (`[[load_case.load]]`) | what: `what` (`LineQuantity`; `structure_wind`, `structure_wind_factored` — version 2 of `.ohlslc`, 6 of `.ohls` — are pressures on `members`, `LineQuantity::is_pressure`) **or** `value` (N) **or** `pressure` (Pa); how: `line_case`, `factor`, `one_sided`, `side`, `direction` (structure axes); where: `points` (`"all"` or labels), `sets`, `phases`, **or** `members` (`"all"` or ids); `note` | point / wire point labels, sets, phase labels (from the line), member ids of the `.ohls` |
 
 Evaluated (`evaluate`) with `LineValues` (per point: sets, phases; values
 per line load case, point or set and quantity) into a `LoadTable`
 (rows: `case`, `load`, `at` point/member/joint, `label`, `force`
-transverse/longitudinal/vertical down N, `source` recipe/line/typed,
+transverse/longitudinal/vertical down N, `source`
+recipe/line/wind/ice/point/typed — the part a row comes from —,
 `evaluated`, `missing`, `note`, `area` — a surface load's member area,
-m²). Started for a placed structure, the structure application puts
+m²). Row numbers (`load`) per part, so typed values keep matching
+(`ohl_structure_loads::Part`, `PART_BLOCK` = 1000): older loads 1–999,
+line forces 1001…, wind 2001…, ice 3001…, point loads 4001…; a point
+turned off keeps its row (force 0, note "off"). The self weight has no
+rows (the solve puts it on the members × `self_weight_factor()`). The
+members' wind, outline and length come through the `MemberAreas` trait
+(`member_ids`, `member_wind` → `BodyWind`, `perimeter`, `length`;
+default: not known, the rows say why), implemented by
+`ohl_structure_link::SectionAreas` with the section library's `[wind]`
+factors (`ohl_structures_fe::wind::MemberWindSetup::wind_iced`: iced
+members 2 t wider). Started for a placed structure, the structure application puts
 the line's forces first (a row per line case and point, source `line`,
 no recipe; a line case named as a recipe is "NAME (line)"). The table
 is a result, not stored in the structure file (the line's cases can be

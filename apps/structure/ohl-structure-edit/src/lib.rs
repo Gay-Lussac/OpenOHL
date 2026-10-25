@@ -54,9 +54,9 @@ pub use geometry::{
 pub use groups::{Group, groups, set_group, set_group_field, set_group_kind, set_group_section};
 pub use load_cases::{
     BODY_WIND_NOTE, CASE_FIELDS, CaseText, GivenCase, LINE_CASE_LOADS, LINE_PRESSURES, LOAD_FIELDS,
-    add_body_wind_load, add_load, add_load_case, load_cases, merge_load_cases,
-    raise_for_line_pressures, remove_load, remove_load_case, set_load_case_field, set_load_field,
-    store_given_cases, take_line_load_cases,
+    PART_KEYS, PARTS_VERSION, add_body_wind_load, add_load, add_load_case, load_cases,
+    merge_load_cases, raise_for_line_pressures, remove_load, remove_load_case, set_case_tables,
+    set_load_case_field, set_load_field, store_given_cases, take_line_load_cases,
 };
 pub use missing::{Missing, Need, Place, missing, next_level};
 pub use rebuild::{Report, apply, rebuild, rebuild_all, remove_generator};

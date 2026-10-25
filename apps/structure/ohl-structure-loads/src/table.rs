@@ -11,6 +11,7 @@ use ohl_structures::StructureType;
 use ohl_structures::structures::{set_from_v1, v1_point_label};
 use serde::{Deserialize, Serialize};
 
+use crate::parts::{LineForces, OwnLoads, Part};
 use crate::recipe::{Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick, Side};
 
 /// A point of the placed structure as the line sees it: the sets and
@@ -277,33 +278,51 @@ impl At {
     }
 }
 
-/// Where a row's value comes from.
+/// Where a row's value comes from: the part of the case that made it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
-    /// A value or pressure given in the recipe.
+    /// A value or pressure given in an older load of the recipe.
     Recipe,
-    /// A value of the line, through the recipe.
+    /// A value of the line: an older load taking one, or the case's line
+    /// forces.
     Line,
+    /// The wind on the body (`[[load_case.structure.wind]]`).
+    Wind,
+    /// Ice or another weight on members (`[[load_case.structure.ice]]`).
+    Ice,
+    /// A point load (`[[load_case.structure.point]]`).
+    Point,
     /// Typed (over an evaluated value, or a row of its own; `[[load]]`).
     Typed,
 }
 
 impl Source {
+    /// Every source.
+    pub const ALL: [Self; 6] = [
+        Self::Recipe,
+        Self::Line,
+        Self::Wind,
+        Self::Ice,
+        Self::Point,
+        Self::Typed,
+    ];
+
     /// The name in files.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Recipe => "recipe",
             Self::Line => "line",
+            Self::Wind => "wind",
+            Self::Ice => "ice",
+            Self::Point => "point",
             Self::Typed => "typed",
         }
     }
 
     /// From its name in files.
     pub fn parse(s: &str) -> Option<Self> {
-        [Self::Recipe, Self::Line, Self::Typed]
-            .into_iter()
-            .find(|a| a.as_str() == s)
+        Self::ALL.into_iter().find(|a| a.as_str() == s)
     }
 }
 
@@ -313,7 +332,9 @@ impl Source {
 pub struct LoadRow {
     /// The load case.
     pub case: String,
-    /// The recipe's load, from 1 (none: a typed row of its own).
+    /// The recipe's load, from 1 (none: a typed row of its own): an older
+    /// load 1 to 999, a part's item from its block (line forces 1001…,
+    /// wind 2001…, ice 3001…, point loads 4001…: [`Part`]).
     pub load: Option<usize>,
     /// What it is at.
     pub at: At,
@@ -505,8 +526,11 @@ impl LoadTable {
     }
 }
 
-/// The area of a member the surface loads act on, m² (from the section
-/// library: `ohl-structure-link`).
+/// The members of the structure as the loads on them need them (from the
+/// section library and the structure's finite-element model:
+/// `ohl-structure-link`): the area a pressure meets, the member wind of
+/// the wind on the body, a member's outline and length for its ice. What
+/// is not known gives the row's "missing" (why).
 pub trait MemberAreas {
     /// The area of member `id`, if known.
     fn area(&self, id: &str) -> Option<f64>;
@@ -518,6 +542,54 @@ pub trait MemberAreas {
         let _ = direction;
         self.area(id).ok_or_else(|| "no area".to_owned())
     }
+
+    /// The members' ids (none: not known here, the structure's own
+    /// members are taken).
+    fn member_ids(&self) -> Option<Vec<String>> {
+        None
+    }
+
+    /// The wind of `pressure` (Pa, factored) blowing towards `towards`
+    /// (a unit vector, table axes: vertical down) on every member: the
+    /// member wind of the line's own structure checks (faces, solidity,
+    /// shielding with the section library's wind factors), each member
+    /// `widened(id)` m wider (iced). Per member its force (table axes) or
+    /// why it has none, and what was applied in words.
+    fn member_wind(
+        &self,
+        pressure: f64,
+        towards: [f64; 3],
+        widened: &dyn Fn(&str) -> f64,
+    ) -> Result<BodyWind, String> {
+        let _ = (pressure, towards, widened);
+        Err(
+            "no member wind: the structure's model and cross-section library are not known here"
+                .into(),
+        )
+    }
+
+    /// The perimeter of member `id`'s outline (the profile's outer edge,
+    /// an angle's inside faces too), m, or why it is not known.
+    fn perimeter(&self, id: &str) -> Result<f64, String> {
+        let _ = id;
+        Err("no outline: the cross-section library is not known here".into())
+    }
+
+    /// The length of member `id`, m, or why it is not known.
+    fn length(&self, id: &str) -> Result<f64, String> {
+        let _ = id;
+        Err("no length: the structure's model is not known here".into())
+    }
+}
+
+/// The wind on the body's members ([`MemberAreas::member_wind`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BodyWind {
+    /// Per member (id): its force (transverse, longitudinal, vertical
+    /// down), N, or why it has none.
+    pub members: Vec<(String, Result<[f64; 3], String>)>,
+    /// What was applied (drag factors, shielding), in words.
+    pub notes: Vec<String>,
 }
 
 /// No areas known: surface loads give rows marked "no area".
@@ -566,6 +638,7 @@ pub fn evaluate_with_areas(
                 rows.extend(point_rows(case, number, load, &targets, line));
             }
         }
+        rows.extend(part_rows(case, structure, &targets, line, areas));
     }
     if !structure.loads.is_empty() && !recipes.iter().any(|c| c.name == MODEL_CASE) {
         match model_rows(structure) {
@@ -605,9 +678,11 @@ pub fn line_pressure(
 
 /// `recipes` with every pressure the line gives (`structure_wind`,
 /// `structure_wind_factored`, [`line_pressure`]) written as the load's
-/// own `pressure` and `direction`, for what reads pressures from the
-/// recipes (the run on an extension, the pole's wind); a load the line
-/// gives no value for is left as it is (no pressure).
+/// own `pressure` and `direction`, and every body wind's `pressure_of` as
+/// its `pressure` (the line result's weather case's, unfactored), for
+/// what reads pressures from the recipes (the run on an extension, the
+/// pole's wind); a load the line gives no value for is left as it is (no
+/// pressure).
 pub fn resolve_line_pressures(
     recipes: &[LoadCaseRecipe],
     line: &LineValues,
@@ -630,9 +705,247 @@ pub fn resolve_line_pressures(
                 })
                 .collect();
             c.loads = loads;
+            if let Some(s) = &mut c.structure {
+                for w in &mut s.wind {
+                    if let Some(r) = &w.pressure_of
+                        && let Some(cw) = line.structure_wind(r)
+                    {
+                        w.pressure = Some(cw.pressure);
+                        w.pressure_of = None;
+                    }
+                }
+            }
             c
         })
         .collect()
+}
+
+/// The rows of case `case`'s parts, after its older loads: its line
+/// forces, the wind on its body, its ice, its point loads, each numbered
+/// in its part's block ([`Part`]). The self weight has no rows: the solve
+/// puts it on the members (each member's weight × its dead-load factor ×
+/// [`LoadCaseRecipe::self_weight_factor`]), as before.
+fn part_rows(
+    case: &LoadCaseRecipe,
+    structure: &StructureType,
+    targets: &[Target],
+    line: &LineValues,
+    areas: &dyn MemberAreas,
+) -> Vec<LoadRow> {
+    let mut rows = Vec::new();
+    for (k, l) in case.line.iter().enumerate() {
+        rows.extend(line_force_rows(
+            case,
+            Part::Line.number(k),
+            l,
+            targets,
+            line,
+        ));
+    }
+    let Some(own) = &case.structure else {
+        return rows;
+    };
+    let ids: Vec<String> = areas
+        .member_ids()
+        .unwrap_or_else(|| structure.members.iter().map(|m| m.id.clone()).collect());
+    for (k, w) in own.wind.iter().enumerate() {
+        let number = Some(Part::Wind.number(k));
+        let text = crate::parts::wind_text(w);
+        let missing = |why: String| {
+            let mut r = LoadRow::new(&case.name, number, At::Member, "").missing(why);
+            r.source = Source::Wind;
+            r.note.clone_from(&text);
+            r
+        };
+        let pressure = match (w.pressure, &w.pressure_of) {
+            (Some(p), _) => p,
+            (None, Some(r)) => match line.structure_wind(r) {
+                Some(cw) => cw.pressure,
+                None => {
+                    rows.push(missing(format!(
+                        "no line value: the wind pressure of \"{r}\""
+                    )));
+                    continue;
+                }
+            },
+            (None, None) => continue,
+        };
+        let widened = |id: &str| own.widening(id);
+        match areas.member_wind(pressure * w.factor, w.from.towards(), &widened) {
+            Err(why) => rows.push(missing(why)),
+            Ok(body) => {
+                for (n, (id, f)) in body.members.into_iter().enumerate() {
+                    let mut note = text.clone();
+                    let wider = own.widening(&id);
+                    if wider > 0.0 {
+                        note.push_str(&format!(
+                            "; iced: {:.0} mm wider for the wind",
+                            wider * 1000.0
+                        ));
+                    }
+                    if n == 0 && !body.notes.is_empty() {
+                        note.push_str("; ");
+                        note.push_str(&body.notes.join("; "));
+                    }
+                    let row = LoadRow {
+                        source: Source::Wind,
+                        note,
+                        ..LoadRow::new(&case.name, number, At::Member, &id)
+                    };
+                    rows.push(match f {
+                        Ok(f) => LoadRow { force: f, ..row },
+                        Err(why) => row.missing(why),
+                    });
+                }
+            }
+        }
+    }
+    for (k, ice) in own.ice.iter().enumerate() {
+        let number = Some(Part::Ice.number(k));
+        let text = crate::parts::ice_text(ice);
+        let chosen: Vec<&str> = match &ice.members {
+            Pick::All => ids.iter().map(String::as_str).collect(),
+            Pick::These(v) => v.iter().map(String::as_str).collect(),
+        };
+        if chosen.is_empty() {
+            let mut r = LoadRow::new(&case.name, number, At::Member, "")
+                .missing("selects no member".into());
+            r.source = Source::Ice;
+            rows.push(r);
+        }
+        for id in chosen {
+            let row = LoadRow {
+                source: Source::Ice,
+                note: text.clone(),
+                ..LoadRow::new(&case.name, number, At::Member, id)
+            };
+            if !ids.iter().any(|m| m == id) {
+                rows.push(row.missing(format!("no member \"{id}\"")));
+                continue;
+            }
+            let perimeter = if ice.thickness.is_some() {
+                match areas.perimeter(id) {
+                    Ok(p) => Some(p),
+                    Err(why) => {
+                        rows.push(row.missing(why));
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let weight = match (ice.weight_per_metre(perimeter), areas.length(id)) {
+                (Ok(w), Ok(len)) => w * len * ice.factor,
+                (Err(why), _) | (_, Err(why)) => {
+                    rows.push(row.missing(why));
+                    continue;
+                }
+            };
+            rows.push(LoadRow {
+                force: [0.0, 0.0, weight],
+                ..row
+            });
+        }
+    }
+    for (k, p) in own.point.iter().enumerate() {
+        let number = Some(Part::Point.number(k));
+        for mut r in point_rows(case, number, &p.as_load(), targets, line) {
+            r.source = Source::Point;
+            if r.note.is_empty() {
+                r.note = crate::parts::point_text(p);
+            }
+            rows.push(r);
+        }
+    }
+    rows
+}
+
+/// The rows of one line forces table (`number`: its row number): per
+/// point carrying a wire (a set) or given a value by the line in its
+/// result (only those of its sets when it names some), the line's
+/// transverse, longitudinal and vertical forces, each × its factor; a
+/// point turned off (`off`) keeps its row with no force, noted "off" (a
+/// value typed over it stays on the same row whether it is off or on).
+fn line_force_rows(
+    case: &LoadCaseRecipe,
+    number: usize,
+    l: &LineForces,
+    targets: &[Target],
+    line: &LineValues,
+) -> Vec<LoadRow> {
+    let number = Some(number);
+    let text = crate::parts::line_forces_text(l);
+    let given_at = |label: &str| {
+        line.values
+            .iter()
+            .any(|v| v.case == l.result && v.point.as_deref() == Some(label))
+    };
+    let chosen: Vec<&Target> = targets
+        .iter()
+        .filter(|t| !t.sets.is_empty() || given_at(&t.label))
+        .filter(|t| l.sets.is_empty() || t.sets.iter().any(|s| l.sets.contains(s)))
+        .collect();
+    let mut rows = Vec::new();
+    for o in &l.off {
+        if !targets.iter().any(|t| &t.label == o) {
+            let mut r = LoadRow::new(&case.name, number, At::Point, o)
+                .missing(format!("off: no point \"{o}\" in the structure"));
+            r.source = Source::Line;
+            rows.push(r);
+        }
+    }
+    if chosen.is_empty() {
+        let mut r =
+            LoadRow::new(&case.name, number, At::Point, "").missing("selects no point".into());
+        r.source = Source::Line;
+        rows.push(r);
+    }
+    let quantities = [
+        LineQuantity::Transverse,
+        LineQuantity::Longitudinal,
+        LineQuantity::Vertical,
+    ];
+    for t in chosen {
+        let mut row = LoadRow {
+            source: Source::Line,
+            note: text.clone(),
+            ..LoadRow::new(&case.name, number, At::Point, &t.label)
+        };
+        if l.off.contains(&t.label) {
+            row.note = format!("off: {}'s line forces left out", t.label);
+            rows.push(row);
+            continue;
+        }
+        let values = quantities.map(|q| line.get(&l.result, &t.label, &t.sets, q));
+        if values.iter().any(Option::is_none) {
+            let lacking: Vec<&str> = quantities
+                .iter()
+                .zip(values)
+                .filter(|(_, v)| v.is_none())
+                .map(|(q, _)| q.as_str())
+                .collect();
+            rows.push(row.missing(format!(
+                "no line value: {} in \"{}\"",
+                lacking.join(", "),
+                l.result
+            )));
+            continue;
+        }
+        let f = l.factors();
+        row.force = [0, 1, 2].map(|k| values[k].unwrap_or_default() * f[k]);
+        rows.push(row);
+    }
+    rows
+}
+
+/// Whether case `case`'s loads on the structure itself include any (a
+/// body wind, ice), for what builds the members' model only when needed.
+pub fn needs_members(case: &LoadCaseRecipe) -> bool {
+    case.loads.iter().any(|l| l.members.is_some())
+        || case
+            .structure
+            .as_ref()
+            .is_some_and(|s: &OwnLoads| !s.wind.is_empty() || !s.ice.is_empty())
 }
 
 fn surface_rows(

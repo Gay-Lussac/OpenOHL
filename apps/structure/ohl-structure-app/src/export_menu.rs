@@ -199,7 +199,7 @@ mod tests {
                 None => dir.join("csv"),
             };
             let m = app.export(f, &out).unwrap();
-            assert!(m.starts_with("exported 178 members, 4 load cases"), "{m}");
+            assert!(m.starts_with("exported 178 members, 5 load cases"), "{m}");
             assert!(out.exists());
         }
         std::fs::remove_dir_all(&dir).unwrap();

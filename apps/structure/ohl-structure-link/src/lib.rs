@@ -376,13 +376,24 @@ pub fn model_file_name(text: &str, sections: &SectionLibrary) -> Result<String, 
 /// the member's length × sin θ). A member whose section is not in the
 /// library, or a structure whose model does not build, has no area (the
 /// row says why).
+///
+/// The wind on the body of a case's loads on the structure itself is the
+/// member wind of the line's own structure checks
+/// ([`ohl_structures_fe::wind::MemberWindSetup`] with the library's
+/// `[wind]` factors: faces, solidity, shielding; the faces found once);
+/// a member's ice takes its profile's outline
+/// ([`ohl_structures_fe::drawn::outline`]: its full perimeter) and its
+/// length.
 pub struct SectionAreas {
     model: Result<Model, String>,
+    wind: Option<ohl_sections::StructureWind>,
+    faces: std::cell::OnceCell<Vec<ohl_structures_fe::wind::Face>>,
 }
 
 impl SectionAreas {
     /// The areas of `structure` (`text`: its file's text, `dir`: its
-    /// folder, for a `model = "….ohlfe"` it names) with `sections`.
+    /// folder, for a `model = "….ohlfe"` it names) with `sections` (and
+    /// its wind factors).
     pub fn new(
         structure: &StructureType,
         text: &str,
@@ -391,13 +402,121 @@ impl SectionAreas {
     ) -> Self {
         Self {
             model: model_of(structure, text, dir, sections),
+            wind: sections.wind.clone(),
+            faces: std::cell::OnceCell::new(),
         }
     }
+
+    fn model(&self, what: &str) -> Result<&Model, String> {
+        self.model
+            .as_ref()
+            .map_err(|e| format!("{what}: the model does not build ({e})"))
+    }
+
+    fn member(&self, id: &str, what: &str) -> Result<(&Model, usize), String> {
+        let model = self.model(what)?;
+        let k = model
+            .members
+            .iter()
+            .position(|m| m.id == id)
+            .ok_or_else(|| format!("{what}: no member \"{id}\" in the model"))?;
+        Ok((model, k))
+    }
+}
+
+/// The perimeter of a profile's outline (its outer edge, an angle's
+/// inside faces too: [`ohl_structures_fe::drawn::outline`]), m.
+pub fn outline_perimeter(profile: &ohl_sections::Section) -> f64 {
+    let o = ohl_structures_fe::drawn::outline(&profile.shape);
+    (0..o.len())
+        .map(|k| {
+            let (a, b) = (o[k], o[(k + 1) % o.len()]);
+            (b[0] - a[0]).hypot(b[1] - a[1])
+        })
+        .sum()
 }
 
 impl MemberAreas for SectionAreas {
     fn area(&self, id: &str) -> Option<f64> {
         self.area_along(id, Direction::Right).ok()
+    }
+
+    fn member_ids(&self) -> Option<Vec<String>> {
+        let model = self.model.as_ref().ok()?;
+        Some(model.members.iter().map(|m| m.id.clone()).collect())
+    }
+
+    fn member_wind(
+        &self,
+        pressure: f64,
+        towards: [f64; 3],
+        widened: &dyn Fn(&str) -> f64,
+    ) -> Result<ohl_structure_loads::BodyWind, String> {
+        let model = self.model("no member wind")?;
+        let faces = self.faces.get_or_init(|| {
+            if ohl_structures_fe::wind::needs_faces(self.wind.as_ref()) {
+                ohl_structures_fe::wind::faces(model)
+            } else {
+                Vec::new()
+            }
+        });
+        let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
+            model,
+            self.wind.as_ref(),
+            faces.clone(),
+        );
+        let extra: Vec<f64> = model.members.iter().map(|m| widened(&m.id)).collect();
+        // Table axes (vertical down) → structure axes (z up), and back.
+        let w = setup.wind_iced(pressure, [towards[0], towards[1], -towards[2]], &extra);
+        let mut row_of = vec![None; model.members.len()];
+        for (row, r) in w.members.iter().enumerate() {
+            row_of[r.member] = Some(row);
+        }
+        let members = model
+            .members
+            .iter()
+            .enumerate()
+            .map(|(k, m)| {
+                let section = &model.sections[m.section];
+                let force = if section.profile.is_none() {
+                    Err(format!(
+                        "no area: cross-section \"{}\" is not in the cross-section library",
+                        section.id
+                    ))
+                } else {
+                    // A member along the wind has no row there: no force.
+                    Ok(row_of[k].map_or([0.0; 3], |row| {
+                        let f = w.member_force(row);
+                        [f[0], f[1], -f[2]]
+                    }))
+                };
+                (m.id.clone(), force)
+            })
+            .collect();
+        Ok(ohl_structure_loads::BodyWind {
+            members,
+            notes: w.notes,
+        })
+    }
+
+    fn perimeter(&self, id: &str) -> Result<f64, String> {
+        let (model, k) = self.member(id, "no outline")?;
+        let section = &model.sections[model.members[k].section];
+        section
+            .profile
+            .as_ref()
+            .map(outline_perimeter)
+            .ok_or_else(|| {
+                format!(
+                    "no outline: cross-section \"{}\" is not in the cross-section library",
+                    section.id
+                )
+            })
+    }
+
+    fn length(&self, id: &str) -> Result<f64, String> {
+        let (model, k) = self.member(id, "no length")?;
+        Ok(model.length(&model.members[k]))
     }
 
     fn area_along(&self, id: &str, direction: Direction) -> Result<f64, String> {

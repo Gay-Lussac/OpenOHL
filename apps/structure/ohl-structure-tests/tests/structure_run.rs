@@ -182,6 +182,14 @@ fn the_pole_check_of_the_line() {
             [-800.0, 0.0],
             "[[load_case.load]]\npressure = \"800 Pa\"\ndirection = \"-x\"\nmembers = \"all\"\n",
         ),
+        // The case's wind on the body (2026-10-25): 500 Pa × 1.6 from the
+        // right, the same wind on the pole; its weight on members not
+        // (said).
+        (
+            [-800.0, 0.0],
+            "[[load_case.structure.wind]]\nfrom = \"right\"\npressure = \"500 Pa\"\n\
+             factor = 1.6\n[[load_case.structure.ice]]\nload = \"10 N/m\"\n",
+        ),
     ] {
         let text = format!("{base}{loads}{extra}");
         let t = parse(&text);
@@ -237,8 +245,18 @@ fn the_pole_check_of_the_line() {
             assert!(
                 p.notes
                     .iter()
-                    .any(|n| n.contains("wind on the pole: 800 Pa"))
+                    .any(|n| n.contains("wind on the pole: 800 Pa")
+                        || n.contains("wind on the body from the right, 500 Pa × 1.6")),
+                "{:?}",
+                p.notes
             );
+            if extra.contains("structure") {
+                assert!(
+                    p.notes
+                        .iter()
+                        .any(|n| n.contains("ice on members: not on the pole"))
+                );
+            }
         }
         let checks = run.checks();
         assert_eq!(checks.len(), 1);

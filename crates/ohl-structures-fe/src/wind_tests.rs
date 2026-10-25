@@ -413,3 +413,38 @@ fn a_tapered_tower_of_960_members() {
             .any(|p| id.starts_with(p))
     }));
 }
+
+/// Iced members (2026-10-25): every member 2·t wider makes each member's
+/// force grow by (d + 2t)/d; no extra width is the plain wind, bit for
+/// bit; a member's force is its two joint loads.
+#[test]
+fn iced_members_are_wider_for_the_wind() {
+    let m = model();
+    let setup = MemberWindSetup::new(&m, None);
+    let plain = setup.wind(1000.0, [0.0, 1.0, 0.0]);
+    assert_eq!(setup.wind_iced(1000.0, [0.0, 1.0, 0.0], &[]), plain);
+    let zeros = vec![0.0; m.members.len()];
+    assert_eq!(setup.wind_iced(1000.0, [0.0, 1.0, 0.0], &zeros), plain);
+    // t = 10 mm: 50 mm → 70 mm, every force × 1.4.
+    let wider = vec![0.02; m.members.len()];
+    let iced = setup.wind_iced(1000.0, [0.0, 1.0, 0.0], &wider);
+    assert!(close(total_y(&iced), 1.4 * total_y(&plain), 1e-12));
+    // A member's force is its two joint loads' (normal to the member, its
+    // size the row's force).
+    for (k, r) in iced.members.iter().enumerate() {
+        let f = iced.member_force(k);
+        let size = (f[0] * f[0] + f[1] * f[1] + f[2] * f[2]).sqrt();
+        assert!(close(size, r.force, 1e-12), "{k}");
+    }
+    // Only the first member wider: the rest as they were.
+    let mut one = vec![0.0; m.members.len()];
+    one[0] = 0.02;
+    let w = setup.wind_iced(1000.0, [0.0, 1.0, 0.0], &one);
+    for (a, b) in w.members.iter().zip(&plain.members) {
+        if a.member == 0 {
+            assert!(close(a.force, 1.4 * b.force, 1e-12));
+        } else {
+            assert_eq!(a.force, b.force);
+        }
+    }
+}

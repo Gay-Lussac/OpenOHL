@@ -404,6 +404,18 @@ impl MemberWind {
         }
         s
     }
+
+    /// The force on the member of row `row` of [`MemberWind::members`],
+    /// N (structure axes): its two loads at the joints summed.
+    pub fn member_force(&self, row: usize) -> [f64; 3] {
+        let mut s = [0.0; 3];
+        for l in self.loads.iter().skip(2 * row).take(2) {
+            for (a, f) in s.iter_mut().zip(l.force) {
+                *a += f;
+            }
+        }
+        s
+    }
 }
 
 /// Faces for a model, computed once and used for every wind direction
@@ -455,6 +467,17 @@ impl<'a> MemberWindSetup<'a> {
     /// shielding factor of a member every face of which facing the wind
     /// stands behind another face (1 otherwise).
     pub fn wind(&self, pressure: f64, direction: [f64; 3]) -> MemberWind {
+        self.wind_iced(pressure, direction, &[])
+    }
+
+    /// [`MemberWindSetup::wind`] with members made wider: member k's width
+    /// for the wind grows by `extra_width[k]` (m; none or 0: as it is) —
+    /// an iced member, 2·t wider for a radial ice thickness t (a
+    /// conservative assumption: the iced outline is not rounded, theory:
+    /// `docs/theory/structure-wind.md`). The faces, their solidity ratios
+    /// and the shielding stay those of the bare members. With no extra
+    /// width it is exactly [`MemberWindSetup::wind`].
+    pub fn wind_iced(&self, pressure: f64, direction: [f64; 3], extra_width: &[f64]) -> MemberWind {
         let model = self.model;
         let mut out = MemberWind::default();
         let n = norm(direction);
@@ -478,6 +501,10 @@ impl<'a> MemberWindSetup<'a> {
         for (k, m) in model.members.iter().enumerate() {
             let Some((normal, sin, width)) = model.across(m, w) else {
                 continue;
+            };
+            let width = match extra_width.get(k) {
+                Some(&e) if e != 0.0 => width + e,
+                _ => width,
             };
             let shape = model.sections[m.section]
                 .profile

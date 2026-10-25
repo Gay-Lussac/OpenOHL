@@ -221,7 +221,7 @@ fn a_file_round_trips_through_toml_and_csv() {
     let mut cases = f.cases.clone();
     cases.push(LoadCaseRecipe::new("empty, with a comma"));
     cases[0].loads[2].note = "say \"hi\",\nover two lines".into();
-    let csv = StructureLoadCases::cases_to_csv(&cases);
+    let csv = StructureLoadCases::cases_to_csv(&cases).unwrap();
     assert_eq!(StructureLoadCases::cases_from_csv(&csv).unwrap(), cases);
     // As tables in a structure file.
     let mut s = structure();

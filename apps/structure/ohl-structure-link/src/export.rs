@@ -426,7 +426,7 @@ pub fn export_structure(
         for case in table.cases() {
             let recipe = recipes.iter().find(|r| r.name == case);
             let self_weight = match recipe {
-                Some(r) => r.self_weight,
+                Some(r) => r.self_weight_factor(),
                 None if case == MODEL_CASE => f64::from(u8::from(model.analysis.self_weight)),
                 None => 1.0,
             };

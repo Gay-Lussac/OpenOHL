@@ -98,7 +98,7 @@ fn a_placed_structure_gets_its_table_from_the_line() {
 
     let structure = type_02();
     let recipes = StructureLoadCases::from_structure(&structure).unwrap();
-    assert_eq!(recipes.len(), 3);
+    assert_eq!(recipes.len(), 4);
     let table = evaluate(&recipes, &structure, &values);
 
     // "wind": the line's factored loads, one component per load.
@@ -239,7 +239,7 @@ fn the_cases_of_the_table_are_solved_through_the_link() {
         .map(|c| CaseToRun {
             name: c.name.clone(),
             strength: c.strength,
-            self_weight: c.self_weight,
+            self_weight: c.self_weight_factor(),
         })
         .collect();
     cases.push(CaseToRun {
@@ -258,7 +258,7 @@ fn the_cases_of_the_table_are_solved_through_the_link() {
         &budget,
     )
     .unwrap();
-    assert_eq!(results.len(), 4);
+    assert_eq!(results.len(), 5);
     let model = Model::load(&path).unwrap();
     for (name, r) in &results {
         let r = r.as_ref().unwrap_or_else(|e| panic!("{name}: {e}"));

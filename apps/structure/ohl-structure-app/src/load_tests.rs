@@ -15,7 +15,7 @@ use ohl_structure_loads::{At, LoadRow, Source};
 
 use crate::app::StructureApp;
 use crate::layout::{Area, Panel};
-use crate::tests::menu;
+use crate::tests::{menu, press};
 
 /// A copy of example structure `name` in a folder of its own.
 fn copy_of(name: &str, tag: &str) -> PathBuf {
@@ -75,11 +75,10 @@ fn a_load_row_is_added_and_undone() {
     let path = copy_of("type-02.ohls", "add");
     let mut h = harness(&path);
     let before = h.state().file.as_ref().unwrap().text();
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     assert_eq!(h.state().area, Area::LoadCases);
     assert_eq!(loads_of(&h, 0), 3);
-    h.get_by_label("+ Load").click();
-    h.run();
+    press(&mut h, "+ Load");
     assert_eq!(loads_of(&h, 0), 4);
     assert!(h.state().dirty());
     assert_eq!(
@@ -92,16 +91,18 @@ fn a_load_row_is_added_and_undone() {
     h.run();
     assert_eq!(loads_of(&h, 0), 3);
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
-    // A case: added, its first load, then undone in two steps.
+    // A case: added, its first line forces, then undone in two steps.
     h.get_by_label("+ Case").click();
     h.run();
-    h.get_by_label("+ Load").click();
-    h.run();
+    press(&mut h, "Add line forces");
     let f = h.state().file.as_ref().unwrap();
     let cases = ohl_structure_edit::load_cases(f.doc());
-    assert_eq!(cases.len(), 4);
-    assert_eq!(cases[3].get("name"), "case 1");
-    assert_eq!(cases[3].loads.len(), 1);
+    assert_eq!(cases.len(), 5);
+    assert_eq!(cases[4].get("name"), "case 1");
+    let recipes = h.state().loads.recipes().unwrap().to_vec();
+    assert_eq!(recipes[4].line.len(), 1);
+    // Opened on its own: no line result to choose, one to type.
+    assert_eq!(recipes[4].line[0].result, crate::case_editor::NO_RESULT);
     h.state_mut().undo();
     h.state_mut().undo();
     h.run();
@@ -142,7 +143,7 @@ fn opened_alone_the_line_values_are_missing() {
 fn a_typed_value_is_kept_after_evaluating_again() {
     let path = copy_of("type-02.ohls", "typed");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     let r = row(&h, "wind", 1, "A1");
     h.state_mut().loads.type_value(&r, [3000.0, 0.0, 0.0]);
     h.run();
@@ -154,8 +155,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
     assert!(typed.missing.is_none());
     assert!(h.state().dirty());
     // A recipe changed: the table is evaluated again, the value stays.
-    h.get_by_label("+ Load").click();
-    h.run();
+    press(&mut h, "+ Load");
     assert_eq!(loads_of(&h, 0), 4);
     let again = row(&h, "wind", 1, "A1");
     assert_eq!(
@@ -175,7 +175,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
     );
     // Opened again: the value is back.
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     let back = row(&h, "wind", 1, "A1");
     assert_eq!(
         (back.force, back.source),
@@ -193,7 +193,7 @@ fn a_typed_value_is_kept_after_evaluating_again() {
 fn the_table_goes_out_and_back_as_csv() {
     let path = copy_of("type-02.ohls", "csv");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     let r = row(&h, "ice, unbalanced", 1, "A11");
     h.state_mut().loads.type_value(&r, [0.0, 0.0, 7000.0]);
     let own = LoadRow {
@@ -234,7 +234,7 @@ fn the_table_goes_out_and_back_as_csv() {
 fn results_of_a_typed_case() {
     let path = copy_of("type-02.ohls", "results");
     let mut h = harness(&path);
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     for (label, force) in [
         ("A1", [4000.0, 1000.0, 9000.0]),
         ("A11", [4000.0, 0.0, 9000.0]),

@@ -487,9 +487,9 @@ impl StructureApp {
             ui,
             "Take the line's load cases as they are",
             can_take,
-            "One load case per load case of the line: its factored transverse, longitudinal \
-             and vertical loads at every point (one undo step)",
-            "The line gives no load case (see the Load recipes panel)",
+            "One load case per line result: its line forces at every point, every factor 1, \
+             and the wind on the body at its weather case's pressure (one undo step)",
+            "The line gives no line result (see the Load case editor)",
         ) {
             self.take_line_cases();
             self.focus(Panel::LoadRecipes);

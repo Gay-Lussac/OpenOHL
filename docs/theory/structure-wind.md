@@ -191,6 +191,16 @@ force, the far ones none.
   which can be lower than a code's (unsafe); a member whose cross-section is not
   in the library has no area (said in its row). Exact: the member wind
   above, with the code's factors.
+- OHL-Structure's **wind on the body** of a load case
+  (`[[load_case.structure.wind]]`, 2026-10-25): this member wind, the
+  same factors and faces, for the case's direction (left, right, ahead,
+  back or 45° between them) and pressure × factor; a row per member.
+  With ice given as a radial thickness \\( t \\) in the same case, each
+  iced member's width \\( d \\) becomes \\( d + 2t \\).
+  **Conservative:** that widening — the iced outline is taken as the
+  bare outline grown by \\( t \\) on both sides, its corners not rounded,
+  an angle's open side as if filled. **Simplification:** the faces'
+  solidity ratios and the shielding stay those of the bare members.
 
 ## Validation
 

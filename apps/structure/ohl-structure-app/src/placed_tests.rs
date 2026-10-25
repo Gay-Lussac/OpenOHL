@@ -123,7 +123,7 @@ fn a_placed_structure_shows_its_line_values_and_keeps_its_typed_loads() {
     write(&at, [1500.0, -200.0, 6000.0]);
     let mut h = harness(&path, &at);
     h.get_by_label("loads of T2 in test line");
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     refresh(&mut h);
     let r = row(&h, "wind", 1, "A1");
     assert_eq!((r.force, r.source), ([1500.0, 0.0, 0.0], Source::Line));
@@ -256,7 +256,7 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     assert_eq!(ice.unwrap().force, [0.0, 0.0, 8000.0]);
     h.get_by_label_contains("The line gives the forces at 2 point(s) of T2 in 2 case(s)");
     // No recipe: said, with the line's cases to take.
-    menu(&mut h, "Load cases", "Load recipes…");
+    menu(&mut h, "Load cases", "Load case editor…");
     h.get_by_label_contains("This structure has no load cases of its own");
     h.get_by_label("Take the line's load cases as they are");
 

@@ -163,7 +163,7 @@ impl Panel {
             Panel::Groups => "Groups",
             Panel::SectionsMaterials => "Cross-sections & materials",
             Panel::PoleDesign => "Pole design",
-            Panel::LoadRecipes => "Load recipes",
+            Panel::LoadRecipes => "Load case editor",
             Panel::LoadTable => "Load table",
             Panel::Results => "FE results",
             Panel::InTheLine => "Line values",
@@ -202,7 +202,9 @@ impl Panel {
             Panel::PoleDesign => {
                 "What the pole check needs: material, wall (or solid) or cross-section, strength"
             }
-            Panel::LoadRecipes => "The structure's load cases: each a list of loads",
+            Panel::LoadRecipes => {
+                "The structure's load cases: line forces and the loads on the structure itself"
+            }
             Panel::LoadTable => {
                 "The recipes evaluated: per case, the loads at each point or member"
             }

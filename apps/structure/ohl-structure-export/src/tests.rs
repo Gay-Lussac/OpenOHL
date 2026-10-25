@@ -365,8 +365,17 @@ fn type_02_as_export_data() {
     assert_eq!(s.nodes.iter().filter(|n| n.is_support()).count(), 4);
     assert!(s.sections.iter().all(|x| x.shape.is_none()));
     let names: Vec<&str> = s.load_cases.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(names, ["wind", "ice, unbalanced", "body wind", "model"]);
-    let model = &s.load_cases[3];
+    assert_eq!(
+        names,
+        [
+            "wind",
+            "ice, unbalanced",
+            "body wind",
+            "high wind, from the left",
+            "model"
+        ]
+    );
+    let model = &s.load_cases[4];
     assert_eq!(model.loads.len(), 2);
     assert_eq!(model.loads[0].force, [4000.0, 0.0, -9000.0]);
     assert!(matches!(model.loads[0].place, LoadPlace::Node(_)));
@@ -403,8 +412,8 @@ fn ifc4_of_type_02() {
     assert_eq!(p.count("IFCBOUNDARYNODECONDITION"), 4);
     assert_eq!(p.count("IFCRELCONNECTSSTRUCTURALMEMBER"), 2 * 178);
     assert_eq!(p.count("IFCSTRUCTURALANALYSISMODEL"), 1);
-    assert_eq!(p.count("IFCSTRUCTURALLOADCASE"), 4);
-    assert_eq!(p.count("IFCSTRUCTURALPOINTACTION"), 3);
+    assert_eq!(p.count("IFCSTRUCTURALLOADCASE"), 5);
+    assert_eq!(p.count("IFCSTRUCTURALPOINTACTION"), 4);
     // [[section]] tables: profiles by name only, no solids.
     assert_eq!(p.count("IFCPROFILEDEF"), 3);
     assert_eq!(p.count("IFCEXTRUDEDAREASOLID"), 0);
@@ -420,10 +429,23 @@ fn ifc4_of_type_02() {
             .iter()
             .all(|a| a[7] == ".PIN_JOINED_MEMBER.")
     );
-    // Self-weight with every case (factor 1), down.
-    for c in p.of("IFCSTRUCTURALLOADCASE") {
-        assert_eq!(c[10], "(0.,0.,-1.0)");
-    }
+    // Self-weight with every case, down: factor 1, the high wind's 1.2
+    // (its loads on the structure itself).
+    let weights: Vec<String> = p
+        .of("IFCSTRUCTURALLOADCASE")
+        .iter()
+        .map(|c| c[10].clone())
+        .collect();
+    assert_eq!(
+        weights,
+        [
+            "(0.,0.,-1.0)",
+            "(0.,0.,-1.0)",
+            "(0.,0.,-1.0)",
+            "(0.,0.,-1.2)",
+            "(0.,0.,-1.0)"
+        ]
+    );
 }
 
 #[test]
@@ -635,9 +657,9 @@ fn saf_sheets_and_round_trip() {
     assert_eq!(rows("StructuralPointConnection"), 46);
     assert_eq!(rows("StructuralCurveMember"), 178);
     assert_eq!(rows("StructuralPointSupport"), 4);
-    assert_eq!(rows("StructuralLoadCase"), 4);
-    // model: 2 × (x, z); ice: 1 × y.
-    assert_eq!(rows("StructuralPointAction"), 5);
+    assert_eq!(rows("StructuralLoadCase"), 5);
+    // model: 2 × (x, z); ice: 1 × y; high wind: its point load, 1 × z.
+    assert_eq!(rows("StructuralPointAction"), 6);
     let model = sheet("Model");
     let value = |k: &str| {
         model
@@ -878,7 +900,7 @@ fn the_structure_report_of_a_lattice_structure() {
     let lines: Vec<&str> = r.csv.lines().collect();
     assert_eq!(lines[0], "case,member,axial_n,usage,governs,slack");
     let members = text.matches("[[member]]").count();
-    assert_eq!(lines.len(), 1 + 4 * members);
+    assert_eq!(lines.len(), 1 + 5 * members);
     assert!(r.summary[0].starts_with("members: "), "{:?}", r.summary);
 }
 

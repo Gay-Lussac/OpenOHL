@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Load recipes and Load table panels: the recipes of the structure
+//! The Load cases and Load table panels: the load cases of the structure
 //! (`[[load_case]]`), each change one edit of the file, and the load
 //! table — first the line's forces at the attachment points (a placed
 //! structure: every case the line transmits, as the line computed them),
@@ -72,7 +72,7 @@ struct Evaluated {
     run_recipes: Vec<LoadCaseRecipe>,
 }
 
-/// The state of the Load recipes and Load table panels.
+/// The state of the Load cases and Load table panels.
 pub struct LoadCasesTab {
     /// "Store in the structure file": the line's cases ticked to store.
     pub store: Option<StoreForm>,
@@ -105,7 +105,7 @@ pub struct LoadCasesTab {
     generation: u64,
     cache: Option<Evaluated>,
     /// Fields being typed: (value in the file, text typed).
-    buffers: HashMap<String, (String, String)>,
+    pub(crate) buffers: HashMap<String, (String, String)>,
 }
 
 impl Default for LoadCasesTab {
@@ -191,9 +191,7 @@ impl LoadCasesTab {
             all.extend(line_wind.iter().cloned());
         }
         // Member areas only when a load needs them (the model is built).
-        let surface = all
-            .iter()
-            .any(|c| c.loads.iter().any(|l| l.members.is_some()));
+        let surface = all.iter().any(ohl_structure_loads::needs_members);
         let of_recipes = if surface {
             let dir = f.path().and_then(Path::parent);
             let areas = SectionAreas::new(t, &f.text(), dir, &self.sections);
@@ -416,7 +414,7 @@ pub(crate) fn arrow(s: &mut Scene, p: [f64; 3], v: [f64; 3], colour: [u8; 4], to
 }
 
 /// A text field of the file: written (Some) when left with another text.
-fn cell(
+pub(crate) fn cell(
     ui: &mut egui::Ui,
     buffers: &mut HashMap<String, (String, String)>,
     key: String,
@@ -534,7 +532,7 @@ impl StructureApp {
         });
     }
 
-    /// The Load recipes panel.
+    /// The Load cases panel ([`crate::case_editor`]).
     pub fn load_recipes_ui(&mut self, ui: &mut egui::Ui) {
         let Some(f) = &self.file else {
             return;
@@ -604,256 +602,7 @@ impl StructureApp {
     }
 
     fn recipes_sheet(&mut self, ui: &mut egui::Ui) {
-        let (mut add, mut import, mut export) = (false, false, false);
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .button("+ Case")
-                .on_hover_text("A new load case without loads")
-                .clicked()
-            {
-                add = true;
-            }
-            if ui
-                .button("Import recipes…")
-                .on_hover_text(
-                    "Load cases from a structure load-case file (.ohlslc) or CSV: a case with \
-                     the name of one here replaces it, the others are added",
-                )
-                .clicked()
-            {
-                import = true;
-            }
-            if ui
-                .button("Export recipes…")
-                .on_hover_text("The load cases as a structure load-case file (.ohlslc) or CSV")
-                .clicked()
-            {
-                export = true;
-            }
-        });
-        if add {
-            self.add_case();
-            return;
-        }
-        if import {
-            self.import_recipes_dialog();
-            return;
-        }
-        if export {
-            self.export_recipes_dialog();
-        }
-        let Some(f) = &mut self.file else {
-            return;
-        };
-        if let Err(e) = self.loads.recipes() {
-            error_label(ui, format!("the load cases do not read: {e}"));
-        }
-        // As the buttons above left them.
-        let cases = edit::load_cases(f.doc());
-        if cases.is_empty() {
-            let line = self.loads.line_cases();
-            ui.label(
-                "This structure has no load cases of its own (recipes) yet. The line's forces \
-                 are in the load table without any; a recipe makes a case of its own: a value \
-                 the line gives (or one of its own), a factor, a one-sided share, the points \
-                 or members it acts on. + Case adds one, Import recipes… takes them from \
-                 another structure.",
-            );
-            if ui
-                .add_enabled(
-                    !line.is_empty(),
-                    egui::Button::new("Take the line's load cases as they are"),
-                )
-                .on_hover_text(
-                    "One recipe per load case of the line: its factored transverse, \
-                     longitudinal and vertical loads at every point (one undo step)",
-                )
-                .on_disabled_hover_text("The line gives no load case (see above)")
-                .clicked()
-            {
-                self.take_line_cases();
-            }
-            return;
-        }
-        let k = self.loads.recipe.min(cases.len() - 1);
-        self.loads.recipe = k;
-        let case = &cases[k];
-        let mut pick = k;
-        ui.horizontal_wrapped(|ui| {
-            ui.label("Recipe:");
-            egui::ComboBox::from_id_salt("recipe")
-                .selected_text(case.get("name"))
-                .show_ui(ui, |ui| {
-                    for (i, c) in cases.iter().enumerate() {
-                        ui.selectable_value(&mut pick, i, c.get("name"));
-                    }
-                });
-            if ui
-                .button("+ Load")
-                .on_hover_text(
-                    "A new load in this case, to change: with the line's values, the line's \
-                     vertical load at every point; opened on its own, 1 kN down at every point",
-                )
-                .clicked()
-            {
-                let name = case.get("name").to_owned();
-                let from_line = self.line_values.is_some();
-                match f.edit(&format!("add a load to {name}"), |doc, _| {
-                    edit::add_load(doc, k, from_line)
-                }) {
-                    Ok(n) => self.message = Some((format!("{name}: load {} added", n + 1), false)),
-                    Err(e) => self.message = Some((e, true)),
-                }
-            }
-            if ui
-                .button("🗑 Case")
-                .on_hover_text("Delete this load case with its loads (Undo takes it back)")
-                .clicked()
-            {
-                let name = case.get("name").to_owned();
-                f.edit(&format!("delete load case {name}"), |doc, _| {
-                    edit::remove_load_case(doc, k);
-                });
-                self.loads.recipe = k.saturating_sub(1);
-                self.message = Some((format!("deleted load case \"{name}\""), false));
-            }
-        });
-        if pick != k {
-            self.loads.recipe = pick;
-            self.loads.shown = Some(cases[pick].get("name").to_owned());
-        }
-        let buffers = &mut self.loads.buffers;
-        let mut written: Option<(String, Result<(), String>)> = None;
-        egui::Grid::new("case-fields")
-            .num_columns(4)
-            .show(ui, |ui| {
-                for (n, field) in edit::CASE_FIELDS.iter().enumerate() {
-                    let tip = match *field {
-                        "name" => "Unique; model is the name of the [[load]] tables' case",
-                        "description" => "What it stands for",
-                        "line_case" => "The line's load case whose values the loads take",
-                        "strength" => "Strength factor of the checks (default 1)",
-                        _ => "Factor on the structure's own weight (default 1; 0: none)",
-                    };
-                    ui.label(readable(field))
-                        .on_hover_text(format!("{tip} (in the file: {field})"));
-                    let (w, hint) = match *field {
-                        "description" => (360.0, ""),
-                        "strength" | "self_weight" => (140.0, "1"),
-                        _ => (140.0, ""),
-                    };
-                    if let Some(typed) = cell(
-                        ui,
-                        buffers,
-                        format!("case/{k}/{field}"),
-                        case.get(field),
-                        w,
-                        hint,
-                    ) {
-                        let r = f.edit(&format!("{} of {}", field, case.get("name")), |doc, _| {
-                            edit::set_load_case_field(doc, k, field, &typed)
-                        });
-                        if *field == "name" && r.is_ok() {
-                            self.loads.shown = Some(typed.trim().to_owned());
-                        }
-                        written = Some((field.to_string(), r));
-                    }
-                    if n % 2 == 1 {
-                        ui.end_row();
-                    }
-                }
-            });
-        ui.separator();
-        let mut drop: Option<usize> = None;
-        let quantities: Vec<&str> = std::iter::once("—")
-            .chain(LineQuantity::ALL.iter().map(|q| q.as_str()))
-            .collect();
-        egui::ScrollArea::both()
-            .id_salt("loads")
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                egui::Grid::new("loads").striped(true).show(ui, |ui| {
-                    ui.strong("#");
-                    for (h, tip) in LOAD_TIPS {
-                        ui.strong(readable(h))
-                            .on_hover_text(format!("{tip} (in the file: {h})"));
-                    }
-                    ui.end_row();
-                    for l in 0..case.loads.len() {
-                        ui.label(format!("{}", l + 1));
-                        for field in edit::LOAD_FIELDS {
-                            let current = case.load(l, field);
-                            let typed = match field {
-                                "what" => choice(ui, (k, l, field), current, &quantities),
-                                "side" => {
-                                    choice(ui, (k, l, field), current, &["—", "ahead", "back"])
-                                }
-                                "direction" => choice(
-                                    ui,
-                                    (k, l, field),
-                                    current,
-                                    &["—", "x", "-x", "y", "-y", "z", "-z"],
-                                ),
-                                "note" => cell(
-                                    ui,
-                                    buffers,
-                                    format!("load/{k}/{l}/{field}"),
-                                    current,
-                                    160.0,
-                                    "",
-                                ),
-                                "factor" => cell(
-                                    ui,
-                                    buffers,
-                                    format!("load/{k}/{l}/{field}"),
-                                    current,
-                                    50.0,
-                                    "1",
-                                ),
-                                _ => cell(
-                                    ui,
-                                    buffers,
-                                    format!("load/{k}/{l}/{field}"),
-                                    current,
-                                    70.0,
-                                    "",
-                                ),
-                            };
-                            if let Some(typed) = typed {
-                                let r = f.edit(
-                                    &format!("{} of load {} of {}", field, l + 1, case.get("name")),
-                                    |doc, _| edit::set_load_field(doc, k, l, field, &typed),
-                                );
-                                written = Some((field.to_owned(), r));
-                            }
-                        }
-                        if ui
-                            .small_button("🗑")
-                            .on_hover_text(format!("Delete load {}", l + 1))
-                            .clicked()
-                        {
-                            drop = Some(l);
-                        }
-                        ui.end_row();
-                    }
-                });
-                if case.loads.is_empty() {
-                    ui.label("No load yet: + Load adds one.");
-                }
-            });
-        if let Some(l) = drop {
-            f.edit(
-                &format!("delete load {} of {}", l + 1, case.get("name")),
-                |doc, _| {
-                    edit::remove_load(doc, k, l);
-                },
-            );
-        }
-        match written {
-            Some((field, Err(e))) => self.message = Some((format!("{field}: {e}"), true)),
-            Some((_, Ok(()))) => self.message = None,
-            None => {}
-        }
+        self.load_cases_window(ui);
     }
 
     fn table_sheet(&mut self, ui: &mut egui::Ui) {
@@ -963,13 +712,21 @@ impl StructureApp {
                                  the line's forces as it computed them; recipe: a case of the \
                                  structure file",
                             ),
-                            ("load", "The recipe's load (none: a row of its own)"),
+                            (
+                                "load",
+                                "The recipe's load: an older load (load 2), or an item of a part \
+                                 (line 1, wind 1, ice 1, point 1); none: a row of its own",
+                            ),
                             ("at", "point, member (a surface load, its total) or joint"),
                             ("label", ""),
                             ("transverse", "kN, to the right of the line"),
                             ("longitudinal", "kN, ahead"),
                             ("vertical", "kN, down"),
-                            ("source", "line, recipe or typed"),
+                            (
+                                "source",
+                                "The part a row comes from: line, wind, ice, point, recipe (an \
+                                 older load's own value) or typed",
+                            ),
                             (
                                 "area",
                                 "A surface load: the member's area it acts on (the cross-section \
@@ -996,7 +753,12 @@ impl StructureApp {
                             } else {
                                 "typed"
                             });
-                            ui.label(r.load.map_or(String::new(), |l| l.to_string()));
+                            match r.load {
+                                Some(l) => ui
+                                    .label(ohl_structure_loads::Part::row_name(l))
+                                    .on_hover_text(format!("load {l} in the table's CSV")),
+                                None => ui.label(""),
+                            };
                             ui.label(r.at.as_str());
                             ui.label(&r.label);
                             let mut kn = r.force.map(|x| x / 1000.0);
@@ -1068,6 +830,102 @@ impl StructureApp {
     }
 }
 
+/// The older loads of case `k` (`case`: as written) as a grid of their
+/// fields, each change one edit of `f`; a load deleted likewise. What was
+/// written last (its field and whether it read) in `written`.
+pub(crate) fn older_loads_table(
+    ui: &mut egui::Ui,
+    f: &mut StructureFile,
+    buffers: &mut HashMap<String, (String, String)>,
+    k: usize,
+    case: &edit::CaseText,
+    written: &mut Option<(String, Result<(), String>)>,
+) {
+    let mut drop: Option<usize> = None;
+    let quantities: Vec<&str> = std::iter::once("—")
+        .chain(LineQuantity::ALL.iter().map(|q| q.as_str()))
+        .collect();
+    egui::ScrollArea::both()
+        .id_salt("loads")
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            egui::Grid::new("loads").striped(true).show(ui, |ui| {
+                ui.strong("#");
+                for (h, tip) in LOAD_TIPS {
+                    ui.strong(readable(h))
+                        .on_hover_text(format!("{tip} (in the file: {h})"));
+                }
+                ui.end_row();
+                for l in 0..case.loads.len() {
+                    ui.label(format!("{}", l + 1));
+                    for field in edit::LOAD_FIELDS {
+                        let current = case.load(l, field);
+                        let typed = match field {
+                            "what" => choice(ui, (k, l, field), current, &quantities),
+                            "side" => choice(ui, (k, l, field), current, &["—", "ahead", "back"]),
+                            "direction" => choice(
+                                ui,
+                                (k, l, field),
+                                current,
+                                &["—", "x", "-x", "y", "-y", "z", "-z"],
+                            ),
+                            "note" => cell(
+                                ui,
+                                buffers,
+                                format!("load/{k}/{l}/{field}"),
+                                current,
+                                160.0,
+                                "",
+                            ),
+                            "factor" => cell(
+                                ui,
+                                buffers,
+                                format!("load/{k}/{l}/{field}"),
+                                current,
+                                50.0,
+                                "1",
+                            ),
+                            _ => cell(
+                                ui,
+                                buffers,
+                                format!("load/{k}/{l}/{field}"),
+                                current,
+                                70.0,
+                                "",
+                            ),
+                        };
+                        if let Some(typed) = typed {
+                            let r = f.edit(
+                                &format!("{} of load {} of {}", field, l + 1, case.get("name")),
+                                |doc, _| edit::set_load_field(doc, k, l, field, &typed),
+                            );
+                            *written = Some((field.to_owned(), r));
+                        }
+                    }
+                    if ui
+                        .small_button("🗑")
+                        .on_hover_text(format!("Delete load {}", l + 1))
+                        .clicked()
+                    {
+                        drop = Some(l);
+                    }
+                    ui.end_row();
+                }
+            });
+            if case.loads.is_empty() {
+                ui.label("No load yet: + Load adds one.");
+            }
+        });
+    if let Some(l) = drop {
+        f.edit(
+            &format!("delete load {} of {}", l + 1, case.get("name")),
+            |doc, _| {
+                edit::remove_load(doc, k, l);
+            },
+        );
+    }
+}
+
 /// Takes the recipes of a `.ohlslc` (or CSV) file into the structure: one
 /// undo step. How many cases were added and replaced.
 pub fn import_recipes(f: &mut StructureFile, path: &Path) -> Result<(usize, usize), String> {
@@ -1097,7 +955,7 @@ pub fn export_recipes(f: &StructureFile, path: &Path) -> Result<(), String> {
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
     {
-        StructureLoadCases::cases_to_csv(&cases)
+        StructureLoadCases::cases_to_csv(&cases)?
     } else {
         StructureLoadCases::new(&format!("{} load cases", t.name), cases).to_toml()
     };
@@ -1475,45 +1333,65 @@ impl StructureApp {
         self.message = Some((format!("added load case \"{name}\""), false));
     }
 
-    /// Load cases › Take the line's load cases as they are: one recipe
-    /// per line case, its factored loads at every point and, on a
-    /// structure with members, the line case's wind on the body on every
-    /// member when the line gives one (one edit).
+    /// Load cases › Take the line's load cases as they are: one load case
+    /// per line result (a case of that name there already is left as it
+    /// is), its line forces at every point, every factor 1, and, on a
+    /// structure with members, the wind on the body at the pressure of
+    /// the result's weather case from its side, factor 1, when it has
+    /// wind (one edit).
     pub fn take_line_cases(&mut self) {
-        let cases: Vec<String> = self.loads.line_cases().into_iter().map(|c| c.1).collect();
-        let windy: Vec<String> = cases
-            .iter()
-            .filter(|c| {
-                self.loads
-                    .line
-                    .structure_wind(c)
-                    .is_some_and(|w| w.pressure * w.factor != 0.0)
-            })
-            .cloned()
-            .collect();
+        let results: Vec<String> = self.loads.line_cases().into_iter().map(|c| c.1).collect();
         let Some(f) = &mut self.file else {
             return;
         };
-        if cases.is_empty() {
-            self.message = Some(("the line gives no load case".into(), true));
+        if results.is_empty() {
+            self.message = Some(("the line gives no line result".into(), true));
             return;
         }
-        let members = !f.structure().members.is_empty();
-        let written = f.edit("take the line's load cases", |doc, _| {
-            let written = edit::take_line_load_cases(doc, &cases);
-            if members {
-                let new: Vec<String> = written
-                    .iter()
-                    .filter(|w| windy.contains(w))
-                    .cloned()
-                    .collect();
-                edit::add_body_wind_load(doc, &new);
+        let members = !f.structure().members.is_empty() || f.structure().model.is_some();
+        let taken: Vec<String> = edit::load_cases(f.doc())
+            .iter()
+            .map(|c| c.get("name").to_owned())
+            .collect();
+        let mut cases = Vec::new();
+        for r in results.iter().filter(|r| !taken.contains(r)) {
+            let mut c = LoadCaseRecipe::new(r);
+            c.description = format!("the line result {r} as it is, every factor 1");
+            c.line.push(ohl_structure_loads::LineForces::new(r));
+            if let Some(w) = self.loads.line.structure_wind(r)
+                && members
+                && w.pressure > 0.0
+            {
+                c.structure = Some(ohl_structure_loads::OwnLoads {
+                    wind: vec![ohl_structure_loads::BodyWindLoad {
+                        // Blowing to the right: from the left.
+                        from: if w.towards == ohl_structure_loads::Direction::Right {
+                            ohl_structure_loads::WindFrom::Left
+                        } else {
+                            ohl_structure_loads::WindFrom::Right
+                        },
+                        pressure: None,
+                        pressure_of: Some(r.clone()),
+                        factor: 1.0,
+                    }],
+                    ..Default::default()
+                });
             }
-            written
-        });
+            cases.push(c);
+        }
+        let written: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+        if !cases.is_empty() {
+            let text = StructureLoadCases::new("", cases).to_toml();
+            if let Err(e) = f.edit("take the line's load cases", |doc, _| {
+                edit::merge_load_cases(doc, &text)
+            }) {
+                self.message = Some((e, true));
+                return;
+            }
+        }
         self.message = Some(if written.is_empty() {
             (
-                "every line case has a recipe of its name already".into(),
+                "every line result has a load case of its name already".into(),
                 true,
             )
         } else {

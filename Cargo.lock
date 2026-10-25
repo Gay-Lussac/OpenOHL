@@ -3918,6 +3918,7 @@ name = "ohl-structure-tests"
 version = "0.0.1"
 dependencies = [
  "ohl-cables",
+ "ohl-core",
  "ohl-line",
  "ohl-loads",
  "ohl-sections",

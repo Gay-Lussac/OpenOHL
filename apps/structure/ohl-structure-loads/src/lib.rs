@@ -6,14 +6,49 @@
 //! application; specification: `docs/development/structure-building.md`
 //! §2).
 //!
-//! A structure's **load case** ([`LoadCaseRecipe`]) is a list of loads
+//! A structure's **load case** ([`LoadCaseRecipe`]; owner, 2026-10-25,
+//! spec `docs/development/structure-load-cases-spec.md`) has two parts:
+//! **line forces** ([`LineForces`]: a line result the line sent — a
+//! weather case, unfactored, a wind case twice, the wind from the left
+//! and from the right — with a factor per axis, at every point or some
+//! sets, points turned off) and **loads on the structure itself**
+//! ([`OwnLoads`]: its self weight, the wind on its body as the line's own
+//! member wind, ice or a weight per metre on members, point loads); its
+//! strength factor and a description. Kept in the structure file as
+//! `[[load_case]]`, or on their own in a structure load-case file
+//! (`.ohlslc`, version 3) for export and import:
+//!
+//! ```toml
+//! format = "ohl-structure-load-cases"
+//! version = 3
+//!
+//! [[load_case]]
+//! name = "ULS wind left"
+//! strength = 1.0
+//!
+//! [[load_case.line]]
+//! result = "storm — wind from the left"
+//! vertical = 1.35
+//! transverse = 1.5
+//! longitudinal = 1.0
+//! off = ["A3"]
+//!
+//! [load_case.structure]
+//! self_weight = 1.35
+//!
+//! [[load_case.structure.wind]]
+//! from = "left"
+//! pressure_of = "storm — wind from the left"
+//! factor = 1.5
+//! ```
+//!
+//! **The older form** (read and evaluated as before): a list of loads
 //! ([`LoadRecipe`]), each saying **what** (a value the line gives at the
 //! placed structure, [`LineQuantity`], or a value of its own), **how** (a
 //! factor, a one-sided share, a direction in the structure's axes) and
 //! **where** (points by label, set, phase or side, or members with a
-//! pressure on their area). Kept in the structure file as
-//! `[[load_case]]`, or on their own in a structure load-case file
-//! (`.ohlslc`) for export and import:
+//! pressure on their area); [`convert_older`] turns what is exact into the
+//! parts:
 //!
 //! ```toml
 //! format = "ohl-structure-load-cases"
@@ -73,10 +108,15 @@
 //! ([`overrides_path`]).
 
 mod csv;
+mod parts;
 mod placed;
 mod recipe;
 mod table;
 
+pub use parts::{
+    BodyWindLoad, Converted, IceLoad, LineForces, OwnLoads, PART_BLOCK, Part, PointLoad, WindFrom,
+    convert_older, describe, ice_text, line_forces_text, mirror_wind, point_text, wind_text,
+};
 pub use placed::{
     CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, MissingWire,
     OtherPlace, PlacedValues, file_part, incomplete_text, line_values_path, overrides_path,
@@ -87,10 +127,12 @@ pub use recipe::{
     STRUCTURE_LOAD_CASE_FILE_VERSION, Side, StructureLoadCases, written_version,
 };
 pub use table::{
-    At, CaseWind, LinePoint, LineValue, LineValues, LoadRow, LoadTable, MemberAreas, NoAreas,
-    Override, Source, Target, evaluate, evaluate_with_areas, line_pressure, model_rows,
-    resolve_line_pressures, targets,
+    At, BodyWind, CaseWind, LinePoint, LineValue, LineValues, LoadRow, LoadTable, MemberAreas,
+    NoAreas, Override, Source, Target, evaluate, evaluate_with_areas, line_pressure, model_rows,
+    needs_members, resolve_line_pressures, targets,
 };
 
+#[cfg(test)]
+mod parts_tests;
 #[cfg(test)]
 mod tests;
