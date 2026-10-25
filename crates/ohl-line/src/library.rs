@@ -396,6 +396,7 @@ impl Line {
                 max_swing_deg: x.limits.max_swing_deg,
                 max_swing_across_deg: x.limits.max_swing_across_deg,
                 max_swing_along_deg: x.limits.max_swing_along_deg,
+                shapes: x.shapes,
                 ..Default::default()
             }));
             // Sets replaced by the structure's own wire points, or left out.
@@ -972,6 +973,47 @@ mod tests {
             .unwrap();
         assert_eq!(resolved.structures[1].string("S1").unwrap().wind_area, 0.35);
         assert!(StructureType::parse(Path::new("w.ohls"), &text.replace("0.35", "-1")).is_err());
+    }
+
+    /// A type's string's own volumes (`[[string.shape]]`, values with
+    /// units) reach the line's string of every structure of the type; a
+    /// shape that does not read is refused with the type.
+    #[test]
+    fn a_type_strings_shapes_reach_the_line() {
+        let text = "id = \"V\"\nname = \"v\"\nkind = \"lattice\"\n\
+            [[point]]\nlabel = \"A1\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+            [[wire]]\nlabel = \"W1\"\nset = 1\n\
+            [[string]]\nlabel = \"S1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"4 m\"\n\
+            [[string.shape]]\nname = \"horn\"\nkind = \"sphere\"\nstate = \"electrified\"\n\
+            at_fraction = 1.0\ndiameter = \"0.3 m\"\n";
+        let mut structures = StructureLibrary::default();
+        structures
+            .insert(
+                Path::new("v.ohls"),
+                StructureType::parse(Path::new("v.ohls"), text).unwrap(),
+            )
+            .unwrap();
+        let mut line = crate::tests::example();
+        line.structures[1].strings.clear();
+        line.structures[1].points.clear();
+        line.structures[1].wires.clear();
+        line.structures[1].structure_type = Some("V".into());
+        line.sections.retain(|s| {
+            s.points
+                .iter()
+                .all(|p| p.structure != line.structures[1].id)
+        });
+        line.jumpers.clear();
+        let resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        let shapes = &resolved.structures[1].string("S1").unwrap().shapes;
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].name, "horn");
+        assert!((shapes[0].diameter - 0.3).abs() < 1e-12);
+        assert!(
+            StructureType::parse(Path::new("v.ohls"), &text.replace("sphere", "torus")).is_err()
+        );
     }
 
     /// A string's limits (not checked): a type's string's own and those

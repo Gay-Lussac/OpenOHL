@@ -190,7 +190,8 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// (2026-10-25): line forces (`[[load_case.line]]`) and loads on the
 /// structure itself (`[load_case.structure]`) — raw tables here, read by
 /// the structure application; a file is written at 7 only when a case
-/// uses them. Version 6 adds the body generators'
+/// uses them; and a string's own volumes (`[[string.shape]]`,
+/// [`TypeString::shapes`]). Version 6 adds the body generators'
 /// options in `[[generator]]` (a panel's `width`, `redundants`, `plan`; a
 /// body's `plan_auto`; a crossarm's `one_arm` — tables the core keeps
 /// unread, read by the structure application), the load quantities
@@ -674,6 +675,12 @@ pub struct TypeString {
     /// insulator's; not checked).
     #[serde(default)]
     pub max_swing_along: Option<ohl_core::units::Angle>,
+    /// Version 7 (2026-10-25): its own volumes (`[[string.shape]]`), each
+    /// replacing its assembly's shape of the same name or added — as a
+    /// line's string's own ([`crate::StringVolumes::with_overrides`]);
+    /// every structure of the type takes them.
+    #[serde(default, rename = "shape")]
+    pub shapes: Vec<crate::StringShape>,
 }
 
 impl TypeString {
@@ -1448,6 +1455,8 @@ pub struct PlacedString {
     /// assembly's ([`crate::InsulatorAssembly::limits`]), which a line
     /// takes where the string gives none (`ohl_line::Line::resolve`).
     pub limits: crate::InsulatorLimits,
+    /// Its own volumes over its assembly's ([`TypeString::shapes`]).
+    pub shapes: Vec<crate::StringShape>,
 }
 
 /// The points, strings and wire points of a placed structure (version 2
@@ -1895,6 +1904,7 @@ impl StructureType {
                         wind_area: s.wind_area.map_or(0.0, |w| w.si()),
                         strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),
                         limits: s.limits(),
+                        shapes: s.shapes.clone(),
                     })
                 })
                 .collect::<Result<_, String>>()?,
