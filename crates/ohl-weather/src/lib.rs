@@ -605,10 +605,11 @@ impl WeatherCases {
             if g.name.trim().is_empty() {
                 return Err("a weather case group needs a name".into());
             }
-            // (Listed with commas in the Structures table.)
-            if g.name.contains(',') {
+            // (Listed with semicolons in the Structures and Sections
+            // tables.)
+            if g.name.contains(';') {
                 return Err(format!(
-                    "weather case group \"{}\": no comma in a group's name",
+                    "weather case group \"{}\": no semicolon in a group's name",
                     g.name
                 ));
             }
@@ -1165,7 +1166,7 @@ mod structure_case_tests {
         assert!(s.takes("T2", "500 Pa"));
         assert!(!s.takes("T3", "300 Pa"));
         assert!(!s.is_empty());
-        let named = "format = \"ohl-weather-cases\"\nversion = 1\n[[group]]\nname = \"a, b\"\n";
+        let named = "format = \"ohl-weather-cases\"\nversion = 1\n[[group]]\nname = \"a; b\"\n";
         assert!(WeatherCases::parse(named).is_err());
     }
 }

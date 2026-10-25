@@ -996,11 +996,11 @@ fn structures_and_sections_take_weather_groups() {
         kind,
         "T2",
         "weather groups",
-        "internal, other",
+        "internal; other",
     );
     let e = apply_table(&mut harness, kind, false).unwrap_err();
     assert!(e.contains("internal, snow"), "{e}");
-    set_cell(&mut harness, kind, "T2", "weather groups", "internal, snow");
+    set_cell(&mut harness, kind, "T2", "weather groups", "internal; snow");
     apply_table(&mut harness, kind, false).unwrap();
     let s1 = harness.state_mut().ready().unwrap().model.line.sections[0]
         .id
