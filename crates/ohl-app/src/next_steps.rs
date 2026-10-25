@@ -277,6 +277,9 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     );
     ui.add_space(4.0);
     let mut chosen = None;
+    // The titles a width of their own: in a grid a cell takes the least
+    // it can, and they broke every few letters (2026-10-25).
+    let title_width = (ui.available_width() * 0.45).clamp(110.0, 260.0);
     egui::Grid::new("next-steps")
         .num_columns(3)
         .spacing([8.0, 6.0])
@@ -296,6 +299,7 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     title = title.italics();
                 }
                 ui.vertical(|ui| {
+                    ui.set_width(title_width);
                     ui.label(title);
                     ui.label(egui::RichText::new(&s.detail).small().weak());
                 });
