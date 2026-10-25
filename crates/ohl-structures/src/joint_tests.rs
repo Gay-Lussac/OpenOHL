@@ -63,7 +63,7 @@ fn shipped_types_keep_their_points() {
             Detail::Stick,
         ),
         (
-            "examples/starter/structures/starter-strain.ohls",
+            "examples/starter/structures/starter-tension.ohls",
             Detail::Stick,
         ),
         ("examples/exports/every-profile.ohls", Detail::Design),

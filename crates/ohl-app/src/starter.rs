@@ -116,10 +116,10 @@ mod tests {
             "Starter suspension (delta, one circuit; invented)",
         ),
         (
-            "starter-strain",
+            "starter-tension",
             "delta-1c",
             Role::Strain,
-            "Starter strain (delta, one circuit; invented)",
+            "Starter tension (delta, one circuit; invented)",
         ),
     ];
 

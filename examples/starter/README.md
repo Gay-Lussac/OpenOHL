@@ -19,7 +19,7 @@ no geographic reference); units are SI.
 |---|---|---|
 | `cables/acsr-examples.ohlw` | the project's wire library | ACSR conductors with typical published values (a copy of `libraries/cables`) |
 | `structures/starter-suspension.ohls` | structure type (level 1) | built from the structure template `delta-1c`, suspension, its default (invented) dimensions |
-| `structures/starter-strain.ohls` | structure type (level 1) | the same template, strain |
+| `structures/starter-tension.ohls` | structure type (level 1) | the same template, a tension structure |
 | `insulators/*.ohli` | insulator library | example assemblies (a suspension string, two suspension strings to one clamp, a tension string), typical values (a copy of `libraries/insulators`) |
 | `weather/starter-weather-cases.ohlwc` | weather cases | everyday, maximum temperature, glaze ice, high wind, minimum temperature — invented |
 | `loadcases/starter-load-cases.ohllc` | load cases | three load cases with invented factors |

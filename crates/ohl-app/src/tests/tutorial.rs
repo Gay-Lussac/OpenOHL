@@ -45,7 +45,7 @@ const TENSION: [usize; 3] = [0, 3, 5];
 const SECTIONS: [&[&str]; 2] = [&["T1", "T2", "T3", "T4"], &["T4", "T5", "T6"]];
 
 /// The starter's structure types (chapter 3).
-const STRAIN: &str = "starter-strain";
+const TENSION_TYPE: &str = "starter-tension";
 const SUSPENSION: &str = "starter-suspension";
 
 /// Saves the window as `name`.png in `OHL_RENDER_PNG` (when set and a GPU
@@ -261,7 +261,7 @@ fn the_tutorial_builds_a_first_line() {
         assert!(f.on_alignment.is_some() && f.along_line);
         // The type: its button opens the structure picker (Choose); the
         // field set as Choose sets it.
-        f.structure_type = Some(STRAIN.into());
+        f.structure_type = Some(TENSION_TYPE.into());
     }
     h.run();
     h.get_by_label_contains("Also on other points of this alignment")
@@ -302,7 +302,7 @@ fn the_tutorial_builds_a_first_line() {
         for (k, id) in ids.iter().enumerate() {
             let s = line.structure(id).unwrap();
             let tension = TENSION.contains(&k);
-            let want = if tension { STRAIN } else { SUSPENSION };
+            let want = if tension { TENSION_TYPE } else { SUSPENSION };
             assert_eq!(s.structure_type.as_deref(), Some(want), "{id}");
             // Chapter 4: the strings come with the type — four at a
             // suspension structure (three phases, the earth wire), two at

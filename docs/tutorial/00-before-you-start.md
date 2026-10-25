@@ -20,7 +20,7 @@ typical values, clearly marked:
 - a **wire library** with an ACSR conductor (`acsr-drake-26-7`);
 - two **structure types** of detail level 1, built from the structure
   template `delta-1c`: `starter-suspension` (one string per phase, three
-  phases in a delta and an earth wire at the peak) and `starter-strain`
+  phases in a delta and an earth wire at the peak) and `starter-tension`
   (a tension structure: two tension strings at each place, one for the
   span behind, one for the span ahead);
 - insulator assemblies, five **weather cases** (everyday, max

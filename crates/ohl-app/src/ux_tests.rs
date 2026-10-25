@@ -31,6 +31,13 @@ pub fn shot(harness: &mut Harness<'_, App>, name: &str) {
     if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
         && let Ok(image) = harness.render()
     {
+        // The status bar shows the login name ("editing as …"): images
+        // for the docs are made as a neutral user, never the real one.
+        let user = crate::files::user();
+        assert_eq!(
+            user, "tester",
+            "screenshots are made with USER=tester (the status bar shows the user)"
+        );
         let path = PathBuf::from(dir).join(format!("{name}.png"));
         crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
     }

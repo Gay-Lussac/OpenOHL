@@ -12,16 +12,16 @@ structures at both ends and at the angle, suspension structures between.
    (P1 chosen in the list, the base on the ground), its
    orientation **along the line** ticked.
 3. **type**: click the type button. The **structure picker** lists the
-   two starter types with a drawing of each. Click `starter-strain` and
+   two starter types with a drawing of each. Click `starter-tension` and
    **Choose**.
 4. Open **Also on other points of this alignment** (folded, under the
    point). Click **All**: points P2 to P6 are ticked.
 5. In the **type** column choose `starter-suspension` for P2, P3 and
-   P5. Leave P4 and P6 at *(the type above)*: they take `starter-strain`
+   P5. Leave P4 and P6 at *(the type above)*: they take `starter-tension`
    too.
 6. Click **Apply** (or press **Enter**).
 
-![The Add structure window on P1: the type starter-strain, the other
+![The Add structure window on P1: the type starter-tension, the other
 points of the alignment ticked, starter-suspension at P2, P3 and
 P5](../images/tutorial/tutorial-add-structure.png)
 
