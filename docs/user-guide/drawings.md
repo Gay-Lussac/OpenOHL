@@ -542,7 +542,12 @@ Drawings…, on the paper chosen, in PDF, SVG, PNG or DXF:
   another arm — compared by level and place, not by height); the first
   and the last always. Between, "from A to B: arrangement unchanged"
   (the template's legend label `phase_unchanged`). Nothing typed twice:
-  taken from the line.
+  taken from the line.  A schematic: drawn in the weather case shown, whatever the cases the
+  sheets take.
+
+The route and situation plans draw the wires in the sheets' cases; those
+not solved yet are solved while the window is open, and an Export asked
+meanwhile starts once they are.
 
 The drawings come within 1 km of the line in full detail (5 cm), north
 up; the orthophotos are read at the template's background resolution.

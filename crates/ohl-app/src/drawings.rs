@@ -603,7 +603,7 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
         route: None,
         ..w.clone()
     };
-    let input = Input::prepare(model, case, &every, PathBuf::new())?;
+    let input = Input::prepare(model, case, &every, PathBuf::new(), true)?;
     let options = input.route_options();
     let export = input.common_export(&options)?;
     let mut routes = Vec::new();
@@ -828,15 +828,18 @@ impl Input {
         if w.formats.is_empty() {
             return Err("tick a format".into());
         }
-        Self::prepare(model, case, w, out)
+        Self::prepare(model, case, w, out, true)
     }
 
-    /// The export of `w` into `out`, the folder and formats not checked.
+    /// The export of `w` into `out`, the folder and formats not checked;
+    /// without `template_cases` every wire in the case shown (the phase
+    /// plan, a schematic: no case to wait for).
     fn prepare(
         model: &Model,
         case: usize,
         w: &DrawingsWindow,
         out: PathBuf,
+        template_cases: bool,
     ) -> Result<Self, String> {
         let break_clearance = ohl_drawing::check_break_clearance(w.break_clearance)?;
         if !(w.line_width.is_finite() && w.line_width > 0.0) {
@@ -876,7 +879,11 @@ impl Input {
         // The cases per circuit (the window's over the template's): the
         // first drawing's wires each in their circuit's case, and the
         // stringing band's tensions.
-        let picks = SheetCases::of(model, &template, &w.sheet.circuit_cases)?;
+        let picks = if template_cases {
+            SheetCases::of(model, &template, &w.sheet.circuit_cases)?
+        } else {
+            SheetCases::default()
+        };
         let solved_case = |k: usize| -> Result<&crate::model::Solved, String> {
             let c = model.cases.get(k).ok_or("no such weather case")?;
             if c.ready {
@@ -1460,7 +1467,8 @@ impl Input {
         out: PathBuf,
         req: &PlanRequest,
     ) -> Result<Self, String> {
-        let mut input = Self::prepare(model, case, w, out)?;
+        let phase = req.kind == PlanKind::Phase;
+        let mut input = Self::prepare(model, case, w, out, !phase)?;
         if req.kind != PlanKind::Phase {
             if req.drawings {
                 input.map_drawings = model
@@ -1577,7 +1585,7 @@ pub fn plugin_plan_sets(
 
 /// The template key of template `name` for a set of `plugin`: that
 /// plugin's, else another plugin's of that name, else the project's.
-fn set_template_key(w: &DrawingsWindow, plugin: &str, name: &str) -> String {
+pub fn set_template_key(w: &DrawingsWindow, plugin: &str, name: &str) -> String {
     let own = format!("plugin:{plugin}/{name}");
     if w.plugin_templates.iter().any(|(k, ..)| *k == own) {
         return own;
@@ -1876,7 +1884,7 @@ impl DrawingsWindow {
     /// orientation and (mixed) standard: under a second for most routes,
     /// seconds for a long one.
     fn compare_papers(&self, model: &Model, case: usize) -> Result<Vec<String>, String> {
-        let input = Input::prepare(model, case, self, PathBuf::new())?;
+        let input = Input::prepare(model, case, self, PathBuf::new(), true)?;
         let opt = match &input.export.optimise {
             Some(o) => o.clone(),
             None => self.optimise()?,
@@ -3015,7 +3023,7 @@ impl Drawings {
                 // Prepared here (the model's data, cheap), drawn and
                 // rendered in the background.
                 self.sheet_pending = None;
-                match Input::prepare(model, case, &key.0, PathBuf::new()) {
+                match Input::prepare(model, case, &key.0, PathBuf::new(), true) {
                     Err(e) => self.sheet_image = Some((key, Err(e))),
                     Ok(input) => {
                         let (tx, rx) = std::sync::mpsc::channel();

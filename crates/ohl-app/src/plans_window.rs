@@ -55,6 +55,9 @@ pub struct PlansWindow {
     pub sets: Vec<(String, String, Result<PlanSet, String>)>,
     /// The set chosen (index in `sets`).
     pub set: usize,
+    /// Export asked while its weather cases were being solved: started
+    /// once they are.
+    pub waiting: bool,
 }
 
 impl Default for PlansWindow {
@@ -75,6 +78,7 @@ impl Default for PlansWindow {
             set_mode: false,
             sets: Vec::new(),
             set: 0,
+            waiting: false,
         }
     }
 }
@@ -111,6 +115,40 @@ impl PlansWindow {
         }
     }
 
+    /// The weather cases the plans asked for draw in (their templates'
+    /// and the Drawings window's per circuit): solved while the window is
+    /// open, the export waiting for them. The phase plan, a schematic,
+    /// takes the case shown and needs none.
+    pub fn wanted(&self, model: &Model, drawings: &crate::drawings::DrawingsWindow) -> Vec<usize> {
+        use ohl_drawing::plan_set::SetKind;
+        let needed = |key: &str| {
+            crate::sheet_ui::resolve_kept(model, key, &drawings.plugin_templates)
+                .ok()
+                .and_then(|t| {
+                    crate::drawings::SheetCases::of(model, &t, &drawings.sheet.circuit_cases).ok()
+                })
+                .map(|p| p.needed())
+                .unwrap_or_default()
+        };
+        let mut v = Vec::new();
+        if self.set_mode {
+            if let Some((plugin, _, Ok(set))) = self.sets.get(self.set) {
+                for d in set.drawings.iter().filter(|d| d.kind != SetKind::Phase) {
+                    let key = d.template.as_ref().map_or_else(
+                        || drawings.sheet.template.clone(),
+                        |t| crate::drawings::set_template_key(drawings, plugin, t),
+                    );
+                    v.extend(needed(&key));
+                }
+            }
+        } else if self.kind != PlanKind::Phase {
+            v = needed(&drawings.sheet.template);
+        }
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     /// The window; `drawings` the Drawings window's settings (routes,
     /// template, title fields, cases) the plans are made with.
     pub fn ui(
@@ -126,6 +164,7 @@ impl PlansWindow {
             self.job = None;
         }
         if !self.open {
+            self.waiting = false;
             return;
         }
         let mut open = true;
@@ -292,6 +331,31 @@ impl PlansWindow {
                     .add_enabled(self.job.is_none(), egui::Button::new("Export"))
                     .clicked();
             });
+        // Its weather cases solved first ([`Self::wanted`]): the export
+        // starts once they are.
+        let unsolved: Vec<String> = self
+            .wanted(model, drawings)
+            .into_iter()
+            .filter_map(|k| model.cases.get(k))
+            .filter(|c| !c.ready)
+            .map(|c| format!("\"{}\"", c.case.name))
+            .collect();
+        if start && !unsolved.is_empty() {
+            self.waiting = true;
+        }
+        if self.waiting {
+            if unsolved.is_empty() {
+                self.waiting = false;
+                start = true;
+            } else {
+                start = false;
+                self.error = Some(format!(
+                    "solving weather case {} first: the export starts then",
+                    unsolved.join(", ")
+                ));
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            }
+        }
         if start {
             let out = self.out.clone().or_else(|| drawings.out.clone());
             match out {
@@ -384,6 +448,46 @@ mod tests {
             assert!(names.iter().any(|n| n.ends_with(what)), "{what}: {names:?}");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Owner, 2026-10-25: the plans asked for in a weather case not solved
+    /// yet wait for it (the window asks for it), but the phase plan, a
+    /// schematic, takes the case shown and never waits.
+    #[test]
+    fn the_phase_plan_never_waits_for_a_case() {
+        let mut model = crate::tests::synthetic();
+        assert!(model.cases.len() > 1);
+        let k = model.cases.len() - 1;
+        model.cases[k] = crate::model::Solved::pending(model.cases[k].case.clone());
+        let mut w = crate::drawings::DrawingsWindow {
+            formats: vec![ohl_drawing::export::Format::Pdf],
+            ..Default::default()
+        };
+        let mut keys: Vec<String> = model
+            .line
+            .sections
+            .iter()
+            .map(crate::drawings::circuit_key)
+            .collect();
+        keys.dedup();
+        for key in keys {
+            w.sheet.circuit_cases.insert(
+                key,
+                crate::sheet_ui::CircuitCases {
+                    drawn: Some(model.cases[k].case.name.clone()),
+                    stringing: None,
+                },
+            );
+        }
+        let dir = std::env::temp_dir();
+        let mut win = PlansWindow::default();
+        win.show(PlanKind::Situation);
+        assert_eq!(win.wanted(&model, &w), vec![k]);
+        let e = Input::for_plans(&model, 0, &w, dir.clone(), &win.request()).err();
+        assert!(e.is_some_and(|e| e.contains("being solved")));
+        win.show(PlanKind::Phase);
+        assert!(win.wanted(&model, &w).is_empty());
+        assert!(Input::for_plans(&model, 0, &w, dir, &win.request()).is_ok());
     }
 
     /// A plan set written in one go: the sheets and the phase plan of

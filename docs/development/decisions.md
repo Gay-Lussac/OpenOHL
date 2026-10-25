@@ -8,6 +8,19 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-25
+
+**The plans' weather cases (owner, 2026-10-25)**
+
+- The phase plan is a schematic: it is drawn in the case shown, never
+  the template's or the Drawings window's cases per circuit, so it never
+  waits for a case to be solved.
+- The route and situation plans and the sheets of a plan set keep their
+  cases; Export › Plans now asks for them to be solved while the window
+  is open (before, only the Drawings window did, and the export waited
+  for a case nothing solved), and an Export asked meanwhile starts once
+  they are.
+
 ## 2026-10-24
 
 **The ground rule of the sheets chosen (owner, 2026-10-24)**
