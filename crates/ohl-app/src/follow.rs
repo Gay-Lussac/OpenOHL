@@ -73,6 +73,30 @@ impl Subject {
         })
     }
 
+    /// The object `s` is part of, if it can be followed: a span point or a
+    /// spread its span, a wire point, string or point its structure.
+    pub fn of_part(model: &Model, s: &Selection) -> Option<Self> {
+        Self::of(s).or_else(|| match s {
+            Selection::SpanPoint { section, label } => {
+                let sec = model.line.sections.iter().find(|x| &x.id == section)?;
+                let p = sec.span_points.iter().find(|p| &p.label == label)?;
+                Some(Subject::Span {
+                    section: section.clone(),
+                    span: p.span,
+                })
+            }
+            Selection::Spread { section, index } => Some(Subject::Span {
+                section: section.clone(),
+                span: crate::app::spread_span(&model.line, section, *index)?,
+            }),
+            Selection::Attachment { structure, .. }
+            | Selection::String { structure, .. }
+            | Selection::Point { structure, .. } => Some(Subject::Structure(structure.clone())),
+            Selection::JumperPoint { jumper, .. } => Some(Subject::Jumper(jumper.clone())),
+            _ => None,
+        })
+    }
+
     /// As selected (the views highlight it).
     pub fn selection(&self) -> Selection {
         match self {
@@ -306,6 +330,8 @@ pub struct Follow {
     pub status: String,
     /// The live measurement found by N: kept until the cursor moves.
     pub pinned: bool,
+    /// Its panel's tab was closed: the tool is put away.
+    pub closed: bool,
     /// The point under the cursor last measured from.
     last_hover: Option<Use>,
 }
@@ -613,9 +639,14 @@ impl Follow {
         let mut classes = self.classes(model);
         let mut radius = self.radius();
         let mut clear = false;
-        egui::Window::new("Follow and snap")
-            .default_width(260.0)
-            .show(ctx, |ui| {
+        let window = egui::Window::new("Follow and snap").default_width(260.0);
+        let shown = crate::dockable::show(
+            ctx,
+            crate::dockable::Panel::Follow,
+            "Follow and snap",
+            window,
+            None,
+            |ui| {
                 ui.label(match &self.subject {
                     Some(s) => format!("Following {}", s.name()),
                     None => "Right-click the object to follow".into(),
@@ -665,7 +696,10 @@ impl Follow {
                     .small()
                     .weak(),
                 );
-            });
+            },
+        );
+        // Its tab closed: the tool is put away.
+        self.closed = shown == crate::dockable::Shown::Closed;
         if classes != self.classes(model) {
             self.classes = Some(classes);
         }

@@ -172,11 +172,27 @@ impl Ready {
     pub(super) fn use_tool_at(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
+        // The Edit tool on a kept measurement or note: its window.
+        let annotation = self.clicked_annotation.take();
+        if tool == Tool::Edit
+            && let Some(id) = annotation
+        {
+            self.measuring.edit(&id);
+            return;
+        }
         // Follow and snap: the first click picks the object; then a click
         // keeps the measurement found.
         if tool == Tool::Follow {
             let f = &mut self.measuring.follow;
-            match (&f.live, crate::follow::Subject::of(&u.target)) {
+            // On nothing that can be followed: the object selected (a
+            // left click first, then the tool's), if it can be.
+            let subject = crate::follow::Subject::of_part(&self.model, &u.target).or_else(|| {
+                f.subject
+                    .is_none()
+                    .then(|| crate::follow::Subject::of_part(&self.model, &self.selection))
+                    .flatten()
+            });
+            match (&f.live, subject) {
                 (Some(m), _) if f.subject.is_some() => {
                     let user = self.model.user_name();
                     let time = self
@@ -211,6 +227,7 @@ impl Ready {
                         what: pick.what,
                         text: String::new(),
                     });
+                    self.measuring.note_opened = true;
                 }
                 _ => self.hint(tool),
             }

@@ -438,6 +438,16 @@ impl TabViewer for Viewer<'_> {
         if hovered.is_some() {
             r.measure_hover = hovered;
         }
+        // The kept measurement or note under a tool click.
+        let hit = match tab {
+            Tab::View3d => r.view3d.annotation_hit.take(),
+            Tab::Plan => r.plan.annotation_hit.take(),
+            Tab::Profile => r.profile.annotation_hit.take(),
+            _ => None,
+        };
+        if used.is_some() {
+            r.clicked_annotation = hit;
+        }
         if let Some(target) = used {
             r.use_tool(target);
         }

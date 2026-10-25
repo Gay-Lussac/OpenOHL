@@ -81,6 +81,9 @@ pub struct View3d {
     pub hover_use: Option<selection::Use>,
     /// The measuring tools' lines and points.
     pub user_measure: crate::measure::Overlay,
+    /// The kept measurement or note under the last tool click (its
+    /// annotation's id); taken by the app.
+    pub annotation_hit: Option<String>,
     /// A measured line to draw on top, with its label (the distance
     /// between conductors' worst station: d and z).
     pub measure: Option<crate::phase_distance::Measure>,
@@ -1179,10 +1182,15 @@ impl View3d {
         // Not flying while a handle is dragged (Shift + Z holds a plane),
         // nor while Alt is held or an area drawn (Alt + Shift: a lasso).
         let area_keys = self.area.is_some() || ui.input(|i| i.modifiers.alt);
-        if !handle_drag
-            && !area_keys
-            && (self.captured || response.hovered() || response.has_focus())
-        {
+        // WASD only while the mouse is locked in first person (owner,
+        // 2026-10-25: never while typing in a field elsewhere); without the
+        // first-person scheme, over the view and no field being typed in.
+        let flying = if self.controls.capture {
+            self.captured
+        } else {
+            (response.hovered() || response.has_focus()) && !ui.ctx().egui_wants_keyboard_input()
+        };
+        if !handle_drag && !area_keys && flying {
             let (v, sprint, dt) = ui.input(|i| {
                 let (v, sprint) = self.controls.held(i);
                 (v, sprint, f64::from(i.stable_dt).min(0.1))
@@ -1251,6 +1259,13 @@ impl View3d {
                 on,
             }
         };
+        if let Some(at) = use_at {
+            let project = clipped_projector(camera, size, clip);
+            self.annotation_hit = self.user_measure.hit(
+                &|p| project(p).map(|(q, _)| egui::pos2(q[0] as f32, q[1] as f32)),
+                egui::pos2(at[0] as f32, at[1] as f32),
+            );
+        }
         let used = use_at.map(|at| {
             let u = use_point(at);
             log::info!(

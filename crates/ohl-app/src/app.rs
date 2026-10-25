@@ -339,6 +339,9 @@ pub struct Ready {
     /// The measuring tools: picks, the point under the cursor, the
     /// measurements made (Tools › Measure).
     pub measuring: crate::measure::Measuring,
+    /// The kept measurement or note under the last tool click (its
+    /// annotation's id): the Edit tool opens it.
+    pub clicked_annotation: Option<String>,
     /// What a view found under the cursor while a measuring tool is held
     /// (the last frame's), taken each frame.
     pub measure_hover: Option<crate::selection::Use>,
@@ -519,6 +522,7 @@ impl Ready {
             measuring: Default::default(),
             case_groups: Default::default(),
             measure_hover: None,
+            clicked_annotation: None,
             phase_distance: Default::default(),
             cases_before_check: None,
             unequal_wind: crate::phase_distance::PhaseDistanceWindow::new(

@@ -385,7 +385,8 @@ plan and the 3D view, in the profile the point on the axis at the cursor's
 height (one alignment shown). **Escape** gives a first pick up.
 
 Each measurement goes to the **Measurements** panel (Tools › Measurements
-panel; it opens with the first one): its value to 0.01 m (or °), the
+panel; it opens with the first one, and frees a locked mouse; **Dock as a
+panel** puts it in the window beside the pages, as Properties): its value to 0.01 m (or °), the
 details folded under it (every part, the picks with their coordinates, the
 weather case, how each end was taken). **Copy** and **Copy all** give the
 values in full as tab-separated text, **Save CSV…** a file; **Delete** and
@@ -402,7 +403,9 @@ coordinates. Deleting what it is attached to **deletes it too**, in the
 same change (one undo brings both back). The **Note** tool (Tools ›
 Measure) writes a note on an object or a point: its window, Enter keeps
 it. Kept measurements are drawn in orange in the plan, the profile and the
-3D view, notes with a short leader; both are listed under **Kept in the
+3D view, notes with a short leader; the **Edit** tool on one opens it (its
+label or text, **Save**, **Delete**; the mouse freed, the window in the
+middle of the screen, as the Note tool's); both are listed under **Kept in the
 project** in the panel (**Delete** there; a measurement not drawn in the
 case shown gives its last value). **Others' measurements** and **Others'
 notes** — ticks in the panel and in Tools › Display options, yours only —
@@ -410,7 +413,9 @@ hide those of the other users.
 
 **Follow and snap** (Tools › Measure; 2026-10-25) measures from an object
 to the LiDAR along it: right-click a **wire** (a span), a **jumper** or a
-**structure** — it is selected —, tick the **LiDAR classes** in its panel
+**structure** — it is selected; a right-click on nothing takes the object
+selected, also a span point's or a spread's span, a string's or a point's
+structure —, its panel (dockable), tick the **LiDAR classes** in its panel
 (by default those shown, but the line's own — conductors, shield wires,
 insulators, structures, by their roles in the class scheme — and noise),
 then move the cursor along the object: for the object's point under the
@@ -760,7 +765,7 @@ The file is checked as you type with the library's own reader; the error is show
 
 ## Controls
 
-The 3D view is navigated with the mouse and, while the pointer is over it, the keyboard — like Minecraft in creative mode:
+The 3D view is navigated with the mouse and the keyboard — like Minecraft in creative mode. The movement keys move the camera only while the mouse is locked in the first-person scheme (2026-10-25: never while typing in a field elsewhere); in the other scheme while the pointer is over the view and no field is being typed in:
 
 | Input | Action |
 |---|---|

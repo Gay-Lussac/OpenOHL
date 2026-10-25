@@ -901,10 +901,18 @@ pub struct Measuring {
     kept_key: Option<(u64, u64, usize, bool)>,
     /// A note being written (the Note tool clicked an object).
     pub note: Option<NoteDraft>,
+    /// A note's window just opened (the mouse is freed).
+    pub note_opened: bool,
+    /// A kept measurement or note being edited (the Edit tool clicked
+    /// it): as kept, its text as typed.
+    pub editing: Option<(ohl_session::annotations::Annotation, String)>,
     /// Commands to perform (keep, delete), taken by the app each frame.
     pub actions: Vec<(String, ohl_session::Command)>,
     /// The follow-and-snap tool ([`crate::follow`]).
     pub follow: crate::follow::Follow,
+    /// The panel was open in the last frame (opened since: the mouse is
+    /// freed).
+    pub was_open: bool,
 }
 
 /// An annotation kept in the project and what it gives now.
@@ -1032,11 +1040,11 @@ impl Measuring {
                         } else {
                             format!("{} {}", k.ann.text, m.label())
                         };
-                        kept.push((a, b, format!("{text}{by}")));
+                        kept.push((k.ann.id.clone(), a, b, format!("{text}{by}")));
                     }
                 }
                 (_, Some(at)) if k.mine || others.notes => {
-                    notes.push((at, format!("{}{by}", k.ann.text)));
+                    notes.push((k.ann.id.clone(), at, format!("{}{by}", k.ann.text)));
                 }
                 _ => {}
             }
@@ -1201,6 +1209,7 @@ impl Measuring {
         now: &dyn Fn() -> String,
     ) {
         self.note_window(ctx, user, now);
+        self.edit_window(ctx);
         if !self.open {
             return;
         }
@@ -1208,10 +1217,14 @@ impl Measuring {
         let mut delete = None;
         let mut keep = None;
         let mut unkeep = None;
-        egui::Window::new("Measurements")
-            .open(&mut open)
-            .default_width(380.0)
-            .show(ctx, |ui| {
+        let window = egui::Window::new("Measurements").default_width(380.0);
+        let shown = crate::dockable::show(
+            ctx,
+            crate::dockable::Panel::Measurements,
+            "Measurements",
+            window,
+            Some(&mut open),
+            |ui| {
                 ui.label(
                     egui::RichText::new(crate::controls::click_words(
                         "Hold a measuring tool (Tools › Measure) and right-click the points; \
@@ -1359,7 +1372,11 @@ impl Measuring {
                             });
                         }
                     });
-            });
+            },
+        );
+        if shown == crate::dockable::Shown::Closed {
+            open = false;
+        }
         if let Some(k) = delete {
             self.done.remove(k);
         }
@@ -1375,6 +1392,84 @@ impl Measuring {
         self.open = open;
     }
 
+    /// Opens kept annotation `id` for editing (the Edit tool clicked it).
+    pub fn edit(&mut self, id: &str) {
+        if let Some(k) = self.kept.iter().find(|k| k.ann.id == id) {
+            self.editing = Some((k.ann.clone(), k.ann.text.clone()));
+            self.note_opened = true;
+        }
+    }
+
+    /// The window of a kept measurement or note being edited: its text
+    /// (a note's, a measurement's label before its value), Save, Delete,
+    /// Cancel.
+    fn edit_window(&mut self, ctx: &egui::Context) {
+        let Some((ann, text)) = &mut self.editing else {
+            return;
+        };
+        let (mut save, mut delete, mut cancel) = (false, false, false);
+        let what = Kind::of_key(&ann.tool).map_or("Note", Kind::name);
+        let value = self
+            .kept
+            .iter()
+            .find(|k| k.ann.id == ann.id)
+            .and_then(|k| k.now.as_ref().ok())
+            .map(Measurement::label);
+        egui::Window::new(format!("{what} {}", ann.id))
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .show(ctx, |ui| {
+                if let Some(v) = &value {
+                    ui.label(egui::RichText::new(v).strong().size(16.0));
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "by {}{}",
+                        ann.author,
+                        if ann.time.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", {}", ann.time)
+                        }
+                    ))
+                    .small()
+                    .weak(),
+                );
+                ui.horizontal(|ui| {
+                    ui.label(if ann.tool.is_empty() { "Text" } else { "Label" });
+                    let r = ui.text_edit_singleline(text);
+                    save |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                });
+                cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
+                ui.horizontal(|ui| {
+                    save |= ui.button("Save").clicked();
+                    delete |= ui
+                        .button("Delete")
+                        .on_hover_text("Delete it from the project (undo brings it back)")
+                        .clicked();
+                    cancel |= ui.button("Cancel").clicked();
+                });
+            });
+        if save {
+            let (mut ann, text) = self.editing.take().expect("editing");
+            if !(ann.tool.is_empty() && text.trim().is_empty()) && ann.text != text.trim() {
+                ann.text = text.trim().to_owned();
+                self.actions
+                    .push((format!("changed annotation {}", ann.id), ann.put()));
+            }
+        } else if delete {
+            let (ann, _) = self.editing.take().expect("editing");
+            self.actions.push((
+                format!("deleted annotation {}", ann.id),
+                ohl_session::annotations::delete(&ann.id),
+            ));
+        } else if cancel {
+            self.editing = None;
+        }
+    }
+
     /// The window of a note being written: its text, Keep (Enter) or
     /// Cancel (Escape).
     fn note_window(&mut self, ctx: &egui::Context, user: &str, now: &dyn Fn() -> String) {
@@ -1382,9 +1477,12 @@ impl Measuring {
             return;
         };
         let (mut keep, mut cancel) = (false, false);
+        // In the middle of the screen, ready to type.
         egui::Window::new("Note")
             .collapsible(false)
             .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
                 ui.label(format!("On {}", n.what));
                 let r = ui.text_edit_singleline(&mut n.text);
@@ -1424,9 +1522,9 @@ pub struct Overlay {
     /// The point under the cursor and what it is.
     pub hover: Option<([f64; 3], String)>,
     /// The kept measurements' lines and labels.
-    pub kept: Vec<([f64; 3], [f64; 3], String)>,
+    pub kept: Vec<(String, [f64; 3], [f64; 3], String)>,
     /// The kept notes: their point and text.
-    pub notes: Vec<([f64; 3], String)>,
+    pub notes: Vec<(String, [f64; 3], String)>,
 }
 
 /// The kept measurements' and notes' colour.
@@ -1444,10 +1542,45 @@ impl Overlay {
             && self.notes.is_empty()
     }
 
+    /// The kept measurement or note drawn under `pos` (screen, within 8
+    /// pixels of its line or its point), by its annotation's id.
+    pub fn hit(
+        &self,
+        screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>,
+        pos: egui::Pos2,
+    ) -> Option<String> {
+        let mut best: Option<(f32, String)> = None;
+        let mut consider = |d: f32, id: &String| {
+            if d <= 8.0 && best.as_ref().is_none_or(|b| d < b.0) {
+                best = Some((d, id.clone()));
+            }
+        };
+        for (id, a, b, _) in &self.kept {
+            if let (Some(p), Some(q)) = (screen(*a), screen(*b)) {
+                let pq = q - p;
+                let l2 = pq.length_sq();
+                let u = if l2 > 0.0 {
+                    ((pos - p).dot(pq) / l2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                consider((p + pq * u).distance(pos), id);
+            }
+        }
+        for (id, at, _) in &self.notes {
+            if let Some(p) = screen(*at) {
+                // The point, or its text up the leader.
+                let text = p + egui::vec2(30.0, -20.0);
+                consider(p.distance(pos).min(text.distance(pos) - 12.0).max(0.0), id);
+            }
+        }
+        best.map(|b| b.1)
+    }
+
     /// Draws it with `painter`, points to the screen by `screen`.
     pub fn paint(&self, painter: &egui::Painter, screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>) {
         // The kept ones under what is being measured.
-        for (a, b, label) in &self.kept {
+        for (_, a, b, label) in &self.kept {
             let (Some(p), Some(q)) = (screen(*a), screen(*b)) else {
                 continue;
             };
@@ -1461,7 +1594,7 @@ impl Overlay {
             label_at(painter, mid + egui::vec2(8.0, -8.0), label, KEPT);
         }
         // A note: a short leader up to its text.
-        for (at, text) in &self.notes {
+        for (_, at, text) in &self.notes {
             let Some(p) = screen(*at) else {
                 continue;
             };
@@ -1865,6 +1998,39 @@ mod keep_tests {
             });
             assert_eq!((o.kept.len(), o.notes.len()), (1, 1));
         }
+        // The Edit tool on the kept measurement (the views give its id):
+        // its window; a label saved changes it in the project.
+        let id = {
+            let r = h.state_mut().ready().unwrap();
+            let id = r.measuring.kept[0].ann.id.clone();
+            r.clicked_annotation = Some(id.clone());
+            r.hotbar.hold(Tool::Edit);
+            r.use_tool(structure(&t2));
+            let (_, text) = r.measuring.editing.as_mut().expect("its window");
+            *text = "to the road".into();
+            id
+        };
+        h.run();
+        {
+            // Save: as Enter or the button does.
+            let r = h.state_mut().ready().unwrap();
+            let (mut ann, text) = r.measuring.editing.take().unwrap();
+            ann.text = text;
+            r.measuring.actions.push(("changed".into(), ann.put()));
+        }
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            let ann = r
+                .model
+                .session()
+                .unwrap()
+                .annotations()
+                .into_iter()
+                .find(|a| a.id == id)
+                .unwrap();
+            assert_eq!(ann.text, "to the road");
+        }
         // T1 deleted: its measurement goes with it, the note stays.
         {
             let r = h.state_mut().ready().unwrap();
@@ -2015,5 +2181,33 @@ mod wire_tests {
             },
         };
         assert!(st.click(&m, Kind::WireToWire, &case, free).is_err());
+    }
+}
+
+#[cfg(test)]
+mod hit_tests {
+    use super::*;
+
+    /// A kept measurement is hit within 8 pixels of its line, a note at
+    /// its point; elsewhere nothing.
+    #[test]
+    fn kept_ones_are_hit_on_screen() {
+        let o = Overlay {
+            kept: vec![(
+                "m1".into(),
+                [0.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+                "1 m".into(),
+            )],
+            notes: vec![("n1".into(), [50.0, 50.0, 0.0], "road".into())],
+            ..Overlay::default()
+        };
+        let screen = |p: [f64; 3]| Some(egui::pos2(p[0] as f32, p[1] as f32));
+        assert_eq!(o.hit(&screen, egui::pos2(40.0, 5.0)).as_deref(), Some("m1"));
+        assert_eq!(
+            o.hit(&screen, egui::pos2(51.0, 49.0)).as_deref(),
+            Some("n1")
+        );
+        assert_eq!(o.hit(&screen, egui::pos2(40.0, 30.0)), None);
     }
 }
