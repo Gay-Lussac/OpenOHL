@@ -417,6 +417,8 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
                 }],
             ),
         }];
+        // As the plugins gave them (the project's edits applied to them).
+        w.original = w.list.clone();
         w.asked = true;
         w.open = true;
         w.chosen = Some((0, 0));

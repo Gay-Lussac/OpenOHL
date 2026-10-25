@@ -428,6 +428,7 @@ fn a_preset_uses_the_projects_cases_of_the_same_weather() {
                 }],
             ),
         }];
+        w.original = w.list.clone();
         w.asked = true;
         r.vegetation.preset = Some((0, 0));
     }
@@ -497,6 +498,7 @@ fn the_vegetation_panel_takes_only_its_part_of_a_big_preset() {
             plugin: "code-big".into(),
             presets: Ok(vec![crate::preset_cases::tests::big_preset("")]),
         }];
+        w.original = w.list.clone();
         w.asked = true;
         r.vegetation.preset = Some((0, 0));
     }
