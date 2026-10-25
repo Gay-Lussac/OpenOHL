@@ -1177,3 +1177,29 @@ fn alignment_points_are_added_edited_and_deleted_with_the_tools() {
     let r = harness.state_mut().ready().unwrap();
     assert!(r.model.line.alignment_by_id(&route).is_some());
 }
+
+/// An editor window opened with the pointer near the bottom of the screen
+/// (a section's: a tall window) is moved back onto the screen once its
+/// size is known: its Apply can be clicked (2026-10-25; before, it hung
+/// below the edge).
+#[test]
+fn a_tall_editor_window_is_kept_on_the_screen() {
+    let model = synthetic_project("editor-on-screen");
+    let section = model.line.sections[0].id.clone();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    h.run();
+    h.hover_at(egui::pos2(500.0, 880.0));
+    h.run();
+    use_tool(
+        &mut h,
+        crate::tools::Tool::Edit,
+        Selection::Span { section, span: 0 },
+        None,
+    );
+    h.run();
+    let apply = h.get_by_label("Apply");
+    let r = apply.rect();
+    assert!(r.max.y <= 900.0, "Apply at {r:?}");
+}

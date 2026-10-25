@@ -354,6 +354,15 @@ fn the_tutorial_builds_a_first_line() {
                 };
                 assert!(f.new);
                 assert_eq!(f.cable, "acsr-drake-26-7");
+                // After the first: the window proposes the circuit and the
+                // phase — the same phase across a tension structure, the
+                // next one at a new wire point.
+                if (phase, k) != (1, 0) {
+                    assert_eq!(
+                        (f.circuit.as_str(), f.phase_label.clone()),
+                        ("C1", format!("L{phase}"))
+                    );
+                }
                 f.circuit = "C1".into();
                 f.phase_label = format!("L{phase}");
             }

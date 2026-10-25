@@ -125,17 +125,29 @@ impl SectionForm {
         template: Option<&str>,
     ) -> Self {
         let line = &model.line;
-        let like = template
-            .and_then(|t| line.sections.iter().find(|s| s.id == t))
-            .or_else(|| {
-                line.sections.iter().find(|s| {
-                    s.points.iter().any(|p| {
-                        points
-                            .first()
-                            .is_some_and(|q| p.structure == q.structure && p.set == q.set)
-                    })
+        // The structure point a section point's wire point hangs from (by
+        // its strings): the two sides of a tension structure share it.
+        let top = |p: &SectionPoint| -> Option<String> {
+            let st = line.structure(&p.structure)?;
+            let w = st.wire_at_set(p.set)?;
+            st.strings_to(&w.label).next().map(|x| x.top.clone())
+        };
+        let continued = line.sections.iter().find(|s| {
+            s.points.iter().any(|p| {
+                points.first().is_some_and(|q| {
+                    p.structure == q.structure
+                        && (p.set == q.set || top(p).is_some_and(|t| top(q) == Some(t)))
                 })
             })
+        });
+        // Like `template` (the section selected), else the one it
+        // continues (from the same wire point, or one on the same
+        // structure point: the other side of a tension structure), else
+        // the first; not continuing one, the circuit's next phase there
+        // (2026-10-25: the phase was copied, to be changed each time).
+        let like = template
+            .and_then(|t| line.sections.iter().find(|s| s.id == t))
+            .or(continued)
             .or_else(|| line.sections.first());
         let id = next_id(
             line.sections.iter().map(|s| s.id.as_str()),
@@ -174,6 +186,17 @@ impl SectionForm {
         // lengths belong to its own spans.
         if f.stringing.clipped() {
             f.stringing = f.unclipped(model, case);
+        }
+        match (continued, points.first()) {
+            // Its conductor path's circuit and phase.
+            (Some(c), _) => {
+                f.circuit = c.circuit_name.clone();
+                f.phase_label = c.phase_label.clone();
+            }
+            (None, Some(first)) => {
+                f.phase_label = next_phase(line, &f.circuit, &first.structure, &f.phase_label);
+            }
+            (None, None) => {}
         }
         f.new = true;
         f.id = id;
@@ -593,4 +616,82 @@ pub(super) fn section_ui(
     ui.button("Pick points again")
         .on_hover_text("With the String wire tool: right-click the strings in order, Enter")
         .clicked()
+}
+
+/// The phase a new section of circuit `circuit` starting at `structure`
+/// is given: the first of the circuit's phase labels (in the order its
+/// sections give them) not yet strung at that structure; all strung, the
+/// label after the last one used there when it ends in a number (`L2` →
+/// `L3`); else `like` (the template's).
+fn next_phase(line: &ohl_line::Line, circuit: &str, structure: &str, like: &str) -> String {
+    if circuit.is_empty() {
+        return like.to_owned();
+    }
+    let of_circuit = || line.sections.iter().filter(|s| s.circuit_name == circuit);
+    let mut labels: Vec<&str> = Vec::new();
+    for s in of_circuit() {
+        if !s.phase_label.is_empty() && !labels.contains(&s.phase_label.as_str()) {
+            labels.push(&s.phase_label);
+        }
+    }
+    let here: Vec<&str> = of_circuit()
+        .filter(|s| s.points.iter().any(|p| p.structure == structure))
+        .map(|s| s.phase_label.as_str())
+        .collect();
+    if let Some(free) = labels.iter().find(|l| !here.contains(l)) {
+        return (*free).to_owned();
+    }
+    // Every known label strung there: the next number after the last.
+    let last = here.last().copied().unwrap_or(like);
+    let digits = last.len() - last.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0 {
+        let (stem, n) = last.split_at(last.len() - digits);
+        if let Ok(n) = n.parse::<u32>() {
+            return format!("{stem}{}", n + 1);
+        }
+    }
+    like.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A new section not continuing one: the circuit's first phase label
+    /// not strung at its first structure; every label strung there, the
+    /// next number; no circuit, the template's.
+    #[test]
+    fn a_new_section_takes_the_next_phase() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut line =
+            ohl_line::Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json"))
+                .unwrap();
+        let first = line.sections[0].clone();
+        let at = first.points[0].structure.clone();
+        let circuit = first.circuit_name.clone();
+        let here: Vec<String> = line
+            .sections
+            .iter()
+            .filter(|s| s.circuit_name == circuit && s.points.iter().any(|p| p.structure == at))
+            .map(|s| s.phase_label.clone())
+            .collect();
+        // Only one phase there: another of the circuit's labels comes.
+        line.sections.retain(|s| {
+            !(s.circuit_name == circuit && s.points.iter().any(|p| p.structure == at))
+                || s.id == first.id
+        });
+        let next = next_phase(&line, &circuit, &at, &first.phase_label);
+        assert_ne!(next, first.phase_label, "{here:?}");
+        // Every label of the circuit there: the number after the last.
+        let mut s2 = first.clone();
+        s2.id = "X2".into();
+        s2.phase_label = "L2".into();
+        let mut s3 = first.clone();
+        s3.id = "X3".into();
+        s3.phase_label = "L3".into();
+        line.sections.retain(|s| s.circuit_name != circuit);
+        line.sections.extend([first.clone(), s2, s3]);
+        assert_eq!(next_phase(&line, &circuit, &at, "L1"), "L4");
+        assert_eq!(next_phase(&line, "", &at, "L1"), "L1");
+    }
 }
