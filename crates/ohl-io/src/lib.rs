@@ -20,6 +20,7 @@ pub mod formats;
 pub mod geopackage;
 pub mod gis;
 pub mod ifc;
+pub mod import_into;
 pub mod landxml;
 pub mod neutral;
 pub mod ohlxml;

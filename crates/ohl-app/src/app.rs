@@ -421,6 +421,8 @@ pub struct Ready {
     pub rule_editor: crate::rule_editor::RuleEditor,
     /// Plugin manager › Presets…: a plugin's presets edited in the project.
     pub preset_editor: crate::preset_edits::PresetEditor,
+    /// File › Import › Another project into this one.
+    pub import_into: crate::import_into::ImportInto,
     /// Add jumper: the first string right-clicked.
     pub jumper_from: Option<ohl_line::SectionPoint>,
     /// Add jumper: the first end right-clicked when it is a tap (a clamp
@@ -572,6 +574,7 @@ impl Ready {
             design_code: Default::default(),
             rule_editor: Default::default(),
             preset_editor: Default::default(),
+            import_into: Default::default(),
             jumper_from: None,
             spacer_from: None,
             link_from: None,
@@ -2128,6 +2131,7 @@ impl eframe::App for App {
                 crate::codes::window(&ctx, ready, &self.plugins);
                 crate::rule_editor::presets_window(&ctx, ready, &self.plugins);
                 crate::preset_edits::window(&ctx, ready, &self.plugins);
+                crate::import_into::window(&ctx, ready, &mut self.plugins);
                 let go = [
                     ready.galloping.ui(&ctx, &ready.model),
                     ready.wirefit.ui(&ctx, &ready.model),

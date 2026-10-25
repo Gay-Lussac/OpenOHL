@@ -10,6 +10,31 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Another project imported into an existing one (owner, 2026-10-25)**
+
+- Owner: "import other lines or project in an existing project. It should
+  then ask if it's the same branch, the same route and offer a merge
+  conflict help if things appear twice." File › Import › **Another
+  project into this one…**, for any project plugin (the reader gives a
+  line and library files; nothing in the plugins changed).
+- The branch: the project line worked on, or a new project line made from
+  it (then Versions › Bring in changes). The routes: each imported route
+  is one of the project's or new; the same id is the same route by
+  default.
+- What appears twice: the same id with other values, or the same place —
+  alignment points and structures within 1 m in plan (adjustable),
+  sections over the same structures and sets, jumpers between the same
+  ends — and library files of the same name. Settled one by one: keep the
+  project's (default), take the imported one (under the project's id),
+  keep both (the imported one renamed `id (2)`).
+- The project line's own merge (Bring in changes) is not used for this:
+  an import has no common ancestor with the project, so it would find no
+  conflict and an imported object of the same id would silently replace
+  the project's.
+- Ids are changed in a scratch session with the project's own rename
+  commands (references follow as in a hand rename); written as library
+  files then one `ReplaceLine`. Coordinate systems must match.
+
 **Kept measurements and notes: labels by the label distance, faster (owner, 2026-10-25)**
 
 - 3D: a kept measurement's label and a note's text are written within
