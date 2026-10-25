@@ -125,6 +125,8 @@ pub fn end_loads<'a>(
         let Some(c) = cable(&j.cable) else {
             continue;
         };
+        // The local wind at its structures (roadmap O15).
+        let case = &case.with_wind_factor(line.jumper_wind_factor(j));
         let c = &cut_cable(c, j);
         let (Some(a), Some(b)) = (
             approximate_end(line, &j.from, 0),
@@ -1311,6 +1313,9 @@ pub fn solve_jumper_in(
     context: &TapContext,
 ) -> Result<JumperShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("jumper {}: {m}", jumper.id));
+    // The local wind at its structures (roadmap O15): the largest of the
+    // spans next to them (1 without).
+    let case = &case.with_wind_factor(line.jumper_wind_factor(jumper));
     // Its own weight per metre at its temperature.
     let cable = &cut_cable(cable, jumper);
     // Its ends are the solved clamps: a section through an end that did not

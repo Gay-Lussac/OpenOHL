@@ -235,6 +235,20 @@ impl WeatherCase {
         self.ice_thickness.si() > 0.0 || self.ice_load.is_some_and(|l| l.si() > 0.0)
     }
 
+    /// The case with its wind pressure times `factor` (a local wind given
+    /// per span, roadmap O15: e.g. 1.2 on a ridge, 0.7 in a valley); the
+    /// name, side, ice and temperature as they are. A factor of 1 or a
+    /// case without wind gives the case unchanged (bit for bit).
+    pub fn with_wind_factor(&self, factor: f64) -> Self {
+        if factor == 1.0 || self.wind_pressure.si() == 0.0 {
+            return self.clone();
+        }
+        Self {
+            wind_pressure: Stress::from_si(self.wind_pressure.si() * factor),
+            ..self.clone()
+        }
+    }
+
     /// The case without its ice (the same temperature and wind).
     pub fn without_ice(&self) -> Self {
         Self {

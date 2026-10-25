@@ -284,7 +284,8 @@ struct AtPoint {
 }
 
 /// Half the horizontal spans next to each wire end, summed over the
-/// sections through it, m, by (structure, set).
+/// sections through it, m, by (structure, set); each span times its local
+/// wind factor (roadmap O15: the wind it takes is the case's times it).
 fn wind_spans(line: &Line) -> BTreeMap<Key, f64> {
     let mut out: BTreeMap<Key, f64> = BTreeMap::new();
     for s in &line.sections {
@@ -298,8 +299,14 @@ fn wind_spans(line: &Line) -> BTreeMap<Key, f64> {
             _ => 0.0,
         };
         for (k, p) in s.points.iter().enumerate() {
-            let back = if k > 0 { half(at[k - 1], at[k]) } else { 0.0 };
-            let ahead = at.get(k + 1).map_or(0.0, |&b| half(at[k], b));
+            let back = if k > 0 {
+                half(at[k - 1], at[k]) * s.wind_factor(k - 1)
+            } else {
+                0.0
+            };
+            let ahead = at
+                .get(k + 1)
+                .map_or(0.0, |&b| half(at[k], b) * s.wind_factor(k));
             *out.entry((p.structure.clone(), p.set)).or_default() += back + ahead;
         }
     }

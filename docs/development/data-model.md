@@ -242,7 +242,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ohl-line"` | — |
-| `version` | u32 | — | file version (now 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 9, 2026-10-25: a section's `wind_factors` and `structure_loads.broken_cases` — 8: a string's own `shapes` — each written only when used, `Line::to_json` writing the oldest version that holds the line (7, 8 or 9); 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `height_datum` | `HeightDatum?` | — | version 7: the heights' vertical datum, `{name, epsg}` — its name (`"LN02"`), the EPSG code of its vertical system (`5728`), either or both (an empty one refused; informative, nothing converted; `HeightDatum::parse` reads them as typed, `label()` → `LN02 (EPSG:5728)`); left out when none. Set in Terrain › Coordinate system › Define… with the CRS (one line-settings edit) or `put` `meta` `line`; the sheets' `{height_datum}` takes `Line::height_datum_label()` (`SheetInfo::height_datum`) first, then the CRS's vertical part (`ohl_drawing::height_datum_of`), then the template's `[if_empty]` | — |
@@ -261,7 +261,7 @@ files](../user-guide/line-file.md).
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic wire types above the transition temperature, for wire types that do not say | — |
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
-| `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `load_cases` — the load cases (`.ohllc`) sent, by name (absent: all, the default); `weather_cases` — the weather cases sent on their own, by name (default none), each as `ohl_loads::LoadCase::from_weather` (`weather: <name>`, initial, every factor 1); sent load cases first, then the weather cases (`ohl_structure_link::structure_cases`); a name no longer in the line is skipped and named in the file's note. Line file `{"structure_loads": {"load_cases": [...], "weather_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>` and `<weather_case name>` | load case and weather case **names** |
+| `structure_loads` | `StructureLoads` | — | what the line sends to the placed structures, the cases of their line-values file (Criteria › Loads for structures, a tick menu): `weather_cases` — the weather cases sent, by name (default none), each a line result unfactored, a wind case twice (`<case> — wind from the left` / `— right`); `condition` — the wires' condition in them; `broken_cases` (version 9, 2026-10-25, roadmap O9) — the line's load cases with a broken wire sent, by name, after the weather cases, each its weather case with that wire broken, unfactored, `<weather case> — <section> span <n> broken` (`ohl_structure_link::structure_cases_with`, `broken_result_name`, tag `broken wire`); `load_cases` — read, not used since 2026-10-25; a name no longer in the line (or no longer a broken-wire case) is skipped and named in the file's note. Line file `{"structure_loads": {"weather_cases": [...], "condition": "creep", "broken_cases": [...]}}` (left out when default); project `meta` row `structure_loads`; OHL XML `<structure_loads load_cases="all\|listed">` with `<load_case name>`, `<weather_case name>` and `<broken_case name>` | load case and weather case **names** |
 | `condition_cases` | — | — | **not stored**: the weather cases named by `creep_stretch`, set by the program solving the line | — |
 
 **Plugin values** (`fields`, `ohl_line::Fields`): structures, sections,
@@ -459,6 +459,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `label` (optional), `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor: the whole bundle's, shared by its subconductors), `per_subconductor` (optional, default false, written only when true: `load` is on each subconductor, the bundle carrying `load` × `bundle`, `SpreadObject::bundle_load`); on the wire pieces they cover (FE; `Section::spread_loads` gives each as the whole bundle's, the model of one subconductor takes its share) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
 | `weather_groups` | `[string]` | — | its weather case groups: a check with the section override takes on its spans only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
+| `wind_factors` | `[SpanWind]` | — | version 9 (2026-10-25, roadmap O15): local winds, `{span, factor}` — span index (0 = first, as span points), factor 0 to `MAX_WIND_FACTOR` (10) on the weather case's wind pressure there in every case with wind; a span not listed takes 1; each span once (validated); written only when given; kept on their spans by `Section::set_points` (a span split or joined drops its factor). `Section::wind_factor(span)`, `has_local_wind`, `largest_wind_factor` (the ruling span, the permanent stretch), `wind_factor_at_point(k)` (the strings: the larger of the two spans), `set_wind_factor(first, last, f)` (1 removes), `wind_factors_text` / `ohl_line::parse_wind_factors` (`2–4: 1.2; 6: 0.7`, spans from 1, the Sections table's **local winds**); `Line::wind_factor_at_structure`, `jumper_wind_factor` (the jumpers). Taken by the solver (`solve::LocalWinds`: each span's case `WeatherCase::with_wind_factor`), the spacers' wind, the jumpers, the structure loads' jumper strings, the wind span (`capacity::wind_spans`). OHL XML `<wind_factor span factor/>` in `<section>`; session command `set_wind_factor` | span indices |
 | `calculation` | `Calculation` | — | `{condition, method}` (`condition::Condition` × `Method`), written by its name: condition and method joined (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
 `SectionPoint { structure, set }` names the wire point with set `set` on
@@ -1562,9 +1563,29 @@ cases); one case for all is `solve_section` bit for bit. In the plain
 section model, `ohl_wirefe::State::span_states` (`(span, SpanState {
 temperature, cable_load })`, empty: all in the state's).
 
+**Local winds** (2026-10-25, roadmap O15): a section's `wind_factors`
+(above) become, in a case with wind, each span's own case with the
+pressure times its factor (`ohl_line::solve::LocalWinds`, in memory only,
+over a span's own case where it has one); `WeatherCase::with_wind_factor`
+(a factor of 1 or no wind: the case unchanged).
+
+**A broken wire** (2026-10-25, roadmap O9, in memory):
+`ohl_line::solve::solve_section_broken(line, section, cable, case, span,
+budget, coupling)` (span 0 = first; FE only) and `solve_line_broken(line,
+library, case, section, span, budget)` (the other sections as
+`solve_line_with`); the shape's `SectionShape::broken` = `Some(span)`, its
+`spans[span]` with no points and no tension, the flag `span n: the wire
+broken`; the ends next to the break that hold no wire report their
+strings' hanging weight as their `attachment_loads`.
+
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors
 `vertical`, `transverse`, `longitudinal`, `strength`, `tags`;
+`broken` (version 3, `[case.broken]`, `BrokenWire`: `section` id, `span`
+`BrokenSpan::One(n)` from 1 or `Every` (`"every"`), `set` u32? — a check:
+the set of a section point at one of the span's ends; `BrokenWire::spans(line)`
+the spans broken from 0, or why not; `describe()` → `S3 span 2 broken`);
+written at version 3 only when a case has one (`written_version`);
 `structure` (version 2, `[case.structure]`, `StructureWind`:
 `wind_pressure` Pa?, `wind_factor`?) — the wind on the structures' own
 bodies when it differs from the wires': each given replaces, for the
@@ -1584,7 +1605,12 @@ words) and `missing` (`MissingWire`: `structure`, `kind`
 section not solved ends at or hangs on, or whose strings hold a jumper
 not solved: that structure's loads in that case are **incomplete**;
 `CaseLoads::missing_at`, `is_incomplete`) and `structure_wind`
-(`BodyWind` of the case). The usage
+(`BodyWind` of the case). `AttachmentLoad::broken_span`
+(`Option<[usize; 3]>`, 2026-10-25): in a broken-wire case the broken
+span (from 1) giving each component (transverse, longitudinal,
+vertical) — with `"every"` the envelope's (the largest factored of each
+component by size over the spans, sign kept, the line-axes force made
+again of them); the loads CSV's last column `broken_span`. The usage
 (`ohl_loads::capacity`, `CaseUsage` → `StructureUsage`) carries the
 same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
@@ -2393,7 +2419,9 @@ the line state differs from now.
 
 `ohl_session::Command`, JSON tagged by `op` (snake_case): `put` (`kind`,
 `id`, `value` as in the line file, `ord`), `delete` (`kind`, `id`,
-`confirm`), `move_structure`, `set_stringing`, `move_alignment_point`,
+`confirm`), `move_structure`, `set_stringing`, `set_wind_factor`
+(`section`, `spans` [first, last] from 0, `factor`; 2026-10-25: a put
+of the section, 1 removing the factors), `move_alignment_point`,
 `insert_alignment_point` (a new point, or an existing `point`: shared),
 `remove_alignment_point` (deletes the point: off every alignment),
 `tie_alignment_point`, `detach_alignment_point`,

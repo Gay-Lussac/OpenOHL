@@ -55,6 +55,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(JumperBand));
     registry.register(Box::new(SafetyVolumeCase));
     registry.register(Box::new(SpanCasesSection));
+    registry.register(Box::new(BrokenWireSection));
+    registry.register(Box::new(LocalWindSpan));
 }
 
 /// The swing band's margin of a case: its `band_margin` (a length, since
@@ -2053,6 +2055,180 @@ outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
             ("clamp_z_m", clamp[2]),
             ("swing_deg", swing),
             ("string_n", string.force),
+        ]))
+    }
+}
+
+/// The cable of the two-span validation sections (`line.span_cases`,
+/// `line.broken_wire`, `line.local_wind`): synthetic, one component.
+fn two_span_cable() -> Result<ohl_cables::Cable, String> {
+    toml::from_str(
+        r#"
+id = "span-cases"
+name = "Synthetic homogeneous test cable"
+kind = "aaac"
+source = "Synthetic test data, not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "120 kN"
+outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
+"#,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// `line.broken_wire`: the section of `line.span_cases` (two level 300 m
+/// spans, dead-end wire points fixed at (0, 0, 27) and (600, 0, 27) m, a
+/// suspension string from (300, 0, 30) m, 3 m, 800 N, 5e7 N; strung at
+/// 28 kN at 15 °C in the blocks) in still air at `temperature`, the wire
+/// of span `span` (1 or 2) broken
+/// ([`ohl_line::solve::solve_section_broken`], roadmap O9). Outputs: the
+/// remaining span's horizontal tension, the middle clamp's position along
+/// the line and height, the string's swing along the line (positive
+/// towards span 2) and force, and the load on T2 (the string's top) along
+/// the line (positive towards T3) and down.
+struct BrokenWireSection;
+
+impl Calculation for BrokenWireSection {
+    fn id(&self) -> &'static str {
+        "line.broken_wire"
+    }
+
+    fn description(&self) -> &'static str {
+        "Two level spans and a suspension string, the wire of one span broken (inputs: \
+         temperature, span 1 or 2); outputs h_n (the remaining span), clamp_x_m, clamp_z_m, \
+         swing_deg, string_n, along_n, down_n (the load on the middle structure)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_line::solve::{Coupling, solve_section_broken};
+        let cable = two_span_cable()?;
+        let line = two_span_line()?;
+        let span = float_input(inputs, "span")? as usize;
+        if !(1..=2).contains(&span) {
+            return Err("span: 1 or 2".into());
+        }
+        let case = WeatherCase::still(
+            "case",
+            quantity_input::<Temperature>(inputs, "temperature")?,
+        );
+        let shape = solve_section_broken(
+            &line,
+            &line.sections[0],
+            &cable,
+            &case,
+            span - 1,
+            &default_fe_budget(),
+            &Coupling::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        let clamp = shape.clamps[1];
+        let string = shape.strings[1].first().ok_or("no string")?;
+        let (top, bottom) = (string.top, string.bottom);
+        let swing = (bottom[0] - top[0]).atan2(top[2] - bottom[2]).to_degrees();
+        let on_t2 = shape.attachment_loads[1].iter().fold([0.0; 3], |a, l| {
+            [a[0] + l.force[0], a[1] + l.force[1], a[2] + l.force[2]]
+        });
+        Ok(outputs([
+            ("h_n", shape.spans[2 - span].horizontal_tension),
+            ("clamp_x_m", clamp[0]),
+            ("clamp_z_m", clamp[2]),
+            ("swing_deg", swing),
+            ("string_n", string.force),
+            ("along_n", on_t2[0]),
+            ("down_n", -on_t2[2]),
+        ]))
+    }
+}
+
+/// The two-span line of `line.span_cases` and `line.broken_wire`.
+fn two_span_line() -> Result<ohl_line::Line, String> {
+    ohl_line::Line::from_json(
+        r#"{
+  "format": "ohl-line", "version": 6, "name": "span cases", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "points": [{"label": "A1", "position": [300, 0, 30]}],
+     "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0,
+                  "weight": 800.0, "stiffness": 5e7}],
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1}]},
+    {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [600, 0, 27], "set": 1}]}
+  ],
+  "sections": [{"id": "S", "cable": "span-cases", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+               {"structure": "T3", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 28000.0, "temperature": 15.0}}]
+}"#,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// `line.local_wind`: one level 300 m span between wire points fixed at
+/// (0, 0, 27) and (300, 0, 27) m, clipped in with an unstressed length of
+/// 300.5 m at 20 °C (the cable of `line.span_cases`, its weight as its
+/// data sheet gives it at 20 °C), in a case at 20 °C with wind `wind`
+/// from the right and the span's local wind factor `factor`
+/// ([`ohl_line::Section::wind_factors`], roadmap O15). Outputs: the
+/// horizontal tension (across the load), the blowout of the span's middle
+/// from vertical (degrees, to the left) and its distance off the chord.
+struct LocalWindSpan;
+
+impl Calculation for LocalWindSpan {
+    fn id(&self) -> &'static str {
+        "line.local_wind"
+    }
+
+    fn description(&self) -> &'static str {
+        "One level span between fixed points, clipped in, in a wind case with a local wind \
+         factor on the span (inputs: wind, factor); outputs h_n, blowout_deg, sag_m (in the \
+         plane of the load, at mid-span)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_line::solve::solve_section;
+        let cable = two_span_cable()?;
+        let mut line = ohl_line::Line::from_json(
+            r#"{
+  "format": "ohl-line", "version": 6, "name": "local wind", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1}]}
+  ],
+  "sections": [{"id": "S", "cable": "span-cases", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+    "stringing": {"kind": "unstressed_lengths", "lengths": [300.5], "temperature": 20.0}}]
+}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        let factor = float_input(inputs, "factor")?;
+        line.sections[0].set_wind_factor(0, 0, factor);
+        line.validate().map_err(|e| e.to_string())?;
+        let case = WeatherCase {
+            wind_pressure: quantity_input::<Stress>(inputs, "wind")?,
+            ..WeatherCase::still("wind", Temperature::from_celsius(20.0))
+        };
+        let shape = solve_section(
+            &line,
+            &line.sections[0],
+            &cable,
+            &case,
+            &default_fe_budget(),
+        )
+        .map_err(|e| e.to_string())?;
+        let span = &shape.spans[0];
+        let (a, b) = (shape.clamps[0], shape.clamps[1]);
+        let off = [0, 1, 2].map(|k| span.mid_point[k] - 0.5 * (a[k] + b[k]));
+        let blowout = off[1].atan2(-off[2]).to_degrees();
+        let sag = off.iter().map(|x| x * x).sum::<f64>().sqrt();
+        Ok(outputs([
+            ("h_n", span.horizontal_tension),
+            ("blowout_deg", blowout),
+            ("sag_m", sag),
         ]))
     }
 }

@@ -42,7 +42,13 @@ import and export come later; CSV works today.
    result**: the wires' and strings' forces at each attachment point,
    unfactored. A weather case with wind is two line results, `<case> —
    wind from the left` and `<case> — wind from the right`; without wind,
-   one, named as the weather case.
+   one, named as the weather case. A broken wire (roadmap O9) is a line
+   result too: a load case of the line with a broken wire ticked there
+   is sent as its weather case with that wire broken, named
+   `<weather case> — <section> span <n> broken` (with wind, twice:
+   `high wind — S3 span 2 broken — wind from the left`), unfactored like
+   the others; its factors (a code's impact factor on the longitudinal
+   load) are the structure load case's.
 2. **All the factors are in the structure load case**, in one place.
 3. **A load case has two parts**, each with its own factors, with a
    description (several lines) and a strength factor.
@@ -333,8 +339,10 @@ for structures, see [Loads for structures](desktop-app.md#loads-for-structures))
 each weather case ticked there, unfactored (factored = unfactored), named
 as the weather case; one with wind twice, `<case> — wind from the left`
 and `<case> — wind from the right` (since 2026-10-25; before, the line's
-load cases and `weather: <name>`). A recipe names the line result by that
-name. A value the line does not give makes a row marked **no
+load cases and `weather: <name>`); a broken-wire case ticked there as
+`<weather case> — <section> span <n> broken` (the section solved with
+that wire gone, [Load cases](loads.md#a-broken-wire-casebroken)). A
+recipe names the line result by that name. A value the line does not give makes a row marked **no
 line value** (its force 0); so does every line value of a structure
 opened on its own. Such values can be typed into the table.
 

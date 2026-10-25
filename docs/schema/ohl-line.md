@@ -55,6 +55,7 @@ The names are those of the line file:
   <section id="S1" cable="…" circuit_name="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
     <weather_group name="…"/>                   <!-- its weather case groups (the section override) -->
+    <wind_factor span="2" factor="1.2"/>        <!-- version 9: a local wind, span 0 = the first -->
     <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->
@@ -103,6 +104,7 @@ The names are those of the line file:
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
   <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
     <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
+    <broken_case name="…"/>                     <!-- version 9: a load case with a broken wire, its weather case with the wire broken -->
   </structure_loads>
 </line>
 ```

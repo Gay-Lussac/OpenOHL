@@ -1262,6 +1262,13 @@ pub fn ui(
                     ),
                     ("spans in section", (sec.points.len() - 1).to_string()),
                     (
+                        "local wind",
+                        match sec.wind_factor(span) {
+                            1.0 => "the weather case's".to_owned(),
+                            f => format!("× {f} of the weather case's"),
+                        },
+                    ),
+                    (
                         "routes",
                         model
                             .routes_of()
@@ -1273,6 +1280,11 @@ pub fn ui(
             );
             if point.editable
                 && let Some(a) = assign_circuit_ui(ui, model, &section)
+            {
+                action = Some(a);
+            }
+            if point.editable
+                && let Some(a) = local_wind_ui(ui, sec, span)
             {
                 action = Some(a);
             }
@@ -1453,6 +1465,66 @@ fn assign_circuit_ui(
     if let Some(e) = ui.data(|d| d.get_temp::<String>(id.with("error"))) {
         ui.colored_label(ui.visuals().warn_fg_color, e);
     }
+    out
+}
+
+/// The local wind of span `span` of section `sec` (roadmap O15): a factor
+/// on the weather case's wind and the spans it is set on (this one by
+/// default, or a run of the section's spans), **Set** making one command
+/// (one undo, [`ohl_session::Command::SetWindFactor`]).
+fn local_wind_ui(
+    ui: &mut egui::Ui,
+    sec: &ohl_line::Section,
+    span: usize,
+) -> Option<crate::edit::Action> {
+    // Typed values kept while the span's factor stays (an undo or a
+    // table edit starts again from the new one).
+    let id = egui::Id::new((
+        "local-wind",
+        sec.id.as_str(),
+        span,
+        sec.wind_factor(span).to_bits(),
+    ));
+    let n = sec.points.len().saturating_sub(1);
+    // (factor, first span, last span), spans from 1 as shown.
+    let mut v: (f64, usize, usize) =
+        ui.data(|d| d.get_temp(id))
+            .unwrap_or((sec.wind_factor(span), span + 1, span + 1));
+    let mut out = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Local wind ×").on_hover_text(
+            "The weather case's wind on these spans times this factor, in every case with \
+                 wind (e.g. 1.2 on an exposed ridge, 0.7 in a sheltered valley): the wires' \
+                 blowout and tensions, the structure loads, the clearances. 1: the case's wind",
+        );
+        ui.add(
+            egui::DragValue::new(&mut v.0)
+                .range(0.0..=ohl_line::MAX_WIND_FACTOR)
+                .speed(0.01)
+                .max_decimals(3),
+        );
+        ui.label("spans");
+        ui.add(egui::DragValue::new(&mut v.1).range(1..=n));
+        ui.label("to");
+        ui.add(egui::DragValue::new(&mut v.2).range(v.1..=n));
+        if ui
+            .button("Set")
+            .on_hover_text("Gives the spans the factor (one undo)")
+            .clicked()
+        {
+            let (first, last) = (v.1.min(v.2), v.1.max(v.2));
+            out = Some(crate::edit::Action::Command {
+                what: format!("local wind × {} on {} spans {first} to {last}", v.0, sec.id),
+                command: ohl_session::Command::SetWindFactor {
+                    section: sec.id.clone(),
+                    spans: [first - 1, last - 1],
+                    factor: v.0,
+                },
+            });
+        }
+    });
+    v.2 = v.2.max(v.1);
+    ui.data_mut(|d| d.insert_temp(id, v));
     out
 }
 

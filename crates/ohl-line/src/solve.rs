@@ -162,6 +162,10 @@ pub struct SectionShape {
     pub span_points: Vec<(String, Point)>,
     /// The spacers it holds, as solved ([`solve_spacer_group`]).
     pub spacers: Vec<SpacerState>,
+    /// The span solved with its wire gone ([`solve_section_broken`]; none:
+    /// the section whole). That span's shape has no points and no
+    /// tension.
+    pub broken: Option<usize>,
 }
 
 /// A string as solved.
@@ -221,6 +225,10 @@ struct Built {
     span_points: Vec<(String, usize)>,
     /// The spacers it holds: truss, fixed node.
     spacers: Vec<(SpacerHold, usize, usize)>,
+    /// For each section point, whether it lost its wire (a section end
+    /// next to a broken span): its holder is left out of the model, its
+    /// strings hang under their own weight ([`hanging_loads`]).
+    dead: Vec<bool>,
 }
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
@@ -336,11 +344,21 @@ impl SpanCases {
 }
 
 /// The cases of a section's spans, borrowed (the solver's view of
-/// [`SpanCases`], or one case for all).
+/// [`SpanCases`], or one case for all), with the section's local winds
+/// ([`LocalWinds`]) and a broken span.
 #[derive(Clone, Copy)]
 struct Cases<'a> {
     base: &'a WeatherCase,
     own: Option<&'a std::collections::BTreeMap<usize, WeatherCase>>,
+    /// The factor on the wind on the strings at each point of the
+    /// section (none: 1 everywhere).
+    points: Option<&'a [f64]>,
+    /// The spans' cases a section in the blocks rolls in (none: the
+    /// section's case): the local winds only, not the spans' own cases.
+    rolling: Option<&'a std::collections::BTreeMap<usize, WeatherCase>>,
+    /// A span whose wire is gone (a broken wire, roadmap O9): no element
+    /// there, its two clamps held by their strings alone.
+    broken: Option<usize>,
 }
 
 impl<'a> Cases<'a> {
@@ -349,19 +367,87 @@ impl<'a> Cases<'a> {
         Self {
             base: case,
             own: None,
+            points: None,
+            rolling: None,
+            broken: None,
         }
     }
 
     fn of_spans(cases: &'a SpanCases) -> Self {
         Self {
-            base: &cases.base,
             own: Some(&cases.spans),
+            ..Self::one(&cases.base)
         }
     }
 
     /// The case of span `s`.
     fn of(&self, s: usize) -> &'a WeatherCase {
         self.own.and_then(|m| m.get(&s)).unwrap_or(self.base)
+    }
+
+    /// The factor on the wind on the strings at point `k`.
+    fn at_point(&self, k: usize) -> f64 {
+        self.points.and_then(|p| p.get(k)).copied().unwrap_or(1.0)
+    }
+
+    /// The cases the section rolls in: the section's case in every span,
+    /// each times its local wind.
+    fn for_rolling(&self) -> Self {
+        Self {
+            own: self.rolling,
+            rolling: self.rolling,
+            broken: None,
+            ..*self
+        }
+    }
+
+    /// Whether span `s` is the broken one.
+    fn is_broken(&self, s: usize) -> bool {
+        self.broken == Some(s)
+    }
+}
+
+/// A section's local winds in a weather case ([`Section::wind_factors`],
+/// roadmap O15): each span's case with its wind times the span's factor
+/// (over its own case where it has one), the case of every span a
+/// section in the blocks rolls in, and the factor on the strings' wind at
+/// each point — the larger of its two spans' (conservative: the string
+/// swings at least as far as with either).
+struct LocalWinds {
+    spans: std::collections::BTreeMap<usize, WeatherCase>,
+    rolling: std::collections::BTreeMap<usize, WeatherCase>,
+    points: Vec<f64>,
+}
+
+impl LocalWinds {
+    /// None when no span has a factor other than 1 (the section solved
+    /// as before, bit for bit).
+    fn of(section: &Section, cases: Cases<'_>) -> Option<Self> {
+        if !section.has_local_wind() {
+            return None;
+        }
+        let n = section.points.len().saturating_sub(1);
+        Some(Self {
+            spans: (0..n)
+                .map(|s| (s, cases.of(s).with_wind_factor(section.wind_factor(s))))
+                .collect(),
+            rolling: (0..n)
+                .map(|s| (s, cases.base.with_wind_factor(section.wind_factor(s))))
+                .collect(),
+            points: (0..section.points.len())
+                .map(|k| section.wind_factor_at_point(k))
+                .collect(),
+        })
+    }
+
+    /// `cases` with the local winds.
+    fn apply<'a>(&'a self, cases: Cases<'a>) -> Cases<'a> {
+        Cases {
+            own: Some(&self.spans),
+            points: Some(&self.points),
+            rolling: Some(&self.rolling),
+            ..cases
+        }
     }
 }
 
@@ -921,7 +1007,26 @@ fn build(
     let mut supports = Vec::with_capacity(n);
     let mut frees = Vec::with_capacity(n);
     let mut free_labels: Vec<Vec<(String, usize)>> = Vec::with_capacity(n);
+    // A section end next to a broken span holds no wire.
+    let dead: Vec<bool> = (0..n)
+        .map(|k| {
+            let back = k.checked_sub(1).is_none_or(|s| cases.is_broken(s));
+            let ahead = k + 1 >= n || cases.is_broken(k);
+            cases.broken.is_some() && back && ahead
+        })
+        .collect();
     for (k, holder) in layout.iter().enumerate() {
+        if dead[k] {
+            // Out of the model: a node where the clamp was, for the
+            // indices (nothing joins it).
+            model.nodes.push(Node::fixed(reference.clamps[k]));
+            clamps.push(model.nodes.len() - 1);
+            supports.push(Vec::new());
+            frees.push(Vec::new());
+            free_labels.push(Vec::new());
+            members.push(Vec::new());
+            continue;
+        }
         // Free nodes start where given, moved with the clamp to where the
         // reference puts it.
         let shift = reference.clamps[k] - holder.position(holder.clamp);
@@ -991,15 +1096,20 @@ fn build(
         if case.wind_pressure.si() <= 0.0 {
             break;
         }
+        if dead[k] {
+            continue;
+        }
         let along = reference.clamps[(k + 1).min(n - 1)] - reference.clamps[k.saturating_sub(1)];
         let horizontal = along.xy();
         if horizontal.norm() == 0.0 {
             continue;
         }
         let transverse = Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm();
+        // The local wind at this point (1 without).
+        let local = cases.at_point(k);
         for m in holder.members.iter().filter(|m| m.wind_area > 0.0) {
             let push = transverse
-                * (0.5 * case.wind_pressure.si() * m.wind_area * case.wind_from.to_left());
+                * (0.5 * case.wind_pressure.si() * local * m.wind_area * case.wind_from.to_left());
             for end in [m.top, m.bottom] {
                 if let At::Free(i) = end {
                     model.nodes[frees[k][i]].load += push;
@@ -1014,6 +1124,12 @@ fn build(
     let mut span_points: Vec<(String, usize)> = Vec::new();
     let mut span_elements = Vec::with_capacity(n - 1);
     for s in 0..n - 1 {
+        if cases.is_broken(s) {
+            // The wire is gone: no element, the objects on it fall with
+            // it; its clamps are held by their strings alone.
+            span_elements.push(Vec::new());
+            continue;
+        }
         // The span's own case (the section's, unless it has its own).
         let case = cases.of(s);
         let thermal = (cable.thermal_expansion()
@@ -1164,6 +1280,7 @@ fn build(
         free: free_labels,
         spacers,
         span_points,
+        dead,
     })
 }
 
@@ -1489,6 +1606,53 @@ fn settled(
 /// The wires' pull on the clamp of section point `k` in a solution (per
 /// subconductor): what balances the strings, the loads and the support
 /// there.
+/// The loads on the structure of a holder that lost its wire (a section
+/// end next to a broken span, [`solve_section_broken`]): its strings
+/// hang under their own weight, shared equally by its structure points,
+/// with the wind on them across the line (as on the strings of the
+/// section, full on the tops). Simplification: the share is exact for
+/// one string (it hangs plumb), and for strings alike side by side; the
+/// broken wire's piece left hanging from the clamp is not counted (it
+/// lies on the ground).
+fn hanging_loads(
+    holder: &Holder,
+    reference: &Reference,
+    k: usize,
+    cases: Cases<'_>,
+    bundle: f64,
+) -> Vec<Support> {
+    let tops: Vec<&(String, Vector3<f64>, Option<u32>)> = holder
+        .fixed
+        .iter()
+        .filter(|(_, _, o)| o.is_none())
+        .collect();
+    if tops.is_empty() {
+        return Vec::new();
+    }
+    let case = cases.base;
+    let n = reference.clamps.len();
+    let along = reference.clamps[(k + 1).min(n - 1)] - reference.clamps[k.saturating_sub(1)];
+    let h = along.xy();
+    let left = if h.norm() > 0.0 {
+        Vector3::new(-h.y, h.x, 0.0) / h.norm()
+    } else {
+        Vector3::zeros()
+    };
+    let weight: f64 = holder.members.iter().map(|m| m.weight).sum();
+    let area: f64 = holder.members.iter().map(|m| m.wind_area).sum();
+    let wind =
+        left * (case.wind_pressure.si() * cases.at_point(k) * area * case.wind_from.to_left());
+    let share = 1.0 / tops.len() as f64;
+    tops.iter()
+        .map(|(label, at, _)| Support {
+            label: label.clone(),
+            at: p(*at),
+            // On the structure: the weight down, the wind's push.
+            force: p((Vector3::new(0.0, 0.0, -weight) + wind) * share * bundle),
+        })
+        .collect()
+}
+
 fn clamp_pull(built: &Built, solution: &ohl_wirefe::Solution, k: usize) -> Vector3<f64> {
     let c = built.clamps[k];
     let node = &built.model.nodes[c];
@@ -1595,9 +1759,11 @@ fn rolled(
     layout: &[Holder],
     reference: &Reference,
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     budget: &Budget,
 ) -> Result<Reference, LineError> {
+    // The section's case in every span (times the spans' local winds).
+    let cases = cases.for_rolling();
     // The clamps settle where the shared-out lengths put them (strings
     // swing across the line more under ice or wind at line angles, which
     // changes the chords): fixed point, exit clause 20 passes.
@@ -1608,13 +1774,12 @@ fn rolled(
         reference,
         &reference.clamps,
         cable,
-        case,
+        cases,
         20_000.0,
         budget,
     )?;
     for _ in 0..20 {
-        let (built, solved) =
-            solve_built(section, layout, &r, cable, Cases::one(case), budget, None)?;
+        let (built, solved) = solve_built(section, layout, &r, cable, cases, budget, None)?;
         let clamps = settled(layout, &r.clamps, &built, &solved);
         let moved = clamps
             .iter()
@@ -1624,7 +1789,7 @@ fn rolled(
         if moved < 1e-6 {
             return Ok(r);
         }
-        (r, h) = shared_out(section, reference, &clamps, cable, case, h, budget)?;
+        (r, h) = shared_out(section, reference, &clamps, cable, cases, h, budget)?;
     }
     Err(LineError::Invalid(format!(
         "section {}: rolling did not settle in 20 passes",
@@ -1640,10 +1805,12 @@ fn shared_out(
     reference: &Reference,
     clamps: &[Vector3<f64>],
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     guess: f64,
     budget: &Budget,
 ) -> Result<(Reference, f64), LineError> {
+    // One temperature for the section (its case's); each span its load.
+    let case = cases.base;
     let invalid = |m: String| LineError::Invalid(format!("section {}: rolling: {m}", section.id));
     let ea = cable.axial_stiffness().si();
     let thermal =
@@ -1665,7 +1832,7 @@ fn shared_out(
             .map(|(s, d)| {
                 let at = |e: ohl_wirefe::ElementError| invalid(format!("span {s}: {e}"));
                 let (own, stretched) = span_loads_split(
-                    case,
+                    cases.of(s),
                     cable,
                     *d,
                     reference.weight_scale[s] / thermal,
@@ -1919,6 +2086,141 @@ pub fn solve_section_span_cases_coupled(
     )
 }
 
+/// Solves one section of a line in a weather case with the wire of span
+/// `span` (0 = first) gone: a **broken wire** (roadmap O9, owner
+/// 2026-10-19 and 2026-10-25), for the security loads of the design
+/// codes.
+///
+/// The model: the section as it is in the case — its unstressed lengths
+/// those of the whole section in the case's condition (a section in the
+/// blocks rolled in the case before the break, then held in its clamps)
+/// — with no element in the broken span. Its two clamps are then each a
+/// free end held by its strings alone: a suspension string at the back
+/// end swings towards the spans left behind it (the one at the ahead
+/// end ahead) until the string, its weight and the remaining span's pull
+/// are in equilibrium; the remaining spans of each piece re-solve with
+/// the new clamp positions (each span its own tension), the other wires
+/// as they are. A section end next to the broken span (its first or last
+/// point) holds no wire any more: its strings hang under their own
+/// weight ([`SectionShape::attachment_loads`] there: that weight and the
+/// wind on them). A bundle's broken wire is the whole phase (every
+/// subconductor of the bundle in that span; the solve follows one
+/// subconductor for the bundle), the conservative reading.
+///
+/// Left out (Simplification): the dynamic impact of the break (the
+/// static state after it is solved); the broken pieces lying on the
+/// ground; the objects on the broken span (they fall with it). Refused:
+/// a span the section does not have, the ruling-span method (it has one
+/// tension for every span), a spacer or a jumper hanging on a span point
+/// of the broken span. The jumpers on the clamps take their loads of the
+/// whole line (the jumpers at the broken span's ends as if it held).
+///
+/// Expected cost: as [`solve_section`] (the swing of the strings may take
+/// a few more Newton iterations).
+pub fn solve_section_broken(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    span: usize,
+    budget: &Budget,
+    coupling: &Coupling,
+) -> Result<SectionShape, LineError> {
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let spans = section.points.len().saturating_sub(1);
+    if span >= spans {
+        return Err(invalid(format!(
+            "no span {} to break (it has {spans})",
+            span + 1
+        )));
+    }
+    if section.calculation.method() == crate::condition::Method::Rs {
+        return Err(invalid(
+            "a broken wire needs the finite-element method (the ruling span has one tension \
+             for all spans)"
+                .into(),
+        ));
+    }
+    let on_broken: Vec<&str> = section
+        .span_points
+        .iter()
+        .filter(|p| p.span == span)
+        .map(|p| p.label.as_str())
+        .collect();
+    let here =
+        |r: &crate::SpanPointRef| r.section == section.id && on_broken.contains(&r.point.as_str());
+    let held = on_broken.iter().any(|label| {
+        coupling.spacers.holds.iter().any(|h| h.point == *label)
+            || coupling.spacers.pulls.contains_key(*label)
+    }) || line.spacers.iter().any(|x| here(&x.a) || here(&x.b))
+        || line.jumpers.iter().any(|j| {
+            j.taps()
+                .any(|t| matches!(t, crate::Tap::Span(r) if here(r)))
+        });
+    if held {
+        return Err(invalid(format!(
+            "span {}: a spacer or a jumper hangs on its span points ({}): a broken wire there \
+             is not modelled",
+            span + 1,
+            on_broken.join(", ")
+        )));
+    }
+    // The wind's side is the line's (as [`solve_section_coupled`]).
+    let flipped;
+    let case = if against_the_line(line, section) {
+        flipped = WeatherCase {
+            wind_from: case.wind_from.opposite(),
+            ..case.clone()
+        };
+        &flipped
+    } else {
+        case
+    };
+    let cases = Cases {
+        broken: Some(span),
+        ..Cases::one(case)
+    };
+    solve_cases(line, section, cable, cases, budget, coupling)
+}
+
+/// Solves every section of `line` in `case` ([`solve_line_with`]), the
+/// wire of span `span` (0 = first) of section `section` broken
+/// ([`solve_section_broken`]): the other sections as they are, the broken
+/// one on its own (a section sharing strings with others, a TAK, is
+/// broken with the others held as solved whole — Simplification). One
+/// result per section, in order. Err: no section `section`.
+///
+/// Expected cost: one line solve and one more section solve.
+pub fn solve_line_broken(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    section: &str,
+    span: usize,
+    budget: &Budget,
+) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
+    let k = line
+        .sections
+        .iter()
+        .position(|s| s.id == section)
+        .ok_or_else(|| LineError::Invalid(format!("no section {section} to break a wire of")))?;
+    let mut results = solve_line_with(line, library, case, budget);
+    let s = &line.sections[k];
+    let jumpers = crate::jumper::end_loads(line, case, |id| library.get(id));
+    let coupling = Coupling {
+        jumpers: Some(jumpers),
+        ..Coupling::default()
+    };
+    results[k] = match library.get(&s.cable) {
+        Some(cable) => solve_section_broken(line, s, cable, case, span, budget, &coupling),
+        None => Err(LineError::Invalid(format!(
+            "section {}: wire type {} is not in the wire library",
+            s.id, s.cable
+        ))),
+    };
+    Ok(results)
+}
+
 /// A section in its spans' cases (the wind's side already the line's).
 fn solve_cases(
     line: &Line,
@@ -1931,6 +2233,16 @@ fn solve_cases(
     use crate::condition::{Condition, Method};
     // Places given by station: as fractions of their spans.
     let section = &*line.section_with_fractions(section);
+    // Its local winds (roadmap O15): each span's case with its factor.
+    let local = LocalWinds::of(section, cases);
+    let cases = match &local {
+        Some(l) => l.apply(cases),
+        None => cases,
+    };
+    // The ruling span has one tension for all spans: the case's wind
+    // times the largest local factor of the section (on the safe side for
+    // the tension; Simplification for the spans with less).
+    let rs_case = cases.base.with_wind_factor(section.largest_wind_factor());
     // The line's bimetallic model for cables that do not give their own.
     let own = &*line.bimetallic.apply(cable);
     // Its own weight per metre at the stringing temperature; the jumpers
@@ -1949,7 +2261,7 @@ fn solve_cases(
             coupling,
         ),
         // Uniform cases only (checked by the callers).
-        Method::Rs => solve_rs(line, section, cable, cases.base, final_state, budget),
+        Method::Rs => solve_rs(line, section, cable, &rs_case, final_state, budget),
     };
     match calc.condition() {
         Condition::Initial => solve(None),
@@ -2079,7 +2391,7 @@ fn solve_fe(
         reference.lengthen(|_| 1.0 + stretch);
     }
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
-        reference = rolled(section, &loaded, &reference, cable, case, budget)?;
+        reference = rolled(section, &loaded, &reference, cable, cases, budget)?;
     }
     // The spacers it holds and is pulled by (its subconductor's share),
     // and the jumpers hanging on taps on its span points.
@@ -2175,6 +2487,20 @@ fn solve_fe(
     let mut spans = Vec::with_capacity(built.span_elements.len());
     for (s, elements) in built.span_elements.iter().enumerate() {
         let (a, b) = (pos[built.clamps[s]], pos[built.clamps[s + 1]]);
+        if elements.is_empty() {
+            // The broken span: no wire (no points, no tension).
+            spans.push(SpanShape {
+                points: Vec::new(),
+                horizontal_tension: 0.0,
+                max_tension: 0.0,
+                mid_point: p((a + b) / 2.0),
+                low_point: p(if a.z < b.z { a } else { b }),
+                sag: 0.0,
+                surface_radius: 0.0,
+                polyline_error: 0.0,
+            });
+            continue;
+        }
         let chord = b - a;
         let horizontal = chord.xy().norm();
         let mut points: Vec<Vector3<f64>> = Vec::new();
@@ -2322,7 +2648,11 @@ fn solve_fe(
     }
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&spans, cable));
+    if let Some(k) = cases.broken {
+        flags.push(format!("span {}: the wire broken (roadmap O9)", k + 1));
+    }
     Ok(SectionShape {
+        broken: cases.broken,
         section: section.id.clone(),
         clamps: built.clamps.iter().map(|&c| p(pos[c])).collect(),
         spans,
@@ -2333,9 +2663,14 @@ fn solve_fe(
             .supports
             .iter()
             .zip(&loaded)
-            .map(|(nodes, holder)| {
+            .zip(&built.dead)
+            .enumerate()
+            .map(|(k, ((nodes, holder), dead))| {
                 if !holder.reports {
                     return Vec::new();
+                }
+                if *dead {
+                    return hanging_loads(holder, &reference, k, cases, bundle);
                 }
                 nodes
                     .iter()
@@ -2516,3 +2851,6 @@ mod spacer_tests;
 
 #[cfg(test)]
 mod span_case_tests;
+
+#[cfg(test)]
+mod local_tests;

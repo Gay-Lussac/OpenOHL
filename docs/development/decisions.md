@@ -36,6 +36,97 @@ of Parts A, B and C).
   boundary stays the one crate. View › Volumes on the strings, off by
   default; the line's colours.
 
+**A broken wire per span and set, in a load case (roadmap O9; owner, 2026-10-25)**
+
+- Owner: "per span and set, in a load case"; the core broken-wire case
+  approved 2026-10-19 ("the section solved with the wire gone"), for the
+  design-code plugins to use.
+- A load case names it: `[case.broken]` with `section` (id), `span`
+  (from 1, as people count spans and the result's name shows them — the
+  line file counts from 0) or `"every"`, and an optional `set`. **The set**
+  is a section point's set: the wire of that set in that span, as the
+  structures number their wire points; given, it is a check (the case
+  fails when neither end of the span has it — a section renumbered or
+  strung again), not a second way to name the wire. `.ohllc` version 3,
+  written only when a case has one.
+- **The model:** the section's unstressed lengths those of the whole
+  section in the case (a section in the blocks rolled in the case, then
+  held), no element in the broken span; its two clamps each a free end
+  held by its strings alone — the section splits into two independent
+  pieces, each joined to the other only through the structures (the
+  owner's suggestion, the physical model: the adjacent string swings to
+  the remaining tension). The other wires as they are. One finite-element
+  model with the span left out (both pieces in one Newton solve), not two
+  sections: the stretch after creep or load, the stress-strain curves and
+  the rolling stay those of the whole section. A section end next to the
+  break holds no wire: left out of the model, its strings' hanging
+  weight and wind as its load. FE only (the ruling span refuses).
+- **A bundle:** the whole phase broken (every subconductor in that span),
+  marked conservative.
+- **Every span, one at a time:** a solve per span, at every structure
+  point the largest of each component (by size of the factored value,
+  sign kept) with the span giving it (`AttachmentLoad::broken_span`, the
+  loads CSV's last column); conservative, marked.
+- **Left out, marked:** the dynamic impact (the case's longitudinal
+  factor is the place for a code's), the pieces on the ground, the
+  objects on the broken span; a TAK's broken section solved with its
+  partners as whole; jumpers keep their loads of the whole line. Refused:
+  a spacer or a jumper on a span point of the broken span.
+- **To OHL-Structure:** a line result like the weather cases' — Criteria
+  › Loads for structures › **Broken-wire cases sent** ticks the line's
+  load cases with a broken wire (`structure_loads.broken_cases`, line file
+  9); each is sent as its weather case with that wire broken, unfactored,
+  in the menu's wire condition, named `<weather case> — S3 span 2
+  broken` (a wind case twice, `… — wind from the left`), after the
+  weather cases; its factors are the structure load case's (one place for
+  them, as decided for the line results). Chosen over sending the load
+  case itself, so that the line still sends forces only.
+- Validation `brokenwire-001`…`003` (benchmarks/wirefe/broken_wire.toml,
+  an independent reference script and the hand check
+  \\( \tan\varphi = H / (V + W/2) \\)); the solver agrees to 10⁻⁷.
+- No plugin under `local-data/` changed: the format for them is in Design
+  codes (a `[case.broken]` table in the `.ohllc` text they write; the
+  plugin interface unchanged).
+
+**Local winds per span: a factor, for every wind case (roadmap O15; owner, 2026-10-25)**
+
+- Owner: "a factor, for every wind case". A section's spans may carry a
+  factor on the weather case's wind pressure (`wind_factors`, `{span,
+  factor}`, span 0 = first as span points count; factor 0 to 10; a span
+  not listed 1). Kept with the line (line file version 9, written only
+  when used; OHL XML `<wind_factor span factor>`; XSD).
+- Applied wherever the case's wind acts on the wires (found by grep of
+  every `wind_pressure` and `wire_load` use): the spans' load in the
+  finite elements (each span's case scaled: the blowout, the tensions,
+  the objects' wind), the strings (the larger factor of their two spans,
+  conservative), the rolling of a section in the blocks (each span its
+  own wind), the spacers (their span's), the jumpers and their support
+  strings in the structure loads (the largest at their structures,
+  conservative), the ruling span and the permanent stretch after creep or
+  load (the section's largest, conservative — one tension, one stretch
+  per section), the wind span of the allowable-spans check (each half
+  span times its factor); and through the solver every check: the
+  clearances' blowout and swing arc, the distance under unequal wind
+  (each level times each span's factor), the structure loads, the string
+  and tension checks, galloping (on the solved sag). With no factor other
+  than 1 everything is bit for bit as before (tested).
+- **Not scaled, said:** the structures' own wind (bands, member wind,
+  pole) stays the load case's (`[case.structure]` or a wind study per
+  structure give a structure its own); a wind study's pressure (the
+  structure override) is taken as the case's, the spans' factors on it.
+  **Simplification, marked:** the same factor on the ice-with-wind cases
+  as on the wind alone, no direction of its own (to decide later: a
+  factor per case, a direction).
+- **Edited:** the Sections table's **local winds** column (`2–4: 1.2;
+  6: 0.7`, spans from 1, runs; one command on Apply), a span's Properties
+  (**Local wind ×** factor on spans *a* to *b*, **Set**: a run of spans
+  at once), the session command `set_wind_factor` (`ohl project apply`);
+  each one undo step. The tables have no multi-row typing; a run of
+  spans in one cell or in the span's Properties sets many spans at once.
+- Validation `localwind-001`…`004` (benchmarks/wirefe/local_wind.toml,
+  the elastic catenary in the tilted plane of the load, independent
+  script); the solver agrees to 10⁻⁷.
+
 **Small usability fixes found by the tutorial (2026-10-25)**
 
 - String wire: a new section takes the circuit and phase of the section

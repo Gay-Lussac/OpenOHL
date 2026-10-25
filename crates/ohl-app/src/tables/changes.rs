@@ -944,6 +944,17 @@ pub(super) fn section_cells(
         }
         form.set_points(model, case, points);
     }
+    // Local winds (roadmap O15), on the spans as they are.
+    if is_new || c.changed(col("local winds")) {
+        if !is_new && c.changed(col("points")) {
+            return Err(format!(
+                "{name}: change the points and the local winds one after the other"
+            ));
+        }
+        let spans = form.points.len().saturating_sub(1);
+        form.wind_factors = ohl_line::parse_wind_factors(&c.get(col("local winds")), spans)
+            .map_err(|e| format!("{name} local winds: {e}"))?;
+    }
     let temperature = num(&c.get(col("temp °C")), &format!("{name} temperature"))?;
     if !form.stringing.clipped() {
         let condition = c.get(col("condition")).trim().to_lowercase();

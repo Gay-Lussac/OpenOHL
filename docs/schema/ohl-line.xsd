@@ -541,6 +541,25 @@
                   <xs:attribute name="name" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="wind_factor" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A local wind (line file 9, roadmap O15): span
+                    span (0 = the first) takes the weather case's wind pressure
+                    times factor (0 to 10) in every weather case with wind; a
+                    span not listed takes the case's wind.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="span" type="xs:nonNegativeInteger" use="required"/>
+                  <xs:attribute name="factor" use="required">
+                    <xs:simpleType>
+                      <xs:restriction base="xs:double">
+                        <xs:minInclusive value="0"/>
+                        <xs:maxInclusive value="10"/>
+                      </xs:restriction>
+                    </xs:simpleType>
+                  </xs:attribute>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="point" type="ohl:sectionPoint" minOccurs="2" maxOccurs="unbounded"/>
               <xs:element name="stringing" type="ohl:stringing"/>
               <!-- Older documents: point loads of their own, read into
@@ -861,6 +880,17 @@
                 </xs:complexType>
               </xs:element>
               <xs:element name="weather_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="broken_case" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A load case of the line with a broken wire
+                    sent (line file 9, roadmap O9): its weather case with that
+                    wire broken, unfactored, in the condition given (a wind case
+                    twice).</xs:documentation>
+                </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="name" type="xs:string" use="required"/>
                 </xs:complexType>

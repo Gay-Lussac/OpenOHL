@@ -135,7 +135,11 @@ pub fn final_state(
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let st = |e: ohl_sagtension::SagTensionError| invalid(e.to_string());
     let cases = &line.condition_cases;
-    let state_of = |c: &WeatherCase| load_state(c, cable);
+    // The section's local winds (roadmap O15): its largest factor, the
+    // permanent stretch being one for the whole section (on the safe side:
+    // more stretch, more sag).
+    let local = section.largest_wind_factor();
+    let state_of = |c: &WeatherCase| load_state(&c.with_wind_factor(local), cable);
     let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
     let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
     let ns = NonlinearSection::from_known_state(
@@ -356,6 +360,7 @@ pub(super) fn solve_rs(
         nodes: Vec::new(),
         span_points: Vec::new(),
         spacers: Vec::new(),
+        broken: None,
     })
 }
 

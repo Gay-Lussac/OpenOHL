@@ -157,6 +157,12 @@ pub(super) const SECTIONS: &[Column] = &[
         Yes,
         "its weather case groups (Criteria › Weather case groups…), ticked: a check with the section override ticked takes on it only its cases in these groups (e.g. the snow load along the line); empty: the check's cases",
     ),
+    (
+        "local winds",
+        130.0,
+        Yes,
+        "local winds: spans whose wind is the weather case's times a factor, in every case with wind (e.g. 2–4: 1.2; 6: 0.7 — spans counted from 1, a run a–b); empty: the case's wind everywhere. Typed over many rows, each section takes it",
+    ),
 ];
 
 pub(super) const INSULATORS: &[Column] = &[

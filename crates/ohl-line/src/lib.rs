@@ -68,7 +68,13 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 8 adds a string's own volumes (`shapes`,
+/// Latest line file version: 9 adds a section's local winds
+/// (`wind_factors`, [`Section::wind_factors`]; roadmap O15, 2026-10-25)
+/// and the broken-wire load cases sent to the structures
+/// (`structure_loads.broken_cases`, [`StructureLoads::broken_cases`];
+/// roadmap O9, the same raise), written only by a line that has some
+/// (else 8 or 7, [`Line::to_json`]);
+/// 8 adds a string's own volumes (`shapes`,
 /// [`InsulatorString::shapes`]; roadmap O6, 2026-10-25), written only by a
 /// line that has some (else 7, [`Line::to_json`]); 7 adds the optional `height_datum`
 /// ([`HeightDatum`]), an attachment point's link to its joint (`joint`,
@@ -82,10 +88,14 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 8;
+pub const LINE_FILE_VERSION: u32 = 9;
+
+/// The version before the local winds: what a line without them is
+/// written as (when it has strings' own volumes).
+const BEFORE_WIND_FACTORS_VERSION: u32 = 8;
 
 /// The version before the strings' own volumes: what a line without them
-/// is written as.
+/// (and without local winds) is written as.
 const BEFORE_SHAPES_VERSION: u32 = 7;
 
 fn default_format() -> String {
@@ -277,6 +287,13 @@ pub struct StructureLoads {
     /// `creep`, `load`, `max_sag` (2026-10-25).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub condition: Option<String>,
+    /// The line's load cases with a broken wire sent, by name (roadmap O9;
+    /// default none, line file 9): each the weather case it names with
+    /// that wire broken, unfactored, in the condition above — a line
+    /// result `<weather case> — <section> span <n> broken` (a wind case
+    /// twice). Their factors are the structure load cases'.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub broken_cases: Vec<String>,
 }
 
 impl StructureLoads {
@@ -2334,10 +2351,80 @@ pub struct Section {
     /// solved again for them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weather_groups: Vec<String>,
+    /// Local winds (roadmap O15, owner 2026-10-25: "a factor, for every
+    /// wind case"): spans whose wind is the weather case's times a factor
+    /// of their own (e.g. 1.2 on an exposed ridge, 0.7 in a sheltered
+    /// valley), in every weather case with wind, wherever the case's wind
+    /// acts on the wires ([`Section::wind_factor`]). A span not listed
+    /// takes the case's wind (factor 1). Line file version 9.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wind_factors: Vec<SpanWind>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
     pub fields: Fields,
+}
+
+/// A span's local wind ([`Section::wind_factors`]): the factor on the
+/// weather case's wind pressure there.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpanWind {
+    /// The span (0 = the section's first, as span points count them).
+    pub span: usize,
+    /// The factor on the case's wind pressure, 0 to
+    /// [`MAX_WIND_FACTOR`].
+    pub factor: f64,
+}
+
+/// The largest local wind factor a span may be given.
+pub const MAX_WIND_FACTOR: f64 = 10.0;
+
+/// Local winds as written in words ([`Section::wind_factors_text`]):
+/// `2–4: 1.2; 6: 0.7` — spans counted from 1, a run `a–b` (or `a-b`), a
+/// factor each, separated by `;`; empty: none. Spans past `spans` (the
+/// section's number of spans), a factor out of 0 to [`MAX_WIND_FACTOR`]
+/// or a span given twice are refused, saying which. A factor of 1 is
+/// left out (the case's wind).
+pub fn parse_wind_factors(text: &str, spans: usize) -> Result<Vec<SpanWind>, String> {
+    let mut out: Vec<SpanWind> = Vec::new();
+    for part in text.split(';').map(str::trim).filter(|p| !p.is_empty()) {
+        let (range, factor) = part
+            .split_once(':')
+            .ok_or_else(|| format!("\"{part}\": write span: factor, e.g. 2–4: 1.2"))?;
+        let factor: f64 = factor
+            .trim()
+            .parse()
+            .map_err(|_| format!("\"{part}\": the factor is not a number"))?;
+        if !(factor.is_finite() && (0.0..=MAX_WIND_FACTOR).contains(&factor)) {
+            return Err(format!("\"{part}\": a factor from 0 to {MAX_WIND_FACTOR}"));
+        }
+        let range = range.trim().replace('–', "-");
+        let (a, b) = match range.split_once('-') {
+            Some((a, b)) => (a.trim().to_owned(), b.trim().to_owned()),
+            None => (range.clone(), range.clone()),
+        };
+        let span = |t: &str| -> Result<usize, String> {
+            t.parse::<usize>()
+                .ok()
+                .filter(|n| (1..=spans).contains(n))
+                .ok_or_else(|| format!("\"{part}\": spans 1 to {spans}"))
+        };
+        let (a, b) = (span(&a)?, span(&b)?);
+        if a > b {
+            return Err(format!("\"{part}\": the first span after the last"));
+        }
+        for s in a - 1..b {
+            if out.iter().any(|w| w.span == s) {
+                return Err(format!("span {} given twice", s + 1));
+            }
+            if factor != 1.0 {
+                out.push(SpanWind { span: s, factor });
+            }
+        }
+    }
+    out.sort_by_key(|w| w.span);
+    Ok(out)
 }
 
 fn one() -> u32 {
@@ -2383,6 +2470,8 @@ struct SectionFile {
     #[serde(default)]
     weather_groups: Vec<String>,
     #[serde(default)]
+    wind_factors: Vec<SpanWind>,
+    #[serde(default)]
     fields: Fields,
 }
 
@@ -2405,6 +2494,7 @@ impl From<SectionFile> for Section {
             color: f.color,
             calculation: f.calculation,
             weather_groups: f.weather_groups,
+            wind_factors: f.wind_factors,
             fields: f.fields,
         };
         for l in f.loads {
@@ -2518,6 +2608,18 @@ impl Section {
         for (p, m) in self.span_points.iter_mut().zip(spans) {
             p.span = m.expect("checked");
         }
+        // Local winds keep their span; a span gone (split or joined) takes
+        // the case's wind again.
+        self.wind_factors = self
+            .wind_factors
+            .iter()
+            .filter_map(|w| {
+                new_index(w.span).map(|span| SpanWind {
+                    span,
+                    factor: w.factor,
+                })
+            })
+            .collect();
         if let (Stringing::Sag { span: Some(k), .. }, Some(m)) = (&mut self.stringing, sagged) {
             *k = m;
         }
@@ -2528,6 +2630,83 @@ impl Section {
         }
         self.points = points;
         Ok(())
+    }
+
+    /// The local wind factor of span `span` (0 = first): its own, else 1
+    /// (the weather case's wind).
+    pub fn wind_factor(&self, span: usize) -> f64 {
+        self.wind_factors
+            .iter()
+            .find(|w| w.span == span)
+            .map_or(1.0, |w| w.factor)
+    }
+
+    /// Whether a span has a local wind other than the case's.
+    pub fn has_local_wind(&self) -> bool {
+        self.wind_factors.iter().any(|w| w.factor != 1.0)
+    }
+
+    /// The largest local wind factor of its spans (a span without one
+    /// counts 1): what a calculation that cannot tell the spans apart
+    /// takes (the ruling span, the permanent stretch), on the safe side
+    /// for the tension.
+    pub fn largest_wind_factor(&self) -> f64 {
+        let spans = self.points.len().saturating_sub(1);
+        (0..spans)
+            .map(|s| self.wind_factor(s))
+            .fold(if spans == 0 { 1.0 } else { f64::MIN }, f64::max)
+    }
+
+    /// The local wind factor at point `k` of the section: the larger of
+    /// its spans' on either side (what its strings take, on the safe side:
+    /// they swing at least as far as with either).
+    pub fn wind_factor_at_point(&self, k: usize) -> f64 {
+        let spans = self.points.len().saturating_sub(1);
+        let mut f: Option<f64> = None;
+        for s in [k.checked_sub(1), (k < spans).then_some(k)]
+            .into_iter()
+            .flatten()
+        {
+            let x = self.wind_factor(s);
+            f = Some(f.map_or(x, |y| y.max(x)));
+        }
+        f.unwrap_or(1.0)
+    }
+
+    /// Sets the local wind factor of spans `first..=last` (0 = first) to
+    /// `factor`; 1 takes them back to the case's wind (no entry kept).
+    /// The list stays in span order.
+    pub fn set_wind_factor(&mut self, first: usize, last: usize, factor: f64) {
+        self.wind_factors
+            .retain(|w| w.span < first || w.span > last);
+        if factor != 1.0 {
+            self.wind_factors
+                .extend((first..=last).map(|span| SpanWind { span, factor }));
+        }
+        self.wind_factors.sort_by_key(|w| w.span);
+    }
+
+    /// Its local winds in words, spans counted from 1 and runs of equal
+    /// factors joined: `2–4: 1.2; 6: 0.7` (empty: none). Read back by
+    /// [`parse_wind_factors`].
+    pub fn wind_factors_text(&self) -> String {
+        let mut runs: Vec<(usize, usize, f64)> = Vec::new();
+        for w in &self.wind_factors {
+            match runs.last_mut() {
+                Some((_, last, f)) if *last + 1 == w.span && *f == w.factor => *last = w.span,
+                _ => runs.push((w.span, w.span, w.factor)),
+            }
+        }
+        runs.iter()
+            .map(|(a, b, f)| {
+                if a == b {
+                    format!("{}: {f}", a + 1)
+                } else {
+                    format!("{}–{}: {f}", a + 1, b + 1)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     /// The section's bundle.
@@ -2673,6 +2852,49 @@ impl Line {
             }
             Tap::Jumper { .. } => None,
         }
+    }
+
+    /// The local wind factor at structure `structure` (roadmap O15): the
+    /// largest of the spans next to it in every section through it (a
+    /// span without one counts 1); 1 when no section has local winds.
+    /// What the wires that hang at the structure itself take (the jumpers,
+    /// the strings holding them), on the safe side.
+    pub fn wind_factor_at_structure(&self, structure: &str) -> f64 {
+        let mut f: Option<f64> = None;
+        for s in self.sections.iter().filter(|s| s.has_local_wind()) {
+            for (k, p) in s.points.iter().enumerate() {
+                if p.structure == structure {
+                    let x = s.wind_factor_at_point(k);
+                    f = Some(f.map_or(x, |y| y.max(x)));
+                }
+            }
+        }
+        // Next to a section without local winds too: at least 1 there.
+        let plain = self
+            .sections
+            .iter()
+            .filter(|s| !s.has_local_wind())
+            .any(|s| s.points.iter().any(|p| p.structure == structure));
+        match f {
+            Some(x) if plain => x.max(1.0),
+            Some(x) => x,
+            None => 1.0,
+        }
+    }
+
+    /// The local wind factor of jumper `jumper`: the largest at the
+    /// structures of its ends ([`Line::wind_factor_at_structure`]).
+    pub fn jumper_wind_factor(&self, jumper: &Jumper) -> f64 {
+        if !self.sections.iter().any(Section::has_local_wind) {
+            return 1.0;
+        }
+        let mut structures = self.end_structures(&jumper.from);
+        structures.extend(self.end_structures(&jumper.to));
+        structures
+            .iter()
+            .map(|s| self.wind_factor_at_structure(s))
+            .fold(None, |a: Option<f64>, x| Some(a.map_or(x, |y| y.max(x))))
+            .unwrap_or(1.0)
     }
 
     /// The structures a jumper's end is at: its section point's, or, a
@@ -2977,21 +3199,29 @@ impl Line {
         });
     }
 
-    /// Serialises to pretty JSON: as version 7 while no string has volumes
-    /// of its own (the oldest version that holds the line, so an older
-    /// program still reads it), else as its version.
+    /// Serialises to pretty JSON at the oldest version that holds the
+    /// line, so an older program still reads it: 9 with local winds, else
+    /// 8 with strings' own volumes, else 7 (a line of an older version
+    /// as its version).
     pub fn to_json(&self) -> String {
         let text = serde_json::to_string_pretty(self).expect("line serialises");
         let shapes = self
             .structures
             .iter()
             .any(|s| s.strings.iter().any(|x| !x.shapes.is_empty()));
-        if self.version == LINE_FILE_VERSION && !shapes {
+        let winds = self.sections.iter().any(|s| !s.wind_factors.is_empty())
+            || !self.structure_loads.broken_cases.is_empty();
+        let written = match (winds, shapes) {
+            (true, _) => LINE_FILE_VERSION,
+            (false, true) => BEFORE_WIND_FACTORS_VERSION,
+            (false, false) => BEFORE_SHAPES_VERSION,
+        };
+        if self.version == LINE_FILE_VERSION && written != LINE_FILE_VERSION {
             // The version is the second key (after the format): its first
             // occurrence.
             text.replacen(
                 &format!("\"version\": {LINE_FILE_VERSION},"),
-                &format!("\"version\": {BEFORE_SHAPES_VERSION},"),
+                &format!("\"version\": {written},"),
                 1,
             )
         } else {
@@ -3356,6 +3586,24 @@ impl Line {
             // a clamp).
             let end_ok =
                 |p: &SpanPlace| matches!(*p, SpanPlace::Fraction(f) if f == 0.0 || f == 1.0);
+            let mut winds = std::collections::BTreeSet::new();
+            for w in &sec.wind_factors {
+                if w.span >= spans || !winds.insert(w.span) {
+                    return invalid(format!(
+                        "section {}: local wind of span {}: not one of its spans, or given twice",
+                        sec.id,
+                        w.span + 1
+                    ));
+                }
+                if !(w.factor.is_finite() && (0.0..=MAX_WIND_FACTOR).contains(&w.factor)) {
+                    return invalid(format!(
+                        "section {}: local wind factor {} of span {} (0 to {MAX_WIND_FACTOR})",
+                        sec.id,
+                        w.factor,
+                        w.span + 1
+                    ));
+                }
+            }
             let mut labels = std::collections::BTreeSet::new();
             for p in &sec.span_points {
                 if p.label.trim().is_empty() || !labels.insert(p.label.as_str()) {

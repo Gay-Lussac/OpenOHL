@@ -329,6 +329,8 @@ pub struct SectionForm {
     pub calculation: ohl_line::condition::Calculation,
     /// Its weather case groups ([`ohl_line::Section::weather_groups`]).
     pub weather_groups: Vec<String>,
+    /// Its local winds ([`ohl_line::Section::wind_factors`]).
+    pub wind_factors: Vec<ohl_line::SpanWind>,
     /// Display colour (`#rrggbb`; none: its phase's).
     pub color: Option<String>,
     /// What it is, in words.

@@ -296,7 +296,7 @@ impl Op {
                 | Command::RelinkPoints { structure, .. } => {
                     out.push((Kind::Structure, structure.clone()));
                 }
-                Command::SetStringing { section, .. } => {
+                Command::SetStringing { section, .. } | Command::SetWindFactor { section, .. } => {
                     out.push((Kind::Section, section.clone()));
                 }
                 // The point's host (what names the point follows).

@@ -446,6 +446,19 @@ pub enum Command {
         /// New stringing.
         stringing: Stringing,
     },
+    /// Give spans `spans` (first and last, 0 = the section's first span,
+    /// as the line file counts them) of section `section` a local wind
+    /// factor (roadmap O15): the weather case's wind there times `factor`
+    /// in every case with wind; 1 takes them back to the case's wind.
+    /// Refused: no such section or spans, a factor out of 0 to 10.
+    SetWindFactor {
+        /// Section id.
+        section: String,
+        /// The first and last span, 0 = first.
+        spans: [usize; 2],
+        /// The factor (1: the case's wind).
+        factor: f64,
+    },
     /// Move point `index` of alignment `route` (`"line"`: the alignment
     /// `main` of older projects); a point shared by other alignments moves
     /// on all of them. A point tied to a structure is detached.
@@ -2597,6 +2610,40 @@ impl Session {
                     p.position = position;
                     out.push(put(Kind::AlignmentPoint, &p.id.clone(), &p));
                 }
+            }
+            Command::SetWindFactor {
+                section,
+                spans: [first, last],
+                factor,
+            } => {
+                let mut s = self
+                    .line
+                    .sections
+                    .iter()
+                    .find(|s| s.id == section)
+                    .ok_or_else(|| refused(format!("no section {section}")))?
+                    .clone();
+                let n = s.points.len().saturating_sub(1);
+                if first > last || last >= n {
+                    return Err(refused(format!(
+                        "section {section} has spans 1 to {n}: not {} to {}",
+                        first + 1,
+                        last + 1
+                    )));
+                }
+                if !(factor.is_finite() && (0.0..=ohl_line::MAX_WIND_FACTOR).contains(&factor)) {
+                    return Err(refused(format!(
+                        "local wind factor {factor}: 0 to {}",
+                        ohl_line::MAX_WIND_FACTOR
+                    )));
+                }
+                s.set_wind_factor(first, last, factor);
+                out.push(Command::Put {
+                    kind: Kind::Section,
+                    id: section,
+                    value: json(&s),
+                    ord: None,
+                });
             }
             Command::SetStringing { section, stringing } => {
                 let mut s = self

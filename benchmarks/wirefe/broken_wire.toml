@@ -1,0 +1,65 @@
+# A broken wire (ohl_line::solve::solve_section_broken, roadmap O9; theory:
+# Wire system FE › A broken wire). The section of span_cases.toml: two
+# level 300 m spans, dead-end clamps fixed at (0, 27) and (600, 27) m, a
+# suspension string in the middle from (300, 30) m: 3 m, 800 N, axial
+# stiffness 5e7 N. Cable EA = 34.64 MN, alpha = 18.9e-6 /K, 1.6285 kg/m at
+# its data sheet's 20 °C; strung at 28 kN at 15 °C in the blocks (each
+# span's unstressed length 300.1226985734 m at 15 °C). The wire of one span
+# breaks: the string swings towards the span left until its pull, its half
+# weight and that span's end force balance at the clamp.
+#
+# Reference: benchmarks/wirefe/reference_broken_wire.py — the closed-form
+# elastic catenary of the remaining span (its own implementation) and
+# Newton on the clamp's position. Hand check (001): the moment about the
+# string's top, tan(phi) = H / (V + W/2) with V the wire's vertical pull
+# at the clamp: 9538.50 / (2466.72 + 400) = 3.3274, phi = 73.27°; the
+# load on the middle structure along the line is the remaining span's H
+# (the string carries it to the top), down V + W = 2466.72 + 800 =
+# 3266.72 N — the unbalanced longitudinal load of a broken wire. The
+# remaining span slackens from 28 kN (15 °C, whole) to 9.54 kN: its clamp
+# came 2.87 m closer and 2.14 m up.
+
+[[case]]
+id = "brokenwire-001"
+title = "Span 2 broken at 15 °C: the string swings back into span 1"
+calculation = "line.broken_wire"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py), hand check in the file"
+max_seconds = 2.0
+inputs = { temperature = "15 °C", span = 2 }
+expected.h_n = { value = 9538.50388617, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 297.126377339, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 29.1363572797, abs_tol = 1e-6 }
+expected.swing_deg = { value = -73.272298745, abs_tol = 1e-6 }
+expected.string_n = { value = 9959.97569163, rel_tol = 1e-7 }
+expected.along_n = { value = -9538.50388611, rel_tol = 1e-7 }
+expected.down_n = { value = 3266.71578511, rel_tol = 1e-7 }
+
+[[case]]
+id = "brokenwire-002"
+title = "Span 2 broken at -5 °C: the shorter span pulls a little more"
+calculation = "line.broken_wire"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py)"
+max_seconds = 2.0
+inputs = { temperature = "-5 °C", span = 2 }
+expected.h_n = { value = 9713.48632171, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 297.122244837, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 29.1501931217, abs_tol = 1e-6 }
+expected.swing_deg = { value = -73.5480235968, abs_tol = 1e-6 }
+expected.string_n = { value = 10128.158965, rel_tol = 1e-7 }
+expected.along_n = { value = -9713.48632177, rel_tol = 1e-7 }
+expected.down_n = { value = 3268.41201648, rel_tol = 1e-7 }
+
+[[case]]
+id = "brokenwire-003"
+title = "Span 1 broken at 15 °C: the mirror image of brokenwire-001"
+calculation = "line.broken_wire"
+reference = "Symmetry of brokenwire-001 (benchmarks/wirefe/reference_broken_wire.py)"
+max_seconds = 2.0
+inputs = { temperature = "15 °C", span = 1 }
+expected.h_n = { value = 9538.50388617, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 302.873622661, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 29.1363572797, abs_tol = 1e-6 }
+expected.swing_deg = { value = 73.272298745, abs_tol = 1e-6 }
+expected.string_n = { value = 9959.97569163, rel_tol = 1e-7 }
+expected.along_n = { value = 9538.50388611, rel_tol = 1e-7 }
+expected.down_n = { value = 3266.71578511, rel_tol = 1e-7 }

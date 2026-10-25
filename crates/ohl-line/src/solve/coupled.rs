@@ -549,7 +549,9 @@ pub fn solve_spacer_group(
             return [0.0; 3];
         }
         let left = Vector3::new(-h.y, h.x, 0.0) / h.norm();
-        p(left * (0.5 * case.wind_pressure.si() * s.wind_area * case.wind_from.to_left()))
+        // The span's local wind (roadmap O15).
+        let local = line.sections[k].wind_factor(span);
+        p(left * (0.5 * case.wind_pressure.si() * local * s.wind_area * case.wind_from.to_left()))
     };
     // The forces on the pulled ends, one vector per spacer (in `spacers`'
     // order): fixed point of g(f) — the pulled sections solved under f,

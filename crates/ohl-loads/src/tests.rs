@@ -1073,7 +1073,7 @@ fn structure_values_of_a_load_case_are_read_and_checked() {
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nwind_pressure = -5\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nwind_factor = 101\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\ndrag = 2\n",
-        "format = \"ohl-load-cases\"\nversion = 3\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+        "format = \"ohl-load-cases\"\nversion = 4\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
     ] {
         assert!(LoadCases::parse(bad).is_err(), "{bad}");
     }

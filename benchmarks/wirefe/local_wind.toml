@@ -1,0 +1,60 @@
+# A local wind per span (ohl_line::Section::wind_factors, roadmap O15;
+# theory: Wire system FE › Local winds per span). One level 300 m span
+# between wire points fixed at (0, 27) and (300, 27) m, clipped in with an
+# unstressed length of 300.5 m at 20 °C; cable EA = 34.64 MN, 28 mm,
+# 1.6285 kg/m at its data sheet's 20 °C (15.9699 N/m). A case at 20 °C with
+# 500 Pa from the right; the span's local wind factor f: the wind per
+# metre of the stretched wire f × 500 Pa × 0.028 m (f = 1: 14 N/m).
+#
+# Reference: benchmarks/wirefe/reference_broken_wire.py (local_wind) —
+# the load is constant along the span, in a plane tilted from the
+# vertical by atan(f p d k / w) (k the span's stretch, a fixed point: the
+# wind per stretched metre, owner decision 2026-10-21): the closed-form
+# elastic catenary in that plane with the resultant load. Hand check
+# (001): tan(theta) = 14 × 1.000763 / 15.9699 = 0.8773, theta = 41.26°;
+# the factor scales the wind only: 1.5 gives 52.77°, 0 hangs plumb
+# (004, the span in still air: H 20 555.5 N).
+
+[[case]]
+id = "localwind-001"
+title = "Factor 1: the case's wind (500 Pa)"
+calculation = "line.local_wind"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py), hand check in the file"
+max_seconds = 2.0
+inputs = { wind = "500 Pa", factor = 1.0 }
+expected.h_n = { value = 26374.7047514, rel_tol = 1e-7 }
+expected.blowout_deg = { value = 41.260660969, abs_tol = 1e-6 }
+expected.sag_m = { value = 9.06599447521, abs_tol = 1e-6 }
+
+[[case]]
+id = "localwind-002"
+title = "Factor 1.5 (an exposed ridge): blown out further, tighter"
+calculation = "line.local_wind"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py)"
+max_seconds = 2.0
+inputs = { wind = "500 Pa", factor = 1.5 }
+expected.h_n = { value = 31762.5936483, rel_tol = 1e-7 }
+expected.blowout_deg = { value = 52.7730159399, abs_tol = 1e-6 }
+expected.sag_m = { value = 9.35343154139, abs_tol = 1e-6 }
+
+[[case]]
+id = "localwind-003"
+title = "Factor 0.6 (a sheltered valley)"
+calculation = "line.local_wind"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py)"
+max_seconds = 2.0
+inputs = { wind = "500 Pa", factor = 0.6 }
+expected.h_n = { value = 22887.8758615, rel_tol = 1e-7 }
+expected.blowout_deg = { value = 27.7591918406, abs_tol = 1e-6 }
+expected.sag_m = { value = 8.87510070465, abs_tol = 1e-6 }
+
+[[case]]
+id = "localwind-004"
+title = "Factor 0: no wind on the span, as in still air"
+calculation = "line.local_wind"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py)"
+max_seconds = 2.0
+inputs = { wind = "500 Pa", factor = 0.0 }
+expected.h_n = { value = 20555.5003475, rel_tol = 1e-7 }
+expected.blowout_deg = { value = 0.0, abs_tol = 1e-6 }
+expected.sag_m = { value = 8.74512191207, abs_tol = 1e-6 }

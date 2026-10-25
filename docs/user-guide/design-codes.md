@@ -240,7 +240,8 @@ says when the code gives none.
 
 Every plugin says in its notes what it leaves out. In this first version:
 security and failure-containment loads (broken wire, unbalanced ice) —
-use the broken-span solve and your own load cases; construction and
+the core solves a broken wire for any load case that names one (below),
+the example plugins write none yet; construction and
 maintenance loads; wind on structures by the code's own method (the
 structure loads apply each weather case's wind pressure to the structure
 types' height bands, see [Load cases](loads.md); the member wind of a
@@ -258,3 +259,38 @@ interface is unchanged (the `.ohllc` text carries them; the shared
 raises the file to version 2 only then). The example plugins give none
 yet: their structures take the weather case's pressure and the
 transverse factor.
+
+**A broken wire** (roadmap O9; owner 2026-10-19: the core gets the
+broken-wire case, the codes' security loads stay in their plugins). A
+plugin writes a code's broken-wire cases as load cases with a
+`[case.broken]` table in the `.ohllc` text it generates
+([Load cases](loads.md#a-broken-wire-casebroken)) — the plugin
+interface is unchanged:
+
+```toml
+format = "ohl-load-cases"
+version = 3                # 3 only when a case has [case.broken]
+
+[[case]]
+name = "security: S3 every span"
+description = "the code's clause, broken wire"
+weather = "everyday"       # a weather case the plugin writes too
+condition = "initial"
+longitudinal = 1.0         # the code's impact factor on the unbalanced pull
+tags = ["security"]
+
+[case.broken]
+section = "S3"             # a section of the line, by id
+span = "every"             # or a span from 1
+set = 1                    # optional check: the set of the wire
+```
+
+The line's sections and spans come from the line the cases are run on;
+a plugin that does not know them writes `span = "every"` for the
+sections it is told about (one case per section), or leaves the cases to
+the user. The core solves the section with that wire gone, the strings
+at its ends swung to the spans left, and gives the loads (with
+`"every"`, the worst of each component and the span giving it). Not
+modelled (in the [theory](../theory/wirefe.md#a-broken-wire-2026-10-25)):
+the dynamic impact (the factor above), a single subconductor of a
+bundle broken (the whole phase is).

@@ -70,11 +70,12 @@ use serde::Deserialize;
 
 /// `format` of a load case file.
 pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
-/// Newest format version read. Version 2 adds a case's
-/// `[case.structure]` table ([`StructureWind`]), written only when a case
-/// has one ([`LoadCases::written_version`]); version 1 files read as
+/// Newest format version read. Version 3 adds a case's broken wire
+/// (`[case.broken]`, [`BrokenWire`]); version 2 a case's
+/// `[case.structure]` table ([`StructureWind`]); each written only when a
+/// case has one ([`LoadCases::written_version`]); older files read as
 /// before.
-pub const LOAD_CASE_FILE_VERSION: u32 = 2;
+pub const LOAD_CASE_FILE_VERSION: u32 = 3;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
@@ -171,6 +172,135 @@ pub struct LoadCase {
     /// transverse factor).
     #[serde(default)]
     pub structure: Option<StructureWind>,
+    /// A broken wire (version 3, roadmap O9): the section solved with the
+    /// wire of one of its spans gone, or of every span one at a time
+    /// ([`BrokenWire`]); none: every wire whole.
+    #[serde(default)]
+    pub broken: Option<BrokenWire>,
+}
+
+/// A load case's broken wire (`[case.broken]`, version 3; roadmap O9,
+/// owner 2026-10-19 and 2026-10-25): in that case the section `section`
+/// is solved with the wire of span `span` gone
+/// (`ohl_line::solve::solve_section_broken`), the other wires as they
+/// are. The wire is named by its section and span; `set`, when given, is
+/// the set of the section's points at the span's ends (the wire of that
+/// set in that span, as the structures number their wire points): a
+/// check that the span is the wire meant, refused when neither end has
+/// it. A bundle's broken wire is its whole phase (every subconductor in
+/// that span). `span = "every"`: a case per span, one at a time, and for
+/// each structure point the largest of each force component (by size,
+/// its sign kept) with the span giving it — an envelope, conservative
+/// (the components may come from different spans).
+///
+/// ```toml
+/// [case.broken]
+/// section = "S3"
+/// span = 2        # 1 = the section's first span; or "every"
+/// set = 1         # optional
+/// ```
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrokenWire {
+    /// The section, by id.
+    pub section: String,
+    /// The span, or every span one at a time.
+    pub span: BrokenSpan,
+    /// The set of the wire at the span's ends (a check; none: not
+    /// checked).
+    #[serde(default)]
+    pub set: Option<u32>,
+}
+
+/// Which span of a [`BrokenWire`] is broken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrokenSpan {
+    /// Span `n`, counted from 1 (the section's first span is 1).
+    One(usize),
+    /// Every span of the section, one at a time (the worst kept).
+    Every,
+}
+
+impl<'de> Deserialize<'de> for BrokenSpan {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Number(i64),
+            Text(String),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Number(n) if n >= 1 => Ok(Self::One(n as usize)),
+            Raw::Number(n) => Err(serde::de::Error::custom(format!(
+                "span {n}: spans are counted from 1"
+            ))),
+            Raw::Text(t) if t == "every" => Ok(Self::Every),
+            Raw::Text(t) => Err(serde::de::Error::custom(format!(
+                "span \"{t}\": a span number (from 1) or \"every\""
+            ))),
+        }
+    }
+}
+
+impl BrokenSpan {
+    /// As written in files: the number, or `"every"`.
+    pub fn as_toml(&self) -> String {
+        match self {
+            Self::One(n) => n.to_string(),
+            Self::Every => "\"every\"".into(),
+        }
+    }
+}
+
+impl BrokenWire {
+    /// In words for names and notes: `S3 span 2 set 1 broken`,
+    /// `S3 every span broken, one at a time`.
+    pub fn describe(&self) -> String {
+        let set = self.set.map_or(String::new(), |s| format!(" set {s}"));
+        match self.span {
+            BrokenSpan::One(n) => format!("{} span {n}{set} broken", self.section),
+            BrokenSpan::Every => {
+                format!("{}{set} every span broken, one at a time", self.section)
+            }
+        }
+    }
+
+    /// The spans broken in `line` (0 = first): the one, or every span of
+    /// the section. Err: no such section or span, or the set given at
+    /// neither end of the span.
+    pub fn spans(&self, line: &Line) -> Result<Vec<usize>, String> {
+        let s = line
+            .sections
+            .iter()
+            .find(|s| s.id == self.section)
+            .ok_or_else(|| format!("broken wire: no section {}", self.section))?;
+        let n = s.points.len().saturating_sub(1);
+        let spans: Vec<usize> = match self.span {
+            BrokenSpan::One(k) if (1..=n).contains(&k) => vec![k - 1],
+            BrokenSpan::One(k) => {
+                return Err(format!(
+                    "broken wire: section {} has no span {k} (it has {n})",
+                    self.section
+                ));
+            }
+            BrokenSpan::Every => (0..n).collect(),
+        };
+        if let Some(set) = self.set {
+            for &k in &spans {
+                if s.points[k].set != set && s.points[k + 1].set != set {
+                    return Err(format!(
+                        "broken wire: span {} of section {} is not of set {set} (its ends: sets \
+                         {} and {})",
+                        k + 1,
+                        self.section,
+                        s.points[k].set,
+                        s.points[k + 1].set
+                    ));
+                }
+            }
+        }
+        Ok(spans)
+    }
 }
 
 /// A load case's own values for the wind on the structure bodies
@@ -287,6 +417,7 @@ impl LoadCase {
             strength: 1.0,
             tags: vec![WEATHER_CASE_TAG.to_owned()],
             structure: None,
+            broken: None,
         }
     }
 
@@ -326,6 +457,11 @@ impl LoadCase {
         }
         if self.strength == 0.0 {
             return Err(format!("{}: strength factor 0", self.name));
+        }
+        if let Some(b) = &self.broken
+            && b.section.trim().is_empty()
+        {
+            return Err(format!("{}: a broken wire without a section", self.name));
         }
         if let Some(s) = &self.structure {
             if let Some(p) = s.wind_pressure
@@ -394,9 +530,9 @@ impl LoadCases {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// The version a file of these cases is written at: 2 when a case has
-    /// a `[case.structure]` table with a value, else 1 (an older program
-    /// still reads it).
+    /// The version a file of these cases is written at: 3 when a case has
+    /// a broken wire, else 2 when a case has a `[case.structure]` table
+    /// with a value, else 1 (an older program still reads it).
     pub fn written_version(&self) -> u32 {
         written_version(&self.cases)
     }
@@ -405,7 +541,9 @@ impl LoadCases {
 /// The version a load case file holding `cases` is written at
 /// ([`LoadCases::written_version`]).
 pub fn written_version(cases: &[LoadCase]) -> u32 {
-    if cases
+    if cases.iter().any(|c| c.broken.is_some()) {
+        3
+    } else if cases
         .iter()
         .any(|c| c.structure.is_some_and(|s| !s.is_empty()))
     {
@@ -440,6 +578,11 @@ pub struct AttachmentLoad {
     pub local: [f64; 3],
     /// The same, factored by the load case.
     pub factored: [f64; 3],
+    /// A broken-wire case ([`LoadCase::broken`]): the broken span
+    /// (1 = the section's first) giving each component (transverse,
+    /// longitudinal, vertical) — with `"every"`, the span whose break
+    /// gives the largest; none: no broken wire.
+    pub broken_span: Option<[usize; 3]>,
 }
 
 /// The loads of a load case.
@@ -595,7 +738,12 @@ fn axes(orientation_deg: f64) -> ([f64; 2], [f64; 2]) {
 }
 
 /// Solves every section of `line` (structure types resolved) in each load
-/// case and gives the loads on the structures. `weather`: the weather
+/// case and gives the loads on the structures. A case with a broken wire
+/// ([`LoadCase::broken`]) solves that section with the wire of its span
+/// gone (`ohl_line::solve::solve_line_broken`), with `"every"` once per
+/// span, the largest of each component kept
+/// ([`AttachmentLoad::broken_span`] says which span gave it); a section
+/// or span not in the line fails the case as a whole. `weather`: the weather
 /// cases the load cases name (also those of the line's creep-stretch
 /// criteria). A section that does not solve is listed in `failed`; a load
 /// case naming an unknown weather case fails as a whole.
@@ -622,123 +770,232 @@ pub fn structure_loads(
                     case.name, case.weather
                 )
             })?;
-        let calculation = Calculation::ALL
-            .into_iter()
-            .find(|c| c.condition() == case.condition.condition() && c.method() == Method::Fe)
-            .expect("every condition has an FE calculation");
-        // (structure, point) → load.
-        let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
-        let mut failed = Vec::new();
-        let mut missing = Vec::new();
-        // Every section in the load case's condition, solved together where
-        // they share strings.
-        let mut solving = line.clone();
-        for s in &mut solving.sections {
-            s.calculation = calculation;
-        }
-        let results = ohl_line::solve::solve_line_with(&solving, library, w, budget);
-        let mut solved = Vec::with_capacity(results.len());
-        for (section, result) in line.sections.iter().zip(results) {
-            let shape = match result {
-                Ok(shape) => shape,
-                Err(e) => {
-                    failed.push(format!("{}: {e}", section.id));
-                    missing.extend(missing_wires(
-                        &line,
-                        WireKind::Section,
-                        &section.id,
-                        &e.to_string(),
-                    ));
-                    continue;
-                }
-            };
-            for (point, supports) in section.points.iter().zip(&shape.attachment_loads) {
-                let structure = line.structure(&point.structure);
-                // The sets hanging on the same strings.
-                let sets: Vec<u32> = structure
-                    .and_then(|s| {
-                        let w = s.wire_at_set(point.set)?;
-                        Some(
-                            s.component(&w.label)
-                                .wires
-                                .iter()
-                                .filter_map(|&i| s.wires[i].set)
-                                .collect(),
-                        )
-                    })
-                    .unwrap_or_else(|| vec![point.set]);
-                for support in supports {
-                    let place = Place {
-                        structure: &point.structure,
-                        label: &support.label,
-                        at: support.at,
-                    };
-                    add(
-                        &mut at,
-                        &line,
-                        case,
-                        place,
-                        support.force,
-                        &sets,
-                        &section.id,
-                    );
-                }
-            }
-            solved.push(shape);
-        }
-        // Jumpers' support clamps: their strings pull on their tops (the
-        // string's force towards the clamp, half its weight and wind).
-        for j in line.jumpers.iter().filter(|j| !j.supports().is_empty()) {
-            let shape = match ohl_line::jumper::solve_one_jumper(&line, library, w, &solved, j) {
-                Ok(shape) => shape,
-                Err(e) => {
-                    failed.push(format!("jumper {}: {e}", j.id));
-                    missing.extend(missing_wires(
-                        &line,
-                        WireKind::Jumper,
-                        &j.id,
-                        &e.to_string(),
-                    ));
-                    continue;
-                }
-            };
-            for support in &shape.supports {
-                let Some(structure) = line.structure(&support.structure) else {
-                    continue;
-                };
-                for x in &support.strings {
-                    let Some(string) = structure.string(&x.label) else {
-                        continue;
-                    };
-                    let towards = [0, 1, 2].map(|k| support.clamp[k] - x.top[k]);
-                    let d = towards.iter().map(|v| v * v).sum::<f64>().sqrt();
-                    let mut f = towards.map(|v| if d > 0.0 { v / d * x.force } else { 0.0 });
-                    f[2] -= string.weight / 2.0;
-                    // Half the wind on the string, across the line.
-                    if let Some(a) = line.direction_at([x.top[0], x.top[1]]) {
-                        let push =
-                            0.5 * w.wind_pressure.si() * string.wind_area * w.wind_from.to_left();
-                        f[0] -= a[1] * push;
-                        f[1] += a[0] * push;
+        let broken = match &case.broken {
+            Some(b) => b
+                .spans(&line)
+                .map_err(|e| format!("load case {}: {e}", case.name))?,
+            None => Vec::new(),
+        };
+        let (loads, failed, missing) = if broken.is_empty() {
+            let (at, failed, missing) = case_loads(&line, library, w, case, None, budget);
+            (at.into_values().collect(), failed, missing)
+        } else {
+            let section = case.broken.as_ref().map_or("", |b| b.section.as_str());
+            // A solve per span broken; the worst of each component kept.
+            let mut worst: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
+            let (mut failed, mut missing) = (Vec::new(), Vec::new());
+            for &k in &broken {
+                let (at, f, m) = case_loads(&line, library, w, case, Some((section, k)), budget);
+                for x in f {
+                    if !failed.contains(&x) {
+                        failed.push(x);
                     }
-                    let place = Place {
-                        structure: &support.structure,
-                        label: &string.top,
-                        at: x.top,
-                    };
-                    add(&mut at, &line, case, place, f, &[], &j.id);
+                }
+                for x in m {
+                    if !missing.contains(&x) {
+                        missing.push(x);
+                    }
+                }
+                for (key, l) in at {
+                    match worst.get_mut(&key) {
+                        Some(e) => envelope(e, &l, &line),
+                        None => {
+                            worst.insert(key, l);
+                        }
+                    }
                 }
             }
-        }
+            (worst.into_values().collect(), failed, missing)
+        };
         out.push(CaseLoads {
             case: case.clone(),
-            loads: at.into_values().collect(),
+            loads,
             failed,
             missing,
             structure_wind: case.structure_wind(w),
         });
     }
     Ok(out)
+}
+
+/// Keeps in `e` the larger of each force component of `e` and `l` (by
+/// size of the factored value, the sign kept; factored and unfactored
+/// together) with the span giving it, the force in line axes made again
+/// of the components kept (the envelope of a broken wire in every span:
+/// conservative, the components may come from different spans).
+fn envelope(e: &mut AttachmentLoad, l: &AttachmentLoad, line: &Line) {
+    let mut kept = e.broken_span.unwrap_or_default();
+    let theirs = l.broken_span.unwrap_or_default();
+    for i in 0..3 {
+        if l.factored[i].abs() > e.factored[i].abs() {
+            e.factored[i] = l.factored[i];
+            e.local[i] = l.local[i];
+            kept[i] = theirs[i];
+        }
+    }
+    e.broken_span = Some(kept);
+    for s in &l.sections {
+        if !e.sections.contains(s) {
+            e.sections.push(s.clone());
+        }
+    }
+    let (right, ahead) = axes(
+        line.structure(&e.structure)
+            .map_or(0.0, |s| s.orientation_deg),
+    );
+    e.force = [
+        e.local[0] * right[0] + e.local[1] * ahead[0],
+        e.local[0] * right[1] + e.local[1] * ahead[1],
+        -e.local[2],
+    ];
+}
+
+/// What [`case_loads`] gives: the loads by (structure, point), the
+/// sections and jumpers not solved (in words, and per structure).
+type Loads = (
+    BTreeMap<(String, String), AttachmentLoad>,
+    Vec<String>,
+    Vec<MissingWire>,
+);
+
+/// The loads at the structures' points of load case `case` in weather
+/// case `w`, the wire of span `broken` (section, span from 0) gone when
+/// given; with the sections and jumpers that did not solve.
+fn case_loads(
+    line: &Line,
+    library: &ohl_cables::Library,
+    w: &WeatherCase,
+    case: &LoadCase,
+    broken: Option<(&str, usize)>,
+    budget: &Budget,
+) -> Loads {
+    let calculation = Calculation::ALL
+        .into_iter()
+        .find(|c| c.condition() == case.condition.condition() && c.method() == Method::Fe)
+        .expect("every condition has an FE calculation");
+    // (structure, point) → load.
+    let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
+    let mut failed = Vec::new();
+    let mut missing = Vec::new();
+    // Every section in the load case's condition, solved together where
+    // they share strings.
+    let mut solving = line.clone();
+    for s in &mut solving.sections {
+        s.calculation = calculation;
+    }
+    let results = match broken {
+        None => ohl_line::solve::solve_line_with(&solving, library, w, budget),
+        Some((section, span)) => {
+            match ohl_line::solve::solve_line_broken(&solving, library, w, section, span, budget) {
+                Ok(r) => r,
+                // Checked by the caller (the section is there).
+                Err(e) => {
+                    failed.push(e.to_string());
+                    return (at, failed, missing);
+                }
+            }
+        }
+    };
+    let span_of = broken.map(|(_, k)| [k + 1; 3]);
+    let mut solved = Vec::with_capacity(results.len());
+    for (section, result) in line.sections.iter().zip(results) {
+        let shape = match result {
+            Ok(shape) => shape,
+            Err(e) => {
+                failed.push(format!("{}: {e}", section.id));
+                missing.extend(missing_wires(
+                    line,
+                    WireKind::Section,
+                    &section.id,
+                    &e.to_string(),
+                ));
+                continue;
+            }
+        };
+        for (point, supports) in section.points.iter().zip(&shape.attachment_loads) {
+            let structure = line.structure(&point.structure);
+            // The sets hanging on the same strings.
+            let sets: Vec<u32> = structure
+                .and_then(|s| {
+                    let w = s.wire_at_set(point.set)?;
+                    Some(
+                        s.component(&w.label)
+                            .wires
+                            .iter()
+                            .filter_map(|&i| s.wires[i].set)
+                            .collect(),
+                    )
+                })
+                .unwrap_or_else(|| vec![point.set]);
+            for support in supports {
+                let place = Place {
+                    structure: &point.structure,
+                    label: &support.label,
+                    at: support.at,
+                };
+                add(
+                    &mut at,
+                    line,
+                    case,
+                    place,
+                    support.force,
+                    &sets,
+                    &section.id,
+                );
+            }
+        }
+        solved.push(shape);
+    }
+    // Jumpers' support clamps: their strings pull on their tops (the
+    // string's force towards the clamp, half its weight and wind).
+    for j in line.jumpers.iter().filter(|j| !j.supports().is_empty()) {
+        let shape = match ohl_line::jumper::solve_one_jumper(line, library, w, &solved, j) {
+            Ok(shape) => shape,
+            Err(e) => {
+                failed.push(format!("jumper {}: {e}", j.id));
+                missing.extend(missing_wires(line, WireKind::Jumper, &j.id, &e.to_string()));
+                continue;
+            }
+        };
+        // The local wind at its structures (roadmap O15).
+        let local = line.jumper_wind_factor(j);
+        for support in &shape.supports {
+            let Some(structure) = line.structure(&support.structure) else {
+                continue;
+            };
+            for x in &support.strings {
+                let Some(string) = structure.string(&x.label) else {
+                    continue;
+                };
+                let towards = [0, 1, 2].map(|k| support.clamp[k] - x.top[k]);
+                let d = towards.iter().map(|v| v * v).sum::<f64>().sqrt();
+                let mut f = towards.map(|v| if d > 0.0 { v / d * x.force } else { 0.0 });
+                f[2] -= string.weight / 2.0;
+                // Half the wind on the string, across the line.
+                if let Some(a) = line.direction_at([x.top[0], x.top[1]]) {
+                    let push = 0.5
+                        * w.wind_pressure.si()
+                        * local
+                        * string.wind_area
+                        * w.wind_from.to_left();
+                    f[0] -= a[1] * push;
+                    f[1] += a[0] * push;
+                }
+                let place = Place {
+                    structure: &support.structure,
+                    label: &string.top,
+                    at: x.top,
+                };
+                add(&mut at, line, case, place, f, &[], &j.id);
+            }
+        }
+    }
+    if span_of.is_some() {
+        for l in at.values_mut() {
+            l.broken_span = span_of;
+        }
+    }
+    (at, failed, missing)
 }
 
 /// A point of a structure a load acts at.
@@ -775,6 +1032,7 @@ fn add(
             force: [0.0; 3],
             local: [0.0; 3],
             factored: [0.0; 3],
+            broken_span: None,
         });
     if !e.sections.iter().any(|s| s == source) {
         e.sections.push(source.to_owned());
@@ -862,6 +1120,7 @@ pub fn add_structure_wind(
                     force: [-f * right[0], -f * right[1], 0.0],
                     local,
                     factored: [local[0] * body.factor, 0.0, 0.0],
+                    broken_span: None,
                 });
             }
         }
@@ -870,19 +1129,22 @@ pub fn add_structure_wind(
 
 /// The loads as CSV (one row per load case and point; forces in N):
 /// `case,structure,point,label,sets,x,y,z,transverse,longitudinal,
-/// vertical,factored_transverse,factored_longitudinal,factored_vertical`
-/// (`sets` separated by spaces).
+/// vertical,factored_transverse,factored_longitudinal,factored_vertical,
+/// broken_span` (`sets` separated by spaces; `broken_span`: in a
+/// broken-wire case the broken span giving each component, transverse
+/// longitudinal vertical, separated by spaces — the same three for one
+/// span; empty otherwise).
 pub fn to_csv(results: &[CaseLoads]) -> String {
     let mut out = String::from(
         "case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,\
-         factored_transverse,factored_longitudinal,factored_vertical\n",
+         factored_transverse,factored_longitudinal,factored_vertical,broken_span\n",
     );
     let quote = ohl_core::text::csv_field;
     for r in results {
         for l in &r.loads {
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                "{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{}",
                 quote(&r.case.name),
                 quote(&l.structure),
                 quote(&l.point),
@@ -901,6 +1163,8 @@ pub fn to_csv(results: &[CaseLoads]) -> String {
                 l.factored[0],
                 l.factored[1],
                 l.factored[2],
+                l.broken_span
+                    .map_or(String::new(), |k| format!("{} {} {}", k[0], k[1], k[2])),
             );
         }
     }
@@ -909,3 +1173,6 @@ pub fn to_csv(results: &[CaseLoads]) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod broken_tests;

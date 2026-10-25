@@ -40,7 +40,7 @@ cargo run -p ohl-cli -- line examples/synthetic-line/synthetic-line.ohl.json \
 | `bimetallic` | no | The line's bimetallic conductor model ([below](#calculations-condition-and-method)). |
 | `solver` | no | How the whole line is calculated (Criteria › Calculation options): `{ "jumper_loads": "estimate" \| "pull", "taps": "loop" \| "once", "loads_per": "stretched" \| "unstretched" }` — what of the jumpers the sections carry at their clamps (default `estimate`), how a jumper on a tap is solved (default `loop`), and per what metre of the wire the finite elements carry the ice and wind (2026-10-21): `stretched`, the real wire (default, exact), or `unstretched`, as other programs appear to do it (about 0.1 % less ice and wind: slightly less sag and swing, a simplification on the unsafe side; see [Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)). |
 | `defaults` | no | The project's default values (Criteria › Default values): `spacer_compression`, `jumper_exit_angle_deg`, `jumper_stiffness_factor`, `jumper_clamp_length`, `insulator_stiffness`, `air_density_factor`, `thermal_emissivity`, `thermal_absorptivity`, `thermal_roughness`, `thermal_albedo`, `thermal_time_step`, `clearance_wind_step`, `clearance_vertical_band`, `clearance_search_margin`, `clearance_zone_width`, `clearance_zone_depth`; those left out take the program's values. Exported and imported as a `.ohldef` file (`format = "ohl-defaults"`). |
-| `structure_loads` | no | What the line sends to its placed structures ([below](#calculations-condition-and-method)). |
+| `structure_loads` | no | What the line sends to its placed structures ([below](#calculations-condition-and-method)): its weather cases, the wires' condition, version 9 its broken-wire cases. |
 
 Files of version 2 and before may also have the line's own `alignment` (read as the route and alignment `main`, see below). Structures, sections, jumpers, spacers, systems, routes and alignments may carry `fields`: the values of table columns added by plugins.
 
@@ -159,6 +159,7 @@ How the wire is held at each point of a section follows from these. The usual ca
 | `spreads` | no | Objects spread between two points of one span: `{ "label": "…", "from": point label, "to": point label, "load": N/m (downward, whole bundle), "per_subconductor": true }` — `per_subconductor` (optional, default false): the load is on each subconductor of a bundle (the bundle carries the load × `bundle`), else once on the whole bundle, shared by its subconductors. Solved by finite elements on the wire they cover (the ruling span leaves loads out). Older files' `loads` and `spread_loads` are read into points and spreads. |
 | `color` | no | Display colour `#rrggbb`, overriding the phase colour. |
 | `weather_groups` | no | Its weather case groups (`[[group]]` names of the weather case file): a check with the **section override** ticked takes on its spans only its cases that are in these groups (2026-10-25; e.g. the snow load varying along the line). Nothing is solved again for them. |
+| `wind_factors` | no | Version 9: its [local winds](#local-winds-per-span), `[{ "span": 1, "factor": 1.2 }, …]` — span 0 = the first, as `span_points` count them; factor 0 to 10. |
 | `calculation` | no (`"initial-fe"`) | How the section is solved: a wire condition and a method — `initial-rs`, `creep-rs`, `load-rs`, `max-sag-rs`, `initial-fe`, `creep-fe`, `load-fe`, `max-sag-fe`. See below. |
 
 ### Calculations: condition and method
@@ -174,7 +175,21 @@ The weather cases come from the line's `creep_stretch` (Criteria › Creep-Stret
 
 The line's **bimetallic conductor model** (`bimetallic`, optional): what the outer strands of its bimetallic wire types do above the transition temperature, for the wire types whose wire library entry does not say — `{ "behavior": "bird_cage" }` or `{ "behavior": "compression", "max_virtual_compression": 68947400000.0 }` (Pa; default compression with 68 947.4 MPa). Set in the app with Criteria › Bimetallic conductor model; see [Wire library](wire-library.md).
 
-The line's **loads for structures** (`structure_loads`, optional): what it sends to its placed structures — `{ "load_cases": ["wind"], "weather_cases": ["glaze ice"] }` (by name; `load_cases` left out: every load case, the default; `weather_cases`: weather cases sent on their own, each with all factors 1, default none). Set in the app with Criteria › Loads for structures; see [Loads for structures](desktop-app.md#loads-for-structures).
+The line's **loads for structures** (`structure_loads`, optional): what it sends to its placed structures — `{ "weather_cases": ["glaze ice"], "condition": "creep", "broken_cases": ["S3 span 2 broken"] }` (by name; `weather_cases`: weather cases sent, each unfactored, a wind case twice; `condition`: the wires' condition in them; `broken_cases`, version 9: the line's load cases with a broken wire sent, each its weather case with that wire broken — see [Load cases](loads.md#a-broken-wire-casebroken); `load_cases` is read and no longer used since 2026-10-25). Set in the app with Criteria › Loads for structures; see [Loads for structures](desktop-app.md#loads-for-structures).
+
+### Local winds per span
+
+Some spans see another wind than the weather case gives (an exposed ridge, a sheltered valley, a wind study for a stretch). A section's `wind_factors` give such spans a **factor on the case's wind**: in every weather case with wind, the wind pressure there is the case's times the factor (roadmap O15, owner 2026-10-25: "a factor, for every wind case").
+
+```json
+"wind_factors": [{ "span": 1, "factor": 1.2 }, { "span": 2, "factor": 1.2 }, { "span": 5, "factor": 0.7 }]
+```
+
+A span not listed takes the case's wind (factor 1). Everywhere the case's wind acts on the wires the factor follows: the wire's blowout and tensions, the strings (the larger factor of their two spans), the jumpers (the largest at their structures), the structure loads, the clearances' blowout and swing arc, the distance under unequal wind (each span steps up to its own wind), the wind span of the allowable-spans check. The ruling-span method (one tension for all spans) takes the section's largest factor on every span. What is simplified — the same factor on every case with wind (ice with wind too), the structures' own wind not scaled — is in the [theory](../theory/wirefe.md#local-winds-per-span-2026-10-25).
+
+A span keeps its factor when structures are put in or taken out of the section elsewhere; a span split or joined takes the case's wind again. Written only when given: a line with local winds is written as version 9, without as before.
+
+**In the application:** the Sections table's **local winds** column (`2–4: 1.2; 6: 0.7`: spans counted from 1, a run `a–b`, a factor each; empty: none), and a span's Properties (**Local wind ×** factor, on spans *a* to *b*, **Set**). Each change is one undo step. **From the command line:** `ohl project apply FILE.ohl --user NAME '{"op": "set_wind_factor", "section": "S1", "spans": [1, 3], "factor": 1.2}'` (spans 0 = first, as the file counts them; factor 1 takes them back to the case's wind); `ohl line` prints the local winds of each section in a case with wind.
 
 | Method | |
 |---|---|

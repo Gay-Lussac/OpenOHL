@@ -741,6 +741,7 @@ fn loads_for_structures_are_ticked_in_a_menu_that_stays_open() {
         load_cases: None,
         weather_cases: vec!["glaze ice".into(), "high wind".into()],
         condition: None,
+        ..Default::default()
     };
     assert_eq!(r.model.line.structure_loads, want);
     // Kept in the project: the session's line has it.

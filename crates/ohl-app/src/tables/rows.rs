@@ -317,6 +317,7 @@ impl TableKind {
                             s.color.clone().unwrap_or_default(),
                             s.description.clone(),
                             s.weather_groups.join("; "),
+                            s.wind_factors_text(),
                         ],
                     }
                 })

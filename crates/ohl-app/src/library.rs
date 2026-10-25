@@ -185,6 +185,29 @@ const LOAD_CASE: &[Field] = &[
         "the wind on the structures' own bodies when it differs from the wires' (file version \
          2; absent: the weather case's pressure and the transverse factor)",
     ),
+    (
+        "broken",
+        "{ section = \"S1\", span = 1 }",
+        "a broken wire (file version 3): the section solved with the wire of that span gone, \
+         the strings at its ends swung to the spans left (span from 1, or \"every\": each span \
+         in turn, the worst kept)",
+    ),
+];
+
+const LOAD_CASE_BROKEN: &[Field] = &[
+    ("section", "\"S1\"", "the section, by id"),
+    (
+        "span",
+        "1",
+        "its span broken, from 1; or \"every\": each span in turn, for each structure the \
+         largest of each force (and the span giving it)",
+    ),
+    (
+        "set",
+        "1",
+        "optional: the set of the wire at the span's ends (a check that the span is the wire \
+         meant)",
+    ),
 ];
 
 const LOAD_CASE_STRUCTURE: &[Field] = &[
@@ -549,6 +572,7 @@ impl LibraryKind {
             (LibraryKind::WeatherCases, "") => WEATHER_FILE,
             (LibraryKind::LoadCases, "case") => LOAD_CASE,
             (LibraryKind::LoadCases, "structure") => LOAD_CASE_STRUCTURE,
+            (LibraryKind::LoadCases, "broken") => LOAD_CASE_BROKEN,
             (LibraryKind::LoadCases, "") => LOAD_FILE,
             (LibraryKind::Insulators, "") => INSULATOR,
             (LibraryKind::Insulators, "shape") => SHAPE,
@@ -901,8 +925,9 @@ impl LibraryPage {
     }
 
     /// A load case file giving the structures' own wind (`[case.structure]`)
-    /// is written at version 2 (`ohl_loads::LoadCases::written_version`):
-    /// its `version` raised when lower.
+    /// is written at version 2, one with a broken wire (`[case.broken]`) at
+    /// version 3 (`ohl_loads::LoadCases::written_version`): its `version`
+    /// raised when lower.
     fn raise_load_case_version(&mut self) {
         if self.kind != LibraryKind::LoadCases {
             return;
@@ -2235,6 +2260,27 @@ mod tests {
         let read = ohl_loads::LoadCases::parse(&text).unwrap();
         assert_eq!(read.cases[1].structure.unwrap().wind_pressure, Some(900.0));
         assert!(LibraryKind::LoadCases.fields("structure").len() == 2);
+        // A broken wire (roadmap O9): version 3.
+        let doc = page.doc.as_mut().unwrap();
+        let broken: toml_edit::DocumentMut = "broken = { section = \"S1\", span = \"every\" }\n"
+            .parse()
+            .unwrap();
+        doc["case"]
+            .as_array_of_tables_mut()
+            .unwrap()
+            .get_mut(0)
+            .unwrap()["broken"] = broken["broken"].clone();
+        page.check();
+        assert!(page.error.is_none(), "{:?}", page.error);
+        page.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("version = 3\n"), "{text}");
+        let read = ohl_loads::LoadCases::parse(&text).unwrap();
+        assert_eq!(
+            read.cases[0].broken.as_ref().unwrap().span,
+            ohl_loads::BrokenSpan::Every
+        );
+        assert_eq!(LibraryKind::LoadCases.fields("broken").len(), 3);
     }
 
     /// A weather case changed keeps the file's comments; a value that does

@@ -340,9 +340,16 @@ the default; after creep; after the heaviest load; whichever sags more);
 **Weather cases sent** — the line's weather cases (Criteria › Weather
 cases), a hover giving each one's values; **none**; the **groups'**
 buttons add a group's cases. A ticked case no longer in the line stays
-listed, marked, to be unticked. Each change is one edit of the project
-line's settings (undoable, the `structure_loads` row), so every project
-line keeps its own choice.
+listed, marked, to be unticked. **Broken-wire cases sent** (roadmap O9)
+— the line's load cases with a broken wire (`[case.broken]`, [Load
+cases](loads.md#a-broken-wire-casebroken)): each ticked is sent as its
+weather case with that wire broken, unfactored, a line result
+`<weather case> — <section> span <n> broken` (with wind twice,
+`… — wind from the left` and `… — wind from the right`), after the
+weather cases; a ticked one no longer a broken-wire case stays listed to
+be unticked. Each change is one edit of the project line's settings
+(undoable, the `structure_loads` row), so every project line keeps its
+own choice.
 
 All the factors — on the weight, the wind, the tensions — are given in
 the structure's load cases ([Structure load

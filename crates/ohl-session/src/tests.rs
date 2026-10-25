@@ -1889,6 +1889,7 @@ fn structure_loads_are_a_settings_row() {
         load_cases: Some(vec!["wind".into()]),
         weather_cases: vec!["ice".into(), "wind".into()],
         condition: Some("creep".into()),
+        ..Default::default()
     };
     let command = s.structure_loads_command(choice.clone());
     let Command::Batch { commands } = &command else {
@@ -2012,4 +2013,61 @@ fn annotations_are_kept_apart_and_go_with_their_object() {
     let ids: Vec<String> = s.annotations().into_iter().map(|x| x.id).collect();
     assert_eq!(ids, vec!["a1", "a2"]);
     assert!(s.line().structure("T3").is_some());
+}
+
+/// Local winds (roadmap O15): a factor set on a run of spans is one
+/// command (one undo), solves the section again, is kept in the project
+/// and in its export; 1 takes them back; refused out of range, changing
+/// nothing.
+#[test]
+fn local_winds_are_one_command_each() {
+    let (path, mut s) = project("wind-factor");
+    let id = s.line().sections[0].id.clone();
+    let n = s.line().sections[0].points.len() - 1;
+    assert!(n >= 2, "{n}");
+    let set = |spans: [usize; 2], factor: f64| Command::SetWindFactor {
+        section: id.clone(),
+        spans,
+        factor,
+    };
+    // As JSON, as `ohl project apply` takes it.
+    let typed: Command = serde_json::from_str(&format!(
+        "{{\"op\": \"set_wind_factor\", \"section\": \"{id}\", \"spans\": [0, 1], \"factor\": 1.2}}"
+    ))
+    .unwrap();
+    assert_eq!(typed, set([0, 1], 1.2));
+    let applied = s.apply("ana", typed).unwrap();
+    assert!(applied.sections.contains(&id));
+    let sec = &s.line().sections[0];
+    assert_eq!(sec.wind_factor(0), 1.2);
+    assert_eq!(sec.wind_factor(1), 1.2);
+    assert_eq!(sec.wind_factors.len(), 2);
+    assert!(s.export().to_json().contains("\"wind_factors\""));
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().sections[0].wind_factor(1), 1.2);
+    s.apply("ana", set([1, 1], 1.0)).unwrap();
+    assert_eq!(s.line().sections[0].wind_factors.len(), 1);
+    s.undo("ana").unwrap();
+    assert_eq!(s.line().sections[0].wind_factors.len(), 2);
+    s.undo("ana").unwrap();
+    assert!(s.line().sections[0].wind_factors.is_empty());
+    s.redo("ana").unwrap();
+    assert_eq!(s.line().sections[0].wind_factor(0), 1.2);
+    for bad in [
+        set([0, n], 1.2),
+        set([1, 0], 1.2),
+        set([0, 0], 11.0),
+        set([0, 0], -1.0),
+    ] {
+        let before = s.line().clone();
+        assert!(s.apply("ana", bad).is_err());
+        assert_eq!(*s.line(), before);
+    }
+    let none = Command::SetWindFactor {
+        section: "nope".into(),
+        spans: [0, 0],
+        factor: 1.2,
+    };
+    assert!(s.apply("ana", none).is_err());
 }

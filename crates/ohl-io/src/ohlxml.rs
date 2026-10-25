@@ -574,6 +574,7 @@ fn write_section(out: &mut String, s: &Section) {
         color,
         calculation,
         weather_groups,
+        wind_factors,
         fields,
     } = s;
     out.push_str("  <section");
@@ -595,6 +596,14 @@ fn write_section(out: &mut String, s: &Section) {
         out.push_str("    <weather_group");
         attr(out, "name", g);
         out.push_str("/>\n");
+    }
+    for w in wind_factors {
+        let _ = writeln!(
+            out,
+            "    <wind_factor span=\"{}\" factor=\"{}\"/>",
+            w.span,
+            num(w.factor)
+        );
     }
     for p in points {
         section_point(out, "point", p, "    ");
@@ -1124,6 +1133,7 @@ pub fn to_xml(line: &Line) -> String {
             load_cases,
             weather_cases,
             condition,
+            broken_cases,
         } = structure_loads;
         out.push_str("  <structure_loads");
         if let Some(c) = condition {
@@ -1146,6 +1156,11 @@ pub fn to_xml(line: &Line) -> String {
         }
         for c in weather_cases {
             out.push_str("    <weather_case");
+            attr(&mut out, "name", c);
+            out.push_str("/>\n");
+        }
+        for c in broken_cases {
+            out.push_str("    <broken_case");
             attr(&mut out, "name", c);
             out.push_str("/>\n");
         }
@@ -1276,13 +1291,13 @@ fn read_alignment_point(e: &Element) -> Result<AlignmentPoint, String> {
 }
 
 /// `<structure_loads load_cases="all|listed" condition?>` with its
-/// `<load_case name>` (not used since 2026-10-25) and `<weather_case
-/// name>`.
+/// `<load_case name>` (not used since 2026-10-25), `<weather_case name>`
+/// and `<broken_case name>` (version 9).
 fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String> {
     check(
         e,
         &["load_cases", "condition"],
-        &["load_case", "weather_case"],
+        &["load_case", "weather_case", "broken_case"],
     )?;
     let names = |tag: &str| {
         e.children_named(tag)
@@ -1305,6 +1320,7 @@ fn read_structure_loads(e: &Element) -> Result<ohl_line::StructureLoads, String>
         load_cases,
         weather_cases: names("weather_case")?,
         condition: owned(e, "condition"),
+        broken_cases: names("broken_case")?,
     })
 }
 
@@ -1619,6 +1635,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "span_point",
             "spread",
             "weather_group",
+            "wind_factor",
             "field",
         ],
     )?;
@@ -1652,6 +1669,16 @@ fn read_section(e: &Element) -> Result<Section, String> {
             .map(|g| {
                 check(g, &["name"], &[])?;
                 Ok(text(g, "name")?.to_owned())
+            })
+            .collect::<Result<_, String>>()?,
+        wind_factors: e
+            .children_named("wind_factor")
+            .map(|w| {
+                check(w, &["span", "factor"], &[])?;
+                Ok(ohl_line::SpanWind {
+                    span: number(w, "span")?,
+                    factor: number(w, "factor")?,
+                })
             })
             .collect::<Result<_, String>>()?,
         fields: read_fields(e)?,
