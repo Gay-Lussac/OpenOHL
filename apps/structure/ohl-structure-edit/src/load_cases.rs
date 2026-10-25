@@ -393,11 +393,10 @@ pub fn merge_load_cases(doc: &mut DocumentMut, text: &str) -> Result<(usize, usi
     for t in new.iter() {
         let mut t = t.clone();
         // Placed by the file it goes into, not the one it comes from.
+        // (Its loads and parts too, however deep.)
         t.set_position(None);
-        if let Some(loads) = t.get_mut("load").and_then(Item::as_array_of_tables_mut) {
-            for l in loads.iter_mut() {
-                l.set_position(None);
-            }
+        for (_, v) in t.iter_mut() {
+            unplace(v);
         }
         let name = t
             .get("name")
@@ -527,12 +526,80 @@ pub fn add_body_wind_load(doc: &mut DocumentMut, cases: &[String]) -> Vec<String
     changed
 }
 
+/// The structure file version of a load case's two parts (line forces
+/// `[[load_case.line]]`, loads on the structure itself
+/// `[load_case.structure]`; 2026-10-25).
+pub const PARTS_VERSION: i64 = 7;
+
+/// The keys of a case's two parts.
+pub const PART_KEYS: [&str; 2] = ["line", "structure"];
+
+/// Sets `keys` of case `case` to those of `text` (the case's tables as
+/// TOML text: `[[line]]`, `[structure]`, `[[load]]`, fields…); a key
+/// `text` has not is removed. The case's other keys stay as written (with
+/// their comments).
+pub fn set_case_tables(
+    doc: &mut DocumentMut,
+    case: usize,
+    text: &str,
+    keys: &[&str],
+) -> Result<(), String> {
+    let given: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+    let c = case_mut(doc, case)?;
+    for key in keys {
+        match given.get(key) {
+            Some(item) => {
+                let mut item = item.clone();
+                unplace(&mut item);
+                c.insert(key, item);
+            }
+            None => {
+                c.remove(key);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Placed by the file it goes into, not the text it comes from.
+fn unplace(item: &mut Item) {
+    match item {
+        Item::Table(t) => {
+            t.set_position(None);
+            for (_, v) in t.iter_mut() {
+                unplace(v);
+            }
+        }
+        Item::ArrayOfTables(a) => {
+            for t in a.iter_mut() {
+                t.set_position(None);
+                for (_, v) in t.iter_mut() {
+                    unplace(v);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Raises the file to version 6 ([`crate::body::OPTIONS_VERSION`], the
 /// version of the generators' options too) when a recipe's load takes a
-/// pressure of the line ([`LINE_PRESSURES`]; a file without a `version`
-/// stays so).
+/// pressure of the line ([`LINE_PRESSURES`]), and to version 7
+/// ([`PARTS_VERSION`]) when a case has line forces or loads on the
+/// structure itself ([`PART_KEYS`]); a file without a `version` stays so.
 /// Run after every edit ([`crate::StructureFile::edit`]).
 pub fn raise_for_line_pressures(doc: &mut DocumentMut) {
+    let parts = doc
+        .get("load_case")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|cases| {
+            cases
+                .iter()
+                .any(|c| PART_KEYS.iter().any(|k| c.contains_key(k)))
+        });
+    if parts {
+        crate::edits::raise_version(doc, PARTS_VERSION);
+    }
     let uses = doc
         .get("load_case")
         .and_then(Item::as_array_of_tables)
@@ -927,5 +994,48 @@ points = "all"
         assert_eq!(cases.len(), 3);
         assert_eq!(cases[0].loads.len(), 1);
         assert!(d.to_string().contains("# The cases (a comment kept)."));
+    }
+
+    /// A case's parts set from text: the line forces and the loads on the
+    /// structure itself written into it, its older loads and the comments
+    /// kept, the file raised to version 7; removed again, gone.
+    #[test]
+    fn a_cases_parts_are_set_and_raise_the_version() {
+        let mut d: DocumentMut = format!("format = \"ohl-structure\"\nversion = 3\n{FILE}")
+            .parse()
+            .unwrap();
+        let parts = r#"
+[[line]]
+result = "storm — wind from the left"
+vertical = 1.35
+off = ["A1"]
+
+[structure]
+self_weight = 1.35
+
+[[structure.wind]]
+from = "left"
+pressure = "650 Pa"
+"#;
+        set_case_tables(&mut d, 0, parts, &PART_KEYS).unwrap();
+        raise_for_line_pressures(&mut d);
+        assert_eq!(d["version"].as_integer(), Some(PARTS_VERSION));
+        let t = reads(&d);
+        let first = &t.load_cases[0];
+        assert_eq!(
+            first["line"].as_array().unwrap()[0]["result"].as_str(),
+            Some("storm — wind from the left")
+        );
+        assert_eq!(
+            first["structure"]["wind"].as_array().unwrap()[0]["from"].as_str(),
+            Some("left")
+        );
+        assert_eq!(first["load"].as_array().unwrap().len(), 1);
+        assert_eq!(t.load_cases[1]["name"].as_str(), Some("ice"));
+        assert!(d.to_string().contains("# The cases (a comment kept)."));
+        set_case_tables(&mut d, 0, "", &PART_KEYS).unwrap();
+        let t = reads(&d);
+        assert!(!t.load_cases[0].contains_key("line"));
+        assert!(!t.load_cases[0].contains_key("structure"));
     }
 }

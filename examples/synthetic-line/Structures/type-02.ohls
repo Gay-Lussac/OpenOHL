@@ -1,6 +1,6 @@
 # Derived from the geometry of an existing line — check and complete.
 format = "ohl-structure"
-version = 2
+version = 7
 id = "type-02"
 name = "type-02 (2 structures, e.g. T2)"
 kind = "other"
@@ -1325,3 +1325,31 @@ description = "a pressure on the members' area (areas come with the section libr
 pressure = "0.6 kPa"
 direction = "x"
 members = "all"
+
+# A case of the two parts (2026-10-25; invented factors, NOT from a
+# design code): the line forces of a line result, a factor per axis, and
+# the loads on the structure itself. The cases above are in the older
+# form (still read and evaluated).
+[[load_case]]
+name = "high wind, from the left"
+description = """The line's high wind from the left, invented factors.
+Mirror wind makes the case from the right."""
+
+[[load_case.line]]
+result = "high wind — wind from the left"
+vertical = 1.2
+transverse = 1.4
+longitudinal = 1.0
+
+[load_case.structure]
+self_weight = 1.2
+
+[[load_case.structure.wind]]
+from = "left"
+pressure_of = "high wind — wind from the left"
+factor = 1.4
+
+[[load_case.structure.point]]
+value = "1 kN"
+direction = "down"
+points = ["A1"]

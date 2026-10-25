@@ -1,30 +1,73 @@
 # Synthetic example structure load cases (NOT taken from any design
-# code): recipes on their own, as exported from a structure and imported
-# into another. Values are invented; they only show the format.
+# code): load cases on their own, as exported from a structure and
+# imported into another. Values are invented; they only show the format.
+# Each case has its line forces (a line result of the line: a weather
+# case, a wind case twice) with a factor per axis, and the loads on the
+# structure itself; the last case is in the older form (still read).
 format = "ohl-structure-load-cases"
-version = 1
+version = 3
 name = "Synthetic example structure load cases"
 
 [[load_case]]
 name = "everyday"
-description = "the wires' loads in still air, as the line gives them"
-line_case = "everyday"
+description = "the wires' forces in still air, as the line gives them"
 
-[[load_case.load]]
-what = "transverse"
-points = "all"
+[[load_case.line]]
+result = "everyday"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
 
-[[load_case.load]]
-what = "longitudinal"
-points = "all"
+[[load_case]]
+name = "high wind, from the left"
+description = """The high wind from the left (invented factors).
+Mirror wind makes the case from the right."""
 
-[[load_case.load]]
-what = "vertical"
+[[load_case.line]]
+result = "high wind — wind from the left"
+vertical = 1.2
+transverse = 1.4
+longitudinal = 1.0
+
+[load_case.structure]
+self_weight = 1.2
+
+[[load_case.structure.wind]]
+from = "left"
+pressure_of = "high wind — wind from the left"
+factor = 1.4
+
+[[load_case]]
+name = "glaze ice, set 1 removed"
+description = "works on the line: the wire of set 1 taken down, ice on the members"
+
+[[load_case.line]]
+result = "glaze ice"
+vertical = 1.3
+transverse = 1.0
+longitudinal = 1.0
+off = ["A1"]
+
+[[load_case.structure.ice]]
+thickness = "10 mm"
+density = "900 kg/m³"
+members = "all"
+
+[[load_case]]
+name = "construction"
+description = "a load of the case itself: 1.5 kN down at every point"
+
+[load_case.structure]
+self_weight = 1.1
+
+[[load_case.structure.point]]
+value = "1.5 kN"
+direction = "down"
 points = "all"
 
 [[load_case]]
 name = "one-sided pull"
-description = "40 % of the largest tension on one side, at set 1 only"
+description = "older form: 40 % of the largest tension on one side, at set 1 only"
 line_case = "everyday"
 
 [[load_case.load]]
@@ -36,13 +79,3 @@ what = "tension_max"
 one_sided = "40 %"
 side = "ahead"
 sets = [1]
-
-[[load_case]]
-name = "construction"
-description = "a load of the case itself: 1.5 kN down at every point"
-self_weight = 1.1
-
-[[load_case.load]]
-value = "1.5 kN"
-direction = "-z"
-points = "all"

@@ -47,6 +47,15 @@ pub(crate) fn harness(path: &Path) -> Harness<'static, StructureApp> {
 }
 
 /// Clicks menu `top`, then its entry `entry`.
+/// Clicks the widget labelled `label`, scrolled into view first (the
+/// Load case editor's parts may lie below a short panel's edge).
+pub(crate) fn press(h: &mut Harness<'static, StructureApp>, label: &str) {
+    h.get_by_label(label).scroll_to_me();
+    h.run();
+    h.get_by_label(label).click();
+    h.run();
+}
+
 pub(crate) fn menu(h: &mut Harness<'static, StructureApp>, top: &str, entry: &str) {
     h.get_by_label(top).click();
     h.run();

@@ -34,6 +34,7 @@
 
 mod app;
 mod body_tab;
+mod case_editor;
 mod export_menu;
 mod extensions_panel;
 mod generators_ui;
@@ -72,6 +73,8 @@ use eframe::egui;
 
 #[cfg(test)]
 mod body_ui_tests;
+#[cfg(test)]
+mod case_editor_tests;
 #[cfg(test)]
 mod glyph_tests;
 #[cfg(test)]

@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The recipes: `[[load_case]]` and `[[load_case.load]]`, in a structure
-//! file or a structure load-case file.
+//! The recipes: `[[load_case]]` with its parts (`[[load_case.line]]`,
+//! `[load_case.structure]`, [`crate::parts`]) and its loads in the older
+//! form (`[[load_case.load]]`), in a structure file or a structure
+//! load-case file.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -12,13 +14,17 @@ use ohl_core::units::{Force, Stress};
 use ohl_structures::StructureType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::parts::{LineForces, OwnLoads, PART_BLOCK};
+
 /// `format` of a structure load-case file.
 pub const STRUCTURE_LOAD_CASE_FILE_FORMAT: &str = "ohl-structure-load-cases";
-/// Newest format version read. Version 2 adds the line quantities
-/// `structure_wind` and `structure_wind_factored` (a surface load taking
-/// the line case's wind on the structure body); a file is written at 2
-/// only when a load uses one ([`StructureLoadCases::new`]).
-pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 2;
+/// Newest format version read. Version 3 adds a case's two parts (owner,
+/// 2026-10-25): line forces (`[[load_case.line]]`) and loads on the
+/// structure itself (`[load_case.structure]`). Version 2 adds the line
+/// quantities `structure_wind` and `structure_wind_factored` (a surface
+/// load taking the line case's wind on the structure body). A file is
+/// written at the lowest version its cases need ([`written_version`]).
+pub const STRUCTURE_LOAD_CASE_FILE_VERSION: u32 = 3;
 /// File extension of structure load-case files.
 pub const STRUCTURE_LOAD_CASE_FILE_EXTENSION: &str = "ohlslc";
 /// The case today's `[[load]]` (nodal forces) is read as.
@@ -483,27 +489,37 @@ impl LoadRecipe {
     }
 }
 
-/// A load case of a structure: named loads, its strength factor and the
-/// factor on the structure's self-weight.
+/// A load case of a structure: its strength factor and its parts — line
+/// forces ([`LineForces`]), loads on the structure itself ([`OwnLoads`])
+/// — and its loads in the older form ([`LoadRecipe`]: what, how, where)
+/// with the older factor on the structure's self-weight.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoadCaseRecipe {
     /// Unique name.
     pub name: String,
-    /// What it stands for.
+    /// What it stands for (several lines).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
-    /// The line's load case giving the line values (a load may name
-    /// another).
+    /// The line's load case giving the older loads' line values (a load
+    /// may name another).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_case: Option<String>,
     /// Strength (resistance) factor of the checks.
     #[serde(default = "one")]
     pub strength: f64,
-    /// Factor on the structure's self-weight (0: none).
+    /// Factor on the structure's self-weight (0: none), the older form:
+    /// `[load_case.structure] self_weight`, when given, is the case's
+    /// ([`LoadCaseRecipe::self_weight_factor`]; this one must then be 1).
     #[serde(default = "one")]
     pub self_weight: f64,
-    /// The loads.
+    /// Line forces (part 1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub line: Vec<LineForces>,
+    /// Loads on the structure itself (part 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<OwnLoads>,
+    /// The loads in the older form.
     #[serde(rename = "load", default, skip_serializing_if = "Vec::is_empty")]
     pub loads: Vec<LoadRecipe>,
 }
@@ -517,11 +533,40 @@ impl LoadCaseRecipe {
             line_case: None,
             strength: 1.0,
             self_weight: 1.0,
+            line: Vec::new(),
+            structure: None,
             loads: Vec::new(),
         }
     }
 
-    /// Checks the factors and every load.
+    /// The factor on the structure's self-weight: `[load_case.structure]
+    /// self_weight` when given, else the case's `self_weight` (default 1).
+    pub fn self_weight_factor(&self) -> f64 {
+        self.structure
+            .as_ref()
+            .and_then(|s| s.self_weight)
+            .unwrap_or(self.self_weight)
+    }
+
+    /// It uses the parts of version 3 (line forces, loads on the
+    /// structure itself).
+    pub fn has_parts(&self) -> bool {
+        !self.line.is_empty() || self.structure.is_some()
+    }
+
+    /// The case as the TOML text of its `[[load_case]]` table (its keys at
+    /// the top: `name`, `[[line]]`, `[structure]`, `[[load]]`, …), loads on
+    /// the structure itself with nothing in them left out — what an edit
+    /// writes into the file, key by key.
+    pub fn to_toml(&self) -> String {
+        let mut c = self.clone();
+        if c.structure.as_ref().is_some_and(OwnLoads::is_empty) {
+            c.structure = None;
+        }
+        toml::to_string(&c).expect("recipes are plain tables")
+    }
+
+    /// Checks the factors, the parts and every load.
     pub fn check(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
             return Err("a load case without a name".into());
@@ -538,6 +583,35 @@ impl LoadCaseRecipe {
                 self.name, self.self_weight
             ));
         }
+        if self
+            .structure
+            .as_ref()
+            .is_some_and(|s| s.self_weight.is_some())
+            && self.self_weight != 1.0
+        {
+            return Err(format!(
+                "load case {}: the self weight is given twice (self_weight = {} on the case and \
+                 in [load_case.structure]): give it in [load_case.structure] only",
+                self.name, self.self_weight
+            ));
+        }
+        for (part, n) in [("load", self.loads.len()), ("line", self.line.len())] {
+            if n >= PART_BLOCK {
+                return Err(format!(
+                    "load case {}: at most {} {part} tables",
+                    self.name,
+                    PART_BLOCK - 1
+                ));
+            }
+        }
+        for (k, l) in self.line.iter().enumerate() {
+            l.check()
+                .map_err(|e| format!("load case {}, line {}: {e}", self.name, k + 1))?;
+        }
+        if let Some(s) = &self.structure {
+            s.check()
+                .map_err(|e| format!("load case {}: {e}", self.name))?;
+        }
         for (k, l) in self.loads.iter().enumerate() {
             l.check()
                 .map_err(|e| format!("load case {}, load {}: {e}", self.name, k + 1))?;
@@ -547,9 +621,12 @@ impl LoadCaseRecipe {
 }
 
 /// The version a structure load-case file holding `cases` is written at:
-/// 2 when a load takes a structure wind of the line, else 1.
+/// 3 when a case has the parts (line forces, loads on the structure
+/// itself), else 2 when a load takes a structure wind of the line, else 1.
 pub fn written_version(cases: &[LoadCaseRecipe]) -> u32 {
-    if cases
+    if cases.iter().any(LoadCaseRecipe::has_parts) {
+        3
+    } else if cases
         .iter()
         .flat_map(|c| &c.loads)
         .any(|l| l.what.is_some_and(LineQuantity::is_pressure))
@@ -592,9 +669,8 @@ pub struct StructureLoadCases {
 }
 
 impl StructureLoadCases {
-    /// The cases, with this format's header: version 2 when a load takes
-    /// a structure wind of the line ([`LineQuantity::is_pressure`]), else
-    /// 1 (an older program still reads it).
+    /// The cases, with this format's header at the lowest version they
+    /// need ([`written_version`]; an older program still reads it).
     pub fn new(name: &str, cases: Vec<LoadCaseRecipe>) -> Self {
         Self {
             format: Some(STRUCTURE_LOAD_CASE_FILE_FORMAT.into()),

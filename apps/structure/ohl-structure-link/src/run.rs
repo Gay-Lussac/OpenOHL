@@ -20,14 +20,23 @@
 //!   table's surface rows. The piece's members are what the wind blows on
 //!   below the feet; the body above stands `dz` higher, which changes no
 //!   force (the pressure does not depend on the height).
+//! - **The case's loads on the structure itself on the piece**
+//!   (`[load_case.structure]`, 2026-10-25): its wind on the body acts on
+//!   the piece's members as on the body (the member wind with the section
+//!   library's wind factors on the model on the extension, iced members
+//!   wider), its ice and weight per metre on the piece's members it picks
+//!   (every member, or those named); a note per load. The point loads and
+//!   line forces are rows at points, as the body's.
 //! - **The pole check** ([`ohl_structures_fe::check_pole`], as the line's
 //!   `pole` check): the case's point rows at the structure's points as
 //!   written above the feet (the pole and its loads rise together on an
 //!   extension: the moments about the pole's own ground line are the
 //!   same), the horizontal pressures of the case's surface loads on
-//!   `members = "all"` as the wind pressure on the pole (times the pole's
-//!   drag), the case's strength factor, P-Delta when the pole gives its
-//!   modulus.
+//!   `members = "all"` and of its wind on the body (pressure × factor,
+//!   from its direction) as the wind pressure on the pole (times the
+//!   pole's drag), the case's strength factor, P-Delta when the pole gives
+//!   its modulus. The ice on members is not on the pole (said in the
+//!   case's notes: the pole check takes no ice of its own).
 
 use std::path::Path;
 
@@ -265,7 +274,7 @@ pub fn cases_to_run(
             CaseToRun {
                 name: c.to_owned(),
                 strength: recipe.map_or(1.0, |r| r.strength),
-                self_weight: recipe.map_or(1.0, |r| r.self_weight),
+                self_weight: recipe.map_or(1.0, |r| r.self_weight_factor()),
             }
         })
         .collect()
@@ -400,6 +409,110 @@ fn piece_loads(
     out
 }
 
+/// The case's own loads on the structure (`[load_case.structure]`) on the
+/// extension's own members of `model` (`ids`), as on the body: its wind
+/// (the member wind with the section library's wind factors, pressure ×
+/// factor, iced members wider) and its ice and weight per metre (on the
+/// piece's members it picks: every member, or those named), half to each
+/// joint, with a note per load. A wind whose pressure the line does not
+/// give (a `pressure_of` not resolved) is said and left out.
+fn piece_part_loads(
+    model: &Model,
+    ids: &[String],
+    recipe: Option<&LoadCaseRecipe>,
+    sections: &SectionLibrary,
+    extension: &str,
+    notes: &mut Vec<String>,
+) -> Vec<NodalLoad> {
+    let mut out = Vec::new();
+    let Some(own) = recipe.and_then(|r| r.structure.as_ref()) else {
+        return out;
+    };
+    let piece: Vec<usize> = ids
+        .iter()
+        .filter_map(|id| model.members.iter().position(|m| &m.id == id))
+        .collect();
+    let mut half = |k: usize, f: [f64; 3]| {
+        for node in [model.members[k].i, model.members[k].j] {
+            out.push(NodalLoad {
+                node,
+                force: f.map(|x| 0.5 * x),
+                moment: [0.0; 3],
+            });
+        }
+    };
+    if !own.wind.is_empty() {
+        let setup = ohl_structures_fe::wind::MemberWindSetup::new(model, sections.wind.as_ref());
+        let extra: Vec<f64> = model.members.iter().map(|m| own.widening(&m.id)).collect();
+        for (k, w) in own.wind.iter().enumerate() {
+            let Some(p) = w.pressure else {
+                notes.push(format!(
+                    "extension {extension}: wind {} takes the pressure of {} — the line gives \
+                     none: not on its members",
+                    k + 1,
+                    w.pressure_of.as_deref().unwrap_or("—")
+                ));
+                continue;
+            };
+            let t = w.from.towards();
+            let wind = setup.wind_iced(p * w.factor, [t[0], t[1], -t[2]], &extra);
+            let mut total = [0.0; 3];
+            for (row, r) in wind.members.iter().enumerate() {
+                if piece.contains(&r.member) {
+                    let f = wind.member_force(row);
+                    for (s, x) in total.iter_mut().zip(f) {
+                        *s += x;
+                    }
+                    half(r.member, f);
+                }
+            }
+            notes.push(format!(
+                "extension {extension}: wind {} ({}) also on its {} member(s), {:.2} kN",
+                k + 1,
+                ohl_structure_loads::wind_text(w),
+                piece.len(),
+                total.iter().map(|x| x * x).sum::<f64>().sqrt() / 1000.0
+            ));
+        }
+    }
+    for (k, ice) in own.ice.iter().enumerate() {
+        let (mut total, mut on, mut without) = (0.0, 0, 0);
+        for &m in &piece {
+            if !ice.on(&model.members[m].id) {
+                continue;
+            }
+            let perimeter = model.sections[model.members[m].section]
+                .profile
+                .as_ref()
+                .map(crate::outline_perimeter);
+            match ice.weight_per_metre(perimeter) {
+                Ok(w) => {
+                    let f = w * model.length(&model.members[m]) * ice.factor;
+                    // Down: −z in structure axes.
+                    half(m, [0.0, 0.0, -f]);
+                    total += f;
+                    on += 1;
+                }
+                Err(_) => without += 1,
+            }
+        }
+        if on + without > 0 {
+            notes.push(format!(
+                "extension {extension}: ice {} ({}) also on its {on} member(s), {:.2} kN{}",
+                k + 1,
+                ohl_structure_loads::ice_text(ice),
+                total / 1000.0,
+                if without > 0 {
+                    format!(" ({without} without an outline: not in the cross-section library, left out)")
+                } else {
+                    String::new()
+                }
+            ));
+        }
+    }
+    out
+}
+
 /// The pole check of case `case` with the rows of `table`.
 fn pole_case(
     input: &RunInput,
@@ -447,6 +560,42 @@ fn pole_case(
             wind[0].hypot(wind[1]),
             pole.drag
         ));
+    }
+    // The case's wind on the body: on the pole too, pressure × factor
+    // from its direction (× the pole's drag).
+    let own = input
+        .recipes
+        .iter()
+        .find(|r| r.name == case.name)
+        .and_then(|r| r.structure.as_ref());
+    if let Some(own) = own {
+        for (k, w) in own.wind.iter().enumerate() {
+            match w.pressure {
+                Some(p) => {
+                    let t = w.from.towards();
+                    wind[0] += p * w.factor * t[0];
+                    wind[1] += p * w.factor * t[1];
+                    notes.push(format!(
+                        "wind on the pole: wind {} ({}), × drag {}",
+                        k + 1,
+                        ohl_structure_loads::wind_text(w),
+                        pole.drag
+                    ));
+                }
+                None => notes.push(format!(
+                    "wind {}: the pressure of {} — the line gives none: not on the pole",
+                    k + 1,
+                    w.pressure_of.as_deref().unwrap_or("—")
+                )),
+            }
+        }
+        if !own.ice.is_empty() {
+            notes.push(
+                "ice on members: not on the pole (the pole check takes no ice of its own; \
+                 the ice on the members is in the finite-element model)"
+                    .into(),
+            );
+        }
     }
     let c = ohl_structures_fe::check_pole(pole, &loads, wind, case.strength, true, budget)?;
     Ok(PoleResult {
@@ -533,7 +682,16 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             let mut notes = Vec::new();
             let extra = match input.extension {
                 Some(e) if !piece.is_empty() => {
-                    piece_loads(m, &piece, input.recipes, &c.name, e, &mut notes)
+                    let mut l = piece_loads(m, &piece, input.recipes, &c.name, e, &mut notes);
+                    l.extend(piece_part_loads(
+                        m,
+                        &piece,
+                        input.recipes.iter().find(|r| r.name == c.name),
+                        input.sections,
+                        e,
+                        &mut notes,
+                    ));
+                    l
                 }
                 _ => Vec::new(),
             };

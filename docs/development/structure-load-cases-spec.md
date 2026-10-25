@@ -1,6 +1,8 @@
 # Structure load cases: line forces and the structure's own loads (spec)
 
-Status: agreed with the owner (2026-10-25), being built. Replaces how the
+Status: agreed with the owner (2026-10-25); all four steps built, in
+active development (not approved yet): decisions taken within it in the
+[decision log](decisions.md) (2026-10-25). Replaces how the
 line's loads reach a structure and how a structure load case is put
 together; the load table, its typed values and the solve stay.
 

@@ -186,7 +186,11 @@ use crate::{Library, LibraryItem};
 pub const STRUCTURE_FILE_EXTENSION: &str = "ohls";
 /// Format identifier.
 pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
-/// Newest format version read. Version 6 adds the body generators'
+/// Newest format version read. Version 7 adds a load case's two parts
+/// (2026-10-25): line forces (`[[load_case.line]]`) and loads on the
+/// structure itself (`[load_case.structure]`) — raw tables here, read by
+/// the structure application; a file is written at 7 only when a case
+/// uses them. Version 6 adds the body generators'
 /// options in `[[generator]]` (a panel's `width`, `redundants`, `plan`; a
 /// body's `plan_auto`; a crossarm's `one_arm` — tables the core keeps
 /// unread, read by the structure application), the load quantities
@@ -207,7 +211,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 6;
+pub const STRUCTURE_FILE_VERSION: u32 = 7;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -2475,7 +2479,7 @@ mod tests {
         assert_eq!(t.nodes[0].made_by.as_deref(), Some("body"));
         assert_eq!((t.symmetry.len(), t.generators.len()), (1, 1));
         assert_eq!(t.detail(), Detail::Outline);
-        for older in [1, 2, 5, STRUCTURE_FILE_VERSION] {
+        for older in [1, 2, 5, 6, STRUCTURE_FILE_VERSION] {
             assert!(StructureType::parse(Path::new("t.ohls"), &text(older)).is_ok());
         }
         let newer = StructureType::parse(Path::new("t.ohls"), &text(STRUCTURE_FILE_VERSION + 1))

@@ -108,7 +108,7 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   (and stays unchanged for a second), the line application computes them
   again and rewrites the file; the application reads it again within
   half a second and evaluates the recipes with the new values.
-- A **status block** at the top of the Load recipes, Load table and Line
+- A **status block** at the top of the Load case editor, Load table and Line
   values panels says, in plain words, what the line gave or why not:
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
   line's values for T2 are being computed…*; *The line gives no values
@@ -143,9 +143,11 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   without the line (exports, design elsewhere). Stored again, cases of
   the same names are replaced (asked first: **Replace and store**).
 - **Take the line's load cases as they are** (Load cases menu, and in the
-  Load recipes panel while the structure has no recipe) writes instead
-  one recipe per line case taking the line's factored values at every
-  point: the forces then follow the line.
+  Load case editor while the structure has no case) writes instead one
+  load case per line result: its line forces at every point, every
+  factor 1, and (a structure with members) the wind on the body at the
+  pressure of its weather case from its side: the forces then follow the
+  line.
 - **Line values** lists, with each case's **source** (load case, or a
   weather case sent on its own: factored = unfactored), the line's values per point (with its sets and
   phases) and load case: transverse, longitudinal, vertical, unfactored
@@ -218,7 +220,7 @@ at the bottom of the window.
 | **Geometry** (level 1) | **Points & strings** (Attachment points, Strings), **Wire points & sets** (Wire points, Sets), **Structure fields** |
 | **Body** (level 2) | **Joints**, **Members**, **Generators**, **Pole**, **Extensions** |
 | **Design** (level 3) | **Supports**, **Member cross-sections**, **Groups**, **Cross-sections & materials**, **Pole design** |
-| **Load cases** | **Load recipes**, **Load table** |
+| **Load cases** | **Load case editor**, **Load table** |
 | **Results** | **FE results** |
 | **In the line** | **Line values** |
 
@@ -269,7 +271,7 @@ their menu or from View.
 | **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **+ Point**, **One string** and **Two strings to one wire point** presets for the points picked, **Link** (the Link tool), **Delete…** (everything picked, lists what goes with each first; one undo step) |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add joint** (above the joint picked), **Member** between two joints picked, **Point here** on a joint (not on a support joint: strings hang from attach joints), **Delete…**; **symmetry**, **Make symmetric**, **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
-| **Load cases** (any level) | **Load recipes**: the structure's load cases (name, description, line case, strength, self-weight) and their loads (what, value, pressure, line case, factor, one-sided share, side, direction, points, sets, phases, members, note). **Load table**: the line's forces, then the recipes evaluated, per case and point, member or joint | **+ Case**, **+ Load** (with the line's values the line's vertical load at every point; opened on its own 1 kN down at every point, to change), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Load cases** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line result, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **In the line**: **Line values** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
@@ -430,25 +432,61 @@ built again ([format](structure-library.md#body-generators-groups-and-symmetry))
 
 ## Load cases
 
-The **Load recipes** panel edits the structure's `[[load_case]]` tables
-([Structure load cases](structure-load-cases.md)): pick the case under
-**Recipe**, type its fields, and one row per load (`what`, `side` and
-`direction` are chosen from a list; a value takes its unit, `2 kN` or
-`0.6 kPa`, a plain number is N or Pa; lists are separated by `;`). A
-field is written when it is left (Enter, Tab or a click elsewhere), each
-change one undo step. When the recipes do not read, the reason is shown
-in red and the table below keeps the cases that read.
+The **Load case editor** (Load cases menu) edits the structure's
+`[[load_case]]` tables ([Structure load cases](structure-load-cases.md)):
+the cases on the left (name, the first line of the description), the
+case on the right:
+
+- **Name**, **Strength factor**, **Description** (several lines), and in
+  a frame the sentence of what the case does, made from it (*storm — wind
+  from the left: vertical × 1.35, transverse × 1.5, longitudinal × 1.0
+  at every point (without A3) · self weight × 1.35 · …*).
+- **1. Line forces** (collapsible): a row per line result taken — the
+  **line result** (a list of those the line sent, each with its weather
+  case's wind on hover; opened on its own, typed by name), the
+  **vertical**, **transverse** and **longitudinal** factors, **at**
+  (empty: every point, or set numbers), **Points (n off)** — a tick per
+  attachment point (its label, sets and phases) turning its line forces
+  on or off; the menu stays open on a tick — and 🗑; **Add line forces**.
+  Without line results a line says where they come from (OHL-Design ›
+  Criteria › Loads for structures).
+- **2. Loads on the structure itself** (collapsible): **Self weight**
+  (its factor), **Wind on the body** (from ▾ — left, right, ahead,
+  behind and the four between —, its own pressure or the pressure of a
+  line result ▾, × factor), **Ice and additional weight** (a thickness
+  and density, or a load per metre; on `all` or member ids; × factor),
+  **Point loads** (a force, a direction ▾, at points or sets), each with
+  **Add** and one line saying what it does and where it lands in the
+  load table.
+- **Loads in the older form**, only when the case has some: its
+  `line_case` and older `self_weight`, one row per load (`what`, `side`
+  and `direction` chosen from a list; a value takes its unit, `2 kN` or
+  `0.6 kPa`, a plain number is N or Pa; lists separated by `;`), **+
+  Load**, and **Convert** (the loads into the parts where that is exact;
+  the message says what stayed).
+
+Case buttons: **+ Case** (new), **Duplicate**, **🗑 Case**, **Mirror
+wind** (a copy with left and right swapped in its name, line results and
+body wind). A value typed in the new parts takes its unit or the one
+shown (Pa, mm, kg/m³, N/m, kN). A field is written when it is left
+(Enter, Tab or a click elsewhere), each change one undo step; the file
+is raised to version 7 when a case has the parts. When the cases do not
+read, the reason is shown in red.
 
 **Import recipes…** takes the cases of a `.ohlslc` or CSV file: a case
 with the name of one in the structure replaces it, the others are added
-(one undo step). **Export recipes…** writes them as `.ohlslc` or CSV.
+(one undo step). **Export recipes…** writes them as `.ohlslc`, or CSV
+(cases in the older form only; a case with the parts is refused there,
+said).
 
 The **Load table** panel shows first the line's forces (started for a
 placed structure, [above](#started-for-a-placed-structure)), then the
 recipes evaluated: per case (or every case) and per point, member or
 joint, the transverse, longitudinal and vertical load in kN, where the
 case comes from (**from**: *line load case*, *recipe*, *typed*), where the
-value comes from (`line`, `recipe`, `typed`), the member's **area** a
+value comes from (the part: `line`, `wind`, `ice`, `point`, `recipe`,
+`typed`; the **load** column names the row's part, load 2, line 1, wind
+1, …), the member's **area** a
 surface load acts on, and why a row has no value. Opened on its own, the
 structure has no line: every load taking a line value shows **no line
 value**. Type the

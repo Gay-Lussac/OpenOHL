@@ -15,6 +15,7 @@ ohl-structure-link.workspace = true
 ohl-structure-edit.workspace = true
 ohl-structure-export.workspace = true
 ohl-cables.workspace = true
+ohl-core.workspace = true
 ohl-line.workspace = true
 ohl-loads.workspace = true
 ohl-structures.workspace = true

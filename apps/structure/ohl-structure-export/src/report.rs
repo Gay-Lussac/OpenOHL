@@ -244,7 +244,7 @@ pub fn report_html(input: &ReportInput) -> String {
             esc(&c.name),
             esc(recipe.map_or("", |r| r.description.as_str())),
             recipe.map_or(1.0, |r| r.strength),
-            recipe.map_or(1.0, |r| r.self_weight),
+            recipe.map_or(1.0, |r| r.self_weight_factor()),
             esc(&if status.is_empty() {
                 "solved".to_owned()
             } else {
