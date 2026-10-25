@@ -36,6 +36,10 @@ last band high noise (18); below the ground, low noise (7). Buildings,
 poles and wires above the ground get vegetation classes too: telling them
 apart (planarity, linearity, returns) is not part of this base.
 
+![Left: the lowest point of each grid cell, a surface opened with a window wider than a building, and the roof cells holding no ground. Right: the classes by height above the TIN](../images/theory/lidar-classes.svg)
+
+*Ground by the progressive morphological filter, then the classes by height above the ground (heights not to scale).*
+
 **Conservative:** for the vegetation analysis, a building, pole or wire
 point classified as vegetation is checked as a tree: more points reported,
 none missed. Not for other rules: a building rule finds no point the
@@ -139,6 +143,10 @@ wind is solved with the wind **from the left and from the right**.
   \\( R(s) = \max(R_L, R_0, R_R) \\), from \\( \varphi_L \\) to
   \\( \varphi_R \\) — the arc of before (at \\( R \\) only) filled in
   towards the axis down to \\( r \\).
+
+  ![The plane square to the span's axis: the wire blown left, in still air and blown right, the band from the smallest to the largest radius between the outermost angles, its margin, and a point q with its distance to the band](../images/theory/swing-band.svg)
+
+  *The swing arc as a band about the attachment axis, widened by its margin \\( m \\) (schematic).*
 
   **Conservative:** every radius between the smallest and the largest of
   the three, along the whole arc: a wind between none and the full one
@@ -426,6 +434,10 @@ with \\( A \\) the clearance allowance (flashover clearance, buffers; the
 growth is already in \\( h' \\)). The fall-in margin is the difference. With
 \\( k = 0 \\) and level ground this is the check above (a sphere of radius
 \\( h' \\) about the base), so the existing results are the special case.
+
+![In the vertical plane through the tree's base B and a wire point q: the grown tree, the hinge H at the root-ball radius, the trunk's length L, the sector it sweeps down to its resting angle, and d_fall](../images/theory/fall-in.svg)
+
+*A tree falling about its root ball: the sector swept by the trunk and the distance \\( d_{\text{fall}} \\) from a wire point (schematic, root ball enlarged).*
 
 *Changed from the method as first written:* within the sector the
 distance is \\( |q - H| - L \\), negative when the trunk passes beyond the

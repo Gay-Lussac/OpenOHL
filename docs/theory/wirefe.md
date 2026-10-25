@@ -11,6 +11,10 @@ Unstressed length \\( L_0 \\), axial stiffness \\( EA \\), uniform load \\( \mat
 
 For given end positions, \\( (H, V_0) \\) come from a damped Newton iteration (exit clauses: 100 iterations; the time limit, 10 s, only guards against a loop). The element returns the end forces and the exact 3×3 tangent stiffness (in-plane: inverse of the flexibility matrix; out-of-plane: \\( H/x \\)), verified against finite differences.
 
+![One span as one catenary element from node i to node j: the tension components (H, V_0) at node i and (H, V_1) at node j along the wire, and the load q per unit unstressed length](../images/theory/catenary-element.svg)
+
+*The elastic catenary element: one span between two nodes, its end tensions found from their positions.*
+
 *Validation:* `wirefe-001…003` against RK4 integration of the elastic wire along its unstressed length (with a tension jump for a point load); `tbirv-001…003` against Irvine's equations and a quadrature of the wire's tangent ([Textbook and published cases](../validation/textbook.md)).
 
 **The weight of a heated span (2026-10-21, owner decision).** A wire keeps its mass when it lengthens without being loaded more: when heated, after creep or a permanent set, past a bimetallic wire's transition. In a line's sections the temperature lengthens each span's unstressed length \\( L_0 \\) (as cut at stringing) to \\( L_0 e^{\alpha\Delta t} \\) (\\( \Delta t \\) from the stringing temperature); the element's own weight per unit of that longer length is therefore \\( w\,e^{-\alpha\Delta t} \\), so the span weighs \\( wL_0 \\) hot or cold. The same for every other lengthening without mass: a span whose reference length grew by a factor \\( k \\) (the linear models' creep stretch \\( 1 + \varepsilon_c \\), the stress-strain curves' correction of step 3 below, the core branch's offset) carries \\( w/(k\,e^{\alpha\Delta t}) \\) per unit of its element length; spread loads on the wire (N per metre of wire, a weight fixed to it) are scaled alike; jumpers too (\\( w \\) over their free thermal strain's factor). Ice and wind are loads per metre of the **real** conductor: they act on the longer or shorter wire as it is, not conserved like the weight (a cold span carries its ice on its shorter length, as it should), and on its elastic stretch too (below). Point loads, bodies and strings are forces, not per metre: unchanged. Before this, the load stayed per unit of the longer length, so a hot span weighed more than its wire by \\( e^{\alpha\Delta t} - 1 \\) (for a 300 m span strung at 25 kN at 10 °C, EA 30 MN, \\( \alpha \\) = 20·10⁻⁶/K: +0.04 % on H at 70 °C, +0.17 % at 150 °C, sag 7 and 13 mm larger; −0.04 % at −20 °C). The closed-form and ruling-span calculations conserve the weight the same way ([Sag-tension](sagtension.md#the-wires-own-weight-is-conserved)), and the three agree: a level 400 m span strung at 25 kN at 10 °C weighs 6288.73 N at 150 °C in each (its data sheet's 1.6 kg/m at 20 °C, per metre at 10 °C), FE 17734.05 N, the closed form 0.013 N less, the ruling-span method 8.28 N more (its additive thermal form) — validation `tbheat-001…003` ([Textbook and published cases](../validation/textbook.md)).
@@ -51,6 +55,10 @@ Unknowns: positions of the free nodes. Each iteration assembles the stiffness of
 ## Sections: sagging and clamping
 
 A section (dead-end to dead-end, suspension strings, alone or two to a wire point) is built as in the field: every span is sagged at the stringing tension with the strings **plumb** (at their stretched length under the clamp load), which fixes each span's unstressed length. Any other state — temperature (\\( L_0 e^{\alpha\Delta t} \\), the span's own weight kept, see [above](#elastic-catenary-element); the ruling-span method uses the additive form, see [Thermal strain: two forms in use](sagtension.md#thermal-strain-two-forms-in-use)), ice, wind on wires and strings, point loads at predefined sites, broken spans — is then solved with string swing, unequal span tensions and 3D blowout.
+
+![A section in side view: strain assemblies at its ends, suspension strings in the middle, fixed attachment points, free clamps, and one catenary element per span](../images/theory/fe-section.svg)
+
+*A section as finite elements: fixed attachment points, strings as truss elements, free clamps and one catenary element per span (schematic).*
 
 In a line model (`ohl-line`) this is a section **clipped in**. A section still **in the blocks** (the default while designing) rolls instead: in each weather case its total unstressed length, from the sagging condition (a tension, or a sag in the ruling span or in one span), is shared out between the spans so that all have the same horizontal tension — the length of each span for a tension \\( H \\) under the case's load is found exactly, and \\( H \\) is the root of \\( \sum_i L_{0,i}(H) = L_0 \\) (bracketed secant). The clamps settle where the strings put them (swung across the line at angles, plumb along it, where equal tensions cancel); the sharing is repeated until they stop moving (≤ 1 µm, 20 passes at most). Point loads are left out of the sharing.
 
@@ -100,6 +108,10 @@ the clamp) — and span 0 at 60 °C with span 1 at 15 °C (the string swings
 2.34° towards span 1; each span keeps its weight): the closed-form elastic catenary of each span and
 Newton on the clamp's position, its own implementation; the solver agrees
 to 10⁻⁷.
+
+![Two spans either side of a suspension string, the left one iced; the string swung by the angle phi into it, and the horizontal tensions H_0 and H_1 at the clamp](../images/theory/span-cases.svg)
+
+*A span in a weather case of its own: the string swings into the iced span until \\( H_0 - H_1 = T\sin\varphi \\) at the clamp (schematic).*
 
 What this shows that the equal-tension (ruling span) model cannot: in the example job, support 3 is a **valley structure** (a 25 m descent into it, a 40 m rise out of it). Its weight span is only ~55 m, so in high wind its string swings ~89° — a real design issue (V-string, hold-down weights or a taller structure).
 

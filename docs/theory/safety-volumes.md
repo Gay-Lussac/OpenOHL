@@ -51,6 +51,10 @@ radius and bundle in \\( r_{\text{outer}} \\)); it hangs from clamp to
 clamp, so its tube joins the tubes of the sections it connects and the
 volume is **continuous at the structures** (a dead end, a branch).
 
+![Two sections ending 6 m apart either side of a structure with tubes of radius 1 m, a gap of 4 m between them; with a jumper sagging 1.5 m, one closed piece](../images/theory/safety-jumper.svg)
+
+*The check by hand at a dead end: without the jumper the tubes leave a gap of 4 m, with it the volume is one piece.*
+
 The **swing arc** contributes every point within \\( D_k + m_b \\) of the
 band (\\( m_b \\) its margin, 0.15 m by default; since 2026-10-21 a
 parameter — the window's **band margin**, `--band-margin` — recorded
@@ -64,6 +68,10 @@ the band's margin; the angles from the smallest to the largest) and its
 **Simplification** (a rigid swing). Distances are measured in 3D, so
 beyond the band's ends and beyond the span's ends the volume is rounded
 (balls of radius \\( D \\)).
+
+![The section at mid-span of the band from 8 m to 10 m between −40° and +40° and of the volume within 2.15 m of it: 8.578 m to each side, 12.15 m below the axis, its top 3.978 m below it](../images/theory/safety-section.svg)
+
+*The band of the check by hand and its volume at mid-span, to scale.*
 
 A **jumper's band** (2026-10-21, the owner's decision) is the same
 closed form about the axis through the jumper's two end clamps (blown to
@@ -116,7 +124,7 @@ only the positions of the spans ticked are taken (so the volume ends
 within the distance of their ends), and a jumper's only when the spans
 at both its ends are ticked. Grouping
 changes only which positions one mesh holds: each wire keeps the
-distance \( d(U) \) of its own system's voltage, so a volume per circuit
+distance \\( d(U) \\) of its own system's voltage, so a volume per circuit
 or per system is the union of its wires' volumes (meshed as one).
 The wires without a system — earthed wires and any section without
 one — are one group since 2026-10-21 (the owner's decision,

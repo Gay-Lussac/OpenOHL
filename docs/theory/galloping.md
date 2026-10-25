@@ -42,11 +42,19 @@ ellipse's centre lies on it a distance \\( c\\,A \\) above the wire at rest
 (`centre_above_rest = c`; 0.5 puts the wire at the lower end of the major
 axis).
 
+![Across the span: the wire at rest, the ellipse's major axis A tilted by theta from the vertical, its minor axis B and its centre c A above the wire](../images/theory/galloping-ellipse.svg)
+
+*The galloping ellipse, looking from the span's first structure to its last (schematic).*
+
 Along the span the ellipse is swept with the loop shape: at the fraction
 \\( t \\) of the span its size (axes and centre offset) is scaled by
 \\( |\sin(n\pi t)| \\) — each loop largest in its middle, nothing at the
 supports — or kept the same (`along = "constant"`, as some methods draw one
 ellipse at mid-span for the whole span).
+
+![A span from the side with two loops: the ellipse's size scaled by |sin(n pi t)| along the span, nothing at the supports, and the inner stations](../images/theory/galloping-loops.svg)
+
+*The ellipse along a span of two loops, its size scaled by \\( |\sin(n\pi t)| \\) (schematic).*
 
 ### Clearance between ellipses
 
@@ -70,6 +78,10 @@ Accuracy: the ellipses are 72-sided circumscribed polygons — the regular
 stretched onto the ellipse, so each holds its ellipse and touches it from
 outside; the wires of a span are taken as parallel (one cross-section
 plane).
+
+![Two wires side by side with their ellipses drawn as circumscribed polygons, the distance between the polygons, and each wire's outer radius](../images/theory/galloping-gap.svg)
+
+*The clearance between two ellipses: the distance between their circumscribed polygons less each wire's outer radius.*
 
 **Conservative:** the circumscribed polygons hold the ellipses, so the gap
 found is never more than between the true ellipses; it is low by at most

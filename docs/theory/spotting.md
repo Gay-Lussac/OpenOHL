@@ -11,6 +11,10 @@ Spotting chooses positions, types and heights of the structures along a route so
 - **Each structure** \\( (j, l) \\) between spans \\( L_b \\) (back) and \\( L_a \\) (ahead) must keep its **wind span** \\( (L_b + L_a)/2 \\) and **weight span** \\( (L_b - x_b) + x_a \\) — \\( x \\) the horizontal distance of a span's low point from its back structure — within its allowable spans at its line angle (the start has only \\( L_a \\), the end only \\( L_b \\)).
 - **Cost**: \\( \sum C_k \\) over the structures \\( + \sum (C_{span} + p\\,\ell) \\) over the spans, with \\( \ell \\) the wire length of a span and \\( p \\) the price per metre of all its wires.
 
+![Structure j between its back span L_b and its span ahead L_a: the wind span from mid-span to mid-span, the weight span from low point to low point](../images/theory/wind-weight-span.svg)
+
+*The wind span and the weight span of a structure, with the low points \\( x_b \\) and \\( x_a \\) measured from each span's back structure (schematic).*
+
 ## The wire and the clearance
 
 In the design (maximum sag) condition the wire is a catenary of horizontal tension \\( H \\) and weight \\( w \\) per metre, parameter \\( C = H/w \\), between the wire points \\( z_i = g(s_i) + h_k \\) and \\( z_j = g(s_j) + h_l \\) ([Sag-tension](sagtension.md)). Between two consecutive profile points the ground is a straight line of slope \\( m \\), and the wire minus the ground is convex, so its least value on that piece is where the wire's slope equals \\( m \\):
@@ -18,6 +22,10 @@ In the design (maximum sag) condition the wire is a catenary of horizontal tensi
 \\[ x^* = x_{low} + C \operatorname{asinh} m, \\]
 
 clamped to the piece. The smallest clearance of the span is the least of these values — exact, with one evaluation per profile piece. A span is rejected as soon as one piece falls below \\( c \\).
+
+![A ground profile with candidate stations every step, a forbidden zone and a required station; structures at chosen stations, the wire between their lowest wire points and the clearance c above the ground](../images/theory/spotting-profile.svg)
+
+*Spotting on a profile: candidate stations, spans between candidate structures, and the least clearance of a span found on each ground piece (schematic).*
 
 **Conservative:** the wire hangs from the lowest wire point of each candidate (\\( h_k \\)): higher wires of the same structure clear the ground by more. Exact: each wire from its own point.
 

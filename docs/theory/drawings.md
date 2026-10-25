@@ -30,6 +30,10 @@ band rows. Its **vertical scale is never changed**. On each sheet:
 The profile is never empty and the ground is always on the sheet. The
 continuous drawing (no sheets) takes the height it needs.
 
+![Three profile panels: everything fits; only the essentials fit with the structures' tops cut; the datum stepped at a structure with a double line](../images/theory/sheet-ranges.svg)
+
+*The three ways a sheet takes its height range, the vertical scale unchanged (schematic).*
+
 ## Lines below the lowest conductor
 
 For each circuit (its sections' circuit name) the line is
@@ -40,6 +44,10 @@ at every station s where one of its wires is drawn: the **lower
 envelope** of its conductors (each span interpolated linearly between its
 solved points), lowered by d, the vertical ground clearance its rule
 requires. Jumpers are left out (they hang at the structures).
+
+![Above, the plan: the corridor of half width w, its near side and the LiDAR points within it. Below, the profile: a circuit's wires, their lower envelope and the line d below it](../images/theory/lowest-line.svg)
+
+*The line below the lowest conductor: the lower envelope of the circuit's wires, lowered by \\( d \\) (schematic).*
 
 - d: the clearance rules for the ground (`target = "ground"`, a `vertical`
   required clearance) that check the circuit's voltage (`voltages`, none: all),

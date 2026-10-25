@@ -57,6 +57,10 @@ at each joint. Two factors:
   face (below), then the data's shielding factor
   \\( \eta(\varphi_{front}, e/b) \\).
 
+![A member at an angle theta to the wind: the wind's unit vector, the member's axis, the wind's part normal to the member and the force along it, half at each joint](../images/theory/member-wind.svg)
+
+*The cross-flow force on a member: along the wind's part normal to it, proportional to \\( \sin^2\theta \\).*
+
 ## Faces
 
 A **face** is a set of at least three members lying in one plane,
@@ -87,6 +91,10 @@ width for that direction × length; members without a profile count 0).
 The face's **breadth** \\( b = A_o / h \\), \\( h \\) the outline's
 extent along the global z axis taken into the plane (for a horizontal
 face, along an in-plane axis).
+
+![A lattice face with its convex-hull outline of area A_o, its extent h and a member's silhouette; beside it a waisted face whose hull is larger than the face](../images/theory/face-solidity.svg)
+
+*A face's outline, breadth and solidity ratio; for a face that is not convex the hull is larger, which lowers \\( \varphi \\) (schematic).*
 
 Approximations: the convex hull overestimates the outline of a face that
 is not convex (a waisted body, the window of a cat-head tower), which
@@ -144,6 +152,10 @@ the far face is shielded by the near one and the two side faces (edge-on)
 are not; at 45°, the two far faces are shielded, the far corner leg too
 (it lies only in far faces), the other legs not (each lies in a near
 face). Members in no face (plan bracing, hip bracing) are never shielded.
+
+![Plan of a square lattice body: with the wind normal to two faces the far face is shielded and the side faces are edge-on; at 45 degrees the two far faces and the far corner leg are shielded](../images/theory/shielding-plan.svg)
+
+*Shielding in plan: the far faces behind a face facing the wind, the side faces edge-on (schematic).*
 
 **Conservative:** members inside the body (in no face: plan and hip
 bracing, inner diagonals) are never shielded and take their full wind,

@@ -117,7 +117,7 @@ With the **structure override** ticked, the internal clearances check a
 structure with a value in that column in the group's cases at that
 pressure: those cases are solved again at it (for the whole line, the
 results taken at those structures only) and its rows named
-"<case> (wind study 450 Pa)". A value under the least is taken at the
+`<case> (wind study 450 Pa)`. A value under the least is taken at the
 least, said in the notes; a value that is not a pressure is said and the
 case's own wind taken. Structures without a value keep the case's wind.
 (The LeV's explanations, ESTI 240 Art. 33: a wind study may lower the

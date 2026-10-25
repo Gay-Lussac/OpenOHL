@@ -35,6 +35,10 @@ Per unit length of conductor, with a uniform conductor temperature
   [(T+273)^4 - (T_a+273)^4] \\); IEEE writes the same with
   \\( 17.8 = \pi\sigma\cdot10^8 \\) (eq. 7a).
 
+![A conductor cut across with Joule heating inside, solar heating, convective cooling by the wind and radiative cooling; the balance equation and, in plan, the wind's angle to the conductor axis](../images/theory/heat-balance.svg)
+
+*The heat balance per unit length: Joule and solar heating against convective and radiative cooling.*
+
 In steady state the left side is zero. The **ampacity** for a maximum
 temperature \\( T_{max} \\) is then closed-form,
 \\( I = \sqrt{(P_C + P_R - P_S)/R_{ac}(T_{max})} \\) (none when the sun alone
@@ -192,6 +196,10 @@ its temperature changed, and checked by the rules that apply to that case
    range*);
 3. bisection between the last temperature that passed and the first that
    failed until they are 0.5 °C apart; the limit is the one that passed.
+
+![The governing clearance falling with the conductor temperature; steps of 10 degrees until a check fails, then a bisection to 0.5 degrees, the limit the last temperature that passed](../images/theory/temperature-limit.svg)
+
+*The search for the maximum operating temperature: steps of 10 °C, then bisection to 0.5 °C; the limit is the last temperature that passed (schematic).*
 
 **Conservative:** the limit is the last temperature that passed, up to
 0.5 °C below the exact one. Exact: the temperature where the governing
