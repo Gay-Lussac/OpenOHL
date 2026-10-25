@@ -437,6 +437,11 @@ impl PresetEditor {
         self.sheet_job = None;
     }
 
+    /// Whether the plugin's sheet templates are being read.
+    pub fn reading(&self) -> bool {
+        self.sheet_job.is_some()
+    }
+
     fn read_sheets(&mut self) {
         if self.sheets.is_some() || self.sheet_job.is_some() {
             return;
