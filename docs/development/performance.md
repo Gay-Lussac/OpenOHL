@@ -212,6 +212,12 @@ first).
 The search runs only when the pointer moved; the alignments' centre lines
 for the stations are kept until the line changes.
 
+**Follow and snap**: `OHL_BENCH_FILE=… cargo test --release -p ohl-app
+follow_benchmark -- --ignored --nocapture` follows a span in the middle of
+the line (the default classes and radius): on a real line the span's
+surroundings read in 23 ms, a cursor move 0.3 ms (the nearest point found
+and measured), N (the closest spot of the span) 12 ms.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

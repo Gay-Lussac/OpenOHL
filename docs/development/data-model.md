@@ -2216,7 +2216,9 @@ annotation in the same log entry, so one undo brings both back.
 measurement takes; a note: one), `text`, `author`, `time` (UTC), `last`
 (`value`, `unit`, `case`: the value when kept, for a reader without the
 solved line). An `Anchor` is tagged by `on`: `structure` (`structure`:
-its base), `attachment` (`structure`, `set`), `wire` (`section`, `span`
+its base), `on_structure` (`structure`, `offset` from its base: E, N, H —
+a point of its members; it follows the structure moved, not turned),
+`attachment` (`structure`, `set`), `wire` (`section`, `span`
 from 0, `fraction` of the wire's length 0–1, in the case measured),
 `jumper` (`jumper`, `fraction`), `span_point` (`section`, `label`),
 `alignment_point` (`id`), `lidar` (`at` E, N, H, `class`), `point` (`at`,

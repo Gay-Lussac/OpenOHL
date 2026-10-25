@@ -1243,3 +1243,61 @@ fn measuring_benchmark() {
             .map_or("none".into(), |m| m.label())
     );
 }
+
+/// Follow and snap on a project of your own (`OHL_BENCH_FILE`): a span in
+/// the middle of the line, the classes shown, the default radius — how
+/// long its surroundings take to read, a cursor move (the nearest point
+/// found and measured), and N (the closest spot of the whole span).
+#[test]
+#[ignore = "a benchmark on a project of your own"]
+fn follow_benchmark() {
+    let Some(m) = from_env() else {
+        eprintln!("skipping: set OHL_BENCH_FILE");
+        return;
+    };
+    let ctx = egui::Context::default();
+    let case = 0;
+    let sec = m.line.sections[m.line.sections.len() / 2].id.clone();
+    let points = m.shape(&sec, case).unwrap().spans[0].points.clone();
+    let lines = crate::measure::Centrelines::of(&m);
+    let mut f = crate::follow::Follow::default();
+    f.subject = Some(crate::follow::Subject::Span {
+        section: sec.clone(),
+        span: 0,
+    });
+    let at = |k: usize, n: usize| crate::selection::Use {
+        target: crate::selection::Selection::Span {
+            section: sec.clone(),
+            span: 0,
+        },
+        at: None,
+        on: crate::measure::point_along(&points, k as f64 / n as f64),
+    };
+    let t = Instant::now();
+    loop {
+        f.hover(&m, case, &lines, "c", Some(&at(1, 2)), &ctx);
+        if !f.status.starts_with("reading") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(t.elapsed().as_secs() < 120, "read within two minutes");
+    }
+    let read = t.elapsed();
+    let n = 400;
+    let t = Instant::now();
+    let mut found = 0;
+    for k in 0..n {
+        f.hover(&m, case, &lines, "c", Some(&at(k, n)), &ctx);
+        found += usize::from(f.live.is_some());
+    }
+    let hover = t.elapsed() / n as u32;
+    let t = Instant::now();
+    f.closest(&m, case, &lines, "c");
+    let closest = t.elapsed();
+    println!(
+        "follow and snap on {sec} span 1: surroundings read in {read:.1?} ({}); a cursor move \
+         {hover:.1?} ({found} of {n} with a point within reach); N {closest:.1?}: {}",
+        f.status,
+        f.live.as_ref().map_or("none".into(), |m| m.label())
+    );
+}

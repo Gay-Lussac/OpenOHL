@@ -65,12 +65,16 @@ pub enum Tool {
     MeasureStations,
     /// Right-click an object or a point: a note kept there.
     Note,
+    /// Right-click an object, choose LiDAR classes, move along it: the
+    /// nearest point of those classes measured live; a click keeps it
+    /// ([`crate::follow`]).
+    Follow,
 }
 
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Tools menu list them in this order.
-    pub const ALL: [Tool; 19] = [
+    pub const ALL: [Tool; 20] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -89,6 +93,7 @@ impl Tool {
         Tool::MeasureDistance,
         Tool::MeasureHeight,
         Tool::MeasureStations,
+        Tool::Follow,
         Tool::Note,
     ];
 
@@ -101,9 +106,11 @@ impl Tool {
                 "Structures"
             }
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
-            Tool::MeasureDistance | Tool::MeasureHeight | Tool::MeasureStations | Tool::Note => {
-                "Measure"
-            }
+            Tool::MeasureDistance
+            | Tool::MeasureHeight
+            | Tool::MeasureStations
+            | Tool::Follow
+            | Tool::Note => "Measure",
         }
     }
 
@@ -129,6 +136,7 @@ impl Tool {
             Tool::MeasureHeight => "Height above ground",
             Tool::MeasureStations => "Stations",
             Tool::Note => "Note",
+            Tool::Follow => "Follow and snap",
         }
     }
 
@@ -157,6 +165,7 @@ impl Tool {
             Tool::MeasureHeight => "↕",
             Tool::MeasureStations => "📏",
             Tool::Note => "🖹",
+            Tool::Follow => "🎯",
         }
     }
 
@@ -221,12 +230,20 @@ impl Tool {
             Tool::Note => {
                 "right-click an object or a point: write a note kept there in the project (shared; deleted with the object)"
             }
+            Tool::Follow => {
+                "right-click a wire, a jumper or a structure, tick the LiDAR classes, move the cursor along it: the nearest point of those classes measured live; right-click again: kept in the project (N: the closest spot; Escape: another object)"
+            }
         }
     }
 
     /// Whether it changes the model (needs editing rights).
     pub fn edits(self) -> bool {
-        !matches!(self, Tool::Select | Tool::GoTo) && self.measure().is_none()
+        !matches!(self, Tool::Select | Tool::GoTo) && !self.measuring()
+    }
+
+    /// A measuring tool (the views find what is under the cursor).
+    pub fn measuring(self) -> bool {
+        self.measure().is_some() || self == Tool::Follow
     }
 
     /// The measurement it makes, if it is a measuring tool.
@@ -306,6 +323,7 @@ impl Tool {
             Tool::MeasureHeight => "measure_height",
             Tool::MeasureStations => "measure_stations",
             Tool::Note => "note",
+            Tool::Follow => "follow",
         }
     }
 }

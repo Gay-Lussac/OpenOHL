@@ -10,6 +10,25 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Follow and snap (T11) built (owner, 2026-10-25)**
+
+- Objects followed: a span's wire, a jumper, a structure (its members or
+  stick drawing and strings). The object's point is the one clicked on it,
+  else the nearest in plan to the point under the cursor.
+- The points: the stored ones of the ticked classes in the object's box
+  grown by the radius, read once in the background into 2 m plan cells;
+  each move an exact ring search (stops when no farther ring can be
+  nearer). N: every point against the object's lines (boxes of 8
+  segments skip the far ones), exact.
+- Default classes: those shown but the line's own (roles conductor,
+  shield_wire, insulator, structure) and noise — found on a real line,
+  where a wire snapped to its own insulator points.
+- A kept one keeps its LiDAR point (spec question 2, searching again after
+  a change, still open). A structure point is kept as a new anchor
+  `on_structure` (offset from its base).
+- Real line, a span in the middle: 23–63 ms to read, 0.03–0.3 ms a cursor
+  move, 12–27 ms for N.
+
 **Measuring tools, phase 2: annotations (owner: "go ahead", 2026-10-25)**
 
 - A new object kind `annotation` in the project, apart from the line (as

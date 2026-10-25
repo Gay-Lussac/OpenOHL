@@ -329,6 +329,13 @@ pub fn pick_of(model: &Model, case: usize, anchor: &Anchor) -> Option<Pick> {
             model.line.structure(structure)?.position,
             format!("structure {structure} (base)"),
         ),
+        Anchor::OnStructure { structure, offset } => {
+            let base = model.line.structure(structure)?.position;
+            plain(
+                [0, 1, 2].map(|k| base[k] + offset[k]),
+                format!("structure {structure}"),
+            )
+        }
         Anchor::Attachment { structure, set } => plain(
             model
                 .line
@@ -605,6 +612,8 @@ pub struct Measuring {
     pub note: Option<NoteDraft>,
     /// Commands to perform (keep, delete), taken by the app each frame.
     pub actions: Vec<(String, ohl_session::Command)>,
+    /// The follow-and-snap tool ([`crate::follow`]).
+    pub follow: crate::follow::Follow,
 }
 
 /// An annotation kept in the project and what it gives now.
@@ -1558,5 +1567,61 @@ mod keep_tests {
         h.state_mut().ready().unwrap().model.undo().unwrap();
         h.run();
         assert_eq!(kept(&mut h), 2);
+        // Follow and snap: the first click picks the object (selected);
+        // with a measurement found, the next click keeps it.
+        let span = Selection::Span {
+            section: h.state_mut().ready().unwrap().model.line.sections[0]
+                .id
+                .clone(),
+            span: 0,
+        };
+        click(
+            &mut h,
+            Tool::Follow,
+            Use {
+                target: span.clone(),
+                at: None,
+                on: Some(mid),
+            },
+        );
+        {
+            let r = h.state_mut().ready().unwrap();
+            assert_eq!(r.selection, span);
+            assert!(r.measuring.follow.subject.is_some());
+            let lines = super::Centrelines::of(&r.model);
+            let wire = super::resolve(
+                &r.model,
+                r.case,
+                &Use {
+                    target: span.clone(),
+                    at: None,
+                    on: Some(mid),
+                },
+            )
+            .unwrap();
+            let ground = super::Pick {
+                at: [mid[0], mid[1], mid[2] - 12.0],
+                what: "LiDAR point".into(),
+                wire: None,
+                anchor: ohl_session::annotations::Anchor::Lidar {
+                    at: [mid[0], mid[1], mid[2] - 12.0],
+                    class: 5,
+                },
+            };
+            r.measuring.follow.live = Some(super::measure(
+                &r.model,
+                &lines,
+                super::Kind::Distance,
+                &[wire, ground],
+                "c",
+            ));
+            r.use_tool(Use {
+                target: Selection::None,
+                at: None,
+                on: None,
+            });
+        }
+        h.run();
+        assert_eq!(kept(&mut h), 3);
     }
 }

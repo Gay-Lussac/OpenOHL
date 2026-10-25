@@ -1984,7 +1984,7 @@ impl eframe::App for App {
                                     .small(),
                             );
                         }
-                        if ready.hotbar.tool().measure().is_some()
+                        if ready.hotbar.tool().measuring()
                             && let Some(text) = ready.measuring.readout()
                         {
                             ui.separator();

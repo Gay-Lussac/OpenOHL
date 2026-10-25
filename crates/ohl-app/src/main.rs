@@ -39,6 +39,7 @@ mod drawings;
 mod edit;
 mod editors;
 mod files;
+mod follow;
 mod galloping;
 mod ground_lines;
 mod handles;

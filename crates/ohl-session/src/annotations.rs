@@ -11,7 +11,7 @@
 //! user may add and change them, as reports), and **deleted with the
 //! object it is attached to**: a command that leaves an anchor without
 //! its object deletes the annotation in the same log entry
-//! ([`orphaned`]), so one undo brings both back.
+//! (`orphaned`), so one undo brings both back.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,6 +29,15 @@ pub enum Anchor {
     Structure {
         /// Its id.
         structure: String,
+    },
+    /// A point of a structure's members or strings, by its offset from
+    /// the structure's base (easting, northing, height; it follows the
+    /// structure moved, not turned).
+    OnStructure {
+        /// The structure.
+        structure: String,
+        /// From its base, m.
+        offset: [f64; 3],
     },
     /// A wire point of a structure (where a wire is clamped), by its set.
     Attachment {
@@ -89,7 +98,9 @@ impl Anchor {
     pub fn holds(&self, line: &Line) -> bool {
         let section = |id: &str| line.sections.iter().find(|s| s.id == id);
         match self {
-            Anchor::Structure { structure } => line.structure(structure).is_some(),
+            Anchor::Structure { structure } | Anchor::OnStructure { structure, .. } => {
+                line.structure(structure).is_some()
+            }
             Anchor::Attachment { structure, set } => line
                 .wire_point(&ohl_line::SectionPoint::new(structure.clone(), *set))
                 .is_some(),
