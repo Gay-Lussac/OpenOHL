@@ -32,9 +32,13 @@
 //! \\( e^{\alpha \Delta t} \\)) of a section clipped in, or the condition
 //! of a section in the blocks — a horizontal tension, or a sag in the ruling
 //! span or in one span — at which every span is sagged with the strings
-//! plumb. A section in the blocks then **rolls**: in each weather case its
-//! unstressed length is shared out so that every span has the same
-//! horizontal tension.
+//! plumb (the section's unstressed length). A section in the blocks then
+//! **rolls**: in each weather case, the stringing state included, its
+//! unstressed length is shared out over frictionless sheaves at the
+//! suspension clamps, the wire's tension equal on both sides of each (the
+//! default, owner decision 2026-10-25), or — simplified, the line's
+//! calculation options — so that every span has the same horizontal
+//! tension.
 
 use nalgebra::Vector3;
 use ohl_cables::Cable;
@@ -470,6 +474,9 @@ struct Reference {
     /// [`crate::SolverOptions::loads_per`]; set where a weather case is
     /// solved, irrelevant in still air).
     loads_per: crate::LoadsPer,
+    /// How a section in the blocks rolls (the line's
+    /// [`crate::SolverOptions::blocks`]; set where a section is solved).
+    blocks: crate::InTheBlocks,
 }
 
 impl Reference {
@@ -1392,6 +1399,8 @@ fn estimate_strain_weights(
             }
         })
         .collect();
+    // The stringing state as given (every span at the stringing tension,
+    // as before the sheave model: the data keep their meaning).
     let reference = reference(section, &held, cable, budget)?;
     let case = WeatherCase::still(
         "stringing",
@@ -1470,6 +1479,7 @@ fn reference(
                 temperature: *temperature,
                 weight_scale: vec![1.0; lengths.len()],
                 loads_per: crate::LoadsPer::default(),
+                blocks: crate::InTheBlocks::default(),
             });
         }
         Stringing::Tension {
@@ -1511,6 +1521,7 @@ fn reference(
             lengths,
             temperature,
             loads_per: crate::LoadsPer::default(),
+            blocks: crate::InTheBlocks::default(),
         };
         let (built, solved) = solve_built(
             section,
@@ -1683,10 +1694,24 @@ fn across_only(
     k: usize,
     along: Vector3<f64>,
 ) -> Option<Vector3<f64>> {
+    hung(built, solution, k, along, 0.0)
+}
+
+/// Where a holder's clamp hangs under the wires' pull in a solution, its
+/// part along the line (unit `along`) replaced by `along_pull` (N per
+/// subconductor): the assembly alone, from its solved shape, under its own
+/// loads and that pull. None if it does not solve.
+fn hung(
+    built: &Built,
+    solution: &ohl_wirefe::Solution,
+    k: usize,
+    along: Vector3<f64>,
+    along_pull: f64,
+) -> Option<Vector3<f64>> {
     let c = built.clamps[k];
     let trusses: Vec<usize> = built.members[k].iter().map(|(_, t)| *t).collect();
     let pull = clamp_pull(built, solution, k);
-    let pull = pull - along * pull.dot(&along);
+    let pull = pull - along * (pull.dot(&along) - along_pull);
     // The assembly alone: its nodes (renumbered), its strings.
     let mut nodes: Vec<usize> = Vec::new();
     for &t in &trusses {
@@ -1750,10 +1775,15 @@ pub(crate) fn tension_for_sag(
 }
 
 /// A section in the blocks in a weather case: its unstressed length (the
-/// sum of the reference lengths) shared out between the spans so that all
-/// have the same horizontal tension — the wire rolls over the suspension
-/// clamps (point loads are left out of the sharing). Bisection on the
-/// tension; exit clause: 200 steps.
+/// sum of the reference lengths) shared out between the spans — the wire
+/// rolls over the suspension clamps (point loads are left out of the
+/// sharing):
+///
+/// - over frictionless sheaves (the default, [`crate::InTheBlocks`]): the
+///   wire's tension equal on both sides of each ([`over_sheaves`]), the
+///   strings swung to the sheaves' resultant, along the line too;
+/// - simplified: all spans the same horizontal tension, the strings plumb
+///   along the line. Bisection on the tension; exit clause: 200 steps.
 fn rolled(
     section: &Section,
     layout: &[Holder],
@@ -1766,10 +1796,11 @@ fn rolled(
     let cases = cases.for_rolling();
     // The clamps settle where the shared-out lengths put them (strings
     // swing across the line more under ice or wind at line angles, which
-    // changes the chords): fixed point, exit clause 20 passes.
+    // changes the chords; over sheaves along it too): fixed point, exit
+    // clause 20 passes.
     // First guess 20 kN: the bracket widens from there; later passes start
     // from the tension found.
-    let (mut r, mut h) = shared_out(
+    let (mut r, mut h, mut pulls) = shared_out(
         section,
         reference,
         &reference.clamps,
@@ -1780,7 +1811,10 @@ fn rolled(
     )?;
     for _ in 0..20 {
         let (built, solved) = solve_built(section, layout, &r, cable, cases, budget, None)?;
-        let clamps = settled(layout, &r.clamps, &built, &solved);
+        let clamps = match &pulls {
+            None => settled(layout, &r.clamps, &built, &solved),
+            Some(p) => settled_over_sheaves(layout, &r.clamps, &built, &solved, p),
+        };
         let moved = clamps
             .iter()
             .zip(&r.clamps)
@@ -1789,7 +1823,7 @@ fn rolled(
         if moved < 1e-6 {
             return Ok(r);
         }
-        (r, h) = shared_out(section, reference, &clamps, cable, cases, h, budget)?;
+        (r, h, pulls) = shared_out(section, reference, &clamps, cable, cases, h, budget)?;
     }
     Err(LineError::Invalid(format!(
         "section {}: rolling did not settle in 20 passes",
@@ -1797,9 +1831,50 @@ fn rolled(
     )))
 }
 
+/// [`settled`] for a section rolled over sheaves: every clamp in the
+/// middle of the section hangs where its assembly balances the wires'
+/// pull — across the line as solved, along it the sheaves' (`pulls`, per
+/// section point, [`over_sheaves`]): the equal tension on both sides of
+/// a sheave leaves a pull along the line on inclined or unequal spans,
+/// which swings the string towards the span with the larger horizontal
+/// tension until it balances.
+fn settled_over_sheaves(
+    layout: &[Holder],
+    clamps: &[Vector3<f64>],
+    built: &Built,
+    solution: &ohl_wirefe::Solution,
+    pulls: &[Vector3<f64>],
+) -> Vec<Vector3<f64>> {
+    let n = clamps.len();
+    (0..n)
+        .map(|k| {
+            let position = solution.positions[built.clamps[k]];
+            let middle = k > 0 && k + 1 < n;
+            match layout[k].shape {
+                Shape::Suspension | Shape::VString | Shape::General if middle => {
+                    let unit = |a: usize, b: usize| {
+                        let d = (clamps[b] - clamps[a]).xy();
+                        if d.norm() > 0.0 { d.normalize() } else { d }
+                    };
+                    let along = unit(k - 1, k) + unit(k, k + 1);
+                    let along = Vector3::new(along.x, along.y, 0.0).normalize();
+                    hung(built, solution, k, along, pulls[k].dot(&along)).unwrap_or(position)
+                }
+                _ => position,
+            }
+        })
+        .collect()
+}
+
+/// The wires' pulls on the clamps over sheaves, per section point
+/// (none: the equal-H model).
+type SheavePulls = Option<Vec<Vector3<f64>>>;
+
 /// The reference's unstressed length shared out between the spans between
 /// `clamps` so that all have the same horizontal tension in `case` (found
-/// from `guess`, N); with that tension.
+/// from `guess`, N); with that tension. Over sheaves (the reference's
+/// [`crate::InTheBlocks`]) that sharing is the start of [`over_sheaves`],
+/// whose first span's tension and pulls on the clamps come with it.
 fn shared_out(
     section: &Section,
     reference: &Reference,
@@ -1808,7 +1883,7 @@ fn shared_out(
     cases: Cases<'_>,
     guess: f64,
     budget: &Budget,
-) -> Result<(Reference, f64), LineError> {
+) -> Result<(Reference, f64, SheavePulls), LineError> {
     // One temperature for the section (its case's); each span its load.
     let case = cases.base;
     let invalid = |m: String| LineError::Invalid(format!("section {}: rolling: {m}", section.id));
@@ -1922,6 +1997,13 @@ fn shared_out(
     for _ in 0..ohl_wirefe::model::STRETCH_PASSES {
         let found = lengths(h)?;
         if moved.get() <= ohl_wirefe::model::STRETCH_TOLERANCE {
+            if reference.blocks == crate::InTheBlocks::Sheaves {
+                let stretches = stretches.borrow().clone();
+                let (r, h, pulls) = over_sheaves(
+                    section, reference, clamps, cable, cases, h, stretches, budget,
+                )?;
+                return Ok((r, h, Some(pulls)));
+            }
             return Ok((
                 Reference {
                     clamps: clamps.to_vec(),
@@ -1929,8 +2011,10 @@ fn shared_out(
                     temperature: reference.temperature,
                     weight_scale: reference.weight_scale.clone(),
                     loads_per: reference.loads_per,
+                    blocks: reference.blocks,
                 },
                 h,
+                None,
             ));
         }
         h = search(h, 1.0 + 1e-4)?;
@@ -1940,6 +2024,166 @@ fn shared_out(
          {:.3e})",
         ohl_wirefe::model::STRETCH_PASSES,
         moved.get()
+    )))
+}
+
+/// The reference's unstressed length shared out between the spans between
+/// `clamps` over frictionless sheaves in `case` ([`ohl_sagtension::sheaves`],
+/// owner decision 2026-10-25): the wire's tension (along it, at the
+/// clamp: |force| of the span's catenary there, with its load — own
+/// weight, ice, wind) equal on both sides of every suspension clamp. One
+/// unknown, the first span's horizontal tension (from `guess`, the
+/// equal-H tension), each next span's from the equal tension, the
+/// section's length the residual; the spans' stretch under ice and wind
+/// (`stretches`, from the equal-H sharing) a fixed point around it (exit
+/// clause [`ohl_wirefe::model::STRETCH_PASSES`]). With the first span's
+/// tension and the wires' pull on each clamp (per section point).
+///
+/// Simplification: the wire runs over the sheave at the clamp point (the
+/// sheave's size left out) and the sheaves have no friction.
+#[allow(clippy::too_many_arguments)]
+fn over_sheaves(
+    section: &Section,
+    reference: &Reference,
+    clamps: &[Vector3<f64>],
+    cable: &Cable,
+    cases: Cases<'_>,
+    guess: f64,
+    mut stretches: Vec<f64>,
+    budget: &Budget,
+) -> Result<(Reference, f64, Vec<Vector3<f64>>), LineError> {
+    use ohl_sagtension::sheaves::{ShareError, SheaveSpan, share};
+    let case = cases.base;
+    let invalid = |m: String| {
+        LineError::Invalid(format!(
+            "section {}: rolling over the sheaves: {m}",
+            section.id
+        ))
+    };
+    let ea = cable.axial_stiffness().si();
+    let thermal =
+        (cable.thermal_expansion() * (case.temperature.celsius() - reference.temperature)).exp();
+    let total: f64 = reference.lengths.iter().sum();
+    let chords: Vec<Vector3<f64>> = clamps.windows(2).map(|c| c[1] - c[0]).collect();
+    let n_spans = |c: &[Vector3<f64>]| c.len().saturating_sub(1);
+    let element_budget = ohl_wirefe::catenary_element::default_element_budget();
+    // Each span's last length (a start for the next: the tensions tried
+    // lie close together).
+    let last: std::cell::RefCell<Vec<Option<f64>>> =
+        std::cell::RefCell::new(vec![None; n_spans(clamps)]);
+    // Span `s` at horizontal tension `h` with stretch `k`: its element and
+    // state, and whether it carries loads per stretched metre.
+    let span = |s: usize, h: f64, k: f64| {
+        let at = |e: ohl_wirefe::ElementError| invalid(format!("span {}: {e}", s + 1));
+        let d = chords[s];
+        let (own, stretched) = span_loads_split(
+            cases.of(s),
+            cable,
+            d,
+            reference.weight_scale[s] / thermal,
+            reference.loads_per,
+        );
+        let load = own + stretched * k;
+        let element = |l: f64| CableProperties {
+            unstressed_length: l,
+            axial_stiffness: ea,
+            load,
+        };
+        // A secant on the length from the last one (2–4 element solves),
+        // else the bracketed search (exact either way: to 1e-12 of H).
+        let near = last.borrow()[s].and_then(|start| {
+            let mut a = (start, element(start).solve(d, None, &element_budget).ok()?);
+            if (a.1.horizontal - h).abs() <= 1e-12 * h {
+                return Some(a);
+            }
+            let b0 = start * (1.0 + 1e-7);
+            let mut b = (b0, element(b0).solve(d, None, &element_budget).ok()?);
+            for _ in 0..20 {
+                let (fa, fb) = (a.1.horizontal - h, b.1.horizontal - h);
+                if (fb).abs() <= 1e-12 * h {
+                    return Some(b);
+                }
+                if fb == fa {
+                    return None;
+                }
+                let next = b.0 - fb * (b.0 - a.0) / (fb - fa);
+                if !(next > 0.0 && (next - start).abs() < 1e-2 * start) {
+                    return None;
+                }
+                a = b;
+                b = (next, element(next).solve(d, None, &element_budget).ok()?);
+            }
+            None
+        });
+        let (l, state) = match near {
+            Some(found) => found,
+            None => {
+                let l = CableProperties::unstressed_length_for_tension(d, h, ea, load, budget)
+                    .map_err(at)?;
+                (l, element(l).solve(d, None, &element_budget).map_err(at)?)
+            }
+        };
+        last.borrow_mut()[s] = Some(l);
+        Ok::<_, LineError>((element(l), state, stretched != Vector3::zeros()))
+    };
+    let n = chords.len();
+    let mut h1 = guess;
+    for _ in 0..ohl_wirefe::model::STRETCH_PASSES {
+        let hs = share(
+            n,
+            total,
+            h1,
+            |s, h| {
+                let (props, state, _) = span(s, h, stretches[s])?;
+                Ok(Some(SheaveSpan {
+                    unstressed: props.unstressed_length / thermal,
+                    tension_start: state.tension_i,
+                    tension_end: state.tension_j,
+                }))
+            },
+            budget,
+        )
+        .map_err(|e| match e {
+            ShareError::Span(e) => e,
+            other => invalid(other.to_string()),
+        })?;
+        let mut lengths = Vec::with_capacity(n);
+        let mut pulls = vec![Vector3::zeros(); n + 1];
+        let mut moved: f64 = 0.0;
+        for (s, &h) in hs.iter().enumerate() {
+            let (props, state, per_stretched) = span(s, h, stretches[s])?;
+            lengths.push(props.unstressed_length / thermal);
+            pulls[s] += state.force_i;
+            pulls[s + 1] += state.force_j;
+            if per_stretched {
+                let next = props.stretched_length(&state) / props.unstressed_length;
+                moved = if next.is_nan() {
+                    f64::INFINITY
+                } else {
+                    moved.max((next - stretches[s]).abs())
+                };
+                stretches[s] = next;
+            }
+        }
+        if moved <= ohl_wirefe::model::STRETCH_TOLERANCE {
+            return Ok((
+                Reference {
+                    clamps: clamps.to_vec(),
+                    lengths,
+                    temperature: reference.temperature,
+                    weight_scale: reference.weight_scale.clone(),
+                    loads_per: reference.loads_per,
+                    blocks: reference.blocks,
+                },
+                hs[0],
+                pulls,
+            ));
+        }
+        h1 = hs[0];
+    }
+    Err(invalid(format!(
+        "the spans' stretch under ice and wind did not settle in {} passes",
+        ohl_wirefe::model::STRETCH_PASSES
     )))
 }
 
@@ -1955,8 +2199,45 @@ pub fn clip_lengths(
     let cable = &*line.bimetallic.apply(cable);
     let cable = &*strung_cable(section, cable)?;
     let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, &budget)?;
-    let r = reference(section, &layout, cable, &budget)?;
+    let mut r = reference(section, &layout, cable, &budget)?;
+    r.loads_per = line.solver.loads_per;
+    r.blocks = line.solver.blocks;
+    let r = in_the_blocks_at_stringing(section, &layout, &r, cable, &budget)?;
     Ok((r.lengths, r.temperature))
+}
+
+/// A section in the blocks at its stringing condition (still air at the
+/// reference's temperature): over sheaves, the reference's length shared
+/// out by them ([`rolled`]: every span at the given tension with the
+/// strings plumb gives the section's length, the sheaves then pass the
+/// tension along the wire, so the spans' horizontal tensions differ a
+/// little from the given one on unequal or inclined spans); simplified, or
+/// clipped in, or of one span: the reference as it is.
+fn in_the_blocks_at_stringing(
+    section: &Section,
+    layout: &[Holder],
+    reference: &Reference,
+    cable: &Cable,
+    budget: &Budget,
+) -> Result<Reference, LineError> {
+    if reference.blocks == crate::InTheBlocks::EqualH
+        || section.stringing.clipped()
+        || reference.lengths.len() < 2
+    {
+        return Ok(reference.clone());
+    }
+    let still = WeatherCase::still(
+        "stringing",
+        ohl_core::units::Temperature::from_celsius(reference.temperature),
+    );
+    rolled(
+        section,
+        layout,
+        reference,
+        cable,
+        Cases::one(&still),
+        budget,
+    )
 }
 
 /// The cable as strung in `section`: its own weight per metre of
@@ -2342,6 +2623,8 @@ fn solve_fe(
     // The ice and wind per stretched or unstretched metre (the line's
     // calculation options, 2026-10-21).
     reference.loads_per = line.solver.loads_per;
+    // How it rolls in the blocks (2026-10-25).
+    reference.blocks = line.solver.blocks;
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
@@ -2368,10 +2651,14 @@ fn solve_fe(
                 "stringing",
                 ohl_core::units::Temperature::from_celsius(reference.temperature),
             );
+            // In the blocks over sheaves the spans' lengths at stringing
+            // are the sheaves' sharing of the reference's.
+            let at_stringing =
+                in_the_blocks_at_stringing(section, &layout, &reference, cable, budget)?;
             let (b, sol) = solve_built(
                 section,
                 &layout,
-                &reference,
+                &at_stringing,
                 cable,
                 Cases::one(&stringing),
                 budget,
@@ -2840,6 +3127,8 @@ pub fn solve_line_with(
     results
 }
 
+#[cfg(test)]
+mod sheave_tests;
 #[cfg(test)]
 mod tests;
 

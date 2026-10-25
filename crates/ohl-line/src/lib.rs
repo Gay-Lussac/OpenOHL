@@ -68,7 +68,12 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 9 adds a section's local winds
+/// Latest line file version: 10 adds the in-the-blocks model of the line's
+/// calculation options (`solver.blocks`, [`SolverOptions::blocks`], written
+/// only when the simplified equal-H model is chosen; owner decision
+/// 2026-10-25) and a jumper given by its tension (`tension`,
+/// [`Jumper::tension`], the riser; the same raise), written only by a line
+/// that uses one (else 9, 8 or 7, [`Line::to_json`]); 9 adds a section's local winds
 /// (`wind_factors`, [`Section::wind_factors`]; roadmap O15, 2026-10-25)
 /// and the broken-wire load cases sent to the structures
 /// (`structure_loads.broken_cases`, [`StructureLoads::broken_cases`];
@@ -88,7 +93,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 9;
+pub const LINE_FILE_VERSION: u32 = 10;
+
+/// The version before the in-the-blocks option and the jumpers given by
+/// their tension: what a line without them is written as (when it has
+/// local winds).
+const BEFORE_SHEAVES_VERSION: u32 = 9;
 
 /// The version before the local winds: what a line without them is
 /// written as (when it has strings' own volumes).
@@ -346,6 +356,68 @@ pub struct SolverOptions {
     /// other programs appear to do it.
     #[serde(default, skip_serializing_if = "LoadsPer::is_default")]
     pub loads_per: LoadsPer,
+    /// How a section in the blocks shares its wire between its spans
+    /// (owner decision 2026-10-25, line file version 10 when not the
+    /// default): over frictionless sheaves, the wire's tension equal on
+    /// both sides of each (the default); or the simplified model, one
+    /// horizontal tension for every span. A file without it: the default.
+    #[serde(default, skip_serializing_if = "InTheBlocks::is_default")]
+    pub blocks: InTheBlocks,
+}
+
+/// How a section in the blocks shares its unstressed length between its
+/// spans in each weather case ([`SolverOptions::blocks`]; owner decision
+/// 2026-10-25). The section's length is the same either way: every span
+/// sagged at the stringing tension (the horizontal tension in the ruling
+/// span) with the strings plumb, at the stringing temperature.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InTheBlocks {
+    /// Over frictionless sheaves at the suspension clamps, the default: the
+    /// wire's tension along it is equal on both sides of each sheave, the
+    /// strings swing along the line to the sheaves' resultant (the
+    /// sheave's size and friction left out).
+    #[default]
+    Sheaves,
+    /// Simplified (equal H): every span the same horizontal tension, the
+    /// strings plumb along the line (the model before 2026-10-25). On
+    /// unequal or inclined spans the spans' tensions differ from the
+    /// sheaves' by about the load per metre times the difference of their
+    /// ends' heights above their low points.
+    EqualH,
+}
+
+impl InTheBlocks {
+    /// Every choice.
+    pub const ALL: [Self; 2] = [Self::Sheaves, Self::EqualH];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sheaves => "sheaves",
+            Self::EqualH => "equal_h",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
+
+    /// In words, for report headers.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Sheaves => {
+                "in the blocks over frictionless sheaves (equal tension along the wire)"
+            }
+            Self::EqualH => "in the blocks simplified (equal H in every span)",
+        }
+    }
 }
 
 /// Per what metre of the wire the finite elements carry the ice and wind
@@ -544,7 +616,16 @@ pub struct Jumper {
     /// still air at `temperature` (jumpers without support only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sag: Option<f64>,
-    /// Temperature of `length` / `sag`, °C.
+    /// Or: the pull it is tensioned to, N per subconductor, at its higher
+    /// end (its `from` end when both are level), in still air at
+    /// `temperature`: a taut jumper (a riser, dead-ended between two
+    /// strain points, any direction, vertical included), solved as a taut
+    /// wire ([`jumper`], owner decision 2026-10-25; line file version 10).
+    /// Its cut length is found from it in its design case and kept, as
+    /// for a sag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tension: Option<f64>,
+    /// Temperature of `length` / `sag` / `tension`, °C.
     #[serde(default = "default_jumper_temperature")]
     pub temperature: f64,
     /// A rigid jumper (a tube or bar): the straight member between its
@@ -888,6 +969,8 @@ struct JumperFile {
     length: Option<f64>,
     #[serde(default)]
     sag: Option<f64>,
+    #[serde(default)]
+    tension: Option<f64>,
     #[serde(default = "default_jumper_temperature")]
     temperature: f64,
     #[serde(default)]
@@ -937,6 +1020,7 @@ impl From<JumperFile> for Jumper {
             to: end(f.to, f.to_tap),
             length: f.length,
             sag: f.sag,
+            tension: f.tension,
             temperature: f.temperature,
             rigid: f.rigid,
             bending_stiffness: f.bending_stiffness,
@@ -3200,7 +3284,9 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 9 with local winds, else
+    /// line, so an older program still reads it: 10 with the simplified
+    /// in-the-blocks model or a jumper given by its tension, else 9 with
+    /// local winds, else
     /// 8 with strings' own volumes, else 7 (a line of an older version
     /// as its version).
     pub fn to_json(&self) -> String {
@@ -3211,10 +3297,13 @@ impl Line {
             .any(|s| s.strings.iter().any(|x| !x.shapes.is_empty()));
         let winds = self.sections.iter().any(|s| !s.wind_factors.is_empty())
             || !self.structure_loads.broken_cases.is_empty();
-        let written = match (winds, shapes) {
-            (true, _) => LINE_FILE_VERSION,
-            (false, true) => BEFORE_WIND_FACTORS_VERSION,
-            (false, false) => BEFORE_SHAPES_VERSION,
+        let sheaves =
+            !self.solver.blocks.is_default() || self.jumpers.iter().any(|j| j.tension.is_some());
+        let written = match (sheaves, winds, shapes) {
+            (true, _, _) => LINE_FILE_VERSION,
+            (false, true, _) => BEFORE_SHEAVES_VERSION,
+            (false, false, true) => BEFORE_WIND_FACTORS_VERSION,
+            (false, false, false) => BEFORE_SHAPES_VERSION,
         };
         if self.version == LINE_FILE_VERSION && written != LINE_FILE_VERSION {
             // The version is the second key (after the format): its first
@@ -3727,12 +3816,30 @@ impl Line {
                     })?;
                 }
             }
-            match (j.rigid, j.length, j.sag) {
-                (true, None, None) => {}
-                (true, ..) => return bad("a rigid jumper has no length or sag"),
-                (false, Some(l), None) if l > 0.0 => {}
-                (false, None, Some(s)) if s > 0.0 => {}
-                _ => return bad("give either a positive length or a positive sag"),
+            match (j.rigid, j.length, j.sag, j.tension) {
+                (true, None, None, None) => {}
+                (true, ..) => return bad("a rigid jumper has no length, sag or tension"),
+                (false, Some(l), None, None) if l > 0.0 => {}
+                (false, None, Some(s), None) if s > 0.0 => {}
+                (false, None, None, Some(t)) if t > 0.0 && t.is_finite() => {
+                    if j.on_tap() {
+                        return bad(
+                            "a jumper given by its tension (a riser) is dead-ended between two \
+                             wire points, not on a tap",
+                        );
+                    }
+                    if j.support().is_some() || !j.supports().is_empty() {
+                        return bad(
+                            "a jumper given by its tension (a riser) has no helping strings \
+                             (post insulators along it are not modelled yet)",
+                        );
+                    }
+                }
+                _ => {
+                    return bad(
+                        "give either a positive length, a positive sag or a positive tension",
+                    );
+                }
             }
             if j.bending_stiffness
                 .is_some_and(|e| !(e >= 0.0 && e.is_finite()))

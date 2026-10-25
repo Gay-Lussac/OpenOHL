@@ -221,7 +221,18 @@ fn rich_line() -> Line {
         point: "C1".into(),
     }));
     line.jumpers.push(tap);
+    // A riser given by its tension (2026-10-25).
+    let mut riser = line.jumpers[0].clone();
+    riser.id = "JR".into();
+    riser.set_supports(Vec::new());
+    riser.points.clear();
+    riser.sag = None;
+    riser.length = None;
+    riser.tension = Some(4500.0);
+    line.jumpers.push(riser);
     line.solver.taps = ohl_line::TapLoads::Once;
+    // The simplified in-the-blocks model (2026-10-25): kept.
+    line.solver.blocks = ohl_line::InTheBlocks::EqualH;
     // Ice and wind per unstretched metre (2026-10-21): kept.
     line.solver.loads_per = ohl_line::LoadsPer::Unstretched;
     line.sections[0].add_spread_load(&ohl_line::legacy::SpreadLoad {
@@ -498,6 +509,7 @@ fn xsd_lists_every_element_written() {
     }
     // Attributes added since: declared too.
     assert!(xsd.contains("name=\"per_subconductor\""));
+    assert!(xsd.contains("name=\"blocks\"") && xsd.contains("name=\"tension\""));
     for a in [
         "max_load",
         "max_swing_deg",

@@ -236,7 +236,11 @@ fn v_string_holds_the_clamp_against_wind_until_a_leg_goes_slack() {
     // Movement of T2's clamp across the line (y; the line runs along x).
     let across = |a: &SectionShape, b: &SectionShape| (a.clamps[1][1] - b.clamps[1][1]).abs();
 
-    let v_line = with_v_string();
+    // The simplified in-the-blocks model: one H at stringing (over sheaves
+    // the spans' H differ by the load times their ends' heights above
+    // their low points, [`super::sheave_tests`]).
+    let mut v_line = with_v_string();
+    v_line.solver.blocks = crate::InTheBlocks::EqualH;
     let calm = solve(&v_line, 0.0);
     // Still air: both legs in tension, carrying the weight span.
     let forces =
@@ -773,6 +777,9 @@ fn tension_stringing_reproduces_its_tension() {
     let mut line = crate::tests::example();
     // Jumpers hang their weight on the clamps after stringing.
     line.jumpers.clear();
+    // The simplified in-the-blocks model (over sheaves:
+    // [`super::sheave_tests`]).
+    line.solver.blocks = crate::InTheBlocks::EqualH;
     // Strung at 25 kN at 15 °C: solving at 15 °C gives 25 kN in every span,
     // within 0.1 %: sagging holds the clamps plumb along the line, the
     // solved state lets them settle longitudinally (6 N observed).
@@ -793,10 +800,12 @@ fn tension_stringing_reproduces_its_tension() {
 }
 
 /// Sagged to 8 m in its second span: solving in the stringing state
-/// gives that sag there, and the same tension in every span.
+/// gives that sag there, and the same tension in every span (the
+/// simplified in-the-blocks model).
 #[test]
 fn sag_stringing_reproduces_its_sag() {
     let mut line = crate::tests::example();
+    line.solver.blocks = crate::InTheBlocks::EqualH;
     // Jumpers hang their weight on the clamps after stringing.
     line.jumpers.clear();
     line.sections[0].stringing = Stringing::Sag {
@@ -818,14 +827,15 @@ fn sag_stringing_reproduces_its_sag() {
     }
 }
 
-/// In the blocks the spans keep one tension in every weather case;
-/// clipped in, with the same lengths at stringing, they do not under
-/// ice; a structure moved changes the tension of a clipped section, not
-/// the stringing tension of one in the blocks.
+/// In the blocks (simplified: equal H) the spans keep one tension in
+/// every weather case; clipped in, with the same lengths at stringing,
+/// they do not under ice; a structure moved changes the tension of a
+/// clipped section, not the stringing tension of one in the blocks.
 #[test]
 fn sections_in_the_blocks_roll_clipped_ones_do_not() {
     let lib = library();
     let mut line = crate::tests::example();
+    line.solver.blocks = crate::InTheBlocks::EqualH;
     line.sections[0].clear_point_loads();
     line.sections[0].stringing = Stringing::Tension {
         horizontal_tension: 25_000.0,

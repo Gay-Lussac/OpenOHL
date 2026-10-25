@@ -1269,3 +1269,83 @@ fn the_structures_take_the_load_cases_own_wind() {
     assert!((p.usage - by_hand.usage).abs() < 1e-12, "{p:?} {by_hand:?}");
     assert!(p.usage > at(&plain, "T6").pole.unwrap().usage);
 }
+
+/// A riser (a jumper given by its tension, 2026-10-25) dead-ended on T3
+/// between two strain strings: its pull loads their tops, the top one
+/// down by about the tension (and its string's weight), the bottom one up
+/// by the tension less the riser's weight; the load is the riser's.
+#[test]
+fn a_riser_loads_the_tops_of_its_strings() {
+    let (mut line, library, weather, cases) = setup();
+    let st = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
+    let base = st.position;
+    for (k, (point, wire, set, dz)) in [("RS1", "RW1", 90, 20.0), ("RS2", "RW2", 91, 5.0)]
+        .into_iter()
+        .enumerate()
+    {
+        // The string's top 0.5 m beyond its wire point, along the riser.
+        let away = if k == 0 { 0.5 } else { -0.5 };
+        st.points.push(ohl_line::StructurePoint {
+            description: Default::default(),
+            label: point.into(),
+            position: [base[0] + 2.0, base[1] + 2.0, base[2] + dz + away],
+            ..Default::default()
+        });
+        st.wires.push(ohl_line::WirePoint {
+            description: Default::default(),
+            label: wire.into(),
+            position: [base[0] + 2.0, base[1] + 2.0, base[2] + dz],
+            set: Some(set),
+            weight: 0.0,
+        });
+        st.strings.push(ohl_line::InsulatorString {
+            label: format!("RI{k}"),
+            top: point.into(),
+            wire: wire.into(),
+            weight: 40.0,
+            ..Default::default()
+        });
+    }
+    let mut riser = line.jumpers[0].clone();
+    riser.id = "JR".into();
+    riser.set_supports(Vec::new());
+    riser.set_support(None);
+    riser.points.clear();
+    riser.sag = None;
+    riser.length = None;
+    riser.tension = Some(2_500.0);
+    riser.bundle = Some(1);
+    riser.from = ohl_line::JumperEnd::wire("T3", 90);
+    riser.to = ohl_line::JumperEnd::wire("T3", 91);
+    line.jumpers.push(riser);
+    line.validate().unwrap();
+    let budget = ohl_wirefe::default_fe_budget();
+    let r = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    for c in &r {
+        assert!(c.failed.is_empty(), "{}: {:?}", c.case.name, c.failed);
+        let at = |p: &str| {
+            c.loads
+                .iter()
+                .find(|l| l.structure == "T3" && l.point == p)
+                .unwrap_or_else(|| panic!("{}: a load at {p}", c.case.name))
+        };
+        let (top, bottom) = (at("RS1"), at("RS2"));
+        assert_eq!(top.sections, vec!["JR".to_owned()]);
+        assert_eq!(top.sets, vec![90]);
+        // Unfactored, the line's axes: down at the top, up at the bottom,
+        // 15 m of riser between them (about 16 N/m).
+        assert!(top.force[2] < -2_000.0, "{}: {:?}", c.case.name, top.force);
+        assert!(
+            bottom.force[2] > 1_500.0,
+            "{}: {:?}",
+            c.case.name,
+            bottom.force
+        );
+        let weight = -(top.force[2] + bottom.force[2]);
+        assert!(
+            weight > 80.0 + 100.0 && weight < 80.0 + 600.0,
+            "{}: {weight}",
+            c.case.name
+        );
+    }
+}

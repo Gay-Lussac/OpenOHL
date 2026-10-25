@@ -64,7 +64,10 @@ pub struct TensionSection {
 /// every span's catenary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionSolution {
-    /// Horizontal tension, equal in all spans.
+    /// Horizontal tension, equal in all spans (the equal-H model); over
+    /// sheaves ([`TensionSection::solve_over_sheaves`]) each span has its
+    /// own (`spans[i].catenary.horizontal_tension`) and this is their mean
+    /// weighted by the spans' horizontal lengths.
     pub horizontal_tension: Force,
     /// Span solutions, in order.
     pub spans: Vec<SpanSolution>,
@@ -197,6 +200,87 @@ impl TensionSection {
             spans: at(h)?.0,
         })
     }
+
+    /// Solves the section in the blocks over frictionless sheaves at a
+    /// load and temperature ([`crate::sheaves`], owner decision
+    /// 2026-10-25): the same unstressed length, shared so that the wire's
+    /// tension is equal on both sides of every sheave; each span its own
+    /// horizontal tension. Equal level spans give the equal-H solution;
+    /// unequal ones differ by the load times the difference of their sags.
+    ///
+    /// Expected cost: about 10–20 × [`Self::solve`] per span (a few ms for
+    /// 10 spans).
+    pub fn solve_over_sheaves(
+        &self,
+        state: LoadState,
+        budget: &Budget,
+    ) -> Result<SectionSolution, SagTensionError> {
+        let equal = self.solve(state, budget)?;
+        let thermal = (self.cable.thermal_expansion
+            * (state.temperature - self.reference_temperature).kelvin())
+        .exp();
+        let at = |i: usize, h: f64| {
+            span_at(h, &state, self.spans[i], |s| {
+                Ok(thermal * (1.0 + mean_strain(s, self.cable)))
+            })
+        };
+        over_sheaves(
+            &self.spans,
+            self.unstressed_length.si(),
+            equal.horizontal_tension.si(),
+            at,
+            budget,
+        )
+    }
+}
+
+/// The section over sheaves ([`crate::sheaves::share`]) from `at(i, h)`,
+/// span `i` at tension `h` with its stretch (its length over its
+/// unstressed length), sharing `total` from the tension `guess`.
+pub(crate) fn over_sheaves(
+    spans: &[SpanGeometry],
+    total: f64,
+    guess: f64,
+    at: impl Fn(usize, f64) -> Result<(SpanSolution, f64), SagTensionError>,
+    budget: &Budget,
+) -> Result<SectionSolution, SagTensionError> {
+    use crate::sheaves::{ShareError, SheaveSpan, share};
+    let hs = share(
+        spans.len(),
+        total,
+        guess,
+        |i, h| match at(i, h) {
+            Ok((s, stretch)) => Ok(Some(SheaveSpan {
+                unstressed: s.length().si() / stretch,
+                tension_start: s.tension_left().si(),
+                tension_end: s.tension_right().si(),
+            })),
+            Err(SagTensionError::TooSlack { .. }) => Ok(None),
+            Err(e) => Err(e),
+        },
+        budget,
+    )
+    .map_err(|e| match e {
+        ShareError::Span(e) => e,
+        ShareError::Stopped { stop, detail } => SagTensionError::NotConverged {
+            problem: "section over sheaves",
+            stop,
+            detail,
+        },
+        ShareError::NoSolution(m) => SagTensionError::InvalidInput(m),
+    })?;
+    let solved = hs
+        .iter()
+        .enumerate()
+        .map(|(i, &h)| at(i, h).map(|(s, _)| s))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (weighted, sum) = spans.iter().zip(&hs).fold((0.0, 0.0), |(w, l), (g, h)| {
+        (w + h * g.span.si(), l + g.span.si())
+    });
+    Ok(SectionSolution {
+        horizontal_tension: Force::from_si(weighted / sum),
+        spans: solved,
+    })
 }
 
 #[cfg(test)]
@@ -241,6 +325,65 @@ mod tests {
             .iter()
             .map(|&s| SpanGeometry::level(Length::from_meters(s)))
             .collect()
+    }
+
+    /// Over sheaves: equal level spans keep one H; other spans share the
+    /// length with the wire's tension equal at the sheave, the section's
+    /// unstressed length the same.
+    #[test]
+    fn sheaves_pass_the_tension_along_the_wire() {
+        let budget = default_solver_budget();
+        let strung = |spans: Vec<SpanGeometry>| {
+            TensionSection::from_known_state(
+                spans,
+                drake(),
+                state(15.97, 15.0),
+                Force::from_si(25_000.0),
+            )
+            .unwrap()
+        };
+        // Equal level spans: one H, as strung.
+        let even = strung(level(&[300.0, 300.0, 300.0]));
+        let s = even
+            .solve_over_sheaves(state(15.97, 15.0), &budget)
+            .unwrap();
+        for sp in &s.spans {
+            close(sp.catenary.horizontal_tension.si(), 25_000.0, 1e-9);
+        }
+        // Unequal level spans: the end tension H + w D is equal, so the
+        // longer span (more sag) carries less H, by w (D_2 - D_1).
+        let flat = strung(level(&[200.0, 350.0]));
+        let s = flat
+            .solve_over_sheaves(state(15.97, 15.0), &budget)
+            .unwrap();
+        let [a, b] = [0, 1].map(|i| &s.spans[i]);
+        close(a.tension_right().si(), b.tension_left().si(), 1e-10);
+        let dh = a.catenary.horizontal_tension.si() - b.catenary.horizontal_tension.si();
+        let w = 15.97;
+        close(dh, w * (b.sag().si() - a.sag().si()), 2e-3);
+        let inclined = strung(vec![
+            SpanGeometry::inclined(Length::from_meters(300.0), Length::from_meters(40.0)),
+            SpanGeometry::inclined(Length::from_meters(250.0), Length::from_meters(-30.0)),
+        ]);
+        for t in [15.0, 50.0] {
+            let at = state(15.97, t);
+            let s = inclined.solve_over_sheaves(at, &budget).unwrap();
+            close(
+                s.spans[0].tension_right().si(),
+                s.spans[1].tension_left().si(),
+                1e-10,
+            );
+            let lengths: f64 = inclined.span_unstressed_lengths(&s, &at).iter().sum();
+            close(lengths, inclined.unstressed_length.si(), 1e-11);
+            // The span whose low point lies further below the sheave
+            // carries less H: the sheave is 40 m above span 1's back
+            // support, 30 m above span 2's ahead one.
+            let (h1, h2) = (
+                s.spans[0].catenary.horizontal_tension.si(),
+                s.spans[1].catenary.horizontal_tension.si(),
+            );
+            assert!(h1 < h2, "{h1} {h2}");
+        }
     }
 
     #[test]

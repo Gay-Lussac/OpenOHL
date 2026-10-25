@@ -990,6 +990,66 @@ fn case_loads(
             }
         }
     }
+    // Risers (jumpers given by their tension, 2026-10-25): their pull on
+    // the wire points they are dead-ended at where no section ends (a
+    // section there carries it as a jumper's load). Through the strings to
+    // their tops, shared equally, each with its whole weight; on a wire
+    // point without strings, there. Simplification: the riser's ends are
+    // its wire points as given (its strings are not swung by its pull).
+    if line.jumpers.iter().any(|j| j.tension.is_some()) {
+        let shapes = ohl_line::jumper::solve_jumpers(line, library, w, &solved);
+        for (j, shape) in line.jumpers.iter().zip(shapes) {
+            if j.tension.is_none() {
+                continue;
+            }
+            let shape = match shape {
+                Ok(shape) => shape,
+                Err(e) => {
+                    failed.push(format!("jumper {}: {e}", j.id));
+                    missing.extend(missing_wires(line, WireKind::Jumper, &j.id, &e.to_string()));
+                    continue;
+                }
+            };
+            for (end, force) in [&j.from, &j.to].into_iter().zip(shape.end_forces) {
+                let Some(point) = end.point() else {
+                    continue;
+                };
+                if line.sections.iter().any(|s| s.points.contains(point)) {
+                    continue;
+                }
+                let Some(structure) = line.structure(&point.structure) else {
+                    continue;
+                };
+                let Some(wire) = structure.wire_at_set(point.set) else {
+                    continue;
+                };
+                let strings: Vec<_> = structure.strings_to(&wire.label).collect();
+                if strings.is_empty() {
+                    let place = Place {
+                        structure: &point.structure,
+                        label: &wire.label,
+                        at: wire.position,
+                    };
+                    add(&mut at, line, case, place, force, &[point.set], &j.id);
+                    continue;
+                }
+                let share = 1.0 / strings.len() as f64;
+                for string in strings {
+                    let Some(top) = structure.node(&string.top) else {
+                        continue;
+                    };
+                    let mut f = force.map(|x| x * share);
+                    f[2] -= string.weight;
+                    let place = Place {
+                        structure: &point.structure,
+                        label: &string.top,
+                        at: top.position(),
+                    };
+                    add(&mut at, line, case, place, f, &[point.set], &j.id);
+                }
+            }
+        }
+    }
     if span_of.is_some() {
         for l in at.values_mut() {
             l.broken_span = span_of;

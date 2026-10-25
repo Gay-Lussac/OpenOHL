@@ -256,6 +256,11 @@ pub fn final_state(
 /// permanent state `final_state`), each span a catenary between its
 /// clamps held where they hang in still air at stringing, in the plane of
 /// its load (blown out by the wind). Point loads are left out.
+///
+/// It keeps the equal horizontal tension whatever the line's in-the-blocks
+/// model ([`crate::InTheBlocks`], owner decision 2026-10-25): the ruling
+/// span is itself that simplification (one tension, one equivalent span);
+/// the sheaves are the finite-element calculation's.
 pub(super) fn solve_rs(
     line: &Line,
     section: &Section,

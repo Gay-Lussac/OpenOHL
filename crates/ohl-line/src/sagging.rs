@@ -6,10 +6,14 @@
 //! stringing crew measures, per span, in the stringing state (initial,
 //! bare, still air) at the conductor temperature of sagging.
 //!
-//! The section is the line's ruling-span model ([`crate::solve`]'s *RS*:
-//! one horizontal tension through the section, the spans between the
-//! clamps hanging in still air at stringing), the in-the-blocks model of
-//! the engine unchanged. Post-processing only.
+//! The section is the line's spans between the clamps hanging in still
+//! air at stringing, strung with the section's unstressed length (every
+//! span at the stringing tension), in the blocks as the line's
+//! calculation options say ([`crate::InTheBlocks`]): over frictionless
+//! sheaves, the wire's tension equal on both sides of each (the default,
+//! owner decision 2026-10-25: each span its own horizontal tension), or
+//! simplified, one horizontal tension through the section.
+//! Post-processing only.
 
 use ohl_cables::Cable;
 use ohl_cables::mechanics::{MaterialState, Mechanics};
@@ -28,7 +32,8 @@ pub struct SaggingOptions {
     /// temperature).
     pub temperature: Option<f64>,
     /// Temperature at clipping in, °C, for the clipping offsets (none: the
-    /// sagging temperature, where they are zero in this model).
+    /// sagging temperature, where they are zero: the wire is clipped in
+    /// as it lies in the blocks).
     pub clip_temperature: Option<f64>,
     /// Waves timed by the stopwatch.
     pub waves: u32,
@@ -55,6 +60,8 @@ pub struct SaggingSpan {
     pub span: f64,
     /// Rise of the ahead clamp over the back one, m.
     pub rise: f64,
+    /// Its horizontal tension at sagging, N (over sheaves each span's own).
+    pub horizontal_tension: f64,
     /// Sag (vertical, where the wire is parallel to the chord), m.
     pub sag: f64,
     /// A level span's sag of the same span, tension and load, m.
@@ -87,8 +94,12 @@ pub struct SaggingTable {
     pub temperature: f64,
     /// Temperature at clipping in, °C.
     pub clip_temperature: f64,
-    /// Horizontal tension at sagging, N.
+    /// Horizontal tension at sagging, N: the spans' (equal H), or their mean
+    /// weighted by the spans' lengths (over sheaves; each span's in
+    /// [`SaggingSpan::horizontal_tension`]).
     pub horizontal_tension: f64,
+    /// How the section lies in the blocks.
+    pub blocks: crate::InTheBlocks,
     /// Per span, in line order.
     pub spans: Vec<SaggingSpan>,
     /// Warnings: states beyond the stress-strain curves' range.
@@ -98,7 +109,8 @@ pub struct SaggingTable {
 /// The sagging table of `section` strung with `cable`.
 ///
 /// Expected cost: one still-air finite-element solve (the clamps at
-/// stringing) and five ruling-span solves (~1 ms each for 10 spans).
+/// stringing) and five section solves (~1 ms each for 10 spans in the
+/// equal-H model, 10–20 times that over sheaves).
 pub fn sagging_table(
     line: &Line,
     section: &Section,
@@ -130,9 +142,15 @@ pub fn sagging_table(
             cable,
         )
     };
+    let blocks = line.solver.blocks;
     let solve = |t: f64| {
-        ns.solve(bare(t), &MaterialState::Initial, budget)
-            .map_err(st)
+        match blocks {
+            crate::InTheBlocks::Sheaves => {
+                ns.solve_over_sheaves(bare(t), &MaterialState::Initial, budget)
+            }
+            crate::InTheBlocks::EqualH => ns.solve(bare(t), &MaterialState::Initial, budget),
+        }
+        .map_err(st)
     };
     let solved = solve(t)?;
     let dt = 0.5;
@@ -154,6 +172,7 @@ pub fn sagging_table(
         .map(|(k, sp)| SaggingSpan {
             span: sp.geometry.span.si(),
             rise: sp.geometry.rise.si(),
+            horizontal_tension: sp.catenary.horizontal_tension.si(),
             sag: sp.sag().si(),
             level_sag: sagging::level_sag(sp).si(),
             inclined_correction: sagging::inclined_correction(sp).si(),
@@ -179,6 +198,7 @@ pub fn sagging_table(
         temperature: t,
         clip_temperature: clip_t,
         horizontal_tension: solved.horizontal_tension.si(),
+        blocks,
         spans: rows,
         warnings,
     })
@@ -207,7 +227,8 @@ mod tests {
         });
         assert!(!same.spans.is_empty());
         for s in &same.spans {
-            // Clipped at the sagging temperature: no offsets in this model.
+            // Clipped at the sagging temperature: no offsets (clipped in as
+            // it lies in the blocks).
             assert!(s.clip_offset.abs() < 1e-9, "{}", s.clip_offset);
             assert!((s.inclined_correction - (s.sag - s.level_sag)).abs() < 1e-12);
             assert!(s.sag_per_kelvin > 0.0 && s.stopwatch > 0.0);

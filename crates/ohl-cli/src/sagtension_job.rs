@@ -66,6 +66,12 @@ struct SaggingInput {
     /// Transits: one per span to sight.
     #[serde(default)]
     transit: Vec<TransitInput>,
+    /// How the section lies in the blocks: `sheaves` (over frictionless
+    /// sheaves, the wire's tension equal on both sides of each; the
+    /// default, owner decision 2026-10-25) or `equal_h` (simplified, one
+    /// horizontal tension in every span).
+    #[serde(default)]
+    blocks: ohl_line::InTheBlocks,
 }
 
 /// A transit sighting a span ([`ohl_sagtension::sagging::angle_of_sight`]).
@@ -524,15 +530,34 @@ fn sagging_report(
         &solve(Temperature::from_celsius(t.celsius() + dt))?,
         dt,
     );
+    let (lo, hi) = solved.spans.iter().fold((f64::MAX, 0.0_f64), |(a, b), s| {
+        let h = s.catenary.horizontal_tension.si();
+        (a.min(h), b.max(h))
+    });
+    let h = match input.blocks {
+        ohl_line::InTheBlocks::EqualH => show(solved.horizontal_tension, units, 2),
+        ohl_line::InTheBlocks::Sheaves => format!(
+            "H {} to {}",
+            show(Force::from_si(lo), units, 2),
+            show(Force::from_si(hi), units, 2)
+        ),
+    };
     let _ = writeln!(
         out,
-        "\nSagging (in the blocks, initial state, bare, still air, at {}; H {})",
+        "\nSagging ({}, initial state, bare, still air, at {}; {})",
+        match input.blocks {
+            ohl_line::InTheBlocks::Sheaves => "in the blocks over frictionless sheaves",
+            ohl_line::InTheBlocks::EqualH => "in the blocks, simplified: equal H",
+        },
         show(t, units, 1),
-        show(solved.horizontal_tension, units, 2)
+        match input.blocks {
+            ohl_line::InTheBlocks::EqualH => format!("H {h}"),
+            ohl_line::InTheBlocks::Sheaves => h,
+        }
     );
     let mut header = format!(
-        "  {:>4} {:>10} {:>10} {:>12} {:>14} {:>12}",
-        "span", "sag", "level sag", "incl. corr.", "sag per K", "dyno back"
+        "  {:>4} {:>12} {:>10} {:>10} {:>12} {:>14} {:>12}",
+        "span", "H", "sag", "level sag", "incl. corr.", "sag per K", "dyno back"
     );
     let _ = write!(header, " {:>12}", "dyno ahead");
     for n in &waves {
@@ -546,8 +571,9 @@ fn sagging_report(
     for (i, sp) in solved.spans.iter().enumerate() {
         let per_k_shown = Length::from_si(per_k[i]);
         let mut line = format!(
-            "  {:>4} {:>10} {:>10} {:>12} {:>14} {:>12} {:>12}",
+            "  {:>4} {:>12} {:>10} {:>10} {:>12} {:>14} {:>12} {:>12}",
             i + 1,
+            show(sp.catenary.horizontal_tension, units, 2),
             show(sp.sag(), units, 3),
             show(sagging::level_sag(sp), units, 3),
             show(sagging::inclined_correction(sp), units, 3),
@@ -606,8 +632,8 @@ fn sagging_report(
         if clip_t == t {
             let _ = writeln!(
                 out,
-                "  (clipped at the sagging temperature: zero in this model, one horizontal tension \
-                 in the blocks; sheaves and their friction are not modelled)"
+                "  (clipped at the sagging temperature: zero, the wire clipped in as it lies in the \
+                 blocks; the sheaves' size and friction are left out)"
             );
         }
     }
@@ -997,8 +1023,15 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
                 input,
                 reference_case,
                 &|t| {
-                    ns.solve(bare(t), &MaterialState::Initial, &budget)
-                        .map_err(|e| e.to_string())
+                    match input.blocks {
+                        ohl_line::InTheBlocks::Sheaves => {
+                            ns.solve_over_sheaves(bare(t), &MaterialState::Initial, &budget)
+                        }
+                        ohl_line::InTheBlocks::EqualH => {
+                            ns.solve(bare(t), &MaterialState::Initial, &budget)
+                        }
+                    }
+                    .map_err(|e| e.to_string())
                 },
                 &|sol, t| {
                     ns.span_unstressed_lengths(sol, &bare(t), &MaterialState::Initial)
@@ -1012,7 +1045,15 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
                 &mut out,
                 input,
                 reference_case,
-                &|t| section.solve(bare(t), &budget).map_err(|e| e.to_string()),
+                &|t| {
+                    match input.blocks {
+                        ohl_line::InTheBlocks::Sheaves => {
+                            section.solve_over_sheaves(bare(t), &budget)
+                        }
+                        ohl_line::InTheBlocks::EqualH => section.solve(bare(t), &budget),
+                    }
+                    .map_err(|e| e.to_string())
+                },
                 &|sol, t| Ok(section.span_unstressed_lengths(sol, &bare(t))),
                 units,
             )?;
@@ -1257,9 +1298,31 @@ mod tests {
     fn sagging_outputs_of_the_example() {
         let report = run(&example(), UnitSystem::Metric).unwrap().report;
         assert!(
-            report.contains("Sagging (in the blocks, initial state"),
+            report.contains("Sagging (in the blocks over frictionless sheaves, initial state"),
             "{report}"
         );
+        // Over the sheaves each span its own H: a range in the header.
+        assert!(report.contains("H 24.31 kN to 24.77 kN"), "{report}");
+        // Simplified: one H.
+        let text = std::fs::read_to_string(example())
+            .unwrap()
+            .replace("[sagging]", "[sagging]\nblocks = \"equal_h\"");
+        let path = std::env::temp_dir().join("ohl-cli-equal-h-job.toml");
+        let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables");
+        std::fs::write(
+            &path,
+            text.replace(
+                "\"../../libraries/cables\"",
+                &format!("'{}'", library.display()),
+            ),
+        )
+        .unwrap();
+        let report = run(&path, UnitSystem::Metric).unwrap().report;
+        assert!(
+            report.contains("Sagging (in the blocks, simplified: equal H, initial state"),
+            "{report}"
+        );
+        assert!(report.contains("; H 24.40 kN)"), "{report}");
         assert!(
             report.contains("Clipping offsets, clipped in at 10.0 °C"),
             "{report}"

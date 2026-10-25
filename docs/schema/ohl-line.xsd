@@ -713,6 +713,10 @@
             <xs:attribute name="cable" type="xs:string" use="required"/>
             <xs:attribute name="length" type="xs:double"/>
             <xs:attribute name="sag" type="xs:double"/>
+            <!-- Version 10 (2026-10-25): a taut jumper (a riser) given by
+                 the pull it is tensioned to, N per subconductor, at its
+                 higher end in still air at its temperature. -->
+            <xs:attribute name="tension" type="xs:double"/>
             <xs:attribute name="temperature" type="xs:double" default="15"/>
             <xs:attribute name="bending_stiffness" type="xs:double"/>
             <xs:attribute name="stiffness_factor" type="xs:double"/>
@@ -841,6 +845,17 @@
                 <xs:restriction base="xs:string">
                   <xs:enumeration value="stretched"/>
                   <xs:enumeration value="unstretched"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <!-- Version 10 (2026-10-25): a section in the blocks over
+                 frictionless sheaves (default: equal tension along the
+                 wire at each sheave) or simplified (equal H in every span). -->
+            <xs:attribute name="blocks" default="sheaves">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="sheaves"/>
+                  <xs:enumeration value="equal_h"/>
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>

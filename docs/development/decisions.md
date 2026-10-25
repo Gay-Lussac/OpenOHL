@@ -45,6 +45,98 @@ of Parts A, B and C).
   between its ends, rounded up to the cm), sag or rigid chosen there; a
   refused solve keeps the window open with the reason.
 
+**Sections in the blocks over frictionless sheaves (owner, 2026-10-25 — reverses "not wanted" of 2026-10-22)**
+
+- Owner: the default for every section in the blocks is now **equal
+  tension along the wire over each sheave** (at each suspension clamp),
+  in every weather case, the stringing state included; it replaces equal
+  horizontal tension. The equal-H model stays as the option
+  **simplified (equal H)**: Criteria › Calculation options, the line's
+  `solver.blocks` (`sheaves` default, `equal_h`), kept in the project
+  like the other solver options; line file version 10 when written; a
+  file without it is calculated over sheaves.
+- Owner: **the given stringing tension stays "H in the ruling span"**:
+  the section's unstressed length is as before (every span at the given
+  tension with the strings plumb, at the stringing temperature); the
+  sheaves then share it out. Existing data keep their meaning — but at
+  the stringing temperature the spans' H now differ slightly from the
+  given one on unequal or inclined spans.
+- **Every in-the-blocks result changes slightly.** On the synthetic
+  example's first section (four spans, 25 kN at 15 °C, jumpers off, its
+  point loads off): the spans' horizontal tensions by up to 159 N
+  (0.6 %; at 15 °C −52 N to +59 N), their sags by up to 37 mm (15 °C,
+  80 °C and 20 mm of ice at −5 °C), the clipping offsets (sagged at
+  15 °C, clipped at 35 °C) by up to 0.8 mm. Clipped-in sections are not
+  affected (but *clipping in* now takes the sheaves' lengths at
+  stringing).
+- The model: the wire runs over the sheave at the clamp point (its size
+  left out) without friction; the tension at a span's end is the
+  magnitude of its catenary's end force with its load (ice and wind
+  included). One unknown, the first span's H, each next span's from the
+  equal tension (a bracketed secant per span), the section's length the
+  residual (a bracketed secant): `ohl_sagtension::sheaves`, used by the
+  line's finite-element sections (`solve::over_sheaves`), the 2D
+  sections (`TensionSection` and `NonlinearSection::solve_over_sheaves`)
+  and so the sagging outputs (`ohl sagtension` `[sagging] blocks`, the
+  section window's Sagging panel, each span's H shown). Over sheaves the
+  strings swing **along the line** too, to the sheaves' resultant (each
+  clamp's assembly solved alone under the wires' pull with its part
+  along the line the sheaves'; a free clamp on the stiff wire would creep
+  there over hundreds of passes).
+- **Clipping offsets at the sagging temperature stay zero**: the wire is
+  clipped in as it lies in the blocks (where it runs over the sheave); the
+  "few millimetres" of the 2026-10-22 note are the differences against
+  the equal-H model, not offsets of the sheave model.
+- **The ruling-span method keeps one H** (decided here): it is itself the
+  equal-H simplification; said in its doc and the theory.
+- The estimated weights of strain assemblies given as geometry only stay
+  estimated from the equal-H stringing state (the data keep their
+  meaning); a section clipped in from the sheaves' lengths then differs
+  from the one in the blocks by about 1 N in 25 kN on the example.
+- **Friction later** (roadmap): it needs a tension ratio per sheave and
+  the pulling end.
+- Validation: `sag-004` (two inclined spans over a sheave, an independent
+  reference with Newton on both H, `reference_sheaves.py`, and a hand
+  check of \\(H_2 - H_1 = w\,\Delta z_{low}\\)); `sag-003`, `tbrs-002` and
+  `tbrs-003` assume equal H and run with the simplified option (their
+  references unchanged, no tolerance loosened); the other cases pass
+  unchanged.
+
+**A riser on a lyre pylon: a jumper given by its tension (owner, 2026-10-25)**
+
+- Owner: the vertical conductor of a lyre pylon (a **riser**) is tensioned
+  between top and bottom (dead-ended with a pull), and it is **a jumper**,
+  not a new object. A jumper may now be given **by its tension**
+  (`tension`, beside `length`, `sag`, `rigid`): N per subconductor, at its
+  **higher end** (its `from` end when both are level; decided here), in
+  still air at its temperature. Line file version 10 when used; OHL XML
+  `<jumper tension>`; the jumper window's *tension* choice.
+- The model (decided here): a taut wire of straight elastic bars (about
+  1 m, 8 to 64) between its two wire points with its loads at the nodes,
+  solved by the wire solver — any chord direction, vertical included (the
+  catenary element cannot take a chord along its load). Its cut length
+  is found from the tension in its design case (still air at its
+  temperature, its objects on it, the jumpers tapping onto it not yet)
+  and kept like a sag jumper's; in every weather case the length is kept
+  (with the thermal change) and the tension follows the weather. A slack
+  riser (a bar in compression) is refused for that case.
+- The jumpers at its top and bottom **tap onto its points** (checked: a
+  tap on a vertical jumper works; a point on a vertical riser is placed by
+  its length or share, a distance along the line refused).
+- Its pull goes into the **structure loads** where no section ends at its
+  wire point: through its strings to their tops (shared equally, each
+  with its weight), else on the wire point; its ends are the wire points
+  as given (its strings not swung by it, a simplification). Clearances,
+  internal clearances and drawings take it as a jumper.
+- **Post insulators along the riser** (helping strings): not simple in
+  this model (a taut wire with its supports would need the rod's
+  constraints): left for later, a riser with helping strings refused.
+- Validation: `riser-001` (a vertical riser of invented data: still air
+  exact, the bottom's tension T − wL₀; in a wind the continuous elastic
+  string by an independent shooting reference, `reference_riser.py`; the
+  hand check \\(qL^2/8T_{mean}\\) with the bow's stretch raising the
+  tension, 0.160 m against 0.236 m at the still-air tension).
+
 **Background maps in the project (owner, 2026-10-25, roadmap O16)**
 
 - Owner: "a map loaded into the project is fine"; shown on the plan, the
@@ -1166,7 +1258,9 @@ sheet height — the goal is that the drawing fits.
     strains were within 1 %); `nonlinear-005…006` added (an invented soft
     cable beyond 1 %: no warning without a range, six with 1 % given).
   - **The sheave model is not wanted**: removed from the follow-ups; the
-    in-the-blocks simplification stays, marked as such.
+    in-the-blocks simplification stays, marked as such. *(Reversed by the
+    owner on 2026-10-25: sections in the blocks over frictionless sheaves,
+    the equal-H model an option.)*
   - **No Drake-like curves** ("Don't take it into the examples and checks
     if we don't have it."): the cross-check on curves from a library's
     test data of unstated source is removed — `xdrake-001…009`

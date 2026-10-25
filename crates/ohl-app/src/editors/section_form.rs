@@ -485,7 +485,7 @@ pub(super) fn section_ui(
     ui.horizontal(|ui| {
         ui.label("status");
         ui.radio_value(&mut clipped, false, "in the blocks")
-            .on_hover_text("Unclipped: the wire rolls over the suspension clamps — one horizontal tension in all spans in every weather case; moving a structure sags it again to its condition");
+            .on_hover_text("Unclipped: the wire rolls over the suspension clamps in every weather case — over frictionless sheaves (its tension the same on both sides of each) or with one horizontal tension in all spans, as Criteria › Calculation options say; moving a structure sags it again to its condition");
         ui.radio_value(&mut clipped, true, "clipped in")
             .on_hover_text("Each span keeps its unstressed length: a structure moved changes the spans next to it, the suspension strings swing to balance them");
     });

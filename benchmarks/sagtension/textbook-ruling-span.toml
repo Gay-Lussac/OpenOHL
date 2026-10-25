@@ -99,11 +99,14 @@ expected.string_2_0_n = { value = 5012.996004, rel_tol = 1e-7 }
 expected.string_2_0_along_deg = { value = -1.310870558, abs_tol = 1e-6 }
 
 [case.inputs]
+# Clipped in from the simplified in-the-blocks state (equal H, the strings
+# plumb), which the reference assumes (decision log 2026-10-25).
 clip_in = true
 weather = { name = "hot", temperature = "80 °C" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "ruling span", "crs": "local",
+{"format": "ohl-line", "version": 10, "name": "ruling span", "crs": "local",
+ "solver": {"blocks": "equal_h"},
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
@@ -143,11 +146,14 @@ expected.string_1_0_along_deg = { value = -0.8341279486, abs_tol = 1e-6 }
 expected.string_2_0_along_deg = { value = 0.4964185924, abs_tol = 1e-6 }
 
 [case.inputs]
+# Clipped in from the simplified in-the-blocks state (equal H, the strings
+# plumb), which the reference assumes (decision log 2026-10-25).
 clip_in = true
 weather = { name = "cold", temperature = "-20 °C" }
 cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
 line = '''
-{"format": "ohl-line", "version": 6, "name": "ruling span", "crs": "local",
+{"format": "ohl-line", "version": 10, "name": "ruling span", "crs": "local",
+ "solver": {"blocks": "equal_h"},
  "structures": [
   {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
    "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},

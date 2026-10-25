@@ -1160,3 +1160,47 @@ fn exported_libraries_stay_in_their_folder() {
         !dir.join("escaped.ohlw").exists() && !dir.parent().unwrap().join("escaped.ohlw").exists()
     );
 }
+
+/// The jumper window's "given by tension" (a riser, 2026-10-25): chosen
+/// with its radio, the jumper keeps a tension and no length or sag, its
+/// bending stiffness and exit angles hidden; one command, undone and
+/// redone.
+#[test]
+fn a_jumper_given_by_its_tension_in_its_window() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("jumper-tension");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    harness.state_mut().ready().unwrap().view3d.captured = true;
+    use_tool(
+        &mut harness,
+        Tool::Edit,
+        Selection::Jumper("J-T3-branch".into()),
+        None,
+    );
+    harness.run();
+    harness.get_by_label("tension").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Jumper(f)) = &r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert_eq!(f.jumper.tension, Some(2_000.0));
+        assert!(f.jumper.sag.is_none() && f.jumper.length.is_none());
+    }
+    assert!(harness.query_by_label("stiffness EI").is_none());
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let j = &r.model.line.jumpers[0];
+    assert_eq!((j.tension, j.sag), (Some(2_000.0), None));
+    r.perform(crate::edit::Action::Undo);
+    let j = &r.model.line.jumpers[0];
+    assert_eq!((j.tension, j.sag), (None, Some(1.5)));
+    r.perform(crate::edit::Action::Redo);
+    assert_eq!(r.model.line.jumpers[0].tension, Some(2_000.0));
+}

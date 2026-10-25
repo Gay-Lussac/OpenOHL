@@ -94,7 +94,7 @@ the real strings (FE, clipped in) the spans carry −0.73 %, +0.26 % and
 | Case | What | Source | Tolerance |
 |---|---|---|---|
 | tbrs-001 | exact equal-H section and the ruling span length | closed form \\( \sqrt{\sum S^3/\sum S} \\) + reference | \\( 10^{-7} \\), \\( 10^{-9} \\) |
-| tbrs-002 | FE, 80 °C: span tensions, clamp moves, string swing | \\( \Delta H = N \sin\varphi \\) at each clamp + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m/° |
+| tbrs-002 | FE, 80 °C: span tensions, clamp moves, string swing (clipped in from the simplified equal-H state, which the reference assumes: the line's `solver.blocks = "equal_h"`, 2026-10-25) | \\( \Delta H = N \sin\varphi \\) at each clamp + reference | \\( 10^{-7} \\), \\( 10^{-6} \\) m/° |
 | tbrs-003 | FE, −20 °C | the same | the same |
 | tbrs-004 | the line's ruling-span method (one H, additive strain) | reference | \\( 10^{-7} \\) |
 
@@ -184,7 +184,14 @@ are in the case notes and the [theory](../theory/sagtension.md#sagging-outputs).
 |---|---|---|---|
 | sag-001 | level 300 m: stopwatch (3 waves), dynamometer, transit 3 m below, sag per kelvin | \\( t = 2n\sqrt{8D/g} \\) (+0.03 %); \\( T = H + qy \\); \\( \sqrt a + \sqrt b = 2\sqrt D \\); the parabola's \\( dD/dt \\) (−0.2 %) | \\( 10^{-7} \\) |
 | sag-002 | 300 m +50 m: dynamometer at both ends, inclined correction, transit | \\( T_B - T_A = qh \\) exactly; \\( D_{level}(1/\cos\theta - 1) \\) | \\( 10^{-7} \\) |
-| sag-003 | 200/350/250 m inclined, sagged at 15 °C, clipped in at 35 °C: clipping offsets | zero at the far dead-end; zero when clipped at the sagging temperature | \\( 10^{-7} \\) m |
+| sag-003 | 200/350/250 m inclined, sagged at 15 °C, clipped in at 35 °C: clipping offsets (the simplified in-the-blocks model, one H) | zero at the far dead-end; zero when clipped at the sagging temperature | \\( 10^{-7} \\) m |
+| sag-004 | 300 m +40 m / 250 m −30 m over a frictionless sheave (2026-10-25): each span's H, the equal tension at the sheave, clipping offsets (`reference_sheaves.py`: Newton on both H) | \\( H_2 - H_1 = w\,(\Delta z_{low}) \\) = 158 N by the parabola (exact 157.4 N) | \\( 10^{-8} \\), \\( 10^{-7} \\) m |
+
+### A riser (`benchmarks/wirefe/riser.toml`)
+
+| Case | What | Hand check | Tolerance |
+|---|---|---|---|
+| riser-001 | a vertical riser 30 m tensioned to 5 kN at its top (2026-10-25): cut length, the bottom's tension; with that length a 10 N/m wind (`reference_riser.py`: the continuous elastic string, shot by Newton) | \\( T_{bottom} = T - wL_0 \\); \\( \delta = qL^2/8T_{mean} \\) with the bow's stretch | \\( 10^{-9} \\) (\\( 10^{-8} \\) the bottom), \\( 2\cdot10^{-3} \\) in the wind |
 
 ### Ice and wind (`benchmarks/weather/textbook-ice-wind.toml`)
 

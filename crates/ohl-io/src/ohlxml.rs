@@ -823,6 +823,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
         to,
         length,
         sag,
+        tension,
         temperature,
         rigid,
         bending_stiffness,
@@ -842,6 +843,7 @@ fn write_jumper(out: &mut String, j: &Jumper) {
     attr(out, "cable", cable);
     opt_num(out, "length", *length);
     opt_num(out, "sag", *sag);
+    opt_num(out, "tension", *tension);
     attr(out, "temperature", &num(*temperature));
     if *rigid {
         attr(out, "rigid", "true");
@@ -1109,6 +1111,7 @@ pub fn to_xml(line: &Line) -> String {
             jumper_loads,
             taps,
             loads_per,
+            blocks,
         } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
@@ -1117,6 +1120,9 @@ pub fn to_xml(line: &Line) -> String {
         }
         if !loads_per.is_default() {
             attr(&mut out, "loads_per", loads_per.as_str());
+        }
+        if !blocks.is_default() {
+            attr(&mut out, "blocks", blocks.as_str());
         }
         out.push_str("/>\n");
     }
@@ -1810,6 +1816,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
             "cable",
             "length",
             "sag",
+            "tension",
             "temperature",
             "rigid",
             "bending_stiffness",
@@ -1907,6 +1914,7 @@ fn read_jumper(e: &Element) -> Result<Jumper, String> {
         to: end("to")?,
         length: optional(e, "length")?,
         sag: optional(e, "sag")?,
+        tension: optional(e, "tension")?,
         temperature: optional(e, "temperature")?.unwrap_or(15.0),
         rigid: match e.attr("rigid") {
             None | Some("false") => false,
@@ -2105,7 +2113,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let solver = match root.child("solver") {
         None => ohl_line::SolverOptions::default(),
         Some(s) => {
-            check(s, &["jumper_loads", "taps", "loads_per"], &[])?;
+            check(s, &["jumper_loads", "taps", "loads_per", "blocks"], &[])?;
             let jumper_loads = match owned(s, "jumper_loads") {
                 None => ohl_line::JumperLoads::default(),
                 Some(t) => ohl_line::JumperLoads::parse(&t)
@@ -2121,10 +2129,16 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 Some(t) => ohl_line::LoadsPer::parse(&t)
                     .ok_or_else(|| format!("solver loads_per \"{t}\": stretched or unstretched"))?,
             };
+            let blocks = match owned(s, "blocks") {
+                None => ohl_line::InTheBlocks::default(),
+                Some(t) => ohl_line::InTheBlocks::parse(&t)
+                    .ok_or_else(|| format!("solver blocks \"{t}\": sheaves or equal_h"))?,
+            };
             ohl_line::SolverOptions {
                 jumper_loads,
                 taps,
                 loads_per,
+                blocks,
             }
         }
     };

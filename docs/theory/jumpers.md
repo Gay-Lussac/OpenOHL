@@ -1,6 +1,6 @@
 # Jumpers
 
-Implemented in `crates/ohl-line` (`jumper.rs`, `rod.rs`). A jumper is a short slack wire joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire. The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
+Implemented in `crates/ohl-line` (`jumper.rs`, `jumper/riser.rs`, `rod.rs`). A jumper is a short slack wire joining two attachment points: the ends of two sections at a dead-end structure, or a tap from a branch to a through wire; or, given by its tension, a taut riser between two strain points of a lyre pylon ([below](#a-riser-a-jumper-given-by-its-tension)). The line file fields are described in [Line files](../user-guide/line-file.md#jumpers).
 
 **Its load on the clamps** (Criteria › Calculation options, the line's `solver.jumper_loads`). The sections at a jumper's ends carry it at their clamps — clamps hanging from strings; a wire clamped to the structure leaves it to the structure — in one of two ways:
 
@@ -172,6 +172,25 @@ solved by finite elements only (not the ruling span).
 
 A jumper given `rigid` is a tube or bar: the straight member between its two solved clamps, in every weather case. It has no length or sag of its own and no thermal change. Its tension is not computed, because the members holding it carry it. It is drawn, and checked for clearances, along that straight line, and it can never be taut.
 
+## A riser: a jumper given by its tension
+
+*Owner decision 2026-10-25; in active development.* Lyre pylons carry the circuits up and down on the same pylon by vertical conductors, **risers**: each is dead-ended between a strain point at the top and one at the bottom and pulled to a tension; the jumpers to the outgoing sections attach to it at the top and the bottom. A riser is a jumper given **by its tension** (`tension`, beside `length`, `sag` and `rigid`): the pull it is tensioned to, N per subconductor, **at its higher end** (its `from` end when both are level), in still air at its temperature. Any chord direction, vertical included (a hinged jumper, one catenary element, cannot take a chord along its load: the riser is a model of its own, `jumper/riser.rs`).
+
+- **Model.** A taut wire of \\( n \\) straight elastic bars (pieces of about 1 m, \\( 8 \\le n \\le 64 \\), axial stiffness \\( EA \\)) between its two wire points, its load lumped at the nodes: half of each piece's weight, ice and wind on each of its ends (per metre of the unstressed wire, the own weight conserved as it lengthens or shortens with the temperature, the wind the line's across it: on a vertical riser all of it), its objects and the jumpers hanging on its points shared between the two nodes around them. Solved by the Newton solver of `ohl-wirefe`, started from the bow a taut string of that load would take, its depth \\( \delta \\) from \\( \delta\\,(T_0 + EA\\,8\\delta^2/3c^2) = q c^2/8 \\) (\\( T_0 \\) the straight wire's tension, \\( c \\) the chord): from the straight wire Newton stalled on a 30 m riser in a 10 N/m wind.
+- **Its length.** The unstressed length giving the tension at its higher end in still air at its temperature, between its ends solved there (its **design case**, as for a sag), with its objects on it (the jumpers that tap onto it are hung after it is tensioned): a bracketed secant on the length (a longer wire, less tension; one too long to stay taut counts as too little tension; exit clause 100 steps). It is cut once and kept as a jumper given by its sag is ([below](#cutting-a-jumper-given-by-its-sag)). In every weather case the riser keeps that length, lengthened or shortened with the temperature like the line's wires (the bimetallic model included): **its tension follows the weather**, it bows in the wind and sags under ice.
+- **Its ends** are the wire points as for any jumper (the solved clamps where a section ends there; else the attachment's wire point). **Its pull** on its two ends (`end_forces`) goes into the structure loads where no section ends at the wire point: through the strings to their tops, shared equally, each with its whole weight, or on a wire point without strings, there. The jumpers at its top and bottom **tap onto its points** (taps on a jumper, [Jumpers on taps](#jumpers-on-taps)); a point on a vertical riser is placed by its length along it or its share, not by a distance along the line (refused, said so). It is a jumper for everything else: the clearance checks, the internal clearances and the drawings take its polygon and its iced radius.
+- **Refused.** A riser that goes slack in a weather case (a bar in compression: hot, with little tension) is refused there, said so: given by its tension, it must stay taut. A riser on a tap, or with helping strings: refused (post insulators along a riser are not modelled yet).
+
+Hand checks (`riser-001`, invented data: 15 N/m, \\( EA \\) = 30 MN, 30 m vertical, 5 kN at the top): straight under its own weight, its tension falls by \\( wL_0 \\) to the bottom (4550.07 N: the polygon with the loads at its nodes is exact here, the tension being linear along it) and its length is the root of \\( L_0 + (T L_0 - wL_0^2/2)/EA = 30 \\) m (29.99523 m). In a wind \\( q \\) across it the middle deflects by \\( qL^2/8T_{mean} \\) — but the bow lengthens the wire by \\( 8\\delta^2/3L \\), which with its length kept raises the tension by \\( EA\\,8\\delta^2/3L^2 \\): at 10 N/m the mean tension rises from 4775 N to about 7050 N and the deflection is 0.160 m, against 0.236 m at the still-air tension. The independent reference (`benchmarks/wirefe/reference_riser.py`) integrates the continuous elastic string along its length and shoots it from the top by Newton; the polygon agrees within \\( 2\\cdot10^{-3} \\) (about \\( (\\ell/L)^2 \\)).
+
+**Simplification:** the riser's ice and wind per metre of its unstressed wire: its stretch \\( T/EA \\) (about \\( 10^{-4} \\)) left out of them, so a little less ice and wind (unsafe side, by about \\( 10^{-4} \\)). Exact: per stretched metre, as the sections' elements.
+
+**Simplification:** a polygon of straight pieces for the curve: between its nodes the wire bows by about \\( q\\,\\ell^2/8T \\) across its piece (reported as the jumper's `polyline_error`, below a millimetre at 1 m pieces), and the polygon's tensions and bow differ from the continuum by about \\( (\\ell/L)^2 \\). Exact: more pieces, or elastic catenary elements where the chord is not along the load.
+
+**Simplification:** no bending stiffness (a taut wire): at a riser's tension, much larger than its weight over its stiffness, the wire's bending changes its shape only near its clamps. Exact: the extensible rod.
+
+**Simplification:** a riser's ends are its wire points as given where no section ends there: its pull does not swing its strain strings (their tops carry its pull). Exact: the strings solved with it.
+
 ## Cutting a jumper given by its sag
 
 A `sag` is the jumper's largest vertical distance below its end-to-end chord, in still air at its temperature (its **design case**). The cut length is found in that design case:
@@ -221,7 +240,8 @@ On the first existing line (99 weather cases, the wind from both sides): before,
 ## When a jumper fails
 
 - **A section at an end not solved.** The jumper's ends are the solved clamps of the sections through them. When one of those sections fails in a weather case, the jumper fails too and names it, rather than hanging between the attachments' data points.
-- **Ends less than 0.1 m apart horizontally.** A vertical jumper is not supported yet.
+- **Ends less than 0.1 m apart horizontally.** A jumper given by its length or sag (one catenary element, or the rod) cannot be vertical: a vertical jumper is given by its tension ([a riser](#a-riser-a-jumper-given-by-its-tension)).
+- **A riser slack.** A jumper given by its tension whose tension falls to zero somewhere along it in a weather case.
 - **A support string out of reach.** A string's top is farther from either end than the jumper's length to its clamp plus the string's length.
 - **Too short for its strings.** No shape holds every string, although each alone could reach (through springs, above): said so, with about how far beyond the jumper's reach its strings hold which point.
 - **Strings that do not settle.** Strings going taut and slack in turn 8 times. Not met in testing.

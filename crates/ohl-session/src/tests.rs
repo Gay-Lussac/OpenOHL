@@ -2071,3 +2071,46 @@ fn local_winds_are_one_command_each() {
     };
     assert!(s.apply("ana", none).is_err());
 }
+
+/// The in-the-blocks model and a jumper given by its tension (owner
+/// decision 2026-10-25) are edits like any other: one command each,
+/// undone and redone, kept in the project (read back from it).
+#[test]
+fn blocks_and_a_riser_are_commands() {
+    let (path, mut s) = project("blocks-riser");
+    let mut solver = s.line().solver;
+    solver.blocks = ohl_line::InTheBlocks::EqualH;
+    let command = s.solver_command(solver);
+    s.apply("ben", command).unwrap();
+    assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::EqualH);
+    let mut j = example().jumpers[0].clone();
+    j.id = "JR".into();
+    j.sag = None;
+    j.length = None;
+    j.tension = Some(2_500.0);
+    s.apply(
+        "ben",
+        Command::Put {
+            kind: Kind::Jumper,
+            id: "JR".into(),
+            value: serde_json::to_value(&j).unwrap(),
+            ord: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(s.line().jumpers.last().unwrap().tension, Some(2_500.0));
+    // Kept in the project.
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::EqualH);
+    assert_eq!(s.line().jumpers.last().unwrap().tension, Some(2_500.0));
+    s.undo("ben").unwrap();
+    assert!(s.line().jumpers.iter().all(|j| j.id != "JR"));
+    s.redo("ben").unwrap();
+    assert_eq!(s.line().jumpers.last().unwrap().tension, Some(2_500.0));
+    s.undo("ben").unwrap();
+    s.undo("ben").unwrap();
+    assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::Sheaves);
+    s.redo("ben").unwrap();
+    assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::EqualH);
+}

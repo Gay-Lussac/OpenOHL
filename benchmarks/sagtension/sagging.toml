@@ -100,9 +100,10 @@ transit = { span = 1, instrument_x = "0 m", instrument_z = "-3 m", target_x = "3
 # the 15 °C shares put them: offsets 0.0307 m at the first suspension
 # structure (into the 350 m span), -0.0180 m at the second, and zero at the
 # far dead-end by construction (the shares add up to the section's length:
-# hand check). Clipped at the sagging temperature the offsets are zero (the
-# engine's model). Sheave friction and the equal support tension across
-# sheaves are not modelled (decision log 2026-10-22).
+# hand check). Clipped at the sagging temperature the offsets are zero.
+# Run with the simplified in-the-blocks model (blocks = "equal_h", one H
+# through the section), whose reference this is; the sheave model is
+# sag-004 (decision log 2026-10-25).
 [[case]]
 id = "sag-003"
 title = "Sagging, section 200/350/250 m inclined: sags, corrections, sag per kelvin, clipping offsets (sagged at 15 °C, clipped at 35 °C)"
@@ -138,3 +139,46 @@ known_load = "15.97 N/m"
 known_temperature = "15 °C"
 known_tension = "28 kN"
 clip_temperature = "35 °C"
+blocks = "equal_h"
+
+# sag-004, over a frictionless sheave (owner decision 2026-10-25): two
+# spans 300 m (+40 m) and 250 m (-30 m), strung at H = 28 kN at 15 °C
+# (every span at 28 kN with the strings plumb gives the section's
+# unstressed length), sagged at 15 °C and clipped in at 35 °C. The wire's
+# tension is equal on both sides of the sheave at B (dyno_right_0 =
+# dyno_left_1), so the spans' H differ from 28 kN even at the stringing
+# temperature: by hand (parabola, reference_sheaves.py's notes)
+# H2 - H1 = q ((z_B - z_low,1) - (z_B - z_low,2)) = 15.96 x (42.0 - 32.1)
+# = 158 N (exact 157.4 N); the length is conserved (each span's share
+# shifts, the clip offset at B -14.4 mm, zero at the far dead-end).
+# Clipped at the sagging temperature the offsets are zero (the wire is
+# clipped in as it lies in the blocks).
+[[case]]
+id = "sag-004"
+title = "Sagging over a frictionless sheave, two inclined spans 300 m +40 m / 250 m -30 m: equal tension at the sheave, the spans' H, clipping offsets (sagged at 15 °C, clipped at 35 °C)"
+calculation = "sagtension.sagging"
+reference = "Independent numerics (benchmarks/sagtension/reference_sheaves.py: Newton on both H) + hand check (notes)"
+max_seconds = 2.0
+expected.h_0_n = { value = 27938.62395, rel_tol = 1e-8 }
+expected.h_1_n = { value = 28095.98571, rel_tol = 1e-8 }
+expected.sag_0_m = { value = 6.486092331, rel_tol = 1e-7 }
+expected.sag_1_m = { value = 4.470730014, rel_tol = 1e-7 }
+expected.dyno_left_0_n = { value = 27969.63006, rel_tol = 1e-8 }
+expected.dyno_right_0_n = { value = 28607.91006, rel_tol = 1e-8 }
+expected.dyno_left_1_n = { value = 28607.91006, rel_tol = 1e-8 }
+expected.dyno_right_1_n = { value = 28129.20145, rel_tol = 1e-8 }
+expected.clip_offset_0_m = { value = -0.01440256486, abs_tol = 1e-7 }
+expected.clip_offset_1_m = { value = 0.0, abs_tol = 1e-9 }
+
+[case.inputs]
+spans = [
+    { span = "300 m", rise = "40 m" },
+    { span = "250 m", rise = "-30 m" },
+]
+axial_stiffness = "34640 kN"
+thermal_expansion = 18.9e-6
+known_load = "15.97 N/m"
+known_temperature = "15 °C"
+known_tension = "28 kN"
+clip_temperature = "35 °C"
+blocks = "sheaves"
