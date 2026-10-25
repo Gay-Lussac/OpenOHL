@@ -532,6 +532,35 @@ fn edits_are_undone_and_redone() {
     assert_eq!(f.text(), start);
 }
 
+/// The revision: another after every change of the text (edit, undo,
+/// redo), the same while nothing changes, never the same for two files;
+/// the text kept for a revision is the document's.
+#[test]
+fn every_change_is_a_new_revision() {
+    let mut f = StructureFile::parse(PYLON, None).unwrap();
+    let g = StructureFile::parse(PYLON, None).unwrap();
+    assert_ne!(f.revision(), g.revision());
+    let r0 = f.revision();
+    assert_eq!(f.text_ref(), f.doc().to_string());
+    f.edit("nothing", |_, _| ());
+    assert_eq!(f.revision(), r0);
+    f.edit("add joint", |doc, t| {
+        add_joint(doc, Some(t), [6.0, 0.0, 30.0])
+    });
+    let r1 = f.revision();
+    assert_ne!(r1, r0);
+    assert_eq!(f.text_ref(), f.doc().to_string());
+    assert!(f.text_ref().contains("30"));
+    f.undo();
+    assert!(f.revision() != r1 && f.revision() != r0);
+    assert_eq!(f.text(), StructureFile::parse(PYLON, None).unwrap().text());
+    let r2 = f.revision();
+    f.redo();
+    assert_ne!(f.revision(), r2);
+    assert_eq!(f.text_ref(), f.doc().to_string());
+    assert_eq!(f.structure().nodes.len(), 4);
+}
+
 /// Saving writes the file; Save as moves it; a file that does not read is
 /// not saved.
 #[test]

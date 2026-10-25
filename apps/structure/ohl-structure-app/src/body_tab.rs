@@ -215,6 +215,20 @@ impl StructureApp {
                     .collect();
             }
         });
+        // Each member's length by id (the first of an id, as a search
+        // finds it): a search per row was slow on a large lattice.
+        let lengths: std::collections::HashMap<&str, f64> = g
+            .members
+            .iter()
+            .rev()
+            .map(|x| {
+                let l = (0..3)
+                    .map(|k| (x.2[k] - x.1[k]).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                (x.0.as_str(), l)
+            })
+            .collect();
         egui::Grid::new("members").striped(true).show(ui, |ui| {
             for h in [
                 "member",
@@ -237,12 +251,7 @@ impl StructureApp {
                 row(ui, &mut self.selected, &mut self.scroll_to, h, &m.id);
                 ui.label(&m.nodes[0]);
                 ui.label(&m.nodes[1]);
-                let l = g.members.iter().find(|x| x.0 == m.id).map_or(0.0, |x| {
-                    (0..3)
-                        .map(|k| (x.2[k] - x.1[k]).powi(2))
-                        .sum::<f64>()
-                        .sqrt()
-                });
+                let l = lengths.get(m.id.as_str()).copied().unwrap_or(0.0);
                 ui.label(format!("{l:.3} m"));
                 ui.label(m.group.as_deref().unwrap_or("—"));
                 ui.label(m.section.as_deref().unwrap_or("—"));

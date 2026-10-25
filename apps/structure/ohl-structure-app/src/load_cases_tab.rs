@@ -348,28 +348,43 @@ impl LoadCasesTab {
     /// The arrows of the case shown: each row's force at its point, joint
     /// or member (its middle), `arrow_scale` m per kN; none when every
     /// case is shown or arrows are off. Its key changes with what it shows.
-    pub fn overlay(&self, g: &Geometry) -> Option<(u64, Scene)> {
+    pub fn overlay(&self, g: &Geometry, drawn: Option<u64>) -> Option<(u64, Option<Scene>)> {
         let case = self
             .shown
             .as_deref()
             .filter(|c| self.arrows && !c.is_empty())?;
         let mut h = DefaultHasher::new();
         (self.key(), case, self.arrow_scale.to_bits(), g.joints.len()).hash(&mut h);
+        let key = h.finish();
+        // Built only when it changed (every frame it cost a search per
+        // row through the joints and members: slow with the line's cases).
+        if drawn == Some(key) {
+            return Some((key, None));
+        }
+        use std::collections::HashMap;
+        // The first of a label wins (as a search finds it): a point
+        // before a wire point.
+        let points: HashMap<&str, [f64; 3]> = g
+            .wires
+            .iter()
+            .rev()
+            .map(|w| (w.0.as_str(), w.1))
+            .chain(g.points.iter().rev().map(|p| (p.0.as_str(), p.1)))
+            .collect();
+        let joints: HashMap<&str, [f64; 3]> =
+            g.joints.iter().rev().map(|j| (j.0.as_str(), j.1)).collect();
+        let members: HashMap<&str, [f64; 3]> = g
+            .members
+            .iter()
+            .rev()
+            .map(|m| (m.0.as_str(), [0, 1, 2].map(|k| (m.1[k] + m.2[k]) / 2.0)))
+            .collect();
         let mut s = Scene::new([0.0; 3]);
         for r in self.table().case(case).filter(|r| r.missing.is_none()) {
             let at = match r.at {
-                At::Point => g
-                    .points
-                    .iter()
-                    .find(|p| p.0 == r.label)
-                    .map(|p| p.1)
-                    .or_else(|| g.wires.iter().find(|w| w.0 == r.label).map(|w| w.1)),
-                At::Joint => g.joints.iter().find(|j| j.0 == r.label).map(|j| j.1),
-                At::Member => g
-                    .members
-                    .iter()
-                    .find(|m| m.0 == r.label)
-                    .map(|m| [0, 1, 2].map(|k| (m.1[k] + m.2[k]) / 2.0)),
+                At::Point => points.get(r.label.as_str()).copied(),
+                At::Joint => joints.get(r.label.as_str()).copied(),
+                At::Member => members.get(r.label.as_str()).copied(),
             };
             if let Some(p) = at {
                 // Table axes (vertical down) → structure axes (z up).
@@ -377,7 +392,7 @@ impl LoadCasesTab {
                 arrow(&mut s, p, v.map(|x| x * self.arrow_scale), ARROW, true);
             }
         }
-        Some((h.finish(), s))
+        Some((key, Some(s)))
     }
 }
 

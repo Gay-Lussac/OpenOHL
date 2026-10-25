@@ -6,12 +6,21 @@
 //! the undo and redo of whole edits, saving.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use ohl_structures::{LibraryItem, StructureType};
 use toml_edit::DocumentMut;
 
 /// Most edits kept for undo.
 const UNDO_STEPS: usize = 500;
+
+/// The next revision, unique among every file of the process.
+static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
+
+fn next_revision() -> u64 {
+    NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
+}
 
 /// One step of the history: the text before (undo) or after (redo) it.
 #[derive(Debug, Clone)]
@@ -28,8 +37,14 @@ pub struct StructureFile {
     /// Where it is read from and saved to (none: not saved yet).
     path: Option<PathBuf>,
     doc: DocumentMut,
+    /// The text of `doc`, written once per revision (asked for every frame:
+    /// hashed, compared with the saved one).
+    text: OnceLock<String>,
+    /// Changes with every change of the text, unique among the files: what
+    /// is worked out from the file is kept while it stays.
+    revision: u64,
     /// The structure as last read (kept while the text does not read).
-    read: StructureType,
+    read: Arc<StructureType>,
     /// Why the text does not read now.
     error: Option<String>,
     /// The text on disk (unsaved changes when different).
@@ -65,7 +80,9 @@ impl StructureFile {
         Ok(Self {
             path: path.map(Path::to_path_buf),
             doc,
-            read,
+            text: OnceLock::new(),
+            revision: next_revision(),
+            read: Arc::new(read),
             error: None,
             saved: if path.is_some() {
                 text.to_owned()
@@ -85,7 +102,18 @@ impl StructureFile {
 
     /// The text as edited.
     pub fn text(&self) -> String {
-        self.doc.to_string()
+        self.text_ref().to_owned()
+    }
+
+    /// The text as edited, without a copy.
+    pub fn text_ref(&self) -> &str {
+        self.text.get_or_init(|| self.doc.to_string())
+    }
+
+    /// The text's revision: another after every change (edit, undo, redo,
+    /// reload), never the same for two files.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// The file as edited.
@@ -96,6 +124,11 @@ impl StructureFile {
     /// The structure as last read.
     pub fn structure(&self) -> &StructureType {
         &self.read
+    }
+
+    /// The structure as last read, shared (no copy).
+    pub fn structure_arc(&self) -> Arc<StructureType> {
+        Arc::clone(&self.read)
     }
 
     /// Why the text as edited does not read (the structure shown is the
@@ -117,7 +150,7 @@ impl StructureFile {
 
     /// Changes not saved.
     pub fn dirty(&self) -> bool {
-        self.text() != self.saved
+        self.text_ref() != self.saved
     }
 
     /// Makes an edit (`what`, in words): `f` changes the file given the
@@ -130,10 +163,12 @@ impl StructureFile {
         what: &str,
         f: impl FnOnce(&mut DocumentMut, &StructureType) -> R,
     ) -> R {
-        let before = self.doc.to_string();
+        let before = self.text();
         let r = f(&mut self.doc, &self.read);
         crate::raise_for_line_pressures(&mut self.doc);
         let after = self.doc.to_string();
+        // `f` had the document: its text is written again in any case.
+        self.text = OnceLock::new();
         if after != before {
             if self.group.is_none() {
                 self.push_undo(Step {
@@ -153,7 +188,7 @@ impl StructureFile {
         if self.group.is_none() {
             self.group = Some(Step {
                 what: what.to_owned(),
-                text: self.doc.to_string(),
+                text: self.text(),
             });
         }
     }
@@ -161,7 +196,7 @@ impl StructureFile {
     /// Closes the group: one undo step when it changed the text.
     pub fn end(&mut self) {
         if let Some(step) = self.group.take()
-            && step.text != self.doc.to_string()
+            && step.text != self.text_ref()
         {
             self.push_undo(step);
         }
@@ -193,7 +228,7 @@ impl StructureFile {
     pub fn undo(&mut self) -> Option<String> {
         self.end();
         let step = self.undo.pop()?;
-        let now = self.doc.to_string();
+        let now = self.text();
         self.set_text(&step.text);
         self.redo.push(Step {
             what: step.what.clone(),
@@ -206,7 +241,7 @@ impl StructureFile {
     pub fn redo(&mut self) -> Option<String> {
         self.end();
         let step = self.redo.pop()?;
-        let now = self.doc.to_string();
+        let now = self.text();
         self.set_text(&step.text);
         self.push_undo(Step {
             what: step.what.clone(),
@@ -218,11 +253,13 @@ impl StructureFile {
     fn set_text(&mut self, text: &str) {
         if let Ok(doc) = text.parse::<DocumentMut>() {
             self.doc = doc;
+            self.text = OnceLock::new();
         }
         self.reread(text);
     }
 
     fn reread(&mut self, text: &str) {
+        self.revision = next_revision();
         let path = self
             .path
             .clone()
@@ -232,7 +269,7 @@ impl StructureFile {
             .and_then(|t| crate::body::check(&t).map(|()| t))
         {
             Ok(t) => {
-                self.read = t;
+                self.read = Arc::new(t);
                 self.error = None;
             }
             Err(e) => self.error = Some(e),
@@ -254,7 +291,7 @@ impl StructureFile {
             return Ok(false);
         }
         StructureType::parse(&path, &text).map_err(|e| e.to_string())?;
-        let before = self.doc.to_string();
+        let before = self.text();
         self.push_undo(Step {
             what: "changed on disk".into(),
             text: before,
