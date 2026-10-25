@@ -132,7 +132,14 @@ fn weather_cases_are_sent_unfactored_and_wind_on_both_sides() {
     assert_eq!(cases.missing, ["weather case \"gone\""]);
     let budget = ohl_wirefe::default_fe_budget();
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    let placed = placed_values(&[], &loads.weather, &loads.missing, &line, "T2", "synthetic");
+    let placed = placed_values(
+        &[],
+        &loads.weather,
+        &loads.missing,
+        &line,
+        "T2",
+        "synthetic",
+    );
     // In the order of the line's weather cases; the line's load cases are
     // not sent.
     assert_eq!(

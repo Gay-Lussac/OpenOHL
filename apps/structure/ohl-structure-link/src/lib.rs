@@ -188,7 +188,10 @@ pub fn structure_cases(
         missing,
         ..Default::default()
     };
-    for w in weather.iter().filter(|w| choice.weather_cases.contains(&w.name)) {
+    for w in weather
+        .iter()
+        .filter(|w| choice.weather_cases.contains(&w.name))
+    {
         let sides: Vec<Option<ohl_weather::WindSide>> = if w.wind_pressure.si() > 0.0 {
             vec![
                 Some(ohl_weather::WindSide::Left),
