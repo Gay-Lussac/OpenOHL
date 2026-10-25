@@ -3892,6 +3892,7 @@ name = "ohl-structure-link"
 version = "0.0.1"
 dependencies = [
  "ohl-cables",
+ "ohl-clearance",
  "ohl-core",
  "ohl-line",
  "ohl-loads",

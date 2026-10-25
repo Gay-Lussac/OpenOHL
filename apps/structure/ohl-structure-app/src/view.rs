@@ -107,6 +107,8 @@ pub struct ViewInput<'a> {
     /// The moment of each point's offset in the case the results show:
     /// label, in words.
     pub moments: &'a [(String, String)],
+    /// The volumes on the strings to draw (none: not shown).
+    pub volumes: &'a [ohl_structure_link::VolumeMesh],
     /// What the view asks of the application.
     pub action: &'a mut Option<ViewAction>,
 }
@@ -346,7 +348,7 @@ impl View {
         if self.dirty || self.gpu.is_none() {
             self.gpu = Some(GpuScene::new(
                 device,
-                &scene(g, v.foot, v.selected, v.ahead, v.preview),
+                &scene(g, v.foot, v.selected, v.ahead, v.preview, v.volumes),
             ));
             self.dirty = false;
         }
@@ -565,6 +567,7 @@ fn scene(
     selected: &[Handle],
     ahead: f64,
     preview: &[[[f64; 3]; 2]],
+    volumes: &[ohl_structure_link::VolumeMesh],
 ) -> Scene {
     let mut s = Scene::new([0.0; 3]);
     let extent = g
@@ -609,6 +612,17 @@ fn scene(
     }
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
+    }
+    // The volumes on the strings, filled, in the line's colours.
+    for m in volumes {
+        let c = match m.state {
+            ohl_structures::ElectricalState::Grounded => [150, 150, 155, 255],
+            ohl_structures::ElectricalState::Electrified => [240, 150, 60, 255],
+            ohl_structures::ElectricalState::Insulated => [225, 220, 180, 255],
+        };
+        for t in &m.triangles {
+            s.triangle(*t, [c; 3]);
+        }
     }
     // The rigid links: solid rods from the joint to the point.
     for l in &g.links {
@@ -767,4 +781,26 @@ fn labels(
         egui::FontId::proportional(11.0),
         egui::Color32::GRAY,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The volumes on the strings are drawn as triangles of the scene, as
+    /// many as their meshes hold.
+    #[test]
+    fn the_volumes_are_triangles_of_the_scene() {
+        let g = Geometry::default();
+        let tri = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let v = vec![ohl_structure_link::VolumeMesh {
+            string: "S1".into(),
+            name: "horn".into(),
+            state: ohl_structures::ElectricalState::Electrified,
+            triangles: vec![tri; 5],
+        }];
+        let without = scene(&g, 0.0, &[], 0.0, &[], &[]).counts().2;
+        let with = scene(&g, 0.0, &[], 0.0, &[], &v).counts().2;
+        assert_eq!(with - without, 5);
+    }
 }

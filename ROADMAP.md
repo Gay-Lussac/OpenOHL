@@ -566,10 +566,10 @@ convex solids (GJK, a lower bound: conservative); a rule's `shapes` and
 `distance_wind` (another distance with wind). Structures › String shapes
 and the String library's columns edit them; Structures › Display
 options › Volumes on the strings (3D) draws them. Theory:
-[Internal clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md). Not yet: the
-shapes in OHL-Structure's view (it would need the core's placement across
-the application's boundary: to decide); a structure type's own strings
-(`.ohls`) carrying shape overrides.
+[Internal clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md). OHL-Structure draws
+them too (View › Volumes on the strings: in still air, placed by
+`ohl-structure-link` as the line places them; owner, 2026-10-25). Not
+yet: a structure type's own strings (`.ohls`) carrying shape overrides.
 
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from

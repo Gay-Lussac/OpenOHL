@@ -30,12 +30,17 @@
 //!   the surface loads of the recipes
 //!   ([`ohl_structure_loads::evaluate_with_areas`]); [`section_library`]
 //!   reads it.
+//! - [`string_volumes`]: the volumes on a structure's strings (their
+//!   insulator assemblies' shapes) placed on its strings in still air, as
+//!   triangles for OHL-Structure's view (the line's placement,
+//!   `ohl_clearance::volumes`).
 //! - [`export_structure`]: a level 3 structure with its section library
 //!   and load table as plain data for the exports
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
 mod export;
 mod run;
+mod volumes;
 
 pub use export::{
     ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
@@ -45,6 +50,7 @@ pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,
 };
+pub use volumes::{VolumeMesh, string_volumes};
 
 use std::path::Path;
 use std::time::{Duration, Instant};

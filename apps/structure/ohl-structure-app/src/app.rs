@@ -157,6 +157,9 @@ pub struct StructureApp {
     pub insert_at: f64,
     /// The rigid links drawn in the 3D view (View › Rigid links).
     pub rigid_links: bool,
+    /// The volumes on the strings drawn in the 3D view (View › Volumes on
+    /// the strings; off by default).
+    pub string_volumes: bool,
 }
 
 impl StructureApp {
@@ -205,6 +208,7 @@ impl StructureApp {
             link: None,
             insert_at: 0.5,
             rigid_links: true,
+            string_volumes: false,
         }
     }
 
@@ -865,7 +869,9 @@ impl StructureApp {
         let key = (
             f.text(),
             self.selected.clone(),
-            self.ahead.to_bits() ^ u64::from(self.rigid_links),
+            self.ahead.to_bits()
+                ^ u64::from(self.rigid_links)
+                ^ (u64::from(self.string_volumes) << 1),
             self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
         );
         if self.drawn.as_ref() != Some(&key) {
@@ -885,6 +891,13 @@ impl StructureApp {
             g.links.clear();
         }
         let linkable = crate::link_tool::linkable(&t);
+        // The volumes on the strings, in still air (placed by the link
+        // crate as the line places them).
+        let volumes = if self.string_volumes {
+            ohl_structure_link::string_volumes(&t, &g.strings, &self.insulators)
+        } else {
+            Vec::new()
+        };
         // The moments of the points' offsets in the case the results show.
         let moments: Vec<(String, String)> = self
             .results
@@ -927,6 +940,7 @@ impl StructureApp {
                 link: self.link.as_mut(),
                 linkable: &linkable,
                 moments: &moments,
+                volumes: &volumes,
                 action: &mut action,
             },
         );
