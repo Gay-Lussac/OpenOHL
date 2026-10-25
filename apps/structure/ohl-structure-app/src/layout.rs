@@ -342,12 +342,7 @@ pub fn default_dock() -> DockState<Panel> {
     tree.split_below(
         design,
         0.42,
-        vec![
-            Panel::LoadRecipes,
-            Panel::LoadTable,
-            Panel::Results,
-            Panel::InTheLine,
-        ],
+        vec![Panel::LoadTable, Panel::Results, Panel::InTheLine],
     );
     dock
 }
@@ -377,11 +372,22 @@ fn home(dock: &DockState<Panel>, panel: Panel) -> Option<NodePath> {
 
 /// Shows `panel`: brought to the front of its leaf and focused; closed, it
 /// opens where it belongs (next to a panel of its menu; the 3D view on the
-/// right, the level above the tables).
+/// right, the level above the tables; the Load case editor in a window of
+/// its own).
 pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
     if dock.find_tab(&panel).is_none() {
         let tables = home(dock, Panel::PointsInsulators);
         match panel {
+            // The Load case editor in a window of its own, large enough
+            // to see a case's two parts at once (owner, 2026-10-25:
+            // "easily understandable"); dragged into the dock if wanted.
+            Panel::LoadRecipes => {
+                let surface = dock.add_window(vec![panel]);
+                if let Some(w) = dock.get_window_state_mut(surface) {
+                    w.set_position(egui::pos2(120.0, 80.0));
+                    w.set_size(egui::vec2(980.0, 760.0));
+                }
+            }
             Panel::View3d => {
                 dock.main_surface_mut()
                     .split_right(NodeIndex::root(), 0.45, vec![panel]);
