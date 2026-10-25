@@ -37,6 +37,10 @@ On macOS, double-click **Start OHL-Structure.command**. See
 
 ### A new line, step by step
 
+The tutorial [Start from scratch — your first line](../tutorial/index.md)
+goes through these steps one by one, with the starter template; here
+they are in a few lines.
+
 A line is made in the steps below, most needing the one before. Its layout is three kinds of record: a **route**, its **alignments** (each on one route), and the **alignment points** of each alignment, in order.
 
 1. **The route** — File › New project, then name its route (the first window of a new project asks for it; Terrain › Routes later). A route is the path of the line; everything else is put on it.

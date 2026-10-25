@@ -173,8 +173,8 @@ cases**, **Results**, **In the line** — then **Plugins**
 ([below](#plugins)) and **Help** (**User guide…**: the manual on this
 computer, as in OHL-Design — the book built by `mdbook build`, else its
 sources in `docs/`, nothing fetched from the internet —; **Start from
-scratch (tutorial)…**: greyed, the tutorial is planned and not written
-yet; **About OHL-Structure**: version, licence);
+scratch (tutorial)…**: [the tutorial](../tutorial/index.md) of the line
+application, your first line from the starter template; **About OHL-Structure**: version, licence);
 **Undo**, **Redo** and **Save** at their right (the same place as
 OHL-Design's quick bar). Shortcuts are written ⌘ on macOS, Ctrl
 elsewhere. Each work menu lists

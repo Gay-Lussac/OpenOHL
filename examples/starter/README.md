@@ -7,9 +7,10 @@ design.**
 OHL-Design offers this folder as **File › New project… › Starter template
 (for learning)** (also on the start page: **New project from the starter
 template…**). The new project gets the library files below and nothing
-else: **no route, alignment, structure or wire** — you add those. A
-tutorial that builds them step by step from these files (Help › Start
-from scratch) is planned, not written yet.
+else: **no route, alignment, structure or wire** — you add those. The
+tutorial [Start from scratch — your first
+line](../../docs/tutorial/index.md) (Help › Start from scratch) builds
+them step by step from these files.
 
 The project's coordinate system is `local` (plane coordinates in metres,
 no geographic reference); units are SI.
