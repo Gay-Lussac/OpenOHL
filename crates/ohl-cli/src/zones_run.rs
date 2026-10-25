@@ -560,6 +560,7 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         None,
         &budget,
         &done,
+        &Default::default(),
     )
     .map_err(stopped)?;
     print_report(&result, &scheme);

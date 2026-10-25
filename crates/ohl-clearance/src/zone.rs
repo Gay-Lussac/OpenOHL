@@ -735,6 +735,9 @@ pub struct ZoneTargets<'a> {
     #[allow(clippy::type_complexity)]
     pub points:
         Option<&'a mut dyn FnMut(&[u8], &mut dyn FnMut(f64, f64, f64, u8)) -> Result<(), String>>,
+    /// The structure and section overrides (owner, 2026-10-25): a span
+    /// takes only the cases its section's and its ends' groups give.
+    pub filter: &'a ohl_weather::CaseFilter,
 }
 
 /// One rule's check of one kind of target.
@@ -750,6 +753,21 @@ struct Part {
     arcs: Vec<usize>,
     arc_groups: Vec<usize>,
     arc_points: Option<ArcPointCheck>,
+}
+
+/// Whether the overrides let span wire `w` (a section's span; a jumper
+/// is never left out) take weather case `case`.
+fn span_takes(line: &Line, filter: &ohl_weather::CaseFilter, w: &Wire, case: &str) -> bool {
+    if filter.is_none() {
+        return true;
+    }
+    match line.sections.iter().find(|s| s.id == w.section) {
+        Some(sec) => {
+            let end = |k: usize| sec.points.get(k).map_or("", |p| p.structure.as_str());
+            filter.takes_span(&sec.id, [end(w.span), end(w.span + 1)], case)
+        }
+        None => true,
+    }
 }
 
 /// Checks `rules` in the zone `zone` against the wires of every state
@@ -814,6 +832,9 @@ pub fn check_zones(
                     if w.points.len() < 2 {
                         continue;
                     }
+                    if !span_takes(line, targets.filter, &w, &states[s].name) {
+                        continue;
+                    }
                     // A requirement by voltage reaches every wire checked
                     // (else an error before any check, as `ohl line`).
                     if let Err(e) = rule.distance.at(w.kv().unwrap_or(0.0)) {
@@ -836,7 +857,17 @@ pub fn check_zones(
                 ));
                 continue;
             }
-            let arc_items = arcs_of_rule(&def, arcs, &used);
+            let arc_items: Vec<usize> = arcs_of_rule(&def, arcs, &used)
+                .into_iter()
+                .filter(|&a| {
+                    span_takes(
+                        line,
+                        targets.filter,
+                        &arcs[a].wire,
+                        &states[arcs[a].state].name,
+                    )
+                })
+                .collect();
             let arc_groups = arc_items.iter().map(|&a| group(&arcs[a].wire)).collect();
             parts.push(Part {
                 rule: k,
@@ -1274,6 +1305,7 @@ mod tests {
                 ground: None,
                 surfaces: &[],
                 points: Some(&mut feed),
+                filter: &Default::default(),
             },
             &budget,
         )
@@ -1334,6 +1366,7 @@ mod tests {
                 None,
                 &Budget::new(),
                 &AtomicUsize::new(0),
+                &Default::default(),
             )
         };
         let r = run(&CheckScope::default()).unwrap();
@@ -1414,6 +1447,7 @@ mod tests {
                 ground: None,
                 surfaces: &[],
                 points: None,
+                filter: &Default::default(),
             },
             &budget,
         )

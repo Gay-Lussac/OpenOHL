@@ -44,6 +44,86 @@ pub fn groups(model: &Model) -> Vec<CaseGroup> {
     g
 }
 
+/// A check's two ticks (owner, 2026-10-25): the **structure override**
+/// and the **section override** — results at a structure or on a section
+/// with weather case groups (Structures and Sections tables) take only
+/// the check's cases in those groups.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Overrides {
+    /// The structures' groups.
+    pub structures: bool,
+    /// The sections' groups.
+    pub sections: bool,
+}
+
+impl Overrides {
+    /// The two ticks (in a check's footer, beside Run); whether one
+    /// changed.
+    pub fn ui(&mut self, ui: &mut egui::Ui) -> bool {
+        let a = ui
+            .checkbox(&mut self.structures, "structure override")
+            .on_hover_text(
+                "At a structure with weather case groups (Structures table): only this check's \
+                 cases in them",
+            )
+            .changed();
+        let b = ui
+            .checkbox(&mut self.sections, "section override")
+            .on_hover_text(
+                "On a section with weather case groups (Sections table): only this check's \
+                 cases in them",
+            )
+            .changed();
+        a || b
+    }
+
+    /// The filter of the ticks for `model`'s structures and sections.
+    pub fn filter(self, model: &Model) -> ohl_weather::CaseFilter {
+        let groups = groups(model);
+        ohl_weather::CaseFilter {
+            structures: self.structures.then(|| {
+                ohl_weather::OwnCases::new(
+                    model
+                        .line
+                        .structures
+                        .iter()
+                        .map(|s| (s.id.as_str(), &s.weather_groups[..])),
+                    &groups,
+                )
+            }),
+            sections: self.sections.then(|| {
+                ohl_weather::OwnCases::new(
+                    model
+                        .line
+                        .sections
+                        .iter()
+                        .map(|s| (s.id.as_str(), &s.weather_groups[..])),
+                    &groups,
+                )
+            }),
+        }
+    }
+}
+
+/// Whether the overrides let span `span` of section `section` take
+/// weather case `case` (its section's groups and both its ends'; a
+/// section not in the line: yes).
+pub fn span_takes(
+    line: &ohl_line::Line,
+    filter: &ohl_weather::CaseFilter,
+    section: &str,
+    span: usize,
+    case: &str,
+) -> bool {
+    match line.sections.iter().find(|s| s.id == section) {
+        Some(sec) => {
+            let end = |k: usize| sec.points.get(k).map_or("", |p| p.structure.as_str());
+            filter.takes_span(&sec.id, [end(span), end(span + 1)], case)
+        }
+        None => true,
+    }
+}
+
 /// A group's buttons: the cases of the one clicked added to `chosen`
 /// (names); whether it changed. Nothing shown without groups.
 pub fn pick_names(ui: &mut egui::Ui, groups: &[CaseGroup], chosen: &mut Vec<String>) -> bool {

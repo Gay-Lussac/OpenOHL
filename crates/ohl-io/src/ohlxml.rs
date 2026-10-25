@@ -343,6 +343,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         omit_sets,
         members,
         routes,
+        weather_groups,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -362,6 +363,7 @@ fn write_structure(out: &mut String, s: &Structure) {
         && omit_sets.is_empty()
         && members.is_empty()
         && routes.is_empty()
+        && weather_groups.is_empty()
         && fields.is_empty()
     {
         out.push_str("/>\n");
@@ -369,6 +371,11 @@ fn write_structure(out: &mut String, s: &Structure) {
     }
     out.push_str(">\n");
     write_on_routes(out, routes, "    ");
+    for g in weather_groups {
+        out.push_str("    <weather_group");
+        attr(out, "name", g);
+        out.push_str("/>\n");
+    }
     for p in points {
         let StructurePoint {
             description,
@@ -500,6 +507,7 @@ fn write_section(out: &mut String, s: &Section) {
         spreads,
         color,
         calculation,
+        weather_groups,
         fields,
     } = s;
     out.push_str("  <section");
@@ -517,6 +525,11 @@ fn write_section(out: &mut String, s: &Section) {
         attr(out, "calculation", &enum_name(calculation));
     }
     out.push_str(">\n");
+    for g in weather_groups {
+        out.push_str("    <weather_group");
+        attr(out, "name", g);
+        out.push_str("/>\n");
+    }
     for p in points {
         section_point(out, "point", p, "    ");
     }
@@ -1280,6 +1293,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             "description",
         ],
         &[
+            "weather_group",
             "point",
             "wire",
             "string",
@@ -1488,6 +1502,13 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
         omit_sets,
         members,
         routes: read_on_routes(e)?,
+        weather_groups: e
+            .children_named("weather_group")
+            .map(|g| {
+                check(g, &["name"], &[])?;
+                Ok(text(g, "name")?.to_owned())
+            })
+            .collect::<Result<_, String>>()?,
         id,
         fields: read_fields(e)?,
     })
@@ -1517,6 +1538,7 @@ fn read_section(e: &Element) -> Result<Section, String> {
             "spread_load",
             "span_point",
             "spread",
+            "weather_group",
             "field",
         ],
     )?;
@@ -1545,6 +1567,13 @@ fn read_section(e: &Element) -> Result<Section, String> {
         stringing: read_stringing(one(e, "stringing")?)?,
         color: owned(e, "color"),
         calculation,
+        weather_groups: e
+            .children_named("weather_group")
+            .map(|g| {
+                check(g, &["name"], &[])?;
+                Ok(text(g, "name")?.to_owned())
+            })
+            .collect::<Result<_, String>>()?,
         fields: read_fields(e)?,
         span_points: e
             .children_named("span_point")

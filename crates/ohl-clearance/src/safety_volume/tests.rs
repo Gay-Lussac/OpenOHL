@@ -390,6 +390,7 @@ fn the_example_line_s_volumes() {
                 ..SafetyParams::default()
             },
             &Budget::new(),
+            &Default::default(),
         )
         .unwrap();
         println!(

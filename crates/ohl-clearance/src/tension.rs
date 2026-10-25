@@ -344,6 +344,7 @@ pub fn check(
     library: &ohl_cables::Library,
     solved: &[(&str, &[SectionShape])],
     rules: &[TensionRule],
+    filter: &ohl_weather::CaseFilter,
 ) -> TensionReport {
     let mut report = TensionReport::default();
     let mut noted = std::collections::BTreeSet::new();
@@ -379,6 +380,11 @@ pub fn check(
                 }
                 let allowed = rule.factor * rts;
                 for (j, span) in shape.spans.iter().enumerate() {
+                    // The overrides: the section's and its ends' groups.
+                    let end = |k: usize| section.points.get(k).map_or("", |p| p.structure.as_str());
+                    if !filter.takes_span(&section.id, [end(j), end(j + 1)], case) {
+                        continue;
+                    }
                     let tension = match rule.measure {
                         TensionMeasure::Max => span.max_tension,
                         TensionMeasure::Horizontal => span.horizontal_tension,
@@ -454,9 +460,50 @@ mod tests {
                 ..TensionRule::blank("not in this case")
             },
         ];
-        let report = check(&line, &library, &[("everyday", &shapes)], &rules);
+        let report = check(
+            &line,
+            &library,
+            &[("everyday", &shapes)],
+            &rules,
+            &Default::default(),
+        );
         let spans: usize = shapes.iter().map(|s| s.spans.len()).sum();
         assert_eq!(report.rows.len(), 2 * spans);
+        // The section override (owner, 2026-10-25): the first section's
+        // groups lack "everyday": its spans left out; the structure
+        // override with a structure's groups lacking it: the spans at it.
+        let groups = vec![ohl_weather::CaseGroup {
+            name: "snow".into(),
+            description: String::new(),
+            cases: vec!["heavy snow".into()],
+        }];
+        let snow = ["snow".to_owned()];
+        let first = &line.sections[0];
+        let filter = ohl_weather::CaseFilter {
+            sections: Some(ohl_weather::OwnCases::new(
+                [(first.id.as_str(), &snow[..])],
+                &groups,
+            )),
+            structures: None,
+        };
+        let r = check(&line, &library, &[("everyday", &shapes)], &rules, &filter);
+        let first_spans = first.points.len() - 1;
+        assert_eq!(r.rows.len(), 2 * (spans - first_spans));
+        assert!(r.rows.iter().all(|x| x.section != first.id));
+        let at = first.points[0].structure.clone();
+        let filter = ohl_weather::CaseFilter {
+            structures: Some(ohl_weather::OwnCases::new(
+                [(at.as_str(), &snow[..])],
+                &groups,
+            )),
+            sections: None,
+        };
+        let r = check(&line, &library, &[("everyday", &shapes)], &rules, &filter);
+        assert!(r.rows.len() < 2 * spans);
+        assert!(r.rows.iter().all(|x| {
+            let s = line.sections.iter().find(|s| s.id == x.section).unwrap();
+            s.points[x.span].structure != at && s.points[x.span + 1].structure != at
+        }));
         assert!(report.notes.iter().any(|n| n.contains("not in this case")));
         assert!(report.rows.windows(2).all(|w| w[0].usage >= w[1].usage));
         let section = &line.sections[0];
@@ -498,7 +545,13 @@ mod tests {
             factor: 0.01,
             ..TensionRule::blank("tight")
         }];
-        let r = check(&line, &library, &[("everyday", &shapes)], &tight);
+        let r = check(
+            &line,
+            &library,
+            &[("everyday", &shapes)],
+            &tight,
+            &Default::default(),
+        );
         assert_eq!(r.failures().count(), spans);
         assert_eq!(r.marks().len(), spans);
     }

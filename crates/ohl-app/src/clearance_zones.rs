@@ -106,6 +106,8 @@ type Marks = Vec<([f64; 3], [f64; 3])>;
 pub struct ZoneWindow {
     /// Shown.
     pub open: bool,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// The zone.
     pub zone: Zone,
     /// The wind.
@@ -183,6 +185,7 @@ impl ZoneWindow {
     pub fn new(measure: Measure) -> Self {
         Self {
             open: false,
+            overrides: Default::default(),
             zone: Zone::new(measure),
             wind: WindSteps::default(),
             rules: Vec::new(),
@@ -534,6 +537,7 @@ impl ZoneWindow {
         );
         let zone = self.zone;
         let check = self.check.clone();
+        let filter = self.overrides.filter(model);
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.sections);
         let done = Arc::new(AtomicUsize::new(0));
@@ -548,7 +552,7 @@ impl ZoneWindow {
             let surfaces = named.read();
             let r = run(
                 &line, &library, zone, &check, rules, states, arc, cloud, ground, &surfaces, scope,
-                &d, &c,
+                &d, &c, &filter,
             );
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -805,6 +809,11 @@ impl ZoneWindow {
                         "clearances-what-is-solved",
                     ));
                     self.check_ui(ui, model);
+                    // The structure and section overrides of the cases
+                    // (in the body here: the footer stays one line).
+                    ui.horizontal_wrapped(|ui| {
+                        self.overrides.ui(ui);
+                    });
                 }
             });
             run |= help::footer(ui, footer, |ui| self.run_ui(ui));
@@ -1564,6 +1573,7 @@ fn run(
     scope: Option<std::collections::BTreeSet<String>>,
     done: &AtomicUsize,
     cancel: &CancelToken,
+    filter: &ohl_weather::CaseFilter,
 ) -> Result<Report, String> {
     let surfaces: Vec<(String, &ohl_terrain::Terrain)> = surfaces
         .iter()
@@ -1594,6 +1604,7 @@ fn run(
         scope.as_ref(),
         &budget,
         done,
+        filter,
     )
 }
 

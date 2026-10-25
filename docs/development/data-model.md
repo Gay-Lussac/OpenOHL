@@ -364,6 +364,7 @@ open (`ols_meta` keys `routes_alignments`, `alignment_points`).
 | `extension` | string? | — | extension of the type | `.ohls` `[[extension]] name` |
 | `description` | string | — | free text | — |
 | `height_adjust` | f64 | m | typed: feet above the ground at `position` (may be negative) | — |
+| `weather_groups` | `[string]` | — | its weather case groups: a check with the structure override takes here only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
 | `points` | `[StructurePoint]` | — | points where strings hang | — |
 | `wires` | `[WirePoint]` | — | wire points | — |
 | `strings` | `[InsulatorString]` | — | strings | labels of points / wire points |
@@ -454,6 +455,7 @@ once resolved every structure is checked in full (`check_strings`).
 | `span_points` | `[SpanPoint]` | — | labelled points on spans (`span`, `at`: a place — `fraction` (horizontal, from the back point), `distance` (m) or `station` (m, of the line along the alignment both structures stand on, turned into a fraction when solved, `Line::section_with_fractions`; with no alignment through both, at the back point) — one of them, `{"distance": 30}` (`SpanPlace` enum; files before version 5 giving several are read with a station over a distance over the fraction), each with its `object` (one per point: a body or a clamp, `objects::LineObject`) or bare (a spread's end); nodes of the FE model, reported solved (`SectionShape::span_points`) | span index; spacers and spreads name them |
 | `spreads` | `[SpreadObject]` | N/m | objects spread between two points of one span: `label` (optional), `from`, `to` (point labels), `type` (library id), `load` (downward, N/m of conductor: the whole bundle's, shared by its subconductors), `per_subconductor` (optional, default false, written only when true: `load` is on each subconductor, the bundle carrying `load` × `bundle`, `SpreadObject::bundle_load`); on the wire pieces they cover (FE; `Section::spread_loads` gives each as the whole bundle's, the model of one subconductor takes its share) | point labels |
 | `color` | string? | — | `#rrggbb`, overrides the phase colour | — |
+| `weather_groups` | `[string]` | — | its weather case groups: a check with the section override takes on its spans only its cases in them (2026-10-25); not read by the solve | `.ohlwc` `[[group]] name` |
 | `calculation` | `Calculation` | — | `{condition, method}` (`condition::Condition` × `Method`), written by its name: condition and method joined (`initial-fe` default, `creep-rs`, `max-sag-fe`, …) | — |
 
 `SectionPoint { structure, set }` names the wire point with set `set` on

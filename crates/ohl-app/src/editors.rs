@@ -66,6 +66,8 @@ pub struct StructureForm {
     /// The routes it gives itself (empty: those of the alignments it
     /// stands on).
     pub routes: Vec<String>,
+    /// Its weather case groups ([`ohl_line::Structure::weather_groups`]).
+    pub weather_groups: Vec<String>,
     /// A new route's name being typed.
     pub new_route: String,
     /// A new route to make with it.
@@ -325,6 +327,8 @@ pub struct SectionForm {
     pub note: Option<String>,
     /// Cable condition and method it is solved with.
     pub calculation: ohl_line::condition::Calculation,
+    /// Its weather case groups ([`ohl_line::Section::weather_groups`]).
+    pub weather_groups: Vec<String>,
     /// Display colour (`#rrggbb`; none: its phase's).
     pub color: Option<String>,
     /// What it is, in words.

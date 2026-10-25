@@ -486,6 +486,92 @@ pub struct CaseGroup {
     pub cases: Vec<String>,
 }
 
+/// The cases a check takes at each object of the line (a structure, a
+/// section) when it takes the objects' own groups (the override, owner
+/// 2026-10-25: a wind study's winds at some structures, the snow load
+/// along the line by section): at an object with weather case groups,
+/// only the check's cases that are in one of them; elsewhere every case
+/// of the check.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct OwnCases {
+    /// Per object with groups (by id), the names of its groups' cases.
+    by_structure: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+}
+
+impl OwnCases {
+    /// From each object's id and its groups' names, and the groups of
+    /// the case file (a group the file does not have gives no case).
+    pub fn new<'a>(
+        structures: impl IntoIterator<Item = (&'a str, &'a [String])>,
+        groups: &[CaseGroup],
+    ) -> Self {
+        let mut by_structure = std::collections::BTreeMap::new();
+        for (id, names) in structures {
+            if names.is_empty() {
+                continue;
+            }
+            let cases: std::collections::BTreeSet<String> = groups
+                .iter()
+                .filter(|g| names.contains(&g.name))
+                .flat_map(|g| g.cases.iter().cloned())
+                .collect();
+            by_structure.insert(id.to_owned(), cases);
+        }
+        Self { by_structure }
+    }
+
+    /// Whether the check takes weather case `case` at object `structure`.
+    pub fn takes(&self, structure: &str, case: &str) -> bool {
+        self.by_structure
+            .get(structure)
+            .is_none_or(|cases| cases.contains(case))
+    }
+
+    /// Whether no object has groups (the override changes nothing).
+    pub fn is_empty(&self) -> bool {
+        self.by_structure.is_empty()
+    }
+}
+
+/// A check's override of its cases by the objects' own groups (owner,
+/// 2026-10-25: every check has two ticks, the structure override and the
+/// section override): with one ticked, a result at a structure or on a
+/// section takes only the check's cases in that object's groups; neither:
+/// every case (the default).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CaseFilter {
+    /// The structure override: the structures' groups' cases.
+    pub structures: Option<OwnCases>,
+    /// The section override: the sections' groups' cases.
+    pub sections: Option<OwnCases>,
+}
+
+impl CaseFilter {
+    /// Whether a result at `structure` (if any) on `section` (if any)
+    /// takes weather case `case`.
+    pub fn takes(&self, structure: Option<&str>, section: Option<&str>, case: &str) -> bool {
+        let ok = |own: &Option<OwnCases>, id: Option<&str>| match (own, id) {
+            (Some(o), Some(id)) => o.takes(id, case),
+            _ => true,
+        };
+        ok(&self.structures, structure) && ok(&self.sections, section)
+    }
+
+    /// Whether a result on a span of `section` between structures `ends`
+    /// takes `case`: the section's groups, and both ends' (a span is at
+    /// both).
+    pub fn takes_span(&self, section: &str, ends: [&str; 2], case: &str) -> bool {
+        self.takes(Some(ends[0]), Some(section), case) && self.takes(Some(ends[1]), None, case)
+    }
+
+    /// Whether it lets every case through (no override ticked, or no
+    /// object with groups).
+    pub fn is_none(&self) -> bool {
+        self.structures.as_ref().is_none_or(OwnCases::is_empty)
+            && self.sections.as_ref().is_none_or(OwnCases::is_empty)
+    }
+}
+
 /// Whether `name` matches `pattern`: `*` (any text) and `?` (one
 /// character) wildcards, case-insensitive.
 pub fn name_matches(pattern: &str, name: &str) -> bool {
@@ -518,6 +604,13 @@ impl WeatherCases {
         for g in &set.groups {
             if g.name.trim().is_empty() {
                 return Err("a weather case group needs a name".into());
+            }
+            // (Listed with commas in the Structures table.)
+            if g.name.contains(',') {
+                return Err(format!(
+                    "weather case group \"{}\": no comma in a group's name",
+                    g.name
+                ));
             }
             if !groups.insert(g.name.as_str()) {
                 return Err(format!(
@@ -1046,5 +1139,33 @@ air_density_factor = 0.6
             ..hot.clone()
         };
         assert!(hot.same_physics(&hot_too) && hot_too.same_physics(&hot));
+    }
+}
+
+#[cfg(test)]
+mod structure_case_tests {
+    use super::*;
+
+    /// A structure with groups takes the check's cases in them only; one
+    /// without, every case; a group the file lacks gives none.
+    #[test]
+    fn structures_take_their_groups_cases() {
+        let groups = vec![CaseGroup {
+            name: "wind study".into(),
+            description: String::new(),
+            cases: vec!["300 Pa".into(), "everyday".into()],
+        }];
+        let (t1, t2, t3) = (
+            vec!["wind study".to_owned()],
+            Vec::new(),
+            vec!["gone".to_owned()],
+        );
+        let s = OwnCases::new([("T1", &t1[..]), ("T2", &t2[..]), ("T3", &t3[..])], &groups);
+        assert!(s.takes("T1", "300 Pa") && !s.takes("T1", "500 Pa"));
+        assert!(s.takes("T2", "500 Pa"));
+        assert!(!s.takes("T3", "300 Pa"));
+        assert!(!s.is_empty());
+        let named = "format = \"ohl-weather-cases\"\nversion = 1\n[[group]]\nname = \"a, b\"\n";
+        assert!(WeatherCases::parse(named).is_err());
     }
 }

@@ -66,6 +66,8 @@ pub struct StringChecksWindow {
     pub status: Option<(String, bool)>,
     /// Only the rows beyond their limit.
     pub only_failures: bool,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// The plugin preset chosen in the dropdown (plugin, preset).
     plugin_preset: Option<(usize, usize)>,
     /// The check.
@@ -178,6 +180,7 @@ impl StringChecksWindow {
         let line = model.line.clone();
         let library = model.library.clone();
         let rules = self.rules.clone();
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             let mut solved = Vec::new();
             let mut notes = Vec::new();
@@ -202,7 +205,7 @@ impl StringChecksWindow {
                 .iter()
                 .map(|(n, s)| (n.as_str(), s.as_slice()))
                 .collect();
-            let mut report = strings::check(&line, &views, &rules);
+            let mut report = strings::check(&line, &views, &rules, &filter);
             report.notes.splice(0..0, notes);
             Ok(Report { report, rules })
         });
@@ -291,6 +294,7 @@ impl StringChecksWindow {
                     self.results_ui(ui, &stale, &mut run, &mut out);
                 });
                 help::footer(ui, "string-checks-window", |ui| {
+                    self.overrides.ui(ui);
                     let why = self.why_not_run();
                     run |= help::run_button(
                         ui,

@@ -865,7 +865,8 @@ pub fn build(
 /// the volumes.
 ///
 /// Cost: the solves of [`solve_positions`], then [`build`]; exit clause:
-/// `budget`.
+/// `budget`; `filter`: the structure and section overrides of the cases.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     line: &Line,
     library: &ohl_cables::Library,
@@ -874,6 +875,7 @@ pub fn run(
     steps: WindSteps,
     params: &SafetyParams,
     budget: &Budget,
+    filter: &ohl_weather::CaseFilter,
 ) -> Result<SafetyVolumes, String> {
     if let Some(p) = params.problem() {
         return Err(p);
@@ -915,6 +917,8 @@ pub fn run(
     }
     params.system_of = system_map(line);
     let params = &params;
-    let positions = solve_positions(line, library, cases, wind.options(steps), budget)?;
+    let mut positions = solve_positions(line, library, cases, wind.options(steps), budget)?;
+    // The structure and section overrides: each span its own cases.
+    positions.retain_cases(line, filter);
     build(&positions, params, budget)
 }

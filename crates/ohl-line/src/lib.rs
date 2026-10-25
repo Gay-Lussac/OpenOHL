@@ -1219,6 +1219,13 @@ pub struct Structure {
     /// stands on ([`Line::structure_routes`]).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<String>,
+    /// Its weather case groups (of the weather case file, by name): a
+    /// check at structures with the structure override ticked takes here
+    /// only its cases that are in these groups (owner, 2026-10-25; e.g. a
+    /// wind study's lower winds; none: the check's cases). Nothing is
+    /// solved again for them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weather_groups: Vec<String>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1258,6 +1265,8 @@ struct StructureFile {
     members: Vec<Vec<Point>>,
     #[serde(default)]
     routes: Vec<String>,
+    #[serde(default)]
+    weather_groups: Vec<String>,
     #[serde(default)]
     fields: Fields,
 }
@@ -1304,6 +1313,7 @@ impl From<StructureFile> for Structure {
             omit_sets,
             members: f.members,
             routes: f.routes,
+            weather_groups: f.weather_groups,
             fields: f.fields,
         }
     }
@@ -2303,6 +2313,13 @@ pub struct Section {
     /// Cable condition and method it is solved with (default Initial FE).
     #[serde(default, skip_serializing_if = "condition::Calculation::is_default")]
     pub calculation: condition::Calculation,
+    /// Its weather case groups (of the weather case file, by name): a
+    /// check with the section override ticked takes on it only its cases
+    /// that are in these groups (owner, 2026-10-25: e.g. the snow load
+    /// varying along the line; none: the check's cases). Nothing is
+    /// solved again for them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weather_groups: Vec<String>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -2350,6 +2367,8 @@ struct SectionFile {
     #[serde(default)]
     calculation: condition::Calculation,
     #[serde(default)]
+    weather_groups: Vec<String>,
+    #[serde(default)]
     fields: Fields,
 }
 
@@ -2371,6 +2390,7 @@ impl From<SectionFile> for Section {
             spreads: f.spreads,
             color: f.color,
             calculation: f.calculation,
+            weather_groups: f.weather_groups,
             fields: f.fields,
         };
         for l in f.loads {

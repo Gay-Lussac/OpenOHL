@@ -661,6 +661,8 @@ pub struct Out {
 pub struct VegetationWindow {
     /// Shown (closed: its layers are taken off the views).
     pub open: bool,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// Weather cases ticked (indices in the model's cases).
     pub cases: Vec<usize>,
     /// The settings.
@@ -813,6 +815,7 @@ impl VegetationWindow {
         let iso = settings.iso.0.then_some(settings.iso.1);
         let origin = model.origin;
         let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             // Exit clause: ~1 µs a point and position set; an hour is far
             // beyond what a line needs.
@@ -863,6 +866,8 @@ impl VegetationWindow {
                     positions.spans.len()
                 ));
             }
+            // The structure and section overrides: each span its own cases.
+            positions.retain_cases(&line, &filter);
             let positions = Arc::new(positions);
             let mut check =
                 VegetationCheck::with_positions(Arc::clone(&positions), &classes, params.clone());
@@ -1102,7 +1107,10 @@ impl VegetationWindow {
                         self.save_ui(ui, model, &mut out);
                     }
                 });
-                again |= help::footer(ui, "vegetation-panel", |ui| self.run_ui(ui));
+                again |= help::footer(ui, "vegetation-panel", |ui| {
+                    self.overrides.ui(ui);
+                    self.run_ui(ui)
+                });
             },
         );
         if shown == crate::dockable::Shown::Closed {

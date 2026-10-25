@@ -461,6 +461,8 @@ pub struct Out {
 pub struct SafetyVolumeWindow {
     /// Shown (closed: its layer is taken off the views).
     pub open: bool,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// Weather cases ticked (indices in the model's cases).
     pub cases: Vec<usize>,
     /// The settings.
@@ -489,6 +491,7 @@ impl Default for SafetyVolumeWindow {
     fn default() -> Self {
         Self {
             open: false,
+            overrides: Default::default(),
             cases: Vec::new(),
             settings: Settings::default(),
             job: Job::default(),
@@ -601,6 +604,7 @@ impl SafetyVolumeWindow {
                 )
             })
             .collect();
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             // Exit clause: an hour is far beyond what a line needs.
             let budget =
@@ -613,6 +617,7 @@ impl SafetyVolumeWindow {
                 settings.steps,
                 &params,
                 &budget,
+                &filter,
             )?;
             let colors = v
                 .volumes
@@ -823,6 +828,7 @@ impl SafetyVolumeWindow {
                     self.export_ui(ui, model);
                 });
                 help::footer(ui, "safety-volume-window", |ui| {
+                    self.overrides.ui(ui);
                     again |= help::run_button(
                         ui,
                         !self.job.running(),

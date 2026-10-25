@@ -67,7 +67,7 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_slice()))
         .collect();
-    let report = strings::check(&line, &views, &set.string_rules);
+    let report = strings::check(&line, &views, &set.string_rules, &Default::default());
     for n in &report.notes {
         println!("  note: {n}");
     }

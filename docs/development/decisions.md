@@ -10,6 +10,35 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Weather case groups of structures and sections; the overrides (owner, 2026-10-25)**
+
+- First a structure's single group and a maximum wind pressure from a wind
+  study were proposed; the owner preferred, since some checks need the
+  full wind: a **list of groups** on each structure and each section (the
+  snow load varies along the line), and in **every check two ticks**, the
+  **structure override** and the **section override** — ticked, a result
+  takes only the check's cases that are also in its object's groups.
+- A result at a structure (strings, structure loads) takes its
+  structure's groups; on a span, its section's and both its ends'
+  structures' (a span is at both); string results both their structure's
+  and their section's. Objects without groups: every case of the check.
+- Applied where each check takes a case for an object, before any worst
+  value over cases (clearances: each span's wire per state and its swing
+  arcs; vegetation and safety volumes: the positions of each span; the
+  distance between conductors: the conductors of a case, the same at
+  every unequal-wind level; galloping: the spans of its case; tensions
+  and strings: their rows; structure loads: each load case's weather at
+  each structure). The cases are still solved for the whole line.
+- The structure loads take the structure override only (their loads are
+  summed per structure from every section).
+- ESTI Weisung 240 (Art. 33): a wind study proving lower pressures lets
+  the wind for the conductors' distances to the structures be reduced to
+  no less than 300 N/m², per EN 50341-1 — a group of such cases on the
+  structures concerned; the bound is for the LeV plugin to check, not the
+  core.
+- The ticks are window settings (not yet kept in the rule files); the
+  internal clearances, when written, take them too.
+
 **Measuring tools, phase 3: the wire tools (owner, 2026-10-25)**
 
 - Wire to wire (T5): the closest approach of the two picked spans as

@@ -66,7 +66,13 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_slice()))
         .collect();
-    let report = tension::check(&line, &library, &views, &set.tension_rules);
+    let report = tension::check(
+        &line,
+        &library,
+        &views,
+        &set.tension_rules,
+        &Default::default(),
+    );
     for n in &report.notes {
         println!("  note: {n}");
     }

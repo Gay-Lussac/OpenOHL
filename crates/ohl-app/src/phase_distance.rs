@@ -380,11 +380,24 @@ pub struct Out {
     pub wires: Option<Vec<MeasureWire>>,
 }
 
+/// Whether the overrides let conductor `c` (a span's wire) take weather
+/// case `case`.
+fn conductor_takes(
+    line: &ohl_line::Line,
+    filter: &ohl_weather::CaseFilter,
+    c: &Conductor,
+    case: &str,
+) -> bool {
+    crate::case_groups::span_takes(line, filter, &c.wire.section, c.wire.span, case)
+}
+
 /// The Distance between conductors window (and the one under unequal
 /// wind).
 pub struct PhaseDistanceWindow {
     /// The check it runs.
     pub kind: Kind,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// To be shown (the app opens its page).
     pub open: bool,
     /// A values file chosen (none: the project's copy, else the
@@ -447,6 +460,7 @@ impl PhaseDistanceWindow {
     pub fn new(kind: Kind) -> Self {
         Self {
             kind,
+            overrides: Default::default(),
             open: false,
             file: None,
             cases: BTreeSet::new(),
@@ -931,6 +945,7 @@ impl PhaseDistanceWindow {
             low_share: self.low_share,
         };
         let wind_step = self.wind_step;
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             let mut notes = Vec::new();
             let mut rows = Vec::new();
@@ -938,7 +953,7 @@ impl PhaseDistanceWindow {
                 && let Some((solved, _)) = cases.first()
             {
                 let case = &solved.case;
-                let (levels, n) = ohl_clearance::unequal_wind::solve_levels(
+                let (mut levels, n) = ohl_clearance::unequal_wind::solve_levels(
                     &line,
                     &library,
                     case,
@@ -950,6 +965,22 @@ impl PhaseDistanceWindow {
                     },
                 )?;
                 notes.extend(n.into_iter().map(|n| format!("\"{}\" {n}", case.name)));
+                // The overrides: the conductors whose span does not take
+                // the case left out, the same at every level.
+                if let Some(first) = levels.first() {
+                    let keep: Vec<bool> = first
+                        .conductors
+                        .iter()
+                        .map(|c| conductor_takes(&line, &filter, c, &case.name))
+                        .collect();
+                    for l in &mut levels {
+                        let mut k = 0;
+                        l.conductors.retain(|_| {
+                            k += 1;
+                            keep.get(k - 1).copied().unwrap_or(true)
+                        });
+                    }
+                }
                 // Exit clause: the pairs of a 25 km line at about 20
                 // levels in seconds.
                 let budget =
@@ -1024,7 +1055,8 @@ impl PhaseDistanceWindow {
                         .iter()
                         .map(|f| format!("\"{name}\": not solved: {f}")),
                 );
-                let cs = conductors(&line, &solved.shapes, &library);
+                let mut cs = conductors(&line, &solved.shapes, &library);
+                cs.retain(|c| conductor_takes(&line, &filter, c, &name));
                 // Exit clause: about a second for a 25 km line.
                 let budget =
                     ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(300));
@@ -1281,6 +1313,7 @@ impl PhaseDistanceWindow {
         let page = self.kind.page();
         let out = help::body(ui, page, |ui| self.body_ui(ui, model));
         help::footer(ui, page, |ui| {
+            self.overrides.ui(ui);
             if help::run_button(
                 ui,
                 !self.job.running(),

@@ -209,6 +209,7 @@ fn zones_by_a_rule_file_with_its_check() {
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
+        &Default::default(),
     )
     .unwrap();
     let violations = rows.lines().filter(|l| l.starts_with("violation,")).count();

@@ -58,6 +58,12 @@ pub(super) const STRUCTURES: &[Column] = &[
         Yes,
         "what it is, in words (free text)",
     ),
+    (
+        "weather groups",
+        150.0,
+        Yes,
+        "its weather case groups (Criteria › Weather case groups…), separated by commas: a check with the structure override ticked takes here only its cases in these groups (e.g. a wind study's lower winds); empty: the check's cases",
+    ),
 ];
 
 pub(super) const SECTIONS: &[Column] = &[
@@ -144,6 +150,12 @@ pub(super) const SECTIONS: &[Column] = &[
         220.0,
         Yes,
         "what it is, in words (free text)",
+    ),
+    (
+        "weather groups",
+        150.0,
+        Yes,
+        "its weather case groups (Criteria › Weather case groups…), separated by commas: a check with the section override ticked takes on it only its cases in these groups (e.g. the snow load along the line); empty: the check's cases",
     ),
 ];
 
