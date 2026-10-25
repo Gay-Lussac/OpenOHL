@@ -191,6 +191,7 @@ impl TableKind {
                             s.routes.join(", ")
                         },
                         s.description.clone(),
+                        s.weather_groups.join(", "),
                     ],
                 })
                 .collect(),
@@ -315,6 +316,7 @@ impl TableKind {
                             s.calculation.label().to_owned(),
                             s.color.clone().unwrap_or_default(),
                             s.description.clone(),
+                            s.weather_groups.join(", "),
                         ],
                     }
                 })

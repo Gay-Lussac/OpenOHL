@@ -75,7 +75,22 @@ a description, the cases ticked; **Save** writes them into the file, one
 change) and **picked as one** — a group's button adds its cases — in
 **Criteria › Loads for structures** and in the checks' case lists
 (vertical and radial clearances, vegetation, safety volumes, wire
-tensions, string checks, distance between conductors). Renaming a case in
+tensions, string checks, distance between conductors). **Structures and sections** take groups of their own — the **weather
+groups** column of the Structures and Sections tables, comma-separated
+(a wind study's lower winds at some pylons; the snow load varying along
+the line by section). Every check has two ticks — beside **Run**, in the vertical and radial
+clearance windows under *What is solved*:
+**structure override** and **section override**. Ticked, a result at a
+structure (a string, a structure's loads) or on a span takes only the
+check's cases that are in that structure's or section's groups — a span
+is at its section and at both its ends — and is left out in the others;
+objects without groups take every case of the check. A case is still
+computed for the line as a whole: the overrides choose which results
+count where. Checks with them: vertical and radial clearances, vegetation,
+safety volumes, wire tensions, string checks, distance between conductors
+(also under unequal wind: a pair only in a case both its spans take),
+galloping, and the structure loads (the structure override only: their
+loads are summed per structure from every section). Renaming a case in
 the Weather cases table renames it in the groups too; a name no case has
 (deleted, or renamed elsewhere) stays in its group, shown as such, not
 refused. Group names are unique in the file.

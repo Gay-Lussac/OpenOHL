@@ -110,6 +110,7 @@ impl SectionForm {
             stringing: s.stringing.clone(),
             note: None,
             calculation: s.calculation,
+            weather_groups: s.weather_groups.clone(),
             color: s.color.clone(),
             description: s.description.clone(),
         })
@@ -163,6 +164,7 @@ impl SectionForm {
                 },
                 note: None,
                 calculation: Default::default(),
+                weather_groups: Vec::new(),
                 color: None,
                 description: String::new(),
             },
@@ -265,6 +267,7 @@ impl SectionForm {
             spreads: old.map_or_else(Vec::new, |o| o.spreads.clone()),
             color: self.color.clone(),
             calculation: self.calculation,
+            weather_groups: self.weather_groups.clone(),
             fields: old.map_or_else(Default::default, |o| o.fields.clone()),
         };
         if old.is_some_and(|o| o.points != self.points) {

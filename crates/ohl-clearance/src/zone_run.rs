@@ -99,6 +99,7 @@ pub fn run_zone_check(
     sections_scope: Option<&BTreeSet<String>>,
     budget: &Budget,
     done: &AtomicUsize,
+    filter: &ohl_weather::CaseFilter,
 ) -> Result<ZoneCheckResult, String> {
     let mut sections = sections_needed(line, &rules);
     // The circuits chosen only.
@@ -203,6 +204,7 @@ pub fn run_zone_check(
             ground,
             surfaces,
             points: points.is_some().then_some(&mut feed as _),
+            filter,
         },
         budget,
     )?;

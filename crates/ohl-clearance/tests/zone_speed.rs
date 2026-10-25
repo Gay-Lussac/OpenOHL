@@ -279,6 +279,7 @@ fn speed() {
                         ground: Some(&terrain),
                         surfaces: &[],
                         points: Some(&mut feed),
+                        filter: &Default::default(),
                     },
                     &budget,
                 )

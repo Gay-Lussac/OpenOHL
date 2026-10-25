@@ -971,6 +971,65 @@ fn the_weather_case_table_writes_its_file() {
     assert_solved_fully(&r.model);
 }
 
+/// Weather case groups on structures and sections (owner, 2026-10-25),
+/// typed in their tables as a comma list: a group the case file does not
+/// have is refused (naming those it has); kept on the object, nothing
+/// solved again for them.
+#[test]
+fn structures_and_sections_take_weather_groups() {
+    use crate::tables::TableKind;
+    let mut model = synthetic_project("structure-groups");
+    let path = model.sources.file.parent().unwrap().join("cases.ohlwc");
+    let text = std::fs::read_to_string(root().join("examples/synthetic-line/weather-cases.ohlwc"))
+        .unwrap()
+        + "\n[[group]]\nname = \"internal\"\ncases = [\"glaze ice\"]\n\
+           [[group]]\nname = \"snow\"\ncases = [\"everyday\"]\n";
+    std::fs::write(&path, text).unwrap();
+    model.sources.weather = Some(path);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::Structures;
+    set_cell(
+        &mut harness,
+        kind,
+        "T2",
+        "weather groups",
+        "internal, other",
+    );
+    let e = apply_table(&mut harness, kind, false).unwrap_err();
+    assert!(e.contains("internal, snow"), "{e}");
+    set_cell(&mut harness, kind, "T2", "weather groups", "internal, snow");
+    apply_table(&mut harness, kind, false).unwrap();
+    let s1 = harness.state_mut().ready().unwrap().model.line.sections[0]
+        .id
+        .clone();
+    set_cell(
+        &mut harness,
+        TableKind::Sections,
+        &s1,
+        "weather groups",
+        "snow",
+    );
+    apply_table(&mut harness, TableKind::Sections, false).unwrap();
+    let r = harness.state_mut().ready().unwrap();
+    let t2 = r.model.line.structure("T2").unwrap();
+    assert_eq!(t2.weather_groups, vec!["internal", "snow"]);
+    assert_eq!(r.model.line.sections[0].weather_groups, vec!["snow"]);
+    // The overrides' filter: at T2 the glaze ice and everyday cases only,
+    // on the section everyday only; elsewhere every case.
+    let f = crate::case_groups::Overrides {
+        structures: true,
+        sections: true,
+    }
+    .filter(&r.model);
+    assert!(f.takes(Some("T2"), None, "glaze ice"));
+    assert!(!f.takes(Some("T2"), None, "max temperature"));
+    assert!(!f.takes(None, Some(&s1), "glaze ice"));
+    assert!(f.takes(Some("T3"), None, "max temperature"));
+}
+
 /// Alignment points with the tools: added on the ground (into the nearest
 /// segment; a route following its structures gets points under them
 /// first), moved in the Edit window, deleted.

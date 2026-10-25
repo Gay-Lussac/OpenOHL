@@ -101,6 +101,7 @@ fn without_component(
 ) {
     let probe = Structure {
         routes: Default::default(),
+        weather_groups: Vec::new(),
         id: String::new(),
         position: [0.0; 3],
         orientation_deg: 0.0,

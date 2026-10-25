@@ -450,6 +450,7 @@ pub fn check(
     line: &Line,
     solved: &[(&str, &[SectionShape])],
     rules: &[StringRule],
+    filter: &ohl_weather::CaseFilter,
 ) -> StringReport {
     let mut report = StringReport::default();
     let kv: Vec<Option<f64>> = crate::case::voltages_of(line)
@@ -484,6 +485,11 @@ pub fn check(
                         .points
                         .get(p)
                         .map_or(String::new(), |x| x.structure.clone());
+                    // The overrides: the structure's and the section's own
+                    // groups' cases only.
+                    if !filter.takes(Some(&structure), Some(&section.id), case) {
+                        continue;
+                    }
                     for st in strings {
                         if !rule.strings.takes(st.strain) {
                             continue;
@@ -676,7 +682,12 @@ mod tests {
                 ..StringRule::blank("invented limit across")
             },
         ];
-        let r = check(&line, &[("still", &a), ("wind", &b)], &rules);
+        let r = check(
+            &line,
+            &[("still", &a), ("wind", &b)],
+            &rules,
+            &Default::default(),
+        );
         // The load: the one at 1 N fails in both cases, the others pass.
         let loads: Vec<&StringRow> = r
             .rows
@@ -729,7 +740,12 @@ mod tests {
             .unwrap();
         st.slack = true;
         let label = st.label.clone();
-        let r = check(&line, &[("still", &c)], &[StringRule::blank("u")]);
+        let r = check(
+            &line,
+            &[("still", &c)],
+            &[StringRule::blank("u")],
+            &Default::default(),
+        );
         let up: Vec<&StringRow> = r
             .rows
             .iter()

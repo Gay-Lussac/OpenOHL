@@ -364,6 +364,7 @@ impl Structure {
     pub fn new(id: impl Into<String>, position: Point) -> Self {
         Structure {
             routes: Default::default(),
+            weather_groups: Vec::new(),
             id: id.into(),
             position,
             orientation_deg: 0.0,
@@ -1000,6 +1001,7 @@ mod tests {
         let (points, strings, wires) = from_v1(attachments);
         Structure {
             routes: Default::default(),
+            weather_groups: Vec::new(),
             id: "T".into(),
             position: [0.0; 3],
             orientation_deg: 0.0,

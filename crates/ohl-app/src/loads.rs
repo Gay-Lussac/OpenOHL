@@ -156,6 +156,10 @@ pub fn paint_usage_legend(painter: &egui::Painter, rect: egui::Rect, out_of_date
 pub struct LoadsPage {
     /// The last results (or why there are none).
     pub results: Option<Outcome>,
+    /// The structure override of its cases (its loads are at the
+    /// structures: a load case at a structure with groups only when its
+    /// weather case is in them; the section override not offered).
+    pub overrides: crate::case_groups::Overrides,
     /// A computation running: since, its answer.
     running: Option<(Instant, Receiver<Finished>)>,
     /// How much of their capacity the structures use, per load case (with
@@ -246,6 +250,7 @@ impl LoadsPage {
             .map_err(|e| format!("cross-section library: {e}"));
         // The route worked on only (View › Work on route).
         let scope = model.scope().map(|s| s.structures);
+        let filter = self.overrides.filter(model);
         let (tx, rx) = channel();
         let c = ctx.clone();
         self.stamp.started(model.revision());
@@ -270,6 +275,15 @@ impl LoadsPage {
                         c.loads.retain(|l| on.contains(&l.structure));
                         c.missing.retain(|m| on.contains(&m.structure));
                     }
+                }
+                // The structure override: a load case at a structure with
+                // groups only when its weather case is in them.
+                for c in loads.iter_mut() {
+                    let w = c.case.weather.clone();
+                    c.loads
+                        .retain(|l| filter.takes(Some(&l.structure), None, &w));
+                    c.missing
+                        .retain(|m| filter.takes(Some(&m.structure), None, &w));
                 }
             }
             let usage = r.as_ref().map_or_else(
@@ -331,6 +345,11 @@ impl LoadsPage {
     pub fn ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Option<String> {
         let go = help::body(ui, "loads-page", |ui| self.body_ui(ui, model));
         help::footer(ui, "loads-page", |ui| {
+            ui.checkbox(&mut self.overrides.structures, "structure override")
+                .on_hover_text(
+                    "At a structure with weather case groups (Structures table): only the load \
+                     cases whose weather case is in them",
+                );
             if help::run_button(
                 ui,
                 !self.running(),

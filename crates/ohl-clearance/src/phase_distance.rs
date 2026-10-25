@@ -1153,6 +1153,7 @@ pub(crate) mod tests {
             omit_sets: Vec::new(),
             members: Vec::new(),
             routes: Vec::new(),
+            weather_groups: Vec::new(),
             fields: Default::default(),
         };
         let mut st = st;

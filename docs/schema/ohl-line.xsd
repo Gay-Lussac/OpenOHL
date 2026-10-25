@@ -299,6 +299,14 @@
                     it stands on).</xs:documentation>
                 </xs:annotation>
               </xs:element>
+              <xs:element name="weather_group" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Its weather case groups, by name (2026-10-25): a check with the structure override takes only its cases in them.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="point" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
                   <xs:documentation>An attachment point: where strings hang
@@ -475,6 +483,14 @@
         <xs:element name="section" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
             <xs:sequence>
+              <xs:element name="weather_group" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>Its weather case groups, by name (2026-10-25): a check with the section override takes only its cases in them.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
               <xs:element name="point" type="ohl:sectionPoint" minOccurs="2" maxOccurs="unbounded"/>
               <xs:element name="stringing" type="ohl:stringing"/>
               <!-- Older documents: point loads of their own, read into

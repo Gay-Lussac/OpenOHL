@@ -137,7 +137,16 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
     };
     let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
     let t = Instant::now();
-    let v = safety_volume::run(&line, &library, &chosen, a.wind, steps, &params, &budget)?;
+    let v = safety_volume::run(
+        &line,
+        &library,
+        &chosen,
+        a.wind,
+        steps,
+        &params,
+        &budget,
+        &Default::default(),
+    )?;
     let wind = safety_volume::wind_text(a.wind, steps.margins());
     println!(
         "safety volumes of {}: {} weather cases, {wind}, {} positions ({:.2?})",

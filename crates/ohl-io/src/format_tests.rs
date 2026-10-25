@@ -354,6 +354,14 @@ fn rich_line() -> Line {
         ohl_line::JumperClamp::new("JW", 0.75),
     ]);
     line.jumpers.push(held);
+    // A structure's weather case group and wind study (2026-10-25), a
+    // system's owner and number.
+    line.structures[0].weather_groups = vec!["internal".into(), "wind study".into()];
+    line.sections[0].weather_groups = vec!["snow zone 2".into()];
+    if let Some(sys) = line.systems.first_mut() {
+        sys.owner = "Utility".into();
+        sys.number = "C12".into();
+    }
     // The strings added here: their lengths and directions from where
     // their wire points are.
     line.place_strings().unwrap();

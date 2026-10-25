@@ -56,6 +56,8 @@ pub struct Out {
 pub struct WireTensionsWindow {
     /// Shown.
     pub open: bool,
+    /// The structure and section overrides of its cases.
+    pub overrides: crate::case_groups::Overrides,
     /// The project's rule file read.
     loaded: bool,
     /// The rule file kept.
@@ -179,6 +181,7 @@ impl WireTensionsWindow {
         let line = model.line.clone();
         let library = model.library.clone();
         let rules = self.rules.clone();
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             let mut solved = Vec::new();
             let mut notes = Vec::new();
@@ -203,7 +206,7 @@ impl WireTensionsWindow {
                 .iter()
                 .map(|(n, s)| (n.as_str(), s.as_slice()))
                 .collect();
-            let mut report = tension::check(&line, &library, &views, &rules);
+            let mut report = tension::check(&line, &library, &views, &rules, &filter);
             report.notes.splice(0..0, notes);
             Ok(Report { report, rules })
         });
@@ -290,6 +293,7 @@ impl WireTensionsWindow {
                     self.results_ui(ui, &stale, &mut run, &mut out);
                 });
                 help::footer(ui, "wire-tensions-window", |ui| {
+                    self.overrides.ui(ui);
                     let why = self.why_not_run();
                     run |= help::run_button(
                         ui,

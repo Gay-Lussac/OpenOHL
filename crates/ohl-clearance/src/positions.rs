@@ -1390,6 +1390,44 @@ pub struct Positions {
 }
 
 impl Positions {
+    /// Only the positions the structure and section overrides let their
+    /// span take (owner, 2026-10-25): a span keeps a case's positions
+    /// when its section's and its ends' groups give that case. The
+    /// spans' bounds stay those of all their positions (bounds only: as
+    /// wide or wider).
+    pub fn retain_cases(&mut self, line: &Line, filter: &ohl_weather::CaseFilter) {
+        if filter.is_none() {
+            return;
+        }
+        let takes: Vec<bool> = self
+            .positions
+            .iter()
+            .map(|p| {
+                let w = &self.spans[p.span].wire;
+                let case = &self.cases[p.case];
+                match line.sections.iter().find(|s| s.id == w.section) {
+                    Some(sec) => {
+                        let end = |k: usize| sec.points.get(k).map_or("", |x| x.structure.as_str());
+                        filter.takes_span(&sec.id, [end(w.span), end(w.span + 1)], case)
+                    }
+                    None => true,
+                }
+            })
+            .collect();
+        let mut new_index = vec![None; self.positions.len()];
+        let mut kept = Vec::new();
+        for (k, p) in std::mem::take(&mut self.positions).into_iter().enumerate() {
+            if takes[k] {
+                new_index[k] = Some(kept.len());
+                kept.push(p);
+            }
+        }
+        self.positions = kept;
+        for s in &mut self.spans {
+            s.positions = s.positions.iter().filter_map(|k| new_index[*k]).collect();
+        }
+    }
+
     /// One position per wire, the case as it is: the vegetation check of
     /// one solved case (the axis from the wire's ends).
     pub fn of_wires(case: &str, wires: Vec<Wire>) -> Self {
@@ -2339,6 +2377,54 @@ mod tests {
     /// ice as a spread weight and the wind on the bare diameter, it was
     /// blown 3.7 m against 6.0 m); its radius is the iced one. Extra ice
     /// as a thickness grows that radius by it.
+    /// The overrides keep a span's positions of the cases its section
+    /// takes only, every span's position list renumbered (owner,
+    /// 2026-10-25).
+    #[test]
+    fn positions_keep_the_cases_their_spans_take() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let cases = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .select(&["everyday".into(), "glaze ice".into()], &[])
+        .unwrap();
+        let mut p = solve_positions(
+            &line,
+            &library,
+            &cases,
+            PositionOptions::default(),
+            &Budget::new(),
+        )
+        .unwrap();
+        let before = p.positions.len();
+        let groups = vec![ohl_weather::CaseGroup {
+            name: "warm".into(),
+            description: String::new(),
+            cases: vec!["everyday".into()],
+        }];
+        let warm = ["warm".to_owned()];
+        let filter = ohl_weather::CaseFilter {
+            sections: Some(ohl_weather::OwnCases::new([("S1", &warm[..])], &groups)),
+            structures: None,
+        };
+        p.retain_cases(&line, &filter);
+        assert!(p.positions.len() < before);
+        for s in &p.spans {
+            for &k in &s.positions {
+                let x = &p.positions[k];
+                assert!(std::ptr::eq(&p.spans[x.span], s), "renumbered");
+                if s.wire.section == "S1" {
+                    assert_eq!(p.cases[x.case], "everyday");
+                }
+            }
+        }
+    }
+
     #[test]
     fn unbalanced_ice_takes_the_wind_on_its_iced_diameter() {
         use std::path::Path;

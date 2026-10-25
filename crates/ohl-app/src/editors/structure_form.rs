@@ -47,6 +47,7 @@ impl StructureForm {
             on_alignment: None,
             along_line: along.is_some(),
             routes: Vec::new(),
+            weather_groups: Vec::new(),
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -151,6 +152,7 @@ impl StructureForm {
                 .map(|p| (p.0, p.1)),
             along_line: false,
             routes: s.routes.clone(),
+            weather_groups: s.weather_groups.clone(),
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -224,6 +226,7 @@ impl StructureForm {
                 description: self.description.trim().to_owned(),
                 points: self.global_points(),
                 routes: self.routes.clone(),
+                weather_groups: self.weather_groups.clone(),
                 ..Structure::new(id.clone(), self.position)
             }
         } else {
@@ -258,6 +261,7 @@ impl StructureForm {
             s.height_adjust = self.height_adjust;
             s.description = self.description.trim().to_owned();
             s.routes = self.routes.clone();
+            s.weather_groups.clone_from(&self.weather_groups);
             // Its own points as in the window (in its axes, turned and
             // moved with it); a linked one keeps its joint, its offset
             // following a move (owner decision 2026-10-21).

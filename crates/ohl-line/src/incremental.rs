@@ -357,6 +357,8 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         omit_sets,
         members: _,
         routes,
+        // (Read by the structure checks only, after the solve.)
+        weather_groups: _,
         fields,
     } = a;
     *id == b.id

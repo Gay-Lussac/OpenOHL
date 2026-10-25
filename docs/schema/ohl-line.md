@@ -33,6 +33,7 @@ The names are those of the line file:
        and the line's own <alignment> without id: read and converted -->
   <structure id="T1" x="…" y="…" z="…" orientation_deg="-90" type="…" extension="…"
              height_adjust="0.5">                <!-- feet 0.5 m above the ground -->
+    <weather_group name="…"/>                   <!-- its weather case groups (the structure override) -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" length="…" angle_deg="…" direction_deg="…" weight="…" wind_area="…"
@@ -50,6 +51,7 @@ The names are those of the line file:
   <circuit id="…" name="North" system="…" description="…"/>  <!-- version 7: a circuit; its sections give its name -->
   <section id="S1" cable="…" circuit_name="…" phase_label="L1" system="…" bundle="1"
            bundle_spacing="…" bundle_rotation_deg="…" color="#rrggbb" calculation="creep-rs">
+    <weather_group name="…"/>                   <!-- its weather case groups (the section override) -->
     <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->

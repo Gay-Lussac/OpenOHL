@@ -56,6 +56,8 @@ pub struct Report {
 pub struct GallopingWindow {
     /// Shown.
     pub open: bool,
+    /// The structure and section overrides of its case.
+    pub overrides: crate::case_groups::Overrides,
     /// The parameter file.
     pub file: Option<PathBuf>,
     /// Weather case (index in the model's cases).
@@ -95,6 +97,7 @@ impl GallopingWindow {
         let shapes = solved.shapes.clone();
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
+        let filter = self.overrides.filter(model);
         self.job.start_at(ctx, model.revision(), move || {
             let params = GallopingParams::load(&path)?;
             let mut notes: Vec<String> =
@@ -105,7 +108,11 @@ impl GallopingWindow {
                     params.cases
                 ));
             }
-            let wires = galloping::galloping_wires(&line, &shapes, &library);
+            let mut wires = galloping::galloping_wires(&line, &shapes, &library);
+            // The overrides: the spans that do not take the case left out.
+            wires.retain(|w| {
+                crate::case_groups::span_takes(&line, &filter, &w.wire.section, w.wire.span, &case)
+            });
             // Exit clause: well under a second for any line.
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(300));
@@ -275,6 +282,7 @@ impl GallopingWindow {
                     });
                 });
                 help::footer(ui, "galloping-window", |ui| {
+                    self.overrides.ui(ui);
                     again |= help::run_button(ui, !self.job.running(), "Size the ellipses of every span by the parameter file in the case chosen and check their clearances", None);
                     self.job.status_ui(ui);
                 });

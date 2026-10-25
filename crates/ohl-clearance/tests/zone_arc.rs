@@ -133,6 +133,7 @@ fn run_with(
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
+        &Default::default(),
     )
     .unwrap()
 }
@@ -325,6 +326,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
             None,
             &Budget::new(),
             &AtomicUsize::new(0),
+            &Default::default(),
         )
         .unwrap()
     };
@@ -377,6 +379,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
+        &Default::default(),
     )
     .unwrap_err();
     assert!(e.contains("band margin"), "{e}");
@@ -397,6 +400,7 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
+        &Default::default(),
     )
     .unwrap_err();
     assert!(e.contains("jumper band margin"), "{e}");
@@ -445,6 +449,7 @@ fn a_ground_rule_checks_the_surface_it_names() {
         None,
         &Budget::new(),
         &AtomicUsize::new(0),
+        &Default::default(),
     )
     .unwrap();
     let all = lowest(&r);

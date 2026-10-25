@@ -191,6 +191,7 @@ fn the_example_line_s_system_map() {
             ..SafetyParams::default()
         },
         &Budget::new(),
+        &Default::default(),
     )
     .unwrap_err();
     assert!(e.contains("no system"), "{e}");
@@ -219,6 +220,7 @@ fn the_example_line_s_system_map() {
             ..SafetyParams::default()
         },
         &Budget::new(),
+        &Default::default(),
     )
     .unwrap_err();
     assert!(e.contains("no span"), "{e}");
