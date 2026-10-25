@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Measuring tools, phase 3: the wire tools (owner, 2026-10-25)**
+
+- Wire to wire (T5): the closest approach of the two picked spans as
+  solved, every segment pair (the clearance crate's public segment
+  geometry; the unequal-wind check's own pruned code stays its own), to
+  the surfaces (the nearest subconductors at the points found).
+- Clearance at a point (T4): vertical and shortest to the ground surface
+  the checks use; the shortest searched exactly over every triangle that
+  can be nearer than the ground straight under the point (that bounds
+  it). The sweep along the span runs on the click only (87 → 23 ms on a
+  real span with the search narrowed to the best so far); the value
+  under the cursor is the point's own. The sweep is at the solved points,
+  bundles as one wire there (simplification, said).
+- Wire to object (T6): to a structure's drawn lines (members, else stick
+  drawing; strings) or a point. Background drawings cannot be picked yet.
+- Every kept one recomputes from its anchors (the whole span searched
+  again).
+
 **Weather case groups; Loads for structures explained (owner, 2026-10-25)**
 
 - Groups (a name, a description, cases by name) live in the weather case

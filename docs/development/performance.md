@@ -218,6 +218,11 @@ the line (the default classes and radius): on a real line the span's
 surroundings read in 23 ms, a cursor move 0.3 ms (the nearest point found
 and measured), N (the closest spot of the span) 12 ms.
 
+**Wire tools**: `wire_tools_benchmark` (same variables) times Clearance at
+a point with its sweep along the span — 23 ms on a real span (on the
+click; under the cursor only the point's own, without the sweep) — and
+Wire to wire between two spans, 0.04 ms.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

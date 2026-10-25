@@ -209,11 +209,15 @@ pub(crate) fn check_value(id: &str, value: &Value) -> Result<(), SessionError> {
         )));
     }
     let wanted = match (a.kind, a.tool.as_str()) {
-        (AnnotationKind::Dimension, "height") => 1,
-        (AnnotationKind::Dimension, "distance" | "stations") => 2,
+        (AnnotationKind::Dimension, "height" | "clearance") => 1,
+        (
+            AnnotationKind::Dimension,
+            "distance" | "stations" | "wire_to_wire" | "wire_to_object",
+        ) => 2,
         (AnnotationKind::Dimension, other) => {
             return Err(refused(format!(
-                "annotation {id}: measurement \"{other}\" (distance, height or stations)"
+                "annotation {id}: measurement \"{other}\" (distance, height, stations, \
+                 wire_to_wire, clearance or wire_to_object)"
             )));
         }
         _ => 1,

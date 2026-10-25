@@ -34,14 +34,23 @@ pub enum Kind {
     Height,
     /// Two points' stations and offsets along the route.
     Stations,
+    /// The shortest distance between two wires (their spans or jumpers
+    /// picked), exact on the wires as solved.
+    WireToWire,
+    /// A wire's clearance to the ground at the point picked (vertical and
+    /// shortest) and the smallest along its span.
+    Clearance,
+    /// The shortest distance from a wire (its span or jumper picked) to
+    /// an object: a structure's members, a point.
+    WireToObject,
 }
 
 impl Kind {
     /// The picks it takes.
     pub fn picks(self) -> usize {
         match self {
-            Kind::Height => 1,
-            Kind::Distance | Kind::Stations => 2,
+            Kind::Height | Kind::Clearance => 1,
+            Kind::Distance | Kind::Stations | Kind::WireToWire | Kind::WireToObject => 2,
         }
     }
 
@@ -51,14 +60,24 @@ impl Kind {
             Kind::Distance => "distance",
             Kind::Height => "height",
             Kind::Stations => "stations",
+            Kind::WireToWire => "wire_to_wire",
+            Kind::Clearance => "clearance",
+            Kind::WireToObject => "wire_to_object",
         }
     }
 
     /// From its key.
     pub fn of_key(key: &str) -> Option<Kind> {
-        [Kind::Distance, Kind::Height, Kind::Stations]
-            .into_iter()
-            .find(|k| k.key() == key)
+        [
+            Kind::Distance,
+            Kind::Height,
+            Kind::Stations,
+            Kind::WireToWire,
+            Kind::Clearance,
+            Kind::WireToObject,
+        ]
+        .into_iter()
+        .find(|k| k.key() == key)
     }
 
     /// Its name.
@@ -67,8 +86,85 @@ impl Kind {
             Kind::Distance => "Distance",
             Kind::Height => "Height above ground",
             Kind::Stations => "Stations",
+            Kind::WireToWire => "Wire to wire",
+            Kind::Clearance => "Clearance at a point",
+            Kind::WireToObject => "Wire to object",
         }
     }
+
+    /// Whether pick `k` (from 0) must be on a wire.
+    pub fn wants_wire(self, k: usize) -> bool {
+        match self {
+            Kind::WireToWire => true,
+            Kind::Clearance | Kind::WireToObject => k == 0,
+            _ => false,
+        }
+    }
+}
+
+type P3 = [f64; 3];
+
+fn dist(a: P3, b: P3) -> f64 {
+    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+}
+
+/// The wire an anchor is on, as solved in case `case`: its span's or
+/// jumper's axis.
+fn wire_line(model: &Model, case: usize, anchor: &Anchor) -> Option<Vec<P3>> {
+    match anchor {
+        Anchor::Wire { section, span, .. } => {
+            Some(model.shape(section, case)?.spans.get(*span)?.points.clone())
+        }
+        Anchor::Jumper { jumper, .. } => Some(model.jumper_shape(jumper, case)?.points.clone()),
+        _ => None,
+    }
+}
+
+/// The closest points of two polylines (exact: every pair of
+/// segments) and their distance.
+fn closest_lines(a: &[P3], b: &[P3]) -> Option<(P3, P3, f64)> {
+    let mut best: Option<(P3, P3, f64)> = None;
+    for u in a.windows(2) {
+        for v in b.windows(2) {
+            let (p, q) = ohl_clearance::geometry::closest_between_segments(u[0], u[1], v[0], v[1]);
+            let d = dist(p, q);
+            if best.is_none_or(|x| d < x.2) {
+                best = Some((p, q, d));
+            }
+        }
+    }
+    best
+}
+
+/// The point of a polyline closest to `p`, and its distance.
+fn closest_on_line(a: &[P3], p: P3) -> Option<(P3, f64)> {
+    a.windows(2)
+        .map(|w| ohl_clearance::geometry::closest_on_segment(p, w[0], w[1]))
+        .min_by(|x, y| x.1.total_cmp(&y.1))
+}
+
+/// The ground surface's point closest to `p` within `radius` (in plan)
+/// and its distance: every triangle near, exactly.
+fn closest_ground(model: &Model, p: P3, radius: f64) -> Option<(P3, f64)> {
+    let ground = model.ground_for_checks()?;
+    let mut best: Option<(P3, f64)> = None;
+    ground.triangles_near(p[0], p[1], radius, |t| {
+        let q = ohl_clearance::geometry::closest_on_triangle(p, t[0], t[1], t[2]);
+        let d = dist(p, q);
+        if best.is_none_or(|b| d < b.1) {
+            best = Some((q, d));
+        }
+    });
+    best
+}
+
+/// How far around point `p` (in plan) the ground's closest point can
+/// be: no farther than the ground straight under it (so its height above
+/// that, and a metre), else 100 m.
+fn ground_radius(model: &Model, p: P3) -> f64 {
+    model
+        .ground_at(p[0], p[1])
+        .map_or(100.0, |g| (p[2] - g).abs() + 1.0)
 }
 
 /// A wire picked: what its surface needs.
@@ -451,6 +547,19 @@ pub fn measure(
     picks: &[Pick],
     case_name: &str,
 ) -> Measurement {
+    measure_with(model, lines, kind, picks, case_name, true)
+}
+
+/// [`measure`]; without `whole`, what follows the cursor: the clearance's
+/// sweep along the span left for the click.
+pub fn measure_with(
+    model: &Model,
+    lines: &Centrelines,
+    kind: Kind,
+    picks: &[Pick],
+    case_name: &str,
+    whole: bool,
+) -> Measurement {
     let mut rows = Vec::new();
     let mut notes = Vec::new();
     let mut line = None;
@@ -574,6 +683,188 @@ pub fn measure(
             ));
             line = Some((p, q));
         }
+        Kind::WireToWire | Kind::WireToObject => {
+            let case = model
+                .cases
+                .iter()
+                .position(|c| c.case.name == case_name)
+                .unwrap_or(0);
+            let a_line = wire_line(model, case, &picks[0].anchor);
+            // The other end: a wire, a structure's lines, else a point.
+            let b_lines: Vec<Vec<P3>> = match (&picks[1].anchor, kind) {
+                (a, Kind::WireToWire) => wire_line(model, case, a).into_iter().collect(),
+                (Anchor::Structure { structure } | Anchor::OnStructure { structure, .. }, _) => {
+                    model
+                        .line
+                        .structure(structure)
+                        .map(|st| {
+                            crate::scene::structure_lines(&model.bodies, st)
+                                .into_iter()
+                                .map(|(_, l)| l)
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                }
+                _ => vec![vec![picks[1].at]],
+            };
+            let found = a_line.as_ref().and_then(|a| {
+                b_lines
+                    .iter()
+                    .filter_map(|b| match b.len() {
+                        1 => closest_on_line(a, b[0]).map(|(p, d)| (p, b[0], d)),
+                        _ => closest_lines(a, b),
+                    })
+                    .min_by(|x, y| x.2.total_cmp(&y.2))
+            });
+            match found {
+                None => notes.push(if a_line.is_none() {
+                    "the first pick is not on a wire (a span or a jumper)".into()
+                } else {
+                    "nothing to measure to".into()
+                }),
+                Some((pa, pb, axis)) => {
+                    // Each wire's surface at the points found.
+                    let on_wire = |pick: &Pick, at: P3| -> Option<Pick> {
+                        let line = wire_line(model, case, &pick.anchor)?;
+                        let anchor = match &pick.anchor {
+                            Anchor::Wire { section, span, .. } => Anchor::Wire {
+                                section: section.clone(),
+                                span: *span,
+                                fraction: fraction_along(&line, at),
+                            },
+                            Anchor::Jumper { jumper, .. } => Anchor::Jumper {
+                                jumper: jumper.clone(),
+                                fraction: fraction_along(&line, at),
+                            },
+                            _ => return None,
+                        };
+                        pick_of(model, case, &anchor)
+                    };
+                    let a = on_wire(&picks[0], pa);
+                    let b = (kind == Kind::WireToWire)
+                        .then(|| on_wire(&picks[1], pb))
+                        .flatten();
+                    let p = a.as_ref().map_or(pa, |x| surface_towards(x, pb));
+                    let q = b.as_ref().map_or(pb, |x| surface_towards(x, p));
+                    let p = a.as_ref().map_or(p, |x| surface_towards(x, q));
+                    let d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+                    let h = d[0].hypot(d[1]);
+                    rows.push(row("shortest distance", h.hypot(d[2]), "m"));
+                    rows.push(row("between the axes", axis, "m"));
+                    rows.push(row("horizontal", h, "m"));
+                    rows.push(row("vertical (second − first)", d[2], "m"));
+                    if h.hypot(d[2]) > 0.0 {
+                        rows.push(row(
+                            "angle from the vertical",
+                            h.atan2(d[2].abs()).to_degrees(),
+                            "°",
+                        ));
+                    }
+                    notes.push(
+                        "the closest points of the whole span(s) as solved in this case, every \
+                         segment against every segment (exact on the solved wire); to the \
+                         wires' surfaces"
+                            .into(),
+                    );
+                    line = Some((p, q));
+                }
+            }
+        }
+        Kind::Clearance => {
+            let case = model
+                .cases
+                .iter()
+                .position(|c| c.case.name == case_name)
+                .unwrap_or(0);
+            let a = &picks[0];
+            let radius = a.wire.as_ref().map_or(0.0, |w| w.radius);
+            let lowest = a
+                .wire
+                .as_ref()
+                .and_then(|w| w.axes.iter().copied().min_by(|x, y| x[2].total_cmp(&y[2])))
+                .unwrap_or(a.at);
+            let bottom = [lowest[0], lowest[1], lowest[2] - radius];
+            if let Some(g) = model.ground_at(bottom[0], bottom[1]) {
+                rows.push(row("vertical clearance here", bottom[2] - g, "m"));
+            }
+            // Shortest: from each subconductor's surface.
+            let axes = a.wire.as_ref().map_or(vec![a.at], |w| w.axes.clone());
+            let shortest = axes
+                .iter()
+                .filter_map(|x| {
+                    closest_ground(model, *x, ground_radius(model, *x)).map(|(q, d)| (*x, q, d))
+                })
+                .min_by(|x, y| x.2.total_cmp(&y.2));
+            match shortest {
+                Some((from, q, d)) => {
+                    let p = surface_towards(
+                        &Pick {
+                            at: from,
+                            what: String::new(),
+                            wire: Some(OnWire {
+                                axes: vec![from],
+                                radius,
+                            }),
+                            anchor: a.anchor.clone(),
+                        },
+                        q,
+                    );
+                    rows.insert(0, row("shortest to the ground here", d - radius, "m"));
+                    line = Some((p, q));
+                }
+                None => notes.push("no ground surface near this point".into()),
+            }
+            // Along the whole span (on the click): at each of its solved
+            // points, the lowest above the ground first; a point's ground
+            // search no wider than the best so far (nothing farther can be
+            // nearer).
+            if let Some(span) = wire_line(model, case, &a.anchor).filter(|_| whole) {
+                let mut low_v: Option<(f64, P3)> = None;
+                let mut low_s: Option<(f64, P3)> = None;
+                let mut order: Vec<(f64, P3)> = span
+                    .iter()
+                    .map(|x| {
+                        let v = model
+                            .ground_at(x[0], x[1])
+                            .map_or(f64::INFINITY, |g| x[2] - g);
+                        (v, *x)
+                    })
+                    .collect();
+                order.sort_by(|p, q| p.0.total_cmp(&q.0));
+                for (v, x) in order {
+                    if v.is_finite() && low_v.is_none_or(|b| v - radius < b.0) {
+                        low_v = Some((v - radius, x));
+                    }
+                    let reach = match low_s {
+                        Some((best, _)) => (best + radius).min(ground_radius(model, x)),
+                        None => ground_radius(model, x),
+                    };
+                    if let Some((_, d)) = closest_ground(model, x, reach) {
+                        let v = d - radius;
+                        if low_s.is_none_or(|b| v < b.0) {
+                            low_s = Some((v, x));
+                        }
+                    }
+                }
+                if let Some((v, _)) = low_v {
+                    rows.push(row("smallest vertical along the span", v, "m"));
+                }
+                if let Some((v, _)) = low_s {
+                    rows.push(row("smallest shortest along the span", v, "m"));
+                }
+                notes.push(format!(
+                    "along the span: at its {} solved points (the wire's axis less its radius; \
+                     a bundle's subconductors not apart — simplification)",
+                    span.len()
+                ));
+            }
+            notes.push(
+                "ground: the surface the checks use; the shortest distance over every triangle \
+                 that can be nearer than the ground straight under the point, exact; a \
+                 measurement, not a check (no rule, no limit)"
+                    .into(),
+            );
+        }
     }
     Measurement {
         kind,
@@ -654,10 +945,25 @@ pub struct Others {
 impl Measuring {
     /// A pick of tool `kind`: kept, and once there are enough the
     /// measurement made (the panel opened).
-    pub fn click(&mut self, model: &Model, kind: Kind, case_name: &str, pick: Pick) {
+    pub fn click(
+        &mut self,
+        model: &Model,
+        kind: Kind,
+        case_name: &str,
+        pick: Pick,
+    ) -> Result<(), String> {
         if self.kind != Some(kind) {
             self.picks.clear();
             self.kind = Some(kind);
+        }
+        if kind.wants_wire(self.picks.len())
+            && !matches!(pick.anchor, Anchor::Wire { .. } | Anchor::Jumper { .. })
+        {
+            return Err(format!(
+                "{}: pick a wire (a span or a jumper), not {}",
+                kind.name(),
+                pick.what
+            ));
         }
         self.picks.push(pick);
         if self.picks.len() >= kind.picks() {
@@ -668,6 +974,7 @@ impl Measuring {
             self.open = true;
         }
         self.live = None;
+        Ok(())
     }
 
     /// The point under the cursor with tool `kind` held: the live
@@ -681,10 +988,13 @@ impl Measuring {
         self.lines.update(model);
         let lines = &self.lines;
         self.live = pick.as_ref().and_then(|p| {
-            (self.picks.len() + 1 == kind.picks()).then(|| {
+            (self.picks.len() + 1 == kind.picks()
+                && (!kind.wants_wire(self.picks.len())
+                    || matches!(p.anchor, Anchor::Wire { .. } | Anchor::Jumper { .. })))
+            .then(|| {
                 let mut all = self.picks.clone();
                 all.push(p.clone());
-                measure(model, lines, kind, &all, case_name)
+                measure_with(model, lines, kind, &all, case_name, false)
             })
         });
         self.hover = pick;
@@ -1368,11 +1678,15 @@ mod tests {
             lines.station_of(b.position).unwrap(),
         );
         let mut state = Measuring::default();
-        state.click(&m, Kind::Stations, "c", point(a.position));
+        state
+            .click(&m, Kind::Stations, "c", point(a.position))
+            .unwrap();
         assert!(state.done.is_empty());
         state.hover(&m, Kind::Stations, "c", Some(point(b.position)));
         assert!(state.live.is_some(), "the value before the click");
-        state.click(&m, Kind::Stations, "c", point(b.position));
+        state
+            .click(&m, Kind::Stations, "c", point(b.position))
+            .unwrap();
         let r = &state.done[0];
         if sa.0 == sb.0 {
             assert!((r.rows[0].value - (sb.1 - sa.1)).abs() < 1e-9);
@@ -1623,5 +1937,83 @@ mod keep_tests {
         }
         h.run();
         assert_eq!(kept(&mut h), 3);
+    }
+}
+
+/// Phase 3's wire tools on the example line: wire to wire is the closest
+/// approach of the two spans (to the surfaces: less than between the
+/// axes), the clearance's shortest distance is no more than its vertical
+/// one, a wire to a structure is measured to its lines.
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    fn wire(m: &Model, section: usize, f: f64) -> Pick {
+        let s = &m.line.sections[section];
+        pick_of(
+            m,
+            0,
+            &Anchor::Wire {
+                section: s.id.clone(),
+                span: 0,
+                fraction: f,
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn wire_tools() {
+        let m = crate::tests::synthetic();
+        let lines = Centrelines::of(&m);
+        let case = m.cases[0].case.name.clone();
+        let (a, b) = (wire(&m, 0, 0.5), wire(&m, 1, 0.5));
+        let r = measure(&m, &lines, Kind::WireToWire, &[a.clone(), b.clone()], &case);
+        let (d, axes) = (r.rows[0].value, r.rows[1].value);
+        assert!(d > 0.0 && d < axes, "{r:?}");
+        // No closer than the brute force on the axes.
+        let la = wire_line(&m, 0, &a.anchor).unwrap();
+        let lb = wire_line(&m, 0, &b.anchor).unwrap();
+        let brute = la
+            .iter()
+            .flat_map(|p| lb.iter().map(move |q| dist(*p, *q)))
+            .fold(f64::INFINITY, f64::min);
+        assert!(axes <= brute + 1e-9, "{axes} {brute}");
+        // Clearance: shortest no more than vertical.
+        let c = measure(&m, &lines, Kind::Clearance, std::slice::from_ref(&a), &case);
+        let get = |name: &str| c.rows.iter().find(|r| r.name == name).map(|r| r.value);
+        if let (Some(s), Some(v)) = (
+            get("shortest to the ground here"),
+            get("vertical clearance here"),
+        ) {
+            assert!(s <= v + 1e-9 && s > 0.0, "{c:?}");
+        }
+        assert!(get("smallest vertical along the span").is_some(), "{c:?}");
+        // A wire to a structure.
+        let t = pick_of(
+            &m,
+            0,
+            &Anchor::Structure {
+                structure: m.line.structures[2].id.clone(),
+            },
+        )
+        .unwrap();
+        let o = measure(&m, &lines, Kind::WireToObject, &[a, t], &case);
+        assert!(
+            o.rows[0].value.is_finite() && o.rows[0].value >= 0.0,
+            "{o:?}"
+        );
+        // Not a wire first: refused, said why.
+        let mut st = Measuring::default();
+        let free = Pick {
+            at: [0.0, 0.0, 0.0],
+            what: "point".into(),
+            wire: None,
+            anchor: Anchor::Point {
+                at: [0.0, 0.0, 0.0],
+                what: String::new(),
+            },
+        };
+        assert!(st.click(&m, Kind::WireToWire, &case, free).is_err());
     }
 }
