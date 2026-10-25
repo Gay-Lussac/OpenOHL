@@ -5,7 +5,9 @@ Status: **proposed** (draft for the owner, 2026-10-25); **phase 1 built**
 station and offset, the Measurements panel — in active development, not
 approved); **phase 2 built** (2026-10-25: kept measurements and notes as
 annotations — leaders as notes with a fixed short leader, placement by
-hand not yet). Nothing else here is built or approved. The owner decided four of the first draft's questions
+hand not yet); **T11 follow and snap built** (2026-10-25: wires, jumpers
+and structures; a kept one keeps its LiDAR point — open question 2 not
+decided yet). Nothing else here is built or approved. The owner decided four of the first draft's questions
 (2026-10-25: stored apart from the line; wire distances to the surface;
 an annotation deleted with its object; shared by everyone, others' hidden
 in the display options) and asked for one more tool (T11, follow an

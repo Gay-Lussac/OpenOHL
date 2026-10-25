@@ -562,8 +562,44 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
             let pick = hover.and_then(|u| crate::measure::resolve(&r.model, r.case, &u));
             r.measuring.hover(&r.model, kind, &case_name, pick);
         }
+        None if r.hotbar.tool() == crate::tools::Tool::Follow => {
+            let case_name = r
+                .model
+                .cases
+                .get(r.case)
+                .map_or(String::new(), |c| c.case.name.clone());
+            let typing = ctx.egui_wants_keyboard_input();
+            if r.measuring.follow.subject.is_some()
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                r.measuring.follow.subject = None;
+                r.measuring.follow.live = None;
+            }
+            r.measuring.lines.update(&r.model);
+            let lines = r.measuring.lines.clone();
+            r.measuring
+                .follow
+                .hover(&r.model, r.case, &lines, &case_name, hover.as_ref(), ctx);
+            if !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::N)) {
+                r.measuring
+                    .follow
+                    .closest(&r.model, r.case, &lines, &case_name);
+                r.measuring.follow.pinned = r.measuring.follow.live.is_some();
+            }
+            // What the views draw: the object's point and the measured line.
+            r.measuring.picks.clear();
+            r.measuring.live = r.measuring.follow.live.clone();
+            r.measuring.hover = r
+                .measuring
+                .follow
+                .live
+                .as_ref()
+                .and_then(|m| m.picks.first().cloned());
+            r.measuring.kind = None;
+            r.measuring.follow.panel(ctx, &r.model);
+        }
         None => {
-            if r.measuring.kind.is_some() {
+            if r.measuring.kind.is_some() || r.measuring.live.is_some() {
                 r.measuring.cancel();
                 r.measuring.kind = None;
             }

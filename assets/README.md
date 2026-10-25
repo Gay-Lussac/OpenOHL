@@ -22,7 +22,7 @@ every file parses.
 | `brand/ohl-design-icon.svg` | OHL-Design's window (and Dock / taskbar) icon |
 | `brand/ohl-structure-icon.svg` | OHL-Structure's window (and Dock / taskbar) icon |
 | `brand/openohl-mark.svg` | both start pages (above the name), OHL-Design's Help menu, OHL-Structure's About window |
-| `icons/tools/select.svg` … `replace.svg`, `measure-*.svg`, `note.svg` (19 files: select, move, delete, goto, edit, add-structure, add-string, string-wire, add-alignment, new-alignment, edit-alignment, add-jumper, on-span, link, replace, measure-distance, measure-height, measure-stations, note) | OHL-Design's tools: the hotbar slots, the inventory, the Tools menu, the quick bar (`link.svg`: the Link tool, also OHL-Structure's Link button) |
+| `icons/tools/select.svg` … `replace.svg`, `measure-*.svg`, `follow.svg`, `note.svg` (20 files: select, move, delete, goto, edit, add-structure, add-string, string-wire, add-alignment, new-alignment, edit-alignment, add-jumper, on-span, link, replace, measure-distance, measure-height, measure-stations, follow, note) | OHL-Design's tools: the hotbar slots, the inventory, the Tools menu, the quick bar (`link.svg`: the Link tool, also OHL-Structure's Link button) |
 | `icons/tools/add-joint.svg` | OHL-Structure: Body › Add a joint; Add joint (Joints and Members panels); Joint (Extensions panel) |
 | `icons/tools/add-member.svg` | OHL-Structure: Body › Member between the two joints; Member (Joints and Members panels, Extensions panel) |
 | `icons/tools/point-on-joint.svg` | OHL-Structure: Body › Point on the joint; Point here |

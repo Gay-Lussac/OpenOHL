@@ -346,7 +346,7 @@ suggests ticking weather cases here.
 
 ## Tools: hotbar and inventory
 
-As in Minecraft, the bottom of the 3D view holds a **hotbar** (it goes with the 3D view when another page is in front; the inventory shows it to arrange it) of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair) — or a left-click, with the option [**Tools act on left-click**](#tools-act-on-left-click). The tools by theme — **General**: Select, Edit, Delete, Go to structure (G); **Alignments**: New alignment, Add alignment point, Edit alignment; **Structures**: Add structure, Move structure (M), Replace structure, Link attachment point, Add string; **Wires**: String wire, Add jumper, Add on span; **Measure**: Distance, Height above ground, Stations, Note (see [Editing](#editing), [Routes and alignments](#routes-and-alignments) and [Measuring](#measuring)). A new user's hotbar holds Select, Move structure, Delete, Go to structure, Edit, Add structure, Add string, String wire and **New alignment**; the others wait in the inventory. Holding a tool that is not in the hotbar (from the Tools menu, a key, a link of Next steps) puts it into an empty slot — the active one if it is empty — else into the last slot: never over the first slot (Select) nor over the tool held. A left click selects (a right-click with the option on); a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person), also when it replaces a window already open for another object; it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool, grouped by these themes (the **Tools** menu lists them in the same order, a line between themes) (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come. Each tool has its icon (the drawings of `assets/icons/tools/`) in its slot, in the inventory, in the **Tools** menu and on the quick bar; in the menus it takes the text colour of the theme (light or dark). The window and the start page show the OpenOHL mark and OHL-Design's icon; **Help › About** shows the mark with the version.
+As in Minecraft, the bottom of the 3D view holds a **hotbar** (it goes with the 3D view when another page is in front; the inventory shows it to arrange it) of nine tool slots. Choosing a slot — **1–9**, a click on it, or the **wheel** while the mouse is captured in first person, one slot per wheel notch (a trackpad steps at a steady pace; Ctrl + wheel stays the speed) — only *holds* its tool; a **right-click** on an object uses it (in first person, on what is under the crosshair) — or a left-click, with the option [**Tools act on left-click**](#tools-act-on-left-click). The tools by theme — **General**: Select, Edit, Delete, Go to structure (G); **Alignments**: New alignment, Add alignment point, Edit alignment; **Structures**: Add structure, Move structure (M), Replace structure, Link attachment point, Add string; **Wires**: String wire, Add jumper, Add on span; **Measure**: Distance, Height above ground, Stations, Follow and snap, Note (see [Editing](#editing), [Routes and alignments](#routes-and-alignments) and [Measuring](#measuring)). A new user's hotbar holds Select, Move structure, Delete, Go to structure, Edit, Add structure, Add string, String wire and **New alignment**; the others wait in the inventory. Holding a tool that is not in the hotbar (from the Tools menu, a key, a link of Next steps) puts it into an empty slot — the active one if it is empty — else into the last slot: never over the first slot (Select) nor over the tool held. A left click selects (a right-click with the option on); a right-*drag* still pans. A window opened by a tool (Move, an editor, the confirmation of a deletion, Go to) frees a captured mouse and opens at the crosshair (or at the mouse outside first person), also when it replaces a window already open for another object; it can be dragged anywhere, also partly off the screen. **E** opens the **inventory** with every tool, grouped by these themes (the **Tools** menu lists them in the same order, a line between themes) (**E** or **Escape** closes it); only while it is open can the hotbar be arranged: drag a tool onto a slot, drag slots to swap them, drag a slot back to the inventory (or right-click the slot) to empty it. The arrangement is remembered. New tools are added to the inventory as they come. Each tool has its icon (the drawings of `assets/icons/tools/`) in its slot, in the inventory, in the **Tools** menu and on the quick bar; in the menus it takes the text colour of the theme (light or dark). The window and the start page show the OpenOHL mark and OHL-Design's icon; **Help › About** shows the mark with the version.
 
 ## Measuring
 
@@ -398,6 +398,29 @@ project** in the panel (**Delete** there; a measurement not drawn in the
 case shown gives its last value). **Others' measurements** and **Others'
 notes** — ticks in the panel and in Tools › Display options, yours only —
 hide those of the other users.
+
+**Follow and snap** (Tools › Measure; 2026-10-25) measures from an object
+to the LiDAR along it: right-click a **wire** (a span), a **jumper** or a
+**structure** — it is selected —, tick the **LiDAR classes** in its panel
+(by default those shown, but the line's own — conductors, shield wires,
+insulators, structures, by their roles in the class scheme — and noise),
+then move the cursor along the object: for the object's point under the
+cursor (elsewhere: the object's point nearest in plan to the point under
+the cursor) the **nearest stored point** of those classes within the
+search radius (30 m by default, in the panel) is measured live — to the
+wire's surface — and the line jumps from point to point as the cursor
+moves, with no click. A right-click **keeps** it in the project (as
+**Keep**), and the tool stays on the object for the next one. **N** jumps
+to the **closest spot of the whole object** (every point within the radius
+measured to the object's lines as solved; kept until the cursor moves).
+**Escape** or **Another object** picks another. The points are the stored
+ones at full density, not the thinned ones drawn: those of the ticked
+classes around the object are read once, in the background (a span of a
+real line: about 25–65 ms), then each cursor move is a search of the
+nearby ones (well under a millisecond). Nothing of the classes within the
+radius: it says so, never a farther point. A point on a structure is kept
+by its offset from the structure's base (it follows the structure moved,
+not turned).
 
 ## Clearances
 

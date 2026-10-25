@@ -172,6 +172,32 @@ impl Ready {
     pub(super) fn use_tool_at(&mut self, u: crate::selection::Use) {
         use crate::tools::Tool;
         let tool = self.hotbar.tool();
+        // Follow and snap: the first click picks the object; then a click
+        // keeps the measurement found.
+        if tool == Tool::Follow {
+            let f = &mut self.measuring.follow;
+            match (&f.live, crate::follow::Subject::of(&u.target)) {
+                (Some(m), _) if f.subject.is_some() => {
+                    let user = self.model.user_name();
+                    let time = self
+                        .model
+                        .session()
+                        .and_then(|s| s.now().ok())
+                        .unwrap_or_default();
+                    self.measuring.done.push(m.clone());
+                    let k = self.measuring.done.len() - 1;
+                    self.measuring.keep(k, &user, time);
+                    self.measuring.open = true;
+                }
+                (_, Some(subject)) => {
+                    f.subject = Some(subject.clone());
+                    f.live = None;
+                    self.select(subject.selection());
+                }
+                _ => self.hint(tool),
+            }
+            return;
+        }
         // The Note tool: a note's window on what was clicked.
         if tool == Tool::Note {
             let anchor = crate::measure::anchor_of(&self.model, self.case, &u);
