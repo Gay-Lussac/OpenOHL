@@ -575,16 +575,14 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
                 r.measuring.follow.subject = None;
                 r.measuring.follow.live = None;
             }
-            r.measuring.lines.update(&r.model);
-            let lines = r.measuring.lines.clone();
-            r.measuring
-                .follow
-                .hover(&r.model, r.case, &lines, &case_name, hover.as_ref(), ctx);
+            // (The alignments borrowed, not copied every frame.)
+            let m = &mut r.measuring;
+            m.lines.update(&r.model);
+            m.follow
+                .hover(&r.model, r.case, &m.lines, &case_name, hover.as_ref(), ctx);
             if !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::N)) {
-                r.measuring
-                    .follow
-                    .closest(&r.model, r.case, &lines, &case_name);
-                r.measuring.follow.pinned = r.measuring.follow.live.is_some();
+                m.follow.closest(&r.model, r.case, &m.lines, &case_name);
+                m.follow.pinned = m.follow.live.is_some();
             }
             // What the views draw: the object's point and the measured line.
             r.measuring.picks.clear();
@@ -608,7 +606,11 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
             }
         }
     }
-    r.measuring.refresh_kept(&r.model, r.case);
+    r.measuring.refresh_kept(
+        &r.model,
+        r.case,
+        crate::measure::Others::of(&r.model.section_display),
+    );
     // The Measurements panel or a note's window just opened (a measuring
     // tool's click in first person): the mouse is freed to use it.
     let opened = (r.measuring.open && !r.measuring.was_open) || r.measuring.note_opened;
@@ -638,6 +640,12 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
     );
     if r.model.section_display != before {
         r.refresh_views();
+        // Others' shown or hidden: drawn from this frame.
+        r.measuring.refresh_kept(
+            &r.model,
+            r.case,
+            crate::measure::Others::of(&r.model.section_display),
+        );
     }
     // Kept and deleted: one command each (undo as any edit).
     let actions = std::mem::take(&mut r.measuring.actions);
@@ -645,7 +653,11 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
         for (what, command) in actions {
             r.perform(crate::edit::Action::Command { what, command });
         }
-        r.measuring.refresh_kept(&r.model, r.case);
+        r.measuring.refresh_kept(
+            &r.model,
+            r.case,
+            crate::measure::Others::of(&r.model.section_display),
+        );
     }
 }
 

@@ -19,6 +19,8 @@
 //! wire is measured to its **surface** (owner, 2026-10-25): the
 //! subconductor nearest to the other end, less its radius.
 
+use std::sync::Arc;
+
 use eframe::egui;
 
 use crate::model::Model;
@@ -897,8 +899,11 @@ pub struct Measuring {
     /// The annotations kept in the project, with what each gives now.
     pub kept: Vec<Kept>,
     /// What `kept` was computed from: the annotations' stamp, the line
-    /// version, the case and whether it was solved.
-    kept_key: Option<(u64, u64, usize, bool)>,
+    /// version, the case, whether it was solved and others' shown.
+    kept_key: Option<(u64, u64, usize, bool, Others)>,
+    /// The kept ones as the views draw them, for others' shown as given
+    /// (made with `kept`, not every frame).
+    drawn: Option<(Others, KeptLines, KeptNotes)>,
     /// A note being written (the Note tool clicked an object).
     pub note: Option<NoteDraft>,
     /// A note's window just opened (the mouse is freed).
@@ -948,6 +953,16 @@ pub struct Others {
     pub measurements: bool,
     /// Others' notes.
     pub notes: bool,
+}
+
+impl Others {
+    /// As the Display options tick them.
+    pub fn of(display: &crate::annotations::SectionDisplay) -> Self {
+        Self {
+            measurements: !display.hide_others_measurements,
+            notes: !display.hide_others_notes,
+        }
+    }
 }
 
 impl Measuring {
@@ -1024,6 +1039,26 @@ impl Measuring {
         {
             lines.push((a, b, m.label()));
         }
+        let (kept, notes) = match &self.drawn {
+            Some((o, kept, notes)) if *o == others => (kept.clone(), notes.clone()),
+            _ => self.kept_drawn(others),
+        };
+        let mut points: Vec<[f64; 3]> = self.picks.iter().map(|p| p.at).collect();
+        if let Some(h) = &self.hover {
+            points.push(h.at);
+        }
+        Overlay {
+            lines,
+            points,
+            hover: self.hover.as_ref().map(|h| (h.at, h.what.clone())),
+            kept,
+            notes,
+        }
+    }
+
+    /// The kept measurements' lines and the notes drawn, with their
+    /// labels (others' on their ticks).
+    fn kept_drawn(&self, others: Others) -> (KeptLines, KeptNotes) {
         let mut kept = Vec::new();
         let mut notes = Vec::new();
         for k in &self.kept {
@@ -1049,28 +1084,26 @@ impl Measuring {
                 _ => {}
             }
         }
-        let mut points: Vec<[f64; 3]> = self.picks.iter().map(|p| p.at).collect();
-        if let Some(h) = &self.hover {
-            points.push(h.at);
-        }
-        Overlay {
-            lines,
-            points,
-            hover: self.hover.as_ref().map(|h| (h.at, h.what.clone())),
-            kept,
-            notes,
-        }
+        (Arc::new(kept), Arc::new(notes))
     }
 
     /// The kept annotations computed again when they, the line, the case
-    /// shown or its solution changed.
-    pub fn refresh_kept(&mut self, model: &Model, case: usize) {
+    /// shown, its solution or others' shown changed. Others' measurements
+    /// hidden are not computed (a clearance sweeps its span).
+    pub fn refresh_kept(&mut self, model: &Model, case: usize, others: Others) {
         let Some(session) = model.session() else {
             self.kept.clear();
+            self.drawn = None;
             return;
         };
         let ready = model.cases.get(case).is_some_and(|c| c.ready);
-        let key = (session.annotations_stamp(), model.line_version, case, ready);
+        let key = (
+            session.annotations_stamp(),
+            model.line_version,
+            case,
+            ready,
+            others,
+        );
         if self.kept_key == Some(key) {
             return;
         }
@@ -1085,6 +1118,15 @@ impl Measuring {
             .annotations()
             .into_iter()
             .map(|ann| {
+                let mine = ann.author == user;
+                if !mine && !others.measurements && Kind::of_key(&ann.tool).is_some() {
+                    return Kept {
+                        mine,
+                        ann,
+                        now: Err("hidden".into()),
+                        at: None,
+                    };
+                }
                 let picks: Option<Vec<Pick>> = ann
                     .anchors
                     .iter()
@@ -1097,14 +1139,11 @@ impl Measuring {
                     (None, Some(p)) => (Err(String::new()), p.first().map(|x| x.at)),
                     _ => (Err(format!("not drawn in weather case {case_name}")), None),
                 };
-                Kept {
-                    mine: ann.author == user,
-                    ann,
-                    now,
-                    at,
-                }
+                Kept { mine, ann, now, at }
             })
             .collect();
+        let (kept, notes) = self.kept_drawn(others);
+        self.drawn = Some((others, kept, notes));
     }
 
     /// Measurement `k` of the panel kept in the project (a command to
@@ -1512,6 +1551,17 @@ impl Measuring {
     }
 }
 
+/// The kept measurements drawn: their annotation's id, the line's ends,
+/// the label.
+pub type KeptLines = Arc<Vec<(String, [f64; 3], [f64; 3], String)>>;
+
+/// The kept notes drawn: their annotation's id, the point, the text.
+pub type KeptNotes = Arc<Vec<(String, [f64; 3], String)>>;
+
+/// The eye and the label distance of a 3D view: labels farther are not
+/// written (`None`: the plan and the profile, every label).
+pub type Near = Option<([f64; 3], f64)>;
+
 /// What the views draw for the measuring tools.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Overlay {
@@ -1521,10 +1571,11 @@ pub struct Overlay {
     pub points: Vec<[f64; 3]>,
     /// The point under the cursor and what it is.
     pub hover: Option<([f64; 3], String)>,
-    /// The kept measurements' lines and labels.
-    pub kept: Vec<(String, [f64; 3], [f64; 3], String)>,
+    /// The kept measurements' lines and labels (made when they change,
+    /// shared by the views).
+    pub kept: KeptLines,
     /// The kept notes: their point and text.
-    pub notes: Vec<(String, [f64; 3], String)>,
+    pub notes: KeptNotes,
 }
 
 /// The kept measurements' and notes' colour.
@@ -1543,11 +1594,13 @@ impl Overlay {
     }
 
     /// The kept measurement or note drawn under `pos` (screen, within 8
-    /// pixels of its line or its point), by its annotation's id.
+    /// pixels of its line or its point, or of a note's text where it is
+    /// written: within `near`), by its annotation's id.
     pub fn hit(
         &self,
         screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>,
         pos: egui::Pos2,
+        near: Near,
     ) -> Option<String> {
         let mut best: Option<(f32, String)> = None;
         let mut consider = |d: f32, id: &String| {
@@ -1555,7 +1608,7 @@ impl Overlay {
                 best = Some((d, id.clone()));
             }
         };
-        for (id, a, b, _) in &self.kept {
+        for (id, a, b, _) in self.kept.iter() {
             if let (Some(p), Some(q)) = (screen(*a), screen(*b)) {
                 let pq = q - p;
                 let l2 = pq.length_sq();
@@ -1567,66 +1620,114 @@ impl Overlay {
                 consider((p + pq * u).distance(pos), id);
             }
         }
-        for (id, at, _) in &self.notes {
+        for (id, at, _) in self.notes.iter() {
             if let Some(p) = screen(*at) {
                 // The point, or its text up the leader.
-                let text = p + egui::vec2(30.0, -20.0);
-                consider(p.distance(pos).min(text.distance(pos) - 12.0).max(0.0), id);
+                let d = if written(near, *at) {
+                    let text = p + egui::vec2(30.0, -20.0);
+                    p.distance(pos).min(text.distance(pos) - 12.0).max(0.0)
+                } else {
+                    p.distance(pos)
+                };
+                consider(d, id);
             }
         }
         best.map(|b| b.1)
     }
 
-    /// Draws it with `painter`, points to the screen by `screen`.
-    pub fn paint(&self, painter: &egui::Painter, screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>) {
-        // The kept ones under what is being measured.
-        for (_, a, b, label) in &self.kept {
-            let (Some(p), Some(q)) = (screen(*a), screen(*b)) else {
-                continue;
-            };
-            for (w, c) in [(3.5, egui::Color32::from_black_alpha(160)), (1.5, KEPT)] {
-                painter.line_segment([p, q], egui::Stroke::new(w, c));
-            }
-            for x in [p, q] {
-                painter.circle_filled(x, 2.5, KEPT);
-            }
-            let mid = p + (q - p) * 0.5;
-            label_at(painter, mid + egui::vec2(8.0, -8.0), label, KEPT);
+    /// Draws it with `painter`, points to the screen by `screen`; in 3D
+    /// the kept ones' labels only within `near`. No label over another:
+    /// what is being measured and the point under the cursor are written
+    /// first, then the kept ones (in 3D the nearest first); a kept label
+    /// that would overlap one written is left out, its line or point
+    /// drawn (display only).
+    pub fn paint(
+        &self,
+        painter: &egui::Painter,
+        screen: &dyn Fn([f64; 3]) -> Option<egui::Pos2>,
+        near: Near,
+    ) {
+        let mut placer = crate::annotations::Placer::default();
+        let lines: Vec<(egui::Pos2, egui::Pos2, Label)> = self
+            .lines
+            .iter()
+            .filter_map(|(a, b, label)| {
+                let (p, q) = (screen(*a)?, screen(*b)?);
+                let mid = p + (q - p) * 0.5;
+                let l = Label::new(
+                    painter,
+                    mid + egui::vec2(8.0, -8.0),
+                    label,
+                    egui::Color32::WHITE,
+                );
+                placer.force(l.rect());
+                Some((p, q, l))
+            })
+            .collect();
+        // What the cursor is on, named before the click.
+        let hover = self.hover.as_ref().and_then(|(at, what)| {
+            let l = Label::new(painter, screen(*at)? + egui::vec2(10.0, 8.0), what, COLOUR);
+            placer.force(l.rect());
+            Some(l)
+        });
+        // The kept ones under what is being measured: lines (`Some` end)
+        // and notes, by their label's distance from the eye.
+        let from_eye = |at: [f64; 3]| near.map_or(0.0, |(eye, _)| dist(at, eye));
+        let mut kept: Vec<(f64, Option<egui::Pos2>, egui::Pos2, &str)> = self
+            .kept
+            .iter()
+            .filter_map(|(_, a, b, label)| {
+                let (p, q) = (screen(*a)?, screen(*b)?);
+                let mid = [0, 1, 2].map(|i| 0.5 * (a[i] + b[i]));
+                Some((from_eye(mid), Some(p), q, label.as_str()))
+            })
+            .chain(self.notes.iter().filter_map(|(_, at, text)| {
+                Some((from_eye(*at), None, screen(*at)?, text.as_str()))
+            }))
+            .collect();
+        if near.is_some() {
+            kept.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
         }
-        // A note: a short leader up to its text.
-        for (_, at, text) in &self.notes {
-            let Some(p) = screen(*at) else {
-                continue;
+        let range = near.map_or(f64::INFINITY, |(_, r)| r);
+        for (d, from, p, text) in kept {
+            let label = match from {
+                Some(from) => {
+                    for (w, c) in [(3.5, egui::Color32::from_black_alpha(160)), (1.5, KEPT)] {
+                        painter.line_segment([from, p], egui::Stroke::new(w, c));
+                    }
+                    for x in [from, p] {
+                        painter.circle_filled(x, 2.5, KEPT);
+                    }
+                    from + (p - from) * 0.5 + egui::vec2(8.0, -8.0)
+                }
+                // A note: a short leader up to its text.
+                None => {
+                    let to = p + egui::vec2(18.0, -22.0);
+                    painter.line_segment([p, to], egui::Stroke::new(1.5, KEPT));
+                    painter.circle_filled(p, 3.0, KEPT);
+                    to + egui::vec2(2.0, 4.0)
+                }
             };
-            let to = p + egui::vec2(18.0, -22.0);
-            painter.line_segment([p, to], egui::Stroke::new(1.5, KEPT));
-            painter.circle_filled(p, 3.0, KEPT);
-            label_at(painter, to + egui::vec2(2.0, 4.0), text, KEPT);
+            // (Off the view: not placed.)
+            if d <= range {
+                let l = Label::new(painter, label, text, KEPT);
+                if painter.clip_rect().intersects(l.rect()) && placer.reserve(l.rect()) {
+                    l.paint(painter);
+                }
+            }
         }
-        for (a, b, label) in &self.lines {
-            let (Some(p), Some(q)) = (screen(*a), screen(*b)) else {
-                continue;
-            };
+        for (p, q, label) in lines {
             for (w, c) in [(4.5, egui::Color32::from_black_alpha(180)), (2.0, COLOUR)] {
                 painter.line_segment([p, q], egui::Stroke::new(w, c));
             }
-            let mid = p + (q - p) * 0.5;
-            label_at(
-                painter,
-                mid + egui::vec2(8.0, -8.0),
-                label,
-                egui::Color32::WHITE,
-            );
+            label.paint(painter);
         }
         for x in self.points.iter().filter_map(|p| screen(*p)) {
             painter.circle_stroke(x, 5.0, egui::Stroke::new(2.0, COLOUR));
             painter.circle_filled(x, 2.0, COLOUR);
         }
-        // What the cursor is on, named before the click.
-        if let Some((at, what)) = &self.hover
-            && let Some(x) = screen(*at)
-        {
-            label_at(painter, x + egui::vec2(10.0, 8.0), what, COLOUR);
+        if let Some(l) = hover {
+            l.paint(painter);
         }
     }
 }
@@ -1654,15 +1755,36 @@ pub fn others_ticks(ui: &mut egui::Ui, display: &mut crate::annotations::Section
     });
 }
 
-fn label_at(painter: &egui::Painter, at: egui::Pos2, text: &str, colour: egui::Color32) {
-    let galley = painter.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), colour);
-    let at = egui::pos2(at.x, at.y - galley.size().y);
-    painter.rect_filled(
-        egui::Rect::from_min_size(at, galley.size()).expand(3.0),
-        3.0,
-        egui::Color32::from_black_alpha(170),
-    );
-    painter.galley(at, galley, colour);
+/// Whether a kept one's label at `at` is written: within the label
+/// distance of the eye in 3D, always in the plan and the profile.
+fn written(near: Near, at: [f64; 3]) -> bool {
+    near.is_none_or(|(eye, range)| dist(at, eye) <= range)
+}
+
+/// A label on its dark box, its bottom left at the point given.
+struct Label {
+    galley: Arc<egui::Galley>,
+    at: egui::Pos2,
+    colour: egui::Color32,
+}
+
+impl Label {
+    fn new(painter: &egui::Painter, at: egui::Pos2, text: &str, colour: egui::Color32) -> Self {
+        let galley =
+            painter.layout_no_wrap(text.to_owned(), egui::FontId::proportional(13.0), colour);
+        let at = egui::pos2(at.x, at.y - galley.size().y);
+        Self { galley, at, colour }
+    }
+
+    /// Where it is written, with its box.
+    fn rect(&self) -> egui::Rect {
+        egui::Rect::from_min_size(self.at, self.galley.size()).expand(3.0)
+    }
+
+    fn paint(self, painter: &egui::Painter) {
+        painter.rect_filled(self.rect(), 3.0, egui::Color32::from_black_alpha(170));
+        painter.galley(self.at, self.galley, self.colour);
+    }
 }
 
 #[cfg(test)]
@@ -2104,6 +2226,171 @@ mod keep_tests {
         h.run();
         assert_eq!(kept(&mut h), 3);
     }
+
+    /// Many kept annotations, most of them another user's: how long they
+    /// take to be computed again (others' shown and hidden), to be made
+    /// into the views' overlay and to be drawn. A benchmark: run with
+    /// `--ignored --nocapture`.
+    #[test]
+    #[ignore = "benchmark: run with --ignored --nocapture"]
+    fn kept_annotations_benchmark() {
+        use std::time::Instant;
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1400.0, 900.0))
+            .build_eframe(|_| {
+                crate::app::App::with_model(crate::tests::synthetic_project("keep-bench"), None)
+            });
+        h.run();
+        let n = {
+            let r = h.state_mut().ready().unwrap();
+            let user = r.model.user_name();
+            let sections: Vec<(String, usize)> = r
+                .model
+                .line
+                .sections
+                .iter()
+                .filter_map(|s| Some((s.id.clone(), r.model.shape(&s.id, r.case)?.spans.len())))
+                .collect();
+            let structure = r.model.line.structures[0].id.clone();
+            let mut k = 0;
+            for (section, spans) in &sections {
+                for span in 0..*spans {
+                    for f in (0..10).map(|i| 0.05 + 0.1 * f64::from(i)) {
+                        k += 1;
+                        // Every fourth one the user's own.
+                        let author = if k % 4 == 0 {
+                            user.clone()
+                        } else {
+                            "other".into()
+                        };
+                        let wire = ohl_session::annotations::Anchor::Wire {
+                            section: section.clone(),
+                            span,
+                            fraction: f,
+                        };
+                        for (kind, tool, anchors, text) in [
+                            (
+                                ohl_session::annotations::AnnotationKind::Dimension,
+                                "clearance",
+                                vec![wire.clone()],
+                                String::new(),
+                            ),
+                            (
+                                ohl_session::annotations::AnnotationKind::Dimension,
+                                "distance",
+                                vec![
+                                    wire.clone(),
+                                    ohl_session::annotations::Anchor::Structure {
+                                        structure: structure.clone(),
+                                    },
+                                ],
+                                String::new(),
+                            ),
+                            (
+                                ohl_session::annotations::AnnotationKind::Note,
+                                "",
+                                vec![wire.clone()],
+                                format!("note {k}"),
+                            ),
+                        ] {
+                            let ann = ohl_session::annotations::Annotation {
+                                id: format!("{author}-{}{k}", tool.len()),
+                                kind,
+                                tool: tool.into(),
+                                anchors,
+                                text,
+                                author: author.clone(),
+                                time: String::new(),
+                                last: None,
+                            };
+                            r.measuring.actions.push(("bench".into(), ann.put()));
+                        }
+                    }
+                }
+            }
+            3 * k
+        };
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        assert_eq!(r.model.session().unwrap().annotations().len(), n);
+        let time = |f: &mut dyn FnMut()| {
+            let t = Instant::now();
+            for _ in 0..5 {
+                f();
+            }
+            t.elapsed() / 5
+        };
+        let shown = super::Others {
+            measurements: true,
+            notes: true,
+        };
+        let hidden = super::Others {
+            measurements: false,
+            notes: false,
+        };
+        let refresh = |r: &mut crate::app::Ready, others: super::Others| {
+            r.measuring.kept_key = None;
+            r.measuring.refresh_kept(&r.model, r.case, others);
+        };
+        let refresh_shown = time(&mut || refresh(r, shown));
+        let refresh_hidden = time(&mut || refresh(r, hidden));
+        refresh(r, shown);
+        let overlay = time(&mut || {
+            // Once for each of the three views, as a frame does.
+            for _ in 0..3 {
+                std::hint::black_box(r.measuring.overlay(shown));
+            }
+        });
+        let o = r.measuring.overlay(shown);
+        // Drawn in 3D seen from above the line's middle, 300 m up and
+        // 2 km up: every label (no label distance) or those near.
+        let ctx = egui::Context::default();
+        let mid = {
+            let st = &r.model.line.structures;
+            st[st.len() / 2].position
+        };
+        let paint = |o: &super::Overlay, height: f64| {
+            let screen = |p: [f64; 3]| {
+                let s = 600.0 / height;
+                Some(egui::pos2(
+                    (700.0 + (p[0] - mid[0]) * s) as f32,
+                    (450.0 - (p[1] - mid[1]) * s) as f32,
+                ))
+            };
+            let mut shapes = 0;
+            let t = Instant::now();
+            for _ in 0..5 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 900.0),
+                    )),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(input, |ui| {
+                    let painter = ui.painter();
+                    let eye = [mid[0], mid[1], mid[2] + height];
+                    o.paint(painter, &screen, Some((eye, 1500.0)));
+                });
+                shapes = out.shapes.len();
+                out.textures_delta.clear();
+            }
+            (t.elapsed() / 5, shapes)
+        };
+        // (The empty one first: the labels' layouts are kept from the
+        // frame before.)
+        let (empty, _) = paint(&super::Overlay::default(), 300.0);
+        paint(&o, 300.0);
+        let (near, near_shapes) = paint(&o, 300.0);
+        let (far, far_shapes) = paint(&o, 2000.0);
+        println!(
+            "{n} kept annotations ({} drawn): computed again {refresh_shown:.1?} (others' \
+             hidden: {refresh_hidden:.1?}); overlay for three views {overlay:.1?}; drawn \
+             from 300 m {near:.1?} ({near_shapes} shapes), from 2 km {far:.1?} ({far_shapes} \
+             shapes; an empty frame {empty:.1?})",
+            o.kept.len() + o.notes.len()
+        );
+    }
 }
 
 /// Phase 3's wire tools on the example line: wire to wire is the closest
@@ -2193,21 +2480,38 @@ mod hit_tests {
     #[test]
     fn kept_ones_are_hit_on_screen() {
         let o = Overlay {
-            kept: vec![(
+            kept: Arc::new(vec![(
                 "m1".into(),
                 [0.0, 0.0, 0.0],
                 [100.0, 0.0, 0.0],
                 "1 m".into(),
-            )],
-            notes: vec![("n1".into(), [50.0, 50.0, 0.0], "road".into())],
+            )]),
+            notes: Arc::new(vec![("n1".into(), [50.0, 50.0, 0.0], "road".into())]),
             ..Overlay::default()
         };
         let screen = |p: [f64; 3]| Some(egui::pos2(p[0] as f32, p[1] as f32));
-        assert_eq!(o.hit(&screen, egui::pos2(40.0, 5.0)).as_deref(), Some("m1"));
         assert_eq!(
-            o.hit(&screen, egui::pos2(51.0, 49.0)).as_deref(),
+            o.hit(&screen, egui::pos2(40.0, 5.0), None).as_deref(),
+            Some("m1")
+        );
+        assert_eq!(
+            o.hit(&screen, egui::pos2(51.0, 49.0), None).as_deref(),
             Some("n1")
         );
-        assert_eq!(o.hit(&screen, egui::pos2(40.0, 30.0)), None);
+        assert_eq!(o.hit(&screen, egui::pos2(40.0, 30.0), None), None);
+        // The note's text (up its leader) where it is written; beyond the
+        // label distance only its point, the line at any distance.
+        let text = egui::pos2(80.0, 30.0);
+        assert_eq!(o.hit(&screen, text, None).as_deref(), Some("n1"));
+        let far = Some(([1e4, 0.0, 0.0], 1500.0));
+        assert_eq!(o.hit(&screen, text, far), None);
+        assert_eq!(
+            o.hit(&screen, egui::pos2(51.0, 49.0), far).as_deref(),
+            Some("n1")
+        );
+        assert_eq!(
+            o.hit(&screen, egui::pos2(40.0, 5.0), far).as_deref(),
+            Some("m1")
+        );
     }
 }

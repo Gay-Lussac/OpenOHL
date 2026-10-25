@@ -406,7 +406,11 @@ coordinates. Deleting what it is attached to **deletes it too**, in the
 same change (one undo brings both back). The **Note** tool (Tools ›
 Measure) writes a note on an object or a point: its window, Enter keeps
 it. Kept measurements are drawn in orange in the plan, the profile and the
-3D view, notes with a short leader; the **Edit** tool on one opens it (its
+3D view, notes with a short leader — in 3D their labels and the notes'
+texts within the 3D label distance of the eye (as the other labels;
+beyond it the line and the note's point only), and in every view a label
+that would overlap one already written is left out (in 3D the nearest
+written first; the line or point is still drawn and can be clicked); the **Edit** tool on one opens it (its
 label or text, **Save**, **Delete**; the mouse freed, the window in the
 middle of the screen, as the Note tool's); both are listed under **Kept in the
 project** in the panel (**Delete** there; a measurement not drawn in the
