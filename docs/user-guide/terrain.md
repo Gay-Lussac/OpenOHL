@@ -536,14 +536,20 @@ height anywhere inside the surveyed area (the convex hull of the points) is
 the linear interpolation on the triangle below. Outside it there is no
 ground: spans that are not fully over the survey are reported.
 
-## Backgrounds: orthophotos and drawings
+## Backgrounds: orthophotos, maps and drawings
 
-**Terrain › Backgrounds** keeps orthophotos and DXF drawings (e.g. the
-cadastre) in the project file, drawn under the line. Like point clouds and
+**Terrain › Backgrounds** keeps orthophotos, maps and DXF drawings (e.g.
+the cadastre) in the project file, drawn under the line. Like point clouds and
 surfaces they belong to the project, not to the line: they are not logged
 and not undone.
 
-- **Import orthophotos…** — north-up images in the project's coordinate
+- **Import orthophotos or maps…** — *They are orthophotos* or *a map*
+  (2026-10-25): a map is a georeferenced image of a map loaded into the
+  project; under the plan view it is drawn like an orthophoto, and the
+  **route and situation plans** and the **sheets' key map** take the maps
+  first (every layer when the project has none; the sheets' plan takes the
+  layers its template or the export names). The menu lists each layer with
+  its kind; a click on the kind turns it (kept in the project). North-up images in the project's coordinate
   system: **GeoTIFF** (its tags give where it lies; a GeoTIFF naming
   another EPSG system than the project's is refused), or **TIFF, JPEG,
   PNG with a world file** next to them (`.tfw`, `.jgw`, `.pgw`, `.wld`, or

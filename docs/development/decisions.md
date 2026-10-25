@@ -10,6 +10,17 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Background maps in the project (owner, 2026-10-25, roadmap O16)**
+
+- Owner: "a map loaded into the project is fine"; shown on the plan, the
+  sheets and the plans (not draped in 3D). A map is an image layer of its
+  own kind (`background_layer`: orthophoto or map), imported as the
+  orthophotos are (GeoTIFF or an image with a world file).
+- The route and situation plans and the sheets' key map take the maps
+  when the project has any, else every layer; the sheets' plan keeps the
+  layers its template or the export names. The kind is chosen at import
+  and turned with a click in Terrain › Backgrounds.
+
 **Volumes on the strings in OHL-Structure (owner, 2026-10-25)**
 
 - A structure type's string may carry its own volumes too

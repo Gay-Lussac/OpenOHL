@@ -178,10 +178,45 @@ const SCHEMA: &str = "PRAGMA journal_mode = WAL;
         level INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL,
         data BLOB NOT NULL,
         PRIMARY KEY (image, level, tx, ty));
+    CREATE TABLE IF NOT EXISTS background_layer (
+        layer TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'orthophoto');
     CREATE TABLE IF NOT EXISTS background_drawing (
         name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NULL DEFAULT '',
         items INTEGER NOT NULL, bounds TEXT NOT NULL, data BLOB NOT NULL,
         created TEXT NOT NULL DEFAULT (datetime('now')));";
+
+/// What an image layer is (2026-10-25, roadmap O16): an orthophoto (an
+/// aerial or satellite image) or a map (a map loaded into the project).
+/// The route and situation plans and the sheets' key map take the maps
+/// when the project has any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+pub enum LayerKind {
+    /// An aerial or satellite image (the default: layers before kept as
+    /// such).
+    #[default]
+    Orthophoto,
+    /// A map.
+    Map,
+}
+
+impl LayerKind {
+    /// The name kept in the project.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Orthophoto => "orthophoto",
+            Self::Map => "map",
+        }
+    }
+
+    /// From its name (anything else: an orthophoto).
+    pub fn parse(s: &str) -> Self {
+        if s == "map" {
+            Self::Map
+        } else {
+            Self::Orthophoto
+        }
+    }
+}
 
 /// The backgrounds of a project file.
 pub struct Store {
@@ -503,12 +538,56 @@ impl Store {
             .ok_or_else(|| err("the image was not kept"))
     }
 
-    /// Removes every image of layer `layer`.
+    /// Removes every image of layer `layer` (and its kind).
     pub fn delete_image_layer(&self, layer: &str) -> Result<usize, BackgroundError> {
+        self.conn.execute(
+            "DELETE FROM background_layer WHERE layer = ?1",
+            params![layer],
+        )?;
         Ok(self.conn.execute(
             "DELETE FROM background_image WHERE layer = ?1",
             params![layer],
         )?)
+    }
+
+    /// The kind of each image layer given one (the others: orthophotos).
+    pub fn layer_kinds(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, LayerKind>, BackgroundError> {
+        let mut st = self
+            .conn
+            .prepare("SELECT layer, kind FROM background_layer")?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                LayerKind::parse(&r.get::<_, String>(1)?),
+            ))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Sets image layer `layer`'s kind.
+    pub fn set_layer_kind(&self, layer: &str, kind: LayerKind) -> Result<(), BackgroundError> {
+        self.conn.execute(
+            "INSERT INTO background_layer (layer, kind) VALUES (?1, ?2)
+             ON CONFLICT(layer) DO UPDATE SET kind = excluded.kind",
+            params![layer, kind.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// The image layers that are maps, in name order.
+    pub fn map_layers(&self) -> Result<Vec<String>, BackgroundError> {
+        let images = self.images()?;
+        let kinds = self.layer_kinds()?;
+        let mut out: Vec<String> = images
+            .iter()
+            .map(|i| i.layer.clone())
+            .filter(|l| kinds.get(l) == Some(&LayerKind::Map))
+            .collect();
+        out.sort();
+        out.dedup();
+        Ok(out)
     }
 
     /// The drawings kept, by name.

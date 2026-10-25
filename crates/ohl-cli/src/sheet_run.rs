@@ -617,7 +617,19 @@ pub fn plan_backgrounds(
         );
     }
     if photos.on() || key_photo || args.plans {
-        let layers = photos.on().then(|| photos.names()).flatten();
+        // The plan's layers as named; the key map's and the route and
+        // situation plans' alone: the maps, when the project has any,
+        // else every layer (2026-10-25, roadmap O16).
+        let maps = ohl_background::Store::open(file)
+            .and_then(|s| s.map_layers())
+            .map_err(|e| e.to_string())?;
+        let layers = if photos.on() {
+            photos.names()
+        } else if maps.is_empty() {
+            None
+        } else {
+            Some(&maps[..])
+        };
         match ohl_background::Mosaic::open(file, layers).map_err(|e| e.to_string())? {
             Some(m) => {
                 let name = m.layers().join(", ");
