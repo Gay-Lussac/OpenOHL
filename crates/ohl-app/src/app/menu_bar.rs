@@ -29,6 +29,21 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
             ui.close();
         }
         if ui
+            .add_enabled(
+                r.model.session().is_some(),
+                egui::Button::new("Another project into this one…"),
+            )
+            .on_hover_text(
+                "Another program's project (a project plugin reads it) brought into this \
+                 project: into the line you work on or a new project line, its routes this \
+                 project's or new, what appears in both settled one by one",
+            )
+            .clicked()
+        {
+            r.import_into.show();
+            ui.close();
+        }
+        if ui
             .add_enabled(!busy, egui::Button::new("LiDAR points (LAS/LAZ)…"))
             .on_hover_text("Add LiDAR tiles to the project's point cloud (or a new one)")
             .clicked()

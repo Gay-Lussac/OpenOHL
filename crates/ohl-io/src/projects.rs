@@ -171,22 +171,16 @@ pub struct CreatedProject {
 }
 
 /// Reads another program's file (format: `format`, else the extension)
-/// into a new project `into` (`.ohl` added): the line and its library
-/// files, the sections clipped in if asked. Refused if the project file
-/// exists.
-pub fn create_project(
+/// as a project (its line and library files), the sections clipped in if
+/// asked; nothing written ([`crate::import_into`] brings it into an
+/// existing project).
+pub fn read_project(
     registry: &mut Registry,
     path: &Path,
     format: Option<&str>,
     options: &Options,
-    into: &Path,
-    user: &str,
     clip_in: bool,
-) -> Result<CreatedProject, String> {
-    let into = into.with_extension(ohl_core::files::PROJECT_EXTENSION);
-    if into.exists() {
-        return Err(format!("{} exists already", into.display()));
-    }
+) -> Result<ImportedProject, String> {
     let id = crate::format_of(path, format);
     let importer = registry
         .project_importer(&id)
@@ -204,6 +198,27 @@ pub fn create_project(
     if let Err(e) = p.line.validate() {
         p.notes.push(format!("the line does not check yet: {e}"));
     }
+    Ok(p)
+}
+
+/// Reads another program's file (format: `format`, else the extension)
+/// into a new project `into` (`.ohl` added): the line and its library
+/// files, the sections clipped in if asked. Refused if the project file
+/// exists.
+pub fn create_project(
+    registry: &mut Registry,
+    path: &Path,
+    format: Option<&str>,
+    options: &Options,
+    into: &Path,
+    user: &str,
+    clip_in: bool,
+) -> Result<CreatedProject, String> {
+    let into = into.with_extension(ohl_core::files::PROJECT_EXTENSION);
+    if into.exists() {
+        return Err(format!("{} exists already", into.display()));
+    }
+    let p = read_project(registry, path, format, options, clip_in)?;
     let mut s = ohl_session::Session::open(&into).map_err(|e| e.to_string())?;
     let applied = s.import(&p.line, user).map_err(|e| e.to_string())?;
     for (kind, name, text) in &p.libraries {

@@ -97,6 +97,21 @@ enum Job {
     },
     StoreSurfaces(SurfaceImport),
     CreateProject(ProjectImport),
+    ReadProject(ProjectRead),
+}
+
+/// Another program's file read as a project, to bring into the one open
+/// ([`crate::import_into`]).
+#[derive(Debug, Clone)]
+pub struct ProjectRead {
+    /// The file.
+    pub path: PathBuf,
+    /// Format id (`None`: from the file extension).
+    pub format: Option<String>,
+    /// Format options.
+    pub options: ohl_io::Options,
+    /// Clip the sections in at their stringing condition.
+    pub clip_in: bool,
 }
 
 /// Another program's file made a new project.
@@ -139,6 +154,7 @@ enum Reply {
     Imported(Result<Box<ohl_line::Line>, String>),
     SurfacesStored(Result<Vec<String>, String>),
     ProjectCreated(Result<(PathBuf, Vec<String>), String>),
+    ProjectRead(Result<Box<ohl_io::projects::ImportedProject>, String>),
 }
 
 /// The thread holding the format registry (plugin instances stay on it).
@@ -194,6 +210,16 @@ impl Worker {
                         Job::CreateProject(job) => {
                             Reply::ProjectCreated(create_project(&mut registry, &job))
                         }
+                        Job::ReadProject(job) => Reply::ProjectRead(
+                            ohl_io::projects::read_project(
+                                &mut registry,
+                                &job.path,
+                                job.format.as_deref(),
+                                &job.options,
+                                job.clip_in,
+                            )
+                            .map(Box::new),
+                        ),
                     };
                     if tx.send(reply).is_err() {
                         break;
@@ -385,6 +411,10 @@ pub struct Plugins {
     pub creating: bool,
     /// The project created (its file and the reader's notes), or why not.
     pub project_created: Option<Result<(PathBuf, Vec<String>), String>>,
+    /// A file being read as a project to bring in.
+    pub reading_project: bool,
+    /// The project read, or why not (taken by the import window).
+    pub project_read: Option<Result<Box<ohl_io::projects::ImportedProject>, String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
@@ -654,6 +684,10 @@ impl Plugins {
                     self.creating = false;
                     self.project_created = Some(r);
                 }
+                Reply::ProjectRead(r) => {
+                    self.reading_project = false;
+                    self.project_read = Some(r);
+                }
                 Reply::SurfacesStored(r) => {
                     self.storing = false;
                     self.surfaces_stored = Some(r);
@@ -675,7 +709,8 @@ impl Plugins {
         let waiting = ((self.open || self.window.is_some()) && self.formats.is_none())
             || self.window.as_ref().is_some_and(|w| w.busy)
             || self.storing
-            || self.creating;
+            || self.creating
+            || self.reading_project;
         if waiting {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -947,6 +982,16 @@ impl Plugins {
         if worker.jobs.send(Job::CreateProject(job)).is_ok() {
             self.creating = true;
             self.project_created = None;
+        }
+    }
+
+    /// Reads another program's file as a project (on the worker); the
+    /// result comes in [`Plugins::project_read`].
+    pub fn read_project(&mut self, job: ProjectRead) {
+        let worker = self.worker.get_or_insert_with(Worker::start);
+        if worker.jobs.send(Job::ReadProject(job)).is_ok() {
+            self.reading_project = true;
+            self.project_read = None;
         }
     }
 

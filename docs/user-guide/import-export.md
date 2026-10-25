@@ -154,4 +154,39 @@ A **project plugin** reads another program's project file into a new OpenOHL pro
 
 **Clip in** (`--clip-in`, or the window's tick): sections the reader left in the blocks are clipped in at their stringing condition, so each span keeps its length — as programs that sag a section with a ruling span and then solve it with fixed lengths do.
 
+### Into an existing project
+
+File › Import › **Another project into this one…** (2026-10-25) reads
+another program's project file the same way and brings it into the
+project open — other lines of the same project, a neighbouring line, a
+later state of the same line:
+
+1. **The file**: the format (default: from the extension), options,
+   *clip in*; **Read the file** (in the background; nothing changes yet).
+2. **Into which project line?** The line you work on (one change,
+   undoable), or **a new project line made from it** (named; you then work
+   on it — to look at the import apart and bring it into another line
+   later with Versions › Bring in changes).
+3. **Its routes**: each of the import's routes is **this project's route
+   …** (its alignments join that route) or **a new route** (renamed if
+   its id is taken). A route of an id the project has is taken to be the
+   same by default.
+4. **What appears in both**: an object of the **same id** with other
+   values, or of another id **at the same place** — an alignment point or
+   a structure nearer than the tolerance in plan (1 m by default), a
+   section over the same structures and sets, a jumper between the same
+   ends — and a library file of the same name with another text. Each is
+   listed with what differs and settled: **keep the project's** (the
+   default: the imported one left out, what the import attached to it
+   attached to the project's), **take the imported one** (it replaces the
+   project's, under the project's id) or **keep both** (the imported one
+   under an id of its own, `T12 (2)`, what refers to it following). *All:*
+   settles every one alike. What is the same in both is left as it is;
+   the rest is added. The ids the import's objects were given are listed.
+
+**Import** writes the library files, then the line as one change. The
+coordinate systems must be the same (else reproject one first). The
+renames are made with the project's own rename (what refers to an object
+follows as when it is renamed by hand).
+
 Terrain (TIN) and point clouds are imported apart, also from File: **Import › Terrain surface (TIN)…** (Terrain › Terrain surfaces) and **Import › LiDAR points (LAS/LAZ)…**.
