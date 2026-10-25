@@ -991,6 +991,19 @@ impl PlanView {
             egui::FontId::proportional(13.0),
             egui::Color32::from_gray(200),
         );
+        // The cursor's project coordinates (2026-10-25: to place a point
+        // at a given easting and northing).
+        if let Some(pos) = response.hover_pos() {
+            let e = c[0] + f64::from(pos.x - mid.x) / scale;
+            let n = c[1] - f64::from(pos.y - mid.y) / scale;
+            painter.text(
+                rect.right_bottom() + egui::vec2(-10.0, -8.0),
+                egui::Align2::RIGHT_BOTTOM,
+                format!("E {e:.2}  N {n:.2}"),
+                egui::FontId::monospace(11.0),
+                egui::Color32::from_gray(200),
+            );
+        }
         used
     }
 }

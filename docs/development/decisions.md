@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-10-25
 
+**Small usability fixes found by the tutorial (2026-10-25)**
+
+- String wire: a new section takes the circuit and phase of the section
+  it continues (the same wire point, or one hanging from the same
+  structure point — the other side of a tension structure), else the
+  circuit's next phase at that structure (the first label not strung
+  there; all strung, the number after the last). Before, the first
+  section's phase was copied and had to be changed every time.
+- A tool window that would reach past the bottom or right of the screen
+  is moved back onto it in the frames after it opens; dragged later, it
+  may still go anywhere.
+- The plan view writes the cursor's easting and northing in its corner.
+- The left column of the default layout is wider (28 % of the middle
+  instead of 20 %): Next steps' titles no longer break every few
+  letters. A layout arranged before is kept.
+
 **Materials typed in OHL-Structure (roadmap U5, 2026-10-25)**
 
 - Design › Cross-sections & materials › Cross-section library lists the

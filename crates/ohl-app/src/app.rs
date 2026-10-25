@@ -682,9 +682,11 @@ pub fn default_dock() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::View3d, Tab::Plan]);
     let tree = dock.main_surface_mut();
     let [centre, _] = tree.split_right(NodeIndex::root(), 0.74, vec![Tab::Properties]);
+    // The left column wide enough for Next steps' titles beside their
+    // links (2026-10-25: at 0.2 they broke every few letters).
     let [centre, _] = tree.split_left(
         centre,
-        0.2,
+        0.28,
         vec![Tab::Model, Tab::Clearances, Tab::NextSteps],
     );
     tree.split_below(centre, 0.66, vec![Tab::Profile]);

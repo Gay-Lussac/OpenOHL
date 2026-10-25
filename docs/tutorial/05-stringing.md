@@ -27,8 +27,10 @@ and T4 to T6 — and solved in every weather case.
 5. The second section of the same phase: right-click T4's **set 41**,
    T5's **set 1**, T6's **set 21**, **Enter**. The window starts from the
    first section's values (circuit C1, phase L1): **Apply**.
-6. The other phases the same way, changing the **phase** in the window
-   each time:
+6. The other phases the same way. The window proposes the circuit and
+   the **next phase** of the circuit at that structure (L2, then L3) and,
+   across a tension structure, the same phase again: check it, then
+   **Apply**:
 
    | Section | Strings, in order | Phase |
    |---|---|---|

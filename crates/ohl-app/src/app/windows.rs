@@ -59,6 +59,28 @@ pub(super) fn popups(ctx: &egui::Context, r: &mut Ready) {
         r.xsections.free_mouse(ctx);
     }
     r.popup_fresh = r.popup_opened == Some(ctx.cumulative_frame_nr());
+    // In the frames after it opened (its size known from the first): a
+    // tool window reaching past the bottom or the right of the screen is
+    // moved back onto it, once (2026-10-25: Apply was off the screen);
+    // dragged afterwards, it may go anywhere.
+    if let Some(opened) = r.popup_opened
+        && (1..=3).contains(&ctx.cumulative_frame_nr().saturating_sub(opened))
+    {
+        let screen = ctx.content_rect();
+        for key in TOOL_WINDOWS {
+            let id = egui::Id::new((key.to_owned(), r.popup_serial));
+            let Some(rect) = ctx.memory(|m| m.area_rect(id)) else {
+                continue;
+            };
+            let dy = (rect.bottom() - screen.bottom()).max(0.0);
+            let dx = (rect.right() - screen.right()).max(0.0);
+            if dx > 0.5 || dy > 0.5 {
+                r.popup_at.x = (r.popup_at.x - dx).max(screen.left());
+                r.popup_at.y = (r.popup_at.y - dy).max(screen.top());
+                r.popup_fresh = true;
+            }
+        }
+    }
     let open = r.goto.is_some()
         || r.coord_dialog.is_some()
         || r.route_choice.is_some()
@@ -95,6 +117,18 @@ pub(super) fn popups(ctx: &egui::Context, r: &mut Ready) {
     }
     r.popup_open = open;
 }
+
+/// The keys of the tool windows ([`tool_window`]).
+const TOOL_WINDOWS: [&str; 8] = [
+    "xsection",
+    "move",
+    "goto",
+    "confirm",
+    "display-cases",
+    "editor",
+    "point-delete",
+    "spread-delete",
+];
 
 /// A tool window: opens next to [`Ready::popup_at`] (again each time it
 /// opens, whatever a window of its id was in an earlier run: window
