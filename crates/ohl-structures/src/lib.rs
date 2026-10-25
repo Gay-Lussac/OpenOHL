@@ -17,12 +17,15 @@
 //! - [`extensions`]: height extensions, their bodies and leg extensions.
 //! - [`on_members`]: joints inserted on members (a point read from a
 //!   file that put it along a member).
+//! - [`string_volumes`]: the volumes on an assembly's strings, their
+//!   freedoms, several strings in one assembly (roadmap O6).
 
 pub mod derive;
 pub mod extensions;
 pub mod insulators;
 pub mod on_members;
 pub mod pole;
+pub mod string_volumes;
 pub mod structures;
 pub mod templates;
 
@@ -38,6 +41,9 @@ use std::path::{Path, PathBuf};
 pub use extensions::{ExtendedBody, Extension, LegExtension};
 pub use insulators::{AssemblyKind, InsulatorAssembly, InsulatorLibrary, InsulatorLimits};
 pub use pole::{InlinePole, PoleRef, PoleRing, PoleShape, PoleWall};
+pub use string_volumes::{
+    Along, Arrangement, ElectricalState, Freedom, ShapeKind, StringShape, StringVolumes,
+};
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, Joint, JointKind, JointSource,
     NOT_ATTACH, PlacedAttachment, PlacedPoint, PlacedString, PlacedStrings, PlacedWire, PointPlace,

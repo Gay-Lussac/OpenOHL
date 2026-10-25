@@ -216,11 +216,51 @@ decided within it:
 - Exact on the solved polylines (segment–segment, segment–triangle), to
   the wire's surface (radius and polyline bound taken off:
   conservative); a string's wire point is a point (fittings not counted:
-  on the unsafe side). The volumes on the strings are a later part.
+  on the unsafe side). The volumes on the strings: the next entry.
 - Rules: `[[internal_rule]]` in the rule file (`name`, `cases`,
   `voltages`, `distance`, `conductors`, `jumpers`, `string_ends`,
   `reach`), `checks = ["internal"]`; the structure and section overrides
   apply. `ohl internal` runs it; the desktop window is written apart.
+
+**Internal clearances, the volumes on the strings (owner, 2026-10-25; details confirmed 2026-10-19)**
+
+- The shapes belong to the insulator assembly (`.ohli` version 4,
+  `[[shape]]`: sphere, cylinder, box, cone; grounded, electrified,
+  insulated; position along the string from its top as a fraction or in
+  metres, sizes, an offset across and along), so every string of that
+  type has them. **A structure overrides one by name** in the style of the
+  string overrides: its own string's `shapes` (line file version 8) — each
+  replaces the assembly's shape of that name or is added; one overridden
+  as insulated is left out (no removal key: minimal).
+- **Freedoms** (`swing_across`, `swing_along`, `twist`: free or blocked)
+  set the shapes' **orientation only**; their positions follow the solved
+  string (its top and wire point give the axis). A blocked swing keeps the
+  still-air angle in that plane; a blocked twist keeps the structure's
+  across axis, a free one takes the across direction of the conductor at
+  the wire point (as solved). A strain string's shapes always follow its
+  axis (the conductor's pull). Approximate, said in the theory page: the
+  solve's string itself swings as it does.
+- **Several strings in one assembly** (`strings` 1 to 4, `arrangement`
+  across / along / triangle, `spacing`): the line keeps one string on their
+  middle (the solve unchanged); each string's copy of a shape is offset by
+  the arrangement, parallel to the modelled string; a `shared` shape (the
+  yoke plate) once on the axis. Approximate: the strings' own tops and the
+  yoke's linkage are not modelled.
+- **The check**: each electrified shape a part (`Part::Shape`); every part
+  (conductors, jumpers, string ends, shapes) against the body and the
+  grounded shapes of every string at the structure; electrified against
+  electrified and grounded against the body not measured; insulated shapes
+  never targets. Distances by GJK on the convex solids, reported as its
+  lower bound within 1 nm (conservative). A rule's `shapes` (default true)
+  turns both off; `distance_wind` gives another distance in the cases with
+  wind (a wind pressure above 0), the owner's 2026-10-19 rule.
+- **Display**: Structures › Display options › Volumes on the strings (3D),
+  off by default, drawn on the solved strings within the solids distance.
+  **Editing**: Structures › String shapes (a table, one Apply one undoable
+  change) and the String library's freedom and string columns. Not drawn
+  in OHL-Structure: its view would need the core's placement
+  (`ohl-clearance`) across the application's one boundary — left for a
+  decision.
 
 **Weather case groups of structures and sections; the overrides (owner, 2026-10-25)**
 

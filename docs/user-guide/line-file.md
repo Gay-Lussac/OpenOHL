@@ -107,6 +107,7 @@ What hangs on a structure is given explicitly (each point, wire point and string
 | `max_swing_deg` | no | Version 6: the swing from straight down it may take, any direction, degrees (0–180). Not checked; absent: not given (its assembly's). |
 | `max_swing_across_deg` | no | Version 6: the swing across the line it may take, either side, degrees. Not checked; absent: not given (its assembly's). |
 | `max_swing_along_deg` | no | Version 6: the swing along the line it may take, either way, degrees. Not checked; absent: not given (its assembly's). |
+| `shapes` | no | Version 8 (2026-10-25): its own **volumes**, each replacing its assembly's shape of the same name or added — the keys of an insulator assembly's `[[shape]]` ([Volumes on the strings](structure-library.md#volumes-on-the-strings)) in SI numbers, e.g. `{ "name": "clamp", "kind": "box", "state": "electrified", "at_fraction": 1.0, "width": 0.15, "depth": 0.3, "length": 0.1 }`; one overridden as `"insulated"` is not checked at this string. A line without any is written as version 7. |
 
 The four `max_*` values are a string's **limits** ([String limits](structure-library.md#string-limits)): OpenOHL shows and edits them (Strings table, the string window), **Checks › String checks…** compares them with each string's solved force and swing (since 2026-10-24), and a plugin may read them too (the export model, [Plugins](../development/plugins.md)). In the app, a limit its assembly gives is shown dimmed in the Strings table and stays the assembly's unless typed over.
 

@@ -551,9 +551,25 @@ live ends (their wire points, as points) as solved, against every member
 of its body (levels 2 and 3), to the member's surface where its solid is
 known, else its centre line (said: on the unsafe side); rules
 `[[internal_rule]]` (distance fixed or by voltage, plugin presets), the
-cases' structure and section overrides. **Next part:** the volumes on the
-strings (shapes, their electrical state and freedoms, several strings in
-one assembly) and the live-end fittings' size (owner, 2026-10-25).
+cases' structure and section overrides.
+
+**Second part built (2026-10-25), in active development, not approved
+yet: the volumes on the strings.** Shapes on the insulator assembly
+(`.ohli` 4: sphere, cylinder, box, cone; grounded, electrified,
+insulated; position, size, offset), a line's string overriding one by
+name (line file 8); freedoms (swing across, swing along, twist: free or
+blocked — the shapes' orientation; their positions follow the solved
+string); several strings in one assembly (number, arrangement, spacing, a
+shared yoke). The check: electrified shapes and conductors (jumpers,
+string ends) against the grounded shapes and every member, exact on the
+convex solids (GJK, a lower bound: conservative); a rule's `shapes` and
+`distance_wind` (another distance with wind). Structures › String shapes
+and the String library's columns edit them; Structures › Display
+options › Volumes on the strings (3D) draws them. Theory:
+[Internal clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md). Not yet: the
+shapes in OHL-Structure's view (it would need the core's placement across
+the application's boundary: to decide); a structure type's own strings
+(`.ohls`) carrying shape overrides.
 
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from

@@ -56,6 +56,17 @@ pub(super) fn insulator_rows(model: &Model) -> Vec<Row> {
                     .map_or(String::new(), |v| f(v.si().to_degrees(), 2)),
                 a.source.clone().unwrap_or_default(),
                 labelled(model, &a.id).len().to_string(),
+                a.volumes.swing_across.as_str().into(),
+                a.volumes.swing_along.as_str().into(),
+                a.volumes.twist.as_str().into(),
+                a.volumes.strings.to_string(),
+                a.volumes.arrangement.as_str().into(),
+                if a.volumes.strings > 1 {
+                    f(a.volumes.spacing, 3)
+                } else {
+                    String::new()
+                },
+                a.volumes.shapes.len().to_string(),
             ],
             defaulted: Vec::new(),
         })
@@ -113,6 +124,35 @@ pub(super) fn insulator_changes(
         a.max_swing_across = angle("max across")?;
         a.max_swing_along = angle("max along")?;
         a.source = opt(&c.get(col("source")));
+        // The volumes' freedoms and strings (its shapes: String shapes).
+        let freedom = |name: &str| -> Result<ohl_structures::Freedom, String> {
+            let t = c.get(col(name));
+            if t.trim().is_empty() {
+                return Ok(ohl_structures::Freedom::Free);
+            }
+            ohl_structures::Freedom::parse(&t)
+                .ok_or_else(|| format!("{}: {name} \"{}\": free or blocked", a.id, t.trim()))
+        };
+        let v = &mut a.volumes;
+        v.swing_across = freedom("swing across")?;
+        v.swing_along = freedom("swing along")?;
+        v.twist = freedom("twist")?;
+        v.strings = match c.get(col("strings")).trim() {
+            "" => 1,
+            t => t
+                .parse()
+                .map_err(|_| format!("{}: strings \"{t}\": 1 to 4", a.id))?,
+        };
+        v.arrangement = match c.get(col("arrangement")).trim() {
+            "" => ohl_structures::Arrangement::Across,
+            t => ohl_structures::Arrangement::parse(t).ok_or_else(|| {
+                format!("{}: arrangement \"{t}\": across, along or triangle", a.id)
+            })?,
+        };
+        v.spacing = opt_num(&c.get(col("spacing")), &what("spacing"))?.unwrap_or(0.0);
+        if v.strings <= 1 {
+            v.spacing = 0.0;
+        }
         a.validate().map_err(|e| format!("{}: {e}", a.id))
     };
     let mut out = Changes::default();
@@ -196,6 +236,7 @@ pub(super) fn insulator_changes(
             max_swing: None,
             max_swing_across: None,
             max_swing_along: None,
+            volumes: Default::default(),
         };
         read(&mut a, &c)?;
         out.library.push((file(&id), Some(a.to_toml())));
@@ -250,6 +291,176 @@ pub(super) fn insulator_changes(
                 ord: None,
             },
         ));
+    }
+    Ok(out)
+}
+
+/// The key of a shape's row: its assembly and its name.
+fn shape_key(assembly: &str, shape: &str) -> String {
+    format!("{assembly}\t{shape}")
+}
+
+/// "0.5" (a fraction) or "0.3 m" (metres) as a shape's position.
+fn along_text(a: ohl_structures::Along) -> String {
+    match a {
+        ohl_structures::Along::Fraction(x) => f(x, 4),
+        ohl_structures::Along::Metres(m) => format!("{} m", f(m, 3)),
+    }
+}
+
+/// A shape's position typed: a fraction, or metres with "m".
+fn parse_along(text: &str, what: &str) -> Result<ohl_structures::Along, String> {
+    let t = text.trim();
+    match t.strip_suffix('m') {
+        Some(m) => Ok(ohl_structures::Along::Metres(num(m, what)?)),
+        None => Ok(ohl_structures::Along::Fraction(num(t, what)?)),
+    }
+}
+
+/// The String shapes table's rows: one per shape of each insulator
+/// assembly, in the library's order.
+pub(super) fn string_shape_rows(model: &Model) -> Vec<Row> {
+    let Some((_, library)) = model.types.as_ref() else {
+        return Vec::new();
+    };
+    let size = |v: f64, used: bool| if used { f(v, 3) } else { String::new() };
+    library
+        .iter()
+        .flat_map(|a| {
+            a.volumes.shapes.iter().map(move |s| {
+                use ohl_structures::ShapeKind;
+                let k = s.kind;
+                Row {
+                    key: shape_key(&a.id, &s.name),
+                    select: Selection::None,
+                    cells: vec![
+                        a.id.clone(),
+                        s.name.clone(),
+                        k.as_str().into(),
+                        s.state.as_str().into(),
+                        along_text(s.at),
+                        size(s.diameter, k != ShapeKind::Box),
+                        size(s.end_diameter, k == ShapeKind::Cone),
+                        size(s.length, k != ShapeKind::Sphere),
+                        size(s.width, k == ShapeKind::Box),
+                        size(s.depth, k == ShapeKind::Box),
+                        f(s.offset[0], 3),
+                        f(s.offset[1], 3),
+                        if s.shared { "yes" } else { "" }.into(),
+                    ],
+                    defaulted: Vec::new(),
+                }
+            })
+        })
+        .collect()
+}
+
+/// A shape from a row's cells (the sizes its kind does not take dropped).
+fn read_shape(c: &Cells, assembly: &str) -> Result<ohl_structures::StringShape, String> {
+    use ohl_structures::{ElectricalState, ShapeKind, StringShape};
+    let name = c.get(1).trim().to_owned();
+    let what = |col: &str| format!("{assembly} {name}: {col}");
+    let kind = ShapeKind::parse(&c.get(2)).ok_or_else(|| {
+        format!(
+            "{assembly} {name}: kind \"{}\": sphere, cylinder, box or cone",
+            c.get(2).trim()
+        )
+    })?;
+    let state = ElectricalState::parse(&c.get(3)).ok_or_else(|| {
+        format!(
+            "{assembly} {name}: state \"{}\": grounded, electrified or insulated",
+            c.get(3).trim()
+        )
+    })?;
+    let size = |k: usize, col: &str| -> Result<f64, String> {
+        Ok(opt_num(&c.get(k), &what(col))?.unwrap_or(0.0))
+    };
+    let shape = StringShape {
+        at: parse_along(&c.get(4), &what("at"))?,
+        diameter: size(5, "diameter")?,
+        end_diameter: size(6, "end diameter")?,
+        length: size(7, "length")?,
+        width: size(8, "width")?,
+        depth: size(9, "depth")?,
+        offset: [size(10, "offset across")?, size(11, "offset along")?],
+        shared: matches!(c.get(12).trim(), "yes" | "true" | "1"),
+        ..StringShape::new(&name, kind, state)
+    }
+    .sizes_of_its_kind();
+    shape
+        .check()
+        .map_err(|e| format!("{assembly} {name}: {e}"))?;
+    Ok(shape)
+}
+
+/// The String shapes table's changes: each assembly with a shape edited,
+/// added or deleted written again (its file), in one change.
+pub(super) fn string_shape_changes(
+    model: &Model,
+    rows: &[Row],
+    page: &TablePage,
+) -> Result<Changes, String> {
+    model
+        .stored_line()
+        .ok_or_else(|| "read-only: open a project to edit".to_owned())?;
+    let empty = ohl_structures::InsulatorLibrary::default();
+    let library = model.types.as_ref().map_or(&empty, |(_, i)| i);
+    let dir = crate::library::LibraryKind::Insulators.new_file_dir(&model.sources);
+    // Each assembly's shapes as the rows now give them.
+    let mut shapes: BTreeMap<String, Vec<ohl_structures::StringShape>> = BTreeMap::new();
+    let mut touched: BTreeSet<String> = BTreeSet::new();
+    for row in rows {
+        let id = &row.cells[0];
+        let list = shapes.entry(id.clone()).or_default();
+        if page.deleted.contains(&row.key) {
+            touched.insert(id.clone());
+            continue;
+        }
+        let typed = page.edits.get(&row.key);
+        if typed.is_some() {
+            touched.insert(id.clone());
+        }
+        let c = Cells {
+            row: &row.cells,
+            typed,
+            defaulted: &row.defaulted,
+        };
+        list.push(read_shape(&c, id)?);
+    }
+    for added in &page.added {
+        let c = Cells {
+            row: added,
+            typed: None,
+            defaulted: &[],
+        };
+        let id = c.get(0).trim().to_owned();
+        if library.get(&id).is_none() {
+            return Err(format!(
+                "\"{id}\": no such library label (String library): a shape belongs to one"
+            ));
+        }
+        let s = read_shape(&c, &id)?;
+        shapes.entry(id.clone()).or_default().push(s);
+        touched.insert(id);
+    }
+    let mut out = Changes::default();
+    for id in touched {
+        let Some(was) = library.get(&id) else {
+            continue;
+        };
+        let mut a = was.clone();
+        a.volumes.shapes = shapes.remove(&id).unwrap_or_default();
+        a.validate().map_err(|e| format!("{id}: {e}"))?;
+        let path = library.path(&id).map_or_else(
+            || {
+                dir.join(format!(
+                    "{id}.{}",
+                    ohl_structures::insulators::INSULATOR_FILE_EXTENSION
+                ))
+            },
+            std::path::Path::to_path_buf,
+        );
+        out.library.push((path, Some(a.to_toml())));
     }
     Ok(out)
 }

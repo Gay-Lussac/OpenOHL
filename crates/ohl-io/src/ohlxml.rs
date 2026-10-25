@@ -37,6 +37,63 @@ fn num(x: f64) -> String {
     format!("{x}")
 }
 
+/// The attributes of a string's own shape (line file version 8): its
+/// line-file keys, sizes in metres.
+const SHAPE_ATTRS: [&str; 13] = [
+    "name",
+    "kind",
+    "state",
+    "at",
+    "at_fraction",
+    "diameter",
+    "end_diameter",
+    "length",
+    "width",
+    "depth",
+    "offset_across",
+    "offset_along",
+    "shared",
+];
+
+/// A string's own shape as `<shape …/>`, its line-file keys as
+/// attributes.
+fn write_shape(out: &mut String, sh: &impl serde::Serialize) {
+    out.push_str("      <shape");
+    if let Ok(serde_json::Value::Object(m)) = serde_json::to_value(sh) {
+        for key in SHAPE_ATTRS {
+            match m.get(key) {
+                Some(serde_json::Value::String(t)) => attr(out, key, t),
+                Some(serde_json::Value::Number(n)) => {
+                    attr(out, key, &num(n.as_f64().unwrap_or(0.0)))
+                }
+                Some(serde_json::Value::Bool(true)) => attr(out, key, "true"),
+                _ => {}
+            }
+        }
+    }
+    out.push_str("/>\n");
+}
+
+/// A `<shape …/>` of a string read back.
+fn read_shape<T: serde::de::DeserializeOwned>(e: &Element) -> Result<T, String> {
+    check(e, &SHAPE_ATTRS, &[])?;
+    let mut m = serde_json::Map::new();
+    for key in SHAPE_ATTRS {
+        let Some(v) = e.attr(key) else { continue };
+        let value = match key {
+            "name" | "kind" | "state" => serde_json::Value::String(v.to_owned()),
+            "shared" => serde_json::Value::Bool(match v {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                o => return Err(format!("<shape>: shared=\"{o}\": true or false")),
+            }),
+            _ => serde_json::json!(parse_num::<f64>(e, key, v)?),
+        };
+        m.insert(key.to_owned(), value);
+    }
+    serde_json::from_value(serde_json::Value::Object(m)).map_err(|err| format!("<shape>: {err}"))
+}
+
 fn point_attrs(out: &mut String, p: Point) {
     let _ = write!(
         out,
@@ -439,6 +496,7 @@ fn write_structure(out: &mut String, s: &Structure) {
             max_swing_deg,
             max_swing_across_deg,
             max_swing_along_deg,
+            shapes,
         } = x;
         out.push_str("    <string");
         attr(out, "label", label);
@@ -472,7 +530,15 @@ fn write_structure(out: &mut String, s: &Structure) {
         if *strain {
             attr(out, "strain", "true");
         }
-        out.push_str("/>\n");
+        if shapes.is_empty() {
+            out.push_str("/>\n");
+        } else {
+            out.push_str(">\n");
+            for sh in shapes {
+                write_shape(out, sh);
+            }
+            out.push_str("    </string>\n");
+        }
     }
     for label in omit {
         out.push_str("    <omit");
@@ -1396,7 +1462,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "max_swing_across_deg",
                     "max_swing_along_deg",
                 ],
-                &[],
+                &["shape"],
             )?;
             Ok(InsulatorString {
                 description: owned(x, "description").unwrap_or_default(),
@@ -1416,6 +1482,10 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 max_swing_deg: optional(x, "max_swing_deg")?,
                 max_swing_across_deg: optional(x, "max_swing_across_deg")?,
                 max_swing_along_deg: optional(x, "max_swing_along_deg")?,
+                shapes: x
+                    .children_named("shape")
+                    .map(read_shape)
+                    .collect::<Result<_, String>>()?,
             })
         })
         .collect::<Result<_, String>>()?;

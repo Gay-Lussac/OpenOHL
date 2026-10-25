@@ -215,6 +215,13 @@ pub struct InsulatorString {
     /// plane), degrees, either way (not checked). None: not given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_swing_along_deg: Option<f64>,
+    /// Its own volumes (line file version 8, roadmap O6): each replaces
+    /// its assembly's shape of the same name, or is added
+    /// ([`ohl_structures::StringVolumes::with_overrides`]); a shape
+    /// overridden as insulated is not checked at this string. Empty: its
+    /// assembly's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<ohl_structures::StringShape>,
 }
 
 impl InsulatorString {

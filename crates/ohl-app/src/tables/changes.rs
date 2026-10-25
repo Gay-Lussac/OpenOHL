@@ -25,6 +25,9 @@ impl TableKind {
         if self == TableKind::Insulators {
             return insulator_changes(model, rows, page);
         }
+        if self == TableKind::StringShapes {
+            return string_shape_changes(model, rows, page);
+        }
         if self == TableKind::LoadTypes {
             return load_type_changes(model, rows, page);
         }
@@ -536,7 +539,10 @@ impl TableKind {
             }
             TableKind::Spacers => spacer_commands(stored, page, &existing, &mut out)?,
             TableKind::SpanObjects => span_object_commands(stored, page, &existing, &mut out)?,
-            TableKind::WeatherCases | TableKind::Insulators | TableKind::LoadTypes => {
+            TableKind::WeatherCases
+            | TableKind::Insulators
+            | TableKind::StringShapes
+            | TableKind::LoadTypes => {
                 unreachable!("written to its files")
             }
         }

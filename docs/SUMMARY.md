@@ -63,6 +63,7 @@
 - [Safety volumes](theory/safety-volumes.md)
 - [Plan and profile drawings](theory/drawings.md)
 - [Vertical and radial clearances](theory/clearances.md)
+- [Internal clearances](theory/internal-clearances.md)
 - [Wire tensions](theory/wire-tensions.md)
 
 # Design

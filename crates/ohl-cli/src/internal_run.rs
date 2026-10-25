@@ -4,9 +4,11 @@
 
 //! `ohl internal`: the internal clearances ([`ohl_clearance::internal`])
 //! by the `[[internal_rule]]` tables of a rule file — at every structure
-//! with a body (levels 2 and 3), the conductors near it, its jumpers and
-//! its strings' wire points as solved in each weather case of a rule,
-//! against every member of the body; the worst first; CSV with `--csv`.
+//! with a body (levels 2 and 3), the conductors near it, its jumpers, its
+//! strings' wire points and the electrified volumes on its strings (the
+//! insulator library's shapes, the strings' own) as solved in each weather
+//! case of a rule, against every member of the body and the grounded
+//! volumes; the worst first; CSV with `--csv`.
 
 use std::path::PathBuf;
 
@@ -110,10 +112,11 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
     )?;
     let mut line = crate::project::load_line(&a.model.file)?;
     let mut bodies = ohl_structures_fe::drawn::Bodies::default();
+    // The insulator library: the volumes on the strings.
+    let insulators =
+        ohl_structures::InsulatorLibrary::load_dir(&libs.insulators).map_err(|e| e.to_string())?;
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
         let structures = ohl_structures::StructureLibrary::load_dir(&libs.structures)
-            .map_err(|e| e.to_string())?;
-        let insulators = ohl_structures::InsulatorLibrary::load_dir(&libs.insulators)
             .map_err(|e| e.to_string())?;
         line = line
             .resolve(&structures, &insulators)
@@ -163,23 +166,26 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
                 Err(e) => println!("  \"{}\": jumper {} not solved: {e}", case.name, j.id),
             }
         }
-        solved.push((case.name.clone(), shapes, jumpers));
+        solved.push((case, shapes, jumpers));
     }
-    let views: Vec<(
-        &str,
-        &[ohl_line::solve::SectionShape],
-        &[ohl_line::jumper::JumperShape],
-    )> = solved
+    let views: Vec<internal::SolvedCase> = solved
         .iter()
-        .map(|(n, s, j)| (n.as_str(), s.as_slice(), j.as_slice()))
+        .map(|(c, s, j)| internal::SolvedCase {
+            name: &c.name,
+            wind: c.wind_pressure.si() > 0.0,
+            sections: s,
+            jumpers: j,
+        })
         .collect();
     let placed = structure_bodies(&line, &bodies);
+    let fits = internal::string_fits(&line, &insulators);
     let budget = ohl_core::budget::Budget::new()
         .time_limit(std::time::Duration::from_secs(a.time_limit.max(1)));
     let report = internal::check(
         &line,
         &views,
         &placed,
+        &fits,
         &set.internal_rules,
         &Default::default(),
         &budget,
@@ -191,17 +197,19 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
         println!("  note: {n}");
     }
     println!(
-        "{:<20} {:<16} {:<10} {:<20} {:<12} {:>10} {:>10} {:<12} status",
-        "rule", "case", "structure", "part", "member", "distance", "required", "to"
+        "{:<20} {:<16} {:<10} {:<28} {:<28} {:>10} {:>10} {:<12} status",
+        "rule", "case", "structure", "part", "member or shape", "distance", "required", "to"
     );
     for r in &report.rows {
         println!(
-            "{:<20} {:<16} {:<10} {:<20} {:<12} {:>8.3} m {:>8.3} m {:<12} {}",
+            "{:<20} {:<16} {:<10} {:<28} {:<28} {:>8.3} m {:>8.3} m {:<12} {}",
             set.internal_rules[r.rule].name,
             r.case,
             r.structure,
             r.part.to_string(),
-            r.member.as_deref().unwrap_or("-"),
+            Some(r.against())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "-".into()),
             r.distance,
             r.required,
             if r.to_surface {

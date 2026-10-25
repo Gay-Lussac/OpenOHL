@@ -245,6 +245,80 @@ const INSULATOR: &[Field] = &[
         "\"2 m\"",
         "two strings to one wire point: centre to each one's top",
     ),
+    (
+        "swing_across",
+        "\"blocked\"",
+        "free (default) or blocked: whether its shapes turn with the string's swing across (version 4)",
+    ),
+    (
+        "swing_along",
+        "\"blocked\"",
+        "free (default) or blocked: whether its shapes turn with the swing along (version 4)",
+    ),
+    (
+        "twist",
+        "\"blocked\"",
+        "free (default: across the conductor) or blocked (the structure's axes): its shapes about the string's axis (version 4)",
+    ),
+    (
+        "strings",
+        "2",
+        "several strings in one assembly, 1 to 4 (needs spacing; version 4)",
+    ),
+    (
+        "arrangement",
+        "\"across\"",
+        "several strings: across, along or triangle (three)",
+    ),
+    (
+        "spacing",
+        "\"0.45 m\"",
+        "several strings: between their axes",
+    ),
+];
+
+const SHAPE: &[Field] = &[
+    ("name", "\"clamp\"", "unique on the assembly"),
+    ("kind", "\"sphere\"", "sphere, cylinder, box or cone"),
+    (
+        "state",
+        "\"electrified\"",
+        "grounded, electrified or insulated (not a clearance target)",
+    ),
+    (
+        "at_fraction",
+        "0.5",
+        "its centre along the string from its top: 0 the top, 1 the wire point (or at)",
+    ),
+    (
+        "at",
+        "\"0.3 m\"",
+        "its centre from the string's top (or at_fraction)",
+    ),
+    (
+        "diameter",
+        "\"0.2 m\"",
+        "sphere, cylinder; a cone's at its end nearer the top",
+    ),
+    ("end_diameter", "\"0 m\"", "a cone's at its other end"),
+    (
+        "length",
+        "\"0.2 m\"",
+        "on the string's axis: cylinder, cone, box",
+    ),
+    ("width", "\"0.2 m\"", "a box's across"),
+    ("depth", "\"0.2 m\"", "a box's along"),
+    (
+        "offset_across",
+        "\"0.25 m\"",
+        "its centre off the axis, across",
+    ),
+    ("offset_along", "\"0 m\"", "its centre off the axis, along"),
+    (
+        "shared",
+        "true",
+        "several strings: one for the assembly, on its axis (a yoke)",
+    ),
 ];
 
 const STRUCTURE: &[Field] = &[
@@ -477,6 +551,7 @@ impl LibraryKind {
             (LibraryKind::LoadCases, "structure") => LOAD_CASE_STRUCTURE,
             (LibraryKind::LoadCases, "") => LOAD_FILE,
             (LibraryKind::Insulators, "") => INSULATOR,
+            (LibraryKind::Insulators, "shape") => SHAPE,
             (LibraryKind::StructureTypes, "") => STRUCTURE,
             (LibraryKind::StructureTypes, "attachment") => ATTACHMENT,
             (LibraryKind::StructureTypes, "extension") => EXTENSION,
@@ -496,6 +571,7 @@ impl LibraryKind {
     fn arrays(self, context: &str) -> &'static [&'static str] {
         match (self, context) {
             (LibraryKind::StructureTypes, "") => STRUCTURE_BASICS,
+            (LibraryKind::Insulators, "") => &["shape"],
             _ => &[],
         }
     }

@@ -73,6 +73,39 @@ pub(super) fn choices(
                 .to_vec(),
             false,
         ),
+        (TableKind::Insulators, "swing across" | "swing along" | "twist") => {
+            (["free", "blocked"].map(str::to_owned).to_vec(), false)
+        }
+        (TableKind::Insulators, "arrangement") => (
+            ohl_structures::Arrangement::ALL
+                .iter()
+                .map(|a| a.as_str().to_owned())
+                .collect(),
+            false,
+        ),
+        (TableKind::StringShapes, "library label") => (
+            model
+                .types
+                .as_ref()
+                .map(|(_, i)| i.iter().map(|a| a.id.clone()).collect())
+                .unwrap_or_default(),
+            false,
+        ),
+        (TableKind::StringShapes, "kind") => (
+            ohl_structures::ShapeKind::ALL
+                .iter()
+                .map(|k| k.as_str().to_owned())
+                .collect(),
+            false,
+        ),
+        (TableKind::StringShapes, "state") => (
+            ohl_structures::ElectricalState::ALL
+                .iter()
+                .map(|k| k.as_str().to_owned())
+                .collect(),
+            false,
+        ),
+        (TableKind::StringShapes, "shared") => (vec![String::new(), "yes".into()], false),
         (TableKind::Strings, "library label") => (
             with_none(
                 model

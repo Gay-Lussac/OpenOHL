@@ -1,0 +1,71 @@
+# OpenOHL insulator assembly (.ohli) with volumes on the string (version 4,
+# roadmap O6). Every value is INVENTED for the example — not a real
+# assembly, not manufacturer data, not a design code's value. Its length
+# and weight are those of the synthetic line's type-02 strings, so a
+# string of the typed example can carry it (the tests do so).
+format = "ohl-insulator"
+version = 4
+id = "invented-i-volumes"
+name = "Invented suspension string with volumes (example)"
+kind = "suspension"
+source = "INVENTED for the OpenOHL examples"
+length = "3.5 m"
+weight = "900 N"
+axial_stiffness = "5e7 N"
+wind_area = "0.3 m²"
+# The fittings keep the structure's axes about the string's axis.
+twist = "blocked"
+
+# Grounded: at the structure's potential.
+[[shape]]
+name = "top fitting"
+kind = "sphere"
+state = "grounded"
+at = "0 m"
+diameter = "0.15 m"
+
+[[shape]]
+name = "tower-side horn"
+kind = "cylinder"
+state = "grounded"
+at = "0.15 m"
+diameter = "0.02 m"
+length = "0.3 m"
+offset_across = "0.25 m"
+
+# Insulated: the insulator itself (drawn, not a clearance target).
+[[shape]]
+name = "insulator"
+kind = "cylinder"
+state = "insulated"
+at_fraction = 0.5
+diameter = "0.12 m"
+length = "3 m"
+
+# Electrified: at the line's potential.
+[[shape]]
+name = "line-side horn"
+kind = "cylinder"
+state = "electrified"
+at = "3.3 m"
+diameter = "0.02 m"
+length = "0.3 m"
+offset_across = "0.25 m"
+
+[[shape]]
+name = "corona ring"
+kind = "cone"
+state = "electrified"
+at = "3.3 m"
+diameter = "0.3 m"
+end_diameter = "0.4 m"
+length = "0.08 m"
+
+[[shape]]
+name = "clamp"
+kind = "box"
+state = "electrified"
+at_fraction = 1.0
+width = "0.15 m"
+depth = "0.3 m"
+length = "0.1 m"

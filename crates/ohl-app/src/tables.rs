@@ -55,6 +55,9 @@ pub enum TableKind {
     /// The string library: the insulator assemblies strings are labelled
     /// with, how many strings use each.
     Insulators,
+    /// The volumes on the strings: one row per shape of each insulator
+    /// assembly (roadmap O6).
+    StringShapes,
     /// Jumpers.
     Jumpers,
     /// Electrical systems.
@@ -294,11 +297,12 @@ pub struct Changes {
 
 impl TableKind {
     /// Every table (the Tables menu).
-    pub const ALL: [TableKind; 15] = [
+    pub const ALL: [TableKind; 16] = [
         TableKind::Structures,
         TableKind::Sections,
         TableKind::Strings,
         TableKind::Insulators,
+        TableKind::StringShapes,
         TableKind::Jumpers,
         TableKind::Systems,
         TableKind::ConductorPaths,
@@ -319,6 +323,7 @@ impl TableKind {
             TableKind::Sections => "Sections",
             TableKind::Strings => "Strings",
             TableKind::Insulators => "String library",
+            TableKind::StringShapes => "String shapes",
             TableKind::Jumpers => "Jumpers",
             TableKind::Systems => "Electrical systems",
             TableKind::ConductorPaths => "Conductor paths",
@@ -340,6 +345,7 @@ impl TableKind {
             TableKind::Sections => "sections",
             TableKind::Strings => "strings",
             TableKind::Insulators => "insulators",
+            TableKind::StringShapes => "string_shapes",
             TableKind::Jumpers => "jumpers",
             TableKind::Systems => "systems",
             TableKind::ConductorPaths => "circuits",
@@ -361,6 +367,7 @@ impl TableKind {
             TableKind::Sections => SECTIONS,
             TableKind::Strings => STRINGS,
             TableKind::Insulators => INSULATORS,
+            TableKind::StringShapes => STRING_SHAPES,
             TableKind::Jumpers => JUMPERS,
             TableKind::Systems => SYSTEMS,
             TableKind::ConductorPaths => CIRCUITS,

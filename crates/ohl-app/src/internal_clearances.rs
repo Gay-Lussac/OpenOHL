@@ -4,9 +4,11 @@
 
 //! Checks › **Internal clearances…** (roadmap O6, first part; owner,
 //! 2026-10-25): the electrified parts at each structure — the conductors
-//! near it, its jumpers, its strings' live ends — against every member of
-//! its body, to the member's surface where its solid is known, by rules
-//! ([`ohl_clearance::internal`]). Only structures at detail level 2 or 3
+//! near it, its jumpers, its strings' live ends and the electrified
+//! volumes on its strings (second part: the String library's shapes) —
+//! against every member of its body, to the member's surface where its
+//! solid is known, and against the grounded volumes on its strings, by
+//! rules ([`ohl_clearance::internal`]). Only structures at detail level 2 or 3
 //! (with a body); the others are listed as not checked. The rules are kept
 //! in the project as a rule file (`<model>.internal-rules.ohlr`,
 //! `[[internal_rule]]` tables, the structure and section overrides in its
@@ -191,6 +193,26 @@ pub fn structure_bodies(model: &Model) -> Vec<StructureBody> {
     out
 }
 
+/// Each case solved (the case, its sections, its jumpers) as the check
+/// takes it: with wind when its wind pressure is above 0.
+type SolvedCases = [(
+    ohl_weather::WeatherCase,
+    Vec<ohl_line::solve::SectionShape>,
+    Vec<ohl_line::jumper::JumperShape>,
+)];
+
+fn views_of(solved: &SolvedCases) -> Vec<internal::SolvedCase<'_>> {
+    solved
+        .iter()
+        .map(|(c, s, j)| internal::SolvedCase {
+            name: &c.name,
+            wind: c.wind_pressure.si() > 0.0,
+            sections: s,
+            jumpers: j,
+        })
+        .collect()
+}
+
 impl InternalClearancesWindow {
     /// Opens the window; the first time, reads the project's rule file
     /// (its internal rules and overrides), else starts with one rule.
@@ -291,6 +313,11 @@ impl InternalClearancesWindow {
         let library = model.library.clone();
         let rules = self.rules.clone();
         let bodies = structure_bodies(model);
+        // The volumes on the strings: the String library's, the strings'
+        // own merged in.
+        let empty = ohl_structures::InsulatorLibrary::default();
+        let fits =
+            internal::string_fits(&model.line, model.types.as_ref().map_or(&empty, |(_, i)| i));
         let filter = self.overrides.filter(model);
         let study = if self.overrides.structures {
             wind_study(model, &bodies)
@@ -307,20 +334,14 @@ impl InternalClearancesWindow {
                         .iter()
                         .map(|f| format!("\"{}\": not solved: {f}", case.name)),
                 );
-                solved.push((case.name.clone(), s.shapes, s.jumpers));
+                solved.push((case.clone(), s.shapes, s.jumpers));
             }
-            let views: Vec<(
-                &str,
-                &[ohl_line::solve::SectionShape],
-                &[ohl_line::jumper::JumperShape],
-            )> = solved
-                .iter()
-                .map(|(n, s, j)| (n.as_str(), s.as_slice(), j.as_slice()))
-                .collect();
+            let views = views_of(&solved);
             // Exit clause: ten minutes is far beyond a line's structures.
             let budget =
                 ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-            let mut report = internal::check(&line, &views, &bodies, &rules, &filter, &budget)?;
+            let mut report =
+                internal::check(&line, &views, &bodies, &fits, &rules, &filter, &budget)?;
             // The wind study's structures (the override): their rows of the
             // group's cases taken from a run at their own wind instead.
             let studied = |st: &str| study.at.values().any(|ids| ids.iter().any(|i| i == st));
@@ -337,22 +358,15 @@ impl InternalClearancesWindow {
                     notes.extend(s.failed.iter().map(|f| {
                         format!("\"{}\" at {pa} Pa (wind study): not solved: {f}", case.name)
                     }));
-                    solved.push((case.name.clone(), s.shapes, s.jumpers));
+                    solved.push((case, s.shapes, s.jumpers));
                 }
-                let views: Vec<(
-                    &str,
-                    &[ohl_line::solve::SectionShape],
-                    &[ohl_line::jumper::JumperShape],
-                )> = solved
-                    .iter()
-                    .map(|(n, s, j)| (n.as_str(), s.as_slice(), j.as_slice()))
-                    .collect();
+                let views = views_of(&solved);
                 let these: Vec<StructureBody> = bodies
                     .iter()
                     .filter(|b| ids.contains(&b.structure))
                     .cloned()
                     .collect();
-                let part = internal::check(&line, &views, &these, &rules, &filter, &budget)?;
+                let part = internal::check(&line, &views, &these, &fits, &rules, &filter, &budget)?;
                 for n in part.notes {
                     if !report.notes.contains(&n) {
                         report.notes.push(n);
@@ -444,11 +458,12 @@ impl InternalClearancesWindow {
                         egui::RichText::new(
                             "At each structure with a body (detail level 2 or 3): the \
                              conductors near it (within each rule's reach along the span), its \
-                             jumpers and its strings' live ends, as solved in each weather case \
-                             of the rules, against every member — to the member's surface where \
-                             its section's solid is known, else to its centre line (said: on \
-                             the unsafe side). Structures without a body are listed, not \
-                             checked. The volumes on the strings come later.",
+                             jumpers, its strings' live ends and the electrified volumes on its \
+                             strings (Structures › String shapes), as solved in each weather \
+                             case of the rules, against every member — to the member's surface \
+                             where its section's solid is known, else to its centre line (said: \
+                             on the unsafe side) — and against the grounded volumes. Structures \
+                             without a body are listed, not checked.",
                         )
                         .small()
                         .weak(),
@@ -580,8 +595,10 @@ impl InternalClearancesWindow {
                     "conductors",
                     "jumpers",
                     "string ends",
+                    "shapes",
                     "reach m",
                     "distance",
+                    "with wind",
                     "",
                 ] {
                     ui.strong(h);
@@ -648,7 +665,15 @@ impl InternalClearancesWindow {
                         .checkbox(&mut r.string_ends, "")
                         .on_hover_text(
                             "The strings' live ends (their wire points), as points: the \
-                             fittings' size not counted yet — on the unsafe side",
+                             fittings' size not counted unless given as shapes — on the unsafe \
+                             side",
+                        )
+                        .changed();
+                    changed |= ui
+                        .checkbox(&mut r.shapes, "")
+                        .on_hover_text(
+                            "The volumes on the strings (Structures › String shapes): the \
+                             electrified ones checked, every part against the grounded ones",
                         )
                         .changed();
                     let resp = ui.add(
@@ -663,6 +688,30 @@ impl InternalClearancesWindow {
                         &mut r.distance,
                         &voltages,
                     );
+                    // A distance of its own in the cases with wind (owner,
+                    // 2026-10-19); none: the same.
+                    ui.horizontal(|ui| {
+                        let mut own = r.distance_wind.is_some();
+                        if ui
+                            .checkbox(&mut own, "")
+                            .on_hover_text(
+                                "A distance of its own in the weather cases with wind (a wind \
+                                 pressure above 0); not ticked: the distance in every case",
+                            )
+                            .changed()
+                        {
+                            r.distance_wind = own.then(|| r.distance.clone());
+                            changed = true;
+                        }
+                        if let Some(d) = &mut r.distance_wind {
+                            changed |= crate::requirement_ui::requirement_ui(
+                                ui,
+                                ("internal-distance-wind", k),
+                                d,
+                                &voltages,
+                            );
+                        }
+                    });
                     if ui
                         .small_button("×")
                         .on_hover_text("Remove this rule")
@@ -753,7 +802,7 @@ impl InternalClearancesWindow {
                         for h in [
                             "structure",
                             "part",
-                            "member",
+                            "member or shape",
                             "rule",
                             "case",
                             "distance m",
@@ -779,7 +828,12 @@ impl InternalClearancesWindow {
                                 out.go = Some(Selection::Structure(r.structure.clone()));
                             }
                             ui.label(r.part.to_string());
-                            ui.label(r.member.clone().unwrap_or_else(|| "—".into()));
+                            let against = r.against();
+                            ui.label(if against.is_empty() {
+                                "—".into()
+                            } else {
+                                against
+                            });
                             ui.label(&report.rules[r.rule].name);
                             ui.label(&r.case);
                             ui.label(egui::RichText::new(format!("{:.2}", r.distance)).monospace());

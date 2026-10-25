@@ -13,6 +13,7 @@ ohl-core.workspace = true
 serde.workspace = true
 toml.workspace = true
 ohl-line.workspace = true
+ohl-structures.workspace = true
 ohl-terrain.workspace = true
 ohl-cables.workspace = true
 ohl-weather.workspace = true

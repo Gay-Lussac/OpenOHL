@@ -494,6 +494,7 @@ impl TableKind {
                 .collect(),
             TableKind::AlignmentPoints => point_rows(line),
             TableKind::Insulators => insulator_rows(model),
+            TableKind::StringShapes => string_shape_rows(model),
             TableKind::WeatherCases => model
                 .cases
                 .iter()
@@ -656,6 +657,33 @@ impl TableKind {
                 cells[4] = "0".into();
                 cells[5] = "0".into();
                 cells[6] = "50000000".into();
+                cells[TableKind::Insulators.column("strings")] = "1".into();
+            }
+            TableKind::StringShapes => {
+                // On the first assembly, a free name; a sphere at the
+                // middle (to be set).
+                let first = model
+                    .types
+                    .as_ref()
+                    .and_then(|(_, i)| i.iter().next())
+                    .map(|a| (a.id.clone(), a.volumes.shapes.clone()));
+                if let Some((id, shapes)) = first {
+                    let more = added.iter().filter(|r| r[0] == id).count();
+                    let names: Vec<String> = shapes
+                        .iter()
+                        .map(|s| s.name.clone())
+                        .chain(added.iter().filter(|r| r[0] == id).map(|r| r[1].clone()))
+                        .collect();
+                    cells[0] = id;
+                    cells[1] = (shapes.len() + more + 1..)
+                        .map(|k| format!("shape {k}"))
+                        .find(|n| !names.contains(n))
+                        .expect("a free name");
+                }
+                cells[2] = "sphere".into();
+                cells[3] = "electrified".into();
+                cells[4] = "0.5".into();
+                cells[5] = "0.2".into();
             }
             TableKind::WeatherCases => {
                 cells[W_ORDER] = (model.cases.len() + added.len() + 1).to_string();

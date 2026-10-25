@@ -166,7 +166,7 @@ tension-only beam) and `check = false` (a modelling member, not checked)
 are such fields, and made `.ohlfe` **3**; nothing in OpenOHL writes them
 but importers. The project's
 **height datum** (2026-10-21; `ohl_line::HeightDatum`, `Line::height_datum`)
-made the line file **7** (always written at 7, the key only when one is
+made the line file **7** (written at 7 since; the key only when one is
 given; files of 6 and before read without one), OHL XML follows it (root
 attributes `height_datum`, `height_datum_epsg`), and the project file's
 `session_schema` **5** (the `meta` row `line` may hold it: an older
@@ -405,6 +405,7 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.max_swing_deg`, `.max_swing_across_deg`, `.max_swing_along_deg` | f64? | ° | version 6: the swings it may take (from straight down any direction; across; along the line), 0–180 — not checked; none: not given; filled from its assembly's on resolve. Reported with the solved string (`solve::StringState::{limits, swing}`, `jumper::JumperStringShape::{limits, swing}`; `ohl_line::swing(orientation, top, bottom) -> Swing {total_deg, across_deg, along_deg}`) and `Line::string_limits(structure, label)` | — |
 | `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
+| `InsulatorString.shapes` | `[StringShape]` | m | line file **8** (2026-10-25, roadmap O6): its own volumes, each replacing its assembly's shape of the same name or added (`StringVolumes::with_overrides`; one overridden as `insulated` is not checked); the keys of an `.ohli` `[[shape]]` in SI numbers. `Line::to_json` writes version 8 only when a string has some, else 7 (`BEFORE_SHAPES_VERSION`); OHL XML: `<shape …/>` children of `<string>` | — |
 
 The string graph: two strings may end at one wire point; strings hang
 from strings (a string below two, two tension strings from a string's
@@ -949,6 +950,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   first), `not_checked` (structure, why: level 1) and `notes`. CSV
   `rule, case, structure, part, member, distance_m, required_m,
   margin_m, to, status, x, y, z, member_x, member_y, member_z`.
+- **Internal clearances, the volumes on the strings** (2026-10-25,
+  additive): `[[internal_rule]]` takes `shapes` (default true) and an
+  optional `distance_wind` (a requirement for the cases with wind;
+  `InternalRule::required(kv, wind)`). `internal::check` now takes the
+  cases as `SolvedCase { name, wind, sections, jumpers }` and the
+  strings with volumes (`StringFit`: structure, label, the assembly's
+  `StringVolumes` with the string's own shapes merged, its still-air top
+  and wire point, the structure's orientation; `internal::string_fits(line,
+  insulators)`); `Part::Shape { label, shape, copy }`;
+  `InternalRow::grounded` names a grounded shape nearer than every member
+  (`InternalRow::against()`: the member column's text, `shape string S1
+  …`). The geometry is `ohl_clearance::volumes` (`Convex`, `separation`
+  — GJK, a lower bound —, `place`, `StringAt`, `Placed`, `Convex::mesh`
+  for the views).
 - **Requirements** (`ohl_clearance::rules::Requirement`): `vertical` /
   `radial` are a distance (`"7 m"`, `Fixed`), a table
   (`{ by_voltage = [[up to kV, "m"], …] }`, `ByVoltage`: voltages ≥ 0
@@ -1518,7 +1533,10 @@ Source: `crates/ohl-structures/src/insulators.rs`.
 | `wind_area` | area | m² | projected area |
 | `half_width` | length? | m | `legs = 2` only: centre to each string's top |
 | `max_load` | force? | N | version 2: the tension it is rated for (two strings: each one's) — **not checked** by OpenOHL; strings naming it take it where they give none (`InsulatorAssembly::limits`, `InsulatorLimits`) |
-| `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 3 for `legs = 2`, else 2 when a limit is given, else 1 |
+| `max_swing`, `max_swing_across`, `max_swing_along` | angle? | ° | version 2: the swings it may take (from straight down any direction; across; along the line), 0–180°, not checked; taken by its strings where they give none. `to_toml` writes version 4 with volumes, else 3 for `legs = 2`, else 2 when a limit is given, else 1 |
+| `swing_across`, `swing_along`, `twist` | `free` / `blocked` | — | version 4 (2026-10-25, roadmap O6; `InsulatorAssembly::volumes`, `ohl_structures::StringVolumes`, `Freedom`): whether its shapes turn with the solved string's swing across, along and about its axis; default free |
+| `strings`, `arrangement`, `spacing` | u32 (1–4), `across` / `along` / `triangle`, length | —, —, m | version 4: several strings in one assembly (`Arrangement`; a triangle of three; several need a spacing above 0, one none); the line's string stands for all, on their middle (`StringVolumes::string_offsets`) |
+| `[[shape]]` | `StringShape` | m | version 4: `name` (unique), `kind` (`ShapeKind`: sphere, cylinder, box, cone), `state` (`ElectricalState`: grounded, electrified, insulated), `at` (length) or `at_fraction` (0–1), `diameter`, `end_diameter` (cone), `length`, `width`, `depth` (box) — only the sizes its kind takes —, `offset_across`, `offset_along`, `shared` (one for several strings). Read through `ShapeFile` (also the line file's form, SI numbers) |
 
 ### Weather and load cases
 

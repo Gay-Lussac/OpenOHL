@@ -24,7 +24,7 @@ fn older_files_read_without_a_height_datum() {
     assert_eq!(line.height_datum, None);
     assert_eq!(line.height_datum_label(), "");
     assert_eq!(line.version, LINE_FILE_VERSION);
-    assert_eq!(LINE_FILE_VERSION, 7);
+    assert_eq!(LINE_FILE_VERSION, 8);
     // Written without the key while none is given.
     assert!(!line.to_json().contains("height_datum"));
 }
