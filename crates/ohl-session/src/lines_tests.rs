@@ -417,9 +417,10 @@ fn a_protected_line_is_changed_by_admins_only() {
     s.delete_line("ana", "phase 1").unwrap();
 }
 
-/// A library with a crafted name ("../…") that reached a revision (a
-/// crafted copy of the project, a bundle) is refused when that revision is
-/// restored: such names never come back as file names.
+/// A library with a crafted name ("../…") put straight into a project
+/// file is never handed out as a file name, never committed into a
+/// revision, and restoring a revision takes it away (security review
+/// 2026-10-26: names are checked wherever library entries are read).
 #[test]
 fn crafted_library_names_are_not_restored() {
     let (path, s) = project("crafted-library");
@@ -433,9 +434,13 @@ fn crafted_library_names_are_not_restored() {
         .unwrap();
     }
     let mut s = Session::open(&path).unwrap();
+    assert!(s.library_files("cables").unwrap().is_empty());
     let rev = s.commit("ana", "with a crafted library").unwrap();
-    let err = s.roll_back_line("ana", "main", &rev.id).unwrap_err();
-    assert!(err.to_string().contains("bad name"), "{err}");
+    s.roll_back_line("ana", "main", &rev.id).unwrap();
+    assert!(
+        s.version(Kind::Library, "cables/../escaped.ohlw") == 0,
+        "the crafted object is gone"
+    );
 }
 
 /// Each project line has its library files: a change on one leaves the

@@ -1949,6 +1949,10 @@ impl Model {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             for (n, t) in files {
+                // Never a path out of the folder, whatever the session hands.
+                if !ohl_session::safe_file_name(n) {
+                    return Err(format!("library file \"{n}\": not a plain file name"));
+                }
                 std::fs::write(dir.join(n), t).map_err(|e| format!("{n}: {e}"))?;
             }
             Ok(dir)

@@ -10,6 +10,19 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Library file names checked wherever they are read (security review, 2026-10-26)**
+
+A library file's kind and name become a path when the file is written
+(e.g. another project line's libraries shown beside the line worked on).
+Before, only the session's own helpers checked them: a raw put command
+from a client or a crafted project file could carry a name such as
+`../../x` and have it written outside the working folder. Now a put of a
+library object with a kind or name that is not a plain file name is
+refused, entries with such names are never handed out (nor committed into
+a revision; restoring one takes such an object away), and the place that
+writes the files refuses them too. Tests: a raw put refused, a crafted
+entry skipped and removed on restore.
+
 **OHL-Structure: UI review step 1 (owner: UI review step 1, 2026-10-26)**
 
 The owner approved step 1 of a review of OHL-Structure's window. No
