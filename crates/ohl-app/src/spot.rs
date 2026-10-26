@@ -251,7 +251,8 @@ impl SpotWindow {
                 let number =
                     |ui: &mut egui::Ui, label: &str, v: &mut f64, unit: &str, hint: &str| {
                         ui.label(label).on_hover_text(hint);
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(v)
                                 .speed(0.5)
                                 .range(0.0..=1e6)

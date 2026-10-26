@@ -431,7 +431,8 @@ impl Workspace {
         let mut changed = false;
         ui.horizontal_wrapped(|ui| {
             ui.label("snap");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut self.grid)
                     .range(0.0..=5.0)
                     .speed(0.01)
@@ -480,7 +481,8 @@ impl Workspace {
                 })
                 .collect();
             ui.label("string");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut self.string_length)
                     .range(0.05..=50.0)
                     .speed(0.05)
@@ -1118,7 +1120,8 @@ impl Workspace {
             }
         });
         let coord = |ui: &mut egui::Ui, v: &mut f64| {
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(v)
                     .speed(0.01)
                     .max_decimals(3)
@@ -1270,7 +1273,8 @@ impl Workspace {
         // OHL-Structure).
         let linkable: Vec<String> = t.attach_joints().into_iter().map(|j| j.id).collect();
         let coord = |ui: &mut egui::Ui, v: &mut f64| {
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(v)
                     .speed(0.01)
                     .max_decimals(3)
@@ -1498,7 +1502,8 @@ impl Workspace {
                 }
             }
             ui.label("length");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut self.string_length)
                     .range(0.05..=50.0)
                     .speed(0.05)
@@ -1615,8 +1620,8 @@ impl Workspace {
                 if legs == 1 {
                     let (angle, direction) = s.angles();
                     let (mut dn, mut dr) = (angle, (direction + ahead).rem_euclid(360.0));
-                    let a1 = ui.add(egui::DragValue::new(&mut dn).range(0.0..=180.0).speed(0.5).max_decimals(2).suffix("°"));
-                    let a2 = ui.add(egui::DragValue::new(&mut dr).range(0.0..=360.0).speed(0.5).max_decimals(2).suffix("°"));
+                    let a1 = crate::style::field(ui, egui::DragValue::new(&mut dn).range(0.0..=180.0).speed(0.5).max_decimals(2).suffix("°"));
+                    let a2 = crate::style::field(ui, egui::DragValue::new(&mut dr).range(0.0..=360.0).speed(0.5).max_decimals(2).suffix("°"));
                     if a1.changed() || a2.changed() {
                         put(StringChange::Direction(dn, (dr - ahead).rem_euclid(360.0)));
                     }
@@ -1628,11 +1633,11 @@ impl Workspace {
                 }
                 // Weight, wind area, compression.
                 let mut w = s.weight.map(|w| w.si()).or(a.map(|a| a.weight.si())).unwrap_or(0.0);
-                if ui.add(egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
+                if crate::style::field(ui, egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
                     put(StringChange::Weight(w));
                 }
                 let mut wa = s.wind_area.map(|w| w.si()).or(a.map(|a| a.wind_area.si())).unwrap_or(0.0);
-                if ui.add(egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
+                if crate::style::field(ui, egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
                     put(StringChange::WindArea(wa));
                 }
                 ui.horizontal(|ui| {

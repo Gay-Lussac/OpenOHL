@@ -523,13 +523,13 @@ impl PylonBuilder {
                         for p in &t.parameters {
                             ui.label(&p.name);
                             if let Some(v) = self.values.dimensions.get_mut(&p.name) {
-                                ui.add(egui::DragValue::new(v).speed(0.1).max_decimals(3).suffix(" m"));
+                                crate::style::field(ui, egui::DragValue::new(v).speed(0.1).max_decimals(3).suffix(" m"));
                             }
                             ui.label(egui::RichText::new(&p.description).small().weak());
                             ui.end_row();
                         }
                         ui.label("string length");
-                        ui.add(
+                        crate::style::field(ui,
                             egui::DragValue::new(&mut self.values.string_length)
                                 .speed(0.05)
                                 .max_decimals(3)
@@ -549,7 +549,7 @@ impl PylonBuilder {
                         ui.end_row();
                         if !t.earths.is_empty() {
                             ui.label("earth wire string length");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.values.earth_length)
                                     .speed(0.01)
                                     .max_decimals(3)

@@ -1194,7 +1194,7 @@ impl ZoneWindow {
         let mut remove = None;
         let mut duplicate = None;
         let n = self.rules.len();
-        egui::ScrollArea::vertical()
+        egui::ScrollArea::both()
             .id_salt((self.title(), "rules"))
             .max_height(LIST_HEIGHT)
             .auto_shrink([false, true])

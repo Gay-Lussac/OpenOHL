@@ -517,7 +517,10 @@ pub fn fields_ui(ui: &mut egui::Ui, t: &SheetTemplate, f: &mut SheetFields) {
                             ui.horizontal(|ui| {
                                 let mut k = *n;
                                 ui.label("sheet");
-                                ui.add(egui::DragValue::new(&mut k).range(1..=999));
+                                crate::style::field(
+                                    ui,
+                                    egui::DragValue::new(&mut k).range(1..=999),
+                                );
                                 if k != *n {
                                     moved = Some((*n, k));
                                 }

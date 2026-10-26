@@ -656,7 +656,8 @@ fn angle(ui: &mut egui::Ui, label: &str, v: &mut Option<f64>) -> bool {
         changed = true;
     }
     if let Some(x) = v.as_mut() {
-        let r = ui.add(
+        let r = crate::style::field(
+            ui,
             egui::DragValue::new(x)
                 .range(0.1..=180.0)
                 .speed(0.5)

@@ -87,12 +87,15 @@ impl StructureDesk {
                 ui.strong("Structure type, opened on its own");
                 ui.separator();
                 ui.label("ahead is at");
-                ui.add(egui::DragValue::new(ahead).range(0.0..=359.0).suffix("°"))
-                    .on_hover_text(
-                        "Angles in plan around the structure turn clockwise seen from above; \
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(ahead).range(0.0..=359.0).suffix("°"),
+                )
+                .on_hover_text(
+                    "Angles in plan around the structure turn clockwise seen from above; \
                          which one means ahead along the line (yours, for files opened on their \
                          own; a project has its own: Structures › Angles around structures)",
-                    );
+                );
                 ui.label(
                     egui::RichText::new(format!(
                         "right {:.0}° · back {:.0}° · left {:.0}°",

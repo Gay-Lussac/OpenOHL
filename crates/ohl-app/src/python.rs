@@ -703,7 +703,8 @@ impl Console {
                 self.lines.clear();
             }
             ui.label("time limit");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut self.limit)
                     .range(1.0..=86_400.0)
                     .suffix(" s"),

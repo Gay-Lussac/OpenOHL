@@ -10,6 +10,47 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**OHL-Design: UI review (owner: OHL-Design UI review, 2026-10-26)**
+
+The owner approved the same review for OHL-Design as for OHL-Structure:
+both programs look and behave alike, each with its own code (OHL-Design
+and OHL-Structure do not depend on each other: `style.rs` and
+`notices.rs` copied and adapted, no shared crate). No calculation, file
+format or engine changed; every model edit is still one command (undo);
+the UI settings below are the window's, kept between runs, not the
+project's.
+
+- **Look.** Value fields (numbers dragged or typed) have the inset fill
+  and frame of a text field, buttons their raised fill
+  (`style::field`); scroll bars always show; the text a step larger;
+  **View › UI scale** (90 %–150 %, kept; a tick menu: it stays open).
+- **Tables.** Units in the column headers ("H [kN]", "Sag [m]", "E [m]":
+  a table column takes the unit its help gives after a comma), bare
+  numbers right-aligned, headers in sentence case (a one-letter symbol
+  stays). Done in Properties' weather case tables and the table pages;
+  the check windows' result tables follow as they are reworked.
+- **Messages.** Also a notice at the bottom right: information fades
+  after 4 s, an error stays until its ×, a long one scrolls in a box of
+  fixed height. An edit's message is a short sentence (*Section S1
+  changed and recalculated.*, *Undone.*, *Saved.*), the whole text (log
+  entry, sections and cases solved, time) on hover of the status line
+  and of the notice; the status line stays.
+- **Not solved.** Properties says once, above a weather case table, how
+  many cases are not solved yet and why (only the cases shown are solved
+  while editing), with **Solve all** (every case solved in the
+  background); their cells show "—" (a case solved in which the section
+  failed: "failed", the reason under the table as before).
+- **Layers** (the Model panel): in groups — Ground & survey, Line,
+  Results, Backgrounds —, each foldable, the folded ones kept between
+  runs.
+- **Cross-section panel**: its front view set up for the view's own
+  shape (as drawn last), and set up again while untouched when the panel
+  settles to another shape in its first frames (the ±width was cut off
+  at the sides).
+- **OHL-Structure**: the 3D view's fit takes in the compass's angles
+  written around the feet and centres the structure in the room above
+  the hotbar ("270° left" and "180° back" were under it).
+
 **Admins merge alone; connection limits are the host's parameters (owner, 2026-10-26, on the security fixes)**
 
 - An admin merges a review into a protected branch alone: no approval by

@@ -243,7 +243,12 @@ impl View {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let camera = self.camera.get_or_insert_with(|| {
             let mut b: Option<Bounds> = None;
-            for p in g.all().chain([[0.0, 0.0, v.foot]]) {
+            // The structure, its feet and the compass's angles written
+            // around it on the ground (2026-10-26: "270° left" and "180°
+            // back" were under the hotbar).
+            let r = compass_radius(g) * 1.25;
+            let compass = [[r, 0.0], [-r, 0.0], [0.0, r], [0.0, -r]].map(|[x, y]| [x, y, v.foot]);
+            for p in g.all().chain([[0.0, 0.0, v.foot]]).chain(compass) {
                 let b = b.get_or_insert(Bounds { min: p, max: p });
                 b.min = [0, 1, 2].map(|k| b.min[k].min(p[k]));
                 b.max = [0, 1, 2].map(|k| b.max[k].max(p[k]));
@@ -253,6 +258,10 @@ impl View {
             let aspect = f64::from(rect.width() / rect.height().max(1.0));
             c.distance *= 1.3 * (1.0 / aspect.min(1.0)).max(1.0);
             c.pitch = 15f64.to_radians();
+            // Centred in the room above the hotbar (its height at the
+            // bottom of the view): the target lowered by half of it.
+            let height = f64::from(rect.height());
+            c.target[2] -= 0.5 * HOTBAR_ROOM * c.metres_per_pixel(height);
             c
         });
         if let Some(s) = self.standard.take() {
@@ -762,6 +771,10 @@ fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
     );
     painter.galley(at, galley, egui::Color32::WHITE);
 }
+
+/// The height the hotbar takes at the bottom of the 3D view, points
+/// (the tools' hotbar): the structure is fitted above it.
+const HOTBAR_ROOM: f64 = 64.0;
 
 /// The scene: the ground at the feet (a 1 m grid), the axes, the compass,
 /// the sticks, members, strings, joints, points and wire points, and a

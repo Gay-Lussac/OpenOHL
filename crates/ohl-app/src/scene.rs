@@ -109,6 +109,111 @@ impl Layer {
     }
 }
 
+/// The groups of the Layers list (owner: OHL-Design UI review,
+/// 2026-10-26): each foldable, the folded ones kept between runs.
+pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
+    (
+        "Ground & survey",
+        &[
+            Layer::Ground,
+            Layer::Surfaces,
+            Layer::Points,
+            Layer::GroundLines,
+        ],
+    ),
+    (
+        "Line",
+        &[
+            Layer::Alignment,
+            Layer::Structures,
+            Layer::RigidLinks,
+            Layer::Wires,
+            Layer::OtherCases,
+            Layer::OtherLines,
+            Layer::Draft,
+            Layer::Selection,
+        ],
+    ),
+    (
+        "Results",
+        &[
+            Layer::Clearances,
+            Layer::GrowIn,
+            Layer::FallIn,
+            Layer::Isoclearance,
+            Layer::SafetyVolume,
+        ],
+    ),
+    ("Backgrounds", &[Layer::Orthophotos, Layer::Drawings]),
+];
+
+/// The groups of the Layers list folded (by name), kept between runs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LayerGroups {
+    /// The names of the groups folded.
+    pub folded: std::collections::BTreeSet<String>,
+}
+
+impl LayerGroups {
+    const KEY: &str = "layer-groups-folded";
+
+    /// As kept (none: every group open).
+    pub fn load(storage: &dyn eframe::Storage) -> Self {
+        let folded = storage
+            .get_string(Self::KEY)
+            .map(|s| {
+                s.split(',')
+                    .filter(|g| !g.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self { folded }
+    }
+
+    /// Kept between runs.
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        let list: Vec<&str> = self.folded.iter().map(String::as_str).collect();
+        storage.set_string(Self::KEY, list.join(","));
+    }
+
+    /// The layers' ticks in their groups, each group a folding header
+    /// with how many of its layers show; `visible` changed by a tick.
+    pub fn ui(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        visible: &mut std::collections::HashSet<Layer>,
+    ) {
+        use eframe::egui;
+        for (name, layers) in LAYER_GROUPS {
+            let on = layers.iter().filter(|l| visible.contains(l)).count();
+            let open = !self.folded.contains(name);
+            let r = egui::CollapsingHeader::new(format!("{name} ({on}/{})", layers.len()))
+                .id_salt(("layer-group", name))
+                .open(Some(open))
+                .show(ui, |ui| {
+                    for layer in layers {
+                        let mut on = visible.contains(layer);
+                        if ui.checkbox(&mut on, layer.name()).changed() {
+                            if on {
+                                visible.insert(*layer);
+                            } else {
+                                visible.remove(layer);
+                            }
+                        }
+                    }
+                });
+            if r.header_response.clicked() {
+                if open {
+                    self.folded.insert(name.to_owned());
+                } else {
+                    self.folded.remove(name);
+                }
+            }
+        }
+    }
+}
+
 /// What a line of a structure drawing is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {

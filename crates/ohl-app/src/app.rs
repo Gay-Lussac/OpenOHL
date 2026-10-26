@@ -249,6 +249,9 @@ pub struct Ready {
     pub angles_window: Option<f64>,
     /// Tools: the hotbar (the active tool says what a click does).
     pub hotbar: crate::tools::Hotbar,
+    /// Properties' "Solve all": every weather case solved in the
+    /// background, not only those shown (until all are in).
+    pub solve_all: bool,
     /// The inventory window is open.
     pub inventory: bool,
     /// The "Move structure" window, when open.
@@ -486,6 +489,7 @@ impl Ready {
             picker_preview: Default::default(),
             angles_window: None,
             hotbar: crate::tools::Hotbar::default(),
+            solve_all: false,
             inventory: false,
             move_dialog: None,
             wheel: Default::default(),
@@ -671,6 +675,15 @@ pub struct App {
     pub about: bool,
     /// What the Help menu said without a project (a page not opened).
     help_status: Option<(String, bool)>,
+    /// The UI scale (View › UI scale, kept between runs; 1: 100 %).
+    pub ui_scale: f32,
+    /// The scale the window is drawn at (none: the style not set yet).
+    applied_scale: Option<f32>,
+    /// The messages also as notices at the bottom right (errors stay
+    /// until closed).
+    pub notices: crate::notices::Notices,
+    /// The groups of the Layers list folded (kept between runs).
+    pub layer_groups: crate::scene::LayerGroups,
     state: State,
     dock: DockState<Tab>,
     render_state: Option<egui_wgpu::RenderState>,
@@ -739,6 +752,10 @@ impl App {
             customize: false,
             about: false,
             help_status: None,
+            ui_scale: 1.0,
+            applied_scale: None,
+            notices: Default::default(),
+            layer_groups: Default::default(),
         }
     }
 
@@ -1214,6 +1231,10 @@ impl App {
             customize: false,
             about: false,
             help_status: None,
+            ui_scale: 1.0,
+            applied_scale: None,
+            notices: crate::notices::Notices::hidden(),
+            layer_groups: Default::default(),
         }
     }
 
@@ -1736,6 +1757,14 @@ impl Ready {
         need.push(self.case);
         // (The lines on the ground take the cases displayed: these.)
         need.extend(self.model.display_cases.values().flatten().copied());
+        // Properties' Solve all: every case, until all are in.
+        if self.solve_all {
+            if self.model.cases.iter().all(|c| c.ready) {
+                self.solve_all = false;
+            } else {
+                need.extend(0..self.model.cases.len());
+            }
+        }
         // The project lines shown, in the same cases (from the line worked
         // on's solutions, only what differs solved again).
         self.model.want_others(&need, ctx);
@@ -1862,6 +1891,8 @@ impl eframe::App for App {
                 .set(&r.model.sources.file, r.model.view_prefs());
         }
         self.view_prefs.save(storage);
+        crate::style::save_scale(storage, self.ui_scale);
+        self.layer_groups.save(storage);
         storage.set_string("ecw-converter", crate::backgrounds::converter());
         storage.set_string(
             "class-scheme",
@@ -1873,6 +1904,16 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let _timed = crate::perf::span("app ui");
+        // The look (once) and the UI scale (when chosen).
+        if self.applied_scale != Some(self.ui_scale) {
+            if self.applied_scale.is_none() {
+                crate::style::apply(ui.ctx());
+            }
+            if ui.ctx().zoom_factor() != self.ui_scale {
+                ui.ctx().set_zoom_factor(self.ui_scale);
+            }
+            self.applied_scale = Some(self.ui_scale);
+        }
         if let State::Loading { rx, progress } = &mut self.state {
             let mut done = None;
             loop {
@@ -2032,20 +2073,24 @@ impl eframe::App for App {
                         }
                         if let Some((text, error)) = &ready.status {
                             ui.separator();
-                            // Tool hints are written for a right-click.
-                            let text = crate::controls::click_words(
-                                text,
-                                ready.view3d.controls.tools_on_left,
-                            );
-                            let t = egui::RichText::new(text.as_ref()).small();
-                            if *error {
-                                crate::menu::error_label(ui, t);
+                            // In a short sentence, the whole text on
+                            // hover (an edit's log entry, what was solved).
+                            let (short, detail) = crate::notices::shown(text);
+                            let t = egui::RichText::new(short).small();
+                            let r = if *error {
+                                crate::menu::error_label(ui, t)
                             } else {
-                                ui.label(t);
+                                ui.label(t)
+                            };
+                            if let Some(d) = detail {
+                                r.on_hover_text(d);
                             }
                         }
                     });
                 });
+                // The message also as a notice (errors stay until closed).
+                self.notices.observe(&ready.status, ctx.input(|i| i.time));
+                self.notices.ui(&ctx);
                 let mut commands: Vec<crate::menu::Command> = Vec::new();
                 egui::Panel::top("top").show(ui, |ui| {
                     egui::MenuBar::new().ui(ui, |ui| {
@@ -2070,6 +2115,7 @@ impl eframe::App for App {
                             &mut commands,
                             &mut self.customize,
                             &mut self.about,
+                            &mut self.ui_scale,
                         );
                         // The quick bar right of the menus (Undo, Redo,
                         // Save first), as in OHL-Structure.
@@ -2365,6 +2411,7 @@ impl eframe::App for App {
                                     rs: self.render_state.as_ref(),
                                     lod: &mut self.lod,
                                     palette: &mut self.palette,
+                                    layer_groups: &mut self.layer_groups,
                                     scripts: self.plugins.python_scripts(),
                                 },
                             );

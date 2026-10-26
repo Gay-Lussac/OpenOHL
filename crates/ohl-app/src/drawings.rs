@@ -2185,13 +2185,13 @@ impl DrawingsWindow {
                         ui.label("Scales");
                         ui.horizontal(|ui| {
                             ui.label("horizontal 1:");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.hscale)
                                     .range(10.0..=100_000.0)
                                     .speed(10.0),
                             );
                             ui.label("vertical 1:");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.vscale)
                                     .range(10.0..=100_000.0)
                                     .speed(10.0),
@@ -2202,7 +2202,7 @@ impl DrawingsWindow {
                         ui.label("Line width");
                         ui.horizontal(|ui| {
                             ui.label("±");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.line_width)
                                     .range(LINE_WIDTHS)
                                     .suffix(" m")
@@ -2214,7 +2214,7 @@ impl DrawingsWindow {
 
                         ui.label("Sheet breaks");
                         ui.horizontal(|ui| {
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.break_clearance)
                                     .range(0.0..=ohl_drawing::MAX_BREAK_CLEARANCE_MM)
                                     .suffix(" mm")
@@ -2312,7 +2312,7 @@ impl DrawingsWindow {
                         ui.horizontal_wrapped(|ui| {
                             let mut gone = None;
                             for (k, o) in self.side_offsets.iter_mut().enumerate() {
-                                ui.add(
+                                crate::style::field(ui,
                                     egui::DragValue::new(o)
                                         .range(-2000.0..=2000.0)
                                         .suffix(" m")
@@ -2368,7 +2368,7 @@ impl DrawingsWindow {
                                             }),
                                     )
                                     .on_hover_text(file.display().to_string());
-                                    ui.add(
+                                    crate::style::field(ui,
                                         egui::DragValue::new(width)
                                             .range(1.0..=500.0)
                                             .suffix(" mm")
@@ -2437,7 +2437,7 @@ impl DrawingsWindow {
                         ui.end_row();
 
                         ui.label("PNG");
-                        ui.add(
+                        crate::style::field(ui,
                             egui::DragValue::new(&mut self.dpi)
                                 .range(30.0..=600.0)
                                 .suffix(" dpi"),
@@ -2455,7 +2455,7 @@ impl DrawingsWindow {
                              route and sheet chosen there too)",
                         );
                     let mut n = self.sheet_preview.unwrap_or(self.preview_sheet).max(1);
-                    ui.add(egui::DragValue::new(&mut n).range(1..=999).prefix("sheet "));
+                    crate::style::field(ui, egui::DragValue::new(&mut n).range(1..=999).prefix("sheet "));
                     self.preview_sheet = n;
                     self.sheet_preview = on.then_some(n);
                 });

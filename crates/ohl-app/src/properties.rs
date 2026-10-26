@@ -48,6 +48,9 @@ pub struct PointExtras<'a> {
     pub start_link: &'a mut Option<(String, String)>,
     /// "Cross-section here" chosen in a structure's menu: the structure.
     pub cut_at: &'a mut Option<String>,
+    /// "Solve all" clicked (every weather case solved, not only those
+    /// shown).
+    pub solve_all: &'a mut bool,
 }
 
 pub fn ui(
@@ -177,7 +180,8 @@ pub fn ui(
                 ui.horizontal(|ui| {
                     for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
                         ui.label(name);
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(&mut buffer[k])
                                 .speed(0.1)
                                 .max_decimals(3),
@@ -1109,18 +1113,19 @@ pub fn ui(
             );
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
+            unsolved_note(ui, model, point.solve_all);
             // The case of the copy clicked (else the one shown).
             let shown = model.selection_case.unwrap_or(case);
             case_table(
                 ui,
                 "jumper-cases-scroll",
                 &[
-                    "case",
-                    "length (m)",
-                    "sag (m)",
-                    "max T (N)",
-                    "of RTS",
-                    "low z (m)",
+                    "Weather case",
+                    "Length [m]",
+                    "Sag [m]",
+                    "Max T [N]",
+                    "Of RTS [%]",
+                    "Low z [m]",
                 ],
                 model.cases.len(),
                 |ui, k| {
@@ -1142,7 +1147,7 @@ pub fn ui(
                             // Taut: stretched between its clamps; over the
                             // cable's strength: red.
                             let used = egui::RichText::new(format!(
-                                "{:.0} %{}",
+                                "{:.0}{}",
                                 js.strength_use * 100.0,
                                 if js.taut { " taut" } else { "" }
                             ));
@@ -1161,7 +1166,7 @@ pub fn ui(
                             });
                             cells.push(plain(format!("{:.2}", js.low_point[2])));
                         }
-                        None => cells.push((egui::RichText::new("not solved"), None)),
+                        None => cells.push(unsolved_cell(solved)),
                     }
                     cells
                 },
@@ -1295,6 +1300,7 @@ pub fn ui(
             }
             ui.separator();
             ui.label(egui::RichText::new("Weather cases").strong());
+            unsolved_note(ui, model, point.solve_all);
             // The case of the copy clicked (else the one shown); both wind
             // sides shown: the mirror after each case.
             let shown = model
@@ -1309,7 +1315,13 @@ pub fn ui(
             case_table(
                 ui,
                 "span-cases-scroll",
-                &["case", "H (kN)", "max T (kN)", "sag (m)", "low z (m)"],
+                &[
+                    "Weather case",
+                    "H [kN]",
+                    "Max T [kN]",
+                    "Sag [m]",
+                    "Low z [m]",
+                ],
                 rows.len(),
                 |_, i| {
                     let (k, mirrored, solved) = rows[i];
@@ -1341,7 +1353,7 @@ pub fn ui(
                             ]
                             .map(|v| (egui::RichText::new(v), None)),
                         ),
-                        None => cells.push((egui::RichText::new("not solved"), None)),
+                        None => cells.push(unsolved_cell(solved)),
                     }
                     cells
                 },
@@ -1502,16 +1514,17 @@ fn local_wind_ui(
                  wind (e.g. 1.2 on an exposed ridge, 0.7 in a sheltered valley): the wires' \
                  blowout and tensions, the structure loads, the clearances. 1: the case's wind",
         );
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut v.0)
                 .range(0.0..=ohl_line::MAX_WIND_FACTOR)
                 .speed(0.01)
                 .max_decimals(3),
         );
         ui.label("spans");
-        ui.add(egui::DragValue::new(&mut v.1).range(1..=n));
+        crate::style::field(ui, egui::DragValue::new(&mut v.1).range(1..=n));
         ui.label("to");
-        ui.add(egui::DragValue::new(&mut v.2).range(v.1..=n));
+        crate::style::field(ui, egui::DragValue::new(&mut v.2).range(v.1..=n));
         if ui
             .button("Set")
             .on_hover_text("Gives the spans the factor (one undo)")
@@ -1545,6 +1558,56 @@ pub fn cases_box(ui: &mut egui::Ui, id: &str, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
+/// The cell of a weather case a section or jumper has no result in:
+/// "—" when the case is not solved yet (why: [`unsolved_note`], said once
+/// above the table), "failed" when it was solved and this failed.
+fn unsolved_cell(solved: &crate::model::Solved) -> Cell {
+    if solved.ready {
+        (
+            egui::RichText::new("failed"),
+            Some("Not solved in this weather case: the reason is below the table"),
+        )
+    } else {
+        (
+            egui::RichText::new("—"),
+            Some("Not solved yet: only the cases shown are solved while editing"),
+        )
+    }
+}
+
+/// Above a weather case table, once (owner: OHL-Design UI review,
+/// 2026-10-26): why some cases have no result — only the cases shown are
+/// solved while editing — and **Solve all** (`solve_all` set: every case
+/// solved in the background).
+fn unsolved_note(ui: &mut egui::Ui, model: &Model, solve_all: &mut bool) {
+    let pending = model.cases.iter().filter(|c| !c.ready).count();
+    if pending == 0 {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "Not solved in {pending} weather case{}: only the cases shown are solved \
+                 while editing —",
+                if pending == 1 { "" } else { "s" }
+            ))
+            .weak(),
+        );
+        if !model.solving.is_empty() {
+            ui.spinner();
+        }
+        if ui
+            .link("Solve all")
+            .on_hover_text(
+                "Every weather case solved in the background (the views stay as they are)",
+            )
+            .clicked()
+        {
+            *solve_all = true;
+        }
+    });
+}
+
 /// A cell of [`case_table`]: its text, and what its hover says.
 type Cell = (egui::RichText, Option<&'static str>);
 
@@ -1569,11 +1632,26 @@ fn case_table(
     let width = |c: usize| if c == 0 { CASE_WIDTH } else { VALUE_WIDTH };
     egui::Frame::group(ui.style()).show(ui, |ui| {
         let height = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
+        // The units in the headers ("H [kN]"), the numbers right-aligned
+        // under them (owner: OHL-Design UI review, 2026-10-26).
+        let cell = |ui: &mut egui::Ui, c: usize, label: egui::Label| {
+            let layout = if c == 0 {
+                egui::Layout::left_to_right(egui::Align::Center)
+            } else {
+                egui::Layout::right_to_left(egui::Align::Center)
+            };
+            ui.allocate_ui_with_layout(egui::vec2(width(c), height), layout, |ui| {
+                ui.set_min_size(egui::vec2(width(c), height - ui.spacing().item_spacing.y));
+                ui.add(label)
+            })
+            .inner
+        };
         ui.horizontal(|ui| {
             for (c, h) in headers.iter().enumerate() {
-                ui.add_sized(
-                    [width(c), height],
-                    egui::Label::new(egui::RichText::new(*h).small()).truncate(),
+                cell(
+                    ui,
+                    c,
+                    egui::Label::new(egui::RichText::new(*h).small().strong()).truncate(),
                 );
             }
         });
@@ -1587,10 +1665,7 @@ fn case_table(
                     let cells = row(ui, k);
                     ui.horizontal(|ui| {
                         for (c, (text, hover)) in cells.into_iter().enumerate() {
-                            let r = ui.add_sized(
-                                [width(c), height - ui.spacing().item_spacing.y],
-                                egui::Label::new(text).truncate(),
-                            );
+                            let r = cell(ui, c, egui::Label::new(text).truncate());
                             if let Some(h) = hover {
                                 r.on_hover_text(h);
                             }

@@ -170,15 +170,20 @@ impl WireFitWindow {
                 help::body(ui, "wirefit-window", |ui| {
                     ui.horizontal(|ui| {
                         ui.label("model at °C");
-                        ui.add(egui::DragValue::new(&mut self.temperature).speed(0.5));
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.temperature).speed(0.5),
+                        );
                         ui.label("points within m: across");
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(&mut self.params.lateral)
                                 .speed(0.05)
                                 .range(0.05..=10.0),
                         );
                         ui.label("up/down");
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(&mut self.params.vertical)
                                 .speed(0.1)
                                 .range(0.1..=30.0),

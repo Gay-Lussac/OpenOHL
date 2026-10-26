@@ -71,7 +71,8 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, id: &str, stringing_temperature: f64
             );
             ui.horizontal(|ui| {
                 ui.label("stopwatch");
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut panel.waves)
                         .range(1..=10)
                         .suffix(" waves"),
@@ -84,7 +85,8 @@ pub fn ui(ui: &mut egui::Ui, model: &Model, id: &str, stringing_temperature: f64
                     panel.transit = on.then_some(3.0);
                 }
                 if let Some(below) = &mut panel.transit {
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(below)
                             .speed(0.05)
                             .range(0.0..=100.0)
@@ -150,7 +152,7 @@ fn optional(ui: &mut egui::Ui, label: &str, value: &mut Option<f64>, default: f6
         }
         match value {
             Some(t) => {
-                ui.add(egui::DragValue::new(t).speed(0.5).suffix(" °C"));
+                crate::style::field(ui, egui::DragValue::new(t).speed(0.5).suffix(" °C"));
             }
             None => {
                 ui.label(egui::RichText::new(format!("{default:.1} °C ({what})")).weak());

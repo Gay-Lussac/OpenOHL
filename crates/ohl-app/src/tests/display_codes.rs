@@ -815,7 +815,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     // Define: from the menu; the system typed as a proj4 string.
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label_contains("Coordinate system").click();
+    harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
     harness.get_by_label("Define…").click();
     harness.run();
@@ -837,7 +837,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     // The calculator opens with the project's system.
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label_contains("Coordinate system").click();
+    harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
     harness
         .get_by_label("Coordinate system calculator…")
@@ -860,7 +860,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     // Reproject into UTM 32N: a new project, this one unchanged.
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label_contains("Coordinate system").click();
+    harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
     harness.get_by_label("Reproject project…").click();
     harness.run();
@@ -949,7 +949,7 @@ fn the_height_datum_is_defined_with_the_coordinate_system() {
     let open_define = |h: &mut Harness<'_, App>| {
         h.get_by_label("Terrain").click();
         h.run();
-        h.get_by_label_contains("Coordinate system").click();
+        h.get_by_label("Coordinate system ⏵").click();
         h.run();
         h.get_by_label("Define…").click();
         h.run();

@@ -617,7 +617,8 @@ pub(crate) fn limits_ui(ui: &mut egui::Ui, l: &mut ohl_line::StringLimits) -> bo
 }
 
 fn value(ui: &mut egui::Ui, v: &mut f64, speed: f64, suffix: &str) -> egui::Response {
-    ui.add(
+    crate::style::field(
+        ui,
         egui::DragValue::new(v)
             .speed(speed)
             .max_decimals(3)

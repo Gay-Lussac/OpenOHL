@@ -288,7 +288,10 @@ impl PlansWindow {
                             } else {
                                 (&mut self.situation_scale, 500.0..=2000.0)
                             };
-                            ui.add(egui::DragValue::new(scale).range(range).speed(50.0));
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(scale).range(range).speed(50.0),
+                            );
                             ui.end_row();
                             ui.label("Under it");
                             ui.horizontal(|ui| {

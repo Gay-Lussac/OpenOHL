@@ -76,7 +76,7 @@ fn backgrounds_are_kept_shown_and_hidden() {
     // open).
     harness.get_by_label("Terrain").click();
     harness.run();
-    harness.get_by_label_contains("Backgrounds").hover();
+    harness.get_by_label("Backgrounds ⏵").hover();
     harness.run();
     harness.get_by_label_contains("Ortho (1)").click();
     harness.run();

@@ -467,7 +467,8 @@ pub(super) fn section_ui(
             ui.end_row();
             ui.label("bundle");
             ui.horizontal(|ui| {
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut f.bundle)
                         .range(1..=8)
                         .suffix(" wires"),

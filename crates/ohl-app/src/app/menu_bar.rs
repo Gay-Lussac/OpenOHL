@@ -205,6 +205,7 @@ pub(super) fn menus(
     out: &mut Vec<crate::menu::Command>,
     customize: &mut bool,
     about: &mut bool,
+    ui_scale: &mut f32,
 ) {
     use crate::menu::Command;
     let item = |ui: &mut egui::Ui, c: Command, out: &mut Vec<Command>| {
@@ -335,6 +336,8 @@ pub(super) fn menus(
             }
         });
         ui.separator();
+        // A tick menu: it stays open (the scale kept between runs).
+        crate::menu::options_menu(ui, "UI scale", |ui| crate::style::scale_menu(ui, ui_scale));
         if ui.button("Customize the quick bar…").clicked() {
             *customize = true;
             ui.close();
@@ -950,19 +953,15 @@ pub(super) fn snap_panel(ui: &mut egui::Ui, snaps: &mut crate::selection::Snaps)
     );
 }
 
-pub(super) fn model_panel(ui: &mut egui::Ui, r: &mut Ready) {
+pub(super) fn model_panel(
+    ui: &mut egui::Ui,
+    r: &mut Ready,
+    groups: &mut crate::scene::LayerGroups,
+) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.label(egui::RichText::new("Layers").strong());
-        for layer in Layer::ALL {
-            let mut on = r.visible.contains(&layer);
-            if ui.checkbox(&mut on, layer.name()).changed() {
-                if on {
-                    r.visible.insert(layer);
-                } else {
-                    r.visible.remove(&layer);
-                }
-            }
-        }
+        // In their groups, each foldable (kept between runs).
+        groups.ui(ui, &mut r.visible);
         if let Some(cam) = r.view3d.camera.as_mut() {
             ui.add(
                 egui::Slider::new(&mut cam.exaggeration, 1.0..=10.0)

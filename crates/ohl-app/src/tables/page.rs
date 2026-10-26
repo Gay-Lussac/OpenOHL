@@ -803,13 +803,10 @@ impl TablePage {
                         Some((s, false)) if s == c => " ⏷",
                         _ => "",
                     };
-                    // One style in every table: a capital first letter
-                    // (the column's key stays as it is).
-                    let mut name = col.0.chars();
-                    let shown: String = name
-                        .next()
-                        .map(|f| f.to_uppercase().chain(name).collect())
-                        .unwrap_or_default();
+                    // One style in every table: sentence case, the unit
+                    // its help gives in brackets ("E [m]"; the column's
+                    // key stays as it is).
+                    let shown = crate::style::column_header(&col.0, &col.3);
                     let text = egui::RichText::new(format!("{shown}{arrow}")).strong();
                     if ui
                         .add_sized([col.1, header_height], egui::Button::new(text).frame(false))
@@ -1062,10 +1059,20 @@ impl TablePage {
                                         );
                                         continue;
                                     }
-                                    ui.add_sized(
-                                        [col.1, row_height],
-                                        egui::Label::new(t).truncate(),
+                                    let number = crate::style::unit_of(&col.3).is_some();
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col.1, row_height),
+                                        if number {
+                                            egui::Layout::right_to_left(egui::Align::Center)
+                                        } else {
+                                            egui::Layout::left_to_right(egui::Align::Center)
+                                        },
+                                        |ui| {
+                                            ui.set_min_size(egui::vec2(col.1, row_height));
+                                            ui.add(egui::Label::new(t).truncate())
+                                        },
                                     )
+                                    .inner
                                     .on_hover_text(
                                         match col.2 {
                                             Derived => format!("{original} — counted, not typed"),
@@ -1164,6 +1171,11 @@ impl TablePage {
                                     continue;
                                 }
                                 let mut edit = egui::TextEdit::singleline(&mut text);
+                                // A number (a column with a unit): right-
+                                // aligned, as the read-only numbers.
+                                if crate::style::unit_of(&col.3).is_some() {
+                                    edit = edit.horizontal_align(egui::Align::RIGHT);
+                                }
                                 if edited.is_some() {
                                     edit = edit.text_color(ui.visuals().warn_fg_color);
                                 } else if default {

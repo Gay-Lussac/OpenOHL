@@ -1300,7 +1300,7 @@ impl VegetationWindow {
         let voltages = ohl_clearance::zone::line_voltages(&model.line);
         let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
             ui.label(label);
-            ui.add(egui::DragValue::new(v).speed(speed).range(0.0..=max));
+            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
         };
         // Wire positions.
         Self::heading(ui, "Wire positions", "vegetation-wire-positions", out);
@@ -1362,7 +1362,8 @@ impl VegetationWindow {
                             }
                         });
                     if !matches!(s.ice.0, Ice::Off | Ice::OfCase) {
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(&mut s.ice.1)
                                 .speed(1.0)
                                 .range(0.0..=1e6),
@@ -1570,7 +1571,7 @@ impl VegetationWindow {
         ui.horizontal(|ui| {
             num(ui, "search distance ± m", &mut s.search, 1.0, 500.0);
             ui.label("points kept per span");
-            ui.add(egui::DragValue::new(&mut s.keep).range(0..=1000));
+            crate::style::field(ui, egui::DragValue::new(&mut s.keep).range(0..=1000));
         });
         help::explain(
             ui,

@@ -397,7 +397,8 @@ impl LodSettings {
                     ui.label(layer.name());
                     let edit = |ui: &mut egui::Ui, v: &mut f64, range: (f64, f64)| {
                         let speed = (*v * 0.01).max(0.1);
-                        ui.add(
+                        crate::style::field(
+                            ui,
                             egui::DragValue::new(v)
                                 .range(range.0..=range.1)
                                 .speed(speed),

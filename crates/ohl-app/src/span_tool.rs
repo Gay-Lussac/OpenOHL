@@ -556,7 +556,8 @@ fn place_value(ui: &mut egui::Ui, f: &SpanForm, d: &mut f64) {
                 range: std::ops::RangeInclusive<f64>,
                 prefix: &str,
                 suffix: &str| {
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(x)
                 .speed(speed)
                 .range(range)
@@ -694,7 +695,8 @@ pub fn object_ui(
             ui.end_row();
             let size = |ui: &mut egui::Ui, name: &str, x: &mut f64, unit: &str| {
                 ui.label(name);
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(x)
                         .speed(0.01)
                         .range(0.0..=100.0)
@@ -853,7 +855,7 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
         }
         if f.regular && f.what != SpanWhat::Spread {
             ui.label("spacing");
-            ui.add(
+            crate::style::field(ui,
                 egui::DragValue::new(&mut f.spacing)
                     .speed(0.1)
                     .range(0.1..=f64::MAX)
@@ -1130,7 +1132,8 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
                     s.length = f.given_length.then(|| s.length.unwrap_or(3.0));
                 }
                 if let Some(l) = &mut s.length {
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(l)
                             .speed(0.01)
                             .range(0.01..=100.0)
@@ -1140,7 +1143,8 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
             });
             ui.end_row();
             ui.label("weight");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut s.weight)
                     .speed(1.0)
                     .range(0.0..=f64::MAX)
@@ -1148,7 +1152,8 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
             );
             ui.end_row();
             ui.label("wind area");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut s.wind_area)
                     .speed(0.01)
                     .range(0.0..=f64::MAX)
@@ -1182,7 +1187,8 @@ pub fn spacer_ui(ui: &mut egui::Ui, f: &mut SpacerForm, model: &Model) {
                     s.compression = takes.then_some(model.line.defaults.spacer_compression);
                 }
                 if let Some(c) = &mut s.compression {
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(c)
                             .speed(10.0)
                             .range(0.0..=f64::MAX)
