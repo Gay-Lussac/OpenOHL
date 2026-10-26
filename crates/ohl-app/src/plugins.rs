@@ -10,12 +10,12 @@
 //! formats run on a worker thread (a plugin may take a while; its own
 //! exit clauses, ADR-0003, stop it).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui;
-use ohl_plugins::{Found, Tier};
+use ohl_plugins::{Consent, Found, Tier};
 
 /// A plugin listed: where it was found and what can be done with it.
 #[derive(Debug, Clone)]
@@ -384,6 +384,13 @@ pub struct Plugins {
     pub folders: Vec<PathBuf>,
     /// Plugins turned off, by name.
     pub disabled: BTreeSet<String>,
+    /// What the user allowed, by plugin version (a Python plugin to run
+    /// unsandboxed, a WebAssembly plugin more time or memory): in the
+    /// shared settings, asked once per version.
+    pub allowed: BTreeMap<String, Consent>,
+    /// A plugin to allow, waiting for the user's answer: its key, name and
+    /// what it asks.
+    pub confirm_allow: Option<(String, String, Consent)>,
     /// What was found (see [`Plugins::refresh`]).
     pub listed: Vec<Listed>,
     /// The manager window is open.
@@ -448,6 +455,11 @@ impl Plugins {
             }
             None => None,
         };
+        let allowed = shared
+            .as_ref()
+            .map(|s| s.allowed.clone())
+            .unwrap_or_default();
+        ohl_plugins::set_consents(&allowed);
         let saved: Saved = match shared {
             Some(s) => Saved {
                 folders: s.folders,
@@ -463,6 +475,7 @@ impl Plugins {
             settings_path,
             folders: saved.folders,
             disabled: saved.disabled,
+            allowed,
             status,
             ..Self::default()
         };
@@ -479,6 +492,7 @@ impl Plugins {
         ohl_plugins::PluginSettings {
             folders: self.folders.clone(),
             disabled: self.disabled.clone(),
+            allowed: self.allowed.clone(),
         }
         .save(path)
     }
@@ -492,6 +506,8 @@ impl Plugins {
             Ok(Some(s)) => {
                 self.folders = s.folders;
                 self.disabled = s.disabled;
+                ohl_plugins::set_consents(&s.allowed);
+                self.allowed = s.allowed;
             }
             Ok(None) => {}
             Err(e) => self.status = Some((format!("plugin settings not read: {e}"), true)),
@@ -548,9 +564,21 @@ impl Plugins {
         self.stale = true;
     }
 
-    /// Whether the plugin is used (no problem, not turned off).
+    /// Whether the plugin is used (no problem, not turned off; a Python
+    /// plugin only once the user allowed it to run unsandboxed).
     pub fn enabled(&self, l: &Listed) -> bool {
-        l.problem().is_none() && !self.disabled.contains(&l.found.name())
+        l.problem().is_none()
+            && !self.disabled.contains(&l.found.name())
+            && self.to_allow(l).is_none_or(|c| !c.unsandboxed)
+    }
+
+    /// What the user has still to allow the plugin, if anything
+    /// (security review 2026-10-26: Python plugins are not sandboxed; a
+    /// WebAssembly plugin asking more time or memory runs with the
+    /// defaults until allowed).
+    pub fn to_allow(&self, l: &Listed) -> Option<Consent> {
+        let m = l.found.manifest.as_ref().ok()?;
+        m.to_allow(self.allowed.get(&m.consent_key()))
     }
 
     /// The table columns the plugins in use add (`[[column]]` of their
@@ -727,6 +755,7 @@ impl Plugins {
         let mut remove: Option<PathBuf> = None;
         let mut drop_folder: Option<usize> = None;
         let mut edit_presets = None;
+        let mut allow = None;
         egui::Window::new("Plugin manager")
             .open(&mut open)
             .default_width(900.0)
@@ -734,7 +763,9 @@ impl Plugins {
                 ui.label(
                     egui::RichText::new(format!(
                         "Plugins add file formats (WebAssembly, sandboxed: no files, no network) \
-                         and scripts (Python, run in Plugins › Python console). Interface version \
+                         and scripts (Python, run in Plugins › Python console: NOT sandboxed, \
+                         they run with your rights and are asked for before they are used). \
+                         Interface version \
                          {}.{}. Installed plugins are kept in {}.",
                         ohl_plugins::SDK_VERSION.0,
                         ohl_plugins::SDK_VERSION.1,
@@ -853,11 +884,45 @@ impl Plugins {
                                             }
                                         }
                                     }
-                                    match &problem {
-                                        Some(p) => crate::menu::error_label(ui, p),
-                                        None if !on => ui.label("off"),
-                                        None if l.installed => ui.label("installed"),
-                                        None => ui.label("in its folder"),
+                                    let ask = self.to_allow(l);
+                                    let python = l
+                                        .found
+                                        .manifest
+                                        .as_ref()
+                                        .is_ok_and(|m| m.plugin.tier == Tier::Python);
+                                    match (&problem, &ask) {
+                                        (Some(p), _) => crate::menu::error_label(ui, p),
+                                        (None, Some(c)) => {
+                                            ui.horizontal(|ui| {
+                                                crate::menu::error_label(
+                                                    ui,
+                                                    if c.unsandboxed {
+                                                        "not allowed yet (not sandboxed)"
+                                                    } else {
+                                                        "asks for more time or memory"
+                                                    },
+                                                )
+                                                .on_hover_text(c.describe());
+                                                if ui.small_button("Allow…").clicked() {
+                                                    allow = Some((
+                                                        l.found
+                                                            .manifest
+                                                            .as_ref()
+                                                            .map(|m| m.consent_key())
+                                                            .unwrap_or_default(),
+                                                        name.clone(),
+                                                        *c,
+                                                    ));
+                                                }
+                                            })
+                                            .response
+                                        }
+                                        (None, None) if !on => ui.label("off"),
+                                        (None, None) if python => {
+                                            ui.label("allowed, not sandboxed")
+                                        }
+                                        (None, None) if l.installed => ui.label("installed"),
+                                        (None, None) => ui.label("in its folder"),
                                     };
                                     let presets = problem.is_none()
                                         && on
@@ -926,6 +991,10 @@ impl Plugins {
         if let Some(dir) = remove {
             self.confirm_remove = Some(dir);
         }
+        if allow.is_some() {
+            self.confirm_allow = allow;
+        }
+        self.allow_ui(ctx);
         if let Some(dir) = self.confirm_remove.clone() {
             let mut answer = None;
             egui::Window::new("Remove the plugin?")
@@ -950,6 +1019,50 @@ impl Plugins {
                         Err(e) => (format!("remove: {e}"), true),
                     });
                 }
+            }
+        }
+    }
+
+    /// Asks once whether to allow a plugin version what it asks (a
+    /// Python plugin: to run unsandboxed; a WebAssembly plugin: more time
+    /// or memory a call); the answer is kept in the shared settings.
+    fn allow_ui(&mut self, ctx: &egui::Context) {
+        let Some((key, name, asked)) = self.confirm_allow.clone() else {
+            return;
+        };
+        let mut answer = None;
+        egui::Window::new(format!("Allow {name}?"))
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!("{key} {}.", asked.describe()));
+                if asked.unsandboxed {
+                    ui.label(
+                        "A Python plugin is not sandboxed: allow it only when you trust where \
+                         it comes from. Asked again for another version.",
+                    );
+                } else {
+                    ui.label(
+                        "Until allowed it runs with the default limits. Asked again for \
+                         another version.",
+                    );
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Allow").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        if let Some(yes) = answer {
+            self.confirm_allow = None;
+            if yes {
+                self.allowed.insert(key, asked);
+                ohl_plugins::set_consents(&self.allowed);
+                self.changed_settings();
+                self.stale = true;
             }
         }
     }
@@ -1201,6 +1314,7 @@ mod tests {
         ohl_plugins::PluginSettings {
             folders: vec![PathBuf::from("/elsewhere/plugins")],
             disabled: ["geojson".to_owned()].into(),
+            ..Default::default()
         }
         .save(&path)
         .unwrap();
@@ -1217,6 +1331,7 @@ mod tests {
         ohl_plugins::PluginSettings {
             folders: Vec::new(),
             disabled: ["en50341".to_owned()].into(),
+            ..Default::default()
         }
         .save(&path)
         .unwrap();

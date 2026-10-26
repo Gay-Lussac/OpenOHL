@@ -39,9 +39,9 @@ use std::time::Duration;
 use serde::Deserialize;
 
 pub mod settings;
-pub use settings::{PluginSettings, SETTINGS_FILE};
+pub use settings::{Consent, PluginSettings, SETTINGS_FILE, consent_for, set_consents};
 use wasmtime::component::{Component, Linker, ResourceTable};
-use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder, Trap};
+use wasmtime::{Config, Engine, ResourceLimiter, Store, Trap};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 mod bindings {
@@ -582,6 +582,49 @@ impl Manifest {
         }
         Ok(())
     }
+
+    /// What the user must allow before this plugin is used as it asks
+    /// (security review 2026-10-26, L1 and M6): a Python plugin runs
+    /// unsandboxed, with the user's rights; a WebAssembly plugin asking
+    /// more time or memory a call than the defaults ([`Limits`]).
+    /// Nothing to allow: the default (all off).
+    pub fn asks(&self) -> Consent {
+        let d = Limits::default();
+        let python = self.plugin.tier == Tier::Python;
+        Consent {
+            unsandboxed: python,
+            seconds: self
+                .limits
+                .seconds
+                .filter(|s| !python && Duration::from_secs(*s) > d.call_timeout),
+            memory_mib: self
+                .limits
+                .memory_mib
+                .filter(|m| !python && m.saturating_mul(1 << 20) > d.max_memory_bytes as u64),
+        }
+    }
+
+    /// What is still to allow ([`Manifest::asks`] beyond `given`), if
+    /// anything.
+    pub fn to_allow(&self, given: Option<&Consent>) -> Option<Consent> {
+        let asked = self.asks();
+        let given = given.copied().unwrap_or_default();
+        let open = Consent {
+            unsandboxed: asked.unsandboxed && !given.unsandboxed,
+            seconds: asked
+                .seconds
+                .filter(|s| given.seconds.is_none_or(|g| g < *s)),
+            memory_mib: asked
+                .memory_mib
+                .filter(|m| given.memory_mib.is_none_or(|g| g < *m)),
+        };
+        (open != Consent::default()).then_some(asked)
+    }
+
+    /// The key of this plugin version in the consents (`name@version`).
+    pub fn consent_key(&self) -> String {
+        settings::consent_key(&self.plugin.name, &self.plugin.version)
+    }
 }
 
 /// A plugin directory found by [`discover`]: its manifest, or why it does
@@ -606,7 +649,12 @@ impl Found {
         if let Err(e) = m.check_compatible() {
             return Some(e.to_string());
         }
-        if let Err(e) = m.check_permissions() {
+        // A Python plugin runs with the user's rights: its permissions
+        // section restricts nothing, so it is not "checked" (it is allowed
+        // or not: [`Manifest::asks`]).
+        if m.plugin.tier != Tier::Python
+            && let Err(e) = m.check_permissions()
+        {
             return Some(e.to_string());
         }
         if !m.entry_path().is_file() {
@@ -767,16 +815,30 @@ impl Limits {
     /// The most memory a manifest may ask for (WebAssembly 32-bit: 4 GiB).
     pub const MAX_MEMORY_BYTES: usize = 4 << 30;
 
-    /// These limits raised to what `manifest` asks for (never lowered;
-    /// capped).
+    /// These limits raised to what `manifest` asks for, as far as the user
+    /// allowed it for this plugin version in the plugin manager
+    /// ([`consent_for`]; nothing allowed: not raised) — a plugin does not
+    /// raise its own limits (security review 2026-10-26, M6). Never
+    /// lowered; capped.
     pub fn for_manifest(self, manifest: &Manifest) -> Self {
+        let consent = consent_for(&manifest.plugin.name, &manifest.plugin.version);
+        self.raised(&manifest.limits, &consent.unwrap_or_default())
+    }
+
+    /// These limits raised to what is `asked`, at most to what is
+    /// `allowed`.
+    pub fn raised(self, asked: &RequestedLimits, allowed: &Consent) -> Self {
         let mut l = self;
-        if let Some(s) = manifest.limits.seconds {
+        if let Some(s) = asked.seconds.zip(allowed.seconds).map(|(a, b)| a.min(b)) {
             l.call_timeout = l
                 .call_timeout
                 .max(Duration::from_secs(s).min(Self::MAX_TIMEOUT));
         }
-        if let Some(m) = manifest.limits.memory_mib {
+        if let Some(m) = asked
+            .memory_mib
+            .zip(allowed.memory_mib)
+            .map(|(a, b)| a.min(b))
+        {
             let bytes = usize::try_from(m.saturating_mul(1 << 20)).unwrap_or(usize::MAX);
             l.max_memory_bytes = l.max_memory_bytes.max(bytes.min(Self::MAX_MEMORY_BYTES));
         }
@@ -853,7 +915,70 @@ impl Drop for EpochTicker {
 struct HostState {
     wasi: WasiCtx,
     table: ResourceTable,
-    limits: StoreLimits,
+    limits: Budget,
+}
+
+/// Core instances a plugin's store may hold (a component is a few).
+pub const MAX_INSTANCES: usize = 64;
+/// Linear memories a plugin's store may hold.
+pub const MAX_MEMORIES: usize = 16;
+/// Tables a plugin's store may hold.
+pub const MAX_TABLES: usize = 64;
+/// Elements of one table.
+pub const MAX_TABLE_ELEMENTS: usize = 1 << 20;
+
+/// What a plugin's store may take: its memories together at most
+/// [`Limits::max_memory_bytes`] (not each), and a few instances, memories
+/// and tables (security review 2026-10-26, M6).
+struct Budget {
+    max_memory: usize,
+    used: usize,
+}
+
+impl Budget {
+    fn new(max_memory: usize) -> Self {
+        Self {
+            max_memory,
+            used: 0,
+        }
+    }
+}
+
+impl ResourceLimiter for Budget {
+    fn memory_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        let more = desired.saturating_sub(current);
+        if self.used.saturating_add(more) > self.max_memory {
+            return Ok(false);
+        }
+        self.used += more;
+        Ok(true)
+    }
+
+    fn table_growing(
+        &mut self,
+        _current: usize,
+        desired: usize,
+        _maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        Ok(desired <= MAX_TABLE_ELEMENTS)
+    }
+
+    fn instances(&self) -> usize {
+        MAX_INSTANCES
+    }
+
+    fn tables(&self) -> usize {
+        MAX_TABLES
+    }
+
+    fn memories(&self) -> usize {
+        MAX_MEMORIES
+    }
 }
 
 impl WasiView for HostState {
@@ -927,9 +1052,7 @@ impl WasmHost {
         let state = HostState {
             wasi: WasiCtxBuilder::new().build(),
             table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new()
-                .memory_size(limits.max_memory_bytes)
-                .build(),
+            limits: Budget::new(limits.max_memory_bytes),
         };
         let mut store = Store::new(&self.engine, state);
         store.limiter(|state| &mut state.limits);
@@ -1216,9 +1339,7 @@ impl WasmHost {
         let state = HostState {
             wasi: WasiCtxBuilder::new().build(),
             table: ResourceTable::new(),
-            limits: StoreLimitsBuilder::new()
-                .memory_size(plugin.limits.max_memory_bytes)
-                .build(),
+            limits: Budget::new(plugin.limits.max_memory_bytes),
         };
         let mut store = Store::new(&self.engine, state);
         store.limiter(|state| &mut state.limits);
@@ -1950,6 +2071,83 @@ mod tests {
         ));
         let fs = manifest("0.3", "[permissions]\nfilesystem = [\"/tmp\"]");
         assert!(fs.check_permissions().is_err());
+    }
+
+    /// M6 and L1 (security review 2026-10-26): a manifest asking for more
+    /// time or memory gets it only as far as the user allowed this
+    /// version; a Python plugin asks to run unsandboxed.
+    #[test]
+    fn limits_and_python_need_consent() {
+        let greedy = manifest("0.3", "[limits]\nseconds = 600\nmemory-mib = 4096");
+        let d = Limits::default();
+        let l = d.for_manifest(&greedy);
+        assert_eq!(l.call_timeout, d.call_timeout, "not allowed: not raised");
+        assert_eq!(l.max_memory_bytes, d.max_memory_bytes);
+        let asked = greedy.asks();
+        assert_eq!((asked.seconds, asked.memory_mib), (Some(600), Some(4096)));
+        assert!(!asked.unsandboxed);
+        assert_eq!(greedy.to_allow(None), Some(asked));
+        let some = Consent {
+            seconds: Some(60),
+            memory_mib: Some(1024),
+            ..Consent::default()
+        };
+        let l = d.raised(&greedy.limits, &some);
+        assert_eq!(l.call_timeout, Duration::from_secs(60));
+        assert_eq!(l.max_memory_bytes, 1024 << 20);
+        assert!(greedy.to_allow(Some(&some)).is_some(), "asks more still");
+        // Allowed for this version (the plugin manager's answer).
+        set_consents(&[(greedy.consent_key(), asked)].into());
+        let l = d.for_manifest(&greedy);
+        assert_eq!(l.call_timeout, Duration::from_secs(600));
+        assert_eq!(l.max_memory_bytes, 4096 << 20);
+        assert_eq!(
+            greedy.to_allow(consent_for("t", "1.0.0").as_ref()),
+            None,
+            "asked once"
+        );
+        assert_eq!(
+            consent_for("t", "1.0.1"),
+            None,
+            "another version: asked again"
+        );
+        set_consents(&std::collections::BTreeMap::new());
+        // Within the defaults: nothing to allow.
+        assert_eq!(
+            manifest("0.3", "[limits]\nseconds = 2").to_allow(None),
+            None
+        );
+        // Python: unsandboxed, its permissions not "checked".
+        let python = Manifest::parse(
+            "[plugin]\nname = \"p\"\nversion = \"1\"\nsdk = \"0.3\"\ntier = \"python\"\n\
+             entry = \"p.py\"\n[permissions]\nnetwork = true",
+            Path::new("/plugins/p"),
+        )
+        .unwrap();
+        let asked = python.asks();
+        assert!(asked.unsandboxed);
+        assert!(asked.describe().contains("not sandboxed"));
+        assert!(python.to_allow(None).is_some());
+        let found = Found {
+            dir: PathBuf::from("/plugins/p"),
+            manifest: Ok(python),
+        };
+        let problem = found.problem().unwrap_or_default();
+        assert!(!problem.contains("network"), "{problem}");
+    }
+
+    /// M6: the memories of a store together, not each, within the limit;
+    /// few instances, memories and tables; tables bounded.
+    #[test]
+    fn store_budget_counts_all_memories() {
+        let mut b = Budget::new(100);
+        assert!(b.memory_growing(0, 60, None).unwrap());
+        assert!(!b.memory_growing(0, 60, None).unwrap(), "a second memory");
+        assert!(b.memory_growing(0, 40, None).unwrap());
+        assert!(!b.memory_growing(60, 61, None).unwrap());
+        assert!(b.table_growing(0, MAX_TABLE_ELEMENTS, None).unwrap());
+        assert!(!b.table_growing(0, MAX_TABLE_ELEMENTS + 1, None).unwrap());
+        assert!(b.instances() <= 64 && b.memories() <= 16 && b.tables() <= 64);
     }
 
     #[test]

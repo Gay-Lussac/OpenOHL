@@ -301,6 +301,18 @@ fn plugins_are_managed_and_give_their_formats() {
             p.listed.iter().any(|l| l.duplicate),
             "the folder's copy comes second"
         );
+        // Not sandboxed: used once the user allowed it (security review
+        // 2026-10-26).
+        assert!(p.python_scripts().is_empty());
+        let l = p
+            .listed
+            .iter()
+            .find(|l| l.installed && l.found.name() == "hello-python")
+            .unwrap();
+        let asked = p.to_allow(l).unwrap();
+        assert!(asked.unsandboxed);
+        let key = l.found.manifest.as_ref().unwrap().consent_key();
+        p.allowed.insert(key, asked);
         assert_eq!(p.python_scripts().len(), 1);
     }
     // Export the structures as CSV, move one in the file, import it back.
@@ -446,6 +458,7 @@ fn two_applications_share_a_hosted_project() {
             bind: "127.0.0.1:0".parse().unwrap(),
             advertise: None,
             code: None,
+            keys: None,
             newcomers: None,
             web: None,
         },

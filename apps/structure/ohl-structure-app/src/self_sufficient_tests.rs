@@ -167,7 +167,7 @@ fn plugins_are_managed_with_shared_settings() {
             root().join("plugins/examples"),
             root().join("plugins/codes"),
         ],
-        disabled: Default::default(),
+        ..Default::default()
     }
     .save(&ohl_plugins::PluginSettings::path(&user))
     .unwrap();
