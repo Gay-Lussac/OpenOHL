@@ -61,16 +61,17 @@ pub(crate) fn strung(
     budget: &Budget,
 ) -> Result<Strung, LineError> {
     use ohl_core::units::{Length, Temperature};
-    let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
-    let reference = reference(section, &layout, cable, budget)?;
+    // The holders and the reference: from the memo once worked out.
+    let prepared = super::memo::prepared(line, section, cable, budget)?;
+    let (layout, reference) = (&prepared.layout, &prepared.reference);
     let still = WeatherCase::still(
         "stringing",
         Temperature::from_celsius(reference.temperature),
     );
     let (built, solution) = solve_built(
         section,
-        &layout,
-        &reference,
+        layout,
+        reference,
         cable,
         Cases::one(&still),
         budget,

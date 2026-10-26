@@ -538,6 +538,28 @@ Maybe make a toolbar as is the case in the OHL design app."
   vertical 5.6 s → 0.45 s; on the swing arc (3 states, the arcs' lines)
   radial 29.8 s → 23.1 s (the box test only).
 
+**Performance review: a section's weather-independent parts worked out once (owner, 2026-10-26)**
+
+- Every weather case and wind state of a section solved again what does
+  not depend on the weather: its holders with the strain strings'
+  estimated weights, its stringing reference, a curves cable's stringing
+  state, and the final state after creep or after load (a still-air
+  solve and sag-tension solves each).
+- They are now kept in memos (`ohl_line::solve`'s `memo` module) keyed by
+  a 128-bit fingerprint of their inputs' `Debug` text — every field, the
+  numbers exactly: the section, its holders as the line gives them, the
+  cable, the line's bimetallic model and condition cases (for the final
+  state), its calculation options (for the stringing state), and the
+  iteration limit. Any edit is another key. Failures are not kept. At
+  most 4096 entries a memo, the least recently used first out.
+  `forget_solves` drops them.
+- Measured (CPU time): the synthetic example in every calculation
+  (initial, creep, load, max sag; FE and RS; the curves cable; 6 cases
+  and their wind steps) 7.6 s → 4.5 s; the invented 60-span line's 131
+  wind states (initial, FE) 48.8 s → 45.9 s. The same results bit for
+  bit (the `{:?}` dumps of every solve compared; a test solves each
+  calculation from the memo and from scratch).
+
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
 
 - A sheet template's stringing table repeated the band row's values: a

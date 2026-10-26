@@ -50,8 +50,10 @@ use ohl_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, defau
 use crate::{Line, LineError, Point, Section, Stringing};
 
 mod coupled;
+mod memo;
 mod ruling_span;
 pub use coupled::*;
+pub use memo::forget_solves;
 pub use ruling_span::*;
 
 /// Point loads closer than this to a span's end (along the wire), m, are
@@ -2561,14 +2563,14 @@ fn solve_cases(
     };
     match calc.condition() {
         Condition::Initial => solve(None),
-        Condition::Creep => solve(Some(&final_state(
+        Condition::Creep => solve(Some(&memo::final_state(
             line,
             section,
             cable,
             Condition::Creep,
             budget,
         )?)),
-        Condition::Load => solve(Some(&final_state(
+        Condition::Load => solve(Some(&memo::final_state(
             line,
             section,
             cable,
@@ -2587,7 +2589,7 @@ fn solve_cases(
             ]
             .into_iter()
             .filter(|(_, given)| *given)
-            .map(|(c, _)| solve(Some(&final_state(line, section, cable, c, budget)?)))
+            .map(|(c, _)| solve(Some(&memo::final_state(line, section, cable, c, budget)?)))
             .collect::<Result<_, _>>()?;
             shapes
                 .into_iter()
@@ -2632,9 +2634,10 @@ fn solve_fe(
 ) -> Result<SectionShape, LineError> {
     // The section's case: the jumpers, the rolling, the core branch.
     let case = cases.base;
-    let (layout, estimated_weights) =
-        estimate_strain_weights(section, holders_of(line, section)?, cable, budget)?;
-    let mut reference = reference(section, &layout, cable, budget)?;
+    // The same in every weather case: from the memo once worked out.
+    let prepared = memo::prepared(line, section, cable, budget)?;
+    let (layout, estimated_weights) = (prepared.layout.clone(), prepared.weights.clone());
+    let mut reference = prepared.reference.clone();
     // The ice and wind per stretched or unstretched metre (the line's
     // calculation options, 2026-10-21).
     reference.loads_per = line.solver.loads_per;
@@ -2660,27 +2663,32 @@ fn solve_fe(
     let curves = curves_of(cable);
     // Curves: each span's tension in the stringing state (still air at the
     // reference temperature), where the reference lengths are cut.
+    // (The same in every weather case: from the memo once worked out.)
     let strung = match &curves {
-        Some(_) => {
-            let stringing = WeatherCase::still(
-                "stringing",
-                ohl_core::units::Temperature::from_celsius(reference.temperature),
-            );
-            // In the blocks over sheaves the spans' lengths at stringing
-            // are the sheaves' sharing of the reference's.
-            let at_stringing =
-                in_the_blocks_at_stringing(section, &layout, &reference, cable, budget)?;
-            let (b, sol) = solve_built(
-                section,
-                &layout,
-                &at_stringing,
-                cable,
-                Cases::one(&stringing),
-                budget,
-                None,
-            )?;
-            Some(span_tensions(&b, &sol))
-        }
+        Some(_) => Some(memo::stringing(
+            &prepared,
+            &(reference.loads_per, reference.blocks),
+            || {
+                let stringing = WeatherCase::still(
+                    "stringing",
+                    ohl_core::units::Temperature::from_celsius(reference.temperature),
+                );
+                // In the blocks over sheaves the spans' lengths at
+                // stringing are the sheaves' sharing of the reference's.
+                let at_stringing =
+                    in_the_blocks_at_stringing(section, &layout, &reference, cable, budget)?;
+                let (b, sol) = solve_built(
+                    section,
+                    &layout,
+                    &at_stringing,
+                    cable,
+                    Cases::one(&stringing),
+                    budget,
+                    None,
+                )?;
+                Ok(span_tensions(&b, &sol))
+            },
+        )?),
         None => None,
     };
     // Linear: stretched before rolling: in the blocks, the longer wire is
