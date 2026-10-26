@@ -93,7 +93,7 @@ The case's factors apply as to any case. A file is written at version 3 only whe
 
 Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.ohllc` only shows the format.
 
-In a project, the load case files are kept in the project like the other libraries (Criteria › Load cases library edits them).
+In a project, the load case files are kept in the project like the other libraries (Line › Criteria › Load cases library edits them).
 
 ## Structure loads
 
@@ -121,7 +121,7 @@ The CSV columns: `case,structure,point,label,sets,x,y,z,transverse,longitudinal,
 
 **Wind on the structures themselves:** a structure type may give the area the wind blows on, by height band (`[[wind.band]]`, see [Structure libraries](structure-library.md#wind-on-the-structure)). In every load case with wind, each band adds a load across the line — wind pressure × drag coefficient × area, on the wind side of the weather case — at the band's mid-height on the structure's centre line, listed without a point ("wind on the structure"), factored by the transverse factor — or, when the load case gives the structures their own wind (`[case.structure]`), the pressure there × drag × area, factored by its `wind_factor`. The capacity checks' load trees are per point and leave these out, and so does the **fe** check: it takes the member wind on the profiles instead, when the members' sections come from the [cross-section library](section-library.md) (see [Member wind](structure-analysis.md#member-wind-body-wind-at-level-3)). A structure standing on a extension stands its `dz` higher, and its bands with it: the band heights are above the ground of the structure as written, so on a +3 m extension a band 0–20 m acts at 3–23 m (its mid-height 13 m). The force does not change — the pressure is the same at every height — only where it acts (the `z` of the CSV, the label). The extension's own piece below the feet has no band: its members take the member wind of the **fe** check, and OHL-Structure's results put a case's pressure on all members on them too (the same rule, [Structure application](structure-app.md#results)).
 
-**Jumpers:** the sections carry them at their clamps as Criteria › Calculation options says (an estimate by default — weight, ice and wind — or the jumper's own pull; line file `solver.jumper_loads`), and a jumper held by helping strings pulls on those strings, so on the structure holding them.
+**Jumpers:** the sections carry them at their clamps as Line › Criteria › Calculation options says (an estimate by default — weight, ice and wind — or the jumper's own pull; line file `solver.jumper_loads`), and a jumper held by helping strings pulls on those strings, so on the structure holding them.
 
 ## Structure usage (capacity checks)
 

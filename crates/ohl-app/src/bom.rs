@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! File › Bill of materials › Cables: the wire lengths of each cable and
+//! Plans & sheets › Bill of materials › Cables: the wire lengths of each cable and
 //! their stringing, priced with a cost file (`.ohlcost`), computed in the
 //! background from the model as it is; the model is not changed. CSV
 //! export. (The bill also counts structures, insulators and hardware;

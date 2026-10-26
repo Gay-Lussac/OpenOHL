@@ -377,7 +377,7 @@ fn the_hotbar_shows_image_icons() {
     }
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
     // The Tools menu: names without glyphs, the icons beside them.
-    harness.get_by_label("Tools").click();
+    crate::tests::submenu(&mut harness, "Edit", "Tools");
     harness.run();
     harness.get_by_label("Replace structure");
     if gpu && let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") {

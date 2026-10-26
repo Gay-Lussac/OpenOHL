@@ -12,7 +12,7 @@ breaks, and an export without `--page` writes it as one continuous
 drawing. **Sheets** are a separate, optional layer on top of it, for
 exports: the sheet format, the scales and where the sheets break belong
 to the export settings only (`ohl drawing … --page`, `ohl line --drawings
-… --page`, File › Export › Drawings… in the app) and never change the
+… --page`, Plans & sheets › Drawings… in the app) and never change the
 profile view or any computed number. The app can show them over its views
 (the [sheet preview](#sheet-preview), off by default).
 
@@ -208,7 +208,7 @@ rotation is the angle between the line and the elevation's height.
 
 ## Drawings and orthophotos under the plan
 
-The project's DXF drawings and orthophotos (Terrain › Backgrounds) can
+The project's DXF drawings and orthophotos (Line › Terrain › Backgrounds) can
 lie under the sheets' plan, **straightened along the line** like the
 wires and the structures: the drawings' lines on the layer
 `OHL_BACKGROUND_DRAWINGS`, the orthophoto resampled into each sheet's
@@ -426,7 +426,7 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
-**File › Export › Drawings…** opens a window: the **sheet template**
+**Plans & sheets › Drawings…** opens a window: the **sheet template**
 (Built-in, Project, Library or a plugin's; **Load file…** keeps a
 `.ohlsheet` in the project, **Save as file…** writes the one chosen),
 route (or every route), formats, sheets (one continuous drawing, the
@@ -571,7 +571,7 @@ the sheets (the project's drawings and orthophotos read for them).
 
 ### Plan sets
 
-**Export › Plans › Plan set…** (2026-10-24) writes several drawings in one
+**Plans & sheets › Plan set…** (2026-10-24) writes several drawings in one
 go, as a **plan set** lists them — a plugin's (its manifest's
 `[[plan-set]]`, beside its sheet templates; e.g. a code's plan
 submission). Each drawing of the set is made with the Drawings window's

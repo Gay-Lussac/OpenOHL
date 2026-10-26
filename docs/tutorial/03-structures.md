@@ -44,7 +44,7 @@ carries the wire through. See [Editing › Add a
 structure](../user-guide/desktop-app.md#editing), [Structure
 picker](../user-guide/desktop-app.md#structure-picker) and [Structure
 templates](../user-guide/structure-library.md#structure-templates-ohlpt)
-(the starter types were built from the template `delta-1c`; Tools ›
+(the starter types were built from the template `delta-1c`; Edit › Tools ›
 **New structure from a template…** builds your own).
 
 Next: [4. Strings on the structures](04-strings.md).

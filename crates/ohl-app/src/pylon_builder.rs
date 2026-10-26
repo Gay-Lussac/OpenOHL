@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Tools › New pylon from a template…: a pylon template's face (its
+//! Edit › Tools › New pylon from a template…: a pylon template's face (its
 //! dimensions typed, drawn as they change) built into a structure type of
 //! level 1, for suspension or strain (the toggle: each role is a type of
 //! its own); a type built before is built again from what it records,

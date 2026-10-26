@@ -81,7 +81,7 @@ pub enum Tool {
 
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
-    /// Tools menu list them in this order.
+    /// Edit › Tools list them in this order.
     pub const ALL: [Tool; 23] = [
         Tool::Select,
         Tool::Edit,
@@ -613,7 +613,7 @@ impl WheelSteps {
     }
 }
 
-/// The tools' themes, in the order the inventory and the Tools menu show
+/// The tools' themes, in the order the inventory and Edit › Tools show
 /// them.
 pub const THEMES: [&str; 5] = ["General", "Alignments", "Structures", "Wires", "Measure"];
 

@@ -163,7 +163,7 @@ pub struct MoveDialog {
 /// A plugin window asked for from the menus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginRequest {
-    /// Plugins › Plugin manager.
+    /// File › Plugins › Plugin manager.
     Manager,
     /// File › Import into the line.
     Import,
@@ -334,11 +334,11 @@ pub struct Ready {
     pub loads: crate::loads::LoadsPage,
     /// Checks › Thermal rating.
     pub thermal: crate::thermal::ThermalWindow,
-    /// File › Bill of materials › Cables.
+    /// Plans & sheets › Bill of materials › Cables.
     pub bom: crate::bom::BomWindow,
-    /// Structures › Spot structures.
+    /// Line › Structures › Spot structures.
     pub spot: crate::spot::SpotWindow,
-    /// Tools › New pylon from a template…, when open.
+    /// Edit › Tools › New pylon from a template…, when open.
     pub pylon_builder: Option<crate::pylon_builder::PylonBuilder>,
     /// Checks › Galloping ellipses.
     pub galloping: crate::galloping::GallopingWindow,
@@ -350,10 +350,10 @@ pub struct Ready {
     pub internal_clearances: crate::internal_clearances::InternalClearancesWindow,
     /// Export › Plans: the route, situation and phase plans.
     pub plans: crate::plans_window::PlansWindow,
-    /// Criteria › Weather case groups….
+    /// Line › Criteria › Weather case groups….
     pub case_groups: crate::case_groups::GroupsWindow,
     /// The measuring tools: picks, the point under the cursor, the
-    /// measurements made (Tools › Measure).
+    /// measurements made (Edit › Tools › Measure).
     pub measuring: crate::measure::Measuring,
     /// The kept measurement or note under the last tool click (its
     /// annotation's id): the Edit tool opens it.
@@ -401,33 +401,33 @@ pub struct Ready {
     pub vertical_clearances: crate::clearance_zones::ZoneWindow,
     /// Checks › Ground clearances › Radial clearances.
     pub radial_clearances: crate::clearance_zones::ZoneWindow,
-    /// Terrain › Terrain surfaces (TIN).
+    /// Line › Terrain › Terrain surfaces (TIN).
     pub surfaces: crate::surfaces::SurfacesWindow,
-    /// Terrain › Survey data › Class colours, when open.
+    /// Line › Terrain › Survey data › Class colours, when open.
     pub class_window: Option<crate::class_colors::ClassWindow>,
     /// Help › Controls: the window of a view's controls, when open.
     pub controls_window: Option<ControlsPage>,
-    /// Criteria › Creep-Stretch, when open: the weather cases chosen.
+    /// Line › Criteria › Creep-Stretch, when open: the weather cases chosen.
     pub creep_stretch_window: Option<ohl_line::condition::CreepStretch>,
-    /// Criteria › Merge duplicate weather cases….
+    /// Line › Criteria › Merge duplicate weather cases….
     pub merge_cases: crate::merge_cases::MergeCasesWindow,
-    /// Criteria › Bimetallic conductor model, when open: the choice.
+    /// Line › Criteria › Bimetallic conductor model, when open: the choice.
     pub bimetallic_window: Option<ohl_cables::BimetallicModel>,
-    /// Criteria › Calculation options (a draft while open).
+    /// Line › Criteria › Calculation options (a draft while open).
     pub solver_window: Option<ohl_line::SolverOptions>,
     /// A jumper joining two different circuits, waiting for the user
     /// ([`crate::circuit_join`]).
     pub circuit_join: Option<crate::circuit_join::CircuitJoin>,
-    /// Criteria › Default values: the values being changed, and what the
+    /// Line › Criteria › Default values: the values being changed, and what the
     /// last export or import said (an error: true).
     pub defaults_window: Option<(ohl_line::Defaults, Option<(String, bool)>)>,
-    /// Terrain › Coordinate system: its windows and the reprojection.
+    /// Line › Terrain › Coordinate system: its windows and the reprojection.
     pub crs: crate::crs::Windows,
-    /// Terrain › Backgrounds: its windows and the import running.
+    /// Line › Terrain › Backgrounds: its windows and the import running.
     pub backgrounds: crate::backgrounds::Windows,
     /// A project to open next (a reprojected copy).
     pub open_project: Option<std::path::PathBuf>,
-    /// Criteria › Design code.
+    /// Line › Criteria › Design code.
     pub design_code: crate::codes::DesignCodeWindow,
     /// The Clearances tab's rule editor and its rule presets.
     pub rule_editor: crate::rule_editor::RuleEditor,
@@ -2148,8 +2148,11 @@ impl eframe::App for App {
                             &mut self.ui_scale,
                         );
                         // The quick bar right of the menus (Undo, Redo,
-                        // Save first), as in OHL-Structure.
+                        // Save first), as in OHL-Structure: icon buttons
+                        // set apart from the menus.
+                        ui.add_space(12.0);
                         ui.separator();
+                        ui.add_space(4.0);
                         if let Some(c) = self.quickbar.ui(ui) {
                             commands.push(c);
                         }

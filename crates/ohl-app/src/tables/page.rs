@@ -601,7 +601,7 @@ impl TablePage {
                         crate::menu::file_label(model, p)
                     ),
                     None if weather_path(model).is_some() => "The project uses a default case (15 °C): add cases here (+ Add row), Apply keeps them in the project".into(),
-                    None => "The model uses a default case (15 °C): make a case file in Criteria › Weather cases library and choose Use for the model".into(),
+                    None => "The model uses a default case (15 °C): make a case file in Line › Criteria › Weather cases library and choose Use for the model".into(),
                 })
                 .small()
                 .weak(),

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Terrain › Coordinate system: say which system the project's coordinates
+//! Line › Terrain › Coordinate system: say which system the project's coordinates
 //! are in and the vertical datum of its heights (Define), convert points
 //! between systems (Calculator), move the
 //! whole project into another system (Reproject, into a new project file).
@@ -290,7 +290,7 @@ fn row_hover(k: &ohl_crs::Known) -> String {
     )
 }
 
-/// Terrain › Coordinate system › Define: the system the project's
+/// Line › Terrain › Coordinate system › Define: the system the project's
 /// coordinates are in and the vertical datum of its heights (nothing
 /// moves).
 #[derive(Debug, Clone, Default)]
@@ -349,7 +349,7 @@ pub fn describe_height_datum(model: &Model) -> String {
     }
 }
 
-/// Terrain › Coordinate system › Calculator: points from one system to
+/// Line › Terrain › Coordinate system › Calculator: points from one system to
 /// another.
 #[derive(Debug, Clone)]
 pub struct Calculator {
@@ -435,7 +435,7 @@ pub fn convert(from: &str, to: &str, ellipsoidal: bool, input: &str) -> Result<S
     Ok(out.join("\n"))
 }
 
-/// Terrain › Coordinate system › Reproject: the project moved into another
+/// Line › Terrain › Coordinate system › Reproject: the project moved into another
 /// system, written as a new project file.
 #[derive(Debug, Clone)]
 pub struct Reproject {
@@ -702,7 +702,7 @@ impl Windows {
                     if from.is_err() {
                         ui.colored_label(
                             ui.visuals().error_fg_color,
-                            "The project's coordinate system is not defined: Terrain › \
+                            "The project's coordinate system is not defined: Line › Terrain › \
                              Coordinate system › Define first",
                         );
                     }

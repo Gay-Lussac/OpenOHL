@@ -161,7 +161,7 @@ fn the_tutorial_builds_a_first_line() {
     // The ground: Terrain › Terrain surfaces (TIN)… › Import… — a native
     // file dialog: the survey beside the project imported as the button
     // does (surfaces::Action::Import).
-    click(&mut h, "Terrain");
+    crate::tests::line_menu(&mut h, "Terrain");
     click(&mut h, "Terrain surfaces (TIN)…");
     h.get_by_label("Terrain surfaces (TIN)");
     h.get_by_label("Import…");
@@ -609,7 +609,7 @@ fn the_tutorial_builds_a_first_line() {
     // Chapter 9: Criteria › Loads for structures: everyday and high wind
     // ticked (the menu stays open), as strung; the line results: everyday
     // once, high wind from the left and from the right.
-    click(&mut h, "Criteria");
+    crate::tests::line_menu(&mut h, "Criteria");
     h.get_by_label_contains("Loads for structures").hover();
     h.run();
     h.get_by_label("Weather cases sent");

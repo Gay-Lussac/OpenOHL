@@ -382,7 +382,7 @@ fn the_survey_window_stays_open_for_several_classes() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Terrain").click();
+    crate::tests::line_menu(&mut harness, "Terrain");
     harness.run();
     harness.get_by_label_contains("Survey data").click();
     harness.run();

@@ -82,6 +82,25 @@ project's.
   of this alignment* is one line and a (?); the structure preview's
   labels no longer overlap — each moved a line down or up when that is
   free, else left out and shown while the pointer is near its point.
+- **Menus by task**: File, Edit, View, Line, Checks, Plans & sheets,
+  Versions, Help. **Line** holds the former Terrain, Structures, Sections
+  and Criteria menus as submenus (their contents unchanged); the Tools
+  menu is **Edit › Tools**; the Plugins menu is **File › Plugins** (Plugin
+  manager…, Python console); **Plans & sheets** holds Drawings… and the
+  plans (Route, Situation, Phase plan…, Plan set…, out of File › Export)
+  and the Bill of materials (out of File). Every action is still there,
+  every shortcut unchanged; the user guide's menu table and every menu
+  path in the guide, the tutorial and the program's texts follow (the
+  decision log keeps the paths as they were).
+- **Quick bar**: Undo ⟲, Redo ⟳, Save all 💾, Fit views ⛶ and Check wire
+  clearances ✔ are icon buttons (their names, shortcuts and what they do
+  on hover; their names for screen readers), set apart from the menus;
+  other commands put there keep their names.
+- **Dock as a panel**: a small 📌 in the window's title bar (left of its
+  ×), no longer a row of its own; a docked panel's **Float** a small ⬈
+  right of its title.
+- **View › Layers** shows the layers in the same groups as the Model
+  page.
 - **OHL-Structure**: the 3D view's fit takes in the compass's angles
   written around the feet and centres the structure in the room above
   the hotbar ("270° left" and "180° back" were under it).

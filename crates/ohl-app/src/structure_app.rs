@@ -17,7 +17,7 @@
 //!
 //! On a **placed structure** (Properties › Edit…) the application gets
 //! that place's loads: the line's values there in the cases the line
-//! sends to its structures (Criteria › Loads for structures: the load
+//! sends to its structures (Line › Criteria › Loads for structures: the load
 //! cases, all by default, then weather cases chosen on their own with all
 //! factors 1; `ohl_structure_link::structure_cases`,
 //! `ohl_structure_link::placed_values`) written beside the structure
@@ -183,7 +183,7 @@ pub fn arguments(
 /// Why a line without load cases and without weather cases chosen for the
 /// structures sends no values.
 pub const NO_CASES: &str = "no weather case is sent to the structures: tick weather cases in \
-    Criteria › Loads for structures (each gives the forces unfactored, a wind case twice: the \
+    Line › Criteria › Loads for structures (each gives the forces unfactored, a wind case twice: the \
     wind from the left and from the right)";
 
 /// What the line's structure loads are computed from: a copy of the
@@ -225,7 +225,7 @@ impl LineInputs {
     }
 
     /// The structures' loads in the cases the line sends to them
-    /// (Criteria › Loads for structures: its load cases, all by default,
+    /// (Line › Criteria › Loads for structures: its load cases, all by default,
     /// then the weather cases chosen on their own), as Checks › Structure
     /// loads computes them (seconds for a long line). Err: no case to send
     /// (no load case file and no weather case chosen, or none chosen).
@@ -1059,7 +1059,7 @@ pub fn report_window(ctx: &egui::Context, apps: &mut StructureApps) {
     }
 }
 
-/// Criteria › Loads for structures: what the line sends to the placed
+/// Line › Criteria › Loads for structures: what the line sends to the placed
 /// structures (the cases of the structure application): its load cases
 /// (all by default) and weather cases on their own, all factors 1 (none
 /// by default). A tick menu (it stays open while ticking); each tick is
@@ -1187,7 +1187,7 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
 }
 
 /// The broken-wire cases sent (roadmap O9): a tick per load case of the
-/// line with a broken wire (Criteria › Load cases library, `[case.broken]`),
+/// line with a broken wire (Line › Criteria › Load cases library, `[case.broken]`),
 /// each sent as its weather case with that wire broken, unfactored (a
 /// wind case twice); one ticked and since gone is listed to untick.
 pub(crate) fn broken_cases_ui(
@@ -1203,7 +1203,7 @@ pub(crate) fn broken_cases_ui(
         ui.label(
             egui::RichText::new(
                 "None in the line's load cases: a load case with a broken wire \
-                 ([case.broken] in Criteria › Load cases library, or from a design code) is \
+                 ([case.broken] in Line › Criteria › Load cases library, or from a design code) is \
                  listed here.",
             )
             .small()

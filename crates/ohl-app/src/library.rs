@@ -1516,7 +1516,7 @@ const CORE_CURVES: &str = "{ stress_unit = \"MPa\", strain = \"percent\", basis 
 pub const BIMETALLIC_BEHAVIORS: [(&str, &str); 3] = [
     (
         "",
-        "The line's choice (Criteria › Bimetallic conductor model)",
+        "The line's choice (Line › Criteria › Bimetallic conductor model)",
     ),
     (
         "bird_cage",

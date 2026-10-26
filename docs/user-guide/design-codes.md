@@ -96,7 +96,7 @@ names unique).
 
 In the desktop application the Clearances tab's **Edit rules › Load
 preset…** lists the rule presets of the design-code plugins turned on,
-read with the parameter file chosen in Criteria › Design code (none
+read with the parameter file chosen in Line › Criteria › Design code (none
 chosen: an empty one), shows one with its distances at the project's
 voltages, and **merges** it into the rule file chosen (a rule of the same
 name replaced, the others added) or **replaces** its rules — one command,
@@ -207,8 +207,8 @@ notes (and that the code gives no wind factors, when it gives none).
 
 ## In the desktop application
 
-Install a code plugin or add its folder in Plugins › Plugin manager
-(e.g. `plugins/codes`). Then **Criteria › Design code…**:
+Install a code plugin or add its folder in File › Plugins › Plugin manager
+(e.g. `plugins/codes`). Then **Line › Criteria › Design code…**:
 
 1. choose the code;
 2. **Save the plugin's template…** to start a parameter file, fill it in;

@@ -149,7 +149,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &mut crate::plugins::
             if formats.is_empty() {
                 crate::menu::error_label(
                     ui,
-                    "No project format: install a project plugin (Plugins › Plugin manager).",
+                    "No project format: install a project plugin (File › Plugins › Plugin manager).",
                 );
             }
             ui.horizontal(|ui| {

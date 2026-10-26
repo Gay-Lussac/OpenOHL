@@ -64,7 +64,7 @@ Options:
 
 ### LandXML
 
-`landxml` writes each route as an `Alignment` — `CoordGeom` straight lines between its alignment points (or its structures, for a route without an alignment), stationing from 0, and a `Profile` with the heights of those points — and every structure as a `CgPoint` named by its id (`code`: its type). Points are northing, easting, elevation, in metres; a coordinate system `EPSG:<code>` is written as `CoordinateSystem`. Terrain surfaces are written and read apart (Terrain › Terrain surfaces).
+`landxml` writes each route as an `Alignment` — `CoordGeom` straight lines between its alignment points (or its structures, for a route without an alignment), stationing from 0, and a `Profile` with the heights of those points — and every structure as a `CgPoint` named by its id (`code`: its type). Points are northing, easting, elevation, in metres; a coordinate system `EPSG:<code>` is written as `CoordinateSystem`. Terrain surfaces are written and read apart (Line › Terrain › Terrain surfaces).
 
 ### IFC
 
@@ -189,4 +189,4 @@ coordinate systems must be the same (else reproject one first). The
 renames are made with the project's own rename (what refers to an object
 follows as when it is renamed by hand).
 
-Terrain (TIN) and point clouds are imported apart, also from File: **Import › Terrain surface (TIN)…** (Terrain › Terrain surfaces) and **Import › LiDAR points (LAS/LAZ)…**.
+Terrain (TIN) and point clouds are imported apart, also from File: **Import › Terrain surface (TIN)…** (Line › Terrain › Terrain surfaces) and **Import › LiDAR points (LAS/LAZ)…**.

@@ -36,12 +36,13 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     assert!(harness.query_by_label_contains("Weather: ").is_none());
     // Only in the View menu.
     for menu in ["Sections", "Criteria"] {
-        harness.get_by_label(menu).click();
-        harness.run();
+        crate::tests::line_menu(&mut harness, menu);
         assert!(
             harness.query_by_label("Display weather cases…").is_none(),
             "{menu}"
         );
+        harness.key_press(egui::Key::Escape);
+        harness.run();
     }
     harness.get_by_label("View").click();
     harness.run();

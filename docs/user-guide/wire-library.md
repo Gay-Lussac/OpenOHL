@@ -40,12 +40,12 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | `model` | no (`"nonlinear"`) | `"nonlinear"`, `"linear_creep_tension"`, `"linear_creep_temperature"` | The wire model (below). |
 | `creep_temperature_shift` | linear models | number, °C | The permanent stretch due to creep as a temperature increase. |
 | `creep_shift_tension` | `linear_creep_tension` | force | The creep weather case tension at which the stretch equals `creep_temperature_shift`. |
-| `bimetallic_behavior` | no (the line's choice) | `"compression"`, `"bird_cage"` | Wire types with a core: what the outer strands do above the transition temperature (below). Not given: the line's bimetallic conductor model (Criteria › Bimetallic conductor model; compression unless chosen otherwise). |
+| `bimetallic_behavior` | no (the line's choice) | `"compression"`, `"bird_cage"` | Wire types with a core: what the outer strands do above the transition temperature (below). Not given: the line's bimetallic conductor model (Line › Criteria › Bimetallic conductor model; compression unless chosen otherwise). |
 | `max_virtual_compression` | `bimetallic_behavior = "compression"` (default `"68947.4 MPa"`, 10⁷ psi: in practice no limit) | stress | The outer strands' largest virtual compressive stress. |
 
 ### Wire models
 
-The three models of line design programs, used for the conditions after creep and after load (a section's calculation, [line file](line-file.md#sections); the weather cases from Criteria › Creep-Stretch):
+The three models of line design programs, used for the conditions after creep and after load (a section's calculation, [line file](line-file.md#sections); the weather cases from Line › Criteria › Creep-Stretch):
 
 | `model` | Behaviour | After creep | After load |
 |---|---|---|---|
@@ -55,7 +55,7 @@ The three models of line design programs, used for the conditions after creep an
 
 **Bimetallic wires** (aluminium on steel…): give the outer layers and the core each their own `stress_strain` (initial and creep polynomials, final modulus, thermal expansion), on the total area (`basis = "total"`: the actual material values × component area / total area, as tables give them).
 
-The outer strands expand more with temperature than the core. Above a transition temperature they are no longer in tension. What they do then is a property of the conductor, `bimetallic_behavior`. A wire type that does not give it (as older wire files) follows the line's **bimetallic conductor model** (Criteria › Bimetallic conductor model…, kept with the line's settings: one undoable edit, every section solved again); a wire type that gives it keeps its own:
+The outer strands expand more with temperature than the core. Above a transition temperature they are no longer in tension. What they do then is a property of the conductor, `bimetallic_behavior`. A wire type that does not give it (as older wire files) follows the line's **bimetallic conductor model** (Line › Criteria › Bimetallic conductor model…, kept with the line's settings: one undoable edit, every section solved again); a wire type that gives it keeps its own:
 
 | `bimetallic_behavior` | Above the transition temperature |
 |---|---|

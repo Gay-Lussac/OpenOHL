@@ -509,7 +509,7 @@ pub struct Model {
     pub check_ground: Option<std::sync::Arc<Terrain>>,
     /// The point cloud read (`FILE.ohl` or `FILE.ohl#name`).
     pub cloud: Option<String>,
-    /// Orthophotos and drawings of the project (Terrain › Backgrounds).
+    /// Orthophotos and drawings of the project (Line › Terrain › Backgrounds).
     pub backgrounds: crate::backgrounds::Loaded,
     /// Backgrounds this user hides (`image:<layer>`, `drawing:<name>`).
     pub hidden_backgrounds: std::collections::BTreeSet<String>,
@@ -600,7 +600,7 @@ pub struct Model {
     /// mode): those shown are read again; `""`: the line worked on was
     /// renamed or deleted (read again whole).
     pub lines_changed: Vec<String>,
-    /// LiDAR classes not drawn (Terrain menu).
+    /// LiDAR classes not drawn (Line › Terrain).
     pub hidden_classes: std::collections::BTreeSet<u8>,
     /// Points per class of the whole point cloud (loaded or not).
     pub class_counts: Vec<(u8, u64)>,
@@ -620,7 +620,7 @@ pub struct Model {
     /// Working folder of the project's libraries (the project holds them);
     /// `None`: read from their files (a line file, or read-only).
     pub library_dir: Option<PathBuf>,
-    /// What is written next to the wires in each view (Sections › Display
+    /// What is written next to the wires in each view (Line › Sections › Display
     /// options; this user's choice).
     pub section_display: crate::annotations::SectionDisplay,
     /// The side the wind comes from in the weather cases shown (this

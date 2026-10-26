@@ -4,7 +4,7 @@
 
 //! Checks › Structure loads: the loads the wires and strings put on the
 //! structures in each load case (the load case file used: the project's,
-//! Criteria › Load cases), computed on demand in the background — the
+//! Line › Criteria › Load cases), computed on demand in the background — the
 //! model is not changed. One load case shown at a time; factored or not;
 //! a click goes to the structure; CSV export. **Usage**: how much of its
 //! capacity each structure uses (its type's allowable spans and loads,
@@ -230,7 +230,7 @@ impl LoadsPage {
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
-                "no load case file: Criteria › Load cases library (the project's own, or a \
+                "no load case file: Line › Criteria › Load cases library (the project's own, or a \
                  .ohllc file next to a line file)"
                     .into(),
             ));
@@ -395,7 +395,7 @@ impl LoadsPage {
             ui.label("No load case file yet: the structure loads are computed for its cases.");
             ui.label(
                 egui::RichText::new(
-                    "Add one in the Load cases library (Criteria menu): Browse… for a .ohllc \
+                    "Add one in the Load cases library (Line › Criteria): Browse… for a .ohllc \
                      file, or New file… from a template.",
                 )
                 .small()

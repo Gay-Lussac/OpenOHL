@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Criteria › Merge duplicate weather cases… (owner, 2026-10-24): the
+//! Line › Criteria › Merge duplicate weather cases… (owner, 2026-10-24): the
 //! project's weather cases of the same physics
 //! ([`ohl_weather::WeatherCase::same_physics`]: what a solve reads, never
 //! the name) in groups; each group ticked is merged into the case chosen
@@ -368,7 +368,7 @@ pub fn apply(r: &mut Ready, map: &BTreeMap<String, String>) -> Result<String, St
     })
 }
 
-/// Criteria › Merge duplicate weather cases….
+/// Line › Criteria › Merge duplicate weather cases….
 pub fn window(ctx: &egui::Context, r: &mut Ready) {
     if !r.merge_cases.open {
         return;

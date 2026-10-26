@@ -1,6 +1,6 @@
 //! A plugin's presets edited in the project (owner, 2026-10-25): its rule
 //! presets, their weather cases and its sheet templates shown value by
-//! value in **Plugins › Plugin manager › Presets…**; a value changed is
+//! value in **File › Plugins › Plugin manager › Presets…**; a value changed is
 //! kept in the project's library (`plugin-preset-edits/<plugin>.toml`,
 //! one change), the plugin left as it is, and applied wherever the
 //! presets are read: the rule presets every window offers, the sheet
@@ -344,7 +344,7 @@ pub fn apply_preset(
         ohl_plugins::RulePreset {
             name: p.name.clone(),
             description: format!(
-                "{} ({n} value{} changed in this project: Plugins › Plugin manager › Presets…)",
+                "{} ({n} value{} changed in this project: File › Plugins › Plugin manager › Presets…)",
                 p.description,
                 if n == 1 { "" } else { "s" }
             ),

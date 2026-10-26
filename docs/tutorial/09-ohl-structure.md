@@ -17,7 +17,7 @@ weather cases ticked ──► line results (forces at each attachment point, un
 
 ## Steps
 
-1. **Criteria › Loads for structures** (a menu of ticks; it stays open
+1. **Line › Criteria › Loads for structures** (a menu of ticks; it stays open
    while you tick).
    - **Wires**: leave *as strung*.
    - **Weather cases sent**: tick **everyday** and **high wind**.

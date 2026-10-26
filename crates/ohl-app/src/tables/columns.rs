@@ -62,7 +62,7 @@ pub(super) const STRUCTURES: &[Column] = &[
         "weather groups",
         150.0,
         Yes,
-        "its weather case groups (Criteria › Weather case groups…), ticked: a check with the structure override ticked takes here only its cases in these groups (e.g. a wind study's lower winds); empty: the check's cases",
+        "its weather case groups (Line › Criteria › Weather case groups…), ticked: a check with the structure override ticked takes here only its cases in these groups (e.g. a wind study's lower winds); empty: the check's cases",
     ),
 ];
 
@@ -137,7 +137,7 @@ pub(super) const SECTIONS: &[Column] = &[
         "calculation",
         100.0,
         Yes,
-        "wire condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Criteria › Creep-Stretch",
+        "wire condition (Initial, after Creep, after Load, Max Sag of the two) and method (RS: ruling span, FE: finite elements); Creep and Load use Line › Criteria › Creep-Stretch",
     ),
     (
         "colour",
@@ -155,7 +155,7 @@ pub(super) const SECTIONS: &[Column] = &[
         "weather groups",
         150.0,
         Yes,
-        "its weather case groups (Criteria › Weather case groups…), ticked: a check with the section override ticked takes on it only its cases in these groups (e.g. the snow load along the line); empty: the check's cases",
+        "its weather case groups (Line › Criteria › Weather case groups…), ticked: a check with the section override ticked takes on it only its cases in these groups (e.g. the snow load along the line); empty: the check's cases",
     ),
     (
         "local winds",
@@ -270,7 +270,7 @@ pub(super) const INSULATORS: &[Column] = &[
         "shapes",
         55.0,
         Derived,
-        "its volumes: edited in Structures › String shapes",
+        "its volumes: edited in Line › Structures › String shapes",
     ),
 ];
 
@@ -357,7 +357,7 @@ pub(super) const STRINGS: &[Column] = &[
         "library label",
         110.0,
         Yes,
-        "its entry in the string library (Structures › String library: its weight, wind area and stiffness come from there); empty: its own values — a label is given when applied",
+        "its entry in the string library (Line › Structures › String library: its weight, wind area and stiffness come from there); empty: its own values — a label is given when applied",
     ),
     (
         "compression N",
@@ -661,7 +661,7 @@ pub(super) const SYSTEMS: &[Column] = &[
         "colour",
         100.0,
         Yes,
-        "display colour #rrggbb when wires are coloured by system (Sections › Display options); empty: by its place",
+        "display colour #rrggbb when wires are coloured by system (Line › Sections › Display options); empty: by its place",
     ),
     ("sections", 70.0, Derived, "sections given this system"),
     (

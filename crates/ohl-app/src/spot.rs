@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Structures › Spot structures: the least-cost structures along a route of the
+//! Line › Structures › Spot structures: the least-cost structures along a route of the
 //! model ([`ohl_spotting`]) on the model's ground, from its structure types
 //! and a cost file, computed in the background (cancellable). The proposal
 //! is listed and saved as a new line file; the model is not changed.
@@ -111,13 +111,14 @@ impl SpotWindow {
         let fail = |m: &str| Some(Err(m.to_owned()));
         let Some(ground) = model.ground.clone() else {
             self.result = fail(
-                "no ground: import survey data or a surface first (Terrain › Terrain surfaces (TIN)…)",
+                "no ground: import survey data or a surface first (Line › Terrain › Terrain surfaces (TIN)…)",
             );
             return;
         };
         let Some((types, insulators)) = model.types.clone() else {
-            self.result =
-                fail("no structure types: the line uses none (Structures › Structure library)");
+            self.result = fail(
+                "no structure types: the line uses none (Line › Structures › Structure library)",
+            );
             return;
         };
         let Some(cost_path) = self.cost_path.clone() else {

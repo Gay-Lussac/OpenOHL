@@ -560,7 +560,7 @@ pub struct PreviewRoute {
     pub curves: Vec<ohl_drawing::curves::Curve>,
 }
 
-/// The export's sheets, as File › Export › Drawings… would write them now.
+/// The export's sheets, as Plans & sheets › Drawings… would write them now.
 #[derive(Debug, Clone)]
 pub struct Preview {
     /// The sheets' paper in words (none: the export writes one continuous
@@ -2640,7 +2640,7 @@ fn plan_background_ui(
                 ),
             )
             .on_hover_text(
-                "Its DXF drawings (Terrain › Backgrounds) straightened along the line like \
+                "Its DXF drawings (Line › Terrain › Backgrounds) straightened along the line like \
                  everything else in the plan, on the layer OHL_BACKGROUND_DRAWINGS, under \
                  everything else",
             );
@@ -2665,7 +2665,7 @@ fn plan_background_ui(
                 ),
             )
             .on_hover_text(format!(
-                "Its orthophotos (Terrain › Backgrounds) resampled along the line at {:.0} dpi, \
+                "Its orthophotos (Line › Terrain › Backgrounds) resampled along the line at {:.0} dpi, \
                  under a {:.0} % white veil (the template's [plan_background]); SVG, PDF and \
                  PNG (DXF has no images)",
                 b.dpi,
@@ -2690,7 +2690,7 @@ fn plan_background_ui(
                 egui::Checkbox::new(&mut on, "the project's drawings under the key map"),
             )
             .on_hover_text(
-                "Its DXF drawings (Terrain › Backgrounds) around the route, north up, thin, \
+                "Its DXF drawings (Line › Terrain › Backgrounds) around the route, north up, thin, \
                  under the route in the small map (the template's [key_map] drawings)",
             );
         if r.changed() {
@@ -2705,7 +2705,7 @@ fn plan_background_ui(
                 egui::Checkbox::new(&mut on, "the project's orthophotos under the key map"),
             )
             .on_hover_text(format!(
-                "Its orthophotos (Terrain › Backgrounds) around the route, north up, under a \
+                "Its orthophotos (Line › Terrain › Backgrounds) around the route, north up, under a \
                  {:.0} % white veil (the template's [key_map] orthophoto, veil); SVG, PDF and PNG",
                 k.veil * 100.0
             ));
@@ -3411,7 +3411,7 @@ pub const PREVIEW_TICK: &str = "Show the export's sheets over the profile and th
 /// What the sheet preview shows.
 const PREVIEW_HELP: &str = "Sheet edges (match lines), sheet numbers and the export's warnings \
      over the continuous profile and the plan, laid out by the export itself with the settings \
-     of File › Export › Drawings…; nothing is computed differently";
+     of Plans & sheets › Drawings…; nothing is computed differently";
 
 #[cfg(test)]
 mod ground_rule_tests {

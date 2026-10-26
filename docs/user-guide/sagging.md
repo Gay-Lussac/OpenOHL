@@ -18,7 +18,7 @@ differ by a few tenths of a percent, even at the stringing temperature.
 The section's length is that of every span at the stringing tension
 (the horizontal tension in the ruling span) with the strings plumb; the
 sheaves share it out. The former model, one horizontal tension through
-the section, is the option *simplified (equal H)* (Criteria ›
+the section, is the option *simplified (equal H)* (Line › Criteria ›
 Calculation options; `blocks = "equal_h"` on the command line).
 
 ## What is given

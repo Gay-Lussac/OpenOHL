@@ -69,7 +69,7 @@ impl Ready {
                 log::info!("structure application: {e}");
                 self.structure_apps.reports.push(crate::structure_app::Report {
                     title: "OHL-Structure was not started".into(),
-                    text: format!("{e}: the structure type's file was not read (Structures › Structure library)."),
+                    text: format!("{e}: the structure type's file was not read (Line › Structures › Structure library)."),
                     error: true,
                 });
                 self.status = Some((e, true));

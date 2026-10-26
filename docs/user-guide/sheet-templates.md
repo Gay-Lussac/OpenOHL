@@ -116,7 +116,7 @@ A **required** field left empty refuses the export, naming the fields
 (a draft copy of the template can untick `required`).
 
 **No empty gaps.** `{height_datum}` is the project's height datum
-(Terrain › Coordinate system › Define…, e.g. `LN02 (EPSG:5728)`; see
+(Line › Terrain › Coordinate system › Define…, e.g. `LN02 (EPSG:5728)`; see
 [coordinate systems](coordinates.md#in-the-desktop-application-terrain--coordinate-system)),
 else the vertical part of the coordinate system when it names one
 (`EPSG:2056+5728` → `EPSG:5728`, a proj4 `+geoidgrids=`).
@@ -259,7 +259,7 @@ points, else ASPRS).
 
 ## Drawings and orthophotos under the plan
 
-The project's backgrounds (Terrain › Backgrounds: DXF drawings and
+The project's backgrounds (Line › Terrain › Backgrounds: DXF drawings and
 orthophotos kept in the project file) can be drawn under the plan,
 **straightened along the line** like everything else there: a point at
 station *s* and offset *o* from the axis is drawn at *s* along the sheet

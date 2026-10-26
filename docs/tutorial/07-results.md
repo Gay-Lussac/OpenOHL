@@ -11,12 +11,12 @@ the sags and tensions in the properties and the tables.
 2. The **Profile**, under the 3D view: the ground along the alignment
    (with the survey points beside it), the structures by station and the
    wires as solved.
-3. **Sections › Display options**: tick **Sag** for the Profile (the
+3. **Line › Sections › Display options**: tick **Sag** for the Profile (the
    menu stays open). Each span's sag is written at mid-span.
 4. Left-click a span of S1 in any view. **Properties** gives its wire
    type, circuit and phase, and per weather case its horizontal and
    maximum tension, its sag and its lowest point.
-5. **Sections › Sections table**: one row per section, with **H kN** and
+5. **Line › Sections › Sections table**: one row per section, with **H kN** and
    **max sag m** in the weather cases shown.
 6. Hold **Edit** and click the same span: its section's window.
    Open **Sagging** for the crew's table (sags per span and temperature).

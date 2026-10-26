@@ -68,10 +68,10 @@ description = "The cases the clearance checks take"
 cases = ["max temperature", "glaze ice"]
 ```
 
-In the app they are made in **Criteria › Weather case groups…** (a name,
+In the app they are made in **Line › Criteria › Weather case groups…** (a name,
 a description, the cases ticked; **Save** writes them into the file, one
 change) and **picked as one** — a group's button adds its cases — in
-**Criteria › Loads for structures** and in the checks' case lists
+**Line › Criteria › Loads for structures** and in the checks' case lists
 (vertical and radial clearances, vegetation, safety volumes, wire
 tensions, string checks, distance between conductors). **Structures and sections** take groups of their own — the **weather
 groups** column of the Structures and Sections tables, ticked in its dropdown (the case file's groups only, nothing typed; a group name has no semicolon)
@@ -157,6 +157,6 @@ Each case is solved and checked against the clearance rules in turn; the ground 
 
 Without `--weather`, one case comes from `--temperature`, `--wind-pressure` (with `--wind-from left|right`) and `--ice-thickness` or `--ice-load` (with `--ice-density`).
 
-The finite elements carry the ice and wind per metre of the **stretched** wire (exact, the default) or, with the line's calculation option (Criteria › Calculation options, the line file's `solver.loads_per`, `ohl line --loads-per unstretched`), per metre of the **unstretched** wire, as other programs appear to do it: about 0.1 % less ice and wind, slightly less sag and swing — a simplification on the unsafe side, for comparison ([Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)).
+The finite elements carry the ice and wind per metre of the **stretched** wire (exact, the default) or, with the line's calculation option (Line › Criteria › Calculation options, the line file's `solver.loads_per`, `ohl line --loads-per unstretched`), per metre of the **unstretched** wire, as other programs appear to do it: about 0.1 % less ice and wind, slightly less sag and swing — a simplification on the unsafe side, for comparison ([Finite-element wire systems](../theory/wirefe.md#elastic-catenary-element)).
 
 `ohl sagtension` jobs use the same case fields in their `[[case]]` lists.

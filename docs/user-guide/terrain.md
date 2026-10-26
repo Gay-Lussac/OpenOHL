@@ -524,7 +524,7 @@ The ASPRS LAS 1.4 scheme is in [`libraries/lidar-classes/asprs-las-1.4.ohlc`](ht
 
 On a real 25 km line (private data, checked locally), ground built this way from 99.6 million LiDAR points (11.3 million in the utility's ground classes, 22.6 million triangles, about one minute) gave span clearances matching those on the TIN of a commercial program to a median of 2 mm (94 % of 930 spans within 10 cm).
 
-A class may have a display **colour**, `color = "#rrggbb"`; without one, its colour comes from its roles (ground brown, vegetation green, buildings red, water blue, wires yellow…). In the application, Terrain › Survey data › **Class colours…** edits them per class and saves the scheme to a file; the scheme used is each user's choice (for a project or every project), so the same point cloud can be read with another scheme (e.g. a utility's own class numbers stored as ASPRS).
+A class may have a display **colour**, `color = "#rrggbb"`; without one, its colour comes from its roles (ground brown, vegetation green, buildings red, water blue, wires yellow…). In the application, Line › Terrain › Survey data › **Class colours…** edits them per class and saves the scheme to a file; the scheme used is each user's choice (for a project or every project), so the same point cloud can be read with another scheme (e.g. a utility's own class numbers stored as ASPRS).
 
 ## The terrain surface
 
@@ -538,7 +538,7 @@ ground: spans that are not fully over the survey are reported.
 
 ## Backgrounds: orthophotos, maps and drawings
 
-**Terrain › Backgrounds** keeps orthophotos, maps and DXF drawings (e.g.
+**Line › Terrain › Backgrounds** keeps orthophotos, maps and DXF drawings (e.g.
 the cadastre) in the project file, drawn under the line. Like point clouds and
 surfaces they belong to the project, not to the line: they are not logged
 and not undone.
@@ -610,7 +610,7 @@ Both are shown when a project opens.
   nothing is draped on the ground: a 2D drawing (heights 0) lies at height
   0. Texts are not drawn in 3D.
 
-**Reproject project** (Terrain › Coordinate system) moves the drawings
+**Reproject project** (Line › Terrain › Coordinate system) moves the drawings
 with the project; orthophotos would need resampling, so they are left out
 of the new project: import them again in the new system.
 
@@ -618,7 +618,7 @@ of the new project: import them again in the new system.
 
 A project keeps any number of terrain surfaces (TINs, *triangulated irregular networks*), by name, compressed in the project file. You choose one as **active**: it is the ground — drawn, and used for clearances, profiles and placing structures. When a project with an active surface opens, the ground is read from it (a 12.7-million-triangle surface: about 1 s) instead of being built from the LiDAR every time. Other surfaces can be **shown** too, each in its colour (the *Other surfaces* layer, drawn in chunks with levels of detail like the ground).
 
-Terrain › **Terrain surfaces (TIN)…** manages them:
+Line › Terrain › **Terrain surfaces (TIN)…** manages them:
 
 - **Import…** a file. Its format comes from the extension, or you choose it:
 

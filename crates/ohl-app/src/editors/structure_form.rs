@@ -382,7 +382,7 @@ pub(super) fn structure_ui(
         );
         new_pylon = ui
             .button("New structure from a template…")
-            .on_hover_text("Tools › New structure from a template…: this window stays open")
+            .on_hover_text("Edit › Tools › New structure from a template…: this window stays open")
             .clicked();
         ui.separator();
     }

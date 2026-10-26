@@ -60,7 +60,7 @@ Structures 157000.00 + spans 6000.00 + wire 9223.47 = 172223.47 EUR
 
 ## In the application
 
-Structures › **Spot structures…** asks for the route, wire type, design tension and temperature, clearance, step, longest span and cost file (the project's first `.ohlcost` by default; next to a line file). It uses the model's terrain surface and structure types. **Run** (the window's footer, bottom left) runs in the background (**Stop** stops it); the proposal is listed with its costs, and **Save as line file…** writes it as a new line.
+Line › Structures › **Spot structures…** asks for the route, wire type, design tension and temperature, clearance, step, longest span and cost file (the project's first `.ohlcost` by default; next to a line file). It uses the model's terrain surface and structure types. **Run** (the window's footer, bottom left) runs in the background (**Stop** stops it); the proposal is listed with its costs, and **Save as line file…** writes it as a new line.
 
 ## Limits of this first version
 

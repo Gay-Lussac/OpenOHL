@@ -37,7 +37,7 @@ fourth.
 
 A line of six points in the plan, named P1 to P6: straight east for
 600 m, then turning left by about 27° (the line angle at P4) for the
-last 447 m. Terrain › Alignment points lists
+last 447 m. Line › Terrain › Alignment points lists
 them with their E, N and height. A point placed a little off can be put
 right there: type its E and N and apply the change (the table's **Apply** button).
 

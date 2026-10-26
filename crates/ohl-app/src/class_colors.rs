@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Terrain › Survey data › Class colours: the display colour of the LiDAR
+//! Line › Terrain › Survey data › Class colours: the display colour of the LiDAR
 //! points by class number, from a class scheme file (`.ohlc`: names,
 //! roles, colours). Every class of the point cloud is listed with its
 //! points; a colour is picked per class (none: from its roles). The scheme

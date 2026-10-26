@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Python console (Plugins › Python console): an embedded interpreter
+//! The Python console (File › Plugins › Python console): an embedded interpreter
 //! on its own thread, driving the open project through the `ohl` module
 //! (`ols`, its name before 2026-10-18, is the same module).
 //!

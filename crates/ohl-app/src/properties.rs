@@ -1463,7 +1463,7 @@ fn assign_circuit_ui(
                  circuit chosen, out of the one it is in (one undo). A circuit holds one \
                  conductor path per phase: another path of the same phase that is not \
                  connected is refused — connect them (a jumper) to make them one. New \
-                 circuits: Sections › Circuits table",
+                 circuits: Line › Sections › Circuits table",
             )
             .clicked()
         {

@@ -375,7 +375,7 @@ pub fn empty_wire_library(ui: &mut egui::Ui) {
         if ui
             .button(OPEN_WIRE_LIBRARY)
             .on_hover_text(
-                "Sections › Wires library: Browse… for a wire library file (.ohlw), e.g. \
+                "Line › Sections › Wires library: Browse… for a wire library file (.ohlw), e.g. \
                  libraries/cables/acsr-examples.ohlw (typical example values), or add one",
             )
             .clicked()
@@ -486,7 +486,7 @@ pub(super) fn section_ui(
     ui.horizontal(|ui| {
         ui.label("status");
         ui.radio_value(&mut clipped, false, "in the blocks")
-            .on_hover_text("Unclipped: the wire rolls over the suspension clamps in every weather case — over frictionless sheaves (its tension the same on both sides of each) or with one horizontal tension in all spans, as Criteria › Calculation options say; moving a structure sags it again to its condition");
+            .on_hover_text("Unclipped: the wire rolls over the suspension clamps in every weather case — over frictionless sheaves (its tension the same on both sides of each) or with one horizontal tension in all spans, as Line › Criteria › Calculation options say; moving a structure sags it again to its condition");
         ui.radio_value(&mut clipped, true, "clipped in")
             .on_hover_text("Each span keeps its unstressed length: a structure moved changes the spans next to it, the suspension strings swing to balance them");
     });

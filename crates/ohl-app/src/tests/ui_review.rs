@@ -253,3 +253,114 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
     h.get_by_label("To surface [m]");
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// The menus by task (owner: OHL-Design UI review, 2026-10-26): File,
+/// Edit, View, Line, Checks, Plans & sheets, Versions, Help; every moved
+/// action reachable at its new path; the quick bar's commands icon
+/// buttons named for screen readers.
+#[test]
+fn the_menus_are_grouped_by_task() {
+    use egui_kittest::kittest::NodeT as _;
+    let mut h = window(synthetic_project("ui-review-menus"));
+    for top in [
+        "File",
+        "Edit",
+        "View",
+        "Line",
+        "Checks",
+        "Plans & sheets",
+        "Versions",
+        "Help",
+    ] {
+        h.get_by_label(top);
+    }
+    for gone in [
+        "Terrain",
+        "Structures",
+        "Sections",
+        "Criteria",
+        "Tools",
+        "Plugins",
+    ] {
+        assert!(
+            h.query_all_by_label(gone)
+                .all(|n| n.accesskit_node().role() != egui::accesskit::Role::Button),
+            "{gone} is no menu of the bar any more"
+        );
+    }
+    let close = |h: &mut Harness<'_, App>| {
+        h.key_press(egui::Key::Escape);
+        h.run();
+    };
+    let reach: [(&str, &str, &[&str]); 7] = [
+        ("Line", "Terrain", &["Backgrounds ⏵", "Coordinate system ⏵"]),
+        (
+            "Line",
+            "Structures",
+            &["Spot structures…", "Structures table"],
+        ),
+        ("Line", "Sections", &["Sections table", "Jumpers table"]),
+        (
+            "Line",
+            "Criteria",
+            &["Weather cases", "Calculation options…"],
+        ),
+        ("Edit", "Tools", &["Tool inventory", "Measurements panel"]),
+        ("File", "Plugins", &["Plugin manager…", "Python console"]),
+        ("View", "UI scale", &["100 %", "150 %"]),
+    ];
+    for (menu, sub, items) in reach {
+        crate::tests::submenu(&mut h, menu, sub);
+        for item in items {
+            assert!(
+                h.query_all_by_label_contains(item).next().is_some(),
+                "{menu} › {sub} › {item}"
+            );
+        }
+        close(&mut h);
+        close(&mut h);
+    }
+    h.get_by_label("Plans & sheets").click();
+    h.run();
+    for item in ["Drawings…", "Plan set…", "Bill of materials ⏵"] {
+        h.get_by_label(item);
+    }
+    assert!(h.query_by_label_contains("Route").is_some());
+    close(&mut h);
+    // File › Export keeps the line, the points, the libraries; the sheets
+    // went to Plans & sheets.
+    crate::tests::submenu(&mut h, "File", "Export");
+    h.get_by_label("The line…");
+    assert!(h.query_by_label("Drawings…").is_none());
+    close(&mut h);
+    close(&mut h);
+    // A tool held from Edit › Tools.
+    crate::tests::submenu(&mut h, "Edit", "Tools");
+    h.query_all_by_label_contains("Move structure")
+        .last()
+        .unwrap()
+        .click();
+    h.run();
+    assert_eq!(
+        h.state_mut().ready().unwrap().hotbar.tool(),
+        crate::tools::Tool::Move
+    );
+    // The quick bar: icon buttons, their names for screen readers.
+    for name in [
+        "Undo",
+        "Redo",
+        "Save all",
+        "Fit views",
+        "Check wire clearances",
+    ] {
+        assert!(h.query_all_by_label(name).next().is_some(), "{name}");
+    }
+    // The UI scale chosen: kept for the window (100 % by default).
+    assert_eq!(h.state_mut().ui_scale, 1.0);
+    crate::tests::submenu(&mut h, "View", "UI scale");
+    h.get_by_label("125 %").click();
+    h.run();
+    assert_eq!(h.state_mut().ui_scale, 1.25);
+    // (The tick menu stays open on a tick.)
+    h.get_by_label("150 %");
+}

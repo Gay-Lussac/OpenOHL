@@ -1605,7 +1605,7 @@ impl View3d {
         drop(rendering);
         let labels = crate::perf::span("3d labels");
         // Section labels and sags, structures' names and the other
-        // labels (Sections and Structures › Display options).
+        // labels (Sections and Line › Structures › Display options).
         let project = clipped_projector(camera, size, clip);
         let screen =
             |p: [f64; 3]| project(p).map(|(q, _)| rect.min + egui::vec2(q[0] as f32, q[1] as f32));

@@ -75,65 +75,6 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
             ui.close();
         }
         if ui
-            .button("Drawings…")
-            .on_hover_text(
-                "Plan and profile sheets and profile exports of the routes: SVG, DXF, PDF, PNG, \
-                 CSV, XML, at chosen scales and station range",
-            )
-            .clicked()
-        {
-            let (rules, markers) = drawing_checks(r);
-            r.drawings.set_checks(rules, markers);
-            r.drawings.open();
-            ui.close();
-        }
-        // The other plans, apart from the sheets (owner, 2026-10-24).
-        ui.menu_button("Plans", |ui| {
-            use crate::drawings::PlanKind;
-            for (kind, hover) in [
-                (
-                    PlanKind::Route,
-                    "The whole route north up at a small scale over the project's drawings and \
-                     orthophotos",
-                ),
-                (
-                    PlanKind::Situation,
-                    "The route in parts north up at a large scale over the cadastral survey and \
-                     orthophotos",
-                ),
-                (
-                    PlanKind::Phase,
-                    "The structures where the phase arrangement changes, each wire labelled",
-                ),
-            ] {
-                if ui
-                    .button(format!("{}…", kind.title()))
-                    .on_hover_text(hover)
-                    .clicked()
-                {
-                    let (rules, markers) = drawing_checks(r);
-                    r.drawings.set_checks(rules, markers);
-                    r.plans.show(kind);
-                    ui.close();
-                }
-            }
-            ui.separator();
-            if ui
-                .button("Plan set…")
-                .on_hover_text(
-                    "Several drawings in one go (the sheets, the route, situation and phase \
-                     plans), as a plugin's plan set lists them",
-                )
-                .clicked()
-            {
-                let (rules, markers) = drawing_checks(r);
-                r.drawings.set_checks(rules, markers);
-                let dirs = r.drawings.template_plugin_dirs().to_vec();
-                r.plans.show_sets(&dirs);
-                ui.close();
-            }
-        });
-        if ui
             .add_enabled(
                 !busy && r.model.cloud.is_some(),
                 egui::Button::new("LiDAR points (LAS/LAZ)…"),
@@ -175,6 +116,97 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
             }
         }
     });
+    // The plugins (owner: OHL-Design UI review, 2026-10-26: out of the
+    // menu bar).
+    ui.separator();
+    ui.menu_button("Plugins", |ui| {
+        if ui
+            .button("Plugin manager…")
+            .on_hover_text("The plugins installed and found: turn on or off, install, remove")
+            .clicked()
+        {
+            r.plugin_request = Some(PluginRequest::Manager);
+            ui.close();
+        }
+        if ui
+            .button("Python console")
+            .on_hover_text(
+                "Scripts driving the project through the ohl module: read the line and results, \
+                 edit with session commands (undoable)",
+            )
+            .clicked()
+        {
+            r.open_page = Some((Tab::Python, None));
+            ui.close();
+        }
+    });
+}
+
+/// Plans & sheets (owner: OHL-Design UI review, 2026-10-26: the drawings
+/// out of File › Export): the sheets (Drawings…), the route, situation and
+/// phase plans, a plan set, the bill of materials.
+pub(super) fn plans_menu(ui: &mut egui::Ui, r: &mut Ready) {
+    if ui
+        .button("Drawings…")
+        .on_hover_text(
+            "Plan and profile sheets and profile exports of the routes: SVG, DXF, PDF, PNG, \
+             CSV, XML, at chosen scales and station range",
+        )
+        .clicked()
+    {
+        let (rules, markers) = drawing_checks(r);
+        r.drawings.set_checks(rules, markers);
+        r.drawings.open();
+        ui.close();
+    }
+    ui.separator();
+    // The other plans, apart from the sheets (owner, 2026-10-24).
+    {
+        use crate::drawings::PlanKind;
+        for (kind, hover) in [
+            (
+                PlanKind::Route,
+                "The whole route north up at a small scale over the project's drawings and \
+                 orthophotos",
+            ),
+            (
+                PlanKind::Situation,
+                "The route in parts north up at a large scale over the cadastral survey and \
+                 orthophotos",
+            ),
+            (
+                PlanKind::Phase,
+                "The structures where the phase arrangement changes, each wire labelled",
+            ),
+        ] {
+            if ui
+                .button(format!("{}…", kind.title()))
+                .on_hover_text(hover)
+                .clicked()
+            {
+                let (rules, markers) = drawing_checks(r);
+                r.drawings.set_checks(rules, markers);
+                r.plans.show(kind);
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui
+            .button("Plan set…")
+            .on_hover_text(
+                "Several drawings in one go (the sheets, the route, situation and phase \
+                 plans), as a plugin's plan set lists them",
+            )
+            .clicked()
+        {
+            let (rules, markers) = drawing_checks(r);
+            r.drawings.set_checks(rules, markers);
+            let dirs = r.drawings.template_plugin_dirs().to_vec();
+            r.plans.show_sets(&dirs);
+            ui.close();
+        }
+    }
+    ui.separator();
     ui.menu_button("Bill of materials", |ui| {
         if ui
             .button("Wires…")
@@ -194,9 +226,10 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
     });
 }
 
-/// The menus after File, in the order of the work: Edit (with Snap),
-/// View (pages, cases shown, layers), Terrain, Structures, Sections,
-/// Criteria, Checks, Tools, Versions, Plugins, Help.
+/// The menus after File, by task (owner: OHL-Design UI review,
+/// 2026-10-26): Edit (with Snap and Tools), View (pages, cases shown,
+/// layers, UI scale), Line (Terrain, Structures, Sections, Criteria),
+/// Checks, Plans & sheets, Versions, Help (the plugins in File).
 /// Commands go to `out`.
 pub(super) fn menus(
     ui: &mut egui::Ui,
@@ -226,6 +259,51 @@ pub(super) fn menus(
         ui.separator();
         crate::menu::options_menu(ui, "Snap: what can be clicked", |ui| {
             snap_panel(ui, &mut r.snaps)
+        });
+        ui.separator();
+        // A tick menu (the option below): ticking it keeps the menu open;
+        // choosing a tool closes it.
+        crate::menu::options_menu(ui, "Tools", |ui| {
+            item(ui, Command::Inventory, out);
+            // Theme by theme, a line between them (as the inventory groups them).
+            let mut theme = "";
+            for t in crate::tools::Tool::ALL {
+                if t.theme() != theme {
+                    // The Structures group ends with its command (a window,
+                    // no tool held).
+                    if theme == "Structures" {
+                        item(ui, Command::NewPylon, out);
+                    }
+                    ui.separator();
+                    theme = t.theme();
+                }
+                let held = r.hotbar.tool() == t;
+                let mut b = egui::Button::selectable(held, (t.image(ui.ctx(), 16.0), t.name()))
+                    .image_tint_follows_text_color(true);
+                if let Some(k) = t.key() {
+                    b = b.shortcut_text(k);
+                }
+                if ui.add(b).on_hover_text(t.help()).clicked() {
+                    out.push(Command::Hold(t));
+                    ui.close();
+                }
+            }
+            if ui
+                .button("Measurements panel")
+                .on_hover_text("The measurements made: copy, CSV")
+                .clicked()
+            {
+                r.measuring.open = true;
+                ui.close();
+            }
+            crate::menu::options_menu(ui, "Display options", |ui| {
+                ui.label(
+                    egui::RichText::new("Kept measurements and notes (yours only)")
+                        .small()
+                        .weak(),
+                );
+                crate::measure::others_ticks(ui, &mut r.model.section_display);
+            });
         });
     });
     crate::menu::options_menu(ui, "View", |ui| {
@@ -324,13 +402,20 @@ pub(super) fn menus(
             }
         });
         crate::menu::options_menu(ui, "Layers", |ui| {
-            for layer in Layer::ALL {
-                let mut on = r.visible.contains(&layer);
-                if ui.checkbox(&mut on, layer.name()).changed() {
-                    if on {
-                        r.visible.insert(layer);
-                    } else {
-                        r.visible.remove(&layer);
+            // In the Layers list's groups.
+            for (k, (group, layers)) in crate::scene::LAYER_GROUPS.iter().enumerate() {
+                if k > 0 {
+                    ui.separator();
+                }
+                ui.label(egui::RichText::new(*group).small().weak());
+                for layer in *layers {
+                    let mut on = r.visible.contains(layer);
+                    if ui.checkbox(&mut on, layer.name()).changed() {
+                        if on {
+                            r.visible.insert(*layer);
+                        } else {
+                            r.visible.remove(layer);
+                        }
                     }
                 }
             }
@@ -343,173 +428,177 @@ pub(super) fn menus(
             ui.close();
         }
     });
-    crate::menu::options_menu(ui, "Terrain", |ui| terrain_menu(ui, r, out));
-    ui.menu_button("Structures", |ui| {
-        use crate::library::LibraryKind;
-        use crate::tables::TableKind;
-        ui.label(egui::RichText::new("Libraries").small().weak());
-        item(ui, Command::Library(LibraryKind::StructureTypes), out);
-        item(ui, Command::Library(LibraryKind::Insulators), out);
-        ui.separator();
-        ui.label(egui::RichText::new("Tables").small().weak());
-        item(ui, Command::Table(TableKind::Structures), out);
-        item(ui, Command::Table(TableKind::Strings), out);
-        item(ui, Command::Table(TableKind::Insulators), out);
-        item(ui, Command::Table(TableKind::StringShapes), out);
-        ui.separator();
-        crate::menu::options_menu(ui, "Display options", |ui| {
-            ui.label(
-                egui::RichText::new("Labels in each view (yours only)")
-                    .small()
-                    .weak(),
-            );
-            if r.model.section_display.structures_ui(ui) {
-                r.refresh_views();
+    // The line's data by task (owner: OHL-Design UI review, 2026-10-26):
+    // terrain, structures, sections, criteria.
+    ui.menu_button("Line", |ui| {
+        crate::menu::options_menu(ui, "Terrain", |ui| terrain_menu(ui, r, out));
+        ui.menu_button("Structures", |ui| {
+            use crate::library::LibraryKind;
+            use crate::tables::TableKind;
+            ui.label(egui::RichText::new("Libraries").small().weak());
+            item(ui, Command::Library(LibraryKind::StructureTypes), out);
+            item(ui, Command::Library(LibraryKind::Insulators), out);
+            ui.separator();
+            ui.label(egui::RichText::new("Tables").small().weak());
+            item(ui, Command::Table(TableKind::Structures), out);
+            item(ui, Command::Table(TableKind::Strings), out);
+            item(ui, Command::Table(TableKind::Insulators), out);
+            item(ui, Command::Table(TableKind::StringShapes), out);
+            ui.separator();
+            crate::menu::options_menu(ui, "Display options", |ui| {
+                ui.label(
+                    egui::RichText::new("Labels in each view (yours only)")
+                        .small()
+                        .weak(),
+                );
+                if r.model.section_display.structures_ui(ui) {
+                    r.refresh_views();
+                }
+            });
+            // Adding structures is the Add structure tool (on an alignment
+            // point: also on the other points of that alignment, one command);
+            // New pylon from a template is in Edit › Tools (Structures).
+            ui.separator();
+            if ui
+                .button("Spot structures…")
+                .on_hover_text("The least-cost structures along a route (proposal saved as a new line)")
+                .clicked()
+            {
+                r.spot.open(&r.model);
+                ui.close();
+            }
+            if ui
+                .button("Angles around structures…")
+                .on_hover_text(
+                    "Which angle means ahead along the line (string directions, the compass)",
+                )
+                .clicked()
+            {
+                r.angles_window = Some(r.model.line.display.ahead_deg);
+                ui.close();
             }
         });
-        // Adding structures is the Add structure tool (on an alignment
-        // point: also on the other points of that alignment, one command);
-        // New pylon from a template is in the Tools menu (Structures).
-        ui.separator();
-        if ui
-            .button("Spot structures…")
-            .on_hover_text("The least-cost structures along a route (proposal saved as a new line)")
-            .clicked()
-        {
-            r.spot.open(&r.model);
-            ui.close();
-        }
-        if ui
-            .button("Angles around structures…")
-            .on_hover_text(
-                "Which angle means ahead along the line (string directions, the compass)",
-            )
-            .clicked()
-        {
-            r.angles_window = Some(r.model.line.display.ahead_deg);
-            ui.close();
-        }
-    });
-    ui.menu_button("Sections", |ui| {
-        use crate::library::LibraryKind;
-        use crate::tables::TableKind;
-        ui.label(egui::RichText::new("Libraries").small().weak());
-        item(ui, Command::Library(LibraryKind::Cables), out);
-        ui.separator();
-        ui.label(egui::RichText::new("Tables").small().weak());
-        item(ui, Command::Table(TableKind::Sections), out);
-        item(ui, Command::Table(TableKind::Jumpers), out);
-        item(ui, Command::Table(TableKind::SpanObjects), out);
-        item(ui, Command::Table(TableKind::LoadTypes), out);
-        item(ui, Command::Table(TableKind::Spacers), out);
-        item(ui, Command::Table(TableKind::Systems), out);
-        item(ui, Command::Table(TableKind::ConductorPaths), out);
-        item(ui, Command::Table(TableKind::Circuits), out);
-        ui.separator();
-        crate::menu::options_menu(ui, "Display options", |ui| {
-            ui.label(
-                egui::RichText::new("How the wires are drawn and what is written next to them, in each view (yours only)")
-                    .small()
-                    .weak(),
-            );
-            if r.model.section_display.ui(ui) {
-                // Colours, line codes and arrows: drawn again.
-                r.refresh_views();
-            }
+        ui.menu_button("Sections", |ui| {
+            use crate::library::LibraryKind;
+            use crate::tables::TableKind;
+            ui.label(egui::RichText::new("Libraries").small().weak());
+            item(ui, Command::Library(LibraryKind::Cables), out);
+            ui.separator();
+            ui.label(egui::RichText::new("Tables").small().weak());
+            item(ui, Command::Table(TableKind::Sections), out);
+            item(ui, Command::Table(TableKind::Jumpers), out);
+            item(ui, Command::Table(TableKind::SpanObjects), out);
+            item(ui, Command::Table(TableKind::LoadTypes), out);
+            item(ui, Command::Table(TableKind::Spacers), out);
+            item(ui, Command::Table(TableKind::Systems), out);
+            item(ui, Command::Table(TableKind::ConductorPaths), out);
+            item(ui, Command::Table(TableKind::Circuits), out);
+            ui.separator();
+            crate::menu::options_menu(ui, "Display options", |ui| {
+                ui.label(
+                    egui::RichText::new("How the wires are drawn and what is written next to them, in each view (yours only)")
+                        .small()
+                        .weak(),
+                );
+                if r.model.section_display.ui(ui) {
+                    // Colours, line codes and arrows: drawn again.
+                    r.refresh_views();
+                }
+            });
         });
-    });
-    ui.menu_button("Criteria", |ui| {
-        use crate::library::LibraryKind;
-        use crate::tables::TableKind;
-        if ui
-            .button("Weather cases")
-            .on_hover_text("Every weather case in one table: wind, ice, temperatures")
-            .clicked()
-        {
-            out.push(Command::Table(TableKind::WeatherCases));
-            ui.close();
-        }
-        if ui
-            .button("Merge duplicate weather cases…")
-            .on_hover_text(
-                "Weather cases with the same weather under other names merged into one, \
-                 everything naming them following",
-            )
-            .clicked()
-        {
-            r.merge_cases.open = true;
-            r.merge_cases.groups = None;
-            ui.close();
-        }
-        if ui
-            .button("Weather case groups…")
-            .on_hover_text(
-                "Named groups of weather cases with a description, picked as one in Loads for \
-                 structures and in the checks",
-            )
-            .clicked()
-        {
-            r.case_groups.show();
-            ui.close();
-        }
-        item(ui, Command::Library(LibraryKind::WeatherCases), out);
-        item(ui, Command::Library(LibraryKind::LoadCases), out);
-        if ui
-            .button("Creep-Stretch…")
-            .on_hover_text(
-                "The weather cases for the permanent stretch due to creep and due to load \
-                 (sections calculated after Creep, after Load or for Max Sag)",
-            )
-            .clicked()
-        {
-            r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
-            ui.close();
-        }
-        if ui
-            .button("Bimetallic conductor model…")
-            .on_hover_text(
-                "What the outer strands of bimetallic cables do above the transition \
-                 temperature: bird cage or compression (cables that give their own keep it)",
-            )
-            .clicked()
-        {
-            r.bimetallic_window = Some(r.model.line.bimetallic);
-            ui.close();
-        }
-        if ui
-            .button("Calculation options…")
-            .on_hover_text(
-                "How the calculations are done for the whole line: what of the jumpers the \
-                 sections carry at their clamps",
-            )
-            .clicked()
-        {
-            r.solver_window = Some(r.model.line.solver);
-            ui.close();
-        }
-        if ui
-            .button("Default values…")
-            .on_hover_text(
-                "What new objects start with in this project and what the calculations take \
-                 where nothing else gives a value (jumpers, insulators, Q, thermal, clearances); \
-                 exported and imported as a file",
-            )
-            .clicked()
-        {
-            r.defaults_window = Some((r.model.line.defaults, None));
-            ui.close();
-        }
-        if ui
-            .button("Design code…")
-            .on_hover_text(
-                "Weather and load cases from a design-code plugin and your parameter file",
-            )
-            .clicked()
-        {
-            r.design_code.open = true;
-            ui.close();
-        }
-        crate::structure_app::loads_menu(ui, r);
+        ui.menu_button("Criteria", |ui| {
+            use crate::library::LibraryKind;
+            use crate::tables::TableKind;
+            if ui
+                .button("Weather cases")
+                .on_hover_text("Every weather case in one table: wind, ice, temperatures")
+                .clicked()
+            {
+                out.push(Command::Table(TableKind::WeatherCases));
+                ui.close();
+            }
+            if ui
+                .button("Merge duplicate weather cases…")
+                .on_hover_text(
+                    "Weather cases with the same weather under other names merged into one, \
+                     everything naming them following",
+                )
+                .clicked()
+            {
+                r.merge_cases.open = true;
+                r.merge_cases.groups = None;
+                ui.close();
+            }
+            if ui
+                .button("Weather case groups…")
+                .on_hover_text(
+                    "Named groups of weather cases with a description, picked as one in Loads for \
+                     structures and in the checks",
+                )
+                .clicked()
+            {
+                r.case_groups.show();
+                ui.close();
+            }
+            item(ui, Command::Library(LibraryKind::WeatherCases), out);
+            item(ui, Command::Library(LibraryKind::LoadCases), out);
+            if ui
+                .button("Creep-Stretch…")
+                .on_hover_text(
+                    "The weather cases for the permanent stretch due to creep and due to load \
+                     (sections calculated after Creep, after Load or for Max Sag)",
+                )
+                .clicked()
+            {
+                r.creep_stretch_window = Some(r.model.line.creep_stretch.clone());
+                ui.close();
+            }
+            if ui
+                .button("Bimetallic conductor model…")
+                .on_hover_text(
+                    "What the outer strands of bimetallic cables do above the transition \
+                     temperature: bird cage or compression (cables that give their own keep it)",
+                )
+                .clicked()
+            {
+                r.bimetallic_window = Some(r.model.line.bimetallic);
+                ui.close();
+            }
+            if ui
+                .button("Calculation options…")
+                .on_hover_text(
+                    "How the calculations are done for the whole line: what of the jumpers the \
+                     sections carry at their clamps",
+                )
+                .clicked()
+            {
+                r.solver_window = Some(r.model.line.solver);
+                ui.close();
+            }
+            if ui
+                .button("Default values…")
+                .on_hover_text(
+                    "What new objects start with in this project and what the calculations take \
+                     where nothing else gives a value (jumpers, insulators, Q, thermal, clearances); \
+                     exported and imported as a file",
+                )
+                .clicked()
+            {
+                r.defaults_window = Some((r.model.line.defaults, None));
+                ui.close();
+            }
+            if ui
+                .button("Design code…")
+                .on_hover_text(
+                    "Weather and load cases from a design-code plugin and your parameter file",
+                )
+                .clicked()
+            {
+                r.design_code.open = true;
+                ui.close();
+            }
+            crate::structure_app::loads_menu(ui, r);
+        });
     });
     ui.menu_button("Checks", |ui| {
         ui.label(
@@ -727,50 +816,7 @@ pub(super) fn menus(
             ui.close();
         }
     });
-    // A tick menu (the option below): ticking it keeps the menu open;
-    // choosing a tool closes it.
-    crate::menu::options_menu(ui, "Tools", |ui| {
-        item(ui, Command::Inventory, out);
-        // Theme by theme, a line between them (as the inventory groups them).
-        let mut theme = "";
-        for t in crate::tools::Tool::ALL {
-            if t.theme() != theme {
-                // The Structures group ends with its command (a window,
-                // no tool held).
-                if theme == "Structures" {
-                    item(ui, Command::NewPylon, out);
-                }
-                ui.separator();
-                theme = t.theme();
-            }
-            let held = r.hotbar.tool() == t;
-            let mut b = egui::Button::selectable(held, (t.image(ui.ctx(), 16.0), t.name()))
-                .image_tint_follows_text_color(true);
-            if let Some(k) = t.key() {
-                b = b.shortcut_text(k);
-            }
-            if ui.add(b).on_hover_text(t.help()).clicked() {
-                out.push(Command::Hold(t));
-                ui.close();
-            }
-        }
-        if ui
-            .button("Measurements panel")
-            .on_hover_text("The measurements made: copy, CSV")
-            .clicked()
-        {
-            r.measuring.open = true;
-            ui.close();
-        }
-        crate::menu::options_menu(ui, "Display options", |ui| {
-            ui.label(
-                egui::RichText::new("Kept measurements and notes (yours only)")
-                    .small()
-                    .weak(),
-            );
-            crate::measure::others_ticks(ui, &mut r.model.section_display);
-        });
-    });
+    ui.menu_button("Plans & sheets", |ui| plans_menu(ui, r));
     crate::menu::options_menu(ui, "Versions", |ui| {
         crate::project_lines::menu(ui, r);
         ui.separator();
@@ -788,27 +834,6 @@ pub(super) fn menus(
             .clicked()
         {
             r.versions.open = true;
-            ui.close();
-        }
-    });
-    ui.menu_button("Plugins", |ui| {
-        if ui
-            .button("Plugin manager…")
-            .on_hover_text("The plugins installed and found: turn on or off, install, remove")
-            .clicked()
-        {
-            r.plugin_request = Some(PluginRequest::Manager);
-            ui.close();
-        }
-        if ui
-            .button("Python console")
-            .on_hover_text(
-                "Scripts driving the project through the ohl module: read the line and results, \
-                 edit with session commands (undoable)",
-            )
-            .clicked()
-        {
-            r.open_page = Some((Tab::Python, None));
             ui.close();
         }
     });

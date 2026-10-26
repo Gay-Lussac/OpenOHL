@@ -19,7 +19,7 @@ At T4 each phase now runs on: the wire of the span behind, the tension
 string, a jumper hanging in a loop below the crossarm, the other
 tension string, the wire of the span ahead. The jumper's properties give
 its wire type (its section's), its length and its results in every
-weather case. **Sections › Jumpers table** lists the three.
+weather case. **Line › Sections › Jumpers table** lists the three.
 
 **What just happened:** at a structure the tool joins the section ends
 of the same **circuit** and **phase** (that is why each section got C1
@@ -27,7 +27,7 @@ and L1, L2 or L3 in chapter 5) — two ends of the same phase, one jumper.
 Two clicks on strings instead join exactly those two. A jumper is
 solved as a wire of its own, from clamp to clamp, with its bending
 stiffness estimated from its wire type; the sections carry an estimate
-of its load at their clamps (Criteria › Calculation options… chooses).
+of its load at their clamps (Line › Criteria › Calculation options… chooses).
 Joined by the jumpers, S1 and S2 are now one **conductor path**. See
 [Jumpers](../theory/jumpers.md), [Jumpers in the line
 file](../user-guide/line-file.md#jumpers) and the

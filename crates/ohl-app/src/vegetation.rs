@@ -1162,8 +1162,8 @@ impl VegetationWindow {
                 ui,
                 "A design-code plugin may preset the classes, the distances and the wind steps \
                  of this check.",
-                "The presets of every design-code plugin turned on (Plugins › Plugin manager), \
-                 read with the parameter file of Criteria › Design code. Choose one to see what \
+                "The presets of every design-code plugin turned on (File › Plugins › Plugin manager), \
+                 read with the parameter file of Line › Criteria › Design code. Choose one to see what \
                  it sets; Apply puts its values in, creates its weather cases the project lacks \
                  and ticks them.",
             );
