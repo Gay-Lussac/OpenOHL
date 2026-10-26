@@ -138,10 +138,14 @@ ohl project review project.ohl --user rita --approve 2 --note "fine"
 ohl project review project.ohl --user rita --merge 2      # into main, whatever line rita works on
 ```
 
-Reviewers named in the review (not its author) and admins approve or
-reject. An approved review is merged by a reviewer or an admin, also into a
-protected branch; a branch changed after its approval must be submitted
-again.
+Reviewers named in the review and admins approve or reject; a reviewer is
+a designer or an admin, never the review's author (a viewer — e.g. someone
+who joined a server with the general invitation — is refused as a reviewer
+and decides nothing; since 2026-10-26). An approved review is merged by its
+author, a reviewer or an admin, also into a protected branch; into a
+**protected** branch only after an approval by somebody else than the one
+merging it (a reviewer approves, the author merges: four eyes). A branch
+changed after its approval must be submitted again.
 
 ## Who may edit what
 

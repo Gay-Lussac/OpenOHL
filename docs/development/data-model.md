@@ -1874,7 +1874,8 @@ keeps them equal to what the exporter writes):
 | OHL XML | XML, namespace `urn:openohl:ohl-line:1`, schema `docs/schema/ohl-line.xsd` | the same content as the line file, lossless round trip (`crates/ohl-io/src/ohlxml.rs`): objects are elements, plain values attributes named like the JSON keys, points `x`/`y`/`z` attributes | [OHL XML schema](../schema/ohl-line.md) |
 | Project file `*.ohl` | SQLite (ADR-0004), session schema 6 | project lines, operation log, users, libraries, versions and reviews, edit rights, spatial index, surfaces, point clouds, backgrounds, settings | [below](#project-file-tables-cratesohl-session), [Project files](../user-guide/project.md) |
 | Libraries | TOML directories | see above | — |
-| Plugin settings `settings.toml` (in the user's plugin folder, the line application's data folder `plugins/` — storage id "OLS CAD", kept from before OpenOHL) | TOML, `ohl_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off); read and written by `ohl-design` and `ohl-structure` alike | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
+| Plugin settings `settings.toml` (in the user's plugin folder, the line application's data folder `plugins/` — storage id "OLS CAD", kept from before OpenOHL) | TOML, `ohl_plugins::PluginSettings` (unknown fields refused) | `folders` (plugin folders used in place), `disabled` (plugin names turned off), since 2026-10-26 `allowed` (`[allowed."name@version"]`: `unsandboxed = true` for a Python plugin, `seconds`, `memory-mib` for a WebAssembly plugin's larger limits — what the user allowed in the plugin manager, `ohl_plugins::Consent`; written only when something is allowed, so a file without it reads as before); read and written by `ohl-design` and `ohl-structure` alike |
+| Server key file (`ohl serve --keys FILE`; with `--code` alone `PROJECT.ohl.server-key` beside the project; 2026-10-26) | text, 64 hexadecimal digits (the 256-bit key of the personal invitations), mode 0600, made when missing | personal access code = HMAC-SHA-256(key, `user:NAME`), first 16 bytes in hexadecimal; the general code stays the first 6 bytes of SHA-256(secret, `\n*`) | [Server mode](../user-guide/server.md#invitations) | [Writing plugins](plugins.md#where-plugins-are-found-and-the-shared-settings) |
 
 ### Project file tables (`crates/ohl-session`)
 
@@ -1891,8 +1892,13 @@ are missing (`CREATE TABLE IF NOT EXISTS`):
 The file is kept in SQLite's WAL journal mode: while a program has it
 open, `project.ohl-wal` and `project.ohl-shm` lie next to it and hold the
 latest changes. `Session::checkpoint` writes them into the file itself;
-`Session::copy_to` (`VACUUM INTO`) writes a consistent copy (what a
-client joining a server gets). Copy a project only when no program has
+`Session::copy_to` (`VACUUM INTO`) writes a consistent copy;
+`Session::copy_for_others` (what a client joining a server gets, since
+2026-10-26) is that copy with the settings holding an absolute path of
+this computer cut to the file name. Every connection to a project file
+(`ohl_session::harden`, also the point-cloud store) runs with
+`trusted_schema` off and SQLite's defensive mode on (2026-10-26; nothing
+in the file changes). Copy a project only when no program has
 it open, or with SQLite's own backup.
 
 ```text
@@ -2141,8 +2147,10 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 
 Kept in `ols_meta` under `setting.<key>` (`Session::setting`,
 `Session::set_setting`): not part of the line, not logged, not undone,
-not in revisions; on a server `Op::SetSetting`, a designer's (the
-others follow at once).
+not in revisions; on a server `Op::SetSetting`, a designer's whose
+edits no grant limits, an admin's on a protected project line, never a
+value that is an absolute path (since 2026-10-26; the others follow at
+once, the server logs who changed which key).
 
 | Key | Written by | Value |
 |---|---|---|

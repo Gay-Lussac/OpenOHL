@@ -106,7 +106,7 @@ entry        plugins/examples/geojson/target/wasm32-wasip2/release/geojson.wasm
   format geojson-structures: Structures from GeoJSON Point features (.geojson, importer)
 ```
 
-Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout) and a memory cap (default 256 MiB). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
+Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout) and a memory cap (default 256 MiB, for all the plugin's memories together, not each; since 2026-10-26 also at most 64 instances, 16 memories and 64 tables of at most 2^20 elements in its store). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
 
 ## File-format plugins
 
@@ -130,8 +130,9 @@ A plugin that reads terrain surfaces implements the `terrain-plugin` world and l
 ```toml
 extension-points = ["terrain"]
 
-# Large files: more than the default 5 s and 256 MiB per call (granted up
-# to 600 s and 4 GiB).
+# Large files: more than the default 5 s and 256 MiB per call (up to
+# 600 s and 4 GiB). Since 2026-10-26 the user allows them once per plugin
+# version in the plugin manager (until then the defaults apply).
 [limits]
 seconds = 60
 memory-mib = 1024
