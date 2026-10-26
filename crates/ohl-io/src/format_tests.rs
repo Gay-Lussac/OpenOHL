@@ -447,27 +447,17 @@ fn ohl_xml_round_trips_every_line() {
     );
 }
 
-/// An OLS XML document of before 2026-10-18 (its namespace, format
-/// `ohl-line`) reads as the same line, which is written as OHL XML; the
-/// importer is found by its former id too.
+/// An OLS XML document of before 2026-10-18 (format `ols-line`) is no
+/// longer read (removed 2026-10-26), nor is its importer found by its
+/// former id.
 #[test]
-fn ohl_xml_of_before_reads() {
+fn ohl_xml_of_before_is_refused() {
     let m = model();
     let now = String::from_utf8(export("ohl-xml", &m, &Options::new())).unwrap();
-    let before = now
-        .replace(ohlxml::NAMESPACE, ohlxml::LEGACY_NAMESPACE)
-        .replace("format=\"ohl-line\"", "format=\"ols-line\"");
+    let before = now.replace("format=\"ohl-line\"", "format=\"ols-line\"");
     assert_ne!(before, now);
-    let line = ohlxml::from_xml(&before).unwrap();
-    assert_eq!(line, m.line);
-    assert_eq!(line.format, "ohl-line");
-    assert_eq!(ohlxml::to_xml(&line), now);
-    let imported = Registry::with_builtin()
-        .importer("ols-xml")
-        .unwrap()
-        .import(before.as_bytes(), None, &Options::new())
-        .unwrap();
-    assert_eq!(imported, m.line);
+    assert!(ohlxml::from_xml(&before).is_err());
+    assert!(Registry::with_builtin().importer("ols-xml").is_none());
 }
 
 #[test]

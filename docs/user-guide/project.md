@@ -3,8 +3,7 @@
 A project file is one SQLite database (ADR-0004) holding the line model, its
 **operation log**, its users, and its **point clouds** (ADR-0007). Line files
 (`.ohl.json`) stay the open exchange format: import them into a project,
-export the project back. Files with the older endings (`.ols`,
-`.ols.json`) are still read.
+export the project back.
 
 ```bash
 ohl project import line.ohl.json --into project.ohl --user ana   # ana becomes admin

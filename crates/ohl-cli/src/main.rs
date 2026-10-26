@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! `ohl` — the OpenOHL command-line interface (formerly `ols`, still built
-//! as an alias that runs this program).
+//! `ohl` — the OpenOHL command-line interface.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

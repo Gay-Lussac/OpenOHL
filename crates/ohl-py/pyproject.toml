@@ -10,10 +10,7 @@ license = "AGPL-3.0-or-later"
 dynamic = ["version"]
 
 [tool.maturin]
-# `import ohl` (the package in python/ohl, around the compiled `ohl._ohl`);
-# `import ols`, the module's name before 2026-10-18, still works for a
-# while (python/ols: the same functions, with a deprecation warning).
+# `import ohl` (the package in python/ohl, around the compiled `ohl._ohl`).
 module-name = "ohl._ohl"
 python-source = "python"
-python-packages = ["ols"]
 features = ["pyo3/extension-module"]

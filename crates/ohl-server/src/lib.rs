@@ -727,8 +727,7 @@ pub struct SceneSpan {
 }
 
 /// How to join a server: `ohl://HOST:PORT/CODE/FINGERPRINT` (the
-/// fingerprint: SHA-256 of the server certificate, hexadecimal; `ols://`,
-/// the links of before 2026-10-18, read too).
+/// fingerprint: SHA-256 of the server certificate, hexadecimal).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invitation {
     /// Host name or address, and port.
@@ -755,10 +754,7 @@ impl std::str::FromStr for Invitation {
     fn from_str(s: &str) -> Result<Self, String> {
         let bad = || format!("not an invitation: {s} (ohl://HOST:PORT/CODE/FINGERPRINT)");
         let s = s.trim();
-        let rest = s
-            .strip_prefix("ohl://")
-            .or_else(|| s.strip_prefix("ols://"))
-            .ok_or_else(bad)?;
+        let rest = s.strip_prefix("ohl://").ok_or_else(bad)?;
         let mut parts = rest.split('/');
         let (Some(address), Some(code), Some(fp), None) =
             (parts.next(), parts.next(), parts.next(), parts.next())

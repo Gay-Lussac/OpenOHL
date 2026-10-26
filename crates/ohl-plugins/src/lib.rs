@@ -4,8 +4,7 @@
 
 //! Plugin manifests, compatibility checks and the WebAssembly component host.
 //!
-//! Every plugin ships an `ohl-plugin.toml` manifest (ADR-0003; `ols-plugin.toml`,
-//! its name before 2026-10-18, is read too):
+//! Every plugin ships an `ohl-plugin.toml` manifest (ADR-0003):
 //!
 //! ```toml
 //! [plugin]
@@ -156,27 +155,12 @@ pub use io_bindings::ohl::plugin::io_types::{Direction, Format};
 /// Version (major, minor) of the plugin interface implemented by this host.
 pub const SDK_VERSION: (u64, u64) = (0, 3);
 
-/// The plugin interface of before 2026-10-18 (`ols:plugin`, SDK 0.2): its
-/// plugins do not load here; rebuilt for [`SDK_VERSION`] (the `ohl:plugin`
-/// interface, nothing else changed) they do.
-pub const LEGACY_SDK: &str = "0.2";
-
 /// File name of plugin manifests.
 pub const MANIFEST_FILE: &str = "ohl-plugin.toml";
 
-/// File name of plugin manifests before 2026-10-18 (still read).
-pub const LEGACY_MANIFEST_FILE: &str = "ols-plugin.toml";
-
-/// The manifest of the plugin in `dir`: [`MANIFEST_FILE`], else
-/// [`LEGACY_MANIFEST_FILE`] when only that one is there.
+/// The manifest of the plugin in `dir` ([`MANIFEST_FILE`]).
 pub fn manifest_path(dir: &Path) -> PathBuf {
-    let new = dir.join(MANIFEST_FILE);
-    let old = dir.join(LEGACY_MANIFEST_FILE);
-    if !new.is_file() && old.is_file() {
-        old
-    } else {
-        new
-    }
+    dir.join(MANIFEST_FILE)
 }
 
 /// Errors raised while loading or running plugins.
@@ -225,14 +209,8 @@ impl fmt::Display for PluginError {
             Self::Manifest { path, message } => write!(f, "{}: {message}", path.display()),
             Self::Incompatible { plugin, requested } => write!(
                 f,
-                "plugin {plugin} targets plugin interface {requested}, host supports {}.{}{}",
-                SDK_VERSION.0,
-                SDK_VERSION.1,
-                if requested == LEGACY_SDK {
-                    ": rebuild it for the ohl:plugin interface (sdk = \"0.3\" in ohl-plugin.toml)"
-                } else {
-                    ""
-                }
+                "plugin {plugin} targets plugin interface {requested}, host supports {}.{}",
+                SDK_VERSION.0, SDK_VERSION.1,
             ),
             Self::PermissionDenied { plugin, permission } => {
                 write!(
@@ -524,8 +502,7 @@ impl Manifest {
         format!("{}.{}", self.plugin.name, column.name)
     }
 
-    /// Loads `ohl-plugin.toml` (or `ols-plugin.toml` of before 2026-10-18)
-    /// from a plugin directory.
+    /// Loads `ohl-plugin.toml` from a plugin directory.
     pub fn load(dir: &Path) -> Result<Self, PluginError> {
         let path = manifest_path(dir);
         let text = std::fs::read_to_string(&path).map_err(|e| PluginError::Manifest {
@@ -2050,15 +2027,8 @@ mod tests {
         assert!(manifest("0.3", "").check_compatible().is_ok());
         // 0.1: before the design codes' clearance presets.
         assert!(manifest("0.1", "").check_compatible().is_err());
-        // 0.2: the ols:plugin interface of before 2026-10-18, to rebuild.
-        let old = manifest("0.2", "")
-            .check_compatible()
-            .unwrap_err()
-            .to_string();
-        assert!(
-            old.contains("rebuild it for the ohl:plugin interface"),
-            "{old}"
-        );
+        // 0.2: the ols:plugin interface of before 2026-10-18.
+        assert!(manifest("0.2", "").check_compatible().is_err());
         assert!(manifest("0.4", "").check_compatible().is_err());
         assert!(manifest("1.0", "").check_compatible().is_err());
         assert!(manifest("zero", "").check_compatible().is_err());
@@ -2206,22 +2176,16 @@ mod tests {
             f[0].problem()
         );
         assert!(install(&other, &root, false).is_err());
-        // A manifest under its name of before 2026-10-18: found, read,
-        // installed under the current name.
+        // A manifest under its name of before 2026-10-18 is not read.
         let old = root.join("old-src");
         std::fs::create_dir_all(&old).unwrap();
         std::fs::write(
-            old.join(LEGACY_MANIFEST_FILE),
+            old.join("ols-plugin.toml"),
             "[plugin]\nname=\"old\"\nversion=\"1\"\nsdk=\"0.3\"\ntier=\"python\"\nentry=\"x.py\"",
         )
         .unwrap();
         std::fs::write(old.join("x.py"), "").unwrap();
-        let f = discover(&old);
-        assert_eq!(f.len(), 1);
-        assert_eq!(f[0].problem(), None);
-        let to = install(&old, &root, false).unwrap();
-        assert!(to.join(MANIFEST_FILE).is_file() || to.join(LEGACY_MANIFEST_FILE).is_file());
-        assert_eq!(discover(&to)[0].name(), "old");
+        assert!(discover(&old).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
     }
 

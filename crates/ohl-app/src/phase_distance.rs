@@ -1650,7 +1650,7 @@ impl PhaseDistanceWindow {
                 .on_hover_text("Another values file instead of the values used")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Values", &ohl_core::files::open_extensions(&ext))
+                    .add_filter("Values", &[&ext])
                     .pick_file()
             {
                 self.file = Some(p);

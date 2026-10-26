@@ -248,7 +248,7 @@ impl StructureApp {
                     .add(egui::Button::new("Open a structure…").min_size(big))
                     .clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Structure", &ohl_core::files::open_extensions("ohls"))
+                        .add_filter("Structure", &["ohls"])
                         .pick_file()
                 {
                     open = Some(p);
@@ -449,10 +449,7 @@ impl StructureApp {
                 }
                 if ui.button("Another template file (.ohlpt)…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter(
-                            "Structure template",
-                            &ohl_core::files::open_extensions("ohlpt"),
-                        )
+                        .add_filter("Structure template", &["ohlpt"])
                         .pick_file()
                 {
                     chosen = Some(Source::Template(p, Role::Suspension));

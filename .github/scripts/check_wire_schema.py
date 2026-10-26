@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 # License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-"""Validate every wire library (*.ohlw, the older *.olsw, and the
+"""Validate every wire library (*.ohlw and the
 template) against the JSON Schema, so the schema documented for tool
 developers matches real files.
 
@@ -19,7 +19,7 @@ import jsonschema
 root = pathlib.Path(__file__).resolve().parents[2]
 schema = json.loads((root / "docs/schema/ohl-wire-1.schema.json").read_text())
 validator = jsonschema.Draft202012Validator(schema)
-files = sorted(root.glob("**/*.ohlw")) + sorted(root.glob("**/*.olsw"))
+files = sorted(root.glob("**/*.ohlw"))
 files += [root / "libraries/cables/TEMPLATE.ohlw.example"]
 files = [f for f in files if "target" not in f.parts]
 failures = 0

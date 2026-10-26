@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! `ohl-structure` — OHL-Structure, the structure application of OpenOHL
-//! (formerly `ols-structure`, still built as an alias that runs this
-//! program): one structure file (`.ohls`) in its own window, built from level 1
+//! `ohl-structure` — OHL-Structure, the structure application of OpenOHL:
+//! one structure file (`.ohls`) in its own window, built from level 1
 //! (stick figure) to level 3 (full design). The menus are at the top, the
 //! panels under them can be moved, closed and shown again (View).
 //!

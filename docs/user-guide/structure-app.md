@@ -11,9 +11,6 @@ what the levels mean and what comes next.
 ohl-structure examples/synthetic-line/Structures/type-02.ohls
 ```
 
-Its former name `ols-structure` is still built for a transition period:
-it says the program is now called `ohl-structure` and runs it.
-
 Options:
 
 | Option | What |
@@ -77,9 +74,8 @@ cargo build --release -p ohl-app -p ohl-structure-app
 ```
 
 The line application looks for `ohl-structure` in the program the
-`OHL_STRUCTURE_APP` environment variable names (or, by its former name,
-`OLS_STRUCTURE_APP`), then next to `ohl-design`, then on the `PATH`; not
-found there, under its former name `ols-structure`. Before it starts it, it runs `ohl-structure
+`OHL_STRUCTURE_APP` environment variable names, then next to
+`ohl-design`, then on the `PATH`. Before it starts it, it runs `ohl-structure
 --version`: when the build differs from its own it starts it anyway and
 shows a warning (rebuild both). Not found, or stopped with an error right
 away: a window says why — where it looked and how to build it, or what

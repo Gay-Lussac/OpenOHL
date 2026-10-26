@@ -188,7 +188,7 @@ pub struct CheckReport {
 impl CheckReport {
     /// Reads an exported report.
     pub fn parse(text: &str) -> Result<Self, String> {
-        let mut r: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let r: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
         ohl_core::files::check_header(
             Some(&r.format),
             Some(r.version),
@@ -196,8 +196,6 @@ impl CheckReport {
             REPORT_FILE_VERSION,
             "check report",
         )?;
-        // Read with the id of before 2026-10-18 too; kept with the current.
-        r.format = REPORT_FILE_FORMAT.into();
         if r.id.trim().is_empty() {
             return Err("a check report needs a name".into());
         }

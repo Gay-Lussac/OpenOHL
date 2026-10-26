@@ -320,12 +320,11 @@ fn invitations_read_back() {
     let text = inv.to_string();
     assert!(text.starts_with("ohl://line.example.org:4433/k7f39qzt/abab"));
     assert_eq!(text.parse::<Invitation>().unwrap(), inv);
-    // A link of before 2026-10-18.
-    assert_eq!(
+    // A link of before 2026-10-18 (`ols://`) is no longer read.
+    assert!(
         text.replacen("ohl://", "ols://", 1)
             .parse::<Invitation>()
-            .unwrap(),
-        inv
+            .is_err()
     );
     assert!("ohl://x/y".parse::<Invitation>().is_err());
     assert!("http://a:1/b/00".parse::<Invitation>().is_err());

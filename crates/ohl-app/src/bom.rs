@@ -158,10 +158,7 @@ impl BomWindow {
                 .on_hover_text("Unit costs (.ohlcost)")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Unit costs",
-                        &ohl_core::files::open_extensions(ohl_bom::cost::COST_FILE_EXTENSION),
-                    )
+                    .add_filter("Unit costs", &[ohl_bom::cost::COST_FILE_EXTENSION])
                     .pick_file()
             {
                 self.cost_path = Some(p);

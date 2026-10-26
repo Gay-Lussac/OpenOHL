@@ -81,20 +81,15 @@ pub fn pick_file() -> Option<PathBuf> {
             "OpenOHL project, line or structure type",
             &[
                 ohl_core::files::PROJECT_EXTENSION,
-                ohl_core::files::LEGACY_PROJECT_EXTENSION,
                 "json",
                 ohl_structures::structures::STRUCTURE_FILE_EXTENSION,
-                "olss",
             ],
         )
-        .add_filter(
-            "OpenOHL project",
-            &ohl_core::files::open_extensions(ohl_core::files::PROJECT_EXTENSION),
-        )
+        .add_filter("OpenOHL project", &[ohl_core::files::PROJECT_EXTENSION])
         .add_filter("Line file", &["json"])
         .add_filter(
             "Structure type (opened on its own)",
-            &ohl_core::files::open_extensions(ohl_structures::structures::STRUCTURE_FILE_EXTENSION),
+            &[ohl_structures::structures::STRUCTURE_FILE_EXTENSION],
         )
         .pick_file()
 }

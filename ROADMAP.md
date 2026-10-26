@@ -354,15 +354,15 @@ against worked examples with their published values, as every module.
   limit (Analysis › Thermal limit, `ohl thermal clearance-limit
   FILE.ohl`) now reads them too; a name the project does not hold stops
   the search with an error.
-- **U12. Old names still read** (code review 2026-10-26): the `ols`,
-  `ols-cad` and `ols-structure` programs (a note, then the new program),
-  `import ols` (Python), `ols-plugin.toml` manifests, the `ols`
-  extensions and format ids, `OLS_BUILD_ID`. Each says it goes "in a
-  later version": they stay **until the owner sets a date** for their
-  removal (none set). The on-disk and protocol names kept on purpose
-  (`ols_meta`, ALPN `ols/2`, the storage ids `OLS CAD` / `OLS
-  Structure` and the window storage keys `ols-structure-…`) are not
-  part of it.
+- **U12. Old names still read** (code review 2026-10-26) — **done:
+  removed 2026-10-26 (owner)**, before the first release: the `ols`,
+  `ols-cad` and `ols-structure` programs, `import ols` (Python),
+  `ols-plugin.toml` manifests, the `ols` extensions and format ids (and
+  OLS XML's), `ols://` invitations, `OLS_BUILD_ID`, `OLS_STRUCTURE_APP`
+  and the other `OLS_…` variables are no longer built or read. The
+  on-disk and protocol names kept on purpose (`ols_meta`, ALPN `ols/2`,
+  the storage ids `OLS CAD` / `OLS Structure` and the window storage keys
+  `ols-structure-…`) were not part of it and stay.
 
 ## Proposed stages (to discuss)
 

@@ -153,7 +153,7 @@ impl StructureApp {
         {
             ui.close();
             if let Some(p) = rfd::FileDialog::new()
-                .add_filter("Structure", &ohl_core::files::open_extensions("ohls"))
+                .add_filter("Structure", &["ohls"])
                 .pick_file()
             {
                 self.open_chosen(&p);

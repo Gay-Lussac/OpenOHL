@@ -338,7 +338,7 @@ pub(super) fn add_rule_file(r: &mut Ready) {
     let Some(from) = rfd::FileDialog::new()
         .add_filter(
             "Clearance rules",
-            &ohl_core::files::open_extensions(ohl_clearance::rules::RULE_FILE_EXTENSION),
+            &[ohl_clearance::rules::RULE_FILE_EXTENSION],
         )
         .pick_file()
     else {

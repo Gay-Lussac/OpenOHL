@@ -62,10 +62,7 @@ impl StructureApp {
             ui.horizontal(|ui| {
                 if ui.button("Choose library…").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter(
-                            "Cross-section library",
-                            &ohl_core::files::open_extensions("ohlsec"),
-                        )
+                        .add_filter("Cross-section library", &["ohlsec"])
                         .pick_file()
                 {
                     self.export.sections = Some(p);

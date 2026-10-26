@@ -35,7 +35,6 @@ pub mod xml;
 
 use std::collections::BTreeMap;
 
-use ohl_core::files::is_format;
 use ohl_line::Line;
 use ohl_line::jumper::JumperShape;
 use ohl_line::solve::SectionShape;
@@ -421,11 +420,11 @@ impl Registry {
         let k = self
             .project_importers
             .iter()
-            .position(|e| is_format(&key, e.id()))
+            .position(|e| key == e.id())
             .or_else(|| {
                 self.project_importers
                     .iter()
-                    .position(|e| is_format(&key, e.extension()))
+                    .position(|e| key == e.extension())
             })?;
         self.project_importers.get_mut(k)
     }
@@ -444,11 +443,11 @@ impl Registry {
         let k = self
             .surface_importers
             .iter()
-            .position(|e| is_format(&key, e.id()))
+            .position(|e| key == e.id())
             .or_else(|| {
                 self.surface_importers
                     .iter()
-                    .position(|e| is_format(&key, e.extension()))
+                    .position(|e| key == e.extension())
             })?;
         self.surface_importers.get_mut(k)
     }
@@ -496,12 +495,8 @@ impl Registry {
         let k = self
             .exporters
             .iter()
-            .position(|e| is_format(&key, e.id()))
-            .or_else(|| {
-                self.exporters
-                    .iter()
-                    .position(|e| is_format(&key, e.extension()))
-            })?;
+            .position(|e| key == e.id())
+            .or_else(|| self.exporters.iter().position(|e| key == e.extension()))?;
         self.exporters.get_mut(k)
     }
 
@@ -511,12 +506,8 @@ impl Registry {
         let k = self
             .importers
             .iter()
-            .position(|e| is_format(&key, e.id()))
-            .or_else(|| {
-                self.importers
-                    .iter()
-                    .position(|e| is_format(&key, e.extension()))
-            })?;
+            .position(|e| key == e.id())
+            .or_else(|| self.importers.iter().position(|e| key == e.extension()))?;
         self.importers.get_mut(k)
     }
 }

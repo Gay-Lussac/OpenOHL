@@ -13,14 +13,6 @@ authors.workspace = true
 name = "ohl-structure"
 path = "src/main.rs"
 
-# The former name, kept for a transition period: says so and runs the
-# program above (`ohl-structure`).
-[[bin]]
-name = "ols-structure"
-path = "src/bin/ols-structure.rs"
-test = false
-doc = false
-
 [dependencies]
 ohl-core.workspace = true
 ohl-structures.workspace = true

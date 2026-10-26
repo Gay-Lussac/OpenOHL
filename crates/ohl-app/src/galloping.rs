@@ -173,9 +173,7 @@ impl GallopingWindow {
                         && let Some(p) = rfd::FileDialog::new()
                             .add_filter(
                                 "Galloping parameters",
-                                &ohl_core::files::open_extensions(
-                                    ohl_clearance::galloping::GALLOPING_FILE_EXTENSION,
-                                ),
+                                &[ohl_clearance::galloping::GALLOPING_FILE_EXTENSION],
                             )
                             .pick_file()
                     {

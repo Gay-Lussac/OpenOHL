@@ -1,8 +1,8 @@
 # OHL-Design, the line application
 
-**OHL-Design** (the program `ohl-design`, formerly `ols-cad`), the line application of OpenOHL — sag-tension, clearances, line layout — opens a line file or a project and shows it in dockable views that share the selection and the weather case.
+**OHL-Design** (the program `ohl-design`), the line application of OpenOHL — sag-tension, clearances, line layout — opens a line file or a project and shows it in dockable views that share the selection and the weather case.
 
-Your settings, the files opened recently and the plugins installed for you stay where they were before the project was renamed: the application's data folder still carries the name "OLS CAD" (the structure application's: "OLS Structure"), so nothing is lost. The old program name `ols-cad` still starts `ohl-design` for a while (it says so on the terminal).
+Your settings, the files opened recently and the plugins installed for you stay where they were before the project was renamed: the application's data folder still carries the name "OLS CAD" (the structure application's: "OLS Structure"), so nothing is lost.
 
 ```bash
 cargo run --release -p ohl-app -- examples/synthetic-line/synthetic-line.ohl.json \
@@ -778,9 +778,8 @@ every structure of the type follows, and the page shows the saved text
 (if it has unsaved changes of its own, it says so and keeps them).
 
 `ohl-structure` is looked for in the program the `OHL_STRUCTURE_APP`
-environment variable names (its former name `OLS_STRUCTURE_APP` is read
-too), then next to `ohl-design` (and the folder above it), then on the
-`PATH`; where it is not found, under its former name `ols-structure`. What goes wrong is shown in a window of its own
+environment variable names, then next to `ohl-design` (and the folder
+above it), then on the `PATH`. What goes wrong is shown in a window of its own
 (the text in a box that scrolls, closed with **Close**), and written to
 the log:
 

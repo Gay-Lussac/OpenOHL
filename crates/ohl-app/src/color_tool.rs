@@ -921,10 +921,7 @@ impl ColorTool {
                 .on_hover_text("Read a palette file (.ohlcolors): replace yours or add to it")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Colour palette",
-                        &ohl_core::files::open_extensions(PALETTE_FILE_EXTENSION),
-                    )
+                    .add_filter("Colour palette", &[PALETTE_FILE_EXTENSION])
                     .pick_file()
             {
                 self.import_file(&p);

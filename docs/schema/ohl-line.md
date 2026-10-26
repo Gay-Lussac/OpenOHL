@@ -2,7 +2,7 @@
 
 OHL XML is the whole line model — the content of a [line file](../user-guide/line-file.md) (`.ohl.json`) — as XML, for tools that prefer XML. It holds the same data: a file written by OpenOHL and read back gives the same line, number for number.
 
-- **Namespace:** `urn:openohl:ohl-line:1`. Documents of before 2026-10-18 (OLS XML: namespace `urn:ols-cad:ols-line:1`, format `ols-line`) are read too.
+- **Namespace:** `urn:openohl:ohl-line:1`.
 - **Schema:** [`docs/schema/ohl-line.xsd`](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/schema/ohl-line.xsd) (XML Schema 1.0)
 - **Write:** `ohl line LINE --export line.xml` (format `ohl-xml`, the default for `.xml`) or File › Export › The line… in the application.
 - **Read:** `ohl import line.xml --out line.ohl.json`, `ohl project import-file line.xml --into p.ohl --user ann`, or File › Import › Into the line… in the application. The reader also recognises LandXML files (root `LandXML`, see [Import and export](../user-guide/import-export.md#landxml)).

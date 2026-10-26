@@ -1460,7 +1460,7 @@ impl StructureApp {
             return;
         };
         if let Some(p) = rfd::FileDialog::new()
-            .add_filter("Structure load cases", &["ohlslc", "olsslc", "csv"])
+            .add_filter("Structure load cases", &["ohlslc", "csv"])
             .pick_file()
         {
             self.message = Some(match import_recipes(f, &p) {

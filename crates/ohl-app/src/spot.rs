@@ -305,12 +305,7 @@ impl SpotWindow {
                     ui.strong(name);
                     if ui.button("Choose…").clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter(
-                                "Unit costs",
-                                &ohl_core::files::open_extensions(
-                                    ohl_bom::cost::COST_FILE_EXTENSION,
-                                ),
-                            )
+                            .add_filter("Unit costs", &[ohl_bom::cost::COST_FILE_EXTENSION])
                             .pick_file()
                     {
                         self.cost_path = Some(p);

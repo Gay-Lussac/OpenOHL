@@ -791,8 +791,7 @@ pub(super) fn load_type_from_cells(c: &Cells, id: &str) -> Result<ohl_line::Obje
 }
 
 /// The name of the project's library file of its own load types: the one
-/// it holds (`project.olsload` in projects of before 2026-10-18), else
-/// `project.ohlload`.
+/// it holds, else `project.ohlload`.
 pub(super) fn project_load_types_file(model: &Model) -> String {
     model
         .editing

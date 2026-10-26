@@ -1181,10 +1181,7 @@ impl LibraryPage {
                 ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
             ui.separator();
-            let filter = (
-                kind.title(),
-                ohl_core::files::open_extensions(kind.extension()),
-            );
+            let filter = (kind.title(), vec![kind.extension().to_owned()]);
             let start = kind.new_file_dir(sources);
             // An empty library: browsing starts at the examples shipped
             // with the program.
