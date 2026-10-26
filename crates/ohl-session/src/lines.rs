@@ -639,7 +639,7 @@ impl Session {
 
     /// Refuses `user` changing the line worked on when it is protected
     /// (an admin only; its changes otherwise come through approved reviews).
-    pub(crate) fn check_line_write(&self, user: &str) -> Result<(), SessionError> {
+    pub fn check_line_write(&self, user: &str) -> Result<(), SessionError> {
         let line = self.current.clone();
         self.check_branch_write(user, &line, false)
     }
