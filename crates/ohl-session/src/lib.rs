@@ -98,11 +98,25 @@ pub(crate) fn library_value(kind: &str, name: &str, text: &str) -> Value {
 
 /// A library object's kind, name and text.
 pub(crate) fn library_entry(v: &Value) -> Option<(String, String, String)> {
+    let kind = v.get("kind")?.as_str()?;
+    let name = v.get("name")?.as_str()?;
+    // A name that could leave its folder when written is never handed out
+    // (a project file or a client may carry one; security review
+    // 2026-10-26).
+    if !safe_library_name(kind, name) {
+        return None;
+    }
     Some((
-        v.get("kind")?.as_str()?.to_owned(),
-        v.get("name")?.as_str()?.to_owned(),
+        kind.to_owned(),
+        name.to_owned(),
         v.get("text")?.as_str()?.to_owned(),
     ))
+}
+
+/// Whether a library file's kind and name are safe to write as
+/// `<folder>/<kind>/<name>`.
+pub(crate) fn safe_library_name(kind: &str, name: &str) -> bool {
+    safe_file_name(kind) && safe_file_name(name)
 }
 
 /// Errors of a session.
@@ -1996,6 +2010,18 @@ impl Session {
         user: bool,
     ) -> Result<(), SessionError> {
         match command {
+            Command::Put {
+                kind: Kind::Library,
+                ref value,
+                ..
+            } if value
+                .get("kind")
+                .and_then(Value::as_str)
+                .zip(value.get("name").and_then(Value::as_str))
+                .is_none_or(|(k, n)| !safe_library_name(k, n)) =>
+            {
+                return Err(refused("a library file needs a kind and a plain file name"));
+            }
             Command::Put {
                 kind: Kind::PointCloud,
                 ..

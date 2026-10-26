@@ -1139,6 +1139,38 @@ fn library_file_names_are_plain() {
     }
 }
 
+/// A library file put as a raw command (as a client could send it) with a
+/// name that would leave its folder is refused, and one already in a
+/// project is never handed out (security review 2026-10-26).
+#[test]
+fn a_library_file_name_out_of_its_folder_is_refused() {
+    let (_path, mut s) = project("library-escape");
+    for (kind, name) in [
+        ("cables", "../../evil"),
+        ("../x", "a.ohlw"),
+        ("cables", "/abs"),
+    ] {
+        let r = s.apply(
+            "ana",
+            Command::Put {
+                kind: Kind::Library,
+                id: crate::library_id(kind, name),
+                value: serde_json::json!({ "id": crate::library_id(kind, name), "kind": kind, "name": name, "text": "x" }),
+                ord: None,
+            },
+        );
+        assert!(
+            matches!(r, Err(SessionError::Refused(_))),
+            "{kind}/{name}: {r:?}"
+        );
+    }
+    assert!(s.library_files("cables").unwrap().is_empty());
+    assert!(
+        crate::library_entry(&serde_json::json!({"kind": "cables", "name": "../x", "text": "t"}))
+            .is_none()
+    );
+}
+
 #[test]
 fn reprojecting_moves_line_saved_lines_and_surfaces() {
     let (_path, mut s) = project("reproject");
