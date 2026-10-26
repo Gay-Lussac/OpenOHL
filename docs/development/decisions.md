@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**A usage that is not a number never passes (code review, 2026-10-26)**
+
+The over / near / pass sorting of structure usages compared `usage > 1.0`,
+so a NaN usage (which also governs, being sorted above every number) was
+shown as a pass. Now it is "over" in the structure usage status, the
+OHL-Structure results colours and its report. Test: a NaN FE usage gives
+"over".
+
 **Library file names checked wherever they are read (security review, 2026-10-26)**
 
 A library file's kind and name become a path when the file is written
