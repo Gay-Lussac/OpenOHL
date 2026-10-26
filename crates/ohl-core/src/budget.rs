@@ -186,6 +186,12 @@ impl Budget {
         self
     }
 
+    /// Its iteration limit, if any (e.g. as part of a memo's key: a result
+    /// found within a larger limit may not be found within a smaller one).
+    pub fn iteration_limit(&self) -> Option<u64> {
+        self.max_iterations
+    }
+
     /// The token that cancels it, if any (to share with sub-tasks).
     pub fn token(&self) -> Option<&CancelToken> {
         self.cancel.as_ref()
