@@ -1821,26 +1821,59 @@ pub(crate) fn solve_jumpers_memo(
         .collect()
 }
 
-/// independent of each other). Fewer than 16 items: on this thread.
+thread_local! {
+    /// The threads [`in_parallel`] may use on this thread (none: the
+    /// cores): see [`with_threads`].
+    static THREADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `f` with [`in_parallel`] (the sections and jumpers of a line
+/// solve) using at most `n` threads on this thread: for callers that
+/// already solve several lines side by side (the wind states of a
+/// clearance check), so that the threads are not multiplied
+/// (2026-10-26). Only the speed changes.
+pub fn with_threads<R>(n: usize, f: impl FnOnce() -> R) -> R {
+    let before = THREADS.with(|t| t.replace(Some(n.max(1))));
+    let r = f();
+    THREADS.with(|t| t.set(before));
+    r
+}
+
+/// `f` of every item, on several threads when there are many (they are
+/// independent of each other), the results in the items' order. Fewer
+/// than 16 items: on this thread. Each thread takes the next item when
+/// done (2026-10-26: sections of very different lengths left threads
+/// idle in fixed shares); within a thread, nested calls run on it.
 pub(crate) fn in_parallel<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(items.len() / 8)
-        .max(1);
+    let cores = THREADS
+        .with(std::cell::Cell::get)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+    let threads = cores.min(items.len() / 8).max(1);
     if threads == 1 {
         return items.iter().map(&f).collect();
     }
-    let chunk = items.len().div_ceil(threads);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: std::sync::Mutex<Vec<(usize, R)>> =
+        std::sync::Mutex::new(Vec::with_capacity(items.len()));
     std::thread::scope(|scope| {
-        let handles: Vec<_> = items
-            .chunks(chunk)
-            .map(|part| scope.spawn(|| part.iter().map(&f).collect::<Vec<R>>()))
-            .collect();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().expect("a jumper solve panicked"))
-            .collect()
-    })
+        for _ in 0..threads {
+            scope.spawn(|| {
+                with_threads(1, || {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(k) else {
+                            return;
+                        };
+                        let r = f(item);
+                        done.lock().expect("not poisoned").push((k, r));
+                    }
+                });
+            });
+        }
+    });
+    let mut done = done.into_inner().expect("not poisoned");
+    done.sort_by_key(|(k, _)| *k);
+    done.into_iter().map(|(_, r)| r).collect()
 }
 
 /// Solves one jumper of the line between the solved sections `shapes`

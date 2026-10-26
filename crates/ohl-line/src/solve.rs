@@ -2315,11 +2315,28 @@ pub fn solve_section_coupled(
     budget: &Budget,
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
+    let against = against_the_line(line, section);
+    solve_section_coupled_side(line, section, cable, case, budget, coupling, against)
+}
+
+/// [`solve_section_coupled`] with whether the section runs against the
+/// line ([`against_the_line`]) given: worked out once for every section of
+/// a line solve (2026-10-26: the line's routes made once, not once per
+/// section).
+pub(crate) fn solve_section_coupled_side(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    budget: &Budget,
+    coupling: &Coupling,
+    against: bool,
+) -> Result<SectionShape, LineError> {
     // The wind's side is the line's: a section whose points run against
     // the line's direction is solved with the side swapped, so its spans
     // blow to the same side as those entered along it.
     let flipped;
-    let case = if against_the_line(line, section) {
+    let case = if against {
         flipped = WeatherCase {
             wind_from: case.wind_from.opposite(),
             ..case.clone()
