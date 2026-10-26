@@ -38,6 +38,7 @@ pub(crate) fn local(code: &str) -> Options {
         bind: "127.0.0.1:0".parse().unwrap(),
         advertise: None,
         code: Some(code.into()),
+        keys: None,
         newcomers: Some(Role::Viewer),
         web: None,
     }

@@ -1001,6 +1001,7 @@ impl App {
             bind: std::net::SocketAddr::new(w.bind, w.port),
             advertise: None,
             code: None,
+            keys: None,
             newcomers: w.newcomers,
             web: w.web.then(|| std::net::SocketAddr::new(w.bind, w.web_port)),
         };
@@ -1033,7 +1034,7 @@ impl App {
     ) {
         if let Some(s) = &self.hosting {
             remote.invitation = s.invitation.clone();
-            remote.secret = Some(s.secret().to_owned());
+            remote.secret = Some(s.keys().clone());
             remote.web = s
                 .web_link(None)
                 .and_then(|l| l.split_once('#').map(|(base, _)| base.to_owned()));

@@ -221,9 +221,20 @@ enum Command {
         /// computer's address on the local network).
         #[arg(long)]
         advertise: Option<String>,
-        /// Access code (default: a random one).
+        /// Secret of the general invitation (default: a random one; give
+        /// one to keep the general invitation across restarts). Only the
+        /// general access code is made from it: anybody holding that
+        /// invitation can guess a short one, so it never protects the
+        /// users' personal invitations.
         #[arg(long)]
         code: Option<String>,
+        /// File keeping the key of the personal invitations (made with a
+        /// random key when missing, readable by its owner only; keep it
+        /// private, never next to a shared project). Default: with --code,
+        /// PROJECT.server-key beside the project; else a random key for
+        /// this run.
+        #[arg(long, value_name = "FILE")]
+        keys: Option<PathBuf>,
         /// Role of users the project does not know: viewer, designer, or
         /// none (refused).
         #[arg(long, default_value = "viewer")]
@@ -1132,12 +1143,13 @@ fn main() -> ExitCode {
             bind,
             advertise,
             code,
+            keys,
             newcomers,
             seconds,
             invite,
             web,
         }) => report(serve(
-            &project, bind, advertise, code, &newcomers, seconds, &invite, web,
+            &project, bind, advertise, code, keys, &newcomers, seconds, &invite, web,
         )),
         Some(Command::Import {
             file,
@@ -1192,6 +1204,7 @@ fn serve(
     bind: std::net::SocketAddr,
     advertise: Option<String>,
     code: Option<String>,
+    keys: Option<std::path::PathBuf>,
     newcomers: &str,
     seconds: Option<u64>,
     invite: &[String],
@@ -1201,12 +1214,28 @@ fn serve(
         "none" => None,
         r => Some(ohl_session::Role::parse(r).map_err(|e| e.to_string())?),
     };
+    // Personal invitations kept across restarts with --code: their key
+    // beside the project.
+    let keys = keys.or_else(|| {
+        code.as_ref().map(|_| {
+            let mut name = project.file_name().unwrap_or_default().to_os_string();
+            name.push(".server-key");
+            project.with_file_name(name)
+        })
+    });
+    if let Some(k) = &keys {
+        println!(
+            "personal invitations from the key in {} (keep it private)",
+            k.display()
+        );
+    }
     let server = ohl_server::server::Server::start(
         project,
         ohl_server::server::Options {
             bind,
             advertise,
             code,
+            keys,
             newcomers,
             web: web.map(|port| std::net::SocketAddr::new(bind.ip(), port)),
         },

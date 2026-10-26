@@ -5,20 +5,33 @@
 //! The server: one authority thread owns the session and applies every
 //! edit in one order; a task per connection reads requests and writes
 //! what the authority broadcasts.
+//!
+//! Limits against users who would stop the others (security review
+//! 2026-10-26): a job that fails inside the authority (a panic) is
+//! refused to its client and the session read again from the file, the
+//! server keeps running; joins are limited per address
+//! ([`JOINS_PER_MINUTE`]), wrong access codes make that address wait
+//! (doubling up to [`MAX_BACKOFF`]); connections not joined yet are
+//! limited per address ([`MAX_PENDING`]); the copies of the project for
+//! joining clients are shared while nothing changed and at most
+//! [`MAX_COPIES`] exist at once; presence and lock messages are paced per
+//! connection, the users' list broadcast at most every [`PEERS_EVERY`].
+//! The computer itself (loopback addresses) is not limited per address.
 
-use std::collections::BTreeMap;
-use std::net::SocketAddr;
+use std::collections::{BTreeMap, HashMap};
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc as std_mpsc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use ohl_session::{Role, Session};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{
-    ALPN, ClientMsg, Invitation, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg, execute,
-    fingerprint, lock_target, random_code, read_msg, read_msg_max, write_msg,
+    ALPN, Bucket, ClientMsg, Invitation, Keys, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg,
+    execute, fingerprint, lock_target, random_code, read_msg, read_msg_max, write_msg,
 };
 
 /// Messages waiting for a client before its forwarder stops taking
@@ -28,6 +41,30 @@ const OUT_QUEUE: usize = 256;
 /// Locks one user may hold.
 const MAX_LOCKS: usize = 256;
 
+/// Copies of the project for joining clients at once (each as large as
+/// the project): more joins wait.
+pub const MAX_COPIES: usize = 8;
+
+/// Users the general invitation adds in one run of the server.
+pub const MAX_NEWCOMERS: usize = 200;
+
+/// Joins (attempts) per address and minute (a burst of as many).
+pub const JOINS_PER_MINUTE: f64 = 12.0;
+
+/// Longest wait after wrong access codes, seconds (1 s after the first,
+/// doubled after each next).
+pub const MAX_BACKOFF: u64 = 300;
+
+/// Connections of one address not joined yet (QUIC and web each).
+pub const MAX_PENDING: usize = 8;
+
+/// QUIC connections at once.
+const MAX_QUIC: usize = 256;
+
+/// The users' list is broadcast at most this often for presence changes
+/// (the latest one wins).
+pub const PEERS_EVERY: Duration = Duration::from_millis(100);
+
 /// How a server is started.
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -36,9 +73,15 @@ pub struct Options {
     /// Host name or address given in the invitation (default: this
     /// computer's address on the local network).
     pub advertise: Option<String>,
-    /// The secret the access codes are made from (default: a random
-    /// one; give one to keep the invitations across restarts).
+    /// The secret the general access code is made from (default: a
+    /// random one; give one to keep the general invitation across
+    /// restarts). Personal invitations never derive from it.
     pub code: Option<String>,
+    /// The file keeping the key of the personal invitations (made with a
+    /// random key when missing, readable by its owner only; `None`: a
+    /// random key for this run — the personal invitations change at the
+    /// next start).
+    pub keys: Option<PathBuf>,
     /// Role given to users the project does not know (`None`: they are
     /// refused).
     pub newcomers: Option<Role>,
@@ -53,6 +96,7 @@ impl Default for Options {
             bind: "0.0.0.0:4433".parse().expect("address"),
             advertise: None,
             code: None,
+            keys: None,
             newcomers: Some(Role::Viewer),
             web: None,
         }
@@ -69,8 +113,8 @@ pub struct Server {
     pub web_addr: Option<SocketAddr>,
     /// Host name or address given in the invitations.
     host: String,
-    secret: String,
-    jobs: std_mpsc::Sender<Job>,
+    keys: Keys,
+    pub(crate) jobs: std_mpsc::Sender<Job>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -83,10 +127,25 @@ pub(crate) struct Event {
     pub(crate) msg: ServerMsg,
 }
 
+/// A copy of the project file for joining clients, removed when the last
+/// one holding it is done.
+pub(crate) struct Snapshot {
+    path: PathBuf,
+    size: u64,
+    live: Arc<AtomicUsize>,
+}
+
+impl Drop for Snapshot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 pub(crate) struct Joined {
     pub(crate) events: broadcast::Receiver<Event>,
     /// The project file's copy (none for web clients).
-    copy: Option<PathBuf>,
+    copy: Option<Arc<Snapshot>>,
     pub(crate) welcome: ServerMsg,
 }
 
@@ -140,20 +199,40 @@ pub(crate) enum Job {
         have: Option<u64>,
         reply: oneshot::Sender<Result<Option<SceneSource>, String>>,
     },
+    /// A job that fails inside the authority (tests).
+    #[cfg(test)]
+    Panic {
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Stop,
 }
 
 /// The authority: the session, who is connected, the soft locks.
 struct Authority {
     session: Session,
-    secret: String,
+    /// The project file (read again after a job failed inside).
+    path: PathBuf,
+    keys: Keys,
     newcomers: Option<Role>,
+    /// Users the general invitation added in this run.
+    added: usize,
     events: broadcast::Sender<Event>,
     peers: BTreeMap<String, Peer>,
     locks: BTreeMap<String, String>,
     copies: PathBuf,
+    /// Changes of the project file in this run (requests, users added):
+    /// the copy for joining clients is made again after one.
+    state: u64,
+    /// The last copy made, and the state it is of.
+    snapshot: Option<(u64, Arc<Snapshot>)>,
+    /// Copies existing.
+    live: Arc<AtomicUsize>,
     /// Edits of the line or its libraries since the server started.
     revision: u64,
+    /// The users' list last broadcast, and when it is due again (a
+    /// presence changed since).
+    peers_sent: Instant,
+    peers_due: Option<Instant>,
 }
 
 impl Authority {
@@ -167,12 +246,74 @@ impl Authority {
         }
     }
 
+    /// The users' list, to everyone at once.
+    fn broadcast_peers(&mut self) {
+        self.broadcast(self.peers_msg());
+        self.peers_sent = Instant::now();
+        self.peers_due = None;
+    }
+
+    /// The users' list after a presence changed: at most every
+    /// [`PEERS_EVERY`] (the latest wins).
+    fn presence_changed(&mut self) {
+        let next = self.peers_sent + PEERS_EVERY;
+        if Instant::now() >= next {
+            self.broadcast_peers();
+        } else {
+            self.peers_due.get_or_insert(next);
+        }
+    }
+
+    /// The copy of the project for a joining client: the last one, when
+    /// nothing changed since.
+    fn snapshot(&mut self) -> Result<Arc<Snapshot>, String> {
+        if let Some((state, s)) = &self.snapshot
+            && *state == self.state
+        {
+            return Ok(s.clone());
+        }
+        // The old one goes when its last client has it.
+        self.snapshot = None;
+        if self.live.load(Ordering::SeqCst) >= MAX_COPIES {
+            return Err(format!(
+                "the server is sending the project to {MAX_COPIES} others: join again in a minute"
+            ));
+        }
+        let path = self
+            .copies
+            .join(format!("copy-{}-{}.ohl", self.state, random_code(8)));
+        let size = self
+            .session
+            .copy_for_others(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|()| {
+                std::fs::metadata(&path)
+                    .map(|m| m.len())
+                    .map_err(|e| e.to_string())
+            });
+        let size = match size {
+            Ok(size) => size,
+            Err(e) => {
+                let _ = std::fs::remove_file(&path);
+                return Err(e);
+            }
+        };
+        self.live.fetch_add(1, Ordering::SeqCst);
+        let snapshot = Arc::new(Snapshot {
+            path,
+            size,
+            live: self.live.clone(),
+        });
+        self.snapshot = Some((self.state, snapshot.clone()));
+        Ok(snapshot)
+    }
+
     fn join(&mut self, user: &str, code: &str, copy: bool) -> Result<Joined, String> {
         crate::check_name(user)?;
-        let personal = crate::same_code(code, &crate::access_code(&self.secret, Some(user)));
-        let general = crate::same_code(code, &crate::access_code(&self.secret, None));
+        let personal = crate::same_code(code, &self.keys.code(Some(user)));
+        let general = crate::same_code(code, &self.keys.code(None));
         if !personal && !general {
-            return Err("wrong access code".into());
+            return Err(WRONG_CODE.into());
         }
         if self.peers.contains_key(user) {
             return Err(format!("{user} is connected already"));
@@ -189,11 +330,16 @@ impl Authority {
                 let role = self
                     .newcomers
                     .ok_or_else(|| format!("{user} is not a user of this project"))?;
+                if self.added >= MAX_NEWCOMERS {
+                    return Err(format!(
+                        "{MAX_NEWCOMERS} newcomers joined since the server started: ask the \
+                         host for a personal invitation"
+                    ));
+                }
+                let users = self.session.users().map_err(|e| e.to_string())?;
+                crate::check_look_alike(user, users.iter().map(|(n, _)| n.as_str()))?;
                 // Added by the project's admin, like every replica will.
-                let admin = self
-                    .session
-                    .users()
-                    .map_err(|e| e.to_string())?
+                let admin = users
                     .into_iter()
                     .find(|(_, r)| *r == Role::Admin)
                     .map(|(n, _)| n)
@@ -203,7 +349,9 @@ impl Authority {
                     role,
                 };
                 let line = self.session.current_line().to_owned();
+                self.state += 1;
                 execute(&mut self.session, &admin, &line, &op).map_err(|e| e.to_string())?;
+                self.added += 1;
                 self.broadcast(ServerMsg::Applied {
                     user: admin,
                     op,
@@ -216,14 +364,9 @@ impl Authority {
         // Subscribed before the copy: nothing applied after it is missed.
         let events = self.events.subscribe();
         let (copy, size) = if copy {
-            let copy = self.copies.join(format!(
-                "{}-{}.ohl",
-                user.replace(['/', '\\'], "_"),
-                random_code(6)
-            ));
-            self.session.copy_to(&copy).map_err(|e| e.to_string())?;
-            let size = std::fs::metadata(&copy).map_err(|e| e.to_string())?.len();
-            (Some(copy), size)
+            let s = self.snapshot()?;
+            let size = s.size;
+            (Some(s), size)
         } else {
             (None, 0)
         };
@@ -236,7 +379,7 @@ impl Authority {
                 presence: Presence::default(),
             },
         );
-        self.broadcast(self.peers_msg());
+        self.broadcast_peers();
         Ok(Joined {
             events,
             copy,
@@ -251,6 +394,26 @@ impl Authority {
         })
     }
 
+    /// The objects `op` changes (for the soft locks); an undo or redo
+    /// those of the log entry it reverses (`None`: the whole line).
+    fn targets(
+        &self,
+        user: &str,
+        op: &Op,
+        line: &str,
+    ) -> Result<Option<Vec<(ohl_session::Kind, String)>>, String> {
+        let entry = match op {
+            Op::Undo => self.session.undo_entry(user, line),
+            Op::Redo => self.session.redo_entry(user, line),
+            _ => return Ok(op.targets()),
+        }
+        .map_err(|e| e.to_string())?;
+        Ok(Some(match entry {
+            Some(seq) => self.session.entry_objects(seq).map_err(|e| e.to_string())?,
+            None => Vec::new(),
+        }))
+    }
+
     fn request(
         &mut self,
         client: u64,
@@ -259,14 +422,15 @@ impl Authority {
         op: Op,
         line: String,
     ) -> Result<(), String> {
-        // Soft locks: others' objects are refused.
+        // Soft locks: others' objects are refused (admins pass).
         let held: Vec<(&String, &String)> = self
             .locks
             .iter()
             .filter(|(_, u)| u.as_str() != user)
             .collect();
-        if !held.is_empty() {
-            match op.targets() {
+        let admin = self.session.role(user).map_err(|e| e.to_string())? == Some(Role::Admin);
+        if !held.is_empty() && !admin {
+            match self.targets(user, &op, &line)? {
                 None => {
                     let (t, u) = held[0];
                     return Err(format!("{t} is being edited by {u}"));
@@ -281,7 +445,19 @@ impl Authority {
                 }
             }
         }
+        // Whatever happens, the copy for joining clients is made again.
+        self.state += 1;
         let applied = execute(&mut self.session, user, &line, &op).map_err(|e| e.to_string())?;
+        if let Op::SetSetting { key, value } = &op {
+            log(&format!(
+                "{user} {} setting {key} on {line}",
+                if value.is_some() {
+                    "changed"
+                } else {
+                    "removed"
+                }
+            ));
+        }
         if crate::web::changes_scene(&op, &line) {
             self.revision += 1;
         }
@@ -299,7 +475,7 @@ impl Authority {
             && let Some(p) = self.peers.get_mut(name)
         {
             p.role = *role;
-            self.broadcast(self.peers_msg());
+            self.broadcast_peers();
         }
         Ok(())
     }
@@ -345,7 +521,7 @@ impl Authority {
             });
         }
         if self.peers.remove(user).is_some() {
-            self.broadcast(self.peers_msg());
+            self.broadcast_peers();
         }
     }
 
@@ -374,63 +550,291 @@ impl Authority {
         }))
     }
 
-    fn run(mut self, jobs: std_mpsc::Receiver<Job>) {
-        while let Ok(job) = jobs.recv() {
-            match job {
-                Job::Join {
-                    user,
-                    code,
-                    copy,
-                    reply,
-                } => {
-                    let _ = reply.send(self.join(&user, &code, copy));
-                }
-                Job::Request {
-                    client,
-                    user,
-                    id,
-                    op,
-                    line,
-                    reply,
-                } => {
-                    let _ = reply.send(self.request(client, &user, id, op, line));
-                }
-                Job::Presence { user, mut presence } => {
-                    if presence.selection.len() > crate::MAX_LABEL {
-                        let mut end = crate::MAX_LABEL;
-                        while !presence.selection.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        presence.selection.truncate(end);
-                    }
-                    if let Some(p) = self.peers.get_mut(&user)
-                        && p.presence != presence
-                    {
-                        p.presence = presence;
-                        self.broadcast(self.peers_msg());
-                    }
-                }
-                Job::Lock {
-                    user,
-                    target,
-                    reply,
-                } => {
-                    let _ = reply.send(self.lock(&user, target));
-                }
-                Job::Unlock { user, target } => self.unlock(&user, &target),
-                Job::Leave { user } => self.leave(&user),
-                Job::Peers { reply } => {
-                    let _ = reply.send(self.peers.values().cloned().collect());
-                }
-                Job::Scene { have, reply } => {
-                    let _ = reply.send(self.scene(have));
-                }
-                Job::Stop => break,
+    /// Runs `f`; a panic inside it (a bug) is refused instead of stopping
+    /// the server, and the session read again from the project file (what
+    /// the job had not stored is gone with it).
+    fn guarded<T>(
+        &mut self,
+        what: &str,
+        f: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut *self))) {
+            Ok(r) => r,
+            Err(_) => {
+                log(&format!(
+                    "{what} failed inside the server (a bug): refused; the project is read \
+                     again from its file"
+                ));
+                self.recover();
+                Err(format!(
+                    "{what}: refused, an internal error of the server (it keeps running)"
+                ))
             }
         }
+    }
+
+    /// After a job failed inside: the session as the project file holds
+    /// it, the copy for joining clients made again.
+    fn recover(&mut self) {
+        self.state += 1;
+        self.snapshot = None;
+        match Session::open(&self.path) {
+            Ok(s) => self.session = s,
+            Err(e) => log(&format!("reading the project again: {e}")),
+        }
+    }
+
+    fn handle(&mut self, job: Job) {
+        match job {
+            Job::Join {
+                user,
+                code,
+                copy,
+                reply,
+            } => {
+                let _ = reply.send(self.guarded("joining", |a| a.join(&user, &code, copy)));
+            }
+            Job::Request {
+                client,
+                user,
+                id,
+                op,
+                line,
+                reply,
+            } => {
+                let what = op.describe();
+                let _ = reply.send(self.guarded(&what, |a| a.request(client, &user, id, op, line)));
+            }
+            Job::Presence { user, mut presence } => {
+                if presence.selection.len() > crate::MAX_LABEL {
+                    let mut end = crate::MAX_LABEL;
+                    while !presence.selection.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    presence.selection.truncate(end);
+                }
+                if let Some(p) = self.peers.get_mut(&user)
+                    && p.presence != presence
+                {
+                    p.presence = presence;
+                    self.presence_changed();
+                }
+            }
+            Job::Lock {
+                user,
+                target,
+                reply,
+            } => {
+                let _ = reply.send(self.lock(&user, target));
+            }
+            Job::Unlock { user, target } => self.unlock(&user, &target),
+            Job::Leave { user } => self.leave(&user),
+            Job::Peers { reply } => {
+                let _ = reply.send(self.peers.values().cloned().collect());
+            }
+            Job::Scene { have, reply } => {
+                let _ = reply.send(self.guarded("the scene", |a| a.scene(have)));
+            }
+            #[cfg(test)]
+            Job::Panic { reply } => {
+                let _ = reply.send(self.guarded("a test", |_| -> Result<(), String> {
+                    panic!("a job failing inside the authority")
+                }));
+            }
+            Job::Stop => {}
+        }
+    }
+
+    fn run(mut self, jobs: std_mpsc::Receiver<Job>) {
+        loop {
+            let job = match self.peers_due {
+                Some(due) => match jobs.recv_timeout(due.saturating_duration_since(Instant::now()))
+                {
+                    Ok(job) => Some(job),
+                    Err(std_mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
+                },
+                None => match jobs.recv() {
+                    Ok(job) => Some(job),
+                    Err(_) => break,
+                },
+            };
+            match job {
+                Some(Job::Stop) => break,
+                Some(job) => self.handle(job),
+                None => {}
+            }
+            if self.peers_due.is_some_and(|due| Instant::now() >= due) {
+                self.broadcast_peers();
+            }
+        }
+        self.snapshot = None;
         let _ = self.session.checkpoint();
         let _ = std::fs::remove_dir_all(&self.copies);
     }
+}
+
+/// The refusal of a wrong access code (the address then waits).
+pub(crate) const WRONG_CODE: &str = "wrong access code";
+
+/// What one address did lately.
+struct Seen {
+    /// Connections not joined yet.
+    pending: usize,
+    joins: Bucket,
+    /// Wrong access codes in a row.
+    wrong: u32,
+    /// No join before.
+    wait_until: Option<Instant>,
+    last: Instant,
+}
+
+/// Limits per address (QUIC and web): joins, wrong access codes,
+/// connections not joined yet. Loopback addresses (this computer) pass.
+#[derive(Default)]
+pub(crate) struct Gate {
+    seen: Mutex<HashMap<IpAddr, Seen>>,
+}
+
+/// A connection not joined yet (released when dropped).
+pub(crate) struct Pending {
+    gate: Arc<Gate>,
+    ip: IpAddr,
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        if let Ok(mut seen) = self.gate.seen.lock()
+            && let Some(s) = seen.get_mut(&self.ip)
+        {
+            s.pending = s.pending.saturating_sub(1);
+        }
+    }
+}
+
+impl Gate {
+    fn with<T>(&self, ip: IpAddr, f: impl FnOnce(&mut Seen) -> T) -> T {
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        // Forgotten after ten quiet minutes.
+        if seen.len() > 4096 {
+            seen.retain(|_, s| {
+                s.pending > 0 || now.duration_since(s.last) < Duration::from_secs(600)
+            });
+        }
+        let s = seen.entry(ip).or_insert_with(|| Seen {
+            pending: 0,
+            joins: Bucket::new(JOINS_PER_MINUTE / 60.0, JOINS_PER_MINUTE),
+            wrong: 0,
+            wait_until: None,
+            last: now,
+        });
+        s.last = now;
+        f(s)
+    }
+
+    /// A new connection of `ip`, if it may have one more not joined yet.
+    pub(crate) fn enter(self: &Arc<Self>, ip: IpAddr) -> Option<Pending> {
+        let ok = self.with(ip, |s| {
+            if s.pending >= MAX_PENDING && !ip.is_loopback() {
+                false
+            } else {
+                s.pending += 1;
+                true
+            }
+        });
+        ok.then(|| Pending {
+            gate: self.clone(),
+            ip,
+        })
+    }
+
+    /// Whether `ip` may try to join now.
+    pub(crate) fn may_join(&self, ip: IpAddr) -> Result<(), String> {
+        if ip.is_loopback() {
+            return Ok(());
+        }
+        self.with(ip, |s| {
+            if let Some(until) = s.wait_until {
+                let now = Instant::now();
+                if now < until {
+                    return Err(format!(
+                        "wrong access codes from this address: try again in {} s",
+                        (until - now).as_secs() + 1
+                    ));
+                }
+            }
+            if !s.joins.take() {
+                return Err(format!(
+                    "more than {JOINS_PER_MINUTE} joins a minute from this address: try again \
+                     in a minute"
+                ));
+            }
+            Ok(())
+        })
+    }
+
+    /// What a join of `ip` came to: a wrong access code makes it wait
+    /// (1 s, doubled each time up to [`MAX_BACKOFF`]); a join forgets them.
+    pub(crate) fn joined(&self, ip: IpAddr, result: &Result<(), String>) {
+        if ip.is_loopback() {
+            return;
+        }
+        self.with(ip, |s| match result {
+            Err(e) if e == WRONG_CODE => {
+                s.wrong = s.wrong.saturating_add(1);
+                let wait = (1u64 << (s.wrong - 1).min(16)).min(MAX_BACKOFF);
+                s.wait_until = Some(Instant::now() + Duration::from_secs(wait));
+            }
+            Err(_) => {}
+            Ok(()) => {
+                s.wrong = 0;
+                s.wait_until = None;
+            }
+        });
+    }
+}
+
+/// Per connection: presence and lock messages paced.
+pub(crate) struct Pace {
+    presence: Bucket,
+    locks: Bucket,
+}
+
+impl Pace {
+    pub(crate) fn new() -> Self {
+        Self {
+            // The applications send their presence when it changes, a few
+            // times a second at most.
+            presence: Bucket::new(10.0, 20.0),
+            locks: Bucket::new(20.0, 64.0),
+        }
+    }
+}
+
+/// Joins at the authority, within the address's limits.
+pub(crate) async fn join(
+    gate: &Gate,
+    ip: IpAddr,
+    jobs: &std_mpsc::Sender<Job>,
+    user: String,
+    code: String,
+    copy: bool,
+) -> Result<Result<Joined, String>, String> {
+    if let Err(e) = gate.may_join(ip) {
+        return Ok(Err(e));
+    }
+    let (tx, rx) = oneshot::channel();
+    jobs.send(Job::Join {
+        user,
+        code,
+        copy,
+        reply: tx,
+    })
+    .map_err(|_| "server stopped")?;
+    let joined = rx.await.map_err(|_| "server stopped")?;
+    gate.joined(ip, &joined.as_ref().map(|_| ()).map_err(Clone::clone));
+    Ok(joined)
 }
 
 /// This computer's address on the local network (the one used to reach
@@ -501,20 +905,35 @@ impl Server {
             None => None,
         };
         let secret = options.code.clone().unwrap_or_else(|| random_code(16));
-        let code = crate::access_code(&secret, None);
-        let copies = std::env::temp_dir().join(format!("ohl-server-{}", random_code(8)));
-        std::fs::create_dir_all(&copies).map_err(|e| e.to_string())?;
+        let personal = match &options.keys {
+            Some(file) => Keys::personal_key_file(file)?,
+            None => {
+                let mut key = [0u8; 32];
+                getrandom::fill(&mut key).map_err(|e| e.to_string())?;
+                key
+            }
+        };
+        let keys = Keys::new(&secret, personal);
+        let code = keys.code(None);
+        let copies = crate::private_temp_dir("ohl-server")?;
         let (events, _) = broadcast::channel(4096);
         let (jobs, job_rx) = std_mpsc::channel();
         let authority = Authority {
             session,
-            secret: secret.clone(),
+            path: path.to_path_buf(),
+            keys: keys.clone(),
             newcomers: options.newcomers,
+            added: 0,
             events: events.clone(),
             peers: BTreeMap::new(),
             locks: BTreeMap::new(),
             copies,
+            state: 0,
+            snapshot: None,
+            live: Arc::new(AtomicUsize::new(0)),
             revision: 0,
+            peers_sent: Instant::now(),
+            peers_due: None,
         };
         let authority_thread = std::thread::Builder::new()
             .name("ohl-authority".into())
@@ -569,9 +988,16 @@ impl Server {
                     };
                     let web_addr = web.as_ref().and_then(|(l, _)| l.local_addr().ok());
                     let _ = ready_tx.send(Ok((quic_addr, web_addr)));
+                    let gate = Arc::new(Gate::default());
                     let web_task = web.map(|(listener, acceptor)| {
-                        tokio::spawn(crate::web::listen(listener, acceptor, net_jobs.clone()))
+                        tokio::spawn(crate::web::listen(
+                            listener,
+                            acceptor,
+                            net_jobs.clone(),
+                            gate.clone(),
+                        ))
                     });
+                    let slots = Arc::new(tokio::sync::Semaphore::new(MAX_QUIC));
                     let mut next = 0u64;
                     let mut stop_rx = stop_rx;
                     loop {
@@ -579,12 +1005,22 @@ impl Server {
                             _ = &mut stop_rx => break,
                             incoming = endpoint.accept() => {
                                 let Some(incoming) = incoming else { break };
+                                // At most so many connections, and so many
+                                // of one address not joined yet.
+                                let (Ok(slot), Some(pending)) = (
+                                    slots.clone().try_acquire_owned(),
+                                    gate.enter(incoming.remote_address().ip()),
+                                ) else {
+                                    incoming.refuse();
+                                    continue;
+                                };
                                 next += 1;
-                                let jobs = net_jobs.clone();
+                                let (jobs, gate) = (net_jobs.clone(), gate.clone());
                                 tokio::spawn(async move {
-                                    if let Err(e) = connection(incoming, next, jobs).await {
+                                    if let Err(e) = connection(incoming, next, jobs, gate, pending).await {
                                         log(&format!("connection {next}: {e}"));
                                     }
+                                    drop(slot);
                                 });
                             }
                         }
@@ -611,23 +1047,23 @@ impl Server {
             local_addr,
             web_addr,
             host,
-            secret,
+            keys,
             jobs,
             stop: Some(stop),
             thread: Some(thread),
         })
     }
 
-    /// The secret the access codes are made from (never sent).
-    pub fn secret(&self) -> &str {
-        &self.secret
+    /// The keys the access codes are made from (never sent).
+    pub fn keys(&self) -> &Keys {
+        &self.keys
     }
 
     /// The personal invitation of `user` (a user of the project joins
     /// only with theirs).
     pub fn invitation_for(&self, user: &str) -> Invitation {
         Invitation {
-            code: crate::access_code(&self.secret, Some(user)),
+            code: self.keys.code(Some(user)),
             ..self.invitation.clone()
         }
     }
@@ -637,7 +1073,7 @@ impl Server {
     /// not send to the server: `https://HOST:PORT/#user=NAME&code=CODE`.
     pub fn web_link(&self, user: Option<&str>) -> Option<String> {
         let addr = self.web_addr?;
-        let code = crate::access_code(&self.secret, user);
+        let code = self.keys.code(user);
         let who = user
             .map(|u| format!("user={}&", crate::web::fragment_escape(u)))
             .unwrap_or_default();
@@ -687,7 +1123,10 @@ async fn connection(
     incoming: quinn::Incoming,
     client: u64,
     jobs: std_mpsc::Sender<Job>,
+    gate: Arc<Gate>,
+    pending: Pending,
 ) -> Result<(), String> {
+    let ip = incoming.remote_address().ip();
     let conn = incoming.await.map_err(|e| e.to_string())?;
     let (mut send, mut recv) = tokio::time::timeout(Duration::from_secs(10), conn.accept_bi())
         .await
@@ -713,15 +1152,9 @@ async fn connection(
         }
         _ => return Err("no hello".into()),
     };
-    let (tx, rx) = oneshot::channel();
-    jobs.send(Job::Join {
-        user: user.clone(),
-        code,
-        copy: true,
-        reply: tx,
-    })
-    .map_err(|_| "server stopped")?;
-    let joined = match rx.await.map_err(|_| "server stopped")? {
+    let joined = join(&gate, ip, &jobs, user.clone(), code, true).await?;
+    drop(pending);
+    let joined = match joined {
         Ok(j) => j,
         Err(reason) => {
             write_msg(&mut send, &ServerMsg::Refused { reason }).await?;
@@ -750,11 +1183,16 @@ async fn serve(
 ) -> Result<(), String> {
     // The copy, on its own stream; removed whatever happens.
     let copy = joined.copy.ok_or("no copy of the project")?;
+    // A client that does not take it in good time is dropped (it holds
+    // a copy of the project meanwhile).
+    let deadline = Duration::from_secs(60 + copy.size / (256 << 10));
     let sent = match write_msg(send, &joined.welcome).await {
-        Ok(()) => send_file(conn, &copy).await,
+        Ok(()) => tokio::time::timeout(deadline, send_file(conn, &copy.path))
+            .await
+            .unwrap_or_else(|_| Err(format!("project not taken in {} s", deadline.as_secs()))),
         Err(e) => Err(e),
     };
-    let _ = tokio::fs::remove_file(&copy).await;
+    drop(copy);
     sent?;
     // One writer: broadcasts (with the answers to this client's requests
     // right after their edits) and this client's notices.
@@ -801,12 +1239,13 @@ async fn serve(
             }
         })
     };
+    let mut pace = Pace::new();
     let reading = async {
         loop {
             let Some(msg) = read_msg::<ClientMsg>(recv).await? else {
                 return Ok::<(), String>(());
             };
-            if let Some(answer) = dispatch(msg, client, user, jobs).await? {
+            if let Some(answer) = dispatch(msg, client, user, jobs, &mut pace).await? {
                 let _ = out.send(answer).await;
             }
         }
@@ -839,6 +1278,7 @@ pub(crate) async fn dispatch(
     client: u64,
     user: &str,
     jobs: &std_mpsc::Sender<Job>,
+    pace: &mut Pace,
 ) -> Result<Option<ServerMsg>, String> {
     Ok(match msg {
         ClientMsg::Hello { .. } => return Err("hello twice".into()),
@@ -858,6 +1298,11 @@ pub(crate) async fn dispatch(
                 .err()
                 .map(|e| ServerMsg::Response { id, result: Err(e) })
         }
+        // More than the applications send: dropped.
+        ClientMsg::Presence(_) if !pace.presence.take() => None,
+        ClientMsg::Lock { .. } if !pace.locks.take() => Some(ServerMsg::Notice {
+            text: "too many lock requests: slow down".into(),
+        }),
         ClientMsg::Presence(presence) => {
             let _ = jobs.send(Job::Presence {
                 user: user.to_owned(),
@@ -908,4 +1353,56 @@ async fn send_file(conn: &quinn::Connection, path: &Path) -> Result<(), String> 
     }
     stream.finish().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    /// L3/L4/M2: wrong access codes make an address wait, longer each
+    /// time; joins a minute and connections not joined yet are limited per
+    /// address; this computer is not limited.
+    #[test]
+    fn addresses_are_limited() {
+        let gate = Arc::new(Gate::default());
+        let ip: IpAddr = "192.0.2.7".parse().unwrap();
+        let other: IpAddr = "192.0.2.8".parse().unwrap();
+        assert!(gate.may_join(ip).is_ok());
+        gate.joined(ip, &Err(WRONG_CODE.into()));
+        let e = gate.may_join(ip).unwrap_err();
+        assert!(e.contains("wrong access codes"), "{e}");
+        assert!(gate.may_join(other).is_ok(), "another address");
+        gate.with(ip, |s| {
+            assert_eq!(s.wrong, 1);
+            s.wait_until = None;
+        });
+        gate.joined(ip, &Err(WRONG_CODE.into()));
+        let wait = gate.with(ip, |s| s.wait_until.unwrap() - Instant::now());
+        assert!(wait > Duration::from_millis(1500), "doubled: {wait:?}");
+        gate.with(ip, |s| s.wait_until = None);
+        gate.joined(ip, &Ok(()));
+        gate.with(ip, |s| assert_eq!(s.wrong, 0));
+        // Joins a minute.
+        let busy: IpAddr = "192.0.2.9".parse().unwrap();
+        for _ in 0..JOINS_PER_MINUTE as usize {
+            assert!(gate.may_join(busy).is_ok());
+        }
+        assert!(gate.may_join(busy).unwrap_err().contains("a minute"));
+        // Connections not joined yet.
+        let held: Vec<Pending> = (0..MAX_PENDING).map(|_| gate.enter(ip).unwrap()).collect();
+        assert!(gate.enter(ip).is_none());
+        drop(held);
+        assert!(gate.enter(ip).is_some());
+        let local: IpAddr = "127.0.0.1".parse().unwrap();
+        for _ in 0..100 {
+            gate.joined(local, &Err(WRONG_CODE.into()));
+            assert!(gate.may_join(local).is_ok());
+        }
+        // Presence and locks paced per connection.
+        let mut pace = Pace::new();
+        let sent = (0..100).filter(|_| pace.presence.take()).count();
+        assert!((20..25).contains(&sent), "{sent}");
+        let locks = (0..200).filter(|_| pace.locks.take()).count();
+        assert!((64..70).contains(&locks), "{locks}");
+    }
 }
