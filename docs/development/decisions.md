@@ -101,7 +101,8 @@ and what was decided on the way:
   `Tool::icon`). Kept, for the owner: `Live::set_library` and
   `line_settings_put` (ohl-session, being changed in parallel; the first
   is described as a fix in the data-model review), `StructureFile::reload`
-  and `tile_extents` (APIs meant for the applications), and
+  and `tile_extents` (APIs meant for the applications) — these four
+  removed the same day (owner: not needed) — and
   `wind_area_per_length` (in the user guide). The old names (`ols`
   programs, `import ols`, `ols-plugin.toml`, `.ols`, `OLS_BUILD_ID`) stay
   until the owner sets a date (roadmap U12). ARCHITECTURE.md now says what

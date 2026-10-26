@@ -31,8 +31,8 @@ Opening a project now drops stale circuit starts; a project or line file
 with a span point's distance beyond its span, repeated spread labels or
 impossible stringing values is refused on opening (none were found in the
 lines checked). The `Live` fix marks every section when the line settings
-the solve reads change, and `Live::set_library` solves again with an
-edited cable library.
+the solve reads change. (`Live::set_library`, which solved again with an
+edited cable library, had no caller and was removed on 2026-10-26.)
 
 | # | Where | What happens | Fix |
 |---|---|---|---|

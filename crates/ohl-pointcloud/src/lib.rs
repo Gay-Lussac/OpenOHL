@@ -492,48 +492,6 @@ impl Store {
         })
     }
 
-    /// The tiles of `level` of the project's grid that the cloud's chunks
-    /// overlap (a chunk across tile borders counts in each), with the
-    /// lowest and highest block base height in each, m. What a viewer
-    /// streams by: chunks of any size, nesting in the tiles or not.
-    /// Heights are the blocks' bases: points lie at or above them.
-    pub fn tile_extents(
-        &self,
-        cloud: &CloudInfo,
-        grid: &ohl_core::grid::Grid,
-        level: i8,
-    ) -> Result<Vec<(ohl_core::grid::Tile, [f64; 2])>, StoreError> {
-        let c = cloud.chunk_size;
-        let mut stmt = self.conn.prepare(
-            "SELECT cx, cy, MIN(z0), MAX(z0) FROM pointcloud_block WHERE cloud = ?1 GROUP BY cx, cy",
-        )?;
-        let rows = stmt.query_map(params![cloud.id], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, i64>(3)?,
-            ))
-        })?;
-        let mut out: std::collections::BTreeMap<ohl_core::grid::Tile, [f64; 2]> =
-            std::collections::BTreeMap::new();
-        for row in rows {
-            let (cx, cy, z0, z1) = row?;
-            let (z0, z1) = (z0 as f64 * cloud.scale, z1 as f64 * cloud.scale);
-            // The chunk's square (its upper edges out).
-            let area = ohl_core::grid::Bounds::new(
-                [cx as f64 * c, cy as f64 * c],
-                [(cx + 1) as f64 * c - 1e-6, (cy + 1) as f64 * c - 1e-6],
-            );
-            for tile in grid.covering(&area, level).tiles() {
-                let z = out.entry(tile).or_insert([z0, z1]);
-                z[0] = z[0].min(z0);
-                z[1] = z[1].max(z1);
-            }
-        }
-        Ok(out.into_iter().collect())
-    }
-
     /// Writes the points of `cloud` to a COPC file ([`copc::write_copc`]):
     /// `classes` and `area` as for [`Store::export_las`]; intensities and
     /// returns as imported.

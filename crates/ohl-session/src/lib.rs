@@ -851,6 +851,7 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
 
 /// The puts of the settings `meta`, every row (those unchanged are left
 /// out when applied).
+#[cfg(test)]
 fn meta_puts(meta: &Meta) -> Command {
     Command::Batch {
         commands: meta_rows(meta)
@@ -937,20 +938,6 @@ pub fn line_circuits_change(before: &Line, after: &Line) -> Result<Command, Stri
         }
     }
     Ok(Command::Batch { commands })
-}
-
-/// The puts of the line's settings (name, CRS, display, systems, creep
-/// stretch…) as in `line`, with new systems when given: one row each
-/// (`META_ROWS`), those unchanged left out when applied.
-pub fn line_settings_put(
-    line: &Line,
-    systems: Option<Vec<ohl_line::electrical::System>>,
-) -> Command {
-    let mut meta = Meta::of(line);
-    if let Some(s) = systems {
-        meta.systems = s;
-    }
-    meta_puts(&meta)
 }
 
 /// A raw log row: seq, time, user, kind, command, inverse, objects,
