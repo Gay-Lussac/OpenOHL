@@ -1300,11 +1300,37 @@ fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
     Ok(())
 }
 
+/// Whether a setting's value is an absolute path of this computer (`/…`,
+/// `~/…`, `C:\…`, `\\server\…`): not handed to others.
+pub fn is_local_path(value: &str) -> bool {
+    let b = value.as_bytes();
+    value.starts_with('/')
+        || value.starts_with("~/")
+        || value.starts_with("\\\\")
+        || (b.len() >= 3
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && matches!(b[2], b'\\' | b'/'))
+}
+
+/// Settings of every connection to a project file, which may come from
+/// anyone (a mailed project, a server's copy): the views and triggers in
+/// it run no function marked unsafe for schemas (`trusted_schema` off),
+/// and the defensive mode refuses writes to the schema itself (security
+/// review 2026-10-26, L7).
+pub fn harden(conn: &Connection) -> Result<(), SessionError> {
+    use rusqlite::config::DbConfig;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
+    Ok(())
+}
+
 impl Session {
     /// Opens a project file (created if missing; an empty project has no
     /// line until [`Session::import`]).
     pub fn open(path: &Path) -> Result<Self, SessionError> {
         let conn = Connection::open(path)?;
+        harden(&conn)?;
         // A newer project file is refused before anything in it changes.
         let has_meta = conn
             .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ols_meta'")?
@@ -1781,6 +1807,36 @@ impl Session {
     pub fn copy_to(&self, path: &Path) -> Result<(), SessionError> {
         self.conn
             .execute("VACUUM INTO ?1", params![path.to_string_lossy()])?;
+        Ok(())
+    }
+
+    /// [`Session::copy_to`] for another computer: the settings that hold
+    /// a path of this one (e.g. `app.weather`, the weather case file used
+    /// last) keep only its file name (security review 2026-10-26, M5).
+    pub fn copy_for_others(&self, path: &Path) -> Result<(), SessionError> {
+        self.copy_to(path)?;
+        let conn = Connection::open(path)?;
+        harden(&conn)?;
+        let mut stmt =
+            conn.prepare("SELECT key, value FROM ols_meta WHERE key LIKE 'setting.%'")?;
+        let local: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<(String, String)>, _>>()?
+            .into_iter()
+            .filter(|(_, v)| is_local_path(v))
+            .collect();
+        drop(stmt);
+        for (key, value) in local {
+            let name = value
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            conn.execute(
+                "UPDATE ols_meta SET value = ?2 WHERE key = ?1",
+                params![key, name],
+            )?;
+        }
         Ok(())
     }
 
@@ -3544,19 +3600,60 @@ impl Session {
         Ok(applied)
     }
 
+    /// The log entry `user`'s next undo on project line `line` reverses.
+    pub fn undo_entry(&self, user: &str, line: &str) -> Result<Option<i64>, SessionError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT seq FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'redo') AND undone_by IS NULL ORDER BY seq DESC LIMIT 1",
+                params![user, line],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The log entry (an undo) `user`'s next redo on project line `line`
+    /// reverses, if nothing of theirs happened since.
+    pub fn redo_entry(&self, user: &str, line: &str) -> Result<Option<i64>, SessionError> {
+        let last: Option<(i64, String, Option<i64>)> = self
+            .conn
+            .query_row(
+                "SELECT seq, kind, undone_by FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'undo', 'redo') ORDER BY seq DESC LIMIT 1",
+                params![user, line],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        Ok(match last {
+            Some((seq, kind, None)) if kind == "undo" => Some(seq),
+            _ => None,
+        })
+    }
+
+    /// The objects log entry `seq` changed (what reversing it changes).
+    pub fn entry_objects(&self, seq: i64) -> Result<Vec<(Kind, String)>, SessionError> {
+        let objects: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT objects FROM oplog WHERE seq = ?1",
+                params![seq],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(objects) = objects else {
+            return Ok(Vec::new());
+        };
+        let objects: Vec<(Kind, String, i64)> =
+            serde_json::from_str(&objects).map_err(|e| SessionError::Store(e.to_string()))?;
+        Ok(objects.into_iter().map(|(k, id, _)| (k, id)).collect())
+    }
+
     /// Undoes `user`'s last command that is not undone yet.
     pub fn undo(&mut self, user: &str) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
         self.check_line_write(user)?;
-        let seq: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT seq FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'redo') AND undone_by IS NULL ORDER BY seq DESC LIMIT 1",
-                params![user, self.current],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let seq = seq.ok_or_else(|| refused(format!("{user} has nothing to undo")))?;
+        let seq = self
+            .undo_entry(user, &self.current)?
+            .ok_or_else(|| refused(format!("{user} has nothing to undo")))?;
         self.reverse(user, seq, "undo")
     }
 
@@ -3564,17 +3661,9 @@ impl Session {
     pub fn redo(&mut self, user: &str) -> Result<Applied, SessionError> {
         self.require(user, Role::Designer)?;
         self.check_line_write(user)?;
-        let last: Option<(i64, String, Option<i64>)> = self
-            .conn
-            .query_row(
-                "SELECT seq, kind, undone_by FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'undo', 'redo') ORDER BY seq DESC LIMIT 1",
-                params![user, self.current],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?;
-        match last {
-            Some((seq, kind, None)) if kind == "undo" => self.reverse(user, seq, "redo"),
-            _ => Err(refused(format!("{user} has nothing to redo"))),
+        match self.redo_entry(user, &self.current)? {
+            Some(seq) => self.reverse(user, seq, "redo"),
+            None => Err(refused(format!("{user} has nothing to redo"))),
         }
     }
 

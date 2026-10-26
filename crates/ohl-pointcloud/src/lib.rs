@@ -347,6 +347,14 @@ impl Store {
     /// Opens (or creates) the project file and its point-cloud tables.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = Connection::open(path)?;
+        // A project file may come from anyone: no unsafe function from its
+        // views or triggers, no writes to its schema (security review
+        // 2026-10-26, L7).
+        conn.set_db_config(
+            rusqlite::config::DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA,
+            false,
+        )?;
+        conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;

@@ -543,9 +543,24 @@ impl Session {
         if branch == target {
             return Err(refused("a branch is reviewed into another branch"));
         }
+        // Reviewers decide: designers or admins, never the author (a
+        // viewer — e.g. added on joining with the general invitation —
+        // approves nothing; security review 2026-10-26, M1).
         for r in reviewers {
-            if self.role(r)?.is_none() {
-                return Err(refused(format!("reviewer {r}: not a user of the project")));
+            match self.role(r)? {
+                None => {
+                    return Err(refused(format!("reviewer {r}: not a user of the project")));
+                }
+                Some(role) if role < Role::Designer => {
+                    return Err(refused(format!(
+                        "reviewer {r} is a {}: reviewers are designers or admins",
+                        role.as_str()
+                    )));
+                }
+                Some(_) if r == user => {
+                    return Err(refused("the author does not review their own branch"));
+                }
+                Some(_) => {}
             }
         }
         let open: Option<i64> = self
@@ -575,9 +590,23 @@ impl Session {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Who approves or rejects a review: a named reviewer who is (still) a
+    /// designer, or an admin — never its author.
     fn may_review(&self, user: &str, review: &Review) -> Result<(), SessionError> {
-        let admin = self.role(user)? == Some(Role::Admin);
-        if admin || (review.reviewers.iter().any(|r| r == user) && review.author != user) {
+        let role = self.role(user)?;
+        if review.author == user {
+            return Err(refused(format!(
+                "{user} wrote review #{}: another user decides it",
+                review.id
+            )));
+        }
+        if role.is_some_and(|r| r < Role::Designer) {
+            return Err(refused(format!(
+                "{user} is a viewer: reviews are decided by designers or admins"
+            )));
+        }
+        let admin = role == Some(Role::Admin);
+        if admin || (role.is_some() && review.reviewers.iter().any(|r| r == user)) {
             return Ok(());
         }
         Err(refused(format!(
@@ -648,7 +677,29 @@ impl Session {
         choices: &Choices,
     ) -> Result<MergeOutcome, SessionError> {
         let review = self.review(id)?;
-        self.may_review(user, &review)?;
+        // Its author, a reviewer or an admin merges.
+        self.require(user, Role::Designer)?;
+        if review.author != user {
+            self.may_review(user, &review)?;
+        }
+        // Into a protected branch: approved by somebody else than the one
+        // who merges, who is (still) a designer or an admin (security
+        // review 2026-10-26, M1).
+        if self.find_ref(&review.target)?.is_some_and(|r| r.protected) {
+            let mut other = false;
+            for n in review.notes.iter().filter(|n| n.verdict == "approve") {
+                if n.user != user && n.user != review.author {
+                    other |= self.role(&n.user)?.is_some_and(|r| r >= Role::Designer);
+                }
+            }
+            if !other {
+                return Err(refused(format!(
+                    "{} is protected: review #{id} is merged after an approval by somebody else \
+                     than the one merging it",
+                    review.target
+                )));
+            }
+        }
         if review.state != ReviewState::Approved {
             return Err(refused(format!(
                 "review #{id} is {}, not approved",

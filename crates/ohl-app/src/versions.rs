@@ -863,10 +863,11 @@ impl VersionsWindow {
                         for n in &rv.notes {
                             ui.label(format!("{} {}: {}", n.user, n.verdict, n.comment));
                         }
-                        let reviewer = admin || (rv.reviewers.contains(&me) && rv.author != me);
-                        ui.add_enabled_ui(can_edit && reviewer, |ui| {
+                        let reviewer = rv.author != me && (admin || rv.reviewers.contains(&me));
+                        // The author merges too, once somebody else approved.
+                        ui.add_enabled_ui(can_edit && (reviewer || rv.author == me), |ui| {
                             ui.horizontal(|ui| {
-                                if rv.state == ReviewState::Open {
+                                if rv.state == ReviewState::Open && reviewer {
                                     for (approve, label) in [(true, "Approve"), (false, "Reject")] {
                                         if ui.button(label).clicked() {
                                             ops.push((

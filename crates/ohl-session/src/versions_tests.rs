@@ -378,6 +378,18 @@ fn review_and_protected_branch() {
     assert!(s.merge("ben", "alt", None, &Choices::new()).is_err());
 
     s.set_user("ana", "rita", Role::Designer).unwrap();
+    // Viewers (e.g. added by the general invitation) and the author do
+    // not review (security review 2026-10-26, M1).
+    assert!(
+        s.submit_review("ben", "alt", "main", &["vic".into()], "")
+            .unwrap_err()
+            .to_string()
+            .contains("viewer")
+    );
+    assert!(
+        s.submit_review("ben", "alt", "main", &["ben".into()], "")
+            .is_err()
+    );
     let id = s
         .submit_review("ben", "alt", "main", &["rita".into()], "please check T6")
         .unwrap();
@@ -396,9 +408,24 @@ fn review_and_protected_branch() {
     let id = s
         .submit_review("ben", "alt", "main", &["rita".into()], "again")
         .unwrap();
-    s.decide_review("rita", id, true, "fine now").unwrap();
+    // Not approved yet: nobody merges.
     assert!(s.merge_review("ben", id, None, &Choices::new()).is_err());
-    let out = s.merge_review("rita", id, None, &Choices::new()).unwrap();
+    // A reviewer made a viewer meanwhile decides nothing.
+    s.set_user("ana", "rita", Role::Viewer).unwrap();
+    assert!(s.decide_review("rita", id, true, "").is_err());
+    s.set_user("ana", "rita", Role::Designer).unwrap();
+    s.decide_review("rita", id, true, "fine now").unwrap();
+    // Into a protected branch, the approver does not merge her own
+    // approval; a viewer never merges; the author does, approved by
+    // somebody else (security review 2026-10-26, M1).
+    assert!(
+        s.merge_review("rita", id, None, &Choices::new())
+            .unwrap_err()
+            .to_string()
+            .contains("somebody else")
+    );
+    assert!(s.merge_review("vic", id, None, &Choices::new()).is_err());
+    let out = s.merge_review("ben", id, None, &Choices::new()).unwrap();
     assert_eq!(out.kind, MergeKind::FastForward);
     let r = s.review(id).unwrap();
     assert_eq!(r.state, ReviewState::Merged);
