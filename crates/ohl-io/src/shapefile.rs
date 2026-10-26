@@ -234,6 +234,14 @@ impl Exporter for Shapefile {
 /// refused rather than read into memory.
 const MAX_ZIP_MEMBER: u64 = 2 << 30;
 
+/// Largest uncompressed size of all the shapefile members of a zip
+/// together (a small zip may unpack to many gigabytes: security review
+/// 2026-10-26, M7).
+const MAX_ZIP_TOTAL: u64 = 2 << 30;
+
+/// Most shapefile members (`.shp`, `.dbf`, `.prj`) in a zip.
+const MAX_ZIP_FILES: usize = 300;
+
 fn le_f64(b: &[u8], at: usize) -> Result<f64, String> {
     at.checked_add(8)
         .and_then(|end| b.get(at..end))
@@ -360,24 +368,7 @@ pub fn read(data: &[u8], options: &Options) -> Result<Neutral, String> {
     if !data.starts_with(b"PK") {
         return read_points(data, &[], options);
     }
-    let mut zip =
-        zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|e| format!("not a zip: {e}"))?;
-    let mut files = std::collections::BTreeMap::new();
-    for k in 0..zip.len() {
-        let mut f = zip.by_index(k).map_err(|e| e.to_string())?;
-        let name = f.name().to_ascii_lowercase();
-        if [".shp", ".dbf", ".prj"].iter().any(|e| name.ends_with(e)) {
-            let mut v = Vec::new();
-            (&mut f)
-                .take(MAX_ZIP_MEMBER + 1)
-                .read_to_end(&mut v)
-                .map_err(|e| e.to_string())?;
-            if v.len() as u64 > MAX_ZIP_MEMBER {
-                return Err(format!("{name} in the zip is larger than 2 GiB"));
-            }
-            files.insert(name, v);
-        }
-    }
+    let files = zip_members(data, MAX_ZIP_TOTAL, MAX_ZIP_FILES)?;
     let mut stems: Vec<String> = files
         .keys()
         .filter_map(|n| n.strip_suffix(".shp").map(str::to_owned))
@@ -405,6 +396,51 @@ pub fn read(data: &[u8], options: &Options) -> Result<Neutral, String> {
     out.crs = crs_of_prj(get(&main, "prj"));
     out.name = Some(main.rsplit('/').next().unwrap_or(&main).to_owned());
     Ok(out)
+}
+
+/// The shapefile members of a zip (`.shp`, `.dbf`, `.prj`, by lower-case
+/// name), at most `max_files` of them unpacking to at most `total` bytes
+/// together.
+fn zip_members(
+    data: &[u8],
+    total: u64,
+    max_files: usize,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, String> {
+    let mut zip =
+        zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|e| format!("not a zip: {e}"))?;
+    let mut files = std::collections::BTreeMap::new();
+    // What is left of the budget of all members together.
+    let mut left = total;
+    for k in 0..zip.len() {
+        let mut f = zip.by_index(k).map_err(|e| e.to_string())?;
+        let name = f.name().to_ascii_lowercase();
+        if [".shp", ".dbf", ".prj"].iter().any(|e| name.ends_with(e)) {
+            if files.len() >= max_files {
+                return Err(format!(
+                    "more than {max_files} shapefile members in the zip"
+                ));
+            }
+            // Counted as they unpack (the sizes the zip states may lie).
+            let cap = MAX_ZIP_MEMBER.min(left);
+            let mut v = Vec::new();
+            (&mut f)
+                .take(cap + 1)
+                .read_to_end(&mut v)
+                .map_err(|e| e.to_string())?;
+            if v.len() as u64 > MAX_ZIP_MEMBER {
+                return Err(format!("{name} in the zip is larger than 2 GiB"));
+            }
+            if v.len() as u64 > left {
+                return Err(format!(
+                    "the shapefiles in the zip unpack to more than {} MiB together",
+                    total >> 20
+                ));
+            }
+            left -= v.len() as u64;
+            files.insert(name, v);
+        }
+    }
+    Ok(files)
 }
 
 /// `EPSG:4326` for a geographic WGS84 `.prj`; none otherwise (the line's
@@ -498,6 +534,29 @@ mod tests {
         c.extend_from_slice(&parts.to_le_bytes());
         c.extend_from_slice(&n.to_le_bytes());
         c
+    }
+
+    /// M7 (security review 2026-10-26): the members of a zip unpack to a
+    /// bounded size together, and only so many of them are read.
+    #[test]
+    fn zip_members_are_bounded_together() {
+        let zip = |members: &[(&str, usize)]| {
+            let mut out = std::io::Cursor::new(Vec::new());
+            let mut z = zip::ZipWriter::new(&mut out);
+            for (name, n) in members {
+                z.start_file(*name, zip::write::SimpleFileOptions::default())
+                    .unwrap();
+                z.write_all(&vec![0u8; *n]).unwrap();
+            }
+            z.finish().unwrap();
+            out.into_inner()
+        };
+        let data = zip(&[("a.shp", 600), ("a.dbf", 600), ("readme.txt", 5000)]);
+        assert_eq!(zip_members(&data, 1200, 10).unwrap().len(), 2);
+        let e = zip_members(&data, 1000, 10).unwrap_err();
+        assert!(e.contains("together"), "{e}");
+        let e = zip_members(&data, 5000, 1).unwrap_err();
+        assert!(e.contains("members"), "{e}");
     }
 
     #[test]
