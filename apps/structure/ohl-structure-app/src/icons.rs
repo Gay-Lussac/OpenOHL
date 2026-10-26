@@ -37,18 +37,42 @@ pub enum Icon {
     Symmetry,
     /// Design › Supports.
     Support,
+    /// The Select tool.
+    Select,
+    /// The Move tool.
+    Move,
+    /// The Link tool.
+    Link,
+    /// The Delete tool.
+    Delete,
+    /// The Add point tool.
+    AddPoint,
+    /// The One string tool.
+    OneString,
+    /// The Two strings to one wire point tool.
+    TwoStrings,
+    /// The Insert a joint on a member tool.
+    InsertJoint,
 }
 
 impl Icon {
     /// Every icon (the tests check each file).
     #[cfg(test)]
-    pub const ALL: [Icon; 6] = [
+    pub const ALL: [Icon; 14] = [
         Icon::AddJoint,
         Icon::AddMember,
         Icon::PointOnJoint,
         Icon::Generator,
         Icon::Symmetry,
         Icon::Support,
+        Icon::Select,
+        Icon::Move,
+        Icon::Link,
+        Icon::Delete,
+        Icon::AddPoint,
+        Icon::OneString,
+        Icon::TwoStrings,
+        Icon::InsertJoint,
     ];
 
     /// Its file's name (without `.svg`).
@@ -60,6 +84,14 @@ impl Icon {
             Icon::Generator => "generator",
             Icon::Symmetry => "symmetry",
             Icon::Support => "support",
+            Icon::Select => "select",
+            Icon::Move => "move",
+            Icon::Link => "link",
+            Icon::Delete => "delete",
+            Icon::AddPoint => "add-point",
+            Icon::OneString => "add-string",
+            Icon::TwoStrings => "two-strings",
+            Icon::InsertJoint => "insert-joint",
         }
     }
 
@@ -77,6 +109,14 @@ impl Icon {
             Icon::Generator => icon!("generator"),
             Icon::Symmetry => icon!("symmetry"),
             Icon::Support => icon!("support"),
+            Icon::Select => icon!("select"),
+            Icon::Move => icon!("move"),
+            Icon::Link => icon!("link"),
+            Icon::Delete => icon!("delete"),
+            Icon::AddPoint => icon!("add-point"),
+            Icon::OneString => icon!("add-string"),
+            Icon::TwoStrings => icon!("two-strings"),
+            Icon::InsertJoint => icon!("insert-joint"),
         }
     }
 

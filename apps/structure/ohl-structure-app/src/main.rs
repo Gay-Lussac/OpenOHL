@@ -41,17 +41,21 @@ mod generators_ui;
 mod help;
 mod icons;
 mod in_line_tab;
+mod inspector;
 mod layout;
 mod libraries;
 mod link_tool;
 mod load_cases_tab;
 mod menus;
+mod notices;
 mod plugins_ui;
 mod pole_panel;
 mod results_tab;
 mod section_editor;
 mod start;
+mod style;
 mod tables;
+mod tools;
 mod view;
 
 use std::path::PathBuf;
@@ -95,6 +99,8 @@ mod section_editor_tests;
 mod self_sufficient_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ui_review_tests;
 
 /// The version `--version` prints: the workspace version and the build id
 /// (the git commit built from). The line application compares it with its

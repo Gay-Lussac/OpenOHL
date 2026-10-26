@@ -290,8 +290,8 @@ impl StructureApp {
             ui.strong(format!("joints ({})", e.nodes.len()));
             let mut drop: Option<String> = None;
             egui::Grid::new("ext-joints").striped(true).show(ui, |ui| {
-                for h in ["joint", "x", "y", "z", "support", ""] {
-                    ui.strong(h);
+                for h in ["joint", "x [m]", "y [m]", "z [m]", "support", ""] {
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for n in &e.nodes {
@@ -303,7 +303,7 @@ impl StructureApp {
                         self.selected = vec![h];
                     }
                     for v in n.point {
-                        ui.label(format!("{:.3}", v.si()));
+                        crate::style::num_label(ui, format!("{:.3}", v.si()));
                     }
                     let now = n
                         .support
@@ -358,7 +358,7 @@ impl StructureApp {
             let mut drop: Option<String> = None;
             egui::Grid::new("ext-members").striped(true).show(ui, |ui| {
                 for h in ["member", "from", "to", "cross-section", ""] {
-                    ui.strong(h);
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for m in &e.members {

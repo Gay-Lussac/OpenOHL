@@ -289,7 +289,7 @@ It grows from today's structure workspace and structure desk.
 | **Design** | 3 | supports picked on joints; cross-sections shown by colour or size | cross-section per member or group (from the cross-section library), materials, member kind, `k`, supports, springs, joint details, `[analysis]` |
 | **Load cases** | any | loads as arrows at points, surface loads on members | the recipes and their evaluated loads (§2) |
 | **Results** | 3 | deformed shape, usage colours, reactions | members, nodes, reactions per case; report (§3) |
-| **In the line** | any | — | the places using this structure, their loads per case |
+| **Line loads** | any | — | the places using this structure, their loads per case |
 
 The header shows **Level N — name** and **for level N + 1:** the list
 from §1.4, each item clickable to its table row or picked in 3D.

@@ -73,8 +73,9 @@ fn a_structure_is_edited_undone_and_saved() {
     h.get_by_label("Level 3 — full design");
     assert_eq!(h.state().area, Area::Design);
     assert_eq!(h.state_mut().focused(), Some(Panel::Supports));
-    // The X-braces cross without a joint: advice, not a lack.
-    h.get_by_label("advice (40)");
+    // The X-braces cross without a joint: advice, not a lack (the
+    // header's "N to do").
+    h.get_by_label("40 to do");
     menu(&mut h, "Body", "Joints…");
     assert_eq!(h.state().area, Area::Body);
     h.state_mut().selected = vec![Handle::Joint("A1".into())];
@@ -106,15 +107,19 @@ fn a_structure_is_edited_undone_and_saved() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// A stick figure: level 1, and for level 2 what it lacks; the item
-/// clicked brings the Members panel to the front.
+/// A stick figure: level 1, and for level 2 what it lacks (the header's
+/// "N to do": the To do list); the item clicked brings the Members panel
+/// to the front.
 #[test]
 fn the_header_names_what_the_next_level_lacks() {
     let path = copy_of("type-01.ohls", "level");
     let mut h = harness(&path);
     h.get_by_label("Level 1 — stick figure");
-    h.get_by_label("for level 2:");
-    h.get_by_label("no member: build the body (Body › Generators › legs and panels), or add joints and members")
+    h.get_by_label_contains(" to do").click();
+    h.run();
+    assert_eq!(h.state_mut().focused(), Some(Panel::Level));
+    h.get_by_label_contains("For level 2");
+    h.get_by_label("\u{2022} no member: build the body (Body › Generators › legs and panels), or add joints and members")
         .click();
     h.run_steps(3);
     assert_eq!(h.state().area, Area::Body);

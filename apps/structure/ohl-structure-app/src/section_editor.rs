@@ -755,7 +755,7 @@ impl StructureApp {
                     "used",
                     "",
                 ] {
-                    ui.strong(h);
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for f in files {
@@ -926,7 +926,7 @@ impl StructureApp {
                 for h in [
                     "material", "name", "E", "G", "density", "fy", "fu", "file", "",
                 ] {
-                    ui.strong(h);
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for f in files {

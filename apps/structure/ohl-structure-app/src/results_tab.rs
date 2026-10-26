@@ -41,7 +41,7 @@ const ITERATIONS: u64 = 200;
 const CASE_TIME: Duration = Duration::from_secs(30);
 /// Usage from which a member is near full (as the line application's
 /// Usage page).
-const NEAR_FULL: f64 = 0.9;
+pub const NEAR_FULL: f64 = 0.9;
 
 /// The answer of a run: the cases solved, or why the run could not
 /// start (the model does not read, an extension not there).
@@ -550,7 +550,7 @@ impl StructureApp {
             .striped(true)
             .show(ui, |ui| {
                 for h in ["check", "usage", "governing case", "what governs"] {
-                    ui.strong(h);
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for s in run.checks() {
@@ -719,7 +719,7 @@ fn offset_moments_ui(
                 .striped(true)
                 .show(ui, |ui| {
                     for h in ["point", "joint", "Mx", "My", "Mz", "|M|", "at the joint"] {
-                        ui.strong(h);
+                        crate::style::header(ui, h, "");
                     }
                     ui.end_row();
                     for p in &r.points {
@@ -859,17 +859,17 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
             egui::Grid::new("reactions-grid")
                 .striped(true)
                 .show(ui, |ui| {
-                    for h in ["joint", "Fx kN", "Fy kN", "Fz kN", "M kN·m"] {
-                        ui.strong(h);
+                    for h in ["joint", "Fx [kN]", "Fy [kN]", "Fz [kN]", "M [kN·m]"] {
+                        crate::style::header(ui, h, "");
                     }
                     ui.end_row();
                     for x in &r.reactions {
                         ui.label(&x.joint);
                         for f in x.force {
-                            ui.monospace(format!("{:9.2}", f / 1000.0));
+                            crate::style::num_label(ui, format!("{:.2}", f / 1000.0));
                         }
                         let m = x.moment.iter().map(|v| v * v).sum::<f64>().sqrt();
-                        ui.monospace(format!("{:9.2}", m / 1000.0));
+                        crate::style::num_label(ui, format!("{:.2}", m / 1000.0));
                         ui.end_row();
                     }
                 });
@@ -883,28 +883,32 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult) {
             egui::Grid::new("members-grid")
                 .striped(true)
                 .show(ui, |ui| {
-                    for h in ["member", "axial kN", "usage", "governs"] {
-                        ui.strong(h);
+                    for h in ["member", "axial [kN]", "usage [%]", "governs"] {
+                        crate::style::header(ui, h, "");
                     }
                     ui.end_row();
                     for m in members {
                         ui.label(&m.id);
-                        ui.monospace(format!(
-                            "{:9.2}{}",
-                            m.axial / 1000.0,
-                            if m.slack {
-                                " slack"
-                            } else if m.bowed {
-                                " bowed"
-                            } else {
-                                ""
-                            }
-                        ));
-                        ui.colored_label(
-                            rgb(usage_colour(m.usage)),
-                            m.usage
-                                .map_or("—".into(), |u| format!("{:.0} %", u * 100.0)),
+                        crate::style::num_label(
+                            ui,
+                            format!(
+                                "{:.2}{}",
+                                m.axial / 1000.0,
+                                if m.slack {
+                                    " slack"
+                                } else if m.bowed {
+                                    " bowed"
+                                } else {
+                                    ""
+                                }
+                            ),
                         );
+                        crate::style::num(ui, |ui| {
+                            ui.colored_label(
+                                rgb(usage_colour(m.usage)),
+                                m.usage.map_or("—".into(), |u| format!("{:.0}", u * 100.0)),
+                            )
+                        });
                         ui.label(&m.governs);
                         ui.end_row();
                     }

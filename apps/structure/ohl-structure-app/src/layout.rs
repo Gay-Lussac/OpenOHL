@@ -17,8 +17,17 @@ use crate::app::{Sheet, StructureApp};
 /// Key of the arrangement in the window's storage.
 pub const DOCK_KEY: &str = "ols-structure-dock";
 
+/// Key of the arrangement's version in the window's storage.
+pub const DOCK_VERSION_KEY: &str = "ohl-structure-dock-version";
+
+/// The arrangement's version: an arrangement kept by an older version
+/// (none kept) gives way to the default once (owner, 2026-10-26: the
+/// calmer arrangement — the 3D view in the middle, the Inspector on its
+/// right, the tables as tabs below it).
+pub const DOCK_VERSION: u32 = 2;
+
 /// The menus of the work, in order: Geometry (level 1), Body (level 2),
-/// Design (level 3), Load cases, Results, In the line. Each panel belongs
+/// Design (level 3), Load cases, Results, Line loads. Each panel belongs
 /// to one (the 3D view and the level to none).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Area {
@@ -57,7 +66,7 @@ impl Area {
             Area::Design => "Design",
             Area::LoadCases => "Load cases",
             Area::Results => "Results",
-            Area::InTheLine => "In the line",
+            Area::InTheLine => "Line loads",
         }
     }
 
@@ -118,13 +127,16 @@ pub enum Panel {
     /// The libraries read and where from, what the structure names but
     /// none has (File › Libraries).
     Libraries,
+    /// What is selected, with its fields ([`crate::inspector`]).
+    Inspector,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 20] = [
+    pub const ALL: [Panel; 21] = [
         Panel::Level,
         Panel::View3d,
+        Panel::Inspector,
         Panel::Libraries,
         Panel::PointsInsulators,
         Panel::WiresSets,
@@ -148,7 +160,7 @@ impl Panel {
     /// Its title (on its tab and in the View menu).
     pub fn title(self) -> &'static str {
         match self {
-            Panel::Level => "Level",
+            Panel::Level => "To do",
             Panel::View3d => "3D view",
             Panel::PointsInsulators => "Points & strings",
             Panel::WiresSets => "Wire points & sets",
@@ -166,16 +178,23 @@ impl Panel {
             Panel::LoadRecipes => "Load case editor",
             Panel::LoadTable => "Load table",
             Panel::Results => "FE results",
-            Panel::InTheLine => "Line values",
+            Panel::InTheLine => "Line loads",
             Panel::Libraries => "Libraries",
+            Panel::Inspector => "Inspector",
         }
     }
 
     /// What it shows (the menus' hover text).
     pub fn tip(self) -> &'static str {
         match self {
-            Panel::Level => "The level, what the next one lacks (each item shows its row), advice",
-            Panel::View3d => "The structure in 3D: pick, drag joints and points",
+            Panel::Level => {
+                "What the next level lacks, then advice: each item shows its row and selects its \
+                 object"
+            }
+            Panel::View3d => {
+                "The structure in 3D: select, and the hotbar's tools (move, add, link, delete)"
+            }
+            Panel::Inspector => "What is selected, with its fields to edit",
             Panel::PointsInsulators => {
                 "Where strings hang on the structure, and the strings from them"
             }
@@ -221,7 +240,7 @@ impl Panel {
     /// libraries).
     pub fn area(self) -> Option<Area> {
         Some(match self {
-            Panel::Level | Panel::View3d | Panel::Libraries => return None,
+            Panel::Level | Panel::View3d | Panel::Libraries | Panel::Inspector => return None,
             Panel::PointsInsulators | Panel::WiresSets | Panel::StructureFields => Area::Geometry,
             Panel::Joints
             | Panel::Members
@@ -315,35 +334,35 @@ impl Panel {
     }
 }
 
-/// The default arrangement: the level at the top left, under it the
-/// geometry and body tables, the design tables, then the loads and
-/// results — groups of a few tabs each, so that every tab's title shows;
-/// the 3D view on the right (about 45 / 55).
+/// The default arrangement (owner, 2026-10-26: calmer): the 3D view
+/// large in the middle with its hotbar, the Inspector on its right (the
+/// To do list behind it), and below the view one area of tables as tabs —
+/// geometry, body, design, loads, results. The header (file, level, to
+/// do) is above them all, not a panel.
 pub fn default_dock() -> DockState<Panel> {
     let mut dock = DockState::new(vec![Panel::View3d]);
     let tree = dock.main_surface_mut();
-    let [_, left] = tree.split_left(NodeIndex::root(), 0.45, vec![Panel::Level]);
-    let [_, tables] = tree.split_below(
-        left,
-        0.13,
+    let [view, _] = tree.split_right(NodeIndex::root(), 0.8, vec![Panel::Inspector, Panel::Level]);
+    // As many tables as show their titles (Groups, Line loads and the
+    // others open beside them from their menus).
+    tree.split_below(
+        view,
+        0.6,
         vec![
             Panel::PointsInsulators,
             Panel::WiresSets,
             Panel::Joints,
             Panel::Members,
             Panel::Generators,
+            Panel::Supports,
+            Panel::MemberSections,
+            Panel::LoadTable,
+            Panel::Results,
         ],
     );
-    let [_, design] = tree.split_below(
-        tables,
-        0.4,
-        vec![Panel::Supports, Panel::MemberSections, Panel::Groups],
-    );
-    tree.split_below(
-        design,
-        0.42,
-        vec![Panel::LoadTable, Panel::Results, Panel::InTheLine],
-    );
+    if let Some(path) = dock.find_tab(&Panel::Inspector) {
+        let _ = dock.set_active_tab(path);
+    }
     dock
 }
 
@@ -392,13 +411,32 @@ pub fn open_panel(dock: &mut DockState<Panel>, panel: Panel) {
                 dock.main_surface_mut()
                     .split_right(NodeIndex::root(), 0.45, vec![panel]);
             }
-            Panel::Level => match tables {
-                Some(at) if at.surface == egui_dock::SurfaceIndex::main() => {
-                    dock.main_surface_mut()
-                        .split_above(at.node, 0.2, vec![panel]);
+            // The Inspector and the To do list on the right of the view,
+            // together.
+            Panel::Level | Panel::Inspector => {
+                let other = if panel == Panel::Level {
+                    Panel::Inspector
+                } else {
+                    Panel::Level
+                };
+                match (dock.find_tab(&other), dock.find_tab(&Panel::View3d)) {
+                    (Some(at), _) => {
+                        dock.set_focused_node_and_surface(at.node_path());
+                        dock.push_to_focused_leaf(panel);
+                    }
+                    (None, Some(view)) if view.surface == egui_dock::SurfaceIndex::main() => {
+                        dock.main_surface_mut()
+                            .split_right(view.node, 0.8, vec![panel]);
+                    }
+                    _ => match tables {
+                        Some(at) if at.surface == egui_dock::SurfaceIndex::main() => {
+                            dock.main_surface_mut()
+                                .split_above(at.node, 0.2, vec![panel]);
+                        }
+                        _ => dock.push_to_first_leaf(panel),
+                    },
                 }
-                _ => dock.push_to_first_leaf(panel),
-            },
+            }
             _ => match home(dock, panel) {
                 Some(at) => {
                     dock.set_focused_node_and_surface(at);
@@ -476,7 +514,7 @@ impl TabViewer for Viewer<'_> {
     /// loads and the results in the dock's scroll area.
     fn scroll_bars(&self, tab: &Panel) -> [bool; 2] {
         match tab {
-            Panel::Level => [false, true],
+            Panel::Level | Panel::Inspector => [false, true],
             Panel::Libraries
             | Panel::LoadRecipes
             | Panel::LoadTable

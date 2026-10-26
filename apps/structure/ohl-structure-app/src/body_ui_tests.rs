@@ -78,10 +78,10 @@ fn a_body_is_generated_grouped_and_undone() {
         .map(|m| m.id.as_str())
         .collect();
     assert_eq!(grouped, ["body-M1", "body-M2"]);
-    // Design › Groups lists it (the members' table beside it too).
+    // Design › Groups lists it.
     menu(&mut h, "Design", "Groups…");
     assert_eq!(h.state_mut().focused(), Some(crate::layout::Panel::Groups));
-    assert!(h.get_all_by_label("main-leg").count() >= 2);
+    assert!(h.get_all_by_label("main-leg").count() >= 1);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
@@ -97,7 +97,7 @@ fn generator_options_in_the_forms() {
     h.get_by_label("legs and panels").click();
     h.run();
     assert_eq!(h.state().body.preview.len(), 64);
-    for header in ["width", "redundants", "plan"] {
+    for header in ["Width", "Redundants", "Plan"] {
         assert!(h.query_by_label(header).is_some(), "{header}");
     }
     if let Some(f) = &mut h.state_mut().body.form

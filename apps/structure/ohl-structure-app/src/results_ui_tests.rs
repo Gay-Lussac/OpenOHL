@@ -132,6 +132,16 @@ fn results_follow_the_extension_chosen() {
     assert_eq!((ext, joint.as_str()), (None, "N0"));
     assert!((m + 10_000.0).abs() < 1e-3, "{m}");
     h.get_by_label("Solved as written");
+    // The members coloured by usage, the legend in the view (an image of
+    // it with OHL_RENDER_PNG).
+    if ohl_render::headless_device().is_ok()
+        && let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+    {
+        let image = h.render().unwrap();
+        image
+            .save(Path::new(&dir).join("ohl-structure-usage-legend.png"))
+            .unwrap();
+    }
     // The extension chosen (as its combo box does): solved again.
     h.state_mut().ext.shown = Some("+2".into());
     h.run();
