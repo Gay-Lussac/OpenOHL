@@ -139,3 +139,117 @@ fn layer_groups_fold() {
         assert_eq!(n, 1, "{layer:?}");
     }
 }
+
+/// Vertical clearances (owner: OHL-Design UI review, 2026-10-26): one
+/// table of rules edited in place — no separate "Add a rule" form; Add
+/// rule adds a row, a name typed in its row is kept —; run, the result
+/// first: a banner with the worst margin, its span and case, red below a
+/// rule; a click on it (or on a row) brings the views there.
+#[test]
+fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
+    let model = synthetic();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1600.0))
+        .build_eframe(|_| App::with_model(model, None));
+    h.run();
+    open_clearance_window(&mut h, "Vertical clearances…");
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-ui-review-v", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    h.state_mut().ready().unwrap().vertical_clearances.file = Some(dir.join("rules.ohlr"));
+    h.run();
+    assert!(
+        h.query_by_label_contains("Add a rule").is_none(),
+        "no second form"
+    );
+    assert!(h.query_by_label("Add this rule").is_none());
+    // Help behind a (?), one short line kept.
+    assert!(h.query_all_by_label("(?)").next().is_some());
+    // Add rule: a row more.
+    h.get_by_label("Add rule").click();
+    h.run();
+    assert_eq!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .vertical_clearances
+            .rules
+            .len(),
+        2
+    );
+    // Its name typed in its row.
+    let field = h
+        .query_all_by_value("Rule 2")
+        .next()
+        .expect("the new row's name");
+    field.focus();
+    h.run();
+    h.query_all_by_value("Rule 2")
+        .next()
+        .unwrap()
+        .type_text(" high");
+    h.run();
+    h.run();
+    {
+        let w = &mut h.state_mut().ready().unwrap().vertical_clearances;
+        assert_eq!(w.rules[1].name, "Rule 2 high");
+        // The distances (a requirement each) and the targets, as their
+        // rows set them: the ground far too close in high wind.
+        w.rules[0].distance = ohl_clearance::Requirement::Fixed(5.0);
+        w.rules[1].distance = ohl_clearance::Requirement::Fixed(100.0);
+        w.rules[1].ground = true;
+        w.rules[1].cases = vec!["high wind".into()];
+    }
+    h.run();
+    h.get_by_label("Run").click();
+    let started = std::time::Instant::now();
+    loop {
+        h.step();
+        if let (Some(_), false) = h.state_mut().ready().unwrap().vertical_clearances.result() {
+            break;
+        }
+        assert!(started.elapsed().as_secs() < 90, "no report in 90 s");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    h.run();
+    let (worst, margin) = {
+        let w = &h.state_mut().ready().unwrap().vertical_clearances;
+        let Some(Ok(rep)) = &w.report else {
+            panic!("a report")
+        };
+        let f = rep
+            .zone
+            .findings
+            .iter()
+            .min_by(|a, b| (a.distance - a.required).total_cmp(&(b.distance - b.required)))
+            .unwrap();
+        (
+            Selection::Span {
+                section: f.section.clone(),
+                span: f.span,
+            },
+            f.distance - f.required,
+        )
+    };
+    assert!(margin < 0.0);
+    let banner = h
+        .query_all_by_label_contains("worst margin")
+        .next()
+        .expect("the result banner");
+    let text = format!("{banner:?}");
+    assert!(text.contains(&format!("{margin:+.2} m")), "{text}");
+    assert!(
+        text.contains(&worst.describe()) && text.contains("high wind"),
+        "{text}"
+    );
+    assert!(text.contains("✖"), "red: below a rule");
+    h.query_all_by_label_contains("worst margin")
+        .next()
+        .unwrap()
+        .click();
+    h.run();
+    assert_eq!(h.state_mut().ready().unwrap().selection, worst);
+    // The units in the result table's headers.
+    h.get_by_label("Required [m]");
+    h.get_by_label("To surface [m]");
+    std::fs::remove_dir_all(dir).ok();
+}

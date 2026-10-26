@@ -19,15 +19,17 @@ the starter's invented values, not those of any regulation.
 2. **Vertical clearances.** **Checks › Ground clearances › Vertical
    clearances…**. The window starts with one rule, *Ground*, its
    distance still to set: in the **Rules** table type **7** m in its
-   **distance** (one distance, every voltage, every weather case). Click
-   **Run**. The result: no span below the rule; the lowest clearance,
-   between 9 and 10 m, at the maximum temperature.
+   **Distance** (one distance, every voltage, every weather case). Click
+   **Run**. The result, in the green banner at the top: every span
+   clear, the worst margin between 2 and 3 m (the lowest clearance,
+   between 9 and 10 m, at the maximum temperature).
 3. **See a failure.** Hold **Edit**, click a span of S1, set its
    **horizontal tension** to **10 kN** and **Apply**. The vertical
    clearances window says its result is out of date: **Run again**. Now
-   *S1 span 3* is listed below the rule (about 6.3 m at the maximum
-   temperature), red in the window and marked red in the views. Click
-   the span in the list to go to it. Then **Undo** (⌘Z / Ctrl+Z) and
+   the banner is red — *S1 span 3* below the rule (about 6.3 m at the
+   maximum temperature, a margin of about −0.7 m) — and the span is
+   marked red in the views. Click the banner (or the span's row) to go
+   to it. Then **Undo** (⌘Z / Ctrl+Z) and
    **Run** again: clear. Close the window.
 4. **Wire tensions.** **Checks › Wire tensions…**. Click **Add rule** and
    type its **factor of RTS**: **0.5** (each wire may carry half its rated

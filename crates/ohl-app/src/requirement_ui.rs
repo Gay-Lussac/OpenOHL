@@ -4,7 +4,7 @@
 
 //! A distance rule, as the user sets it wherever one is edited (the
 //! Clearances tab's rule editor, the Vertical / Radial clearances windows'
-//! rule tables and their "Add a rule", the vegetation panel's clearance
+//! rule tables, the vegetation panel's clearance
 //! and allowance, the safety-volume distance): one shared component.
 //!
 //! - A **form selector** "One distance | Table by voltage | Base + per

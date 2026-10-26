@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use ohl_clearance::rules::Requirement;
-use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneRule};
+use ohl_clearance::zone::{self, Imported, Measure, WindState, Zone, ZoneFinding, ZoneRule};
 use ohl_clearance::{CheckScope, RuleSet, WindSteps};
 use ohl_core::budget::{Budget, CancelToken};
 use ohl_line::condition::Method;
@@ -128,8 +128,6 @@ pub struct ZoneWindow {
     /// window's rules and settings ([`crate::revision`]).
     stamp: crate::revision::Stamp,
     rules_hash: (Option<u64>, Option<u64>),
-    /// The "Add a rule" helper's fields.
-    pub draft: ZoneRule,
     /// The plugin preset chosen in the dropdown (plugin, preset).
     pub plugin_preset: Option<(usize, usize)>,
     /// A plugin preset loaded this frame, for [`Out::plugin_preset`].
@@ -198,7 +196,6 @@ impl ZoneWindow {
             loaded_preset: None,
             stamp: Default::default(),
             rules_hash: (None, None),
-            draft: first_rule(),
             generation: 0,
             drawn: None,
         }
@@ -314,6 +311,13 @@ impl ZoneWindow {
         if self.rules.is_empty() {
             self.rules.push(first_rule());
         }
+    }
+
+    /// The rules changed (as an edit in the table: written to the rule
+    /// file once the mouse is up; tests).
+    #[cfg(test)]
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 
     /// Why the check cannot run, if it cannot (shown at Run).
@@ -1089,14 +1093,12 @@ impl ZoneWindow {
              and the ground surface of the checks. A preset (a design code's) replaces the rules \
              with its own, with its wind and what it solves.",
         );
-        self.add_rule_ui(ui, model);
         ui.horizontal(|ui| {
-            ui.strong("Rules");
             if ui
                 .button("Add rule")
                 .on_hover_text(
-                    "A blank row to fill in the table (its distance and targets to set); \
-                     Add a rule above asks for them first",
+                    "A new row at the end of the table: set its distance and its targets \
+                     there (edited in place, kept with the project)",
                 )
                 .clicked()
             {
@@ -1205,16 +1207,16 @@ impl ZoneWindow {
                     .show(ui, |ui| {
                         let vertical = self.zone.measure == Measure::Vertical;
                         for h in [
-                            "name",
-                            "voltages",
-                            "weather cases",
-                            "distance",
-                            "width m",
-                            "wires",
-                            "targets",
+                            "Name",
+                            "Voltages",
+                            "Weather cases",
+                            "Distance",
+                            "Width [m]",
+                            "Wires",
+                            "Targets",
                             "",
                         ] {
-                            if h == "width m" {
+                            if h == "Width [m]" {
                                 if vertical {
                                     ui.strong(h).on_hover_text(
                                         "The rule's own half width of the zone across the \
@@ -1290,84 +1292,6 @@ impl ZoneWindow {
             });
         }
         preset
-    }
-
-    /// "Add a rule": plain fields for one rule (what, voltage, distance,
-    /// weather cases) and what they mean; the window's first rule while
-    /// it is a placeholder is replaced by it.
-    fn add_rule_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
-        let first = self.rules.len() == 1 && self.rules[0] == first_rule();
-        let (title, measure) = (self.title(), self.zone.measure);
-        egui::CollapsingHeader::new(egui::RichText::new("Add a rule").strong())
-            .id_salt((title, "add-a-rule"))
-            .default_open(first)
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "A rule says how close the wires may come to a target: the ground, or \
-                         LiDAR points of some classes (vegetation, buildings…). Take the \
-                         distance from the regulation you work to — none is given here: one \
-                         distance, a table \"up to kV: distance\" or a base plus an amount \
-                         per kV, so that one rule covers every voltage: no voltage is needed \
-                         then. The voltages (optional; with a table or a formula behind \
-                         \"Only for some voltages…\") and the weather cases narrow where it \
-                         applies (none, every case: everywhere).",
-                    )
-                    .small()
-                    .weak(),
-                );
-                let d = &mut self.draft;
-                let classes = cloud_classes(model, std::slice::from_ref(d));
-                let voltages = line_voltages(model);
-                let cases: Vec<String> = model.cases.iter().map(|c| c.case.name.clone()).collect();
-                let groups = crate::case_groups::groups(model);
-                egui::Grid::new((title, "add-rule-grid"))
-                    .num_columns(2)
-                    .spacing([10.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(200.0));
-                        ui.end_row();
-                        ui.label("What");
-                        targets_ui(ui, (measure, usize::MAX), d, &classes, model);
-                        ui.end_row();
-                        // The distance first: whether a voltage means
-                        // anything follows from it.
-                        ui.label("Distance");
-                        crate::requirement_ui::requirement_ui(
-                            ui,
-                            ("zone-distance", measure.as_str(), usize::MAX),
-                            &mut d.distance,
-                            &voltages,
-                        );
-                        ui.end_row();
-                        ui.label("Voltages");
-                        voltage_ui(ui, (measure, usize::MAX), d, &voltages);
-                        ui.end_row();
-                        ui.label("Weather cases");
-                        cases_ui(ui, (measure, usize::MAX), d, &cases, &groups);
-                        ui.end_row();
-                    });
-                let why = not_ready(d);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(why.is_none(), egui::Button::new("Add this rule"))
-                        .on_disabled_hover_text(why.clone().unwrap_or_default())
-                        .clicked()
-                    {
-                        let rule = std::mem::replace(d, first_rule());
-                        if first {
-                            self.rules[0] = rule;
-                        } else {
-                            self.rules.push(rule);
-                        }
-                        self.dirty = true;
-                    }
-                    if let Some(w) = why {
-                        ui.label(egui::RichText::new(w).small().weak());
-                    }
-                });
-            });
     }
 
     /// The Run row; true to start a check.
@@ -1460,16 +1384,16 @@ impl ZoneWindow {
             Some(Ok(r)) => r,
         };
         let n = report.zone.findings.len();
+        let mut go = None;
+        if let Some(g) = result_banner(ui, report) {
+            go = Some(g);
+        }
         let head = format!(
             "{n} span{} below a rule; {} LiDAR points read",
             if n == 1 { "" } else { "s" },
             report.zone.points
         );
-        if n == 0 {
-            ui.colored_label(crate::menu::ok_color(ui), head);
-        } else {
-            ui.colored_label(ui.visuals().error_fg_color, head);
-        }
+        ui.label(egui::RichText::new(head).small().weak());
         let mut notes: Vec<String> = Vec::new();
         for (k, low) in report.zone.lowest.iter().enumerate() {
             let name = &report.rules[k].name;
@@ -1493,9 +1417,8 @@ impl ZoneWindow {
             None,
         );
         if n == 0 {
-            return None;
+            return go;
         }
-        let mut go = None;
         egui::ScrollArea::vertical()
             .id_salt((self.title(), "results"))
             .max_height(LIST_HEIGHT)
@@ -1505,16 +1428,23 @@ impl ZoneWindow {
                     .striped(true)
                     .spacing([12.0, 3.0])
                     .show(ui, |ui| {
-                        for h in [
-                            "span",
-                            "rule",
-                            "required m",
-                            "to surface m",
-                            "wind",
-                            "target",
-                            "too close",
-                        ] {
-                            ui.strong(h);
+                        for (k, h) in [
+                            "Span",
+                            "Rule",
+                            "Required [m]",
+                            "To surface [m]",
+                            "Wind",
+                            "Target",
+                            "Too close",
+                        ]
+                        .into_iter()
+                        .enumerate()
+                        {
+                            if (2..4).contains(&k) {
+                                num(ui, |ui| ui.strong(h));
+                            } else {
+                                ui.strong(h);
+                            }
                         }
                         ui.end_row();
                         for f in &report.zone.findings {
@@ -1525,21 +1455,32 @@ impl ZoneWindow {
                                     span: f.span,
                                 },
                             };
-                            if ui
-                                .link(span.describe())
-                                .on_hover_text("Select the span and bring the views to it")
-                                .clicked()
-                            {
-                                go = Some((span, f.wire));
-                            }
-                            ui.label(&report.rules[f.rule].name);
-                            ui.label(format!("{:.2}", f.required));
-                            ui.colored_label(
-                                ui.visuals().error_fg_color,
-                                format!("{:.2}", f.distance),
-                            );
+                            // A click anywhere on the row: the views go
+                            // to it (owner: OHL-Design UI review).
+                            let tip = "Select the span and bring the views to it";
+                            let cell = |ui: &mut egui::Ui, t: egui::RichText| {
+                                ui.add(egui::Label::new(t).sense(egui::Sense::click()))
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text(tip)
+                                    .clicked()
+                            };
+                            let mut clicked = ui.link(span.describe()).on_hover_text(tip).clicked();
+                            clicked |= cell(ui, egui::RichText::new(&report.rules[f.rule].name));
+                            clicked |= num(ui, |ui| {
+                                cell(ui, egui::RichText::new(format!("{:.2}", f.required)))
+                            });
+                            clicked |= num(ui, |ui| {
+                                cell(
+                                    ui,
+                                    egui::RichText::new(format!("{:.2}", f.distance))
+                                        .color(ui.visuals().error_fg_color),
+                                )
+                            });
                             ui.label(f.wind(&report.states))
                                 .on_hover_text(f.position(&report.states));
+                            if clicked {
+                                go = Some((span.clone(), f.wire));
+                            }
                             ui.label(match f.class {
                                 None => "ground".into(),
                                 Some(c) => format!(
@@ -1566,6 +1507,83 @@ impl ZoneWindow {
             });
         go
     }
+}
+
+/// `add` right-aligned in its cell (a number column of a grid).
+fn num<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add)
+        .inner
+}
+
+/// The span a finding is on (a jumper's: the jumper).
+fn finding_span(f: &ZoneFinding) -> Selection {
+    match f.section.strip_prefix("jumper:") {
+        Some(j) => Selection::Jumper(j.to_owned()),
+        None => Selection::Span {
+            section: f.section.clone(),
+            span: f.span,
+        },
+    }
+}
+
+/// The result first, in one banner (owner: OHL-Design UI review,
+/// 2026-10-26): the worst margin (clearance found less the one required)
+/// over every rule, where and in which weather case, red below a rule,
+/// green when every span is clear; a click on it brings the views there.
+fn result_banner(ui: &mut egui::Ui, report: &Report) -> Option<(Selection, [f64; 3])> {
+    let worst = report
+        .zone
+        .findings
+        .iter()
+        .chain(report.zone.lowest.iter().flatten())
+        .min_by(|a, b| (a.distance - a.required).total_cmp(&(b.distance - b.required)));
+    let failing = !report.zone.findings.is_empty();
+    let color = if failing {
+        ui.visuals().error_fg_color
+    } else {
+        crate::menu::ok_color(ui)
+    };
+    let text = match worst {
+        Some(f) => {
+            let margin = f.distance - f.required;
+            let case = &report.states[f.state].name;
+            let lead = if failing {
+                format!("✖ {} spans below a rule", report.zone.findings.len())
+            } else {
+                "✔ Every span clear".to_owned()
+            };
+            format!(
+                "{lead} — worst margin {margin:+.2} m: {}, case {case} ({}, {:.2} m of {:.2} m)",
+                finding_span(f).describe(),
+                report.rules[f.rule].name,
+                f.distance,
+                f.required
+            )
+        }
+        None if failing => "✖ Spans below a rule".to_owned(),
+        None => "✔ Every span clear (nothing within reach of the rules)".to_owned(),
+    };
+    let r = egui::Frame::group(ui.style())
+        .stroke(egui::Stroke::new(1.5, color))
+        .fill(color.gamma_multiply(0.12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(
+                egui::Label::new(egui::RichText::new(&text).strong().color(color))
+                    .sense(egui::Sense::click()),
+            )
+        })
+        .inner;
+    let r = match worst {
+        Some(_) => r
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Bring the views to it"),
+        None => r,
+    };
+    if r.clicked() {
+        return worst.map(|f| (finding_span(f), f.wire));
+    }
+    None
 }
 
 /// The check, on its own thread ([`zone::run_zone_check`]; the points

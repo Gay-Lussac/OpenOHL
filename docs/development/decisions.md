@@ -66,6 +66,22 @@ project's.
   **Shift + click adds** — OHL-Design's selection holds one object; a
   selection of several needs the model of the selection, the views' highlight
   and Properties reworked (left for the owner to decide).
+- **Check windows: Vertical and Radial clearances** (one window's code,
+  the pattern for the others): the result first — a banner with the
+  worst margin over every rule (clearance found less required), its span
+  and weather case, red below a rule, green when every span is clear; a
+  click on it or on a result row brings the views there —; the rules one
+  table edited in place (the "Add a rule" form removed; **Add rule** adds
+  a row; the preset choice stays); headers in sentence case with units;
+  the table scrolls sideways. Every check window's explanations
+  (`check_help::explain`) are one short line and a **(?)**, the whole
+  text on hover. Run stays in the footer at the bottom left, its timing
+  small and weak. The Clearances tab (wire clearances) is not reworked
+  yet.
+- **Add structure window**: the explanation under *Also on other points
+  of this alignment* is one line and a (?); the structure preview's
+  labels no longer overlap — each moved a line down or up when that is
+  free, else left out and shown while the pointer is near its point.
 - **OHL-Structure**: the 3D view's fit takes in the compass's angles
   written around the feet and centres the structure in the room above
   the hotbar ("270° left" and "180° back" were under it).

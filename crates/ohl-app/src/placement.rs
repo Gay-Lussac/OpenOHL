@@ -157,16 +157,15 @@ impl MorePoints {
             .as_ref()
             .map(|(l, _)| l.iter().map(|t| t.id.clone()).collect())
             .unwrap_or_default();
-        ui.label(
-            egui::RichText::new(
-                "The points ticked get a structure too, in the same command (one undo): the \
-                 type above, or a row's own (a strain type at an alignment point). Each stands on \
-                 its point, tied to it, turned along the line (the bisector at an angle); then \
-                 it stays as placed — Properties › Placement… › Put it on the line again turns \
-                 it again.",
-            )
-            .small()
-            .weak(),
+        // One short line; the explanation behind its (?) (owner:
+        // OHL-Design UI review, 2026-10-26).
+        crate::check_help::explain(
+            ui,
+            "The points ticked get a structure too (one undo).",
+            "The points ticked get a structure too, in the same command (one undo): the type \
+             above, or a row's own (a strain type at an alignment point). Each stands on its \
+             point, tied to it, turned along the line (the bisector at an angle); then it stays \
+             as placed — Properties › Placement… › Put it on the line again turns it again.",
         );
         ui.horizontal(|ui| {
             if ui.small_button("All").clicked() {
@@ -189,9 +188,9 @@ impl MorePoints {
                     .striped(true)
                     .show(ui, |ui| {
                         ui.strong("#");
-                        ui.strong("point");
-                        ui.strong("put");
-                        ui.strong("type");
+                        ui.strong("Point");
+                        ui.strong("Put");
+                        ui.strong("Type");
                         ui.end_row();
                         for r in &mut self.rows {
                             ui.label((r.index + 1).to_string());

@@ -4,7 +4,7 @@
 
 //! Clearance rules by voltage in the application: the Clearances tab's
 //! rule editor (a table "up to kV", a base plus an amount per kV, their
-//! preview, Undo), the clearance windows' "Add a rule", and a design-code
+//! preview, Undo), the clearance windows' rule rows, and a design-code
 //! plugin's rule preset loaded into the rule file; the voltage filter
 //! (no voltage needed with a table or a formula), Merge rules by voltage
 //! and Remove all rules.
@@ -169,9 +169,9 @@ fn the_rule_editor_sets_distances_by_voltage() {
     );
 }
 
-/// The vertical clearances window's "Add a rule": the distance as a base
-/// plus an amount per kV, the warning until it is set, the rule written
-/// with its formula.
+/// The vertical clearances window's rule, edited in its row: the distance
+/// as a base plus an amount per kV, the warning until it is set, the rule
+/// written with its formula.
 #[test]
 fn add_a_rule_takes_a_distance_by_voltage() {
     let model = synthetic_project("add-rule-by-voltage");
@@ -185,12 +185,8 @@ fn add_a_rule_takes_a_distance_by_voltage() {
     harness.run();
     harness.get_by_label("Vertical clearances…").click();
     harness.run();
-    // The helper's form selector is the first; the grid's row the second.
-    harness
-        .query_all_by_label("Base + per kV")
-        .next()
-        .unwrap()
-        .click();
+    // The first rule's row (the only one): its form selector.
+    harness.get_by_label("Base + per kV").click();
     harness.run();
     assert!(
         harness
@@ -200,14 +196,14 @@ fn add_a_rule_takes_a_distance_by_voltage() {
     );
     {
         let w = &mut harness.state_mut().ready().unwrap().vertical_clearances;
-        w.draft.distance = Requirement::Formula {
+        w.rules[0].distance = Requirement::Formula {
             base: 6.0,
             per_kv: 0.01,
             above_kv: 0.0,
         };
+        // (As a field typed: written once the mouse is up.)
+        w.mark_dirty();
     }
-    harness.run();
-    harness.get_by_label("Add this rule").click();
     harness.run();
     harness.run();
     let w = &harness.state_mut().ready().unwrap().vertical_clearances;
@@ -527,7 +523,7 @@ vertical = "6 m"
     assert_eq!(rules_of(&file).rules[1].voltages, vec![220.0]);
 }
 
-/// The vertical window's rule rows and "Add a rule": with one distance
+/// The vertical window's rule rows: with one distance
 /// the voltages are a tick menu (every voltage when none is ticked); with
 /// a table, behind "Only for some voltages…", off.
 #[test]
@@ -542,8 +538,8 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         r.vertical_clearances.show(&r.model);
     }
     harness.run();
-    // The first rule and the helper: one distance each.
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
+    // The first rule: one distance.
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
     assert_eq!(
         harness
             .query_all_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
@@ -555,7 +551,7 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         w.rules[0].distance = Requirement::ByVoltage(vec![(400.0, 7.0)]);
     }
     harness.run();
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 0);
     assert!(!ticked(
         &harness.get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
     ));
@@ -574,7 +570,7 @@ fn a_clearance_window_rule_needs_no_voltage_for_a_table() {
         .get_by_label(crate::requirement_ui::ONLY_SOME_VOLTAGES)
         .click();
     harness.run();
-    assert_eq!(harness.query_all_by_label("every voltage").count(), 2);
+    assert_eq!(harness.query_all_by_label("every voltage").count(), 1);
 }
 
 /// "Merge rules by voltage": offered only with rules alike but for one
