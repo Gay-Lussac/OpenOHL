@@ -1548,7 +1548,8 @@ fn result_banner(ui: &mut egui::Ui, report: &Report) -> Option<(Selection, [f64;
             let margin = f.distance - f.required;
             let case = &report.states[f.state].name;
             let lead = if failing {
-                format!("✖ {} spans below a rule", report.zone.findings.len())
+                let n = report.zone.findings.len();
+                format!("✖ {n} span{} below a rule", if n == 1 { "" } else { "s" })
             } else {
                 "✔ Every span clear".to_owned()
             };
