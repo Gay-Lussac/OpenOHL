@@ -513,7 +513,7 @@ impl WireSet {
     /// [`WireSet::new`] with the cells' segments in blocks by group:
     /// `group[w]` for wire `w` (e.g. a span's positions in several wind
     /// states). A point checked passes a whole block over when it is
-    /// beyond the reach of all of its segments ([`PointCheck::eval`]);
+    /// beyond the reach of all of its segments ([`PointCheck`]);
     /// only the speed changes (within a wire the segments keep their
     /// order, and the wires' order does not matter to the results).
     pub fn grouped(wires: Vec<Wire>, reach: f64, group: &[usize]) -> Self {
@@ -1377,7 +1377,7 @@ pub fn ground_check_with(
 /// order) and its largest counts are wanted, as the zone check reports
 /// them (owner, 2026-10-26). A group's wires are checked in their order
 /// on one thread, each with the group's smallest clearances so far as
-/// its bound ([`ground_wire`], as a swing arc's lines are): a piece or
+/// its bound (`ground_wire`, as a swing arc's lines are): a piece or
 /// sample that can come neither below them nor below the requirement is
 /// passed over. The groups run in parallel. Each wire's counts are those
 /// of [`ground_check_with`]; its clearances only where it is the group's
