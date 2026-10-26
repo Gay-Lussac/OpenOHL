@@ -53,7 +53,8 @@ mod coupled;
 mod memo;
 mod ruling_span;
 pub use coupled::*;
-pub use memo::forget_solves;
+pub(crate) use memo::live_memo;
+pub use memo::{forget_solves, solve_line_memo, solve_line_memo_default};
 pub use ruling_span::*;
 
 /// Point loads closer than this to a span's end (along the wire), m, are

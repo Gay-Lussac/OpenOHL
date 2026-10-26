@@ -426,6 +426,20 @@ impl SolvedLine {
         solved
     }
 
+    /// [`SolvedLine::solve`] taken from a memo of whole solves when the
+    /// same line (every field), library and case were solved so before
+    /// (performance review, 2026-10-26: the checks solving their cases
+    /// again — internal clearances, phase distances). The same solution
+    /// bit for bit; never a case updated edit by edit.
+    pub fn solve_memo(line: &Line, library: &ohl_cables::Library, case: &WeatherCase) -> Self {
+        crate::solve::live_memo(line, library, case)
+    }
+
+    /// Every section's result, by id.
+    pub(crate) fn section_results(&self) -> impl Iterator<Item = &Result<SectionShape, LineError>> {
+        self.sections.values()
+    }
+
     /// The weather case.
     pub fn case(&self) -> &WeatherCase {
         &self.case

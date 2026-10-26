@@ -560,6 +560,33 @@ Maybe make a toolbar as is the case in the OHL design app."
   bit (the `{:?}` dumps of every solve compared; a test solves each
   calculation from the memo and from scratch).
 
+**Performance review: whole solves kept for the checks (owner, 2026-10-26)**
+
+- Every check solved its weather cases and wind states again on every
+  run, and each check its own: changing a rule, or the vegetation check
+  after the clearance check, paid the solves again.
+- `ohl_line::solve::solve_line_memo` (`solve_line_memo_default`: with the
+  default exit clauses) keeps whole line solves keyed by a 128-bit
+  fingerprint of the line (every field, the condition cases too), the
+  wire library, the weather case and the iteration limit; the clearance
+  zones (`zone::solve_states`), vegetation and safety volumes
+  (`positions::solve_positions`), wire tensions and string checks take
+  their solves from it. The internal clearances and the phase distance
+  solve as OHL-Design's model does (`incremental::SolvedLine::solve`,
+  its jumpers with it — not the same code as `solve_line_with`, so a
+  memo of its own: `SolvedLine::solve_memo`, `Solved::new_memo`); those
+  two share it. Never OHL-Design's cases updated edit by edit.
+- Invalidation: an edit is another key, so an old solve is never taken
+  for it; the solves of a line no longer among the last four solved are
+  dropped, and beyond about 256 MB per memo the least recently used go
+  first. A solve stopped by a time limit or a cancel is not kept.
+- Measured: the invented 60-span line's swing arc after its wind steps
+  (the same still and full-wind states) 1.01 s → 0.01 s CPU; a check run
+  again with the line unchanged takes no solve at all. The same results
+  bit for bit (the dumps and every `ohl` check output on the synthetic
+  lines compared; a test checks the memo against a fresh solve and that
+  an edit is solved again).
+
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
 
 - A sheet template's stringing table repeated the band row's values: a

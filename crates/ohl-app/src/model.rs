@@ -285,6 +285,14 @@ impl Solved {
         Self::from_live(line, case, live)
     }
 
+    /// [`Solved::new`], the solve taken from the memo of whole solves when
+    /// solved so before (the checks running their cases again; the same
+    /// solution bit for bit; never the model's cases updated edit by edit).
+    pub fn new_memo(line: &Line, library: &ohl_cables::Library, case: WeatherCase) -> Self {
+        let live = ohl_line::incremental::SolvedLine::solve_memo(line, library, &case);
+        Self::from_live(line, case, live)
+    }
+
     /// A new solution of the same case replacing `old`: the sections not
     /// solved in this one that `old` had a shape for (solved, or kept from
     /// before) keep that shape ([`Solved::last_solved`]); its mirror the

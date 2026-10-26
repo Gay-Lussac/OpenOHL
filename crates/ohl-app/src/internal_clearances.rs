@@ -296,7 +296,7 @@ impl InternalClearancesWindow {
             let mut solved = Vec::new();
             let mut notes = study.notes.clone();
             for case in &cases {
-                let s = crate::model::Solved::new(&line, &library, case.clone());
+                let s = crate::model::Solved::new_memo(&line, &library, case.clone());
                 notes.extend(
                     s.failed
                         .iter()
@@ -322,7 +322,7 @@ impl InternalClearancesWindow {
                 for case in cases.iter().filter(|c| study.cases.contains(&c.name)) {
                     let mut case = case.clone();
                     case.wind_pressure = ohl_core::units::Stress::from_si(pa);
-                    let s = crate::model::Solved::new(&line, &library, case.clone());
+                    let s = crate::model::Solved::new_memo(&line, &library, case.clone());
                     notes.extend(s.failed.iter().map(|f| {
                         format!("\"{}\" at {pa} Pa (wind study): not solved: {f}", case.name)
                     }));
