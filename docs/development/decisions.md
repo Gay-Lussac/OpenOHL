@@ -58,6 +58,10 @@ of Parts A, B and C).
   built included): vertical 3.4 s → 1.8 s, radial 4.3 s → 3.0 s. Same
   results: the zone reports the same bit for bit; a test checks the
   grouped index against the reference check.
+- Merged with the vertical clearance measured on the slope (r / cos β,
+  physics review the same day): both bounds measure the bundle's extent
+  and the allowance vertically too (the piece's own factor, or the
+  block's steepest piece's), so they stay below the exact gap.
 
 **Old names no longer read (owner, 2026-10-26; roadmap U12)**
 
@@ -506,8 +510,6 @@ Maybe make a toolbar as is the case in the OHL design app."
   (the arrangement now kept with a version, `ohl-structure-dock-version`);
   one that does not read gives the default, as before.
 
-## 2026-10-25
-
 **Performance review: the radial ground check (owner, 2026-10-26)**
 
 - The nearest triangle of a sample: a triangle whose bounding box is
@@ -584,46 +586,6 @@ Maybe make a toolbar as is the case in the OHL design app."
   bit for bit (the dumps and every `ohl` check output on the synthetic
   lines compared; a test checks the memo against a fresh solve and that
   an edit is solved again).
-
-**Performance review: OHL-Structure's long tables draw the rows in view (owner, 2026-10-26)**
-
-- Display only. The load table (5500 rows on the tower of 2026-10-25,
-  each copied every frame), the Members results (3700 rows, sorted every
-  frame), and the Members and Joints sheets were laid out whole every
-  frame.
-- They now draw only the rows in view (`rows::Table`: one row height,
-  the table taking the room of all its rows in its scroll area, the rows
-  outside the view not drawn), the columns kept at their widest cell so
-  far (they do not jump while scrolling); the load table reads its rows
-  in place (no copy), the Members results are sorted once per run and
-  case shown. A row picked elsewhere (the 3D view) is still brought into
-  view: by its place in the table (`scroll_to`), as drawing it did. A
-  test checks that the last member of a lattice is not drawn until
-  picked, then is.
-- Measured (release, example `type-02`: 178 members, 46 joints; the
-  whole frame): Members sheet 2.1 ms → 0.55 ms, Joints 1.1 ms → 0.6 ms;
-  about 11 µs a member row before, so on the 3700-member tower about
-  40 ms → under 1 ms.
-
-**Performance review: OHL-Design's result lists draw the rows in view (owner, 2026-10-26)**
-
-- Display only. The lists of the wire tension, string and internal
-  clearance checks, the vertical and radial clearance findings, the
-  vegetation spans and the bill of materials laid out every row every
-  frame (up to 5000, the zone findings without a limit). They now draw
-  only the rows in view (`rows_in_view::Table`, the helper of
-  OHL-Structure's tables), so every row is listed (the 5000-row cap of
-  the lists is gone; the CSV export was always whole).
-- The Tables page sorts on each row's cell and its number worked out once
-  (not twice per comparison): the same order.
-- Not done, for the owner: keeping the Tables page's rows between frames.
-  They show solved values (tensions, spacer forces) that arrive from
-  background solves while the line's revision stays the same, so a key
-  of (revision, case, table) could show stale values; it needs a counter
-  of the model's solved cases first. The thermal rating's table (one row
-  per section, its ratings already kept) is left as it is.
-- Not measured on a real line (no long lists in the examples); the rows
-  drawn are those in view (about 15–20) instead of all of them.
 
 **Performance review: OHL-Structure's cases solved side by side (owner, 2026-10-26)**
 
