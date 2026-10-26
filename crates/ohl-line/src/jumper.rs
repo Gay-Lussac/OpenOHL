@@ -1827,8 +1827,8 @@ thread_local! {
     static THREADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
 }
 
-/// Runs `f` with [`in_parallel`] (the sections and jumpers of a line
-/// solve) using at most `n` threads on this thread: for callers that
+/// Runs `f` with the parallel parts of a line solve (its sections and jumpers
+/// solved side by side) using at most `n` threads on this thread: for callers that
 /// already solve several lines side by side (the wind states of a
 /// clearance check), so that the threads are not multiplied
 /// (2026-10-26). Only the speed changes.
