@@ -8,7 +8,7 @@
 //! fields that do not look like buttons (a darker inset fill and a
 //! frame), the UI scale chosen in View › UI scale (kept between runs),
 //! and the helpers the tables share: headers in sentence case with their
-//! unit ("H [kN]"), the numbers right-aligned without a unit in each cell.
+//! unit ("H \[kN\]"), the numbers right-aligned without a unit in each cell.
 
 use eframe::egui;
 
@@ -102,7 +102,7 @@ pub fn field(ui: &mut egui::Ui, drag: egui::DragValue<'_>) -> egui::Response {
 }
 
 /// `text` in sentence case: its first letter a capital (the rest kept:
-/// "H [kN]" stays as it is, being a symbol).
+/// "H \[kN\]" stays as it is, being a symbol).
 pub fn sentence(text: &str) -> String {
     // A one-letter symbol (x, y, z, H), alone or with its unit, stays.
     let symbol = text.chars().nth(1).is_none_or(|s| s == ' ');
@@ -138,7 +138,7 @@ pub fn unit_of(help: &str) -> Option<&'static str> {
 }
 
 /// A table column's header: in sentence case, with its unit in square
-/// brackets after it ("E [m]"; a name ending with its unit, as
+/// brackets after it ("E \[m\]"; a name ending with its unit, as
 /// "orientation °", gets it in brackets).
 pub fn column_header(name: &str, help: &str) -> String {
     for u in UNITS {

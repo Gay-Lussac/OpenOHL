@@ -17,7 +17,7 @@ fn window(model: model::Model) -> Harness<'static, App> {
 }
 
 /// The units are in the column headers: a span's weather case table in
-/// Properties ("H [kN]", "Sag [m]"), the Structures table ("E [m]").
+/// Properties ("H \[kN\]", "Sag \[m\]"), the Structures table ("E \[m\]").
 #[test]
 fn units_are_in_the_headers() {
     let mut h = window(synthetic());
