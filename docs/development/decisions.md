@@ -36,6 +36,7 @@ of Parts A, B and C).
   zone reports of both lines the same bit for bit (`{:?}` dumps
   compared).
 
+<<<<<<< HEAD
 **Old names no longer read (owner, 2026-10-26; roadmap U12)**
 
 Before the first release (v0.0.1) the compatibility paths for the names of
@@ -484,6 +485,30 @@ Maybe make a toolbar as is the case in the OHL design app."
   one that does not read gives the default, as before.
 
 ## 2026-10-25
+=======
+**Performance review: the point checks pass far pieces over (owner, 2026-10-26)**
+
+- With wind steps a point was tested against every state's piece of
+  every span near it (the review: 33 µs a point with 131 states).
+- The vertical clearance now has the lower bound the radial has: from
+  the piece's height range (the bundle's lowest and highest
+  subconductor, the slice's rise, the allowance; less 1 µm for the
+  rounding of the point found on the wire), a piece that can neither
+  give a smaller clearance nor one below the requirement is passed
+  over before the exact work.
+- The zone check's wire index keeps a cell's pieces in blocks by span
+  (`WireSet::grouped`: a span's pieces in every wind state together),
+  with the block's bounds: a point beyond the reach of a whole block
+  (radial: the block's box less its largest radius and allowance;
+  vertical: outside its plan box widened by the zone's width, or above
+  its height bound) passes it over at once. Each piece of it would have
+  been passed over by the same test, so nothing found changes, per wire
+  either (a point beyond the reach is never recorded).
+- Measured (CPU time, 60 spans, 131 wind states, 10⁵ points; the index
+  built included): vertical 3.4 s → 1.8 s, radial 4.3 s → 3.0 s. Same
+  results: the zone reports the same bit for bit; a test checks the
+  grouped index against the reference check.
+>>>>>>> 34cf744e (Point checks pass far pieces over: a vertical lower bound before the exact work, and the zone check's wire index in blocks by span (every wind state's piece together) passed over at once beyond reach (performance review item 2, owner 2026-10-26); same results bit for bit; test; decisions)
 
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
 

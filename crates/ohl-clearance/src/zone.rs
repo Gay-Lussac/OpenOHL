@@ -904,8 +904,10 @@ pub fn check_zones(
         let reach = (largest + p.def.search_margin)
             .max(p.def.vertical_band)
             .min(zone.search.unwrap_or(f64::INFINITY));
-        let set = WireSet::new(p.wires.clone(), reach);
         let mut group: Vec<usize> = p.meta.iter().map(|m| m.1).collect();
+        // A span's pieces in every state together: passed over as one
+        // where out of reach.
+        let set = WireSet::grouped(p.wires.clone(), reach, &group);
         // Room for the arcs' groups too.
         group.extend(p.arc_groups.iter().copied());
         p.points = Some(

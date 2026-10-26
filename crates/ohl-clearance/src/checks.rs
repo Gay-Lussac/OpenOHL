@@ -401,9 +401,103 @@ pub struct WireSet {
     pub(crate) radii: Vec<f64>,
     /// [`Wire::allowance`] of each wire, m.
     pub(crate) allowances: Vec<f64>,
+    /// [`Wire::vertical_extent`] of each wire, m.
+    extents: Vec<(f64, f64)>,
     reach: f64,
     segments: Vec<(u32, u32)>,
-    cells: HashMap<(i64, i64), Vec<u32>>,
+    cells: HashMap<(i64, i64), Cell>,
+}
+
+/// The segments listed in a grid cell, in blocks of one group of wires
+/// each ([`WireSet::with_groups`]; without groups, one wire each).
+#[derive(Debug, Clone, Default)]
+struct Cell {
+    /// The segments, a block's together, in their order within a wire.
+    ids: Vec<u32>,
+    blocks: Vec<Block>,
+}
+
+/// A run of [`Cell::ids`] of one group: the bounds of its segments, so
+/// that a point beyond the reach of all of them passes the whole run over
+/// (2026-10-26: with wind steps a span's group holds its pieces in every
+/// state).
+#[derive(Debug, Clone)]
+struct Block {
+    /// Where its ids end in [`Cell::ids`].
+    end: u32,
+    /// Bounding box of its segments' centre lines.
+    lo: P3,
+    hi: P3,
+    /// Largest bundle radius and allowance of its wires.
+    radius: f64,
+    allowance: f64,
+    /// Lowest and highest subconductor of its wires.
+    extent: (f64, f64),
+    /// Steepest of its segments (rise over plan length).
+    slope: f64,
+}
+
+/// Taken off the lower bounds of a vertical clearance: the rounding of
+/// the point found on the wire (its height interpolated) keeps it below
+/// the clearance worked out, so that a piece passed over could not have
+/// given a smaller one.
+const BOUND_EPS: f64 = 1e-6;
+
+impl Block {
+    /// The block of one segment `a`–`b` of a wire.
+    fn of(a: P3, b: P3, radius: f64, allowance: f64, extent: (f64, f64)) -> Self {
+        let plan = (b[0] - a[0]).hypot(b[1] - a[1]);
+        Self {
+            end: 0,
+            lo: [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+            hi: [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+            radius,
+            allowance,
+            extent,
+            slope: if plan > 0.0 {
+                (b[2] - a[2]).abs() / plan
+            } else {
+                0.0
+            },
+        }
+    }
+
+    /// Takes `other` in; its ids now end at `end`.
+    fn add(&mut self, other: &Block, end: u32) {
+        self.end = end;
+        for i in 0..3 {
+            self.lo[i] = self.lo[i].min(other.lo[i]);
+            self.hi[i] = self.hi[i].max(other.hi[i]);
+        }
+        self.radius = self.radius.max(other.radius);
+        self.allowance = self.allowance.max(other.allowance);
+        self.extent = (
+            self.extent.0.min(other.extent.0),
+            self.extent.1.max(other.extent.1),
+        );
+        self.slope = self.slope.max(other.slope);
+    }
+
+    /// A lower bound of the vertical clearance from a point at height
+    /// `z` to its wires, as [`PointCheck::eval`] works it out, with the
+    /// slice depth `depth`.
+    fn vertical_low(&self, z: f64, depth: f64) -> f64 {
+        let rise = if depth > 0.0 {
+            self.slope * depth / 2.0
+        } else {
+            0.0
+        };
+        // Distances square to a sloping wire grow by 1 / cos β measured
+        // vertically ([`vertical_of`]): the steepest piece's factor keeps
+        // this below every piece's exact gap.
+        let k = self.slope.hypot(1.0);
+        (self.lo[2] + self.extent.0 * k - z)
+            .max(z - (self.hi[2] + self.extent.1 * k))
+            .max(0.0)
+            - rise
+            - self.allowance * k
+            - BOUND_EPS
+    }
 }
 
 fn cell_of(v: f64) -> i64 {
@@ -413,27 +507,86 @@ fn cell_of(v: f64) -> i64 {
 impl WireSet {
     /// Indexes `wires` for queries up to `reach` (m) away.
     pub fn new(wires: Vec<Wire>, reach: f64) -> Self {
+        Self::build(wires, reach, None)
+    }
+
+    /// [`WireSet::new`] with the cells' segments in blocks by group:
+    /// `group[w]` for wire `w` (e.g. a span's positions in several wind
+    /// states). A point checked passes a whole block over when it is
+    /// beyond the reach of all of its segments ([`PointCheck::eval`]);
+    /// only the speed changes (within a wire the segments keep their
+    /// order, and the wires' order does not matter to the results).
+    pub fn grouped(wires: Vec<Wire>, reach: f64, group: &[usize]) -> Self {
+        Self::build(wires, reach, Some(group))
+    }
+
+    fn build(wires: Vec<Wire>, reach: f64, group: Option<&[usize]>) -> Self {
+        let radii: Vec<f64> = wires.iter().map(Wire::bundle_radius).collect();
+        let allowances: Vec<f64> = wires.iter().map(Wire::allowance).collect();
+        let extents: Vec<(f64, f64)> = wires.iter().map(Wire::vertical_extent).collect();
         let mut segments = Vec::new();
-        let mut cells: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
+        let mut cells: HashMap<(i64, i64), Cell> = HashMap::new();
+        // With groups: per cell, per group (in the order first met) its
+        // block and segments, put together at the end.
+        type Lists = Vec<(usize, Block, Vec<u32>)>;
+        let mut lists: HashMap<(i64, i64), Lists> = HashMap::new();
         for (w, wire) in wires.iter().enumerate() {
+            let g = group.map(|g| g.get(w).copied().unwrap_or(usize::MAX - w));
             // Subconductors reach out by the bundle radius, their surface
             // by the allowance.
             let reach = reach + wire.outer_radius();
             for (k, s) in wire.points.windows(2).enumerate() {
                 let id = segments.len() as u32;
                 segments.push((w as u32, k as u32));
+                let piece = Block::of(s[0], s[1], radii[w], allowances[w], extents[w]);
                 let (x0, x1) = (s[0][0].min(s[1][0]) - reach, s[0][0].max(s[1][0]) + reach);
                 let (y0, y1) = (s[0][1].min(s[1][1]) - reach, s[0][1].max(s[1][1]) + reach);
                 for i in cell_of(x0)..=cell_of(x1) {
                     for j in cell_of(y0)..=cell_of(y1) {
-                        cells.entry((i, j)).or_default().push(id);
+                        match g {
+                            // Without groups, a block per wire: its
+                            // segments come one after another.
+                            None => {
+                                let cell = cells.entry((i, j)).or_default();
+                                let same = k > 0
+                                    && cell
+                                        .ids
+                                        .last()
+                                        .is_some_and(|&l| segments[l as usize].0 == w as u32);
+                                cell.ids.push(id);
+                                let end = cell.ids.len() as u32;
+                                match cell.blocks.last_mut() {
+                                    Some(b) if same => b.add(&piece, end),
+                                    _ => cell.blocks.push(Block { end, ..piece }),
+                                }
+                            }
+                            Some(g) => {
+                                let list = lists.entry((i, j)).or_default();
+                                match list.iter_mut().rev().find(|e| e.0 == g) {
+                                    Some(e) => {
+                                        e.1.add(&piece, 0);
+                                        e.2.push(id);
+                                    }
+                                    None => list.push((g, piece.clone(), vec![id])),
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+        for (key, list) in lists {
+            let cell = cells.entry(key).or_default();
+            for (_, block, ids) in list {
+                cell.ids.extend(ids);
+                let end = cell.ids.len() as u32;
+                cell.blocks.push(Block { end, ..block });
+            }
+        }
         Self {
-            radii: wires.iter().map(Wire::bundle_radius).collect(),
-            allowances: wires.iter().map(Wire::allowance).collect(),
+            radii,
+            allowances,
+            extents,
             wires,
             reach,
             segments,
@@ -452,7 +605,7 @@ impl WireSet {
         self.cells
             .get(&(cell_of(x), cell_of(y)))
             .into_iter()
-            .flatten()
+            .flat_map(|c| &c.ids)
             .map(|&id| {
                 let (w, k) = self.segments[id as usize];
                 (w as usize, k as usize)
@@ -807,7 +960,36 @@ impl PointCheck {
         }
         let p = [x, y, z];
         let band = self.rule.vertical_band;
-        for (w, k) in wires.near(x, y) {
+        let Some(cell) = wires.cells.get(&(cell_of(x), cell_of(y))) else {
+            return true;
+        };
+        let depth = self.rule.vertical_depth;
+        // Passed over (2026-10-26): a block of segments (a group's, e.g. a
+        // span's in every wind state) none of which can come within the
+        // reach — the radial lower bound from the block's box, the
+        // vertical outside its plan box widened by the zone's width or
+        // above its height lower bound. Each of its segments would be
+        // passed over by the same test below.
+        let mut start = 0;
+        let segments = cell.blocks.iter().flat_map(|block| {
+            let ids = &cell.ids[start..block.end as usize];
+            start = block.end as usize;
+            let radial = self.measures[1]
+                && box_distance(p, block.lo, block.hi) - block.radius - block.allowance
+                    <= wires.reach;
+            let vertical = self.measures[0]
+                && !(x < block.lo[0] - band
+                    || x > block.hi[0] + band
+                    || y < block.lo[1] - band
+                    || y > block.hi[1] + band)
+                && block.vertical_low(z, depth) <= wires.reach;
+            let ids = if radial || vertical { ids } else { &[] };
+            ids.iter().map(move |&id| {
+                let (w, k) = wires.segments[id as usize];
+                (w as usize, k as usize)
+            })
+        });
+        for (w, k) in segments {
             let (a, b) = wires.segment(w, k);
             let wire = &wires.wires[w];
             let required = self.results[w].required;
@@ -893,13 +1075,36 @@ impl PointCheck {
                     || x > a[0].max(b[0]) + band
                     || y < a[1].min(b[1]) - band
                     || y > a[1].max(b[1]) + band;
-                if !outside && let Some((q, _)) = over_in_plan(x, y, a, b, band) {
+                // A lower bound of the clearance (from the piece's height
+                // range): a piece that can change nothing is passed over,
+                // as for the radial (2026-10-26).
+                let rise = if outside {
+                    0.0
+                } else {
+                    slice_rise(a, b, depth)
+                };
+                let passed = outside || {
+                    // Measured vertically on the sloping piece as the exact
+                    // gap is (r / cos β, at most r plus the rise): never
+                    // above it.
+                    let (lo, hi) = wires.extents[w];
+                    let (lo, hi) = (vertical_of(lo, a, b), vertical_of(hi, a, b));
+                    let low = ((a[2].min(b[2]) + lo - z)
+                        .max(z - (a[2].max(b[2]) + hi))
+                        .max(0.0)
+                        - rise
+                        - vertical_of(off, a, b)
+                        - BOUND_EPS)
+                        .max(0.0);
+                    low > reach || idle(0, low, best)
+                };
+                if !passed && let Some((q, _)) = over_in_plan(x, y, a, b, band) {
                     // Vertical separation, above or below the wire (a tree
                     // overhanging a low wire, a line crossing over); with a
                     // depth, to the wire's lowest (highest) in the slice.
                     // The surface radius measured vertically on the
                     // sloping piece (r / cos β), not radially.
-                    // (`off` is the wire's allowance: the same, level.)
+                    // (The bounds before this follow it: keep them together.)
                     let off = wire.vertical_allowance(a, b);
                     let gap = wire.vertical_gap(q, z, a, b)
                         - slice_rise(a, b, self.rule.vertical_depth)
