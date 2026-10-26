@@ -1125,15 +1125,15 @@ fn a_circuit_keeps_one_name_and_phase() {
     assert_eq!(phase(&mut harness, "S3").1, "Main");
 }
 
-/// A project whose library has a crafted name ("../…": written by another
-/// program, or a crafted copy): exporting the libraries refuses it, and
-/// nothing is written outside the folder chosen.
+/// A library with a crafted name ("../…") put as a raw object: refused
+/// since the security review of 2026-10-26 (H1), and nothing is written
+/// outside the folder chosen when the libraries are exported.
 #[test]
 fn exported_libraries_stay_in_their_folder() {
     let mut model = synthetic_project("export-names");
     let file = model.sources.file.clone();
-    // Put as an object directly (the session's own checks bypassed).
-    model
+    // Put as an object directly (the library helpers bypassed).
+    let put = model
         .editing
         .as_mut()
         .unwrap()
@@ -1152,10 +1152,10 @@ fn exported_libraries_stay_in_their_folder() {
                 ord: None,
             },
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(put.to_string().contains("plain file name"), "{put}");
     let dir = file.parent().unwrap().join("export");
-    let err = model.export_libraries(&dir).unwrap_err();
-    assert!(err.contains("not a plain file name"), "{err}");
+    let _ = model.export_libraries(&dir);
     assert!(
         !dir.join("escaped.ohlw").exists() && !dir.parent().unwrap().join("escaped.ohlw").exists()
     );
