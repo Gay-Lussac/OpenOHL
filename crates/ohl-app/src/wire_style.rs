@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! How the wires are drawn (Sections › Display options, each user's own):
+//! How the wires are drawn (Line › Sections › Display options, each user's own):
 //! coloured by circuit (each section's colour, else its phase's) or by
 //! system (the system's colour, each phase in its own line code: the
 //! first solid, the second ·–·–, the third ·––·––), and the direction of

@@ -16,7 +16,7 @@ invented ground as its terrain surface.
 4. The window **New project: first steps** asks for the route. Click
    **Later**: the ground comes first, so that the alignment points get
    their heights from it.
-5. **Terrain › Terrain surfaces (TIN)…**. In the window, under the
+5. **Line › Terrain › Terrain surfaces (TIN)…**. In the window, under the
    import, click **Import…** and choose `starter-survey.csv` — the
    starter put it beside your project file.
 6. Close the window when the surface is listed.

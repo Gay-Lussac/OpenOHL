@@ -94,7 +94,7 @@ impl StructureDesk {
                 .on_hover_text(
                     "Angles in plan around the structure turn clockwise seen from above; \
                          which one means ahead along the line (yours, for files opened on their \
-                         own; a project has its own: Structures › Angles around structures)",
+                         own; a project has its own: Line › Structures › Angles around structures)",
                 );
                 ui.label(
                     egui::RichText::new(format!(

@@ -1116,7 +1116,7 @@ impl ZoneWindow {
                         ui.label(
                             egui::RichText::new(
                                 "No preset in the project: a design code gives them when it \
-                                 generates (Criteria › Design code).",
+                                 generates (Line › Criteria › Design code).",
                             )
                             .small()
                             .weak(),
@@ -1886,7 +1886,7 @@ fn targets_ui(
                 None => "the surface of the checks (the ground shown)".to_owned(),
             };
             ui.radio_value(&mut choice, (true, None), checks)
-                .on_hover_text("The project's surface for the checks (Terrain menu)");
+                .on_hover_text("The project's surface for the checks (Line › Terrain)");
             let in_project = crate::surfaces::names(model);
             let mut names = in_project.clone();
             if let Some(n) = &r.surface

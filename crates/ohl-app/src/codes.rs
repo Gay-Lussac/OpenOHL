@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Criteria › Design code: a design-code plugin (Plugins › Plugin manager)
+//! Line › Criteria › Design code: a design-code plugin (File › Plugins › Plugin manager)
 //! turns the user's parameter file into weather cases and load cases,
 //! kept in the project's libraries (or next to a line file) and used for
 //! the model. The plugin runs on a worker thread; its own exit clauses
@@ -57,7 +57,7 @@ enum Reply {
     Template(Result<PathBuf, String>),
 }
 
-/// The Criteria › Design code window.
+/// The Line › Criteria › Design code window.
 #[derive(Default)]
 pub struct DesignCodeWindow {
     /// The window is open.
@@ -339,7 +339,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plug
             ui.add_space(6.0);
             if list.is_empty() {
                 ui.label(
-                    "No design-code plugin: install one or add its folder (Plugins › Plugin \
+                    "No design-code plugin: install one or add its folder (File › Plugins › Plugin \
                      manager), e.g. from plugins/codes.",
                 );
             }

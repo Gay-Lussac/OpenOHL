@@ -7,11 +7,11 @@
 
 use super::*;
 
-/// Criteria › Bimetallic conductor model: what the outer strands of the
+/// Line › Criteria › Bimetallic conductor model: what the outer strands of the
 /// line's bimetallic cables do above the transition temperature, for the
 /// cables whose wire library entry does not say; OK makes it one command
 /// (every section is solved again).
-/// Terrain › Coordinate system: Define (an edit of the line's settings),
+/// Line › Terrain › Coordinate system: Define (an edit of the line's settings),
 /// Calculator, Reproject (a new project, opened when done).
 pub(super) fn crs_windows(ctx: &egui::Context, r: &mut Ready) {
     match r.crs.show(ctx, &r.model) {
@@ -154,7 +154,7 @@ pub(super) fn bimetallic_window(ctx: &egui::Context, r: &mut Ready) {
     r.bimetallic_window = (open && !ok && !cancel).then_some(draft);
 }
 
-/// Criteria › Calculation options: how the line's calculations are done
+/// Line › Criteria › Calculation options: how the line's calculations are done
 /// (one command, undoable; the sections it touches are solved again).
 /// The measured cost of the jumpers' pull, for the window (release
 /// builds): a test line, and an existing 25 km line where nearly every
@@ -164,7 +164,7 @@ pub(super) const PULL_COST: &str = "measured: about 3× the time of the estimate
     a jumper (554 sections, 518 jumpers, 99 weather cases: 32 s ➡ 158 s, the sections over the \
     cores); sections away from jumpers are not solved again.";
 
-/// Criteria › Default values: what new objects start with, for the
+/// Line › Criteria › Default values: what new objects start with, for the
 /// project; exported and imported as a file.
 pub(super) fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
     let Some((mut draft, mut message)) = r.defaults_window.take() else {
@@ -537,7 +537,7 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
     r.solver_window = (open && !ok && !cancel).then_some(draft);
 }
 
-/// Criteria › Creep-Stretch: the weather case for the final after creep
+/// Line › Criteria › Creep-Stretch: the weather case for the final after creep
 /// and the weather case(s) for the final after load; OK makes it one
 /// command (undoable) and every section is solved again.
 pub(super) fn creep_stretch_window(ctx: &egui::Context, r: &mut Ready) {

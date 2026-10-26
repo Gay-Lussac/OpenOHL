@@ -110,7 +110,7 @@ impl Model {
                 .map_err(EditError::Refused);
         }
         let line = self.session_line()?;
-        // Other creep-stretch weather cases (Criteria › Creep-Stretch, or
+        // Other creep-stretch weather cases (Line › Criteria › Creep-Stretch, or
         // its undo): every section after creep or load changes.
         let all: Vec<String>;
         // The bimetallic conductor model too.

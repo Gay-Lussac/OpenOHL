@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Terrain › Backgrounds: orthophotos (plan view) and DXF drawings (plan
+//! Line › Terrain › Backgrounds: orthophotos (plan view) and DXF drawings (plan
 //! and 3D views) kept in the project ([`ohl_background`]): reading them
 //! with the project, drawing them, importing and removing them.
 
@@ -491,7 +491,7 @@ fn is_ecw(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ecw"))
 }
 
-/// Terrain › Backgrounds › Import orthophotos or maps.
+/// Line › Terrain › Backgrounds › Import orthophotos or maps.
 #[derive(Debug, Clone)]
 pub struct ImageImport {
     /// The files.
@@ -525,7 +525,7 @@ impl ImageImport {
     }
 }
 
-/// Terrain › Backgrounds › Import DXF drawing.
+/// Line › Terrain › Backgrounds › Import DXF drawing.
 #[derive(Debug, Clone, Default)]
 pub struct DrawingImport {
     /// The file.
@@ -1042,7 +1042,7 @@ impl Windows {
     }
 }
 
-/// The Terrain › Backgrounds menu: imports, removal, and what is shown
+/// The Line › Terrain › Backgrounds menu: imports, removal, and what is shown
 /// (ticks: the menu stays open).
 pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     let busy = r.backgrounds.job.is_some();

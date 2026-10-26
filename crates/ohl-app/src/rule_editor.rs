@@ -741,7 +741,7 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
                     .button("Load preset…")
                     .on_hover_text(
                         "Presets of clearance rules from the design-code plugins turned on \
-                         (Plugins › Plugin manager): previewed, then merged into this file or \
+                         (File › Plugins › Plugin manager): previewed, then merged into this file or \
                          replacing its rules",
                     )
                     .clicked()
@@ -1053,7 +1053,7 @@ pub fn preset_dropdown(
             if list.is_empty() {
                 ui.label(
                     egui::RichText::new(
-                        "No design-code plugin turned on (Plugins › Plugin manager)",
+                        "No design-code plugin turned on (File › Plugins › Plugin manager)",
                     )
                     .weak(),
                 );
@@ -1148,7 +1148,7 @@ pub fn presets_window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugi
             ui.label(
                 egui::RichText::new(
                     "Presets of clearance rules from the design-code plugins turned on, read with \
-                     the parameter file of Criteria › Design code (if one is chosen). Check every \
+                     the parameter file of Line › Criteria › Design code (if one is chosen). Check every \
                      value against the regulation you work to.",
                 )
                 .small()

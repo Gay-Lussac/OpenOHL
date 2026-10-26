@@ -62,7 +62,7 @@ a linked point is moved (dragged, typed, put by a command) it stays on
 its joint and its offset follows; a joint moved takes its points along.
 In both applications the **Attachment points** table gives each one's
 joint, offset and the offset's length; the **Link tool** links a point
-to a joint where it is (OHL-Design: Tools › Structures › Link attachment
+to a joint where it is (OHL-Design: Edit › Tools › Structures › Link attachment
 point; OHL-Structure: Geometry › Link tool); a point's menu unlinks it;
 an unlinked point is drawn red in OHL-Design.
 *Built (engine, command line and both applications, 2026-10-21; in

@@ -140,7 +140,7 @@ fn the_highlights_are_drawn_while_the_panel_is_open() {
         assert_eq!(rep.grow.len(), n, "every grow-in point drawn");
     }
     // Docked: still drawn.
-    h.get_by_label("📌 Dock as a panel").click();
+    h.get_by_label("Dock as a panel").click();
     h.run_steps(3);
     assert!(
         h.state_mut()

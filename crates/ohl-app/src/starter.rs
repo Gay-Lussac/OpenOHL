@@ -25,7 +25,7 @@ pub fn dir() -> Option<PathBuf> {
 pub const PYLON_TEMPLATES: &str = "structure-templates";
 
 /// The survey points of the invented ground (copied beside the project,
-/// to import with Terrain › Terrain surfaces).
+/// to import with Line › Terrain › Terrain surfaces).
 pub const SURVEY: &str = "starter-survey.csv";
 
 /// The library files of the starter: (project library kind, file name,

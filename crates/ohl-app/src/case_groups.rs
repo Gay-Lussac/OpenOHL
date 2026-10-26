@@ -4,8 +4,8 @@
 
 //! **Weather case groups** (owner, 2026-10-25): a name, a description and
 //! a few weather cases, kept in the weather case file beside the cases
-//! (`[[group]]`, [`ohl_weather::CaseGroup`]); made in Criteria › Weather
-//! case groups…, picked as one in Criteria › Loads for structures and in
+//! (`[[group]]`, [`ohl_weather::CaseGroup`]); made in Line › Criteria › Weather
+//! case groups…, picked as one in Line › Criteria › Loads for structures and in
 //! the checks' case lists (a group's button adds its cases).
 
 use std::path::PathBuf;
@@ -216,7 +216,7 @@ pub fn with_groups(text: &str, groups: &[CaseGroup]) -> Result<String, String> {
     Ok(out)
 }
 
-/// Criteria › Weather case groups…: the groups as edited.
+/// Line › Criteria › Weather case groups…: the groups as edited.
 #[derive(Debug, Default)]
 pub struct GroupsWindow {
     /// Shown.
@@ -252,7 +252,7 @@ impl GroupsWindow {
                 ui.label(
                     egui::RichText::new(
                         "A group: a name, a description and a few weather cases, kept in the \
-                         weather case file beside the cases. Picked as one in Criteria › Loads \
+                         weather case file beside the cases. Picked as one in Line › Criteria › Loads \
                          for structures and in the checks' case lists.",
                     )
                     .small()

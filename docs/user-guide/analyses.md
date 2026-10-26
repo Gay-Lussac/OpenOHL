@@ -117,7 +117,7 @@ depends on where along it one looks — on the local sag, the suspension
 strings, the angle between the conductors, the voltages (e.g. the Swiss
 ordinance's still-air distance, LeV Annex 6, 2.2). OpenOHL **measures**
 the conductors; the values and the rules are a **check plugin**'s (it
-must be in use: Plugins › Plugin manager). A plugin for the Swiss LeV
+must be in use: File › Plugins › Plugin manager). A plugin for the Swiss LeV
 exists separately; it is not part of the public code. What is measured
 and how: [the core's part](../development/phase-distance-check.md).
 

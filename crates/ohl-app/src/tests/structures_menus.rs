@@ -738,7 +738,7 @@ fn clearances_are_in_the_checks_menu() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Sections").click();
+    crate::tests::line_menu(&mut harness, "Sections");
     harness.run();
     assert!(harness.query_by_label("Vertical clearances…").is_none());
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
@@ -767,7 +767,7 @@ fn add_structure_from_the_menu_takes_one_click_each() {
     harness.state_mut().ready().unwrap().view3d.controls =
         crate::controls::Controls::by_name("minecraft").unwrap();
     for k in 1..=2 {
-        harness.get_by_label("Tools").click();
+        crate::tests::submenu(&mut harness, "Edit", "Tools");
         harness.run();
         harness.get_by_label("Add structure").click();
         harness.run();
@@ -809,12 +809,7 @@ fn opening_a_menu_escapes_what_was_going_on() {
         r.new_alignment = vec![ohl_line::AlignmentPoint::free("", [0.0, 0.0, 500.0])];
     }
     harness.run();
-    harness
-        .get_all_by_label("Structures")
-        .next()
-        .unwrap()
-        .click();
-    harness.run();
+    crate::tests::line_menu(&mut harness, "Structures");
     let r = harness.state_mut().ready().unwrap();
     assert!(!r.view3d.captured);
     assert!(r.new_alignment.is_empty());
@@ -848,18 +843,12 @@ fn the_structures_menu_holds_no_tools() {
             .collect()
     };
     let closed = count(&harness);
-    // (the menu bar's, before the Structures layer of the Model page)
-    harness
-        .get_all_by_label("Structures")
-        .next()
-        .unwrap()
-        .click();
-    harness.run();
+    crate::tests::line_menu(&mut harness, "Structures");
     harness.get_by_label("Spot structures…");
     assert_eq!(count(&harness), closed, "{names:?}");
     harness.key_press(egui::Key::Escape);
     harness.run();
-    harness.get_by_label("Tools").click();
+    crate::tests::submenu(&mut harness, "Edit", "Tools");
     harness.run();
     let open = count(&harness);
     for (k, n) in names.iter().enumerate().take(Tool::ALL.len()) {

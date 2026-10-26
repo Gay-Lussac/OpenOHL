@@ -24,7 +24,7 @@ ohl crs line line.ohl.json --to EPSG:32632 --out line-utm.ohl.json
   (a span of 82.206 m in LV95 is 82.183 m in UTM 32N): check spans and
   stringing after moving a line.
 
-## In the desktop application: Terrain › Coordinate system
+## In the desktop application: Line › Terrain › Coordinate system
 
 - **Define…** says which system the project's coordinates are in — nothing
   moves. Choose it from the **EPSG** list with the

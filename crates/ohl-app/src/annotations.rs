@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Section display options (Sections › Display options): what is written
+//! Section display options (Line › Sections › Display options): what is written
 //! next to the wires, chosen for each view on its own — the section's
 //! label and each span's sag, so far.
 

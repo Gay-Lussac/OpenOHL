@@ -369,7 +369,7 @@ impl ImportProjectWindow {
                 if formats.is_empty() {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
-                        "No project format: install a project plugin (Plugins › Plugin manager).",
+                        "No project format: install a project plugin (File › Plugins › Plugin manager).",
                     );
                 }
                 for f in formats {
@@ -485,7 +485,7 @@ impl Template {
         match self {
             Template::Empty => {
                 "An empty line and empty libraries: add wire types, structure types and weather \
-                 cases from the library pages (e.g. Sections › Wires library › Browse…)."
+                 cases from the library pages (e.g. Line › Sections › Wires library › Browse…)."
             }
             Template::Starter => {
                 "Example libraries with invented values, clearly marked: wire types, two \
@@ -639,7 +639,7 @@ impl NewProject {
                             )
                             .on_hover_text(
                                 "Plane x, y, z in metres: for learning and for lines not tied to \
-                                 a map (set it later: Terrain › Coordinate system › Define)",
+                                 a map (set it later: Line › Terrain › Coordinate system › Define)",
                             );
                             ui.radio_value(&mut self.local, false, "A coordinate system…")
                                 .on_hover_text(

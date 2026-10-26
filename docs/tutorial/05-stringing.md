@@ -5,7 +5,7 @@ and T4 to T6 — and solved in every weather case.
 
 ## Steps
 
-1. **The wire type.** **Sections › Wires library** shows the project's
+1. **The wire type.** **Line › Sections › Wires library** shows the project's
    wire library: the starter's ACSR conductor `acsr-drake-26-7` with its
    diameter, mass, strength and moduli (typical published values). Close
    it; nothing to change.

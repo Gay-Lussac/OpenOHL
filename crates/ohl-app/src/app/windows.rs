@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Keys and small windows: Cross-section, Go to, the edit keys, First
-//! steps, the tool windows, the Terrain menu, Help › Controls.
+//! steps, the tool windows, the Line › Terrain menu, Help › Controls.
 
 use super::*;
 
@@ -810,7 +810,7 @@ pub(super) fn tool_windows(
     }
 }
 
-/// The Terrain menu: the ground surface (TIN) and the LiDAR points, with
+/// The Line › Terrain menu: the ground surface (TIN) and the LiDAR points, with
 /// the classes drawn.
 pub(super) fn terrain_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Command>) {
     ui.label(egui::RichText::new("Routes and alignments").small().weak());

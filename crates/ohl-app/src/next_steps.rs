@@ -26,9 +26,9 @@ pub enum Go {
     Hold(Tool),
     /// A library page.
     Library(LibraryKind),
-    /// Terrain › Terrain surfaces.
+    /// Line › Terrain › Terrain surfaces.
     Surfaces,
-    /// Tools › New pylon from a template.
+    /// Edit › Tools › New pylon from a template.
     PylonBuilder,
     /// Checks › Ground clearances › Vertical clearances.
     VerticalClearances,

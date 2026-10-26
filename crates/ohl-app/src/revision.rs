@@ -52,7 +52,7 @@ pub struct Revision {
     pub points: u64,
     /// The ground surface.
     pub ground: u64,
-    /// Per what metre the ice and wind were carried (Criteria ›
+    /// Per what metre the ice and wind were carried (Line › Criteria ›
     /// Calculation options, 2026-10-21): part of the line, said on its own.
     pub loads_per: ohl_line::LoadsPer,
 }

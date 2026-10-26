@@ -1120,7 +1120,7 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                 })
                                 .response
                                 .on_hover_text(
-                                    "Its entry in the string library (Structures › String library): its \
+                                    "Its entry in the string library (Line › Structures › String library): its \
                                      length, weight, wind area and stiffness are taken; a tension assembly \
                                      makes a dead end. Given here: a label is given when applied",
                                 );
@@ -1284,7 +1284,7 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                     format!(
                                         "Direction in plan, clockwise seen from above: ahead along the line {:.0}°, \
                                          to the right {:.0}°, back {:.0}°, to the left {:.0}° \
-                                         (Structures › Angles around structures)",
+                                         (Line › Structures › Angles around structures)",
                                         ahead,
                                         (ahead + 90.0) % 360.0,
                                         (ahead + 180.0) % 360.0,

@@ -5,7 +5,7 @@ each wire point has — the numbers you string the wires to in chapter 5.
 
 ## Steps
 
-1. **Structures › Display options**: tick **Wire points (label, set)**
+1. **Line › Structures › Display options**: tick **Wire points (label, set)**
    for the Plan and the 3D view (the menu stays open while you tick;
    click elsewhere to close it).
 2. Press **G** (Go to structure), choose *T2*, **Enter**: the 3D view
@@ -16,7 +16,7 @@ each wire point has — the numbers you string the wires to in chapter 5.
    length and weight (the type's own values; a string can take them from
    an insulator assembly of the library instead), and its wire point with
    the set and the clamp (suspension). Click **Cancel**.
-4. **Structures › Strings table** lists every string of the line, one
+4. **Line › Structures › Strings table** lists every string of the line, one
    row each. Close the table.
 
 ## What you should see

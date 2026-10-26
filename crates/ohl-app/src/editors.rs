@@ -382,7 +382,7 @@ pub enum Outcome {
     ResetString,
     /// Pick the section's points again with the String wire tool.
     PickPoints,
-    /// Open Tools › New pylon from a template… (the window stays).
+    /// Open Edit › Tools › New pylon from a template… (the window stays).
     NewPylon,
 }
 

@@ -847,7 +847,7 @@ fn group_list(
         if let Some(g) = list.iter().find(|g| !groups.iter().any(|x| &x.name == *g)) {
             let names: Vec<&str> = groups.iter().map(|x| x.name.as_str()).collect();
             return Err(format!(
-                "{name}: no weather case group \"{g}\" ({}; Criteria › Weather case groups…)",
+                "{name}: no weather case group \"{g}\" ({}; Line › Criteria › Weather case groups…)",
                 if names.is_empty() {
                     "none made yet".to_owned()
                 } else {

@@ -26,7 +26,7 @@ import and export come later; CSV works today.
 ```
  OHL-Design (the line)                      OHL-Structure (a structure)
  weather cases sent ──► line results ──────► load case
-  (Criteria › Loads      unfactored forces    1. line forces: a line result,
+  (Line › Criteria › Loads      unfactored forces    1. line forces: a line result,
    for structures)       at each point           V / T / L factors, points off
                          a wind case twice:   2. loads on the structure itself:
                          from the left and       self weight, wind on the body,
@@ -37,7 +37,7 @@ import and export come later; CSV works today.
 ```
 
 1. **The line gives forces, nothing else.** Each weather case ticked in
-   Criteria › Loads for structures ([Loads for
+   Line › Criteria › Loads for structures ([Loads for
    structures](desktop-app.md#loads-for-structures)) is a **line
    result**: the wires' and strings' forces at each attachment point,
    unfactored. A weather case with wind is two line results, `<case> —
@@ -334,7 +334,7 @@ using one is version 6, a `.ohlslc` version 2 (OHL-Structure raises the
 file when a load takes one; older programs say "newer version").
 
 The line's [structure loads](loads.md#structure-loads) give the first six
-at every point, in each **line result** the line sends (Criteria › Loads
+at every point, in each **line result** the line sends (Line › Criteria › Loads
 for structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
 each weather case ticked there, unfactored (factored = unfactored), named
 as the weather case; one with wind twice, `<case> — wind from the left`

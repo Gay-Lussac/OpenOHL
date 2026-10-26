@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The sheet template part of File › Export › Drawings…: the template
+//! The sheet template part of Plans & sheets › Drawings…: the template
 //! chosen (built in, the project's, the library folder's, a plugin's), the
 //! values of its fields and the revisions, the other versions of the line
 //! drawn with it in their roles, and the template's other options

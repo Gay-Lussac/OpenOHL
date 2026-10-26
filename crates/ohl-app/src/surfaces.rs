@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! Terrain › Terrain surfaces (TIN): the surfaces kept in the project.
+//! Line › Terrain › Terrain surfaces (TIN): the surfaces kept in the project.
 //!
 //! One is **active**: it is the ground — drawn, and used for clearances,
 //! profiles and placing structures. Others can be **shown** too, each in
@@ -672,7 +672,7 @@ impl SurfacesWindow {
                             .button("Import…")
                             .on_hover_text(
                                 "LandXML, OBJ, survey points (CSV/XYZ, triangulated) and the \
-                                 formats of terrain plugins (Plugins › Plugin manager)",
+                                 formats of terrain plugins (File › Plugins › Plugin manager)",
                             )
                             .clicked()
                             && let Some(path) = rfd::FileDialog::new().pick_file()

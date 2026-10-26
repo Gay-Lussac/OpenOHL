@@ -651,7 +651,7 @@ impl PlanView {
         let faded = egui::Color32::from_rgba_unmultiplied(130, 134, 140, 70);
         {
             // Each section in each of its display cases, coloured and
-            // coded as Sections › Display options say.
+            // coded as Line › Sections › Display options say.
             // (Only what is in view; a far view's points crowded into a
             // pixel drawn once.)
             let shapes = model.shapes_shown_ref(case);

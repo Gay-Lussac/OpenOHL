@@ -35,11 +35,11 @@ point clouds](../user-guide/project.md).
 
 ## What next
 
-- Build your own structure type: Tools › **New structure from a
+- Build your own structure type: Edit › Tools › **New structure from a
   template…** ([Structure
   templates](../user-guide/structure-library.md#structure-templates-ohlpt)),
   or open it in [OHL-Structure](../user-guide/structure-app.md).
-- Give the line an electrical system (voltage, phases): Sections ›
+- Give the line an electrical system (voltage, phases): Line › Sections ›
   Electrical systems table ([Electrical
   systems](../user-guide/line-file.md#electrical-systems)); clearance
   rules can then depend on the voltage.
@@ -47,7 +47,7 @@ point clouds](../user-guide/project.md).
   those of the code you work to ([Design
   codes](../user-guide/design-codes.md), [Weather
   cases](../user-guide/weather.md)).
-- Drawings: **File › Export › Drawings…** ([Drawings and profile
+- Drawings: **Plans & sheets › Drawings…** ([Drawings and profile
   exports](../user-guide/drawings.md)).
 - Every menu, page and tool: [OHL-Design, the line
   application](../user-guide/desktop-app.md).

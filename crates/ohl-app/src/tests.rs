@@ -37,6 +37,21 @@ pub(crate) use session_edits::*;
 pub(crate) use types_drawings::*;
 use window::*;
 
+/// Opens `menu` of the menu bar, then its submenu `sub` (hovered): the
+/// menus by task (owner: OHL-Design UI review, 2026-10-26), e.g. Line ›
+/// Terrain, Edit › Tools, File › Plugins.
+pub(crate) fn submenu(h: &mut Harness<'_, App>, menu: &str, sub: &str) {
+    h.get_by_label(menu).click();
+    h.run();
+    h.get_by_label(&format!("{sub} ⏵")).hover();
+    h.run();
+}
+
+/// Opens Line › `sub` (Terrain, Structures, Sections, Criteria).
+pub(crate) fn line_menu(h: &mut Harness<'_, App>, sub: &str) {
+    submenu(h, "Line", sub);
+}
+
 pub(crate) fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The plugin manager (Plugins › Plugin manager): the plugins installed
+//! The plugin manager (File › Plugins › Plugin manager): the plugins installed
 //! for the user and those of the folders added, each with what it
 //! provides, why it cannot be used, and a tick to turn it off; install
 //! from a folder, remove. File-format plugins give File › Import into the
@@ -763,7 +763,7 @@ impl Plugins {
                 ui.label(
                     egui::RichText::new(format!(
                         "Plugins add file formats (WebAssembly, sandboxed: no files, no network) \
-                         and scripts (Python, run in Plugins › Python console: NOT sandboxed, \
+                         and scripts (Python, run in File › Plugins › Python console: NOT sandboxed, \
                          they run with your rights and are asked for before they are used). \
                          Interface version \
                          {}.{}. Installed plugins are kept in {}.",

@@ -176,7 +176,7 @@ pub(super) fn insulator_changes(
                 .count();
             if users.len() > own {
                 return Err(format!(
-                    "{id} is used by structure types (their strings): change them first (Structures › Structure library)"
+                    "{id} is used by structure types (their strings): change them first (Line › Structures › Structure library)"
                 ));
             }
             if !users.is_empty() {

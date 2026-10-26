@@ -74,7 +74,7 @@ fn backgrounds_are_kept_shown_and_hidden() {
     }
     // Terrain › Backgrounds: two boxes ticked in a row (the menu stays
     // open).
-    harness.get_by_label("Terrain").click();
+    crate::tests::line_menu(&mut harness, "Terrain");
     harness.run();
     harness.get_by_label("Backgrounds ⏵").hover();
     harness.run();

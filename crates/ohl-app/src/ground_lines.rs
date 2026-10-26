@@ -1271,7 +1271,7 @@ pub fn compute_on(
             if out.offer_build.is_none() {
                 out.notes.push(
                     "no terrain surface and no LiDAR point cloud: import a surface in \
-                     Terrain › Terrain surfaces (TIN)"
+                     Line › Terrain › Terrain surfaces (TIN)"
                         .into(),
                 );
             }
@@ -3053,7 +3053,7 @@ pub fn menu(
             if ui
                 .button("Build a terrain surface from the LiDAR…")
                 .on_hover_text(
-                    "Terrain › Terrain surfaces (TIN), Build from LiDAR: tick the classes of \
+                    "Line › Terrain › Terrain surfaces (TIN), Build from LiDAR: tick the classes of \
                      the ground and build; the surface becomes the ground and the lines are \
                      draped on it",
                 )

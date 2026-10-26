@@ -928,7 +928,7 @@ fn calculation_options_choose_the_jumpers_pull() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Calculation options…").click();
     harness.run();
@@ -962,7 +962,7 @@ fn calculation_options_choose_the_ice_per_unstretched_metre() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     let before = harness.state_mut().ready().unwrap().model.revision();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Calculation options…").click();
     harness.run();
@@ -1600,7 +1600,7 @@ fn calculation_options_choose_the_simplified_blocks() {
             .blocks,
         ohl_line::InTheBlocks::Sheaves
     );
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Calculation options…").click();
     harness.run();

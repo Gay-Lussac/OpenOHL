@@ -91,7 +91,7 @@ fn display_options_stay_open_while_ticking() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Sections").click();
+    crate::tests::line_menu(&mut harness, "Sections");
     harness.run();
     harness.get_by_label_contains("Display options").hover();
     harness.run();
@@ -166,7 +166,7 @@ fn bill_of_materials_and_spotting_windows() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("File").click();
+    harness.get_by_label("Plans & sheets").click();
     harness.run();
     harness.get_by_label_contains("Bill of materials").hover();
     harness.run();
@@ -202,13 +202,8 @@ fn bill_of_materials_and_spotting_windows() {
             .is_some()
     );
 
-    // The menu (the first "Structures"; the bill's window says it too).
-    harness
-        .query_all_by_label("Structures")
-        .next()
-        .unwrap()
-        .click();
-    harness.run();
+    // The menu: Line › Structures.
+    crate::tests::line_menu(&mut harness, "Structures");
     harness.get_by_label("Spot structures…").click();
     harness.run();
     // The bill's window is open too: the spotting window's Run.
@@ -479,7 +474,7 @@ fn the_design_code_window_opens_from_the_criteria_menu() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| app);
     harness.run();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Design code…").click();
     harness.run();
@@ -687,7 +682,7 @@ fn the_bimetallic_model_is_chosen_for_the_line() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Bimetallic conductor model…").click();
     harness.run();
@@ -725,7 +720,7 @@ fn loads_for_structures_are_ticked_in_a_menu_that_stays_open() {
         .with_size(egui::vec2(1400.0, 1000.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness
         .get_by_label_contains("Loads for structures")
@@ -813,7 +808,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     // Define: from the menu; the system typed as a proj4 string.
-    harness.get_by_label("Terrain").click();
+    crate::tests::line_menu(&mut harness, "Terrain");
     harness.run();
     harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
@@ -835,7 +830,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     let e = r.model.editing.as_ref().unwrap();
     assert_eq!(e.session.line().crs, LOCAL_TM, "kept in the project");
     // The calculator opens with the project's system.
-    harness.get_by_label("Terrain").click();
+    crate::tests::line_menu(&mut harness, "Terrain");
     harness.run();
     harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
@@ -858,7 +853,7 @@ fn the_coordinate_system_is_defined_converted_and_the_project_reprojected() {
     r.crs.calculator = None;
     harness.run();
     // Reproject into UTM 32N: a new project, this one unchanged.
-    harness.get_by_label("Terrain").click();
+    crate::tests::line_menu(&mut harness, "Terrain");
     harness.run();
     harness.get_by_label("Coordinate system ⏵").click();
     harness.run();
@@ -947,7 +942,7 @@ fn the_height_datum_is_defined_with_the_coordinate_system() {
     h.get_by_label("height datum");
     h.get_by_label("not given");
     let open_define = |h: &mut Harness<'_, App>| {
-        h.get_by_label("Terrain").click();
+        crate::tests::line_menu(h, "Terrain");
         h.run();
         h.get_by_label("Coordinate system ⏵").click();
         h.run();

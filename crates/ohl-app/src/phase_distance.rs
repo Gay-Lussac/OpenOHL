@@ -510,7 +510,7 @@ fn load_plugin(
         .cloned()
         .ok_or_else(|| {
             let mut why = "no check plugin in use runs it: install a plugin that does or turn it \
-                           on (Plugins › Plugin manager)"
+                           on (File › Plugins › Plugin manager)"
                 .to_owned();
             if !model.check_problems.is_empty() {
                 why.push_str(&format!(" ({})", model.check_problems.join("; ")));

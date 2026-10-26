@@ -370,14 +370,14 @@ fn tool_windows_dock_and_still_close_with_their_tool() {
     };
     open(&mut h);
     assert!(!docked(&mut h), "a window first");
-    h.get_by_label("📌 Dock as a panel").click();
+    h.get_by_label("Dock as a panel").click();
     h.run();
     h.run();
     h.run();
     assert!(docked(&mut h));
     // Its content is in the panel and works: Cancel closes the tool, the
     // tab goes with it.
-    h.get_by_label("⬈ Float");
+    h.get_by_label("Float");
     shot(&mut h, "display-cases-docked");
     h.get_by_label("Cancel").click();
     h.run();
@@ -387,13 +387,13 @@ fn tool_windows_dock_and_still_close_with_their_tool() {
     // Docked again next time; Float: a window again.
     open(&mut h);
     assert!(docked(&mut h));
-    h.get_by_label("⬈ Float").click();
+    h.get_by_label("Float").click();
     h.run();
     h.run();
     assert!(!docked(&mut h));
-    h.get_by_label("📌 Dock as a panel");
+    h.get_by_label("Dock as a panel");
     // Docked, its tab closed: the tool closes.
-    h.get_by_label("📌 Dock as a panel").click();
+    h.get_by_label("Dock as a panel").click();
     h.run();
     h.run();
     assert!(docked(&mut h));

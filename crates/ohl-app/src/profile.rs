@@ -679,7 +679,7 @@ impl ProfileView {
                 ui.label(
                     egui::RichText::new(
                         "Sheet preview: the export writes one continuous drawing (no sheet \
-                         format chosen in File › Export › Drawings…)",
+                         format chosen in Plans & sheets › Drawings…)",
                     )
                     .small()
                     .weak(),
@@ -968,7 +968,7 @@ impl ProfileView {
                     dot(q, 1.2, egui::Color32::from_rgb(120, 150, 110));
                 }
             }
-            // The LiDAR points (classes hidden in Terrain › LiDAR classes
+            // The LiDAR points (classes hidden in Line › Terrain › LiDAR classes
             // shown left out), one per pixel and class colour.
             let lidar = &built.lidar;
             let from = lidar.partition_point(|p| p.0[0] < s0);
@@ -1204,7 +1204,7 @@ impl ProfileView {
                 col,
             );
         }
-        // Coloured and coded as Sections › Display options say (made
+        // Coloured and coded as Line › Sections › Display options say (made
         // again when the view, the selection or the styles change).
         let display = &model.section_display;
         let arrows = display.direction[crate::annotations::View::Profile as usize];
@@ -1254,7 +1254,7 @@ impl ProfileView {
         if let Some((_, shapes)) = &self.wires {
             painter.extend(shapes.iter().cloned());
         }
-        // Section labels and sags (Sections › Display options), on this
+        // Section labels and sags (Line › Sections › Display options), on this
         // route's traces of the spans.
         let notes = crate::annotations::notes(model, case, crate::annotations::View::Profile, None);
         if !notes.is_empty() {

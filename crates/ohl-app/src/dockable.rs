@@ -6,7 +6,8 @@
 //! (structure, string, section, jumper), the pylon builder, Replace
 //! structure, the ground clearance windows,
 //! Display weather cases. Each comes up as a floating window where it
-//! always did; **Dock as a panel** (its button, top right) makes it a tab
+//! always did; **Dock as a panel** (📌, a small button in its title bar —
+//! owner: OHL-Design UI review, 2026-10-26) makes it a tab
 //! of the main window — dragged anywhere there, into another group or out
 //! into a window of its own, slid aside like any page — and **Float**
 //! makes it a window again. It still closes when its tool is done (Apply,
@@ -29,7 +30,7 @@ use eframe::egui;
 pub enum Panel {
     /// The editor window: a structure, string, section, jumper….
     Editor,
-    /// Tools › New pylon from a template.
+    /// Edit › Tools › New pylon from a template.
     PylonBuilder,
     /// Replace structure.
     Replace,
@@ -41,7 +42,7 @@ pub enum Panel {
     DisplayCases,
     /// Checks › Vegetation (the danger-tree panel).
     Vegetation,
-    /// Tools › Measurements panel.
+    /// Edit › Tools › Measurements panel.
     Measurements,
     /// The Follow and snap tool's panel.
     Follow,
@@ -140,25 +141,52 @@ pub enum Shown<R> {
     Closed,
 }
 
-/// The button that docks or floats it, at the right of its first row.
+/// The accessible name and the hover text of the button that docks a
+/// window.
+pub const DOCK: (&str, &str) = (
+    "Dock as a panel",
+    "Dock as a panel: a tab of the main window — drag it anywhere there, or slide it aside; \
+     it still closes when its tool is done, and comes up docked next time",
+);
+
+/// The accessible name and the hover text of the button that floats a
+/// docked panel.
+pub const FLOAT: (&str, &str) = (
+    "Float",
+    "Float: a window again (its tab can also be dragged out of the main window)",
+);
+
+/// The small icon button that docks (📌) or floats (⬈) it; its name for
+/// screen readers and tests, [`DOCK`] or [`FLOAT`].
 fn dock_button(ui: &mut egui::Ui, panel: Panel, docked: bool) {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-        let (text, tip) = if docked {
-            (
-                "⬈ Float",
-                "Make it a window again (its tab can also be dragged out of the main window)",
-            )
-        } else {
-            (
-                "📌 Dock as a panel",
-                "Make it a tab of the main window: drag it anywhere there, or slide it aside; it \
-                 still closes when its tool is done, and comes up docked next time",
-            )
-        };
-        if ui.small_button(text).on_hover_text(tip).clicked() {
-            host(ui.ctx(), |h| h.requests.push((panel, !docked)));
-        }
-    });
+    let (icon, (name, tip)) = if docked {
+        ("⬈", FLOAT)
+    } else {
+        ("📌", DOCK)
+    };
+    let r = ui.add(egui::Button::new(egui::RichText::new(icon).small()).frame(false));
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    if r.on_hover_text(tip).clicked() {
+        host(ui.ctx(), |h| h.requests.push((panel, !docked)));
+    }
+}
+
+/// The dock button in the title bar of the window whose content `ui`
+/// holds (left of its close button, `closable`): drawn by the content, in
+/// the title bar's row above it (no layer of its own over other windows).
+fn title_bar_button(ui: &mut egui::Ui, panel: Panel, closable: bool) {
+    let content = ui.max_rect();
+    let h = ui.spacing().interact_size.y;
+    let right = content.right() - if closable { h + 2.0 } else { 0.0 };
+    let top = content.top() - h - ui.spacing().item_spacing.y - 2.0;
+    let rect = egui::Rect::from_min_size(egui::pos2(right - h, top), egui::vec2(h, h));
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    child.set_clip_rect(rect.expand(2.0));
+    dock_button(&mut child, panel, false);
 }
 
 /// Shows tool window `panel` titled `title`: as `window` (with `open`,
@@ -188,15 +216,20 @@ pub fn show<R>(
         return Shown::Closed;
     }
     if !docked {
+        let closable = open.is_some();
         let window = match open {
             Some(o) => window.open(o),
             None => window,
         };
-        return window
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| dock_button(ui, panel, false));
-                add(ui)
-            })
+        let shown = window.show(ctx, |ui| {
+            title_bar_button(ui, panel, closable);
+            // As wide as when its dock button had a row of its own there
+            // (a window's size, and so whether its lists scroll, as
+            // before).
+            ui.allocate_space(egui::vec2(ui.available_width(), 0.0));
+            add(ui)
+        });
+        return shown
             .and_then(|r| r.inner)
             .map_or(Shown::Hidden, Shown::Drawn);
     }
@@ -221,7 +254,9 @@ pub fn show<R>(
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.strong(&title);
-                    dock_button(ui, panel, true);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        dock_button(ui, panel, true)
+                    });
                 });
                 ui.separator();
                 add(ui)

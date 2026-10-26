@@ -359,7 +359,7 @@ fn a_saved_library_reaches_the_model() {
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Criteria").click();
+    crate::tests::line_menu(&mut harness, "Criteria");
     harness.run();
     harness.get_by_label("Weather cases library").click();
     harness.run();
@@ -463,11 +463,8 @@ fn tables_edit_the_line_in_one_command_each() {
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
     // Opened from the menu.
-    // The menu button (the Model page has a "Structures" layer too).
-    harness
-        .get_by_role_and_label(egui::accesskit::Role::Button, "Structures")
-        .click();
-    harness.run();
+    // Line › Structures.
+    crate::tests::line_menu(&mut harness, "Structures");
     harness.get_by_label("Structures table").click();
     harness.run();
     harness.run();

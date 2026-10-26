@@ -427,7 +427,7 @@ impl InternalClearancesWindow {
                             "At each structure with a body (detail level 2 or 3): the \
                              conductors near it (within each rule's reach along the span), its \
                              jumpers, its strings' live ends and the electrified volumes on its \
-                             strings (Structures › String shapes), as solved in each weather \
+                             strings (Line › Structures › String shapes), as solved in each weather \
                              case of the rules, against every member — to the member's surface \
                              where its section's solid is known, else to its centre line (said: \
                              on the unsafe side) — and against the grounded volumes. Structures \
@@ -640,7 +640,7 @@ impl InternalClearancesWindow {
                     changed |= ui
                         .checkbox(&mut r.shapes, "")
                         .on_hover_text(
-                            "The volumes on the strings (Structures › String shapes): the \
+                            "The volumes on the strings (Line › Structures › String shapes): the \
                              electrified ones checked, every part against the grounded ones",
                         )
                         .changed();

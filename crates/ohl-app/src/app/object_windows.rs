@@ -21,7 +21,7 @@ pub struct DisplayWindow {
 /// (ticked here; the Sections table is not changed) or each section's own
 /// display cases from the Sections table; and the side the wind comes
 /// from. Apply (Enter) shows them; display only — this user's choice.
-/// Structures › Angles around structures: which angle means ahead. Angles
+/// Line › Structures › Angles around structures: which angle means ahead. Angles
 /// in plan around a structure turn clockwise seen from above.
 pub(super) fn angles_window(ctx: &egui::Context, r: &mut Ready) {
     let Some(mut ahead) = r.angles_window else {

@@ -181,7 +181,7 @@ impl PlansWindow {
                 ui.label(
                     egui::RichText::new(
                         "Plans beside the plan-and-profile sheets, for every route, with the \
-                         sheet template, title fields and routes of Export › Drawings….",
+                         sheet template, title fields and routes of Plans & sheets › Drawings….",
                     )
                     .small()
                     .weak(),

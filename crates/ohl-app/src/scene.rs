@@ -36,9 +36,9 @@ pub enum Layer {
     Draft,
     /// The selection, highlighted.
     Selection,
-    /// Orthophotos (Terrain › Backgrounds), under the plan view.
+    /// Orthophotos (Line › Terrain › Backgrounds), under the plan view.
     Orthophotos,
-    /// DXF drawings (Terrain › Backgrounds), in the plan and 3D views.
+    /// DXF drawings (Line › Terrain › Backgrounds), in the plan and 3D views.
     Drawings,
     /// Vegetation growing into the wires (Checks › Vegetation): a cyan dot
     /// joined to the wire.
@@ -358,7 +358,7 @@ pub fn rgb(hex: &str) -> [u8; 3] {
 }
 
 /// Display colour of a LiDAR class, by its roles (noise magenta: shown
-/// unless hidden in Terrain › LiDAR classes shown).
+/// unless hidden in Line › Terrain › LiDAR classes shown).
 pub fn class_color(scheme: &ohl_lidar::ClassScheme, code: u8) -> Option<[u8; 3]> {
     // The scheme's own colour, else one from the roles.
     if let Some(c) = scheme
@@ -703,7 +703,7 @@ pub fn wires(
         (true, Some(_)) => 230,
         (true, None) => 255,
     };
-    // Colours and line codes (Sections › Display options), the
+    // Colours and line codes (Line › Sections › Display options), the
     // directions as arrows in the case shown.
     let display = &model.section_display;
     let styles = crate::wire_style::Styles::new(line, display.coloring);

@@ -138,7 +138,7 @@ pub enum Command {
     Table(crate::tables::TableKind),
     /// Hold a tool.
     Hold(Tool),
-    /// Open New pylon from a template (the pylon builder): Tools menu,
+    /// Open New pylon from a template (the pylon builder): Edit › Tools,
     /// Structures group. A window building a structure type, not a tool
     /// held (no click in a view).
     NewPylon,
@@ -214,6 +214,20 @@ impl Command {
             Command::Save => {
                 Some("The project written through, the library pages with changes saved")
             }
+            _ => None,
+        }
+    }
+
+    /// Its icon on the quick bar (owner: OHL-Design UI review,
+    /// 2026-10-26: Undo, Redo, Save all, Fit views and Check wire
+    /// clearances as icon buttons, their names on hover); none: its name.
+    pub fn icon(self) -> Option<&'static str> {
+        match self {
+            Command::Undo => Some("⟲"),
+            Command::Redo => Some("⟳"),
+            Command::Save => Some("💾"),
+            Command::FitViews => Some("⛶"),
+            Command::RunChecks => Some("✔"),
             _ => None,
         }
     }
@@ -308,16 +322,32 @@ impl QuickBar {
         ))
     }
 
-    /// The bar's buttons; the command clicked.
+    /// The bar's buttons; the command clicked. A command with an icon
+    /// ([`Command::icon`]) is an icon button, its name, shortcut and what
+    /// it does on hover (its name is its accessible name).
     pub fn ui(&self, ui: &mut egui::Ui) -> Option<Command> {
         let mut out = None;
         for c in &self.0 {
-            let r = ui.add(c.button(ui));
+            let r = match c.icon() {
+                Some(icon) => {
+                    let name = c.name();
+                    let r = ui.add(
+                        egui::Button::new(egui::RichText::new(icon).size(16.0))
+                            .min_size(egui::vec2(28.0, 24.0)),
+                    );
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name)
+                    });
+                    r
+                }
+                None => ui.add(c.button(ui)),
+            };
+            let name = c.name();
             let r = match (c.tip(), c.shortcut()) {
-                (Some(t), Some(s)) => r.on_hover_text(format!("{t} ({s})")),
-                (Some(t), None) => r.on_hover_text(t),
-                (None, Some(s)) => r.on_hover_text(s),
-                (None, None) => r,
+                (Some(t), Some(s)) => r.on_hover_text(format!("{name} ({s}): {t}")),
+                (Some(t), None) => r.on_hover_text(format!("{name}: {t}")),
+                (None, Some(s)) => r.on_hover_text(format!("{name} ({s})")),
+                (None, None) => r.on_hover_text(name),
             };
             if r.clicked() {
                 out = Some(*c);

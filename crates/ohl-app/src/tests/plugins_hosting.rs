@@ -374,7 +374,7 @@ fn the_python_console_drives_the_project() {
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
     harness.run();
-    harness.get_by_label("Plugins").click();
+    crate::tests::submenu(&mut harness, "File", "Plugins");
     harness.run();
     harness.get_by_label("Python console").click();
     harness.run();
