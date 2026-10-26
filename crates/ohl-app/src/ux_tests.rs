@@ -188,6 +188,9 @@ fn next_steps_follow_the_model() {
     h.get_by_label("Next: Name the route…").click();
     h.run();
     assert!(h.state_mut().ready().unwrap().first_steps.is_some());
+    // (Its window closed first: it may lie over the page.)
+    h.get_by_label("Later").click();
+    h.run();
     h.get_by_label("Hold New alignment").click();
     h.run();
     assert_eq!(

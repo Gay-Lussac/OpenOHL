@@ -59,6 +59,7 @@ mod menu;
 mod merge_cases;
 mod model;
 mod next_steps;
+mod notices;
 mod octree;
 mod perf;
 mod phase_distance;
@@ -92,6 +93,7 @@ mod string_checks;
 mod structure_app;
 mod structure_desk;
 mod structure_picker;
+mod style;
 mod surfaces;
 mod survey_io;
 mod tables;
@@ -322,6 +324,10 @@ fn main() -> std::process::ExitCode {
                 app.quickbar = q;
             }
             app.plugins = plugins::Plugins::load(cc.storage, plugins::Plugins::default_user_dir());
+            app.ui_scale = style::load_scale(cc.storage);
+            if let Some(st) = cc.storage {
+                app.layer_groups = scene::LayerGroups::load(st);
+            }
             Ok(Box::new(app))
         }),
     );

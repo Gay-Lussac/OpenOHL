@@ -1708,7 +1708,8 @@ impl PhaseDistanceWindow {
                         }
                     });
                 ui.label("wind step");
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut self.wind_step)
                         .range(1.0..=1000.0)
                         .speed(1.0)
@@ -1822,7 +1823,8 @@ impl PhaseDistanceWindow {
             // Under unequal wind the closest approach is exact: no stations.
             if self.kind == Kind::Span {
                 ui.label("stations every");
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut self.settings.spacing)
                         .range(0.1..=50.0)
                         .speed(0.1)

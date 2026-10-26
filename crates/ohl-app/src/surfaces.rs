@@ -747,7 +747,7 @@ impl SurfacesWindow {
                             )
                             .on_hover_text("The name the new surface is kept under");
                             ui.label("cell");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.lidar.cell)
                                     .range(0.1..=50.0)
                                     .speed(0.1)
@@ -755,7 +755,7 @@ impl SurfacesWindow {
                             )
                             .on_hover_text("The lowest point of each square cell is kept");
                             ui.label("longest side");
-                            ui.add(
+                            crate::style::field(ui,
                                 egui::DragValue::new(&mut self.lidar.max_edge)
                                     .range(1.0..=10_000.0)
                                     .suffix(" m"),

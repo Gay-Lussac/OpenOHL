@@ -644,7 +644,8 @@ impl InternalClearancesWindow {
                              electrified ones checked, every part against the grounded ones",
                         )
                         .changed();
-                    let resp = ui.add(
+                    let resp = crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut r.reach)
                             .range(1.0..=200.0)
                             .speed(0.5),

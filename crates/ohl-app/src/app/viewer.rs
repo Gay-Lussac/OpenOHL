@@ -14,6 +14,8 @@ pub(super) struct Viewer<'a> {
     pub(super) lod: &'a mut crate::lod::LodSettings,
     /// The colour tool's palette.
     pub(super) palette: &'a mut crate::color_tool::Palette,
+    /// The Layers list's folded groups.
+    pub(super) layer_groups: &'a mut crate::scene::LayerGroups,
     /// The Python plugins' scripts (for the console).
     pub(super) scripts: Vec<(String, PathBuf)>,
 }
@@ -246,6 +248,7 @@ impl TabViewer for Viewer<'_> {
                 let editable = r.model.can_edit().is_ok();
                 let mut start_link = None;
                 let mut cut_at = None;
+                let mut solve_all = false;
                 let loads = r.loads.results.as_ref().and_then(|x| x.as_ref().ok());
                 let action = crate::properties::ui(
                     ui,
@@ -258,8 +261,12 @@ impl TabViewer for Viewer<'_> {
                         editable,
                         start_link: &mut start_link,
                         cut_at: &mut cut_at,
+                        solve_all: &mut solve_all,
                     },
                 );
+                if solve_all {
+                    r.solve_all = true;
+                }
                 if let Some(a) = action {
                     r.perform(a);
                 }
@@ -277,7 +284,7 @@ impl TabViewer for Viewer<'_> {
                 None
             }
             Tab::Model => {
-                model_panel(ui, r);
+                model_panel(ui, r, self.layer_groups);
                 None
             }
             Tab::Clearances => {

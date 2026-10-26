@@ -260,7 +260,7 @@ pub(super) fn jumper_ui(ui: &mut egui::Ui, f: &mut JumperForm, model: &Model) {
                     j.bundle_spacing = own.then(|| model.line.jumper_bundle(j).spacing).flatten();
                 }
                 if let Some(n) = &mut j.bundle {
-                    ui.add(egui::DragValue::new(n).range(1..=8));
+                    crate::style::field(ui, egui::DragValue::new(n).range(1..=8));
                     if *n > 1 {
                         let mut sp = j.bundle_spacing.unwrap_or(0.4);
                         ui.label("spacing");
@@ -360,7 +360,8 @@ pub(super) fn clamps_ui(
                     .on_hover_text("A wire point without a set, on one string or two");
                 ui.horizontal(|ui| {
                     ui.label("at");
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut c.at)
                             .speed(0.005)
                             .range(0.01..=0.99)
@@ -370,7 +371,8 @@ pub(super) fn clamps_ui(
                         "Its middle, as a share of the jumper's length from its first end",
                     );
                     ui.label("long");
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut c.clamp_length)
                             .speed(0.005)
                             .range(0.01..=1.0)

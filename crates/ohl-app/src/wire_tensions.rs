@@ -433,7 +433,7 @@ impl WireTensionsWindow {
                         changed |= ticks(ui, &cases, &mut r.cases);
                     });
                     let mut f = r.factor;
-                    let response = ui.add(
+                    let response = crate::style::field(ui,
                         egui::DragValue::new(&mut f)
                             .range(0.0..=1.0)
                             .speed(0.005)

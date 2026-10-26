@@ -796,6 +796,10 @@ pub struct CutView {
     /// The plane the camera was placed for: when the cut moves, the
     /// camera keeps its pose relative to the plane.
     plane_shown: Option<Plane>,
+    /// The front view as set up, and the panel's aspect it was set up
+    /// for: while the camera is still that one, a panel that settles to
+    /// another shape (its first frames) gets the front view again.
+    fitted: Option<(Camera, f64)>,
     slab: Option<(SlabKey, Arc<Slab>)>,
     /// The wires and structures of the last frame.
     pub contents: Contents,
@@ -837,6 +841,7 @@ impl CutView {
             to_front: true,
             fresh: true,
             plane_shown: None,
+            fitted: None,
             slab: None,
             contents: Contents::default(),
             heights: None,
@@ -1163,7 +1168,8 @@ fn bar_ui(ui: &mut egui::Ui, view: &mut CutView) -> Option<Step> {
         }
         ui.separator();
         ui.label("depth ±");
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut view.spec.depth)
                 .range(0.1..=1000.0)
                 .speed(0.5)
@@ -1172,7 +1178,8 @@ fn bar_ui(ui: &mut egui::Ui, view: &mut CutView) -> Option<Step> {
         )
         .on_hover_text("What lies this far before and behind the plane, along the line, is shown");
         ui.label("width ±");
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut view.spec.width)
                 .range(1.0..=5000.0)
                 .speed(0.5)
@@ -1319,11 +1326,17 @@ fn panel_ui(
     let clip = view.clip();
     view.view.clip = clip;
     let heights = view.heights.unwrap_or([0.0, 50.0]);
-    if view.to_front || view.view.camera.is_none() {
-        let avail = ui.available_size();
-        let aspect = f64::from(avail.x) / f64::from(avail.y.max(1.0));
-        view.view
-            .set_camera(front_camera(&plane, heights, width, aspect));
+    // The view's shape: as drawn last (the panel's room before that).
+    let avail = view.rect.map_or_else(|| ui.available_size(), |r| r.size());
+    let aspect = f64::from(avail.x) / f64::from(avail.y.max(1.0));
+    // The front view untouched, the panel of another shape now: again.
+    let settled = view
+        .fitted
+        .is_some_and(|(c, a)| Some(c) == view.view.camera && (a / aspect - 1.0).abs() > 0.01);
+    if view.to_front || view.view.camera.is_none() || settled {
+        let camera = front_camera(&plane, heights, width, aspect);
+        view.view.set_camera(camera);
+        view.fitted = Some((camera, aspect));
         view.to_front = false;
         view.plane_shown = Some(plane);
     } else if let Some(old) = view.plane_shown
@@ -1811,7 +1824,8 @@ pub fn dialog_ui(
                     .find(|v| v.id == d.alignment)
                     .map_or(0.0, |v| plan_length(&v.centreline(line)));
                 ui.horizontal(|ui| {
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut d.station)
                             .range(0.0..=length.max(0.0))
                             .speed(1.0)
@@ -1834,7 +1848,8 @@ pub fn dialog_ui(
                 ui.end_row();
             }
             ui.label("Depth ±");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut d.depth)
                     .range(0.1..=1000.0)
                     .speed(0.5)
@@ -1847,7 +1862,8 @@ pub fn dialog_ui(
             );
             ui.end_row();
             ui.label("Width ±");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut d.width)
                     .range(1.0..=5000.0)
                     .speed(0.5)

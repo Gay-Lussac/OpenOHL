@@ -239,7 +239,7 @@ impl ImportDialog {
                         });
                         ui.end_row();
                         ui.label("Chunk size, m");
-                        ui.add(egui::DragValue::new(&mut self.chunk).range(8.0..=1024.0))
+                        crate::style::field(ui, egui::DragValue::new(&mut self.chunk).range(8.0..=1024.0))
                             .on_hover_text("64 m: four chunks per 256 m tile of the grid");
                         ui.end_row();
                         ui.label("Class scheme (.ohlc)");

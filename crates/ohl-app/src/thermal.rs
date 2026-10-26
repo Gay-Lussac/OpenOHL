@@ -340,7 +340,8 @@ fn body(
                 }
             });
         ui.label("Maximum temperature");
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut w.max_temperature)
                 .range(-20.0..=300.0)
                 .suffix(" °C"),
@@ -384,13 +385,15 @@ fn body(
                     }
                 });
             ui.label("from");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut w.options.min_temperature)
                     .range(-50.0..=w.options.max_temperature - 1.0)
                     .suffix(" °C"),
             );
             ui.label("to");
-            ui.add(
+            crate::style::field(
+                ui,
                 egui::DragValue::new(&mut w.options.max_temperature)
                     .range(w.options.min_temperature + 1.0..=400.0)
                     .suffix(" °C"),

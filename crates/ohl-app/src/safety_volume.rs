@@ -1018,7 +1018,8 @@ impl SafetyVolumeWindow {
                 }
                 ui.horizontal(|ui| {
                     ui.label("margin");
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut s.margin)
                             .speed(0.05)
                             .range(0.0..=50.0)
@@ -1139,7 +1140,8 @@ impl SafetyVolumeWindow {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("tolerance");
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut s.tolerance)
                             .speed(0.005)
                             .range(0.005..=1.0)

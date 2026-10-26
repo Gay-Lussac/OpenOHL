@@ -559,8 +559,11 @@ pub(super) fn alignment_ui(ui: &mut egui::Ui, f: &mut AlignmentForm, model: &Mod
                     .map(|x| format!(" (route {})", x.route))
                     .unwrap_or_default();
                 ui.label(format!("{a}{route}"));
-                ui.add(egui::DragValue::new(order).range(1..=n.max(1)).prefix("#"))
-                    .on_hover_text("Its place along this alignment");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(order).range(1..=n.max(1)).prefix("#"),
+                )
+                .on_hover_text("Its place along this alignment");
                 if ui
                     .small_button("×")
                     .on_hover_text("Take it off this alignment (it stays)")

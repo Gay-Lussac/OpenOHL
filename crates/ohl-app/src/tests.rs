@@ -28,6 +28,7 @@ mod strings_picking;
 mod structures_menus;
 mod tutorial;
 mod types_drawings;
+mod ui_review;
 mod window;
 use clearances::*;
 use objects::*;

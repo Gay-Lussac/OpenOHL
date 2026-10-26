@@ -273,7 +273,8 @@ pub fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64) -> bool {
         ui.label("band margin");
         changed |= ui
             .push_id((id, "band-margin"), |ui| {
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(margin)
                         .speed(0.01)
                         .range(0.0..=5.0)
@@ -338,7 +339,8 @@ pub fn jumper_band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, enab
             ui.label("jumper band margin");
             changed |= ui
                 .push_id((id, "jumper-band-margin"), |ui| {
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(margin)
                             .speed(0.01)
                             .range(0.0..=5.0)

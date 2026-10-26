@@ -632,7 +632,7 @@ impl HostWindow {
                 );
                 egui::Grid::new("host").show(ui, |ui| {
                     ui.label("Port (UDP)");
-                    ui.add(egui::DragValue::new(&mut self.port).range(0..=65535))
+                    crate::style::field(ui, egui::DragValue::new(&mut self.port).range(0..=65535))
                         .on_hover_text("0: any free port (shown in the invitation)");
                     ui.end_row();
                     ui.label("Users the project does not know");

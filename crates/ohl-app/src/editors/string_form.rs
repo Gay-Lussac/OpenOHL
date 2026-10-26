@@ -946,7 +946,7 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
     if f.new {
         ui.horizontal(|ui| {
             ui.label("set");
-            ui.add(egui::DragValue::new(&mut f.set).range(1..=9999));
+            crate::style::field(ui, egui::DragValue::new(&mut f.set).range(1..=9999));
             ui.label("shape");
             let top = f
                 .strings
@@ -1355,7 +1355,7 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
                                 w.set = has.then_some(f.set.max(1));
                             }
                             if let Some(set) = &mut w.set {
-                                ui.add(egui::DragValue::new(set).range(1..=9999));
+                                crate::style::field(ui, egui::DragValue::new(set).range(1..=9999));
                                 ui.label("clamp");
                                 egui::ComboBox::from_id_salt(("wire-dead-end", k))
                                     .selected_text(if w.dead_end { "strain" } else { "suspension" })

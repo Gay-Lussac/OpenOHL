@@ -41,7 +41,8 @@ pub(super) fn angles_window(ctx: &egui::Context, r: &mut Ready) {
             );
             ui.horizontal(|ui| {
                 ui.label("ahead is at");
-                ui.add(
+                crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut ahead)
                         .range(0.0..=359.0)
                         .speed(1.0)

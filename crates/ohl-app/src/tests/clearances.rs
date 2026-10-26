@@ -440,6 +440,12 @@ fn the_radial_clearances_window_keeps_its_rules() {
             .iter()
             .all(|r| r.radial.is_some() && r.vertical.is_none())
     );
+    harness
+        .query_all_by_label("Remove")
+        .next()
+        .unwrap()
+        .scroll_to_me();
+    harness.run();
     harness.query_all_by_label("Remove").next().unwrap().click();
     harness.run();
     assert_eq!(
@@ -453,7 +459,20 @@ fn the_radial_clearances_window_keeps_its_rules() {
         2,
         "asks first"
     );
+    // The question under the rules (scrolled to: the window is long).
+    harness
+        .query_all_by_label("Remove")
+        .last()
+        .unwrap()
+        .scroll_to_me();
+    harness.run();
     harness.get_by_label("Keep").click();
+    harness.run();
+    harness
+        .query_all_by_label("Remove")
+        .next()
+        .unwrap()
+        .scroll_to_me();
     harness.run();
     harness.query_all_by_label("Remove").next().unwrap().click();
     harness.run();

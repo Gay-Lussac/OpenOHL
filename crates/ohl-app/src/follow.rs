@@ -716,7 +716,8 @@ impl Follow {
                     });
                 ui.horizontal(|ui| {
                     ui.label("Search within");
-                    ui.add(
+                    crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut radius)
                             .range(1.0..=200.0)
                             .suffix(" m"),

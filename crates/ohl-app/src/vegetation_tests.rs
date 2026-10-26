@@ -187,7 +187,8 @@ fn the_highlights_are_drawn_while_the_panel_is_open() {
         .accesskit_node()
         .label()
         .unwrap_or_default();
-    h.get_by_label(&shown).click();
+    // (By its accessibility action: the colour window may lie over it.)
+    h.get_by_label(&shown).click_accesskit();
     h.run_steps(2);
     let ground = h
         .query_all_by_label_contains("2 ")

@@ -2887,7 +2887,8 @@ pub fn menu(
     ui.checkbox(&mut settings.on, "Show the lines");
     ui.horizontal(|ui| {
         ui.label("Distance");
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut settings.distance)
                 .range(0.0..=MAX_DISTANCE)
                 .speed(0.5)
@@ -3009,7 +3010,8 @@ pub fn menu(
     });
     ui.horizontal(|ui| {
         ui.label("Width");
-        ui.add(
+        crate::style::field(
+            ui,
             egui::DragValue::new(&mut settings.width)
                 .range(1.0..=6.0)
                 .speed(0.1)

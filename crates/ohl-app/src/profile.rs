@@ -1698,7 +1698,8 @@ pub fn ratio_menu(ui: &mut egui::Ui, ratio: &mut Option<f64>) -> bool {
             typed = true;
             *ratio = Some(value);
         }
-        let r = ui.add(
+        let r = crate::style::field(
+            ui,
             egui::DragValue::new(&mut value)
                 .range(0.1..=500.0)
                 .speed(0.1)
