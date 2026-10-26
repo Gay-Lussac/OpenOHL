@@ -206,7 +206,7 @@ impl StructureUsage {
         match self.governing() {
             None => UsageStatus::NotChecked,
             // A usage that is not a number never passes.
-            Some(g) if !(g.usage <= 1.0) => UsageStatus::Over,
+            Some(g) if g.usage > 1.0 || g.usage.is_nan() => UsageStatus::Over,
             Some(_) => UsageStatus::Pass,
         }
     }
