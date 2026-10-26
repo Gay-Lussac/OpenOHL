@@ -88,10 +88,7 @@ impl Side {
 /// The wire points with a set of `s` (resolved), with their sides and
 /// heights; `ends`: what ends at each set.
 fn wire_rows(s: &Structure, ends: &dyn Fn(u32) -> String) -> Vec<WireRow> {
-    let (c, n) = {
-        let a = s.orientation_deg.to_radians();
-        (a.cos(), a.sin())
-    };
+    let ([c, n], _) = ohl_line::links::axes(s.orientation_deg);
     let mut rows: Vec<WireRow> = s
         .wires
         .iter()
@@ -558,10 +555,7 @@ pub fn point_rows(
     new: &Structure,
     old: &Structure,
 ) -> Vec<PointRow> {
-    let (c, n) = {
-        let a = old.orientation_deg.to_radians();
-        (a.cos(), a.sin())
-    };
+    let ([c, n], _) = ohl_line::links::axes(old.orientation_deg);
     let attach: Vec<(String, [f64; 3])> = ohl_line::links::placed_joints(t, new)
         .into_iter()
         .filter(|j| j.joint.kind == Some(ohl_structures::JointKind::Attach))

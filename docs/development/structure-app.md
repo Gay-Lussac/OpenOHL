@@ -17,8 +17,11 @@ their tests run separately from the core's.
 
 Rules:
 
-- **Core crates never depend on `apps/structure` crates** (also not as
-  dev-dependencies). The core keeps the application's tables unread where
+- **Core crates do not depend on `apps/structure` crates** (also not as
+  dev-dependencies), with one exception: `ohl-app` uses
+  `ohl-structure-edit` (its structure screen), `ohl-structure-loads` and
+  `ohl-structure-link` (the line values it writes for OHL-Structure). The
+  core keeps the application's tables unread where
   it must hold them: `StructureType::load_cases` is the raw
   `[[load_case]]` tables (and `generators`, `symmetry` the raw
   `[[generator]]`, `[[symmetry]]` tables, read by `ohl-structure-edit`), as `[[section]]` / `[[material]]` are for
@@ -26,7 +29,14 @@ Rules:
   formats is in `ohl-structure-tests`, not in
   `crates/ohl-cli/tests/format_typos.rs`.
 - Application crates other than the link take and give plain data; only
-  the link reads core results.
+  the link reads core results. **The engines only through the link**:
+  `ohl-structure-link` alone depends on `ohl-line`, `ohl-loads`,
+  `ohl-clearance`, `ohl-structures-fe`, `ohl-weather` and `ohl-cables`;
+  the other application crates use the model and format crates
+  (`ohl-core`, `ohl-structures`, `ohl-sections`) directly, and
+  `ohl-structure-app` also `ohl-render` and `ohl-plugins` (the link
+  re-exports what they need of the engines, e.g. the usage
+  classification `classify_usage`, `NEAR_FULL`).
 - Plugins reach the application only through `ohl-plugins` (a core
   crate, an allowed dependency of `ohl-structure-app` only): design codes
   stay `code-plugin`s giving the line's weather and load cases — the
@@ -38,7 +48,7 @@ Rules:
 
 - **Start page** (`start.rs`): no file argument → `StructureApp::start_page`.
   Recent files are kept in eframe storage (`RECENT_KEY`
-  `ols-structure-recent`, ten, canonical paths, added by
+  `ols-structure-recent` — the name from before OpenOHL, kept —, ten, canonical paths, added by
   `StructureApp::open`). **New structure** writes `start::minimal` (one
   point, level 1) or a structure template built with
   `PylonTemplate::build(defaults(role))` from `ohl-structures` (no
@@ -310,8 +320,9 @@ The plugin manager's test lists the in-repo plugins and runs the
 set, an unbuilt plugin fails it (build each `plugins/*/*/` with a
 `Cargo.toml`: `cargo build --release --target wasm32-wasip2`).
 
-`ohl-app` depends on `ohl-structure-edit` (its structure screen), so a
-change there also runs `cargo test -p ohl-app`.
+`ohl-app` depends on `ohl-structure-edit` (its structure screen),
+`ohl-structure-loads` and `ohl-structure-link`, so a change there also
+runs `cargo test -p ohl-app`.
 
 The workspace-wide checks (and CI, which runs `--workspace`) include
 these crates too; a change to a core crate the application uses also

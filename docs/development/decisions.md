@@ -10,6 +10,96 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Fixes of the physics and code-quality reviews (owner approved, 2026-10-26)**
+
+The owner approved fixing the findings of both reviews of 2026-10-26,
+except wind directions other than across the line (later). What changed
+and what was decided on the way:
+
+- **Broken wire in every span** (physics B1). The per-component envelope
+  of the breaks stays the loads shown (Structure loads page, CSV) and
+  what the allowable-loads check (Method 2) takes — it checks each
+  component on its own in both directions, so the envelope is on its safe
+  side. It is **not** a bound of a member force combining the components,
+  so the finite-element and pole checks now take each break as its own
+  load and keep the worst usage, naming the span; OHL-Structure gets one
+  line case per break, `<case> (span k broken)` (`CaseLoads::broken_each`,
+  `CaseLoads::each_break`). Tests with the reviewer's example. Results
+  change only for a load case with `span = "every"` (none of the
+  benchmarks).
+- **Ice load without a density** (B3). No longer called Conservative: a
+  Simplification, not on the safe side for the wind, swing and clearances
+  against lighter ice of the same weight (the reviewer's 28 % example in
+  the user guide). The weather case table now says so for every case with
+  wind and an ice load but no density, asking for one
+  (`WeatherCase::ice_density_note`). No density value was picked by the
+  program; glaze stays the default.
+- **Jumpers in the wind** (B4). Decided: the safe side. Each jumper piece
+  now takes the case's full pressure square to itself, as the spans do,
+  pushed to the case's side of the line (before: cos² of the angle
+  between the across-line wind and its normal, so a jumper across the line
+  took almost none). No benchmark or test contradicted it; no benchmark
+  result changed. Labelled Conservative in the jumpers' theory and the
+  conventions.
+- **Load factors on components** (C1). Documented, not redesigned (the
+  load cases' V/T/L factors are the owner's): a Simplification with the
+  reviewer's example in the structure analysis theory, the user guide and
+  the load case library's help.
+- **Vertical clearance on a sloping wire** (C2). Exact now: the surface
+  radius and a bundle's subconductor offsets are measured vertically,
+  r / cos β, capped at r plus the piece's own rise (a steep or vertical
+  jumper piece). Ground, points and wire crossings; a level piece is
+  unchanged bit for bit. Benchmarks: `clearance-surface-001`
+  ground_vertical_m −2.9e-8 m, nothing else. The swing band keeps the
+  radial take-off: now labelled Simplification (unsafe by
+  r(1/cos β − 1)).
+- **The pole's own weight in P-Delta** (E1) times the case's vertical
+  factor (OHL-Structure: the case's self-weight factor), as the members'
+  own weight; `ohl structures pole` (factored loads from a CSV, no case)
+  keeps 1 (`check_pole_factored`).
+- **Docs**: wirefe's stale "no ice on bodies without a density", the
+  tension sections' opening (the ruling span is the idealisation; sheaves
+  are the default in the blocks), the thermal page's "about a fifth" → "about
+  a quarter" (24 %), and conventions.md: wind across the line is
+  conservative for the transverse loads and side clearances only — no wind
+  along or at an angle to the line is a stated **limitation** until wind
+  directions come.
+- **Code quality.** One usage classification (`ohl_structures_fe::check`:
+  `classify_usage`, `UsageClass`, `NEAR_FULL`, `usage_order` with a NaN
+  above everything) for the line's checks, both applications and the
+  report (behaviour as before: NaN is over), re-exported by
+  `ohl-structure-link` so the structure application keeps reaching the
+  engines through the link only. The pole check refuses a load, wind or
+  factor that is not finite with an error naming it (was a panic). A
+  shared `ohl_core::units::parse_finite` for typed numbers: the structure
+  edits refuse `nan`/`inf`/`1e400` (were written into the file) and a
+  mistyped length (was 0 m); quantities with units refuse an overflow;
+  LandXML points, `--area` and two OHL-Design table cells too. One
+  placement rule (`ohl_line::links::feet`, `axes`, `to_structure_axes`,
+  `from_structure_axes`) instead of the copies, and one `structure_bodies`
+  (`ohl_clearance::internal`, now depending on `ohl-structures-fe`) for
+  `ohl internal` and OHL-Design — every benchmark bit for bit the same.
+  One plugin data folder constant (`ohl_plugins::STORAGE_ID`, still "OLS
+  CAD": kept). Spotting refuses a step giving more than 1 000 000
+  stations (a limit of the computation, not of the design). Dead code
+  removed (`low_point_elevation`, `solve_jumper`, `sends_load_case`,
+  `BrokenSpan::as_toml`, `SwingArc::line_at`); test-only helpers under
+  `cfg(test)` (`profile_entity`, `StructureLoadCases::to_tables`,
+  `Tool::icon`). Kept, for the owner: `Live::set_library` and
+  `line_settings_put` (ohl-session, being changed in parallel; the first
+  is described as a fix in the data-model review), `StructureFile::reload`
+  and `tile_extents` (APIs meant for the applications), and
+  `wind_area_per_length` (in the user guide). The old names (`ols`
+  programs, `import ols`, `ols-plugin.toml`, `.ols`, `OLS_BUILD_ID`) stay
+  until the owner sets a date (roadmap U12). ARCHITECTURE.md now says what
+  the crates' dependencies are (ohl-io on ohl-session, ohl-lidar on
+  ohl-line, ohl-validation a client, ohl-sections a domain crate, ohl-app
+  on three structure-application crates, the engines only through
+  ohl-structure-link). Server tests through the public interface: a
+  refused join, two clients on one object, a client gone mid-request (no
+  server code changed). Skipped: a shared UI crate for the two
+  applications (the owner decides later).
+
 **Personal invitations no longer follow from `--code` (security review H2, owner-approved fix, 2026-10-26)**
 
 Every access code used to be the first 6 bytes of SHA-256(secret, name),

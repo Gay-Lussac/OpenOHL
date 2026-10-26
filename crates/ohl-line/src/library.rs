@@ -332,11 +332,7 @@ impl Line {
             })?;
             // The type's feet on the ground at the position, raised by the
             // height adjustment.
-            let at = [
-                s.position[0],
-                s.position[1],
-                s.position[2] + s.height_adjust,
-            ];
+            let at = crate::links::feet(s);
             let placed = t
                 .place(at, s.orientation_deg, s.extension.as_deref(), insulators)
                 .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;

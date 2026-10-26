@@ -321,9 +321,7 @@ pub struct Swing {
 /// x (right of the line) points `orientation_deg` CCW from east.
 pub fn swing(orientation_deg: f64, top: Point, bottom: Point) -> Swing {
     let v = [bottom[0] - top[0], bottom[1] - top[1], bottom[2] - top[2]];
-    let o = orientation_deg.to_radians();
-    let lx = v[0] * o.cos() + v[1] * o.sin();
-    let ly = -v[0] * o.sin() + v[1] * o.cos();
+    let [lx, ly, _] = crate::links::to_structure_axes(orientation_deg, v);
     Swing {
         total_deg: string_angles(orientation_deg, v).0,
         across_deg: lx.atan2(-v[2]).to_degrees(),
@@ -603,9 +601,8 @@ pub fn string_direction(orientation_deg: f64, angle_deg: f64, direction_deg: f64
     let (a, d) = (angle_deg.to_radians(), direction_deg.to_radians());
     // Local: x right, y ahead, z up.
     let (lx, ly, lz) = (a.sin() * d.sin(), a.sin() * d.cos(), -a.cos());
-    let o = orientation_deg.to_radians();
     // Local x is (cos o, sin o); local y (ahead) a quarter turn to its left.
-    [lx * o.cos() - ly * o.sin(), lx * o.sin() + ly * o.cos(), lz]
+    crate::links::from_structure_axes(orientation_deg, [lx, ly, lz])
 }
 
 /// The angles of global `v` on a structure turned `orientation_deg`: from
@@ -615,9 +612,7 @@ pub fn string_angles(orientation_deg: f64, v: Point) -> (f64, f64) {
     if n < 1e-12 {
         return (0.0, 0.0);
     }
-    let o = orientation_deg.to_radians();
-    let lx = v[0] * o.cos() + v[1] * o.sin();
-    let ly = -v[0] * o.sin() + v[1] * o.cos();
+    let [lx, ly, _] = crate::links::to_structure_axes(orientation_deg, v);
     let angle = (-v[2] / n).clamp(-1.0, 1.0).acos().to_degrees();
     let direction = if lx.hypot(ly) < 1e-9 * n {
         0.0

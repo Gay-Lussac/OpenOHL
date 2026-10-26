@@ -27,11 +27,13 @@ tags = ["ULS"]
 | `description` | no | | E.g. the code clause it stands for. |
 | `weather` | yes | | A weather case of the model's weather case file. |
 | `condition` | no | `initial` | The wires' condition ([Calculations](line-file.md#calculations-condition-and-method)). After creep or after load needs the line's creep-stretch criteria. |
-| `vertical`, `transverse`, `longitudinal` | no | 1 | Load factors, 0 to 100. |
+| `vertical`, `transverse`, `longitudinal` | no | 1 | Load factors, 0 to 100, on the load **components** in the structure's axes (below). |
 | `strength` | no | 1 | Strength factor of the capacity checks; more than 0. |
 | `tags` | no | | Code, limit state… |
 | `[case.structure]` | no | | Version 2: the wind on the structures' own bodies, when it differs from the wind on the wires (below). |
 | `[case.broken]` | no | | Version 3: a broken wire, the section solved with the wire of one span gone (below). |
+
+**The factors act on components, not on actions** (**Simplification**): the wires are solved with the unfactored weather, and the factors then multiply each structure load's transverse, longitudinal and vertical components. So the transverse factor also scales the angle component of the wire tension, the longitudinal factor the tension unbalance, the vertical factor the vertical part of the tension on inclined spans. A design code that factors actions (wind, ice, tension) gives other loads — higher or lower depending on its factors (worked example: [Structure analysis](../theory/structures-fe.md#load-factors-on-components-not-on-actions)). Choose the factors with this in mind.
 
 ### Wind on the structures apart from the wires (`[case.structure]`)
 
@@ -85,7 +87,7 @@ set = 1                    # optional: the set of the wire at the span's ends
 
 What is solved: in the case's weather and condition, the section with the wire of that span **gone** — each span keeping its unstressed length of the whole section in the case, the broken span carrying nothing, its two clamps each a free end held by its strings alone. A suspension string next to the break swings towards the spans left on its side until it, its weight and the remaining span's pull are in equilibrium; the remaining spans re-solve with the clamp where it went. The other wires stay as they are. The structure next to the break takes the remaining span's pull along the line, unbalanced; a section end next to the break (a dead-end) holds only its strings' weight. A **bundle**'s broken wire is the whole phase (every subconductor in that span). See [Finite-element wire systems](../theory/wirefe.md#a-broken-wire-2026-10-25) for the model and what it leaves out (the dynamic impact, the pieces on the ground).
 
-**Every span, one at a time** (`span = "every"`): the section is solved once per span, that span broken; at every structure point the loads keep, for each component (transverse, longitudinal, vertical), the largest of those breaks (by size, its sign kept, compared factored) with the span that gave it. Taken together the components are an envelope (they may come from different spans: on the safe side).
+**Every span, one at a time** (`span = "every"`): the section is solved once per span, that span broken; at every structure point the loads keep, for each component (transverse, longitudinal, vertical), the largest of those breaks (by size, its sign kept, compared factored) with the span that gave it. Taken together the components are an envelope (they may come from different spans): on the safe side for the allowable-loads check (Method 2), which takes each component on its own and in both directions, and what the Structure loads page and the CSV show. A member force combines the components, and the envelope is no bound of that (nor does it keep both pulls along the line): the **finite-element** and **pole** checks therefore take each break as its own load and keep the worst, naming the span ("… (span 2 broken)"), and a placed structure opened in OHL-Structure gets one case per break, `<case> (span k broken)` ([theory](../theory/wirefe.md#a-broken-wire-2026-10-25)).
 
 The case's factors apply as to any case. A file is written at version 3 only when a case has a broken wire (the Load cases library raises it, a design-code plugin writes it so); older programs refuse it as "newer". In the Load cases library page the field `broken` is offered as `{ section = …, span = … }`.
 

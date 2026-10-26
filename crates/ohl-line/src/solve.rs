@@ -256,12 +256,16 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
 }
 
 /// Load per unit length on a wire with chord `d` where the line runs along
-/// `along` (a plan unit vector): weight and ice down, and the case's wind
-/// blowing across the line from its side, of which the wire takes the part
-/// across itself (\\( \cos^2 \\) of the angle between the wind and the
-/// wire's normal: all of it along the line, none across it). Without a
-/// direction, as [`span_load`]. For wires whose own direction does not tell
-/// the line's (jumpers).
+/// `along` (a plan unit vector): weight and ice down, and the case's full
+/// wind pressure square to the wire in plan, as on the spans
+/// ([`span_load`]), pushed to the side of the line the case's wind blows
+/// to (physics review 2026-10-26, owner-approved: before, the wire took
+/// only the part of the across-line wind normal to it, by cos² of the
+/// angle between the wind and its normal, so a jumper across the line
+/// took almost none — unsafe for its clearances, since a wind along the
+/// line blows it out fully). A wire lying exactly across the line is
+/// pushed ahead. Without a direction, as [`span_load`]. For wires whose
+/// own direction does not tell the line's (jumpers).
 pub(crate) fn wire_load_in_line_wind(
     case: &WeatherCase,
     cable: &Cable,
@@ -273,16 +277,27 @@ pub(crate) fn wire_load_in_line_wind(
     };
     let load = case.wire_load(cable.diameter, cable.weight());
     let left = nalgebra::Vector2::new(-a[1], a[0]);
+    let ahead = nalgebra::Vector2::new(a[0], a[1]);
     let h = d.xy();
-    // The wind across the wire: its part normal to the wire (|·| = sin of
-    // the angle between them), scaled once more by that sine.
-    let across = if h.norm() > 0.0 {
+    // The wire's normal in plan, on the side of the line's left.
+    let normal = if h.norm() > 0.0 {
         let u = h / h.norm();
-        left - u * left.dot(&u)
+        let n = nalgebra::Vector2::new(-u.y, u.x);
+        let side = n.dot(&left);
+        if side > 0.0 {
+            n
+        } else if side < 0.0 {
+            -n
+        } else if n.dot(&ahead) >= 0.0 {
+            // Across the line exactly: no side; pushed ahead.
+            n
+        } else {
+            -n
+        }
     } else {
         left
     };
-    let push = across * across.norm() * (load.horizontal.si() * case.wind_from.to_left());
+    let push = normal * (load.horizontal.si() * case.wind_from.to_left());
     Vector3::new(push.x, push.y, -load.vertical.si())
 }
 

@@ -2312,22 +2312,14 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         let members = |line: &ohl_line::Line, id: &str| {
             let st = line.structure(id)?;
             let b = bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())?;
-            let at = [
-                st.position[0],
-                st.position[1],
-                st.position[2] + st.height_adjust,
-            ];
+            let at = ohl_line::links::feet(st);
             Some(b.placed_lines(at, st.orientation_deg)).filter(|l| !l.is_empty())
         };
         // Poles at levels 2 and 3: their outline on the same layer.
         let poles = |line: &ohl_line::Line, id: &str| {
             let st = line.structure(id)?;
             let b = bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())?;
-            let at = [
-                st.position[0],
-                st.position[1],
-                st.position[2] + st.height_adjust,
-            ];
+            let at = ohl_line::links::feet(st);
             Some(b.placed_pole_rings(at, st.orientation_deg)).filter(|r| !r.is_empty())
         };
         // A plan set's one PDF: the sheets of every drawing, in order.

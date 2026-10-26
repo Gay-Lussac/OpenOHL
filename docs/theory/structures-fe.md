@@ -167,6 +167,32 @@ Without wind factors in the cross-section library that is all: one drag factor, 
 
 **On an extension** a placed structure stands its `dz` higher. The member wind has no height in it (one pressure per weather case), so the force on each member is the same; the extension's own piece is part of the model and takes its member wind. The type's height bands (`[[wind.band]]`, kept out of the model) rise with the structure: a band from \\( z_0 \\) to \\( z_1 \\) above the ground of the structure as written acts at \\( \tfrac12(z_0+z_1) + dz \\), with the same force \\( q\,c_d\,A \\). OHL-Structure applies the same rule to a case's pressure on all members: on the extension chosen, the extension's own members take it too (\\( p\,A_m \\), half to each joint, \\( A_m \\) the projected area above).
 
+## Load factors: on components, not on actions
+
+A load case's `vertical`, `transverse` and `longitudinal` factors
+(owner-specified, as in the load-tree programs) multiply the **components**
+of each structure load in the structure's axes (`ohl_loads`, `factored =
+local × factor`); the sections are solved with the unfactored weather. A
+design code usually factors **actions** instead (the wind, the ice, the
+permanent loads, the wire tension), each with its own factor, and solves
+the wires under the factored actions.
+
+**Simplification** (either side, depending on the code's factors): the
+transverse factor multiplies the whole transverse resultant — the wind on
+the wires **and** the angle component of the wire tension; the
+longitudinal factor the tension unbalance and dead-end pulls; the vertical
+factor the vertical component of the tension on inclined spans as well as
+the weights. Example (the physics review, 2026-10-26): a 20° angle,
+\\( H = 30 \\) kN each side, wind 10 N/m on a 300 m wind span. Unfactored
+transverse: \\( 2 \cdot 30 \sin 10° + 3.0 = 10.42 + 3.0 = 13.42 \\) kN;
+with `transverse = 1.4`: 18.79 kN. Factoring the wind alone and solving the
+tension under it (say \\( H = 33 \\) kN): \\( 11.46 + 4.2 = 15.66 \\) kN. Here
+the component factoring is 20 % higher (safe); with a code whose tension
+factor exceeds its wind factor it would be lower (unsafe). Exact: the
+factors on the actions — the wires solved under the factored wind and ice,
+a factor on the tension. Not built: the factors stay on the components
+(owner-specified load cases); the load case library's help says so.
+
 ## The structures' wind of a load case
 
 The wind on a structure's own body is \\( q = p_s\\, \\gamma_s \\): \\( p_s \\) the load case's `[case.structure]` `wind_pressure`, else its weather case's `wind_pressure`; \\( \\gamma_s \\) its `wind_factor`, else its `transverse` factor (`ohl_loads::LoadCase::structure_wind`). The wires and strings always take the weather case's pressure and the transverse factor, so a design code treating the wind on structures apart from the wind on the conductors writes the structures' values there (by hand, or a design-code plugin). One rule for every use: the height bands (\\( p_s\\,c_d\\,A \\) unfactored, \\( \\times\\gamma_s \\) factored), the member wind above, the pole's \\( p \\) below, and the line cases in OHL-Structure (sent in the line values as \\( p_s \\), \\( \\gamma_s \\) and the side; there a surface load of \\( q \\) on every member, and the pole's wind). Without the table, \\( q \\) is the weather case's pressure times the transverse factor, as before. Example (invented): a wind case of 600 Pa with transverse 1.4 and `[case.structure]` 900 Pa × 1.2 gives the wires 600 × 1.4 = 840 Pa and the structures 900 × 1.2 = 1 080 Pa; a band of 10 m² with drag 3 carries 900 × 30 = 27 kN, factored 32.4 kN (validation cases `loadwind-001` and `-002`, `benchmarks/weather/load_case_wind.toml`; the line's checks and OHL-Structure's pole check of the same case agree to the last digit, `apps/structure/ohl-structure-tests/tests/structure_wind.rs`).
@@ -188,6 +214,14 @@ with the factored attachment loads \\( \mathbf F_i \\) at the type's attachment 
 **P-Delta amplification**: when the pole gives its modulus \\( E \\), a frame model of the pole above ground (12 tapered steps plus a node at every load, fixed at the ground line, solid or hollow, round or polygonal cross-sections, its own weight when it gives a density) is solved first order and second order with the same loads (offsets as moments); the ratio of the ground-line moments multiplies the moment at every height — exact at the ground line, a simplification above.
 
 **Simplification:** that ratio above the ground line. The second-order share of the moment differs with the height (either way), so for a critical section above the ground line the amplified moment is approximate. Exact: the second-order moment at every height from the frame model.
+
+The pole's own weight in that model is times the load case's **vertical
+factor**, as the members' own weight in the finite-element check (above):
+with the attachment loads factored and the pole's weight not, the ratio
+came out a little low (physics review 2026-10-26; before, the weight was
+unfactored). In OHL-Structure it is the case's self-weight factor (the
+recipe's `self_weight`). `ohl structures pole`, which reads factored loads
+from a CSV without a case, keeps factor 1.
 
 **Simplification:** without a modulus \\( E \\) there is no P-Delta amplification at all: the moments are first order (unsafe for a slender pole under vertical load). Exact: the pole's modulus given.
 

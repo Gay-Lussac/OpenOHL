@@ -248,6 +248,18 @@ impl Problem {
         if !positive(self.step) {
             return bad("the step must be above 0 m");
         }
+        // A tiny step would make (and allocate) more stations than any
+        // route needs: refused before the stations are made (code review
+        // 2026-10-26).
+        let length = self.ground[self.ground.len() - 1][0] - self.ground[0][0];
+        let stations = length / self.step;
+        if stations.is_nan() || stations > MAX_STATIONS as f64 {
+            return Err(SpotError::Invalid(format!(
+                "the step {} m gives {stations:.0} stations on the route's {length:.0} m; at \
+                 most {MAX_STATIONS}: give a larger step",
+                self.step
+            )));
+        }
         if !positive(self.max_span) || self.min_span < 0.0 || self.min_span >= self.max_span {
             return bad("the spans must be 0 ≤ min < max");
         }
@@ -524,6 +536,10 @@ fn spans_at(checks: &[(f64, SpanCheck)], k: usize) -> (f64, f64) {
 }
 
 const NONE: u32 = u32::MAX;
+
+/// The most stations a route is divided into by its step (a limit of the
+/// computation, not of the design: 1 000 km at 1 m).
+pub const MAX_STATIONS: usize = 1_000_000;
 
 /// The least-cost placement of structures (see the crate documentation).
 pub fn spot(problem: &Problem, budget: &Budget) -> Result<Spotting, SpotError> {

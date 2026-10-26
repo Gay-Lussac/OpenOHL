@@ -586,7 +586,11 @@ fn moment_at(pole: &Pole, loads: &[PoleLoad], wind: [f64; 2], h: f64) -> ([f64; 
 /// a vector (x, y), Pa, `strength` the load case's strength factor. With
 /// `p_delta` and the pole's elasticity, the moments are amplified by the
 /// P-Delta ratio of a frame model of the pole (12 tapered elements, fixed
-/// at the ground line); its iterations use `budget`.
+/// at the ground line); its iterations use `budget`. The pole's own
+/// weight in that model is unfactored: [`check_pole_factored`] takes a
+/// load case's vertical factor on it. Err: a load, the wind or the
+/// strength factor not a finite number (named), or the P-Delta solve
+/// failing.
 pub fn check_pole(
     pole: &Pole,
     loads: &[PoleLoad],
@@ -595,10 +599,54 @@ pub fn check_pole(
     p_delta: bool,
     budget: &Budget,
 ) -> Result<PoleCheck, String> {
+    check_pole_factored(pole, loads, wind, strength, 1.0, p_delta, budget)
+}
+
+/// [`check_pole`], the pole's own weight in the P-Delta model times
+/// `self_weight` (the load case's vertical factor, as the members' own
+/// weight in the finite-element check; physics review 2026-10-26: with
+/// the attachment loads factored and the pole's weight not, the P-Delta
+/// ratio came out a little low).
+pub fn check_pole_factored(
+    pole: &Pole,
+    loads: &[PoleLoad],
+    wind: [f64; 2],
+    strength: f64,
+    self_weight: f64,
+    p_delta: bool,
+    budget: &Budget,
+) -> Result<PoleCheck, String> {
+    // A load that is not a finite number would place no node in the
+    // P-Delta model and give no usage: refused, named (code review
+    // 2026-10-26).
+    for (k, l) in loads.iter().enumerate() {
+        if !l.point.iter().chain(&l.force).all(|v| v.is_finite()) {
+            return Err(format!(
+                "pole {}: load {} is not a finite number (at {:?} m, force {:?} N)",
+                pole.id,
+                k + 1,
+                l.point,
+                l.force
+            ));
+        }
+    }
+    if !wind.iter().all(|v| v.is_finite()) {
+        return Err(format!(
+            "pole {}: the wind pressure {wind:?} Pa is not a finite number",
+            pole.id
+        ));
+    }
+    if !(strength.is_finite() && strength > 0.0) || !self_weight.is_finite() {
+        return Err(format!(
+            "pole {}: strength factor {strength} or self-weight factor {self_weight} not a \
+             finite positive number",
+            pole.id
+        ));
+    }
     let (ground, wind_ground) = moment_at(pole, loads, wind, 0.0);
     let ground_moment = ground[0].hypot(ground[1]);
     let amplification = match (p_delta, pole.elasticity) {
-        (true, Some(e)) => match amplification(pole, e, loads, wind, budget) {
+        (true, Some(e)) => match amplification(pole, e, loads, wind, self_weight, budget) {
             Ok(a) => a,
             Err(FeError::Unstable { .. }) => {
                 return Ok(PoleCheck {
@@ -623,7 +671,8 @@ pub fn check_pole(
         let moment = m[0].hypot(m[1]) * amplification;
         let cap = pole.capacity_at(h);
         let usage = moment / (strength * cap);
-        if worst.is_none_or(|w| usage > w.0) {
+        // A usage that is not a number (a capacity of 0) is the worst.
+        if worst.is_none_or(|w| crate::check::usage_order(usage, w.0).is_gt()) {
             worst = Some((usage, h, moment, cap));
         }
     }
@@ -661,6 +710,7 @@ fn amplification(
     e: f64,
     loads: &[PoleLoad],
     wind: [f64; 2],
+    self_weight: f64,
     budget: &Budget,
 ) -> Result<f64, FeError> {
     let top = pole.height();
@@ -704,10 +754,18 @@ fn amplification(
             k,
         ));
     }
+    // Every load height is a node (the loads are finite, checked by the
+    // caller); the nearest node all the same, never a panic.
     let node_at = |h: f64| {
+        let h = h.clamp(0.0, top);
         z.iter()
-            .position(|x| (x - h.clamp(0.0, top)).abs() < 1e-6)
-            .expect("a node at every load")
+            .position(|x| (x - h).abs() < 1e-6)
+            .unwrap_or_else(|| {
+                z.iter()
+                    .enumerate()
+                    .min_by(|a, b| (a.1 - h).abs().total_cmp(&(b.1 - h).abs()))
+                    .map_or(0, |(k, _)| k)
+            })
     };
     let mut nodal = Vec::new();
     for l in loads {
@@ -733,10 +791,7 @@ fn amplification(
             }
         }
     }
-    let loads = Loads {
-        nodal,
-        self_weight: 1.0,
-    };
+    let loads = Loads { nodal, self_weight };
     let ground = |s: &crate::Solution| {
         let r = s
             .reactions

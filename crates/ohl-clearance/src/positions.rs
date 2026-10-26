@@ -1042,15 +1042,10 @@ impl SwingArc {
     }
 
     /// The centre line of the wire swung to angle `phi` (rad) at the
-    /// band's outer radius: at every station the band's point at `phi`,
-    /// clamped to its angles there — a polyline lying on the band's
-    /// outer surface at every station.
-    pub fn line_at(&self, phi: f64) -> Vec<P3> {
-        self.line_at_radius(phi, 1.0)
-    }
-
-    /// As [`SwingArc::line_at`], at the fraction `t` of the way from the
-    /// band's inner radius (0) to its outer one (1) at every station.
+    /// fraction `t` of the way from the band's inner radius (0) to its
+    /// outer one (1): at every station the band's point at `phi`, clamped
+    /// to its angles there — a polyline lying on that surface of the band
+    /// at every station.
     pub fn line_at_radius(&self, phi: f64, t: f64) -> Vec<P3> {
         self.stations
             .iter()

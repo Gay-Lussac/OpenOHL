@@ -95,6 +95,29 @@ impl fmt::Display for ParseQuantityError {
 impl std::error::Error for ParseQuantityError {}
 
 /// Splits `"12.5 kN"` / `"12.5kN"` into its number and unit.
+/// A number as typed (or read from text): trimmed and parsed, and finite.
+/// One rule for every place a number is typed (code review 2026-10-26):
+/// `nan`, `inf` and a number too large for a 64-bit float (`1e400`) are
+/// refused, as is anything that is not a number, each with a message
+/// naming the text.
+///
+/// ```
+/// use ohl_core::units::parse_finite;
+///
+/// assert_eq!(parse_finite(" 32.5 "), Ok(32.5));
+/// assert!(parse_finite("nan").is_err());
+/// assert!(parse_finite("1e400").unwrap_err().contains("finite"));
+/// assert!(parse_finite("12,5").unwrap_err().contains("not a number"));
+/// ```
+pub fn parse_finite(text: &str) -> Result<f64, String> {
+    let t = text.trim();
+    match t.parse::<f64>() {
+        Ok(v) if v.is_finite() => Ok(v),
+        Ok(_) => Err(format!("\"{t}\" is not a finite number")),
+        Err(_) => Err(format!("\"{t}\" is not a number")),
+    }
+}
+
 fn split_value(text: &str) -> Result<(f64, &str), ParseQuantityError> {
     let text = text.trim();
     let end = text
@@ -114,9 +137,9 @@ fn split_value(text: &str) -> Result<(f64, &str), ParseQuantityError> {
     if unit.is_empty() {
         return Err(ParseQuantityError::MissingUnit);
     }
-    let value = number
-        .parse::<f64>()
-        .map_err(|_| ParseQuantityError::InvalidNumber(number.to_owned()))?;
+    // Finite only: `1e400 m` overflows to infinity.
+    let value =
+        parse_finite(number).map_err(|_| ParseQuantityError::InvalidNumber(number.to_owned()))?;
     Ok((value, unit))
 }
 
@@ -1074,6 +1097,23 @@ mod tests {
         );
     }
 
+    /// Typed numbers: finite only, the text named in the message.
+    #[test]
+    fn typed_numbers_are_finite() {
+        assert_eq!(parse_finite("-1"), Ok(-1.0));
+        assert_eq!(parse_finite(" 2e3\n"), Ok(2000.0));
+        for bad in ["nan", "NaN", "inf", "-infinity", "1e400"] {
+            let e = parse_finite(bad).unwrap_err();
+            assert!(e.contains(bad) && e.contains("finite"), "{e}");
+        }
+        for bad in ["", "abc", "1 m", "1,5"] {
+            assert!(
+                parse_finite(bad).unwrap_err().contains("not a number"),
+                "{bad}"
+            );
+        }
+    }
+
     #[test]
     fn parse_errors() {
         assert_eq!(
@@ -1087,6 +1127,11 @@ mod tests {
                 quantity: "length"
             })
         );
+        // Too large for a float: infinity, refused (code review 2026-10-26).
+        assert!(matches!(
+            "1e400 m".parse::<Length>(),
+            Err(ParseQuantityError::InvalidNumber(_))
+        ));
         assert!(matches!(
             "1.2.3 m".parse::<Length>(),
             Err(ParseQuantityError::InvalidNumber(_))

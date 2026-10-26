@@ -220,8 +220,7 @@ pub fn place(
                 .ok_or_else(|| format!("structure {id} is not in the line"))?;
             // Its local x axis (its cross-arms) lies in the plane: to the
             // right of the line looking ahead.
-            let th = st.orientation_deg.to_radians();
-            let mut ahead = [-th.sin(), th.cos()];
+            let (_, mut ahead) = ohl_line::links::axes(st.orientation_deg);
             let (station, _) = ohl_line::route::project(&centre, st.position);
             // Looking ahead along the alignment (a structure turned
             // round: the other way).

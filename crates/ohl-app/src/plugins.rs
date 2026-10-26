@@ -434,7 +434,7 @@ impl Plugins {
     /// The user's plugin directory: `plugins` in the application's data
     /// directory.
     pub fn default_user_dir() -> Option<PathBuf> {
-        eframe::storage_dir(crate::STORAGE_ID).map(|d| d.join("plugins"))
+        eframe::storage_dir(ohl_plugins::STORAGE_ID).map(|d| ohl_plugins::user_dir(&d))
     }
 
     /// As remembered, listing `user_dir` and the folders added: the

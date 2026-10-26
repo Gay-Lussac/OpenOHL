@@ -68,10 +68,6 @@ pub const APP_NAME: &str = "OHL-Structure";
 /// is lost.
 pub const STORAGE_ID: &str = "OLS Structure"; // storage id: kept
 
-/// The line application's storage id, whose data folder holds the
-/// plugins both applications share (kept from before OpenOHL as well).
-pub const LINE_STORAGE_ID: &str = "OLS CAD"; // storage id: kept
-
 use clap::Parser;
 use eframe::egui;
 

@@ -190,8 +190,10 @@ pub struct LoadCase {
 /// it. A bundle's broken wire is its whole phase (every subconductor in
 /// that span). `span = "every"`: a case per span, one at a time, and for
 /// each structure point the largest of each force component (by size,
-/// its sign kept) with the span giving it — an envelope, conservative
-/// (the components may come from different spans).
+/// its sign kept) with the span giving it — an envelope, conservative for
+/// the allowable-loads check only (the components may come from different
+/// spans); the finite-element and pole checks take each break on its own
+/// ([`CaseLoads::broken_each`]).
 ///
 /// ```toml
 /// [case.broken]
@@ -238,16 +240,6 @@ impl<'de> Deserialize<'de> for BrokenSpan {
             Raw::Text(t) => Err(serde::de::Error::custom(format!(
                 "span \"{t}\": a span number (from 1) or \"every\""
             ))),
-        }
-    }
-}
-
-impl BrokenSpan {
-    /// As written in files: the number, or `"every"`.
-    pub fn as_toml(&self) -> String {
-        match self {
-            Self::One(n) => n.to_string(),
-            Self::Every => "\"every\"".into(),
         }
     }
 }
@@ -603,9 +595,60 @@ pub struct CaseLoads {
     /// The wind on the structures' own bodies in this case
     /// ([`LoadCase::structure_wind`]).
     pub structure_wind: BodyWind,
+    /// A broken wire in every span (`span = "every"`, more than one span):
+    /// the loads of each break on its own, in the order of the spans
+    /// (empty otherwise). [`CaseLoads::loads`] is then the envelope (per
+    /// component the largest by size, the components possibly from
+    /// different breaks): conservative for the allowable-loads check
+    /// (Method 2), which takes each component on its own in both
+    /// directions, but not for a check combining the components (a member
+    /// force is `a·T + b·L + c·V`), so the finite-element and pole checks
+    /// take every break as its own load and keep the worst (physics
+    /// review 2026-10-26).
+    pub broken_each: Vec<BrokenLoads>,
+}
+
+/// The loads of one break of a broken wire in every span
+/// ([`CaseLoads::broken_each`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrokenLoads {
+    /// The span broken (1 = the section's first).
+    pub span: usize,
+    /// The loads at the structures' points with that span broken, by
+    /// structure and point (factored as the case says).
+    pub loads: Vec<AttachmentLoad>,
 }
 
 impl CaseLoads {
+    /// This case as the structures' finite-element and pole checks take
+    /// it: itself, or with a broken wire in every span one case per break
+    /// ([`CaseLoads::broken_each`]), named `<case> (span <k> broken)`,
+    /// its broken wire that one span, its loads those of that break (the
+    /// structure wind's loads, at no point, kept in each).
+    pub fn each_break(&self) -> Vec<CaseLoads> {
+        if self.broken_each.is_empty() {
+            return vec![self.clone()];
+        }
+        self.broken_each
+            .iter()
+            .map(|b| {
+                let mut case = self.case.clone();
+                case.name = format!("{} (span {} broken)", self.case.name, b.span);
+                if let Some(w) = case.broken.as_mut() {
+                    w.span = BrokenSpan::One(b.span);
+                }
+                let mut loads = b.loads.clone();
+                loads.extend(self.loads.iter().filter(|l| l.point.is_empty()).cloned());
+                CaseLoads {
+                    case,
+                    loads,
+                    broken_each: Vec::new(),
+                    ..self.clone()
+                }
+            })
+            .collect()
+    }
+
     /// The wires missing from the loads of structure `structure`.
     pub fn missing_at<'a>(&'a self, structure: &'a str) -> impl Iterator<Item = &'a MissingWire> {
         self.missing
@@ -731,18 +774,17 @@ pub fn default_budget() -> Budget {
     ohl_wirefe::default_fe_budget()
 }
 
-/// The structure's axes: (right of the line, ahead) in line axes.
-fn axes(orientation_deg: f64) -> ([f64; 2], [f64; 2]) {
-    let a = orientation_deg.to_radians();
-    ([a.cos(), a.sin()], [-a.sin(), a.cos()])
-}
+// The structure's axes: (right of the line, ahead) in line axes (the
+// line's one rule).
+use ohl_line::links::axes;
 
 /// Solves every section of `line` (structure types resolved) in each load
 /// case and gives the loads on the structures. A case with a broken wire
 /// ([`LoadCase::broken`]) solves that section with the wire of its span
 /// gone (`ohl_line::solve::solve_line_broken`), with `"every"` once per
 /// span, the largest of each component kept
-/// ([`AttachmentLoad::broken_span`] says which span gave it); a section
+/// ([`AttachmentLoad::broken_span`] says which span gave it) and each
+/// break's loads on their own ([`CaseLoads::broken_each`]); a section
 /// or span not in the line fails the case as a whole. `weather`: the weather
 /// cases the load cases name (also those of the line's creep-stretch
 /// criteria). A section that does not solve is listed in `failed`; a load
@@ -776,16 +818,25 @@ pub fn structure_loads(
                 .map_err(|e| format!("load case {}: {e}", case.name))?,
             None => Vec::new(),
         };
+        let mut each = Vec::new();
         let (loads, failed, missing) = if broken.is_empty() {
             let (at, failed, missing) = case_loads(&line, library, w, case, None, budget);
             (at.into_values().collect(), failed, missing)
         } else {
             let section = case.broken.as_ref().map_or("", |b| b.section.as_str());
-            // A solve per span broken; the worst of each component kept.
+            // A solve per span broken; the worst of each component kept
+            // (the envelope), and each break on its own when there are
+            // several.
             let mut worst: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
             let (mut failed, mut missing) = (Vec::new(), Vec::new());
             for &k in &broken {
                 let (at, f, m) = case_loads(&line, library, w, case, Some((section, k)), budget);
+                if broken.len() > 1 {
+                    each.push(BrokenLoads {
+                        span: k + 1,
+                        loads: at.values().cloned().collect(),
+                    });
+                }
                 for x in f {
                     if !failed.contains(&x) {
                         failed.push(x);
@@ -813,6 +864,7 @@ pub fn structure_loads(
             failed,
             missing,
             structure_wind: case.structure_wind(w),
+            broken_each: each,
         });
     }
     Ok(out)
@@ -822,7 +874,10 @@ pub fn structure_loads(
 /// size of the factored value, the sign kept; factored and unfactored
 /// together) with the span giving it, the force in line axes made again
 /// of the components kept (the envelope of a broken wire in every span:
-/// conservative, the components may come from different spans).
+/// conservative for the allowable-loads check, which takes each component
+/// on its own; the components may come from different spans, so the
+/// finite-element and pole checks take each break on its own instead,
+/// [`CaseLoads::broken_each`]).
 fn envelope(e: &mut AttachmentLoad, l: &AttachmentLoad, line: &Line) {
     let mut kept = e.broken_span.unwrap_or_default();
     let theirs = l.broken_span.unwrap_or_default();

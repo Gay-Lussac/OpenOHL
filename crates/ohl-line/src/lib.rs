@@ -311,13 +311,6 @@ impl StructureLoads {
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
-
-    /// Whether load case `name` is sent.
-    pub fn sends_load_case(&self, name: &str) -> bool {
-        self.load_cases
-            .as_ref()
-            .is_none_or(|l| l.iter().any(|c| c == name))
-    }
 }
 
 /// The stringing temperature the program gives new data, °C: a new

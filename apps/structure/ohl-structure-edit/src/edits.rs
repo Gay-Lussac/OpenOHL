@@ -945,11 +945,19 @@ pub fn assembly_text(
 }
 
 /// A field of the file itself (`name`, `height`, `foot`…): a text, or a
-/// length in metres when `meters`; none removes it.
-pub fn set_top_field(doc: &mut DocumentMut, field: &str, value: Option<&str>, meters: bool) {
+/// length in metres when `meters` (`32.5` or `32.5 m`); none removes it.
+/// Err: a length that is not a finite number (the file unchanged; code
+/// review 2026-10-26: a mistype was written as 0 m).
+pub fn set_top_field(
+    doc: &mut DocumentMut,
+    field: &str,
+    value: Option<&str>,
+    meters: bool,
+) -> Result<(), String> {
     match value {
         Some(v) if meters => {
-            let m: f64 = v.trim().trim_end_matches('m').trim().parse().unwrap_or(0.0);
+            let m = ohl_core::units::parse_finite(v.trim().trim_end_matches('m'))
+                .map_err(|e| format!("{field}: {e} (a length in m)"))?;
             doc.insert(field, length(m));
         }
         Some(v) => {
@@ -959,6 +967,7 @@ pub fn set_top_field(doc: &mut DocumentMut, field: &str, value: Option<&str>, me
             doc.remove(field);
         }
     }
+    Ok(())
 }
 
 /// A height extension `name` raising the structure by `dz`, m (a new one
@@ -1027,21 +1036,23 @@ pub fn set_item_field(
         e.remove(field);
         return Ok(());
     }
-    e.insert(field, typed_value(typed));
+    e.insert(field, typed_value(typed)?);
     Ok(())
 }
 
 /// A value as typed: a number, `true`/`false`, else a text (`355 MPa`).
-fn typed_value(typed: &str) -> Item {
-    if let Ok(v) = typed.parse::<i64>() {
+/// Err: a number that is not finite (`nan`, `inf`, `1e400`): refused, not
+/// written into the file as TOML `nan`/`inf` (code review 2026-10-26).
+fn typed_value(typed: &str) -> Result<Item, String> {
+    Ok(if let Ok(v) = typed.parse::<i64>() {
         toml_edit::value(v)
-    } else if let Ok(v) = typed.parse::<f64>() {
-        toml_edit::value(v)
+    } else if typed.parse::<f64>().is_ok() {
+        toml_edit::value(ohl_core::units::parse_finite(typed)?)
     } else if let Ok(v) = typed.parse::<bool>() {
         toml_edit::value(v)
     } else {
         toml_edit::value(typed.trim_matches('"'))
-    }
+    })
 }
 
 /// Field `field` of the `[analysis]` table (the finite-element check's
@@ -1063,6 +1074,8 @@ pub fn set_analysis_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Re
         }
         return Ok(());
     }
+    // Checked before anything is changed.
+    let value = typed_value(typed)?;
     if doc.get("analysis").and_then(Item::as_table).is_none() {
         doc.insert("analysis", Item::Table(Table::new()));
     }
@@ -1070,7 +1083,7 @@ pub fn set_analysis_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Re
         .get_mut("analysis")
         .and_then(Item::as_table_mut)
         .ok_or("[analysis] is not a table")?;
-    t.insert(field, typed_value(typed));
+    t.insert(field, value);
     Ok(())
 }
 

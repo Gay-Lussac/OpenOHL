@@ -115,7 +115,7 @@ pub const APP_NAME: &str = "OHL-Design";
 /// (eframe's storage id, its data folder): the name from before OpenOHL,
 /// kept so that nothing is lost. The structure application reads the
 /// plugins there too.
-pub const STORAGE_ID: &str = "OLS CAD"; // storage id: kept
+pub const STORAGE_ID: &str = ohl_plugins::STORAGE_ID; // storage id: kept
 
 #[cfg(test)]
 mod area_tests;

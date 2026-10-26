@@ -199,6 +199,30 @@ impl WeatherCase {
         Ok(())
     }
 
+    /// A note when this case has wind and an ice load without a density
+    /// (physics review 2026-10-26): the ice is then taken as glaze, the
+    /// densest ice, so of all ice of that weight it has the smallest iced
+    /// diameter — the least wind on it, the least swing and the least
+    /// clearance lost to its surface. Lighter ice (rime, wet snow) of the
+    /// same weight gives more of each: not on the safe side for it. The
+    /// note asks for the ice's density; none: nothing to say (no ice load,
+    /// a density given, or no wind).
+    pub fn ice_density_note(&self) -> Option<String> {
+        (self.ice_load.is_some_and(|w| w.si() > 0.0)
+            && self.ice_density.is_none()
+            && self.wind_pressure.si() > 0.0)
+            .then(|| {
+                format!(
+                    "{}: ice load without a density, taken as glaze ice ({:.0} kg/m³): the \
+                     smallest iced diameter for that weight, so the least wind, swing and \
+                     clearance loss — lighter ice of the same weight gives more; give the ice's \
+                     density",
+                    self.name,
+                    default_ice_density().kilograms_per_cubic_meter()
+                )
+            })
+    }
+
     /// The ice density used: the case's, else glaze ice
     /// ([`GLAZE_ICE_DENSITY`]).
     pub fn ice_density_or_glaze(&self) -> Density {
@@ -737,6 +761,45 @@ mod tests {
             ((actual - expected) / expected).abs() <= rel_tol,
             "actual {actual}, expected {expected}"
         );
+    }
+
+    /// The physics review's example (2026-10-26): 20 N/m of ice on a
+    /// 28.1 mm wire. Without a density, glaze: iced diameter 60.3 mm; the
+    /// same weight of lighter ice (500 kg/m³, an illustrative value, not
+    /// a default) 77.4 mm, so 28 % more wind — glaze is not on the safe
+    /// side for the wind, and an iced wind case without a density says so.
+    #[test]
+    fn an_ice_load_without_a_density_is_glaze_and_says_so() {
+        let d = Length::from_millimeters(28.1);
+        let w = ForcePerLength::from_newtons_per_meter(10.0);
+        let glaze = WeatherCase {
+            ice_load: Some(ForcePerLength::from_newtons_per_meter(20.0)),
+            wind_pressure: Stress::from_si(500.0),
+            ..WeatherCase::still("iced wind", Temperature::from_celsius(-5.0))
+        };
+        let rime = WeatherCase {
+            ice_density: Some(Density::from_kilograms_per_cubic_meter(500.0)),
+            ..glaze.clone()
+        };
+        let (dg, dr) = (glaze.ice(d.si()).1, rime.ice(d.si()).1);
+        close(dg * 1000.0, 60.3, 0.05);
+        close(dr * 1000.0, 77.4, 0.05);
+        let ratio = rime.wire_load(d, w).horizontal.si() / glaze.wire_load(d, w).horizontal.si();
+        close(ratio, 1.28, 0.005);
+        let note = glaze.ice_density_note().unwrap();
+        assert!(note.contains("iced wind") && note.contains("glaze") && note.contains("density"));
+        // A density given, no wind, or no ice: nothing to say.
+        assert!(rime.ice_density_note().is_none());
+        let still = WeatherCase {
+            wind_pressure: Stress::ZERO,
+            ..glaze.clone()
+        };
+        assert!(still.ice_density_note().is_none());
+        let bare = WeatherCase {
+            ice_load: None,
+            ..glaze
+        };
+        assert!(bare.ice_density_note().is_none());
     }
 
     /// The radial ice of an ice load and density weighs that load on the

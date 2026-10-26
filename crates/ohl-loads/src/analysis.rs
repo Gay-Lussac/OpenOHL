@@ -319,11 +319,15 @@ impl Analyses {
             [body.towards * body.factored(), 0.0]
         });
         Some(
-            match ohl_structures_fe::check_pole(
+            // The pole's own weight in the P-Delta model times the
+            // vertical factor, as the members' own weight in the fe check
+            // (physics review 2026-10-26).
+            match ohl_structures_fe::check_pole_factored(
                 pole,
                 &on_pole,
                 wind,
                 case.strength,
+                case.vertical,
                 true,
                 &ohl_structures_fe::default_budget(),
             ) {

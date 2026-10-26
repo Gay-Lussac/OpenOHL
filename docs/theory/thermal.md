@@ -23,8 +23,10 @@ Per unit length of conductor, with a uniform conductor temperature
   ACCC, and OPGW, whose outer wires are aluminium alloy or aluminium-clad),
   0.0045 /K for steel wire. A wire type of kind `other` or `adss` has no known
   coefficient and needs two temperatures. Holding a single value constant
-  instead would understate the hot resistance by about a fifth for an
-  aluminium conductor rated at 100 °C, and overstate the ampacity.
+  instead would understate the hot resistance by about a quarter for an
+  aluminium conductor rated at 100 °C — the 20 °C value held: \( R_{100}/R_{20} =
+  1 + 0.00403 \times 80 = 1.322 \), so it is 24 % low (1 − 1/1.322) — and
+  overstate the ampacity.
   **Simplification:** the resistance is linear in temperature, also
   extrapolated beyond the values given; either way, small within the
   usual range. Exact: AC resistances given at the temperatures used.

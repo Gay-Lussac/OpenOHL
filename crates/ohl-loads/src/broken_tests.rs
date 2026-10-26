@@ -218,3 +218,103 @@ fn local_winds_change_the_loads_across_the_line() {
         assert!((ratio - 1.0).abs() < 0.05, "{s}: {ratio}");
     }
 }
+
+/// The physics review's worked example (2026-10-26): break 1 gives
+/// (L, V) = (+10, 1) kN at a point, break 2 (−9, 5) kN. The envelope
+/// keeps (+10, 5): each component's largest, right for the
+/// allowable-loads check (each component on its own) but not a bound of
+/// a member force combining them — for L − V the envelope gives 5 kN,
+/// break 2 alone −14 kN. So the case keeps each break apart
+/// ([`CaseLoads::broken_each`]) for the finite-element and pole checks.
+#[test]
+fn the_envelope_of_the_breaks_is_no_bound_of_a_combination() {
+    let line = three_spans();
+    let load = |span: usize, l: f64, v: f64| AttachmentLoad {
+        structure: "T2".into(),
+        point: "A1".into(),
+        label: "A1".into(),
+        sets: vec![1],
+        sections: vec!["S".into()],
+        at: [300.0, 0.0, 30.0],
+        force: [0.0; 3],
+        local: [0.0, l, v],
+        factored: [0.0, l, v],
+        broken_span: Some([span; 3]),
+    };
+    let (one, two) = (load(1, 10e3, 1e3), load(2, -9e3, 5e3));
+    let mut e = one.clone();
+    envelope(&mut e, &two, &line);
+    assert_eq!(e.factored, [0.0, 10e3, 5e3]);
+    assert_eq!(e.broken_span, Some([1, 1, 2]));
+    let member = |l: &AttachmentLoad| l.factored[1] - l.factored[2];
+    assert_eq!(member(&e), 5e3);
+    assert_eq!(member(&two), -14e3);
+    assert!(member(&two).abs() > member(&e).abs());
+}
+
+/// A broken wire in every span keeps each break's loads apart
+/// ([`CaseLoads::broken_each`], one per span, each the same as that span
+/// broken alone); the envelope's components are each the largest of
+/// them; [`CaseLoads::each_break`] makes a case of each.
+#[test]
+fn every_span_broken_keeps_each_break() {
+    let line = three_spans();
+    let lib = library();
+    let weather = weather();
+    let budget = default_budget();
+    let case = |span: BrokenSpan| LoadCase {
+        name: "b".into(),
+        longitudinal: 1.5,
+        broken: Some(BrokenWire {
+            section: "S".into(),
+            span,
+            set: None,
+        }),
+        ..LoadCase::from_weather("calm")
+    };
+    let mut cases = vec![case(BrokenSpan::Every)];
+    cases.extend((1..=3).map(|k| case(BrokenSpan::One(k))));
+    let r = structure_loads(&line, &lib, &weather, &cases, &budget).unwrap();
+    let every = &r[0];
+    assert_eq!(every.broken_each.len(), 3);
+    for (k, b) in every.broken_each.iter().enumerate() {
+        assert_eq!(b.span, k + 1);
+        // Each break as that span broken alone.
+        let alone = &r[k + 1];
+        assert!(alone.broken_each.is_empty());
+        assert_eq!(b.loads, alone.loads);
+    }
+    // The envelope at T2 along the line: the largest by size of the
+    // breaks', with its sign.
+    let along: Vec<f64> = every
+        .broken_each
+        .iter()
+        .map(|b| at_loads(&b.loads, "T2").factored[1])
+        .collect();
+    let biggest = along
+        .iter()
+        .copied()
+        .max_by(|a, b| a.abs().total_cmp(&b.abs()))
+        .unwrap();
+    assert_eq!(at(every, "T2").factored[1], biggest);
+    // Breaks next to T2 pull it both ways: the envelope keeps one sign
+    // only, each break keeps its own.
+    assert!(along.iter().any(|l| *l > 1000.0) && along.iter().any(|l| *l < -1000.0));
+    let split = every.each_break();
+    assert_eq!(split.len(), 3);
+    assert_eq!(split[1].case.name, "b (span 2 broken)");
+    assert_eq!(
+        split[1].case.broken.as_ref().unwrap().span,
+        BrokenSpan::One(2)
+    );
+    assert_eq!(split[1].loads, every.broken_each[1].loads);
+    // One span: as it is.
+    assert_eq!(r[1].each_break(), vec![r[1].clone()]);
+}
+
+fn at_loads<'a>(loads: &'a [AttachmentLoad], structure: &str) -> &'a AttachmentLoad {
+    loads
+        .iter()
+        .find(|l| l.structure == structure && !l.point.is_empty())
+        .unwrap_or_else(|| panic!("no load at {structure}"))
+}

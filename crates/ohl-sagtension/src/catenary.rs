@@ -200,11 +200,6 @@ impl SpanSolution {
         Length::from_si(self.low_point_x)
     }
 
-    /// Elevation of the lowest point of the (extended) catenary.
-    pub fn low_point_elevation(&self) -> Length {
-        Length::from_si(self.y(self.low_point_x))
-    }
-
     /// Cable length between the supports.
     pub fn length(&self) -> Length {
         let half = self.geometry.span.si() / (2.0 * self.c);

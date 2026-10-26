@@ -158,8 +158,8 @@ impl Tool {
 
     /// Icon in a slot as text (glyphs of egui's default fonts, each drawn:
     /// see `glyph_tests`): a fallback, the slots and menus show the SVG
-    /// (`crate::icons`).
-    #[allow(dead_code)]
+    /// (`crate::icons`). Only the glyph test reads it.
+    #[cfg(test)]
     pub fn icon(self) -> &'static str {
         match self {
             Tool::Select => "⬉",

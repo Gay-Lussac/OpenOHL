@@ -72,10 +72,12 @@ fn pct(u: Option<f64>) -> String {
 }
 
 fn class(u: Option<f64>) -> &'static str {
-    match u {
-        Some(u) if u > 1.0 || u.is_nan() => "over",
-        Some(u) if u >= 0.9 => "near",
-        Some(_) => "ok",
+    use ohl_structure_link::UsageClass;
+    // A usage that is not a number is over (never a pass).
+    match u.map(ohl_structure_link::classify_usage) {
+        Some(UsageClass::Over) => "over",
+        Some(UsageClass::Near) => "near",
+        Some(UsageClass::Pass) => "ok",
         None => "",
     }
 }

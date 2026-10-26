@@ -151,7 +151,12 @@ pub fn read_landxml(text: &str) -> Result<Vec<Mesh>, TerrainError> {
             let content = &t[close + 1..content_end];
             let v: Vec<f64> = content
                 .split_whitespace()
-                .map(|x| x.parse::<f64>())
+                .map(|x| match x.parse::<f64>() {
+                    // Finite only (code review 2026-10-26): `nan`, `inf`.
+                    Ok(v) if v.is_finite() => Ok(v),
+                    Ok(_) => Err(format!("\"{x}\" is not a finite number")),
+                    Err(e) => Err(e.to_string()),
+                })
                 .collect::<Result<_, _>>()
                 .map_err(|e| bad(format!("LandXML point \"{content}\": {e}")))?;
             if v.len() < 3 {
@@ -366,6 +371,10 @@ mod tests {
         assert_eq!(m.triangles, vec![[0, 1, 2]]);
         assert!(read_landxml("<LandXML/>").is_err());
         assert!(read_landxml("<Surface><Faces><F>1 2 9</F></Faces></Surface>").is_err());
+        // A point that is not finite is refused, named (code review
+        // 2026-10-26).
+        let e = read_landxml(&text.replace("110 210 7", "110 nan 7")).unwrap_err();
+        assert!(e.to_string().contains("not a finite number"), "{e}");
     }
 
     #[test]

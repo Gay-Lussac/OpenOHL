@@ -17,8 +17,9 @@ use ohl_structures::templates::{PylonTemplate, Role};
 
 use crate::app::{StructureApp, error_label};
 
-/// Key of the recent files in the window's storage.
-pub const RECENT_KEY: &str = "ols-structure-recent";
+/// Key of the recent files in the window's storage: the name from before
+/// OpenOHL, kept so that the list is not lost.
+pub const RECENT_KEY: &str = "ols-structure-recent"; // storage key: kept
 
 /// How many recent files are kept.
 const RECENT_MAX: usize = 10;

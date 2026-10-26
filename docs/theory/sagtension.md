@@ -77,7 +77,7 @@ OpenOHL combines thermal and elastic strain in two ways, depending on the calcul
 
 ## Tension sections
 
-Suspension strings equalise the horizontal tension along a section. OpenOHL solves the section exactly: one \\( H \\) for all spans, total unstressed length conserved:
+The ruling-span model takes one horizontal tension for the whole section — the idealisation of suspension strings that swing freely until it is equal. Real strings and sheaves do not equalise \\( H \\): since 2026-10-25 a section in the blocks runs over frictionless sheaves by default (equal **tension** on both sides of each, [below](#sagging-outputs); equal \\( H \\) is the option *simplified (equal H)*), and in the finite-element calculations a section clipped in hangs on its strings, which swing to whatever the spans' tensions give ([Finite-element wire systems](wirefe.md)). The ruling-span method keeps the idealisation; with it, OpenOHL solves the section exactly: one \\( H \\) for all spans, total unstressed length conserved:
 
 \\[ \sum_i \frac{L_i(H)}{1 + \bar T_i(H)/EA} = L_0\\, e^{\alpha (t - t_0)} \\]
 

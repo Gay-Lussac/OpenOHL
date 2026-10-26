@@ -284,6 +284,56 @@ pub struct StructureBody {
     pub members: Vec<BodyMember>,
 }
 
+/// The bodies of the structures of `line` at levels 2 and 3 as placed in
+/// project coordinates (the type at the structure's feet,
+/// `ohl_line::links::feet`, turned by its orientation), the way the
+/// views draw them, `ohl internal` and OHL-Design's check take them (one
+/// copy for both, code review 2026-10-26): each member's centre line and
+/// its solid where its profile is known; a pole one member, `pole`, its
+/// axis and its outline's solid. A structure without a type or a body
+/// (level 1) is left out.
+pub fn structure_bodies(
+    line: &Line,
+    bodies: &ohl_structures_fe::drawn::Bodies,
+) -> Vec<StructureBody> {
+    let mut out = Vec::new();
+    for st in &line.structures {
+        let Some(b) = st
+            .structure_type
+            .as_deref()
+            .and_then(|t| bodies.get(t, st.extension.as_deref()))
+        else {
+            continue;
+        };
+        let at = ohl_line::links::feet(st);
+        let place =
+            |p: &[f64; 3]| ohl_structures::structures::to_global(at, st.orientation_deg, *p);
+        let mut members: Vec<BodyMember> = b
+            .members
+            .iter()
+            .map(|m| BodyMember {
+                id: m.id.clone(),
+                line: m.points.iter().map(place).collect(),
+                solid: m.solid.iter().map(|t| t.each_ref().map(place)).collect(),
+            })
+            .collect();
+        if let Some(p) = &b.pole
+            && let (Some(lo), Some(hi)) = (p.rings.first(), p.rings.last())
+        {
+            members.push(BodyMember {
+                id: Some("pole".into()),
+                line: vec![place(&[0.0, 0.0, lo.0]), place(&[0.0, 0.0, hi.0])],
+                solid: p.solid.iter().map(|t| t.each_ref().map(place)).collect(),
+            });
+        }
+        out.push(StructureBody {
+            structure: st.id.clone(),
+            members,
+        });
+    }
+    out
+}
+
 /// An electrified part measured.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Part {

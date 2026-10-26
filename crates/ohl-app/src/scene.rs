@@ -121,13 +121,9 @@ pub enum Part {
 }
 
 /// Where a structure's type is placed: its position raised by its height
-/// adjustment (as the line places it).
+/// adjustment (the line's one rule, `ohl_line::links::feet`).
 pub fn type_origin(st: &ohl_line::Structure) -> [f64; 3] {
-    [
-        st.position[0],
-        st.position[1],
-        st.position[2] + st.height_adjust,
-    ]
+    ohl_line::links::feet(st)
 }
 
 /// The body a structure is drawn with: its type's at level 2 or 3 on its

@@ -321,3 +321,47 @@ fn the_line_with_a_wire_broken() {
     }
     assert!(solve_line_broken(&line, &lib, &case, "nope", 0, &budget).is_err());
 }
+
+/// Jumpers take the full wind square to each piece, like the spans,
+/// pushed to the case's side of the line (physics review 2026-10-26: at
+/// 80° to the line, 500 Pa on 30 mm, cos² gave 0.45 N/m instead of
+/// 15 N/m). A piece along the line takes it all across the line, one
+/// across the line all along it (pushed ahead).
+#[test]
+fn jumpers_take_the_full_wind_square_to_each_piece() {
+    let (_, cable) = two_spans();
+    let case = windy(10.0, 0.0, 500.0);
+    let q = case
+        .wire_load(cable.diameter, cable.weight())
+        .horizontal
+        .si();
+    let ahead = [0.0, 1.0];
+    let left = nalgebra::Vector2::new(-1.0, 0.0);
+    // Wind from the right (the default) blows to the left.
+    let to = case.wind_from.to_left();
+    for deg in [0.0_f64, 30.0, 80.0, 100.0, 180.0, 260.0] {
+        let a = deg.to_radians();
+        // `deg` from the line's direction (ahead).
+        let d = Vector3::new(-a.sin(), a.cos(), -0.3);
+        let w = wire_load_in_line_wind(&case, &cable, d, Some(ahead));
+        let h = w.xy();
+        assert!(
+            (h.norm() - q).abs() < 1e-9 * q,
+            "{deg}°: {} of {q}",
+            h.norm()
+        );
+        // Square to the piece, on the side the wind blows to.
+        assert!(h.dot(&d.xy()).abs() < 1e-9 * q, "{deg}°");
+        assert!(h.dot(&left) * to > 0.0, "{deg}°: {h:?}");
+        assert_eq!(
+            w.z,
+            -case.wire_load(cable.diameter, cable.weight()).vertical.si()
+        );
+    }
+    // Across the line exactly: pushed ahead, the full load.
+    let w = wire_load_in_line_wind(&case, &cable, Vector3::new(1.0, 0.0, 0.0), Some(ahead));
+    assert!(
+        (w.y - q * to).abs() < 1e-9 * q && w.x.abs() < 1e-12,
+        "{w:?}"
+    );
+}

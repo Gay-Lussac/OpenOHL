@@ -340,7 +340,7 @@ pub(super) fn parse_jumper_place(text: &str) -> Result<ohl_line::JumperPlace, St
             "\"{text}\": write a fraction (0.25), a length along it (3 m along) or a distance from its from clamp (2.5 m)"
         )
     };
-    let number = |s: &str| s.trim().parse::<f64>().map_err(|_| bad());
+    let number = |s: &str| ohl_core::units::parse_finite(s).map_err(|_| bad());
     if let Some(l) = t.strip_suffix("m along") {
         return Ok(ohl_line::JumperPlace::Length(number(l)?));
     }
@@ -623,7 +623,7 @@ pub(super) fn span_object_commands<'a>(
 pub(super) fn parse_place(text: &str) -> Result<ohl_line::SpanPlace, String> {
     let t = text.trim();
     let number = |s: &str| {
-        s.trim().parse::<f64>().map_err(|_| {
+        ohl_core::units::parse_finite(s).map_err(|_| {
             format!(
                 "\"{text}\": write a fraction (0.25), a distance (120 m) or a station (st. 1520 m)"
             )
