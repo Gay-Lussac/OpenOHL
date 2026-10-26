@@ -73,7 +73,7 @@ fn pct(u: Option<f64>) -> String {
 
 fn class(u: Option<f64>) -> &'static str {
     match u {
-        Some(u) if u > 1.0 => "over",
+        Some(u) if !(u <= 1.0) => "over",
         Some(u) if u >= 0.9 => "near",
         Some(_) => "ok",
         None => "",

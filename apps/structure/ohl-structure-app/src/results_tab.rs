@@ -94,7 +94,8 @@ impl Default for ResultsTab {
 /// without a capacity.
 pub fn usage_colour(usage: Option<f64>) -> [u8; 4] {
     match usage {
-        Some(u) if u > 1.0 => [235, 70, 60, 255],
+        // A usage that is not a number never shows as a pass.
+        Some(u) if !(u <= 1.0) => [235, 70, 60, 255],
         Some(u) if u >= NEAR_FULL => [255, 170, 60, 255],
         Some(_) => [110, 220, 120, 255],
         None => [150, 150, 160, 255],

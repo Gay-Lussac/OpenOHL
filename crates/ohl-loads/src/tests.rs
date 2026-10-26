@@ -1009,6 +1009,11 @@ fn an_approximate_fe_check_is_never_a_plain_pass() {
         missing: Vec::new(),
     };
     assert_eq!(s.status(), capacity::UsageStatus::Pass);
+    // A usage that is not a number governs and never passes (code review
+    // 2026-10-26).
+    let mut nan = s.clone();
+    nan.fe.as_mut().unwrap().usage = f64::NAN;
+    assert_eq!(nan.status(), capacity::UsageStatus::Over);
     assert!(!s.is_approximate() && s.approximate_text().is_empty());
     s.fe.as_mut().unwrap().approximate = true;
     assert!(s.is_approximate());
