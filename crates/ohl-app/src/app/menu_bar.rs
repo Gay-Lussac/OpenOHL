@@ -1080,7 +1080,15 @@ pub(super) fn model_panel(
             r.go_to_failure(k, &id);
         }
         ui.separator();
-        ui.label(egui::RichText::new(r.model.sources.file.display().to_string()).small());
+        // The file's name, its path on hover (never printed: as OHL-Structure's
+        // header).
+        let file = &r.model.sources.file;
+        let name = file.file_name().map_or_else(
+            || file.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        ui.label(egui::RichText::new(name).small())
+            .on_hover_text(file.display().to_string());
         // What was read when the project opened: folded (a long list of
         // files and libraries).
         egui::CollapsingHeader::new(format!("Loaded ({} lines)", r.model.log.len()))
