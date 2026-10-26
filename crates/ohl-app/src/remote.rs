@@ -696,6 +696,64 @@ pub enum PeopleAction {
     Op(String, Op),
 }
 
+/// The Roles page: what a viewer, a designer and an admin may do
+/// ([`ohl_session::ROLE_ABILITIES`]), the user's own role marked.
+pub fn roles_ui(ui: &mut egui::Ui, model: &Model) {
+    let own = model
+        .editing
+        .as_ref()
+        .ok()
+        .and_then(|e| e.session.role(&e.user).ok().flatten());
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.label(
+            "Each user of a project has one role. Admins give the roles (People); a \
+             designer's edits may be narrowed further by edit grants.",
+        );
+        ui.add_space(6.0);
+        for role in Role::ALL {
+            let name = format!(
+                "{}{}",
+                capitalised(role.as_str()),
+                if own == Some(role) { " (you)" } else { "" }
+            );
+            ui.horizontal(|ui| {
+                ui.strong(name);
+                ui.label(role.summary());
+            });
+        }
+        ui.add_space(8.0);
+        egui::Grid::new("role-abilities")
+            .striped(true)
+            .num_columns(4)
+            .show(ui, |ui| {
+                ui.strong("May");
+                for role in Role::ALL {
+                    ui.strong(capitalised(role.as_str()));
+                }
+                ui.end_row();
+                for (what, least) in ohl_session::ROLE_ABILITIES {
+                    ui.label(*what);
+                    for role in Role::ALL {
+                        if role >= *least {
+                            ui.label("✔")
+                                .on_hover_text(format!("{}: yes", role.as_str()));
+                        } else {
+                            ui.weak("—").on_hover_text(format!("{}: no", role.as_str()));
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+    });
+}
+
+fn capitalised(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
 /// The People page: who is connected, the invitation, roles (admins).
 pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
     let mut go = None;

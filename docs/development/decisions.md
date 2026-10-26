@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**A Roles page (owner, 2026-10-26)**
+
+What a viewer, a designer and an admin may do is one table in the session
+crate (`ROLE_ABILITIES`, each ability with its least role, plus a sentence
+per role), shown by a new page **Roles** (View) with the user's own role
+marked, and in the server guide. A test tries a sample of its rows against
+the session's checks (the role below refused, the least one allowed).
+
 **OHL-Design: UI review (owner: OHL-Design UI review, 2026-10-26)**
 
 The owner approved the same review for OHL-Design as for OHL-Structure:

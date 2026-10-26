@@ -63,6 +63,8 @@ pub enum Tab {
     Python,
     /// Who works on the project (server mode).
     People,
+    /// What each role may do.
+    Roles,
     /// The loads on the structures.
     Loads,
     /// A structure without a type in the pylon editor.
@@ -95,7 +97,7 @@ pub enum Place {
 
 impl Tab {
     /// The pages of the View menu (library pages: the Libraries menu).
-    pub const VIEWS: [Tab; 9] = [
+    pub const VIEWS: [Tab; 10] = [
         Tab::NextSteps,
         Tab::View3d,
         Tab::Plan,
@@ -105,6 +107,7 @@ impl Tab {
         Tab::Clearances,
         Tab::Lod,
         Tab::People,
+        Tab::Roles,
     ];
 
     /// A page for looking into the program (the model's numbers, the
@@ -127,6 +130,7 @@ impl Tab {
             Tab::Lod => "Level of detail",
             Tab::Python => "Python console",
             Tab::People => "People",
+            Tab::Roles => "Roles",
             Tab::Loads => "Structure loads",
             Tab::StructureEditor => "Structure editor",
             Tab::PhaseDistance => "Distance between conductors",

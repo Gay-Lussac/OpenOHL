@@ -358,6 +358,43 @@ fn grants_limit_edits() {
     assert_eq!(s.grants().unwrap().len(), 1);
 }
 
+/// The Roles page's table follows the session's checks: a sample of its
+/// rows, each tried by the role below its least one (refused) and by its
+/// least one (allowed) (owner, 2026-10-26).
+#[test]
+fn the_role_table_follows_the_checks() {
+    let (_, mut s) = with_branch("roles");
+    assert_eq!(s.role("vic").unwrap(), Some(Role::Viewer));
+    assert_eq!(s.role("ben").unwrap(), Some(Role::Designer));
+    let least = |start: &str| {
+        crate::ROLE_ABILITIES
+            .iter()
+            .find(|(w, _)| w.starts_with(start))
+            .unwrap()
+            .1
+    };
+    // Editing: designers, not viewers.
+    assert_eq!(least("Edit the line"), Role::Designer);
+    assert!(shift(&mut s, "vic", "T2", 1.0).is_err());
+    shift(&mut s, "ben", "T2", 1.0).unwrap();
+    // Committing: designers.
+    assert_eq!(least("Commit"), Role::Designer);
+    assert!(s.commit("vic", "no").is_err());
+    s.commit("ben", "T2 moved").unwrap();
+    // Protecting: admins.
+    assert_eq!(least("Protect or unprotect"), Role::Admin);
+    assert!(s.protect_branch("ben", "main", true).is_err());
+    s.protect_branch("ana", "main", true).unwrap();
+    // A protected branch changed directly: admins.
+    assert_eq!(least("Change a protected branch"), Role::Admin);
+    assert!(shift(&mut s, "ben", "T2", 1.0).is_err());
+    shift(&mut s, "ana", "T2", 1.0).unwrap();
+    // Users and roles: admins.
+    assert_eq!(least("Add users"), Role::Admin);
+    assert!(s.set_user("ben", "zoe", Role::Viewer).is_err());
+    s.set_user("ana", "zoe", Role::Viewer).unwrap();
+}
+
 /// An admin merges a review into a protected branch alone: no approval by
 /// somebody else, an open review merged by the admin (owner, 2026-10-26).
 #[test]
