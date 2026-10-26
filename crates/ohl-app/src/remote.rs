@@ -52,9 +52,9 @@ pub struct Remote {
     sent: (Presence, Option<Instant>),
     /// This application hosts the server.
     pub hosting: bool,
-    /// Hosting: the server's secret (personal invitations are made from
+    /// Hosting: the server's keys (the invitations are made from
     /// it).
-    pub secret: Option<String>,
+    pub secret: Option<ohl_server::Keys>,
     /// The name typed for a personal invitation (People).
     pub invite_name: String,
     /// Hosting with the web client: its address, `https://HOST:PORT/`.
@@ -722,10 +722,7 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
         let who = user
             .map(|u| format!("user={}&", ohl_server::web::fragment_escape(u)))
             .unwrap_or_default();
-        Some(format!(
-            "{web}#{who}code={}",
-            ohl_server::access_code(secret, user)
-        ))
+        Some(format!("{web}#{who}code={}", secret.code(user)))
     };
     if let Some(link) = web_link(None) {
         ui.horizontal(|ui| {
@@ -755,7 +752,7 @@ pub fn people_ui(ui: &mut egui::Ui, model: &mut Model) -> Option<PeopleAction> {
                 .clicked()
             {
                 let personal = Invitation {
-                    code: ohl_server::access_code(&secret, Some(&name)),
+                    code: secret.code(Some(&name)),
                     ..r.invitation.clone()
                 };
                 ui.ctx().copy_text(personal.to_string());

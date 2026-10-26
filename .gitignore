@@ -22,3 +22,6 @@ local-data/
 
 # Local editor/agent settings
 .claude/
+
+# Server key files (personal invitations; ohl serve --keys)
+*.server-key

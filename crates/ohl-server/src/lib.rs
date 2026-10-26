@@ -458,8 +458,18 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
                 None
             }
         }
+        // A designer whose edits no grant limits, and an admin only on a
+        // protected line; never a path of the sender's computer (security
+        // review 2026-10-26, M5).
         Op::SetSetting { key, value } => {
             session.require(user, Role::Designer)?;
+            session.require_unrestricted(user)?;
+            session.check_line_write(user)?;
+            if value.as_deref().is_some_and(ohl_session::is_local_path) {
+                return Err(SessionError::Refused(format!(
+                    "setting {key}: a path of one computer is not shared (a file name is)"
+                )));
+            }
             session.set_setting(key, value.as_deref())?;
             None
         }
@@ -770,23 +780,280 @@ impl std::str::FromStr for Invitation {
     }
 }
 
-/// The access code for `user` (`None`: the general invitation, for users
-/// the project does not know): derived from the server's secret, which is
-/// never sent.
-pub fn access_code(secret: &str, user: Option<&str>) -> String {
+/// The general access code (for users the project does not know),
+/// derived from the server's general secret: the host's `--code`, or a
+/// random one. Twelve hexadecimal digits, as before 2026-10-26 (a link
+/// made with `--code` stays valid). Everyone holding the general
+/// invitation knows this code; nothing else is derived from that secret
+/// (security review 2026-10-26, H2).
+pub fn general_code(secret: &str) -> String {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
     h.update(secret.as_bytes());
-    h.update(b"\n");
-    match user {
-        Some(u) => h.update(format!("user:{u}").as_bytes()),
-        None => h.update(b"*"),
+    h.update(b"\n*");
+    hex(&h.finalize()[..6])
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// HMAC-SHA-256 (RFC 2104).
+pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    use sha2::Digest;
+    let mut block = [0u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&sha2::Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
     }
-    h.finalize()
-        .iter()
-        .take(6)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    let pad = |x: u8| block.map(|b| b ^ x);
+    let mut inner = sha2::Sha256::new();
+    inner.update(pad(0x36));
+    inner.update(message);
+    let mut outer = sha2::Sha256::new();
+    outer.update(pad(0x5c));
+    outer.update(inner.finalize());
+    outer.finalize().into()
+}
+
+/// The keys the access codes are made from: the general secret (the
+/// host's `--code`, or random) gives only the general code; the personal
+/// codes come from a random key of 256 bits that is never derived from
+/// the general secret, so knowing (or guessing) the general invitation
+/// tells nothing about anybody's personal one (security review
+/// 2026-10-26, H2).
+#[derive(Clone)]
+pub struct Keys {
+    general: String,
+    personal: [u8; 32],
+}
+
+impl fmt::Debug for Keys {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Keys(..)")
+    }
+}
+
+impl Keys {
+    /// Keys of a general secret and a personal key.
+    pub fn new(general: &str, personal: [u8; 32]) -> Self {
+        Self {
+            general: general.to_owned(),
+            personal,
+        }
+    }
+
+    /// Random keys (for one run of a server).
+    pub fn random() -> Self {
+        let mut personal = [0u8; 32];
+        getrandom::fill(&mut personal).expect("system randomness");
+        Self::new(&random_code(16), personal)
+    }
+
+    /// The access code for `user` (`None`: the general invitation).
+    /// Personal codes: HMAC-SHA-256 of the personal key over the name,
+    /// 128 bits in hexadecimal.
+    pub fn code(&self, user: Option<&str>) -> String {
+        match user {
+            None => general_code(&self.general),
+            Some(u) => hex(&hmac_sha256(&self.personal, format!("user:{u}").as_bytes())[..16]),
+        }
+    }
+
+    /// The personal key from a key file (64 hexadecimal digits), made
+    /// with a fresh random key when the file does not exist (readable and
+    /// writable by its owner only).
+    pub fn personal_key_file(path: &std::path::Path) -> Result<[u8; 32], String> {
+        let parse = |text: &str| -> Option<[u8; 32]> {
+            let t = text.trim();
+            if t.len() != 64 || !t.is_ascii() {
+                return None;
+            }
+            let mut key = [0u8; 32];
+            for (k, b) in key.iter_mut().enumerate() {
+                *b = u8::from_str_radix(&t[2 * k..2 * k + 2], 16).ok()?;
+            }
+            Some(key)
+        };
+        match std::fs::read_to_string(path) {
+            Ok(text) => parse(&text).ok_or_else(|| {
+                format!(
+                    "{}: not a server key file (64 hexadecimal digits)",
+                    path.display()
+                )
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let mut key = [0u8; 32];
+                getrandom::fill(&mut key).map_err(|e| e.to_string())?;
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                use std::io::Write;
+                options
+                    .open(path)
+                    .and_then(|mut f| writeln!(f, "{}", hex(&key)))
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                Ok(key)
+            }
+            Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    }
+}
+
+/// Makes a new directory only its owner may enter (0700 on Unix), with a
+/// random name, under the temporary folder: the copies of a project made
+/// for the clients are kept there (security review 2026-10-26, L6).
+pub fn private_temp_dir(prefix: &str) -> Result<std::path::PathBuf, String> {
+    let mut last = String::new();
+    for _ in 0..8 {
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}", random_code(12)));
+        // Never a folder that exists already (`create`, not `create_all`).
+        match private_builder().create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) => last = format!("{}: {e}", dir.display()),
+        }
+    }
+    Err(last)
+}
+
+fn private_builder() -> std::fs::DirBuilder {
+    #[allow(unused_mut)]
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+}
+
+/// Makes folder `path` (its parent must exist) only its owner may enter,
+/// unless it exists.
+pub(crate) fn private_dir(path: &std::path::Path) -> std::io::Result<()> {
+    match private_builder().create(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir() => Ok(()),
+        r => r,
+    }
+}
+
+/// A token bucket: `rate` per second, at most `burst` at once.
+#[derive(Debug, Clone)]
+pub(crate) struct Bucket {
+    tokens: f64,
+    rate: f64,
+    burst: f64,
+    last: std::time::Instant,
+}
+
+impl Bucket {
+    pub(crate) fn new(rate: f64, burst: f64) -> Self {
+        Self {
+            tokens: burst,
+            rate,
+            burst,
+            last: std::time::Instant::now(),
+        }
+    }
+
+    /// Takes one token, if there is one.
+    pub(crate) fn take(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let dt = now.duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + dt * self.rate).min(self.burst);
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Characters that look like another (Cyrillic and Greek letters drawn
+/// as Latin ones), mapped to the Latin letter: a name's skeleton.
+const LOOK_ALIKES: &[(char, char)] = &[
+    ('а', 'a'),
+    ('в', 'b'),
+    ('е', 'e'),
+    ('ё', 'e'),
+    ('і', 'i'),
+    ('ј', 'j'),
+    ('к', 'k'),
+    ('м', 'm'),
+    ('н', 'h'),
+    ('о', 'o'),
+    ('р', 'p'),
+    ('с', 'c'),
+    ('т', 't'),
+    ('у', 'y'),
+    ('х', 'x'),
+    ('ѕ', 's'),
+    ('ԁ', 'd'),
+    ('ԛ', 'q'),
+    ('ԝ', 'w'),
+    ('α', 'a'),
+    ('β', 'b'),
+    ('ε', 'e'),
+    ('ζ', 'z'),
+    ('η', 'h'),
+    ('ι', 'i'),
+    ('κ', 'k'),
+    ('μ', 'm'),
+    ('ν', 'v'),
+    ('ο', 'o'),
+    ('ρ', 'p'),
+    ('τ', 't'),
+    ('υ', 'u'),
+    ('χ', 'x'),
+    ('ı', 'i'),
+    ('ℓ', 'l'),
+    ('0', 'o'),
+    ('1', 'l'),
+    ('|', 'l'),
+];
+
+/// A name as it looks: lower case, full-width forms as ASCII,
+/// Cyrillic and Greek look-alikes as Latin letters, `0` as `o`, `1`
+/// and `i` as `l`, spaces and the like dropped. Two names of one
+/// skeleton are told apart only by the eye's mistakes.
+pub fn name_skeleton(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        // Full-width ASCII forms (U+FF01–FF5E).
+        let c = match c as u32 {
+            0xFF01..=0xFF5E => char::from_u32(c as u32 - 0xFF01 + 0x21).unwrap_or(c),
+            _ => c,
+        };
+        for c in c.to_lowercase() {
+            let c = LOOK_ALIKES
+                .iter()
+                .find(|(from, _)| *from == c)
+                .map_or(c, |(_, to)| *to);
+            let c = if c == 'i' { 'l' } else { c };
+            if c.is_whitespace() || matches!(c, '_' | '-' | '.') {
+                continue;
+            }
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Invisible characters (format characters, bidirectional controls):
+/// never in a name.
+fn invisible(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x00AD | 0x034F | 0x061C | 0x115F | 0x1160 | 0x17B4 | 0x17B5 | 0x180B..=0x180F
+            | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x206F | 0x3164 | 0xFE00..=0xFE0F
+            | 0xFEFF | 0xFFA0 | 0xFFF0..=0xFFFB | 0xE0000..=0xE0FFF
+    )
 }
 
 /// SHA-256 of a certificate (DER).
@@ -833,11 +1100,18 @@ pub async fn read_msg_max<T: for<'de> Deserialize<'de>>(
     if len > max {
         return Err(format!("message of {len} bytes: too large"));
     }
-    let mut buf = vec![0u8; len];
-    stream
-        .read_exact(&mut buf)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Grown as the bytes arrive, never allocated from the announced
+    // length alone (security review 2026-10-26, M4).
+    let mut buf = Vec::with_capacity(len.min(64 << 10));
+    let mut piece = vec![0u8; len.min(64 << 10)];
+    while buf.len() < len {
+        let want = (len - buf.len()).min(piece.len());
+        match stream.read(&mut piece[..want]).await {
+            Ok(Some(n)) => buf.extend_from_slice(&piece[..n]),
+            Ok(None) => return Err("the stream ended in a message".into()),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
     serde_json::from_slice(&buf)
         .map(Some)
         .map_err(|e| format!("bad message: {e}"))
@@ -865,6 +1139,27 @@ pub fn check_name(name: &str) -> Result<(), String> {
     if name.chars().count() > MAX_NAME {
         return Err(format!("a user name of at most {MAX_NAME} characters"));
     }
+    if name.chars().any(invisible) {
+        return Err("a user name without invisible characters".into());
+    }
+    Ok(())
+}
+
+/// Refuses a new name that looks like a user's name (`users`) without
+/// being it: the same [`name_skeleton`] — `Аdmin` (Cyrillic A) beside
+/// `admin`, `b0b` beside `bob` (security review 2026-10-26, L8).
+pub fn check_look_alike<'a>(
+    name: &str,
+    users: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let skeleton = name_skeleton(name);
+    for u in users {
+        if u != name && name_skeleton(u) == skeleton {
+            return Err(format!(
+                "{name} looks like the name of user {u}: choose another name"
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -881,5 +1176,7 @@ pub fn random_code(n: usize) -> String {
 
 #[cfg(test)]
 mod points_tests;
+#[cfg(test)]
+mod security_tests;
 #[cfg(test)]
 mod tests;

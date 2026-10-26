@@ -114,7 +114,7 @@ fn web_clients_join_and_follow() {
     .unwrap();
     let addr = server.web_addr.unwrap();
     let fp = server.invitation.fingerprint;
-    let general = crate::access_code(server.secret(), None);
+    let general = server.keys().code(None);
     let link = server.web_link(None).unwrap();
     assert!(link.starts_with("https://127.0.0.1:"), "{link}");
     assert!(link.ends_with(&format!("/#code={general}")), "{link}");
@@ -191,7 +191,7 @@ fn web_clients_join_and_follow() {
     // Bob, a designer, in a browser: the web client only views — his edit
     // and lock are refused.
     rt.block_on(async {
-        let code = crate::access_code(server.secret(), Some("bob"));
+        let code = server.keys().code(Some("bob"));
         let (mut w, m) = join(addr, fp, "bob", &code).await;
         assert!(
             matches!(

@@ -36,7 +36,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::{Role as WsRole, WebSocketConfig};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
-use crate::server::{Event, Job, SceneSource, dispatch, log};
+use crate::server::{Event, Gate, Job, Pace, Pending, SceneSource, dispatch, log};
 use crate::{
     ClientMsg, MAX_HELLO, MAX_MESSAGE, Op, PROTOCOL, Scene, SceneSpan, SceneWire, ServerMsg,
 };
@@ -158,32 +158,51 @@ pub(crate) async fn listen(
     listener: TcpListener,
     acceptor: tokio_rustls::TlsAcceptor,
     jobs: std_mpsc::Sender<Job>,
+    gate: Arc<Gate>,
 ) {
     let scenes = Arc::new(Scenes::new());
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     let mut next = 0u64;
     loop {
-        let tcp = match listener.accept().await {
-            Ok((tcp, _)) => tcp,
+        let (tcp, from) = match listener.accept().await {
+            Ok(accepted) => accepted,
             Err(_) => {
                 // Out of file descriptors, or the like: try again later.
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
         };
+        // At most so many connections, and so many of one address not
+        // joined yet (pages, handshakes, WebSockets before the hello).
         let Ok(slot) = slots.clone().try_acquire_owned() else {
+            continue;
+        };
+        let Some(pending) = gate.enter(from.ip()) else {
             continue;
         };
         next += 1;
         let client = WEB_CLIENTS + next;
-        let (acceptor, jobs, scenes) = (acceptor.clone(), jobs.clone(), scenes.clone());
+        let (acceptor, jobs, scenes, gate) =
+            (acceptor.clone(), jobs.clone(), scenes.clone(), gate.clone());
         tokio::spawn(async move {
-            if let Err(e) = connection(tcp, acceptor, client, jobs, scenes).await {
+            let entry = Entry {
+                gate,
+                ip: from.ip(),
+                pending,
+            };
+            if let Err(e) = connection(tcp, acceptor, client, jobs, scenes, entry).await {
                 log(&format!("web connection {next}: {e}"));
             }
             drop(slot);
         });
     }
+}
+
+/// Where a connection comes from, not joined yet.
+struct Entry {
+    gate: Arc<Gate>,
+    ip: std::net::IpAddr,
+    pending: Pending,
 }
 
 /// An HTTP request's head.
@@ -307,6 +326,7 @@ async fn connection(
     client: u64,
     jobs: std_mpsc::Sender<Job>,
     scenes: Arc<Scenes>,
+    entry: Entry,
 ) -> Result<(), String> {
     let _ = tcp.set_nodelay(true);
     // A browser that does not trust the certificate yet hangs up here:
@@ -343,7 +363,7 @@ async fn connection(
         tls.write_all(answer.as_bytes())
             .await
             .map_err(|e| e.to_string())?;
-        return websocket(tls, rest, client, jobs, scenes).await;
+        return websocket(tls, rest, client, jobs, scenes, entry).await;
     }
     let path = if req.path == "/" {
         "/index.html"
@@ -403,6 +423,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
     client: u64,
     jobs: std_mpsc::Sender<Job>,
     scenes: Arc<Scenes>,
+    entry: Entry,
 ) -> Result<(), String> {
     // Before the access code is checked, only a small message.
     let mut ws = WebSocketStream::from_partially_read(
@@ -436,15 +457,10 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
         refuse(&mut ws, reason).await;
         return Ok(());
     }
-    let (tx, rx) = oneshot::channel();
-    jobs.send(Job::Join {
-        user: user.clone(),
-        code,
-        copy: false,
-        reply: tx,
-    })
-    .map_err(|_| "server stopped")?;
-    let joined = match rx.await.map_err(|_| "server stopped")? {
+    let joined =
+        crate::server::join(&entry.gate, entry.ip, &jobs, user.clone(), code, false).await?;
+    drop(entry.pending);
+    let joined = match joined {
         Ok(j) => j,
         Err(reason) => {
             refuse(&mut ws, reason).await;
@@ -480,6 +496,7 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
     let mut refresh = Some(Instant::now());
     let mut ping = tokio::time::interval(PING);
     let mut heard = Instant::now();
+    let mut pace = Pace::new();
     loop {
         let due = refresh.unwrap_or_else(|| Instant::now() + PING);
         tokio::select! {
@@ -535,7 +552,7 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                             ClientMsg::Lock { .. } => Some(ServerMsg::Notice {
                                 text: VIEW_ONLY.into(),
                             }),
-                            msg => dispatch(msg, client, user, jobs).await?,
+                            msg => dispatch(msg, client, user, jobs, &mut pace).await?,
                         };
                         if let Some(answer) = answer {
                             send(&mut ws, &answer).await?;
@@ -641,8 +658,11 @@ fn library_dir(
     let Some(files) = files.filter(|f| !f.is_empty()) else {
         return Ok(None);
     };
+    // The working folder only its owner enters (security review
+    // 2026-10-26, L6); made again after each scene.
+    crate::private_dir(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let dir = work.join(format!("{kind}-{}", crate::random_code(8)));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir(&dir).map_err(|e| e.to_string())?;
     for (name, text) in files {
         if !ohl_session::safe_file_name(name) {
             return Err(format!("library file \"{name}\": not a plain file name"));
