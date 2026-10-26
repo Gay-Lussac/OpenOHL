@@ -73,8 +73,7 @@ use crate::structures::StructureKind;
 pub const TEMPLATE_FILE_EXTENSION: &str = "ohlpt";
 /// `format` of a structure template.
 pub const TEMPLATE_FILE_FORMAT: &str = "ohl-structure-template";
-/// `format` of a structure template before 2026-10-21 (and its `ols` name
-/// before 2026-10-18): still read.
+/// `format` of a structure template before 2026-10-21: still read.
 pub const TEMPLATE_FILE_FORMAT_BEFORE: &str = "ohl-pylon-template";
 
 /// The shipped library's folder of structure templates (`libraries/…`),
@@ -91,9 +90,7 @@ pub const BESIDE_FOLDERS: [&str; 2] = ["StructureTemplates", "PylonTemplates"];
 /// 2026-10-21 when the file gives it, else the current one.
 fn expected_format(found: Option<&str>) -> &'static str {
     match found {
-        Some(f) if ohl_core::files::is_format(f, TEMPLATE_FILE_FORMAT_BEFORE) => {
-            TEMPLATE_FILE_FORMAT_BEFORE
-        }
+        Some(TEMPLATE_FILE_FORMAT_BEFORE) => TEMPLATE_FILE_FORMAT_BEFORE,
         _ => TEMPLATE_FILE_FORMAT,
     }
 }
@@ -790,8 +787,8 @@ mod tests {
     }
 
     /// The format id `ohl-structure-template` (2026-10-21) and the one
-    /// before, `ohl-pylon-template` (and its `ols` name), are read alike;
-    /// another is refused.
+    /// before, `ohl-pylon-template`, are read alike; another (and the
+    /// `ols` name of before 2026-10-18) is refused.
     #[test]
     fn both_format_ids_are_read() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -802,16 +799,14 @@ mod tests {
             .filter(|l| !l.starts_with("format"))
             .map(|l| format!("{l}\n"))
             .collect();
-        for id in [
-            "ohl-structure-template",
-            "ohl-pylon-template",
-            "ols-pylon-template",
-        ] {
+        for id in ["ohl-structure-template", "ohl-pylon-template"] {
             let t = format!("format = \"{id}\"\n{body}");
             PylonTemplate::parse(std::path::Path::new("x.ohlpt"), &t).unwrap();
         }
-        let t = format!("format = \"ohl-structure\"\n{body}");
-        assert!(PylonTemplate::parse(std::path::Path::new("x.ohlpt"), &t).is_err());
+        for id in ["ohl-structure", "ols-pylon-template"] {
+            let t = format!("format = \"{id}\"\n{body}");
+            assert!(PylonTemplate::parse(std::path::Path::new("x.ohlpt"), &t).is_err());
+        }
     }
 
     #[test]

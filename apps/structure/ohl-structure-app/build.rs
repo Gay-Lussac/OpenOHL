@@ -11,15 +11,14 @@ fn main() {
 }
 
 /// The build id (`OHL_BUILD_ID`): the git commit the program is built
-/// from (`OHL_BUILD_ID` in the environment overrides it; `OLS_BUILD_ID`,
-/// its name before 2026-10-18, too), else `unknown`.
+/// from (`OHL_BUILD_ID` in the environment overrides it), else
+/// `unknown`.
 /// The line application and the structure application compare theirs:
 /// two programs of the same commit belong together. Built again when the
 /// commit changes (the files `HEAD` points at). The same function is in
 /// `crates/ohl-app/build.rs`.
 fn build_id() {
     println!("cargo:rerun-if-env-changed=OHL_BUILD_ID");
-    println!("cargo:rerun-if-env-changed=OLS_BUILD_ID");
     let dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
     let git = |args: &[&str]| {
         std::process::Command::new("git")
@@ -31,7 +30,7 @@ fn build_id() {
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
             .filter(|s| !s.is_empty())
     };
-    let id = match std::env::var("OHL_BUILD_ID").or_else(|_| std::env::var("OLS_BUILD_ID")) {
+    let id = match std::env::var("OHL_BUILD_ID") {
         Ok(id) if !id.trim().is_empty() => id.trim().to_owned(),
         _ => match git(&["rev-parse", "--short=12", "HEAD"]) {
             Some(commit) => {

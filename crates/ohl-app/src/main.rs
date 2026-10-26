@@ -3,8 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! `ohl-design` — OHL-Design, the line application of OpenOHL: sag-tension,
-//! clearances and line layout (formerly `ols-cad`, still built as an
-//! alias that runs this program).
+//! clearances and line layout.
 //!
 //! ```bash
 //! ohl-design examples/synthetic-line/synthetic-line.ohl.json \

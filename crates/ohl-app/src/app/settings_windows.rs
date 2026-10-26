@@ -257,7 +257,7 @@ pub(super) fn defaults_window(ctx: &egui::Context, r: &mut Ready) {
                     ))
                     .clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Default values", &ohl_core::files::open_extensions(ext))
+                        .add_filter("Default values", &[ext])
                         .pick_file()
                 {
                     message = Some(

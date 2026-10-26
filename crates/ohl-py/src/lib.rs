@@ -3,8 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Python bindings for OpenOHL (`import ohl`; this is its compiled part,
-//! `ohl._ohl`, around which `python/ohl` is the package; `import ols`, the
-//! name before 2026-10-18, still works for a while: `python/ols`).
+//! `ohl._ohl`, around which `python/ohl` is the package).
 //!
 //! The Python tier is for scripts, reports, importers/exporters and
 //! automation (ADR-0003). Calculations run in Rust; Python only drives them.

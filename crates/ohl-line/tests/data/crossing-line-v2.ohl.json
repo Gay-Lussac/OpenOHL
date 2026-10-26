@@ -1,5 +1,5 @@
 {
-  "format": "ols-line",
+  "format": "ohl-line",
   "version": 2,
   "name": "Crossing line (invented)",
   "crs": "local (invented)",

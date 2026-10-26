@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Files of older versions read as the current one: the example lines as
-//! they were written in version 2 (`tests/data/*-v2.ols.json`) give the
+//! they were written in version 2 (`tests/data/*-v2.ohl.json`) give the
 //! same line as the examples, written in the current version.
 
 use std::path::Path;
@@ -12,7 +12,7 @@ use std::path::Path;
 fn version_2_examples_read_as_the_current_ones() {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     for f in ["synthetic-line", "synthetic-line-typed", "crossing-line"] {
-        let old = ohl_line::Line::load(&here.join(format!("tests/data/{f}-v2.ols.json"))).unwrap();
+        let old = ohl_line::Line::load(&here.join(format!("tests/data/{f}-v2.ohl.json"))).unwrap();
         let new =
             ohl_line::Line::load(&here.join(format!("../../examples/synthetic-line/{f}.ohl.json")))
                 .unwrap();

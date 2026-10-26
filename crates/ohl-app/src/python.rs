@@ -3,8 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The Python console (File › Plugins › Python console): an embedded interpreter
-//! on its own thread, driving the open project through the `ohl` module
-//! (`ols`, its name before 2026-10-18, is the same module).
+//! on its own thread, driving the open project through the `ohl` module.
 //!
 //! Scripts read the line, the weather cases and the solved results, and
 //! edit through session commands — the same validated, logged, undoable
@@ -294,10 +293,8 @@ def _run(src, name, g):
         m.add_function(wrap_pyfunction!(_call, &m)?)?;
         m.add_function(wrap_pyfunction!(convert, &m)?)?;
         m.add_function(wrap_pyfunction!(quantity_kinds, &m)?)?;
-        // `ols`: its name before 2026-10-18, the same module.
         let modules = py.import("sys")?.getattr("modules")?;
         modules.set_item("ohl", &m)?;
-        modules.set_item("ols", &m)?;
         let code = CString::new(BOOT).expect("no NUL");
         py.run(&code, Some(&m.dict()), None)?;
         Ok(m)
@@ -320,7 +317,6 @@ def _run(src, name, g):
             let globals = PyDict::new(py);
             globals.set_item("__name__", "__console__")?;
             globals.set_item("__builtins__", py.import("builtins")?)?;
-            globals.set_item("ols", &m)?;
             globals.set_item("ohl", m)?;
             Ok(globals.unbind())
         });
@@ -814,9 +810,8 @@ mod tests {
         c.submit("print(ohl.convert('length', '1000 ft', 'm'), x)".into());
         wait(&mut c, &mut calls);
         assert_eq!(c.lines.last(), Some(&Line::Out("304.8 42\n".into())));
-        // A call goes to the application and comes back (through `ols` too,
-        // the module's name before 2026-10-18).
-        c.submit("ols.results('hot')".into());
+        // A call goes to the application and comes back.
+        c.submit("ohl.results('hot')".into());
         wait(&mut c, &mut calls);
         assert_eq!(calls.last().unwrap().0, "results");
         assert_eq!(c.lines.last(), Some(&Line::Out("{'echo': 'hot'}\n".into())));

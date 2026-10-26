@@ -323,7 +323,7 @@ fn body(
             && let Some(p) = rfd::FileDialog::new()
                 .add_filter(
                     "Thermal ambient cases",
-                    &ohl_core::files::open_extensions(ohl_thermal::ambient::AMBIENT_FILE_EXTENSION),
+                    &[ohl_thermal::ambient::AMBIENT_FILE_EXTENSION],
                 )
                 .pick_file()
         {

@@ -27,11 +27,6 @@ use crate::{ExportModel, Exporter, Importer, Options};
 /// The XML namespace of OHL XML line documents.
 pub const NAMESPACE: &str = "urn:openohl:ohl-line:1";
 
-/// The namespace of OLS XML documents of before 2026-10-18, when OLS XML
-/// became OHL XML: read as the current one (as are documents in no
-/// namespace).
-pub const LEGACY_NAMESPACE: &str = "urn:ols-cad:ols-line:1";
-
 /// A number as written (shortest text that reads back to the same value).
 fn num(x: f64) -> String {
     format!("{x}")
@@ -2173,8 +2168,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         "OHL XML line",
     )?;
     let mut line = Line {
-        // Checked above (the id of before 2026-10-18 is read too); the
-        // current one is kept.
+        // Checked above.
         format: ohl_line::LINE_FILE_FORMAT.into(),
         version,
         bimetallic,

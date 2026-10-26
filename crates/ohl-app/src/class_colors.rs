@@ -78,12 +78,7 @@ impl ClassWindow {
                         .on_hover_text("A class scheme file (.ohlc): names, roles, colours")
                         .clicked()
                         && let Some(p) = rfd::FileDialog::new()
-                            .add_filter(
-                                "Class scheme",
-                                &ohl_core::files::open_extensions(
-                                    ohl_lidar::classes::CLASS_FILE_EXTENSION,
-                                ),
-                            )
+                            .add_filter("Class scheme", &[ohl_lidar::classes::CLASS_FILE_EXTENSION])
                             .pick_file()
                     {
                         match ClassScheme::load(&p) {

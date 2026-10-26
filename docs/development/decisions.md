@@ -10,6 +10,30 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Old names no longer read (owner, 2026-10-26; roadmap U12)**
+
+Before the first release (v0.0.1) the compatibility paths for the names of
+before 2026-10-18 are gone: the programs `ols`, `ols-cad` and
+`ols-structure`; `import ols` (python/ols); `ols-plugin.toml` manifests
+(only `ohl-plugin.toml` is read; the hint for sdk 0.2 plugins went with
+it, they are refused as any other version); the `ols` file extensions
+(`.ols`, `.ols.json`, `.olsw`, `.olss`, `.olsslc`, `-clearances.olsr`…)
+and format ids (`ols-…`, OLS XML's namespace and `ols-line`, the
+`ols-xml` importer id); `ols://` invitations; `OLS_BUILD_ID`,
+`OLS_STRUCTURE_APP` and every other `OLS_…` variable (`ohl_core::env`
+reads only `OHL_…`). `ohl_core::files` lost `legacy_name`, `is_format`,
+`open_extensions`, `exists_by_either_name` and the `LEGACY_…` constants;
+the tests of the old names (`ohl-cli` `older_names`, `legacy_name`,
+`tests/data/before-ohl`) went, and the version-2 line files of
+`ohl-line` (`tests/data/*-v2.ohl.json`) carry the new id (their version
+is what they test). Kept on purpose, being on-disk or protocol names
+rather than readers of old files: the table `ols_meta`, ALPN `ols/2`, the
+storage ids `OLS CAD` / `OLS Structure`, the window storage keys
+`ols-structure-…`, the web client's `ols.…` browser storage keys, the
+ADRs (history). The owner's machine holds no files of the old names, so
+no migration. No calculation changed (`ohl validate benchmarks`: 186
+passed).
+
 **A Roles page (owner, 2026-10-26)**
 
 What a viewer, a designer and an admin may do is one table in the session

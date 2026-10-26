@@ -737,7 +737,7 @@ impl StructureApp {
                         {
                             ui.close();
                             if let Some(p) = rfd::FileDialog::new()
-                                .add_filter(kind.title(), &ohl_core::files::open_extensions(ext))
+                                .add_filter(kind.title(), &[ext])
                                 .pick_file()
                             {
                                 let _ = self.import_library(kind, &p);

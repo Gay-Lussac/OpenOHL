@@ -191,8 +191,8 @@ presets as `<plugin>-<name>.ohlr` and `.ohlwc`, in the project among
 its rule and weather case files). Plugin interface version 0.2 (`sdk =
 "0.2"`) brought the presets: a plugin built for 0.1 must be rebuilt. Version 0.3
 (2026-10-18) renamed the interface `ols:plugin` → `ohl:plugin` and the
-manifest `ols-plugin.toml` → `ohl-plugin.toml` (still read): a plugin
-built for 0.2 must be rebuilt (its sources need the new package name
+manifest `ols-plugin.toml` → `ohl-plugin.toml` (the old name no longer
+read since 2026-10-26): a plugin built for 0.2 must be rebuilt (its sources need the new package name
 only). A plugin ships **no values of the
 standard**: it implements the code's method, every number comes from the
 parameter file, and the template's numbers are invented placeholders,

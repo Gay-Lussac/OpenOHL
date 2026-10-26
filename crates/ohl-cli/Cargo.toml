@@ -15,14 +15,6 @@ path = "src/main.rs"
 # No docs page: the command-line help is its documentation.
 doc = false
 
-# The former name, kept for a transition period: says so and runs the
-# program above (`ohl`).
-[[bin]]
-name = "ols"
-path = "src/bin/ols.rs"
-test = false
-doc = false
-
 [dependencies]
 ohl-core.workspace = true
 ohl-validation.workspace = true

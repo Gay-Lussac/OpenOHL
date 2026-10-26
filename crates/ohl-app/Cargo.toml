@@ -13,14 +13,6 @@ authors.workspace = true
 name = "ohl-design"
 path = "src/main.rs"
 
-# The former name, kept for a transition period: says so and runs the
-# program above (`ohl-design`).
-[[bin]]
-name = "ols-cad"
-path = "src/bin/ols-cad.rs"
-test = false
-doc = false
-
 [dependencies]
 ohl-core.workspace = true
 ohl-cables.workspace = true

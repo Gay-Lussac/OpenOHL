@@ -148,10 +148,7 @@ impl CheckLibraryWindow {
                 .on_hover_text("A report exported before (.ohlcr), onto this line")
                 .clicked()
                 && let Some(p) = rfd::FileDialog::new()
-                    .add_filter(
-                        "Check report",
-                        &ohl_core::files::open_extensions(reports::REPORT_FILE_EXTENSION),
-                    )
+                    .add_filter("Check report", &[reports::REPORT_FILE_EXTENSION])
                     .pick_file()
             {
                 match std::fs::read_to_string(&p)

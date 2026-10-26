@@ -404,7 +404,7 @@ impl ZoneWindow {
             let name = r
                 .file_name()
                 .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            if name.ends_with("-clearances.ohlr") || name.ends_with("-clearances.olsr") {
+            if name.ends_with("-clearances.ohlr") {
                 continue;
             }
             let stem = r
@@ -1146,9 +1146,7 @@ impl ZoneWindow {
                 && let Some(p) = rfd::FileDialog::new()
                     .add_filter(
                         "Clearance rules",
-                        &ohl_core::files::open_extensions(
-                            ohl_clearance::rules::RULE_FILE_EXTENSION,
-                        ),
+                        &[ohl_clearance::rules::RULE_FILE_EXTENSION],
                     )
                     .pick_file()
             {

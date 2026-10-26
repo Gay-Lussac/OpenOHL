@@ -249,7 +249,7 @@ impl ImportDialog {
                             }));
                             if ui.small_button("Choose…").clicked() {
                                 self.scheme = rfd::FileDialog::new()
-                                    .add_filter("Class scheme", &ohl_core::files::open_extensions(ohl_lidar::classes::CLASS_FILE_EXTENSION))
+                                    .add_filter("Class scheme", &[ohl_lidar::classes::CLASS_FILE_EXTENSION])
                                     .pick_file();
                             }
                         });

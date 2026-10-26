@@ -11,7 +11,7 @@ The project file stays on the hosting computer. The port must be reachable over 
 
 ## Invitations
 
-An invitation looks like `ohl://192.168.1.20:4433/3f2a9c1b07de/80854a…` (the address, an access code, and the fingerprint of the server's certificate; older `ols://` invitations are still read). The connection is encrypted (QUIC, TLS 1.3), and the application only talks to the server whose certificate matches the fingerprint.
+An invitation looks like `ohl://192.168.1.20:4433/3f2a9c1b07de/80854a…` (the address, an access code, and the fingerprint of the server's certificate). The connection is encrypted (QUIC, TLS 1.3), and the application only talks to the server whose certificate matches the fingerprint.
 
 | Invitation | Who joins with it |
 |---|---|

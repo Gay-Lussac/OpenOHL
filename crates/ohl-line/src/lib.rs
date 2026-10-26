@@ -3148,9 +3148,6 @@ impl Line {
         line.place_strings()?;
         line.validate()?;
         line.version = LINE_FILE_VERSION;
-        // The id of before 2026-10-18 (`ohl-line`) is read; the current one
-        // is written.
-        line.format = LINE_FILE_FORMAT.to_owned();
         Ok(line)
     }
 

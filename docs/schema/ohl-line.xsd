@@ -3,9 +3,7 @@
   OHL XML: the line model of OpenOHL (the content of a line file, .ohl.json)
   as XML. See ohl-line.md in this folder. The namespace keeps its 1 (the
   schema's own identity); a document's `version` attribute is the line file
-  version (now 7; older documents are read and converted). Documents of
-  before 2026-10-18 (namespace urn:ols-cad:ols-line:1, format "ols-line",
-  OLS XML) are read too.
+  version (now 7; older documents are read and converted).
 
   This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
   SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public

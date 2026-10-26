@@ -476,7 +476,7 @@ impl Ready {
                 let dir = self.project_types_dir();
                 std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
                 let p = dir.join(format!("{id}.ohls"));
-                if ohl_core::files::exists_by_either_name(&p) {
+                if p.exists() {
                     return Err(format!("{} exists already", p.display()));
                 }
                 p
@@ -510,7 +510,7 @@ impl Ready {
         }
         let dir = self.project_types_dir();
         let path = dir.join(format!("{type_id}.ohls"));
-        if ohl_core::files::exists_by_either_name(&path) {
+        if path.exists() {
             return Err(format!("{} exists already", path.display()));
         }
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;

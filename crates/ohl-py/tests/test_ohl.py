@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 # License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-import importlib
 import math
 
 import pytest
@@ -25,14 +24,3 @@ def test_errors_are_value_errors():
         ohl.convert("length", "12.5", "m")
     with pytest.raises(ValueError, match="unknown quantity"):
         ohl.convert("volume", "1 m", "m")
-
-
-def test_former_name_still_imports():
-    # `ols`, the module's name before 2026-10-18: the same functions, and a
-    # warning to use `ohl`.
-    with pytest.warns(DeprecationWarning, match="import ohl"):
-        import ols
-
-        importlib.reload(ols)
-    assert ols.convert is ohl.convert
-    assert ols.__version__ == ohl.__version__

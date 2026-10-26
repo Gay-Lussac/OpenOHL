@@ -121,20 +121,19 @@ invalid number; the structure edits (`ohl-structure-edit`: item fields,
 `[analysis]`, the file's own lengths) refuse them instead of writing TOML
 `nan`/`inf` or 0 m; LandXML points that are not finite are refused.
 
-Names of before 2026-10-18 are read: the `ols` extensions (`.ols`,
-`.ols.json`, `.olsw`, `.olss`…) and format ids (`ols-wire`,
-`ols-structure`, OLS XML's namespace `urn:ols-cad:ols-line:1`) are taken
-for their `ohl` names (`ohl_core::files`: `check_header`,
-`has_extension`, `files_with_extension`, `is_project_file`,
-`line_file_stem`; a folder holding both `a.olsw` and `a.ohlw` reads the
-latter); new files are written with the `ohl` names. A project's library
-files keep the names they were stored under. Plugin manifests
-`ols-plugin.toml` are read too; plugins of the `ols:plugin` interface
-(sdk 0.2) are refused until rebuilt for `ohl:plugin` (sdk 0.3).
-`crates/ohl-cli/tests/older_names.rs` checks the example line and
-libraries as they were then (`tests/data/before-ohl`) against the current
-ones. These old names are read until the owner sets a date for their
-removal (none set; roadmap U12).
+Files, extensions and format ids carry the `ohl` names only
+(`ohl_core::files`: `check_header`, `has_extension`,
+`files_with_extension`, `is_project_file`, `line_file_stem`). The names
+of before 2026-10-18 (the `ols` extensions `.ols`, `.ols.json`, `.olsw`,
+`.olss`…, the format ids `ols-wire`, `ols-structure`…, OLS XML's
+`ols-line`, plugin manifests `ols-plugin.toml`, `OLS_…` environment
+variables) are no longer read: removed 2026-10-26 before the first
+release (roadmap U12). Plugins of the `ols:plugin` interface (sdk 0.2)
+are refused. Kept on purpose, being on-disk or protocol names rather
+than readers of old files: the project table `ols_meta`, the ALPN
+`ols/2`, the data folders `OLS CAD` / `OLS Structure` and the window
+storage keys `ols-structure-…` (and the web client's `ols.…` browser
+storage keys).
 
 New optional fields raise the format version (review rule 2.12: an older
 program then says "newer version", not "unknown field"). The string

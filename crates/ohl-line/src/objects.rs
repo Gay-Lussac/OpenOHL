@@ -688,7 +688,7 @@ pub struct ObjectLibrary {
 impl ObjectLibrary {
     /// Parses and checks a library file.
     pub fn parse(text: &str) -> Result<Self, String> {
-        let mut lib: ObjectLibrary = toml::from_str(text).map_err(|e| e.to_string())?;
+        let lib: ObjectLibrary = toml::from_str(text).map_err(|e| e.to_string())?;
         ohl_core::files::check_header(
             lib.format.as_deref(),
             lib.version,
@@ -697,10 +697,6 @@ impl ObjectLibrary {
             "point and spread loads",
         )?;
         lib.validate()?;
-        // The id of before 2026-10-18 is read; the current one is kept.
-        if lib.format.is_some() {
-            lib.format = Some(OBJECT_FILE_FORMAT.into());
-        }
         Ok(lib)
     }
 
