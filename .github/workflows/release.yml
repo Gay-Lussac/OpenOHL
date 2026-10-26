@@ -1,0 +1,71 @@
+name: Release builds
+
+# Run by hand only (Actions → Release builds → Run workflow): builds
+# OHL-Design, OHL-Structure and the ohl command line for Windows and
+# Linux and attaches them to an existing GitHub release (the macOS build
+# is made locally). The Actions budget is limited: Windows minutes count
+# double. Expected ~25 min per platform with a cold cache.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the builds to (e.g. v0.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75 # about 3x the expected duration
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            exe: ""
+          - name: windows-x86_64
+            os: windows-latest
+            exe: ".exe"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Without the embedded Python console (it would need the user's own
+      # Python of the same version): the release notes say so.
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --locked -p ohl-app --no-default-features
+          cargo build --release --locked -p ohl-structure-app -p ohl-cli
+      - name: Package
+        shell: bash
+        run: |
+          name="OpenOHL-${{ inputs.tag }}-${{ matrix.name }}"
+          mkdir -p "$name"
+          for b in ohl-design ohl-structure ohl; do
+            cp "target/release/$b${{ matrix.exe }}" "$name/"
+          done
+          cp LICENSE README.md "$name/"
+          cp -r examples "$name/examples"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "$name.zip" "$name" > /dev/null
+            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$name.tar.gz" "$name"
+            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" "$ASSET" --clobber
