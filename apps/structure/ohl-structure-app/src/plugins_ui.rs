@@ -193,6 +193,9 @@ pub struct PluginsState {
     pub folders: Vec<PathBuf>,
     /// The plugins turned off, by name (shared settings).
     pub disabled: BTreeSet<String>,
+    /// What the user allowed plugin versions (shared settings; asked in
+    /// the line application's plugin manager): kept as read.
+    pub allowed: BTreeMap<String, ohl_plugins::Consent>,
     /// What was found.
     pub listed: Vec<Listed>,
     /// The manager window is open.
@@ -245,6 +248,8 @@ impl PluginsState {
             Ok(Some(s)) => {
                 self.folders = s.folders;
                 self.disabled = s.disabled;
+                ohl_plugins::set_consents(&s.allowed);
+                self.allowed = s.allowed;
             }
             Ok(None) => {}
             Err(e) => self.status = Some((format!("plugin settings not read: {e}"), true)),
@@ -259,6 +264,7 @@ impl PluginsState {
         let s = PluginSettings {
             folders: self.folders.clone(),
             disabled: self.disabled.clone(),
+            allowed: self.allowed.clone(),
         };
         if let Err(e) = s.save(&path) {
             self.status = Some((format!("plugin settings not written: {e}"), true));
