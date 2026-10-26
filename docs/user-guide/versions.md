@@ -144,8 +144,10 @@ who joined a server with the general invitation — is refused as a reviewer
 and decides nothing; since 2026-10-26). An approved review is merged by its
 author, a reviewer or an admin, also into a protected branch; into a
 **protected** branch only after an approval by somebody else than the one
-merging it (a reviewer approves, the author merges: four eyes). A branch
-changed after its approval must be submitted again.
+merging it (a reviewer approves, the author merges: four eyes), except
+for an **admin**, who merges a review alone, approved or still open
+(owner, 2026-10-26). A branch changed after its approval must be
+submitted again.
 
 ## Who may edit what
 

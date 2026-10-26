@@ -1004,6 +1004,8 @@ impl App {
             keys: None,
             newcomers: w.newcomers,
             web: w.web.then(|| std::net::SocketAddr::new(w.bind, w.web_port)),
+            max_connections: w.max_connections,
+            max_per_address: w.max_per_address,
         };
         match ohl_server::server::Server::start(&file, options) {
             Ok(server) => {

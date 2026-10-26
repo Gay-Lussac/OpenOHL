@@ -253,6 +253,13 @@ enum Command {
         /// is in the link: hand it out like an invitation.
         #[arg(long, value_name = "PORT")]
         web: Option<u16>,
+        /// Connections at once (more wait for a free one).
+        #[arg(long, default_value_t = ohl_server::server::MAX_QUIC)]
+        max_connections: usize,
+        /// Connections of one address not joined yet, this computer's too
+        /// (behind a reverse proxy every user comes from it: raise this).
+        #[arg(long, default_value_t = ohl_server::server::MAX_PENDING)]
+        max_per_address: usize,
     },
 }
 
@@ -1148,8 +1155,19 @@ fn main() -> ExitCode {
             seconds,
             invite,
             web,
+            max_connections,
+            max_per_address,
         }) => report(serve(
-            &project, bind, advertise, code, keys, &newcomers, seconds, &invite, web,
+            &project,
+            bind,
+            advertise,
+            code,
+            keys,
+            &newcomers,
+            seconds,
+            &invite,
+            web,
+            (max_connections, max_per_address),
         )),
         Some(Command::Import {
             file,
@@ -1209,6 +1227,7 @@ fn serve(
     seconds: Option<u64>,
     invite: &[String],
     web: Option<u16>,
+    (max_connections, max_per_address): (usize, usize),
 ) -> Result<(), String> {
     let newcomers = match newcomers {
         "none" => None,
@@ -1238,6 +1257,8 @@ fn serve(
             keys,
             newcomers,
             web: web.map(|port| std::net::SocketAddr::new(bind.ip(), port)),
+            max_connections,
+            max_per_address,
         },
     )?;
     println!("hosting {} on {}", project.display(), server.local_addr);

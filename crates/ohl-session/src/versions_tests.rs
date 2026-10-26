@@ -358,6 +358,26 @@ fn grants_limit_edits() {
     assert_eq!(s.grants().unwrap().len(), 1);
 }
 
+/// An admin merges a review into a protected branch alone: no approval by
+/// somebody else, an open review merged by the admin (owner, 2026-10-26).
+#[test]
+fn an_admin_merges_a_review_alone() {
+    let (_, mut s) = with_branch("review-admin");
+    s.protect_branch("ana", "main", true).unwrap();
+    s.set_user("ana", "rita", Role::Designer).unwrap();
+    s.checkout("ben", "alt").unwrap();
+    shift(&mut s, "ben", "T6", 1.0).unwrap();
+    s.commit("ben", "T6 for the road").unwrap();
+    s.checkout("ben", "main").unwrap();
+    let id = s
+        .submit_review("ben", "alt", "main", &["rita".into()], "")
+        .unwrap();
+    // A designer still needs an approval; the admin does not.
+    assert!(s.merge_review("ben", id, None, &Choices::new()).is_err());
+    s.merge_review("ana", id, None, &Choices::new()).unwrap();
+    assert_eq!(s.review(id).unwrap().state, ReviewState::Merged);
+}
+
 #[test]
 fn review_and_protected_branch() {
     let (_, mut s) = with_branch("review");

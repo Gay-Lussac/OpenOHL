@@ -588,6 +588,10 @@ pub struct HostWindow {
     pub web: bool,
     /// TCP port of the web client.
     pub web_port: u16,
+    /// Connections at once.
+    pub max_connections: usize,
+    /// Connections of one address not joined yet (this computer's too).
+    pub max_per_address: usize,
     /// Why the last attempt failed.
     pub error: Option<String>,
 }
@@ -600,6 +604,8 @@ impl Default for HostWindow {
             newcomers: Some(Role::Viewer),
             web: false,
             web_port: 8443,
+            max_connections: ohl_server::server::MAX_QUIC,
+            max_per_address: ohl_server::server::MAX_PENDING,
             error: None,
         }
     }
@@ -660,6 +666,17 @@ impl HostWindow {
                         egui::DragValue::new(&mut self.web_port).range(0..=65535),
                     )
                     .on_hover_text("TCP port of the web client (0: any free port)");
+                    ui.end_row();
+                    ui.label("Connections at most");
+                    ui.add(egui::DragValue::new(&mut self.max_connections).range(1..=4096))
+                        .on_hover_text("Connections at once; more wait for a free one");
+                    ui.end_row();
+                    ui.label("Per address at most");
+                    ui.add(egui::DragValue::new(&mut self.max_per_address).range(1..=1024))
+                        .on_hover_text(
+                            "Connections of one address not joined yet, this computer's own \
+                             too (behind a reverse proxy every user comes from it: raise this)",
+                        );
                     ui.end_row();
                 });
                 if let Some(e) = &self.error {

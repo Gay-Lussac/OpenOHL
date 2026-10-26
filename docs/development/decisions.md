@@ -10,6 +10,19 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Admins merge alone; connection limits are the host's parameters (owner, 2026-10-26, on the security fixes)**
+
+- An admin merges a review into a protected branch alone: no approval by
+  somebody else, and an open review too (the admin's merge is the
+  approval). Designers keep the four eyes rule. Test.
+- The connections at once (default 256) and the connections of one
+  address not joined yet (default 8) are the host's parameters (`ohl
+  serve --max-connections --max-per-address`, the Host window) and hold
+  for loopback too, so a reverse proxy does not lift them. Join rate and
+  wrong-code waits still leave loopback out. Test.
+- Settings changes stay out of the oplog (owner: no); a settings file with
+  an `allowed` table unreadable by older builds is accepted (pre-alpha).
+
 **Fixes of the physics and code-quality reviews (owner approved, 2026-10-26)**
 
 The owner approved fixing the findings of both reviews of 2026-10-26,

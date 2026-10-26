@@ -461,6 +461,7 @@ fn two_applications_share_a_hosted_project() {
             keys: None,
             newcomers: None,
             web: None,
+            ..Default::default()
         },
     )
     .unwrap();
