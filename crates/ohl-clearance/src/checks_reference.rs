@@ -330,6 +330,15 @@ mod tests {
             assert_eq!(new.results, old.results);
             assert_eq!(new.group_violations, old.group_violations);
             assert!(old.group_violations.iter().any(|g| g[0] > 0 && g[1] > 0));
+            // The segments in blocks by group (passed over block by block,
+            // 2026-10-26): the same.
+            let by_group = WireSet::grouped(wires.clone(), 25.0, &groups);
+            let mut grouped = PointCheck::new(&r, &[3, 4, 5], &by_group).grouped(groups.clone());
+            for (p, c) in &cloud {
+                grouped.visit(&by_group, p[0], p[1], p[2], *c);
+            }
+            assert_eq!(grouped.results, old.results);
+            assert_eq!(grouped.group_violations, old.group_violations);
             // In stretches from a snapshot, applied in order.
             let mut par = PointCheck::new(&r, &[3, 4, 5], &set).grouped(groups.clone());
             let mut stamp = 0;
