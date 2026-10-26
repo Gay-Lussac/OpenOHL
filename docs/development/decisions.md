@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-10-26
 
+**Performance review: the time limits read a shared clock (owner, 2026-10-26)**
+
+- The performance review of 2026-10-26 (owner-approved fixes, speed only:
+  the results the same bit for bit) found the time budgets reading the
+  system clock on every iteration of every catenary element solve.
+- A run (`ohl_core::budget::Run`) now reads no clock without a time
+  limit, and with one reads a shared counter that a background thread
+  (`ohl-budget-clock`, parked while no timed run is alive) keeps from the
+  clock once a millisecond: a time limit is noticed within about a
+  millisecond (the tick and the thread's waking), early or late. The
+  iterations, the iteration limit and the cancel token are exact; no
+  iterate depends on the clock. The catenary element's 10 s backstop is
+  gone (it could never trip before its 100 iterations); the enclosing
+  wire solve keeps its time limit and cancel token. An iteration limit
+  hit by an untimed run says no time ("stopped after reaching the limit
+  of 100 iterations").
+- Measured (M1 Max, shared with two other builds: load 60–100 on 10
+  cores, so CPU time is the measure; invented 60-span line, 131 wind
+  steps): the 131 solves 48.7–49.1 s CPU before, 46.9–48.3 s after
+  (2–4 %); the synthetic example's solves (every calculation, every
+  case, one core) 8.6 s before, 8.1 s after (6 %). Less than the review
+  estimated from its profile (half of the samples in the clock): here
+  the clock reads cost a few per cent. Same results: the solves and the
+  zone reports of both lines the same bit for bit (`{:?}` dumps
+  compared).
+
 **Old names no longer read (owner, 2026-10-26; roadmap U12)**
 
 Before the first release (v0.0.1) the compatibility paths for the names of
