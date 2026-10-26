@@ -30,11 +30,11 @@ of Parts A, B and C).
   cores, so CPU time is the measure; invented 60-span line, 131 wind
   steps): the 131 solves 48.7–49.1 s CPU before, 46.9–48.3 s after
   (2–4 %); the synthetic example's solves (every calculation, every
-  case, one core) 8.6 s before, 8.1 s after (6 %). Less than the review
-  estimated from its profile (half of the samples in the clock): here
-  the clock reads cost a few per cent. Same results: the solves and the
-  zone reports of both lines the same bit for bit (`{:?}` dumps
-  compared).
+  case, one core) 8.6 s before, 8.1 s after (6 %); again on a quiet
+  machine, 7.0 s → 6.75 s (3.5 %). Less than the review estimated from
+  its profile (half of the samples in the clock): here the clock reads
+  cost a few per cent. Same results: the solves and the zone reports of
+  both lines the same bit for bit (`{:?}` dumps compared).
 
 **Performance review: the point checks pass far pieces over (owner, 2026-10-26)**
 
@@ -666,6 +666,31 @@ Maybe make a toolbar as is the case in the OHL design app."
   wind states 56.0 s → 46.0 s (the threads no longer multiplied), its
   wall time 5.8 s → 5.0 s. The same results bit for bit (the dumps of
   every solve and zone report compared).
+
+**Performance review: LiDAR tiles decoded on other threads; build profiles (owner, 2026-10-26)**
+
+- `ohl_lidar::for_each_record` (LAS/LAZ tiles: `ohl line --lidar`,
+  `ohl zones` and the checks reading tiles) decodes the tiles on up to
+  four threads, each tile's points handed over in batches of 65 536
+  through a channel of its own (four batches waiting at most), and
+  visits them here in the tiles' order and each file's order: the
+  visitor sees exactly the sequence of a single reader (ties broken as
+  before, the counts the same; a tile that does not read stops the visit
+  after the tiles before it, as before). The gain is the decoding done
+  beside the visiting: up to twice as fast when the visitor's work equals
+  the decoding; tiles are not decoded far ahead (that would take memory
+  without bound). Measured: 8 invented LAZ tiles of 10⁶ points read and
+  hashed, 1.67 s → 1.37 s (the same points in the same order: their
+  fingerprint compared); a test checks the order and the failure.
+- Not done: the server encoding each broadcast once. It touches the
+  events, the QUIC writer and the web clients' writer of `ohl-server`,
+  which the security work changes now; left until that is merged.
+- Owner-approved build profiles (Cargo.toml): `dev` with line tables
+  only for the workspace and no debug information for the dependencies
+  (backtraces keep their lines; the build folder smaller, links faster),
+  and `bench-fast` (release optimisation, no LTO, 16 codegen units) for
+  local timing runs; `release` unchanged. Documented in performance.md
+  (Build profiles) and CONTRIBUTING.md.
 
 ## 2026-10-25
 

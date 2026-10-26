@@ -193,7 +193,11 @@ engineering use yet. The most valuable contributions right now are:
    ```
 
    Build folders grow large: `sh tools/prune-target.sh target` removes
-   what a build no longer needs.
+   what a build no longer needs. Debug builds keep line tables only
+   (backtraces with lines; `CARGO_PROFILE_DEV_DEBUG=true` for a debugger
+   session with variables); for local timing runs, `--profile bench-fast`
+   builds much faster than `--release` (see
+   [Build profiles](docs/development/performance.md#build-profiles)).
 
 ## Workflow
 

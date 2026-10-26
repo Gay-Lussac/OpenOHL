@@ -39,9 +39,6 @@ use ohl_terrain::{Terrain, TerrainError};
 /// ASPRS class of ground points.
 pub const GROUND: u8 = 2;
 
-/// Points read per batch (and between budget checks).
-const BATCH: u64 = 1 << 20;
-
 /// Errors reading LiDAR.
 #[derive(Debug)]
 pub enum LidarError {
@@ -432,41 +429,164 @@ pub fn for_each_record(
 ) -> Result<(usize, usize, u64), LidarError> {
     let run = budget.start();
     let (mut read, skipped, mut points) = (0, 0, 0u64);
-    for path in tiles {
-        let file_error = |e: las::Error| LidarError::File(path.clone(), e.to_string());
-        let mut reader = Reader::from_path(path).map_err(file_error)?;
-        let header = reader.header().clone();
-        // Every tile is read: its header's bounds are not trusted (a
-        // program may leave them wrong), so a tile is never skipped on them.
-        read += 1;
-        let mut data = PointDataBuilder::new().for_header(&header).build();
-        loop {
-            run.check()
-                .map_err(|stop| LidarError::Stopped(stop.to_string()))?;
-            let n = reader.fill_points(BATCH, &mut data).map_err(file_error)?;
-            if n == 0 {
-                break;
-            }
-            points += n;
-            for point in data.points() {
-                let point = point.map_err(file_error)?;
-                // Withheld: deleted by whoever made the survey.
-                if point.is_withheld || corridor.is_some_and(|c| !c.contains(point.x, point.y)) {
-                    continue;
+    // The tiles decoded on other threads (2026-10-26), each tile's points
+    // handed over in batches through a channel of its own, visited here
+    // tile after tile in their order: the visitor sees the points in the
+    // order of a single reader. The decoding overlaps the visiting (and
+    // the next tiles' first batches are ready); a tile is not decoded far
+    // ahead (the memory stays bounded: [`TILE_QUEUE`] batches a tile, at
+    // most [`TILE_THREADS`] tiles at once).
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(TILE_THREADS)
+        .min(tiles.len())
+        .max(1);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    // Each tile's sender is taken by the thread reading it: dropped when
+    // it is done, which closes the tile's channel.
+    let (senders, receivers): (Vec<_>, Vec<_>) = tiles
+        .iter()
+        .map(|_| {
+            let (tx, rx) = std::sync::mpsc::sync_channel::<TileBatch>(TILE_QUEUE);
+            (std::sync::Mutex::new(Some(tx)), rx)
+        })
+        .unzip();
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(path) = tiles.get(k) else {
+                        return;
+                    };
+                    let tx = senders[k].lock().ok().and_then(|mut s| s.take());
+                    if let Some(tx) = tx {
+                        decode_tile(path, corridor, &stop, &tx);
+                    }
                 }
-                visit(&LidarPoint {
-                    x: point.x,
-                    y: point.y,
-                    z: point.z,
-                    class: u8::from(point.classification),
-                    intensity: point.intensity,
-                    return_number: point.return_number,
-                    number_of_returns: point.number_of_returns,
-                });
+            });
+        }
+        let result = (|| {
+            for (path, rx) in tiles.iter().zip(&receivers) {
+                let mut opened = false;
+                // Ends when the tile's reader is done (its channel closed).
+                while let Ok(batch) = rx.recv() {
+                    run.check()
+                        .map_err(|stop| LidarError::Stopped(stop.to_string()))?;
+                    match batch {
+                        TileBatch::Opened => {
+                            // Every tile is read: its header's bounds are not
+                            // trusted (a program may leave them wrong), so a
+                            // tile is never skipped on them.
+                            opened = true;
+                            read += 1;
+                        }
+                        TileBatch::Read(n) => points += n,
+                        TileBatch::Points(batch) => batch.iter().for_each(&mut visit),
+                        TileBatch::Failed(e) => return Err(LidarError::File(path.clone(), e)),
+                    }
+                }
+                if !opened {
+                    // Its reader stopped before opening it (another failed).
+                    return Err(LidarError::Stopped("reading stopped".into()));
+                }
             }
+            Ok(())
+        })();
+        // Stops the readers (a failure, a stop): their sends fail too.
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        drop(receivers);
+        result
+    })?;
+    Ok((read, skipped, points))
+}
+
+/// What a tile's reader hands over, in order.
+enum TileBatch {
+    /// The tile opened.
+    Opened,
+    /// Points read (with those passed over).
+    Read(u64),
+    /// Points kept, in the file's order.
+    Points(Vec<LidarPoint>),
+    /// It failed: why (the points before were handed over).
+    Failed(String),
+}
+
+/// Batches waiting per tile (each [`TILE_BATCH`] points): bounds the
+/// memory while tiles are decoded ahead of the visitor.
+const TILE_QUEUE: usize = 4;
+
+/// Points per batch of a tile decoded on its own thread.
+const TILE_BATCH: u64 = 1 << 16;
+
+/// Tiles decoded at once ([`for_each_record`]).
+const TILE_THREADS: usize = 4;
+
+/// Decodes the tile at `path` into `tx` ([`for_each_record`]) until done,
+/// failed, `stop` or the channel is closed.
+fn decode_tile(
+    path: &Path,
+    corridor: Option<&Corridor>,
+    stop: &std::sync::atomic::AtomicBool,
+    tx: &std::sync::mpsc::SyncSender<TileBatch>,
+) {
+    let failed = |e: las::Error| {
+        let _ = tx.send(TileBatch::Failed(e.to_string()));
+    };
+    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let mut reader = match Reader::from_path(path) {
+        Ok(r) => r,
+        Err(e) => return failed(e),
+    };
+    if tx.send(TileBatch::Opened).is_err() {
+        return;
+    }
+    let header = reader.header().clone();
+    let mut data = PointDataBuilder::new().for_header(&header).build();
+    loop {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        let n = match reader.fill_points(TILE_BATCH, &mut data) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(e) => return failed(e),
+        };
+        if tx.send(TileBatch::Read(n)).is_err() {
+            return;
+        }
+        let mut kept = Vec::with_capacity(n as usize);
+        for point in data.points() {
+            let point = match point {
+                Ok(p) => p,
+                Err(e) => {
+                    // The points before it first, as one reader visits them.
+                    let _ = tx.send(TileBatch::Points(kept));
+                    return failed(e);
+                }
+            };
+            // Withheld: deleted by whoever made the survey.
+            if point.is_withheld || corridor.is_some_and(|c| !c.contains(point.x, point.y)) {
+                continue;
+            }
+            kept.push(LidarPoint {
+                x: point.x,
+                y: point.y,
+                z: point.z,
+                class: u8::from(point.classification),
+                intensity: point.intensity,
+                return_number: point.return_number,
+                number_of_returns: point.number_of_returns,
+            });
+        }
+        if tx.send(TileBatch::Points(kept)).is_err() {
+            return;
         }
     }
-    Ok((read, skipped, points))
 }
 
 /// Calls `visit(x, y, z, class)` for every point of `tiles` inside the
@@ -598,6 +718,53 @@ mod tests {
             std::env::temp_dir().join(format!("ohl-lidar-test-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Tiles decoded side by side (2026-10-26) are visited as one reader
+    /// visits them: tile after tile, each in its file's order (more points
+    /// than a batch); a tile that does not read stops the visit after the
+    /// tiles before it.
+    #[test]
+    fn tiles_read_side_by_side_are_visited_in_order() {
+        let dir = scratch("order");
+        let mut tiles = Vec::new();
+        for k in 0..6 {
+            let path = dir.join(format!("t{k}.laz"));
+            // 300 × 300 ground points and a fifth of them again: more than
+            // one batch of a tile.
+            write_tile(&path, 1000.0 * k as f64, 0.0, if k == 2 { 300 } else { 40 });
+            tiles.push(path);
+        }
+        let mut seen: Vec<(f64, f64, f64)> = Vec::new();
+        let (read, skipped, points) =
+            for_each_record(&tiles, None, &Budget::new(), |p| seen.push((p.x, p.y, p.z))).unwrap();
+        assert_eq!((read, skipped), (6, 0));
+        assert_eq!(points, seen.len() as u64);
+        // The order of the files, one after another.
+        let mut expected = Vec::new();
+        for path in &tiles {
+            let mut reader = Reader::from_path(path).unwrap();
+            let all = reader.read_points(u64::MAX).unwrap();
+            for p in all.points() {
+                let p = p.unwrap();
+                expected.push((p.x, p.y, p.z));
+            }
+        }
+        assert!(expected.len() as u64 > TILE_BATCH);
+        assert_eq!(seen, expected);
+        // A tile that is no LAS file: the tiles before it visited, then the
+        // error naming it.
+        let bad = dir.join("t3.laz");
+        std::fs::write(&bad, b"not a point cloud").unwrap();
+        let mut n = 0usize;
+        let e = for_each_record(&tiles, None, &Budget::new(), |_| n += 1).unwrap_err();
+        assert!(matches!(&e, LidarError::File(p, _) if *p == bad), "{e}");
+        let before: usize = tiles[..3]
+            .iter()
+            .map(|p| tile_info(p).unwrap().points as usize)
+            .sum();
+        assert_eq!(n, before);
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

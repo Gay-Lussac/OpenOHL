@@ -269,3 +269,10 @@ Guidelines:
 2. Set the limit with a safety margin (≈10× the estimate) so that hitting it means a real problem.
 3. When a limit is hit, **report why**: which limit, iterations done, elapsed time, and the solver's last state (e.g. residual). This is what lets us understand and fix the cause.
 4. Never return an unconverged result as if it were valid.
+5. Inner loops of microseconds (an element's Newton iteration, a 1-D search inside a solve) take an iteration limit only; the enclosing solve keeps the time limit and the cancel token. A run reads no clock without a time limit; with one it reads a shared counter kept from the clock once a millisecond (`ohl_core::budget::CLOCK_TICK`), so a time limit is noticed within about a millisecond, early or late (2026-10-26: reading the clock on every iteration cost a few per cent of a wire solve).
+
+## Build profiles
+
+- `dev` (debug builds and tests): the workspace's crates with line tables only (`debug = "line-tables-only"`: backtraces keep their files and lines, the build folder is several GB smaller and links are faster), the dependencies optimised (`opt-level = 2`) without debug information. For a debugger session with variables, build with `CARGO_PROFILE_DEV_DEBUG=true`.
+- `release`: what is shipped (thin LTO, one codegen unit): the slowest to build.
+- `bench-fast`: release optimisation without LTO, 16 codegen units — for local timing runs (`cargo test --profile bench-fast -p ohl-clearance --test zone_speed -- --ignored --nocapture`), much faster to build; its numbers are close to `release` but not the shipped binary's. Results do not depend on the profile.
