@@ -204,10 +204,12 @@ impl WireTensionsWindow {
             let mut notes = Vec::new();
             for case in &cases {
                 let mut shapes = Vec::new();
-                for (section, r) in line
-                    .sections
-                    .iter()
-                    .zip(ohl_line::solve::solve_line(&line, &library, case))
+                for (section, r) in
+                    line.sections
+                        .iter()
+                        .zip(ohl_line::solve::solve_line_memo_default(
+                            &line, &library, case,
+                        ))
                 {
                     match r {
                         Ok(s) => shapes.push(s),

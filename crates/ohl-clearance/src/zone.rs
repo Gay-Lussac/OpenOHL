@@ -568,7 +568,7 @@ pub fn solve_states(
                         return;
                     };
                     let solved: Vec<Result<SectionShape, String>> =
-                        ohl_line::solve::solve_line_with(line, library, &state.case, &fe)
+                        ohl_line::solve::solve_line_memo(line, library, &state.case, &fe)
                             .into_iter()
                             .map(|r| r.map_err(|e| e.to_string()))
                             .collect();

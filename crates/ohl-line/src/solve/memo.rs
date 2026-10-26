@@ -12,6 +12,13 @@
 //!   stringing reference, the stringing state of a cable with stress-strain
 //!   curves, and the final state after creep or after load. Every case and
 //!   every wind state of a run solves them again otherwise.
+//! - **Whole line solves** ([`solve_line_memo`], review item 4): the
+//!   checks that solve the line in their weather cases and wind states —
+//!   clearances by zone, vegetation, safety volumes, phase distances,
+//!   internal clearances, tensions, strings — take a solve of the same
+//!   line in the same case from the memo. Only full solves are kept: never
+//!   OHL-Design's cases updated edit by edit (they may differ from a full
+//!   solve, see performance.md).
 //!
 //! Keys: 128-bit fingerprints of the inputs' `Debug` text — every field,
 //! the numbers exactly (shortest round-trip form) — so a change of any
@@ -19,7 +26,9 @@
 //! iteration limit) is another key: an old entry is never taken for it.
 //! Failed solves are not kept (a stop on a time limit or a cancel depends
 //! on the moment). Memory is bounded: the least recently used entries go
-//! first ([`PARTS_LIMIT`]).
+//! first ([`PARTS_LIMIT`], [`SOLVES_BYTES`]), and the whole solves of a
+//! line no longer among the last [`SOLVED_LINES`] lines are dropped (a
+//! line edited: its old solves go).
 
 use std::collections::HashMap;
 use std::fmt::{Debug, Write as _};
@@ -28,8 +37,11 @@ use std::sync::{Arc, Mutex};
 
 use ohl_cables::Cable;
 use ohl_core::budget::Budget;
+use ohl_weather::WeatherCase;
 
-use super::{FinalState, Holder, Reference, estimate_strain_weights, holders_of, reference};
+use super::{
+    FinalState, Holder, Reference, SectionShape, estimate_strain_weights, holders_of, reference,
+};
 use crate::condition::Condition;
 use crate::{Line, LineError, Section};
 
@@ -62,6 +74,12 @@ pub(crate) fn key(parts: &[&dyn Debug]) -> Key {
 
 /// Entries at most per memo of a solve's parts.
 pub const PARTS_LIMIT: usize = 4096;
+
+/// Estimated bytes at most of the whole solves kept.
+pub const SOLVES_BYTES: usize = 512 << 20;
+
+/// Lines whose whole solves are kept (the most recent).
+pub const SOLVED_LINES: usize = 4;
 
 /// A least-recently-used store.
 struct Lru<V> {
@@ -104,6 +122,18 @@ impl<V: Clone> Lru<V> {
                 self.bytes -= b;
             }
         }
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&Key) -> bool) {
+        let mut freed = 0;
+        self.map.retain(|k, e| {
+            let kept = keep(k);
+            if !kept {
+                freed += e.1;
+            }
+            kept
+        });
+        self.bytes -= freed;
     }
 }
 
@@ -204,10 +234,165 @@ pub(super) fn final_state(
     Ok(f)
 }
 
+type Solved = Arc<Vec<Result<SectionShape, LineError>>>;
+type Live = Arc<crate::incremental::SolvedLine>;
+
+/// Whole solves kept, and the lines they are of (most recent last).
+struct Solves<V> {
+    lru: Lru<V>,
+    /// Per key: its line's key.
+    line_of: HashMap<Key, Key>,
+    lines: Vec<Key>,
+}
+
+static SOLVES: Mutex<Option<Solves<Solved>>> = Mutex::new(None);
+static LIVE: Mutex<Option<Solves<Live>>> = Mutex::new(None);
+
+/// The solve of `line` with the other inputs `rest` from `store`, else
+/// `solve`d: (the solve, about how many bytes it takes — none: not to be
+/// kept).
+fn through<V: Clone>(
+    store: &Mutex<Option<Solves<V>>>,
+    line: &Line,
+    rest: &[&dyn Debug],
+    solve: impl FnOnce() -> (V, Option<usize>),
+) -> V {
+    let line_key = key(&[line]);
+    let mut parts: Vec<&dyn Debug> = vec![&line_key];
+    parts.extend_from_slice(rest);
+    let k = key(&parts);
+    let found = store.lock().ok().and_then(|mut m| {
+        let m = m.as_mut()?;
+        let v = m.lru.get(&k)?;
+        // Its line is the most recent again.
+        m.lines.retain(|l| *l != line_key);
+        m.lines.push(line_key);
+        Some(v)
+    });
+    if let Some(v) = found {
+        return v;
+    }
+    let (v, bytes) = solve();
+    let Some(bytes) = bytes else {
+        return v;
+    };
+    if let Ok(mut m) = store.lock() {
+        let m = m.get_or_insert_with(|| Solves {
+            lru: Lru::new(),
+            line_of: HashMap::new(),
+            lines: Vec::new(),
+        });
+        m.lines.retain(|l| *l != line_key);
+        m.lines.push(line_key);
+        if m.lines.len() > SOLVED_LINES {
+            // A line no longer among the last: its solves go.
+            let gone: Vec<Key> = m.lines.drain(..m.lines.len() - SOLVED_LINES).collect();
+            let line_of = &m.line_of;
+            m.lru
+                .retain(|e| line_of.get(e).is_none_or(|l| !gone.contains(l)));
+        }
+        m.lru.put(k, v.clone(), bytes, usize::MAX, SOLVES_BYTES / 2);
+        m.line_of.insert(k, line_key);
+        let kept = &m.lru.map;
+        m.line_of.retain(|e, _| kept.contains_key(e));
+    }
+    v
+}
+
+/// About how much memory a solve takes, bytes (none: not to be kept — a
+/// failure that may depend on the moment, a time limit or a cancel: the
+/// texts of [`ohl_core::budget::Stop`]).
+pub(crate) fn bytes_of<'a>(
+    solved: impl IntoIterator<Item = &'a Result<SectionShape, LineError>>,
+) -> Option<usize> {
+    let mut bytes = 0;
+    for r in solved {
+        bytes += match r {
+            Ok(s) => {
+                4096 + s
+                    .spans
+                    .iter()
+                    .map(|x| 256 + 48 * x.points.len())
+                    .sum::<usize>()
+            }
+            Err(e) => {
+                let m = e.to_string();
+                if m.contains("stopped after the time limit") || m.contains("cancelled after") {
+                    return None;
+                }
+                64 + m.len()
+            }
+        };
+    }
+    Some(bytes)
+}
+
+/// [`super::solve_line_with`] taken from the memo of whole solves when the
+/// same line (every field), library and weather case were solved before
+/// with the same iteration limit; else solved and kept. The same results
+/// as [`super::solve_line_with`], bit for bit. The key is a 128-bit
+/// fingerprint of the inputs' every field (an edit is another key); a
+/// solve stopped by a time limit or a cancel is not kept; the least
+/// recently used solves go first beyond about 256 MB, and the solves of a
+/// line no longer among the last four solved go with it.
+///
+/// Expected cost: the fingerprints of the line and the library (their
+/// `Debug` text hashed: some milliseconds for a line of hundreds of
+/// spans) and a copy of the solve; a solve when not kept.
+pub fn solve_line_memo(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+) -> Vec<Result<SectionShape, LineError>> {
+    let solved = through(
+        &SOLVES,
+        line,
+        &[library, case, &budget.iteration_limit()],
+        || {
+            let solved = super::solve_line_with(line, library, case, budget);
+            let bytes = bytes_of(&solved);
+            (Arc::new(solved), bytes)
+        },
+    );
+    (*solved).clone()
+}
+
+/// [`solve_line_memo`] with the default exit clauses: [`super::solve_line`]
+/// from the memo.
+pub fn solve_line_memo_default(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+) -> Vec<Result<SectionShape, LineError>> {
+    solve_line_memo(line, library, case, &ohl_wirefe::default_fe_budget())
+}
+
+/// [`crate::incremental::SolvedLine::solve`] taken from its memo of whole
+/// solves (as [`solve_line_memo`]; the same results bit for bit).
+pub(crate) fn live_memo(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+) -> crate::incremental::SolvedLine {
+    let solved = through(&LIVE, line, &[library, case], || {
+        let solved = crate::incremental::SolvedLine::solve(line, library, case);
+        let bytes = bytes_of(solved.section_results());
+        (Arc::new(solved), bytes)
+    });
+    (*solved).clone()
+}
+
 /// Drops every memo (e.g. to measure a solve from scratch).
 pub fn forget_solves() {
     for m in [&PREPARED as &dyn Forget, &FINAL, &STRINGING] {
         m.forget();
+    }
+    if let Ok(mut m) = SOLVES.lock() {
+        *m = None;
+    }
+    if let Ok(mut m) = LIVE.lock() {
+        *m = None;
     }
 }
 
@@ -244,20 +429,20 @@ mod tests {
         assert_ne!(key(&[&line]), key(&[&other]));
         assert_eq!(key(&[&line]), key(&[&line.clone()]));
         let mut cases = line.clone();
-        cases.condition_cases.creep = Some(ohl_weather::WeatherCase::still(
+        cases.condition_cases.creep = Some(WeatherCase::still(
             "c",
             ohl_core::units::Temperature::from_celsius(5.0),
         ));
         assert_ne!(key(&[&line]), key(&[&cases]));
     }
 
-    /// A section solved from the memo's parts (in every condition,
-    /// across cases) is the section solved from scratch, bit for bit.
+    /// The memo's solves are those of a solve, bit for bit, in every
+    /// condition (the parts kept across cases), and a changed line is
+    /// solved again.
     #[test]
-    fn solves_from_the_parts_are_the_solves() {
+    fn memo_solves_are_the_solves() {
         use crate::condition::Calculation;
         use ohl_core::units::{Stress, Temperature};
-        use ohl_weather::WeatherCase;
         let lib = library();
         let budget = ohl_wirefe::default_fe_budget();
         let mut windy = WeatherCase::still("w", Temperature::from_celsius(10.0));
@@ -282,9 +467,30 @@ mod tests {
                 forget_solves();
                 let fresh = super::super::solve_line_with(&line, &lib, case, &budget);
                 assert!(fresh.iter().all(Result::is_ok), "{fresh:?}");
-                let again = super::super::solve_line_with(&line, &lib, case, &budget);
-                assert_eq!(format!("{again:?}"), format!("{fresh:?}"));
+                // Twice: solved (its parts from the memo), then kept.
+                for _ in 0..2 {
+                    let memo = solve_line_memo(&line, &lib, case, &budget);
+                    assert_eq!(format!("{memo:?}"), format!("{fresh:?}"));
+                }
             }
+            // An edit: solved again.
+            let before = solve_line_memo(&line, &lib, &cases[1], &budget);
+            for s in &mut line.sections {
+                match &mut s.stringing {
+                    crate::Stringing::Tension { temperature, .. }
+                    | crate::Stringing::Sag { temperature, .. } => *temperature += 5.0,
+                    _ => {}
+                }
+            }
+            let after = solve_line_memo(&line, &lib, &cases[1], &budget);
+            assert_ne!(format!("{before:?}"), format!("{after:?}"));
+            assert_eq!(
+                format!("{after:?}"),
+                format!(
+                    "{:?}",
+                    super::super::solve_line_with(&line, &lib, &cases[1], &budget)
+                )
+            );
         }
     }
 }

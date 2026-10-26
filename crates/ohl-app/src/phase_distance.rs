@@ -960,7 +960,7 @@ impl PhaseDistanceWindow {
                     wind_step,
                     unequal.low_share,
                     |c| {
-                        let s = crate::model::Solved::new(&line, &library, c.clone());
+                        let s = crate::model::Solved::new_memo(&line, &library, c.clone());
                         (s.shapes, s.failed)
                     },
                 )?;

@@ -1738,7 +1738,7 @@ pub fn solve_positions(
     let fe = ohl_wirefe::default_fe_budget();
     let solved = parallel(jobs.len(), budget, |k| {
         let (_, _, case, _) = &jobs[k];
-        let results = ohl_line::solve::solve_line_with(line, library, case, &fe);
+        let results = ohl_line::solve::solve_line_memo(line, library, case, &fe);
         let jumpers = if options.jumpers && !line.jumpers.is_empty() {
             let ok: Vec<SectionShape> = results.iter().filter_map(|r| r.clone().ok()).collect();
             ohl_line::jumper::solve_jumpers(line, library, case, &ok)
