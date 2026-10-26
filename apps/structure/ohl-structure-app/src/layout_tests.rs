@@ -24,10 +24,11 @@ fn rect_of(app: &crate::app::StructureApp, panel: Panel) -> eframe::egui::Rect {
         .unwrap_or_else(|| panic!("{panel:?} is not open"))
 }
 
-/// The default arrangement: the level and the tables on the left, the 3D
-/// view on the right (about 45 / 55); the Load case editor not open.
+/// The default arrangement (owner, 2026-10-26): the 3D view large in the
+/// middle, the Inspector and the To do list on its right, the tables as
+/// tabs below it; the Load case editor not open.
 #[test]
-fn the_3d_view_is_on_the_right_by_default() {
+fn the_3d_view_is_in_the_middle_by_default() {
     let path = copy_of("type-02.ohls", "layout-default");
     let mut h = harness(&path);
     // A picture of it, when asked for (OHL_STRUCTURE_SCREENSHOT=file.png).
@@ -37,20 +38,20 @@ fn the_3d_view_is_on_the_right_by_default() {
     }
     let app = h.state();
     let view = rect_of(app, Panel::View3d);
-    for p in [
-        Panel::Level,
-        Panel::PointsInsulators,
-        Panel::Supports,
-        Panel::Results,
-    ] {
+    for p in [Panel::Level, Panel::Inspector] {
         let r = rect_of(app, p);
-        assert!(r.right() <= view.left() + 1.0, "{p:?} {r:?} {view:?}");
+        assert!(r.left() >= view.right() - 1.0, "{p:?} {r:?} {view:?}");
     }
-    let level = rect_of(app, Panel::Level);
-    let tables = rect_of(app, Panel::PointsInsulators);
-    assert!(level.bottom() <= tables.top() + 1.0);
-    let share = view.width() / (view.right() - level.left());
-    assert!((0.5..0.6).contains(&share), "{share}");
+    for p in [Panel::PointsInsulators, Panel::Supports, Panel::Results] {
+        let r = rect_of(app, p);
+        assert!(r.top() >= view.bottom() - 1.0, "{p:?} {r:?} {view:?}");
+    }
+    let inspector = rect_of(app, Panel::Inspector);
+    let share = view.width() / (inspector.right() - view.left());
+    assert!((0.75..0.85).contains(&share), "{share}");
+    // The Inspector in front of the To do list.
+    assert!(app.panels_drawn.contains(&Panel::Inspector));
+    assert!(!app.panels_drawn.contains(&Panel::Level));
     // Closed until asked for; the Load case editor then in a window of
     // its own.
     assert!(!app.is_open(Panel::StructureFields));
@@ -108,7 +109,8 @@ fn a_menu_action_focuses_its_panel() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// A header link to a closed panel opens it, in front.
+/// An item of the To do list (the header's "N to do") opens its closed
+/// panel, in front.
 #[test]
 fn a_header_link_opens_a_closed_panel() {
     let path = copy_of("type-01.ohls", "layout-link");
@@ -116,7 +118,9 @@ fn a_header_link_opens_a_closed_panel() {
     close_panel(&mut h.state_mut().dock, Panel::Members);
     h.run();
     assert!(!h.state().is_open(Panel::Members));
-    h.get_by_label("no member: build the body (Body › Generators › legs and panels), or add joints and members")
+    h.get_by_label_contains(" to do").click();
+    h.run();
+    h.get_by_label("\u{2022} no member: build the body (Body › Generators › legs and panels), or add joints and members")
         .click();
     h.run_steps(3);
     assert!(h.state().is_open(Panel::Members));
@@ -145,7 +149,8 @@ impl eframe::Storage for Memory {
 }
 
 /// The arrangement is kept: a panel closed stays closed in the next run;
-/// nothing kept, the default.
+/// nothing kept, or kept by an older version (before the arrangement of
+/// 2026-10-26), the default.
 #[test]
 fn the_arrangement_is_kept_between_runs() {
     let mut app = crate::app::StructureApp::new(None);
@@ -159,7 +164,20 @@ fn the_arrangement_is_kept_between_runs() {
     assert!(next.is_open(Panel::StructureFields));
     let mut fresh = crate::app::StructureApp::new(None);
     fresh.restore(Some(&Memory::default()));
-    assert!(fresh.is_open(Panel::Groups));
+    assert!(fresh.is_open(Panel::Supports));
+    assert!(fresh.is_open(Panel::Inspector));
+    // An older arrangement (no version kept): the default instead.
+    eframe::Storage::remove_string(&mut storage, crate::layout::DOCK_VERSION_KEY);
+    let mut old = crate::app::StructureApp::new(None);
+    old.restore(Some(&storage));
+    assert!(old.is_open(Panel::Inspector));
+    assert!(!old.is_open(Panel::StructureFields));
+    // One that does not read: the default.
+    eframe::Storage::set_string(&mut storage, crate::layout::DOCK_VERSION_KEY, "2".into());
+    eframe::Storage::set_string(&mut storage, crate::layout::DOCK_KEY, "not ron".into());
+    let mut broken = crate::app::StructureApp::new(None);
+    broken.restore(Some(&storage));
+    assert!(broken.is_open(Panel::Inspector));
 }
 
 /// No tab group of the default arrangement holds more tabs than its width

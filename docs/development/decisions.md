@@ -8,6 +8,93 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-10-26
+
+**OHL-Structure: UI review step 1 (owner: UI review step 1, 2026-10-26)**
+
+The owner approved step 1 of a review of OHL-Structure's window. No
+calculation, file format or engine changed; every edit of the model is
+still one command (undo); the settings below are the window's, not the
+file's.
+
+- **Tables and fields.** The units are in the column headers ("x [m]",
+  "Weight [N]", "Transverse [kN]"), the cells show the bare numbers,
+  right-aligned; typing and dragging read as before. Headers are in
+  sentence case (a one-letter symbol such as x, y, z, k stays). Value
+  fields have the inset fill and frame of a text field, buttons the
+  raised fill (the app's style, `style::field`). Scroll bars always show,
+  so a table wider than its panel shows that it scrolls sideways. The
+  tables are `egui::Grid`s: their columns size themselves to the widest
+  cell (headers never clipped); keeping the first column in place while
+  scrolling sideways would need the tables rewritten (`egui_extras`) and
+  is not done. **View › UI scale** (90 %–150 %, kept between runs; the
+  menu stays open on a tick) and the text a step larger by default.
+- **Notices.** Opened alone, the load panels' permanent "No line
+  values…" box is one short line, *No line values (opened on its own)*,
+  the whole sentence on hover, closed with its ×. **Store in the
+  structure file…** stays and says why it is greyed on hover. A message
+  is also a notice at the bottom right: information fades after 4 s, an
+  error stays until its × (long ones scroll in a box of fixed height);
+  the status line at the bottom stays.
+- **Start page.** Bigger buttons; **Open the example** (a copy of
+  `examples/synthetic-line/Structures/type-02.ohls` opened from a
+  temporary folder, not added to the recent files); the **Recent files**
+  with their folders, a missing one marked *(missing)*, each removable
+  with its ×.
+- **3D view.** Buttons for the standard views — **Front** (looking along
+  +y), **Side** (looking along −x, from the right of the line), **Top**
+  (these three in parallel projection), **Iso** — and **Fit**; a legend
+  of the usage colours while the members are coloured by usage; the long
+  line of controls at the bottom replaced by **?** (the controls on
+  hover).
+- **Renamed**: the menu "In the line" and its panel "Line values" are
+  both **Line loads** (the panel's and the area's internal names and the
+  stored arrangement unchanged).
+- **Header.** Above the panels, not a panel: the file's name (its path
+  on hover, never printed), the level as a badge, *\* unsaved*, and a
+  button **N to do** that brings the **To do** list (the former Level
+  panel: what the next level lacks, then the advice, grouped as before)
+  to the front; an item selects its object (joint, member, point) and
+  shows its row, as before.
+
+**OHL-Structure: tools, Inspector, a calmer arrangement (owner, 2026-10-26)**
+
+Owner: "Just go ahead so that it works better for a user. Also maybe
+remove the fact you can click on a joint and drag it straight away.
+Maybe make a toolbar as is the case in the OHL design app."
+
+- **No drag on click.** A click in the 3D view only selects (Shift +
+  click: another). A joint or point moves only with the **Move** tool
+  held (the same snap, one undo step per drag, as before); Escape lets
+  go of a tool.
+- **A hotbar like OHL-Design's**, in OHL-Structure's own code (the
+  structure crates stay apart from `ohl-app`; the drawing copied): nine
+  slots at the bottom of the 3D view, keys 1–9, an inventory of every
+  tool (E) to arrange them by dragging, the arrangement and the slot held
+  kept between runs. Tools: Select, Move, Add point, One string, Two
+  strings to one wire point, Link, Add joint, Add member, Delete in the
+  slots by default; Insert a joint on a member and Symmetry in the
+  inventory. The tool held has a strip above the view with what a click
+  does and its options (snap; a new string's length; where a joint is
+  inserted; the symmetry and Make symmetric); the snap and the string
+  length left the Geometry table's tools. The menus keep their entries
+  (Edit › Move tool, Edit › Tools inventory added). Three icons added in
+  the same style (`add-point`, `two-strings`, `insert-joint`;
+  `assets/make_icons.py`).
+- **Inspector panel** (right of the 3D view): the selected joint,
+  member, attachment point (with its rigid link, link / unlink) or wire
+  point (with its strings' lengths and its counterweight) with its
+  fields, each change through the tables' edits (one undo step);
+  several of one kind: the fields they share, a change written to each
+  in one step; nothing selected: a one-line hint.
+- **Default arrangement**: the 3D view large in the middle with its
+  hotbar, the Inspector (and the To do list behind it) on the right, one
+  area of tables as tabs below the view (as many as show their titles;
+  the others open there from their menus), the header on top. No work
+  modes. An arrangement kept by an older version gives way to it once
+  (the arrangement now kept with a version, `ohl-structure-dock-version`);
+  one that does not read gives the default, as before.
+
 ## 2026-10-25
 
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**

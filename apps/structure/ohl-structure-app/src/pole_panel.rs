@@ -214,26 +214,24 @@ impl StructureApp {
         egui::Grid::new("pole-outline")
             .striped(true)
             .show(ui, |ui| {
-                for h in ["", "z", "diameter", "circumference", ""] {
-                    ui.strong(h);
+                for h in ["", "z [m]", "diameter [mm]", "circumference [mm]", ""] {
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for (k, &(z, d)) in rings.iter().enumerate() {
                     ui.label(format!("{}", k + 1));
                     let (mut z2, mut mm) = (z, d * 1000.0);
-                    let a = ui.add(
-                        egui::DragValue::new(&mut z2)
-                            .speed(0.05)
-                            .max_decimals(3)
-                            .suffix(" m"),
+                    let a = crate::style::field(
+                        ui,
+                        egui::DragValue::new(&mut z2).speed(0.05).max_decimals(3),
                     );
                     hold(f, &a, "pole row");
-                    let b = ui.add(
+                    let b = crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut mm)
                             .speed(1.0)
                             .range(1.0..=10_000.0)
-                            .max_decimals(1)
-                            .suffix(" mm"),
+                            .max_decimals(1),
                     );
                     hold(f, &b, "pole row");
                     if a.changed() || b.changed() {
@@ -243,7 +241,7 @@ impl StructureApp {
                         Some(n) => f64::from(n) * d * (std::f64::consts::PI / f64::from(n)).tan(),
                         None => std::f64::consts::PI * d,
                     };
-                    ui.label(format!("{:.0} mm", around * 1000.0));
+                    crate::style::num_label(ui, format!("{:.0}", around * 1000.0));
                     if ui
                         .small_button("🗑")
                         .on_hover_text("Delete this height")

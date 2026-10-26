@@ -23,6 +23,20 @@ pub const RECENT_KEY: &str = "ols-structure-recent";
 /// How many recent files are kept.
 const RECENT_MAX: usize = 10;
 
+/// The example structure in the source tree (the example line's lattice
+/// tower, invented values).
+pub const EXAMPLE: &str = "examples/synthetic-line/Structures/type-02.ohls";
+
+/// The hover text of "Open the example".
+const EXAMPLE_TIP: &str = "A copy of the example structure (the example line's lattice tower, \
+     type-02: invented values, level 3) opened from a temporary folder: change it freely, the \
+     example itself stays as it is (File › Save as keeps it)";
+
+/// The example structure on this computer, if it is there.
+pub fn example_file() -> Option<PathBuf> {
+    crate::help::shipped(EXAMPLE).filter(|p| p.is_file())
+}
+
 /// The structure files opened recently, the last first.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Recent {
@@ -212,19 +226,26 @@ pub fn copy_examples(dir: &Path) -> Result<(), String> {
 }
 
 impl StructureApp {
-    /// The start page: open, recent files, new.
+    /// The start page: open, new, the example, plugins; the files opened
+    /// recently (the last first; one not there any more marked, and
+    /// removable).
     pub(crate) fn start_page(&mut self, ui: &mut egui::Ui) {
         let mut open: Option<PathBuf> = None;
+        let mut example = false;
+        let mut forget: Option<PathBuf> = None;
+        let big = egui::vec2(220.0, 34.0);
         ui.vertical_centered(|ui| {
-            ui.add_space(60.0);
+            ui.add_space(48.0);
             // The OpenOHL mark above the name.
             ui.add(crate::icons::mark(ui.ctx(), 64.0));
             ui.heading("OHL-Structure");
             ui.label("A structure file (.ohls): its points and strings, its body, its design.");
-            ui.add_space(12.0);
+            ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.add_space((ui.available_width() - 320.0).max(0.0) / 2.0);
-                if ui.button("Open a structure…").clicked()
+                ui.add_space((ui.available_width() - 2.0 * big.x - 12.0).max(0.0) / 2.0);
+                if ui
+                    .add(egui::Button::new("Open a structure…").min_size(big))
+                    .clicked()
                     && let Some(p) = rfd::FileDialog::new()
                         .add_filter("Structure", &ohl_core::files::open_extensions("ohls"))
                         .pick_file()
@@ -232,7 +253,7 @@ impl StructureApp {
                     open = Some(p);
                 }
                 if ui
-                    .button("New structure…")
+                    .add(egui::Button::new("New structure…").min_size(big))
                     .on_hover_text(
                         "An empty level 1 structure, or one built from a structure template, \
                          written where you choose",
@@ -241,8 +262,22 @@ impl StructureApp {
                 {
                     self.new_structure = Some(NewStructure::default());
                 }
+            });
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() - 2.0 * big.x - 12.0).max(0.0) / 2.0);
+                let there = example_file().is_some();
                 if ui
-                    .button("Plugins…")
+                    .add_enabled(there, egui::Button::new("Open the example").min_size(big))
+                    .on_hover_text(EXAMPLE_TIP)
+                    .on_disabled_hover_text(format!(
+                        "The example ({EXAMPLE}) is not on this computer"
+                    ))
+                    .clicked()
+                {
+                    example = true;
+                }
+                if ui
+                    .add(egui::Button::new("Plugins…").min_size(big))
                     .on_hover_text("The plugin manager (shared with OHL-Design)")
                     .clicked()
                 {
@@ -252,34 +287,112 @@ impl StructureApp {
             if let Some(e) = &self.open_error {
                 error_label(ui, e.as_str());
             }
-            ui.add_space(16.0);
+            ui.add_space(20.0);
             if !self.recent.files.is_empty() {
-                ui.strong("Recent");
+                ui.strong("Recent files");
                 egui::ScrollArea::vertical()
                     .id_salt("recent")
-                    .max_height(260.0)
+                    .max_height(300.0)
                     .show(ui, |ui| {
                         for f in &self.recent.files {
                             let name = f
                                 .file_name()
                                 .map_or(String::new(), |n| n.to_string_lossy().into_owned());
+                            let folder = f
+                                .parent()
+                                .and_then(Path::file_name)
+                                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
                             let there = f.is_file();
-                            let r = ui
-                                .add_enabled(there, egui::Link::new(name))
-                                .on_hover_text(f.display().to_string())
-                                .on_disabled_hover_text(format!(
-                                    "{}: not there any more",
-                                    f.display()
-                                ));
-                            if r.clicked() {
-                                open = Some(f.clone());
-                            }
+                            ui.horizontal(|ui| {
+                                ui.add_space((ui.available_width() - 2.0 * big.x).max(0.0) / 2.0);
+                                let text = if there {
+                                    egui::RichText::new(&name).strong()
+                                } else {
+                                    egui::RichText::new(format!("{name} (missing)")).weak()
+                                };
+                                let r = ui
+                                    .add_enabled(
+                                        there,
+                                        egui::Button::new(text)
+                                            .min_size(egui::vec2(big.x, 26.0))
+                                            .right_text(egui::RichText::new(folder).weak().small()),
+                                    )
+                                    .on_hover_text(f.display().to_string())
+                                    .on_disabled_hover_text(format!(
+                                        "{}: not there any more",
+                                        f.display()
+                                    ));
+                                if r.clicked() {
+                                    open = Some(f.clone());
+                                }
+                                if ui
+                                    .small_button("\u{00d7}")
+                                    .on_hover_text("Remove it from this list (the file stays)")
+                                    .clicked()
+                                {
+                                    forget = Some(f.clone());
+                                }
+                            });
                         }
                     });
             }
         });
+        if let Some(f) = forget {
+            self.recent.files.retain(|x| *x != f);
+        }
+        if example {
+            self.open_example();
+        }
         if let Some(p) = open {
             self.open_chosen(&p);
+        }
+    }
+
+    /// Opens a copy of the example structure (in a new folder of the
+    /// system's temporary folder: the example stays as it is; File › Save
+    /// as keeps it elsewhere). Not added to the recent files.
+    pub fn open_example(&mut self) {
+        let Some(from) = example_file() else {
+            self.open_error = Some(format!("the example ({EXAMPLE}) is not on this computer"));
+            return;
+        };
+        let mut k = 1;
+        let dir = loop {
+            let d = std::env::temp_dir().join(format!("ohl-structure-example-{k}"));
+            if !d.exists() {
+                break d;
+            }
+            k += 1;
+        };
+        let to = dir.join(from.file_name().unwrap_or_default());
+        let copied = std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::copy(&from, &to))
+            .map_err(|e| format!("{}: {e}", to.display()));
+        if let Err(e) = copied {
+            self.open_error = Some(e);
+            return;
+        }
+        // Its insulator assemblies beside it, as in the example line.
+        if let Some(lib) = from
+            .parent()
+            .and_then(Path::parent)
+            .map(|d| d.join("Insulators"))
+            && let Ok(entries) = std::fs::read_dir(&lib)
+        {
+            let into = dir.join("Insulators");
+            let _ = std::fs::create_dir_all(&into);
+            for e in entries.flatten() {
+                let _ = std::fs::copy(e.path(), into.join(e.file_name()));
+            }
+        }
+        self.open_chosen(&to);
+        let canonical = std::fs::canonicalize(&to).unwrap_or(to);
+        self.recent.files.retain(|f| *f != canonical);
+        if self.file.is_some() {
+            self.message = Some((
+                "the example structure (a copy): invented values; File › Save as to keep it".into(),
+                false,
+            ));
         }
     }
 

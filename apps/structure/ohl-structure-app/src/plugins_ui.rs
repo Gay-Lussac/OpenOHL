@@ -689,7 +689,7 @@ impl StructureApp {
                                     "status",
                                     "",
                                 ] {
-                                    ui.strong(h);
+                                    crate::style::header(ui, h, "");
                                 }
                                 ui.end_row();
                                 for l in &p.listed {

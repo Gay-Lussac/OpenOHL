@@ -45,7 +45,7 @@ fn the_start_page_opens_and_creates_a_structure() {
     let mut h = started(move |a| a.recent.add(&p));
     h.get_by_label("Open a structure…");
     // A recent file opens with a click.
-    h.get_by_label("type-01.ohls").click();
+    h.get_by_label_contains("type-01.ohls").click();
     h.run();
     assert!(h.state().file.is_some());
     // Back on the start page: New structure… asks its id, name, source.

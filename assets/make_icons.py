@@ -53,6 +53,9 @@ tools.update({
  'follow': ('<path d="M2.5 5.5c5 6.5 14 6.5 19 0"/><circle cx="12" cy="10.4" r="1.7" fill="currentColor"/><path d="M12 12.6v4.2" stroke-dasharray="1.4 1.6"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/><circle cx="7" cy="20" r="1.1" fill="currentColor"/><circle cx="17" cy="19.6" r="1.1" fill="currentColor"/>', 'Follow and snap'),
  'note': ('<path d="M4 4h16v11h-9l-5 4.5V15H4z"/><path d="M8 8.5h8M8 11.5h5"/>', 'Note'),
  'measure-stations': ('<path d="M3 17h18M5 14v6M12 15v4M19 14v6"/><path d="M5 8h14M7.5 5.5 5 8l2.5 2.5M16.5 5.5 19 8l-2.5 2.5"/>', 'Stations'),
+ 'add-point': ('<path d="M3 6h14" opacity="0.55"/><circle cx="10" cy="6" r="2.4" fill="currentColor"/><path d="M10 8.4v7" opacity="0.55"/><path d="M19.5 13v5M17 15.5h5"/>', 'Add point'),
+ 'two-strings': ('<path d="M2.5 4h14"/><path d="M4.5 4 9.5 15M14.5 4 9.5 15" stroke-width="2.2"/><circle cx="9.5" cy="16.5" r="1.5" fill="currentColor"/><path d="M19.5 9v5M17 11.5h5"/>', 'Two strings to one wire point'),
+ 'insert-joint': ('<circle cx="4" cy="20" r="1.6"/><circle cx="20" cy="4" r="1.6"/><path d="M5.2 18.8 18.8 5.2" stroke-width="2.4"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M19.5 15v5M17 17.5h5"/>', 'Insert a joint on a member'),
  'support': ('<path d="M12 4v8"/><path d="M12 12 7 19h10z"/><path d="M5 21.5h14M6.5 21.5l-1.5 1.5M10 21.5l-1.5 1.5M13.5 21.5 12 23M17 21.5 15.5 23" stroke-width="1.4"/>', 'Support'),
 })
 for k, (b, t) in tools.items():

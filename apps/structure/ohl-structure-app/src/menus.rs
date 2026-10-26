@@ -4,7 +4,7 @@
 
 //! The menu bar: File, Edit, View (each panel ticked to show or hide it,
 //! Reset layout), then the menus of the work — Geometry, Body, Design,
-//! Load cases, Results, In the line — each listing its panels (opened or
+//! Load cases, Results, Line loads — each listing its panels (opened or
 //! brought to the front) and its actions, and Help; Undo, Redo and Save
 //! at the right of the menus. The windows they open: the deletion asked
 //! first, About.
@@ -228,6 +228,26 @@ impl StructureApp {
         ) {
             self.selected.clear();
         }
+        ui.separator();
+        if icon_item(
+            ui,
+            Icon::Move,
+            "Move tool",
+            self.file.is_some(),
+            "Hold the Move tool: drag a joint or point in the 3D view to move it (Escape lets go)",
+            "Open a structure first",
+        ) {
+            self.hold_tool(crate::tools::Tool::Move);
+        }
+        if item(
+            ui,
+            "Tools inventory (E)",
+            self.file.is_some(),
+            "Every tool of the 3D view: drag one onto a slot of the hotbar",
+            "Open a structure first",
+        ) {
+            self.inventory = true;
+        }
     }
 
     /// View: each panel ticked to show or hide it (the menu stays open),
@@ -249,6 +269,12 @@ impl StructureApp {
                 "The rigid links drawn: from a joint to an attachment point at an offset \
                  (magenta; none at zero offset)",
             );
+        options_menu(ui, "UI scale", |ui| {
+            for s in crate::style::SCALES {
+                ui.radio_value(&mut self.ui_scale, s, format!("{:.0} %", s * 100.0))
+                    .on_hover_text("The size of the whole window's text and controls (kept)");
+            }
+        });
         ui.checkbox(&mut self.string_volumes, "Volumes on the strings")
             .on_hover_text(
                 "The shapes of the strings' insulator assemblies (fittings, horns, rings) on \
@@ -273,6 +299,7 @@ impl StructureApp {
         };
         tick(ui, self, Panel::Level);
         tick(ui, self, Panel::View3d);
+        tick(ui, self, Panel::Inspector);
         tick(ui, self, Panel::Libraries);
         for area in Area::ALL {
             ui.label(egui::RichText::new(area.name()).small().weak());
@@ -483,8 +510,7 @@ impl StructureApp {
             can_take,
             "The line's cases (ticked) written into the structure file as cases of given \
              values: the file then has its forces without the line",
-            "No line values: open this from a placed structure (Properties › Open in OHL-Structure… in \
-             line application)",
+            crate::load_cases_tab::NO_LINE_VALUES_WHY,
         ) {
             self.open_store();
             self.focus(Panel::LoadTable);

@@ -240,7 +240,7 @@ fn kind_ui(ui: &mut egui::Ui, t: &StructureType, kind: &mut Kind) {
                     ("plan", "Plan bracing at the panel's top: X (corner to corner) or diamond (between the horizontals' middles, with a cross to the centre)"),
                     ("", ""),
                 ] {
-                    ui.strong(h).on_hover_text(tip);
+                    crate::style::header(ui, h, tip);
                 }
                 ui.end_row();
                 let n = p.panels.len();
@@ -448,7 +448,7 @@ impl StructureApp {
         if !gens.is_empty() {
             egui::Grid::new("generators").striped(true).show(ui, |ui| {
                 for h in ["generator", "kind", "joints", "members", ""] {
-                    ui.strong(h);
+                    crate::style::header(ui, h, "");
                 }
                 ui.end_row();
                 for g in &gens {

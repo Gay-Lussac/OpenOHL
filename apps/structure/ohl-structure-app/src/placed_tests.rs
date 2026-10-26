@@ -113,7 +113,7 @@ fn row(h: &Harness<'static, StructureApp>, case: &str, load: usize, label: &str)
 }
 
 /// Started with T2's line values: the header says whose loads they are,
-/// the recipes take the line's values, In the line lists them; values
+/// the recipes take the line's values, Line loads lists them; values
 /// typed are saved for T2 (not for the type); the line-values file
 /// written again is read again.
 #[test]
@@ -130,7 +130,7 @@ fn a_placed_structure_shows_its_line_values_and_keeps_its_typed_loads() {
     assert!(r.missing.is_none());
     let r = row(&h, "ice, unbalanced", 1, "A11");
     assert!((r.force[2] - 1.3 * 8000.0).abs() < 1e-9, "{:?}", r.force);
-    // In the line: the values per point and case, the other place (the
+    // Line loads: the values per point and case, the other place (the
     // points' table, beside it, is closed: it names A11 too).
     crate::layout::close_panel(&mut h.state_mut().dock, Panel::PointsInsulators);
     h.state_mut().focus(Panel::InTheLine);
@@ -288,7 +288,7 @@ fn the_line_forces_are_the_table_and_are_stored_in_the_file() {
     // Opened alone: the stored cases give the same forces.
     let mut alone = crate::tests::harness(&path);
     menu(&mut alone, "Load cases", "Load table…");
-    alone.get_by_label_contains("No line values: open this from a placed structure");
+    alone.get_by_label("No line values (opened on its own)");
     alone.get_by_label_contains("Stored in this file from the line: wind, ice");
     let f = alone.state().file.clone().unwrap();
     alone.state_mut().loads.refresh(&f);

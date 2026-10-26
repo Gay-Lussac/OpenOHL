@@ -633,7 +633,9 @@ impl StructureApp {
                      given values: the file then has its forces without the line (exports, \
                      design elsewhere); one undo step",
                 )
-                .on_disabled_hover_text("No line values: nothing to store")
+                .on_disabled_hover_text(format!(
+                    "{NO_LINE_VALUES_WHY} Without them there is nothing to store."
+                ))
                 .clicked()
             {
                 store = true;
@@ -734,22 +736,22 @@ impl StructureApp {
                             ),
                             ("at", "point, member (a surface load, its total) or joint"),
                             ("label", ""),
-                            ("transverse", "kN, to the right of the line"),
-                            ("longitudinal", "kN, ahead"),
-                            ("vertical", "kN, down"),
+                            ("transverse [kN]", "To the right of the line"),
+                            ("longitudinal [kN]", "Ahead"),
+                            ("vertical [kN]", "Down"),
                             (
                                 "source",
                                 "The part a row comes from: line, wind, ice, point, recipe (an \
                                  older load's own value) or typed",
                             ),
                             (
-                                "area",
+                                "area [m²]",
                                 "A surface load: the member's area it acts on (the cross-section \
-                                 library's profile width for the direction × length), m²",
+                                 library's profile width for the direction × length)",
                             ),
                             (
-                                "evaluated",
-                                "Typed over an evaluated value: the evaluated one, kN",
+                                "evaluated [kN]",
+                                "Typed over an evaluated value: the evaluated one",
                             ),
                             ("why none / note", ""),
                             ("", ""),
@@ -779,14 +781,11 @@ impl StructureApp {
                             let mut kn = r.force.map(|x| x / 1000.0);
                             let mut changed = false;
                             for v in &mut kn {
-                                changed |= ui
-                                    .add(
-                                        egui::DragValue::new(v)
-                                            .speed(0.01)
-                                            .max_decimals(3)
-                                            .suffix(" kN"),
-                                    )
-                                    .changed();
+                                changed |= crate::style::field(
+                                    ui,
+                                    egui::DragValue::new(v).speed(0.01).max_decimals(3),
+                                )
+                                .changed();
                             }
                             if changed {
                                 typed = Some((r.clone(), kn.map(|x| x * 1000.0)));
@@ -801,15 +800,21 @@ impl StructureApp {
                             } else {
                                 source
                             });
-                            ui.label(r.area.map_or(String::new(), |a| format!("{a:.4} m²")));
-                            ui.label(r.evaluated.map_or(String::new(), |e| {
-                                format!(
-                                    "{:.3}; {:.3}; {:.3}",
-                                    e[0] / 1000.0,
-                                    e[1] / 1000.0,
-                                    e[2] / 1000.0
-                                )
-                            }));
+                            crate::style::num_label(
+                                ui,
+                                r.area.map_or(String::new(), |a| format!("{a:.4}")),
+                            );
+                            crate::style::num_label(
+                                ui,
+                                r.evaluated.map_or(String::new(), |e| {
+                                    format!(
+                                        "{:.3}; {:.3}; {:.3}",
+                                        e[0] / 1000.0,
+                                        e[1] / 1000.0,
+                                        e[2] / 1000.0
+                                    )
+                                }),
+                            );
                             match &r.missing {
                                 Some(m) => ui.colored_label(ui.visuals().warn_fg_color, m),
                                 None if r.note.starts_with("incomplete:") => {
@@ -1130,6 +1135,13 @@ fn date(secs: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// The short words of the load panels when there are no line values.
+pub const NO_LINE_VALUES: &str = "No line values";
+
+/// Why there are no line values, and how to get them.
+pub const NO_LINE_VALUES_WHY: &str = "No line values: open this from a placed structure (select \
+     it in the line, Properties › Open in OHL-Structure…) to get its forces.";
+
 /// "Store in the structure file": the line's cases, each ticked or not.
 #[derive(Debug, Clone, Default)]
 pub struct StoreForm {
@@ -1197,12 +1209,7 @@ impl LoadCasesTab {
         }
         let Some(info) = &self.info else {
             return vec![if id.is_empty() {
-                (
-                    "No line values: open this from a placed structure (select it in the line, \
-                     Properties › Open in OHL-Structure…) to get its forces."
-                        .to_owned(),
-                    Tone::Info,
-                )
+                (NO_LINE_VALUES_WHY.to_owned(), Tone::Info)
             } else {
                 (
                     format!(
@@ -1295,6 +1302,33 @@ impl StructureApp {
     /// or why not; the cases stored from the line.
     pub fn line_status_ui(&mut self, ui: &mut egui::Ui) {
         let mut lines = self.loads.line_status();
+        // Opened on its own: one short line that may be closed (its ×),
+        // the whole sentence on hover (owner: UI review step 1,
+        // 2026-10-26).
+        if let [(text, Tone::Info)] = lines.as_slice()
+            && text.starts_with(NO_LINE_VALUES)
+        {
+            let text = text.clone();
+            lines.clear();
+            if !self.line_notice_closed {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{NO_LINE_VALUES} (opened on its own)")).weak(),
+                    )
+                    .on_hover_text(&text);
+                    if ui
+                        .small_button("\u{00d7}")
+                        .on_hover_text(
+                            "Hide this line (Store in the structure file… still says why on \
+                             hover)",
+                        )
+                        .clicked()
+                    {
+                        self.line_notice_closed = true;
+                    }
+                });
+            }
+        }
         if let Some(f) = &self.file {
             let stored: Vec<String> = edit::load_cases(f.doc())
                 .iter()
@@ -1310,6 +1344,9 @@ impl StructureApp {
                     Tone::Info,
                 ));
             }
+        }
+        if lines.is_empty() {
+            return;
         }
         let worst = if lines.iter().any(|l| l.1 == Tone::Warn) {
             Tone::Warn

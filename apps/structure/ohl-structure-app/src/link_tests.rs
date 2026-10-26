@@ -143,7 +143,7 @@ fn joint_kinds_are_set_and_undone() {
     let mut h = harness(&path);
     let before = text(&h);
     menu(&mut h, "Body", "Joints…");
-    h.get_by_label("kind");
+    h.get_by_label("Kind");
     h.state_mut()
         .set_joint_kind("L10B", Some(JointKind::Attach));
     h.run();

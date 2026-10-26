@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! The Line values panel (In the line menu): the status of the line's
+//! The Line loads panel (Line loads menu): the status of the line
 //! values, the values the line gives at the placed structure (from its
 //! line-values file, `--line-values`), per point and case — a case whose
 //! values lack a wire not solved marked "incomplete: S12 not solved" —
@@ -18,18 +18,26 @@ use crate::app::{StructureApp, error_label};
 const QUANTITIES: [(LineQuantity, &str, &str); 6] = [
     (
         LineQuantity::Transverse,
-        "transverse",
-        "kN, to the right of the line, unfactored",
+        "transverse [kN]",
+        "To the right of the line, unfactored",
     ),
-    (LineQuantity::Longitudinal, "longitudinal", "kN, ahead"),
-    (LineQuantity::Vertical, "vertical", "kN, down"),
+    (LineQuantity::Longitudinal, "longitudinal [kN]", "Ahead"),
+    (LineQuantity::Vertical, "vertical [kN]", "Down"),
     (
         LineQuantity::TransverseFactored,
-        "transverse ×",
-        "kN, factored by the line's load case",
+        "transverse × [kN]",
+        "Factored by the line's load case",
     ),
-    (LineQuantity::LongitudinalFactored, "longitudinal ×", "kN"),
-    (LineQuantity::VerticalFactored, "vertical ×", "kN"),
+    (
+        LineQuantity::LongitudinalFactored,
+        "longitudinal × [kN]",
+        "Factored",
+    ),
+    (
+        LineQuantity::VerticalFactored,
+        "vertical × [kN]",
+        "Factored",
+    ),
 ];
 
 /// The line's cases in `values`, in the order of `cases` (then any other).
@@ -52,7 +60,7 @@ fn kn(v: Option<f64>) -> String {
 }
 
 impl StructureApp {
-    /// The Line values panel (In the line menu).
+    /// The Line loads panel (Line loads menu).
     pub fn in_the_line_ui(&mut self, ui: &mut egui::Ui) {
         if let Some(f) = &self.file {
             self.loads.refresh(f);
@@ -122,10 +130,10 @@ impl StructureApp {
                              that case of the line — its forces are missing, the values too low",
                         ),
                     ] {
-                        ui.strong(h).on_hover_text(tip);
+                        crate::style::header(ui, h, tip);
                     }
                     for (_, h, tip) in QUANTITIES {
-                        ui.strong(h).on_hover_text(tip);
+                        crate::style::header(ui, h, tip);
                     }
                     ui.end_row();
                     for p in &values.points {
@@ -153,7 +161,10 @@ impl StructureApp {
                                 None => ui.label("yes"),
                             };
                             for (q, _, _) in QUANTITIES {
-                                ui.label(kn(values.get(c, &p.label, &p.sets, q)));
+                                crate::style::num_label(
+                                    ui,
+                                    kn(values.get(c, &p.label, &p.sets, q)),
+                                );
                             }
                             ui.end_row();
                         }
@@ -181,11 +192,11 @@ impl StructureApp {
                                 for h in [
                                     "structure",
                                     "point",
-                                    "transverse ×",
-                                    "longitudinal ×",
-                                    "vertical ×",
+                                    "transverse × [kN]",
+                                    "longitudinal × [kN]",
+                                    "vertical × [kN]",
                                 ] {
-                                    ui.strong(h);
+                                    crate::style::header(ui, h, "");
                                 }
                                 ui.end_row();
                                 for o in &info.others {
@@ -193,9 +204,12 @@ impl StructureApp {
                                         ui.label(&o.structure);
                                         ui.label(&g.point);
                                         for l in &g.largest {
-                                            ui.label(l.as_ref().map_or("—".into(), |(v, c)| {
-                                                format!("{:.3} ({c})", v / 1000.0)
-                                            }));
+                                            crate::style::num_label(
+                                                ui,
+                                                l.as_ref().map_or("—".into(), |(v, c)| {
+                                                    format!("{:.3} ({c})", v / 1000.0)
+                                                }),
+                                            );
                                         }
                                         ui.end_row();
                                     }

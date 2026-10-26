@@ -234,12 +234,12 @@ impl StructureApp {
                 "member",
                 "from",
                 "to",
-                "length",
+                "length [m]",
                 "group",
                 "cross-section",
                 "made by",
             ] {
-                ui.strong(h);
+                crate::style::header(ui, h, "");
             }
             ui.end_row();
             for m in t
@@ -252,7 +252,7 @@ impl StructureApp {
                 ui.label(&m.nodes[0]);
                 ui.label(&m.nodes[1]);
                 let l = lengths.get(m.id.as_str()).copied().unwrap_or(0.0);
-                ui.label(format!("{l:.3} m"));
+                crate::style::num_label(ui, format!("{l:.3}"));
                 ui.label(m.group.as_deref().unwrap_or("—"));
                 ui.label(m.section.as_deref().unwrap_or("—"));
                 ui.label(m.made_by.as_deref().unwrap_or("by hand"));
@@ -294,7 +294,7 @@ impl StructureApp {
                     .filter_map(|f| MEMBER_FIELDS.iter().find(|m| m.0 == *f))
                     .map(|(_, h, tip, _)| (*h, *tip)),
             ) {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for gr in &all {
@@ -303,7 +303,7 @@ impl StructureApp {
                 if ui.selectable_label(on, &gr.name).clicked() {
                     self.selected = handles;
                 }
-                ui.label(gr.members.len().to_string());
+                crate::style::num_label(ui, gr.members.len().to_string());
                 let current = if gr.mixed_sections {
                     "mixed".to_owned()
                 } else {

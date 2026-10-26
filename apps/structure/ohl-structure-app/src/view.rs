@@ -47,7 +47,76 @@ pub enum ViewAction {
     Cancel,
     /// A point's menu: link, unlink.
     Link(crate::link_tool::LinkAction),
+    /// A click with an acting tool ([`crate::tools::Tool`]) on this (none:
+    /// nothing there), and where it meets the plane facing the camera
+    /// through the point looked at.
+    ToolClick(Option<Handle>, Option<[f64; 3]>),
 }
+
+/// A standard view of the 3D view's buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standard {
+    /// Looking along +y (ahead), parallel projection.
+    Front,
+    /// Looking along -x (from the right of the line), parallel projection.
+    Side,
+    /// From above, +y up on the screen, parallel projection.
+    Top,
+    /// From the back left, above (the view a file opens with), in
+    /// perspective.
+    Iso,
+}
+
+impl Standard {
+    /// Every standard view, in the order of the buttons: with the name and
+    /// what it shows.
+    pub const ALL: [(Standard, &'static str, &'static str); 4] = [
+        (
+            Standard::Front,
+            "Front",
+            "Looking along +y (ahead), parallel projection",
+        ),
+        (
+            Standard::Side,
+            "Side",
+            "Looking along -x (from the right of the line), parallel projection",
+        ),
+        (
+            Standard::Top,
+            "Top",
+            "From above, ahead (+y) up, parallel projection",
+        ),
+        (
+            Standard::Iso,
+            "Iso",
+            "From the back left and above, in perspective",
+        ),
+    ];
+
+    /// `camera` turned to this view (its target and distance kept).
+    pub fn apply(self, camera: &mut Camera) {
+        let (yaw, pitch, ortho): (f64, f64, bool) = match self {
+            Standard::Front => (-90.0, 0.0, true),
+            Standard::Side => (0.0, 0.0, true),
+            Standard::Top => (-90.0, 89.9, true),
+            Standard::Iso => (-135.0, 35.0, false),
+        };
+        camera.yaw = yaw.to_radians();
+        camera.pitch = pitch.to_radians();
+        camera.ortho = ortho;
+    }
+}
+
+/// How to move around in the view and what the colours mean (the "?"
+/// button's hover text).
+pub const CONTROLS: &str = "Drag: turn the view. Right-drag: pan. Wheel: zoom.\n\
+     Click: select (Shift + click: select another, or drop it); with a tool of the hotbar \
+     held, a click uses it.\n\
+     Move tool: drag a joint or point to move it (snapped to the grid, or onto a joint; one \
+     undo step).\n\
+     Hotbar: keys 1-9 hold a tool, E: the inventory, Escape: let go of the tool.\n\
+     Right-click a point: link, unlink.\n\
+     Axes: x right of the line (red), y ahead (green), z up (blue).";
 
 /// A drag moving a joint or a (wire) point.
 #[derive(Debug, Clone)]
@@ -73,11 +142,13 @@ pub struct View {
     overlay: Option<(u64, GpuScene)>,
     /// The point whose menu is open (right-clicked).
     menu_point: Option<String>,
-    /// Where it was drawn last and its camera (for `View::screen_of`, tests).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Where it was drawn last and its camera (the hotbar's place;
+    /// `View::screen_of` in the tests).
     last: Option<(egui::Rect, Camera)>,
     /// The joint under the pointer with the Link tool and a point chosen.
     pub link_hover: Option<String>,
+    /// A standard view asked for (a button), turned to on the next frame.
+    pub standard: Option<Standard>,
 }
 
 /// What the view needs to draw and edit.
@@ -112,6 +183,11 @@ pub struct ViewInput<'a> {
     pub volumes: &'a [ohl_structure_link::VolumeMesh],
     /// What the view asks of the application.
     pub action: &'a mut Option<ViewAction>,
+    /// The members are coloured by usage (the results): the legend shown.
+    pub usage_legend: bool,
+    /// The tool held ([`crate::tools`]): a joint or point moves only with
+    /// Move; a click acts with an acting tool.
+    pub tool: crate::tools::Tool,
 }
 
 impl View {
@@ -129,6 +205,17 @@ impl View {
     /// The whole structure in view on the next frame.
     pub fn fit(&mut self) {
         self.camera = None;
+    }
+
+    /// Where the view was drawn last.
+    pub fn rect(&self) -> Option<egui::Rect> {
+        self.last.map(|l| l.0)
+    }
+
+    /// The camera (tests).
+    #[cfg(test)]
+    pub fn camera(&self) -> Option<Camera> {
+        self.camera
     }
 
     /// Where `p` (local axes) was drawn on the screen last (tests).
@@ -168,6 +255,9 @@ impl View {
             c.pitch = 15f64.to_radians();
             c
         });
+        if let Some(s) = self.standard.take() {
+            s.apply(camera);
+        }
         let size = [f64::from(rect.width()), f64::from(rect.height())];
         let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
         let cam = *camera;
@@ -250,8 +340,35 @@ impl View {
                 }
             });
         }
+        // An acting tool: a click acts (on what is under the pointer, or
+        // where it meets the plane facing the camera through the target).
+        use crate::tools::Tool;
+        let acting = !matches!(
+            v.tool,
+            Tool::Select | Tool::Move | Tool::Symmetry | Tool::Link
+        );
+        if linking.is_none()
+            && acting
+            && response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let here = local(pos);
+            let picked = pick(g, &project, here, 12.0);
+            let at = cam.ray(here, size).and_then(|(a, d)| {
+                let eye = cam.eye();
+                let n = [0, 1, 2].map(|k| eye[k] - cam.target[k]);
+                let dn: f64 = (0..3).map(|k| d[k] * n[k]).sum();
+                (dn.abs() > 1e-12).then(|| {
+                    let s: f64 = (0..3).map(|k| (cam.target[k] - a[k]) * n[k]).sum::<f64>() / dn;
+                    [0, 1, 2].map(|k| a[k] + s * d[k])
+                })
+            });
+            *v.action = Some(ViewAction::ToolClick(picked, at));
+            self.dirty = true;
+        }
         // Picking: a click picks, Shift + click adds.
         if linking.is_none()
+            && !acting
             && response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
@@ -270,8 +387,10 @@ impl View {
             }
             self.dirty = true;
         }
-        // A drag from a joint or point moves it; elsewhere it turns the view.
+        // With the Move tool, a drag from a joint or point moves it;
+        // elsewhere (and with any other tool) it turns the view.
         if linking.is_none()
+            && v.tool == Tool::Move
             && response.drag_started_by(egui::PointerButton::Primary)
             && let Some(pos) = response.interact_pointer_pos()
             && let Some(h) = pick(g, &project, local(pos), 12.0)
@@ -441,6 +560,85 @@ impl View {
                 hover.as_ref(),
             );
         }
+        if v.usage_legend {
+            usage_legend(&painter, rect);
+        }
+        self.buttons(ui, rect);
+    }
+
+    /// The buttons over the view's top left: the standard views, Fit, and
+    /// "?" (the controls on hover).
+    fn buttons(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let bar = egui::Rect::from_min_size(
+            rect.min + egui::vec2(6.0, 6.0),
+            egui::vec2((rect.width() - 12.0).max(0.0), 28.0),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(bar)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 3.0;
+                for (s, name, tip) in Standard::ALL {
+                    if ui.small_button(name).on_hover_text(tip).clicked() {
+                        self.standard = Some(s);
+                        ui.ctx().request_repaint();
+                    }
+                }
+                if ui
+                    .small_button("Fit")
+                    .on_hover_text("Show the whole structure (the view a file opens with)")
+                    .clicked()
+                {
+                    self.fit();
+                    ui.ctx().request_repaint();
+                }
+                ui.small_button("?").on_hover_text(CONTROLS);
+            },
+        );
+    }
+}
+
+/// The colours of the members coloured by usage (the results), at the
+/// view's bottom right.
+fn usage_legend(painter: &egui::Painter, rect: egui::Rect) {
+    let near = crate::results_tab::NEAR_FULL * 100.0;
+    let rows = [
+        (Some(1.5), "over 100 %".to_owned()),
+        (Some(0.95), format!("{near:.0} to 100 %")),
+        (Some(0.5), format!("under {near:.0} %")),
+        (None, "no capacity".to_owned()),
+    ];
+    let font = egui::FontId::proportional(12.0);
+    let line = 16.0;
+    let size = egui::vec2(150.0, line * (rows.len() as f32 + 1.0) + 8.0);
+    let at = rect.right_bottom() - size - egui::vec2(8.0, 8.0);
+    painter.rect_filled(
+        egui::Rect::from_min_size(at, size),
+        3.0,
+        egui::Color32::from_black_alpha(190),
+    );
+    painter.text(
+        at + egui::vec2(6.0, 4.0),
+        egui::Align2::LEFT_TOP,
+        "Members by usage",
+        font.clone(),
+        egui::Color32::WHITE,
+    );
+    for (k, (u, text)) in rows.iter().enumerate() {
+        let y = at.y + 4.0 + line * (k as f32 + 1.0) + line / 2.0;
+        let c = crate::results_tab::usage_colour(*u);
+        painter.line_segment(
+            [egui::pos2(at.x + 8.0, y), egui::pos2(at.x + 28.0, y)],
+            egui::Stroke::new(3.0, egui::Color32::from_rgb(c[0], c[1], c[2])),
+        );
+        painter.text(
+            egui::pos2(at.x + 34.0, y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            font.clone(),
+            egui::Color32::WHITE,
+        );
     }
 }
 
@@ -779,15 +977,6 @@ fn labels(
             painter.text(q, align, id, font.clone(), rgb(PICKED));
         }
     }
-    painter.text(
-        rect.left_bottom() + egui::vec2(8.0, -8.0),
-        egui::Align2::LEFT_BOTTOM,
-        "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-         wheel: zoom; drag a joint or point to move it; Shift + click: pick another; right-click \
-         a point: link, unlink",
-        egui::FontId::proportional(11.0),
-        egui::Color32::GRAY,
-    );
 }
 
 #[cfg(test)]

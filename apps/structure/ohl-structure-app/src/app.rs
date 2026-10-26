@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The window of OHL-Structure: the menus at the top (File, Edit, View,
-//! then Geometry, Body, Design, Load cases, Results, In the line, Help),
+//! then Geometry, Body, Design, Load cases, Results, Line loads, Help),
 //! the panels under them (docked, movable, closable: [`crate::layout`]),
 //! the last message at the bottom.
 
@@ -179,6 +179,21 @@ pub struct StructureApp {
     /// The volumes on the strings drawn in the 3D view (View › Volumes on
     /// the strings; off by default).
     pub string_volumes: bool,
+    /// The messages as notices at the bottom right.
+    pub notices: crate::notices::Notices,
+    /// The UI scale (View › UI scale; kept between runs).
+    pub ui_scale: f32,
+    /// The scale and style applied to the window (none yet).
+    applied_scale: Option<f32>,
+    /// The short "No line values" line of the load panels closed (its ×),
+    /// until the program is started again.
+    pub line_notice_closed: bool,
+    /// The hotbar of the 3D view's tools ([`crate::tools`]; kept).
+    pub hotbar: crate::tools::Hotbar,
+    /// The tool held last frame (the Link tool follows a change).
+    pub held: crate::tools::Tool,
+    /// The inventory (E) is open.
+    pub inventory: bool,
 }
 
 impl StructureApp {
@@ -231,6 +246,13 @@ impl StructureApp {
             insert_at: 0.5,
             rigid_links: true,
             string_volumes: false,
+            notices: Default::default(),
+            ui_scale: 1.0,
+            applied_scale: None,
+            line_notice_closed: false,
+            hotbar: Default::default(),
+            held: crate::tools::Tool::Select,
+            inventory: false,
         }
     }
 
@@ -360,7 +382,7 @@ impl StructureApp {
         }
     }
 
-    /// In the line › Read the line's values again: now.
+    /// Line loads › Read the values again: now.
     pub fn reload_line_values(&mut self) {
         self.values_seen = None;
         self.poll_line_values();
@@ -499,10 +521,35 @@ impl StructureApp {
                 i.consume_key(Modifiers::COMMAND, Key::S),
             )
         });
-        // Escape with the Link tool: the point chosen dropped (or the tool
-        // let go).
-        if self.link.is_some() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-            self.cancel_link();
+        if self.file.is_some() {
+            // Escape: the tool let go (with the Link tool, the point
+            // chosen dropped first); 1-9: a slot of the hotbar; E: the
+            // inventory.
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                self.let_go_of_tool();
+            }
+            const SLOTS: [Key; 9] = [
+                Key::Num1,
+                Key::Num2,
+                Key::Num3,
+                Key::Num4,
+                Key::Num5,
+                Key::Num6,
+                Key::Num7,
+                Key::Num8,
+                Key::Num9,
+            ];
+            if let Some(k) = ctx.input_mut(|i| {
+                SLOTS
+                    .iter()
+                    .position(|key| i.consume_key(Modifiers::NONE, *key))
+            }) {
+                self.hotbar.active = k;
+                self.tool_changed();
+            }
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::E)) {
+                self.inventory = !self.inventory;
+            }
         }
         if redo {
             self.redo();
@@ -557,97 +604,156 @@ impl StructureApp {
         }
     }
 
-    /// The header: file, level and what the next level lacks (each item
-    /// picks its row), the advice folded, the last message.
-    fn header(&mut self, ui: &mut egui::Ui) {
-        let Some(f) = &self.file else {
-            return;
-        };
-        let t = f.structure();
-        let d = t.detail();
-        let mut go: Option<Missing> = None;
-        ui.horizontal_wrapped(|ui| {
-            ui.heading(format!("Level {} — {}", d.level(), d.name()));
-            ui.separator();
-            ui.strong(&t.id);
-            ui.label(&t.name);
-            if let Some(p) = f.path() {
-                ui.label(egui::RichText::new(p.display().to_string()).weak().small());
-            }
-            if f.dirty() {
-                ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
-            }
-        });
-        if let Some(text) = self.loads.placed_title() {
-            let mut open_tab = false;
-            ui.horizontal_wrapped(|ui| {
-                open_tab = ui
-                    .link(egui::RichText::new(text).strong())
-                    .on_hover_text("The line's values at this placed structure: In the line")
-                    .clicked();
-                if let Some(note) = self.loads.info.as_ref().and_then(|i| i.note.as_ref()) {
-                    ui.label(egui::RichText::new(note).weak());
-                }
-            });
-            if let Some(e) = &self.loads.values_error {
-                error_label(ui, e.as_str());
-            }
-            if open_tab {
-                self.focus_request = Some(Panel::InTheLine);
-            }
-        }
+    /// What the next level lacks and the advice, for the file's revision
+    /// (kept until it changes): the level they are for (none: level 3
+    /// reached), what it needs, the advice.
+    fn open_items(&mut self) -> Option<(Option<u8>, Vec<Missing>, Vec<Missing>)> {
+        let f = self.file.as_ref()?;
+        let d = f.structure().detail();
         let next = next_level(d);
         let level = next.unwrap_or(3);
         let key = (f.revision(), level);
         let items = match &self.missing {
             Some((k, items)) if *k == key => std::sync::Arc::clone(items),
             _ => {
-                let items = std::sync::Arc::new(missing(t, level));
+                let items = std::sync::Arc::new(missing(f.structure(), level));
                 self.missing = Some((key, std::sync::Arc::clone(&items)));
                 items
             }
         };
-        let (needed, advice): (Vec<&Missing>, Vec<&Missing>) =
-            items.iter().partition(|m| m.need == Need::Level);
-        if let Some(n) = next {
-            ui.label(egui::RichText::new(format!("for level {n}:")).strong());
-            // Many items (a member each) scroll in a box of fixed height.
-            egui::ScrollArea::vertical()
-                .id_salt("missing")
-                .max_height(48.0)
-                .auto_shrink([false, true])
+        let (needed, advice): (Vec<Missing>, Vec<Missing>) =
+            items.iter().cloned().partition(|m| m.need == Need::Level);
+        Some((next, needed, advice))
+    }
+
+    /// The header above the panels (owner: UI review step 1, 2026-10-26):
+    /// the file's name (its full path on hover), the level, unsaved, a
+    /// button "N to do" bringing the To do list (the Level panel) to the
+    /// front; the placed structure's loads; a file that does not read.
+    pub(crate) fn header(&mut self, ui: &mut egui::Ui) {
+        let Some((next, needed, advice)) = self.open_items() else {
+            return;
+        };
+        let Some(f) = &self.file else {
+            return;
+        };
+        let t = f.structure();
+        let d = t.detail();
+        let mut open_tab = false;
+        let mut to_do = false;
+        ui.horizontal_wrapped(|ui| {
+            let name = f
+                .path()
+                .and_then(Path::file_name)
+                .map_or(t.id.clone(), |n| n.to_string_lossy().into_owned());
+            let r = ui.strong(name);
+            match f.path() {
+                Some(p) => r.on_hover_text(format!("{} — {}\n{}", t.id, t.name, p.display())),
+                None => r.on_hover_text(format!("{} — {}", t.id, t.name)),
+            };
+            if f.dirty() {
+                ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
+            }
+            ui.separator();
+            let badge = egui::RichText::new(format!("Level {} — {}", d.level(), d.name()))
+                .strong()
+                .color(ui.visuals().strong_text_color());
+            egui::Frame::new()
+                .fill(ui.visuals().selection.bg_fill.gamma_multiply(0.5))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(6, 1))
                 .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        for m in &needed {
-                            if ui
-                                .link(&m.reason)
-                                .on_hover_text("Show it in its table")
-                                .clicked()
-                            {
-                                go = Some((*m).clone());
-                            }
-                        }
+                    ui.label(badge).on_hover_text(match next {
+                        Some(n) => format!("What level {n} needs: the To do list"),
+                        None => "The full design: the highest level".to_owned(),
                     });
                 });
-        }
-        if !advice.is_empty() {
-            egui::CollapsingHeader::new(format!("advice ({})", advice.len()))
-                .id_salt("advice")
-                .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("advice-list")
-                        .max_height(80.0)
-                        .show(ui, |ui| {
-                            for m in &advice {
-                                if ui.link(&m.reason).clicked() {
-                                    go = Some((*m).clone());
-                                }
-                            }
-                        });
-                });
+            let n = needed.len() + advice.len();
+            if n > 0 {
+                let text = format!("{n} to do");
+                let tip = format!(
+                    "{} for level {}, {} advice: the To do list (click an item to show it)",
+                    needed.len(),
+                    next.unwrap_or(3),
+                    advice.len()
+                );
+                to_do = ui.button(text).on_hover_text(tip).clicked();
+            } else {
+                ui.colored_label(ok_color(ui), "nothing to do");
+            }
+            if let Some(text) = self.loads.placed_title() {
+                ui.separator();
+                open_tab = ui
+                    .link(egui::RichText::new(text).strong())
+                    .on_hover_text("The line's values at this placed structure: Line loads")
+                    .clicked();
+                if let Some(note) = self.loads.info.as_ref().and_then(|i| i.note.as_ref()) {
+                    ui.label(egui::RichText::new(note).weak());
+                }
+            }
+        });
+        if self.loads.placed_title().is_some()
+            && let Some(e) = &self.loads.values_error
+        {
+            error_label(ui, e.as_str());
         }
         if let Some(e) = f.error() {
             error_label(ui, format!("the file as edited does not read: {e}"));
+        }
+        if open_tab {
+            self.focus_request = Some(Panel::InTheLine);
+        }
+        if to_do {
+            self.focus_request = Some(Panel::Level);
+        }
+    }
+
+    /// The To do list (the Level panel): what the next level needs, then
+    /// the advice, each item showing its row (and selecting its object)
+    /// when clicked.
+    fn checklist_ui(&mut self, ui: &mut egui::Ui) {
+        let Some((next, needed, advice)) = self.open_items() else {
+            return;
+        };
+        let mut go: Option<Missing> = None;
+        let item = |ui: &mut egui::Ui, m: &Missing, go: &mut Option<Missing>| {
+            let tip = if m.target.is_some() {
+                "Show it in its table and select it"
+            } else {
+                "Show it in its table"
+            };
+            if ui
+                .link(format!("\u{2022} {}", m.reason))
+                .on_hover_text(tip)
+                .clicked()
+            {
+                *go = Some(m.clone());
+            }
+        };
+        match next {
+            Some(n) if !needed.is_empty() => {
+                ui.strong(format!("For level {n} ({})", needed.len()));
+                for m in &needed {
+                    item(ui, m, &mut go);
+                }
+            }
+            Some(n) => {
+                ui.label(format!("Nothing lacks for level {n}."));
+            }
+            None => {
+                ui.colored_label(ok_color(ui), "Level 3, the full design: nothing lacks.");
+            }
+        }
+        if !advice.is_empty() {
+            ui.add_space(6.0);
+            egui::CollapsingHeader::new(format!("Advice ({})", advice.len()))
+                .id_salt("advice")
+                .default_open(needed.is_empty())
+                .show(ui, |ui| {
+                    for m in &advice {
+                        item(ui, m, &mut go);
+                    }
+                });
         }
         if let Some(m) = go {
             self.go_to(&m);
@@ -716,12 +822,26 @@ impl StructureApp {
     /// The panels as kept from the last run (none kept, or not read: the
     /// default arrangement).
     pub fn restore(&mut self, storage: Option<&dyn eframe::Storage>) {
-        if let Some(dock) =
-            storage.and_then(|s| eframe::get_value::<DockState<Panel>>(s, crate::layout::DOCK_KEY))
+        // An arrangement of an older version gives way to the default
+        // once; one that does not read too.
+        let version = storage
+            .and_then(|s| eframe::get_value::<u32>(s, crate::layout::DOCK_VERSION_KEY))
+            .unwrap_or(1);
+        if version >= crate::layout::DOCK_VERSION
+            && let Some(dock) = storage
+                .and_then(|s| eframe::get_value::<DockState<Panel>>(s, crate::layout::DOCK_KEY))
         {
             self.dock = dock;
         }
         self.recent = crate::start::Recent::load(storage);
+        self.ui_scale = crate::style::load_scale(storage);
+        self.hotbar = crate::tools::Hotbar::load(storage);
+        self.held = self.hotbar.tool();
+        if self.held == crate::tools::Tool::Link {
+            // The Link tool is not taken up at the start.
+            self.hotbar.hold(crate::tools::Tool::Select);
+            self.held = crate::tools::Tool::Select;
+        }
     }
 
     /// View › Reset layout: the default arrangement.
@@ -735,6 +855,12 @@ impl StructureApp {
     #[cfg(test)]
     pub fn view_screen(&self, p: [f64; 3]) -> Option<egui::Pos2> {
         self.view.screen_of(p)
+    }
+
+    /// The 3D view's camera (tests).
+    #[cfg(test)]
+    pub fn view_camera(&self) -> Option<ohl_render::Camera> {
+        self.view.camera()
     }
 
     /// The joint under the pointer with the Link tool (tests).
@@ -798,11 +924,25 @@ pub fn error_label(ui: &mut egui::Ui, text: impl Into<egui::RichText>) {
 impl eframe::App for StructureApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, crate::layout::DOCK_KEY, &self.dock);
+        eframe::set_value(
+            storage,
+            crate::layout::DOCK_VERSION_KEY,
+            &crate::layout::DOCK_VERSION,
+        );
         self.recent.save(storage);
+        eframe::set_value(storage, crate::style::SCALE_KEY, &self.ui_scale);
+        self.hotbar.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        if self.applied_scale != Some(self.ui_scale) {
+            if self.applied_scale.is_none() {
+                crate::style::apply(&ctx);
+            }
+            ctx.set_zoom_factor(self.ui_scale);
+            self.applied_scale = Some(self.ui_scale);
+        }
         self.keys(&ctx);
         self.close_question(&ctx);
         self.title(&ctx);
@@ -818,8 +958,15 @@ impl eframe::App for StructureApp {
         }
         self.results.poll();
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
+        self.follow_link_tool();
+        self.inventory_window(&ctx);
         self.status_bar(ui);
+        self.notices.observe(&self.message, ctx.input(|i| i.time));
+        self.notices.ui(&ctx);
         self.windows(&ctx);
+        if self.file.is_some() {
+            egui::Panel::top("header").show(ui, |ui| self.header(ui));
+        }
         if self.file.is_none() {
             egui::CentralPanel::default().show(ui, |ui| self.start_page(ui));
             return;
@@ -876,13 +1023,14 @@ impl StructureApp {
     /// One panel's content.
     pub fn panel_ui(&mut self, ui: &mut egui::Ui, panel: Panel) {
         match panel {
-            Panel::Level => self.header(ui),
+            Panel::Level => self.checklist_ui(ui),
             Panel::View3d => self.view_ui(ui),
             Panel::LoadRecipes => self.load_recipes_ui(ui),
             Panel::LoadTable => self.load_table_ui(ui),
             Panel::Results => self.results_ui(ui),
             Panel::InTheLine => self.in_the_line_ui(ui),
             Panel::Libraries => self.libraries_ui(ui),
+            Panel::Inspector => self.inspector_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }
@@ -984,6 +1132,11 @@ impl StructureApp {
             })
             .unwrap_or_default();
         let mut action = None;
+        let tool = self.tool();
+        self.tool_strip(ui);
+        let Some(f) = &mut self.file else {
+            return;
+        };
         self.view.ui(
             ui,
             self.rs.as_ref(),
@@ -1002,13 +1155,20 @@ impl StructureApp {
                 moments: &moments,
                 volumes: &volumes,
                 action: &mut action,
+                usage_legend: self.area == Area::Results && self.results.shown().is_some(),
+                tool,
             },
         );
         match action {
             Some(crate::view::ViewAction::LinkClick(h)) => self.link_click(h),
             Some(crate::view::ViewAction::Cancel) => self.cancel_link(),
             Some(crate::view::ViewAction::Link(a)) => self.link_action(a),
+            Some(crate::view::ViewAction::ToolClick(h, at)) => self.tool_click(h, at),
             None => {}
+        }
+        self.follow_link_tool();
+        if let Some(rect) = self.view.rect() {
+            self.hotbar_ui(ui, rect);
         }
     }
 }

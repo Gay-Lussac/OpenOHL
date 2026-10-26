@@ -96,7 +96,7 @@ both programs and runs them together.
 | `ohl-structure-tests` | Tests of the application with the core (test-only) |
 | `ohl-structure-edit` | The edits of a structure file (`toml_edit`, comments kept), undo and redo of whole edits, what each level still lacks (`missing(level)`); no UI. `ohl-app`'s structure screen calls the same edits (on the basics: points, strings, wire points, sets) |
 | `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](development/structure-exports.md)): IFC4, IFC2x3, SAF, CSV tables; the tool `ohl-structure-export`; the structure report and the tool `ohl-structure-report`, which also answers `ohl`'s JSON requests (`--request`) |
-| `ohl-structure-app` | OHL-Structure, the structure application `ohl-structure` (egui): a `.ohls` in 3D, the Geometry, Body, Design, Load cases, Results and In the line menus at the top, their panels docked and movable under them |
+| `ohl-structure-app` | OHL-Structure, the structure application `ohl-structure` (egui): a `.ohls` in 3D, the Geometry, Body, Design, Load cases, Results and Line loads menus at the top, their panels docked and movable under them (the 3D view with its hotbar of tools, the Inspector, the tables as tabs) |
 
 ## Session & collaboration
 

@@ -85,7 +85,7 @@ fn an_extension_gets_its_piece_and_a_leg() {
     h.run();
     assert_eq!(h.state().ext.picked.as_deref(), Some("+3"));
     // A plain extension at level 3: advice, the model leaves it out.
-    h.get_by_label("advice (41)");
+    h.get_by_label("41 to do");
     h.get_by_label("Build the piece").click();
     h.run();
     let t = h.state().file.as_ref().unwrap().structure().clone();

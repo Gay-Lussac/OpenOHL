@@ -22,13 +22,9 @@ const STEEL: [(&str, &str); 4] = [
 ];
 
 /// A length typed or dragged in a table.
+/// (Its unit, m, is in the column's header.)
 fn coord(ui: &mut egui::Ui, v: &mut f64) -> egui::Response {
-    ui.add(
-        egui::DragValue::new(v)
-            .speed(0.01)
-            .max_decimals(3)
-            .suffix(" m"),
-    )
+    crate::style::field(ui, egui::DragValue::new(v).speed(0.01).max_decimals(3))
 }
 
 /// A text cell of a table (a value with its unit): kept in `buffers`
@@ -444,16 +440,6 @@ impl StructureApp {
     /// fit, what is picked.
     fn tools(&mut self, ui: &mut egui::Ui, _t: &StructureType, area: Area) {
         ui.horizontal_wrapped(|ui| {
-            ui.label("snap");
-            ui.add(
-                egui::DragValue::new(&mut self.grid)
-                    .range(0.0..=5.0)
-                    .speed(0.01)
-                    .max_decimals(3)
-                    .suffix(" m"),
-            )
-            .on_hover_text("A dragged joint or point snaps to this grid (0: none), or onto a joint");
-            ui.separator();
             if area == Area::Geometry {
                 if ui
                     .button("+ Point")
@@ -463,15 +449,6 @@ impl StructureApp {
                     self.add_point();
                 }
                 let tops = self.picked_tops();
-                ui.separator();
-                ui.label("string length");
-                ui.add(
-                    egui::DragValue::new(&mut self.string_length)
-                        .range(0.05..=50.0)
-                        .speed(0.05)
-                        .max_decimals(3)
-                        .suffix(" m"),
-                );
                 for (name, n, help) in [
                     ("One string", 1, "A string from the point picked down to a new wire point (its set: Sets)"),
                     ("Two strings to one wire point", 2, "Two strings from the two points picked to one wire point below their middle"),
@@ -624,18 +601,16 @@ impl StructureApp {
         );
         let mut drop: Option<String> = None;
         egui::Grid::new("extensions").striped(true).show(ui, |ui| {
-            for h in ["name", "dz", ""] {
-                ui.strong(h);
+            for h in ["name", "dz [m]", ""] {
+                crate::style::header(ui, h, "");
             }
             ui.end_row();
             for e in &t.extensions {
                 ui.label(&e.name);
                 let mut dz = e.dz.si();
-                let r = ui.add(
-                    egui::DragValue::new(&mut dz)
-                        .speed(0.05)
-                        .max_decimals(3)
-                        .suffix(" m"),
+                let r = crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut dz).speed(0.05).max_decimals(3),
                 );
                 hold(f, &r, "extension");
                 if r.changed() {
@@ -680,17 +655,17 @@ impl StructureApp {
         egui::Grid::new("points").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("attachment point", "Where strings hang; right-click: link, unlink"),
-                ("x", "Where it is: typed, a point on a joint stays on it and its offset follows"),
-                ("y", ""),
-                ("z", ""),
+                ("x [m]", "Where it is: typed, a point on a joint stays on it and its offset follows"),
+                ("y [m]", ""),
+                ("z [m]", ""),
                 ("joint", "The joint it is linked to (Link tool, or its menu)"),
-                ("offset x", "From its joint to it, m: a rigid link, whose moment the analysis applies at the joint"),
-                ("offset y", ""),
-                ("offset z", ""),
-                ("length", "The offset's length"),
+                ("offset x [m]", "From its joint to it: a rigid link, whose moment the analysis applies at the joint"),
+                ("offset y [m]", ""),
+                ("offset z [m]", ""),
+                ("length [m]", "The offset's length"),
                 ("strings", "Strings hanging from it"),
             ] {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for p in &t.points {
@@ -754,8 +729,11 @@ impl StructureApp {
                 {
                     self.message = Some((e, true));
                 }
-                ui.label(format!("{:.3} m", (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()));
-                ui.label(hanging.to_string());
+                crate::style::num_label(
+                    ui,
+                    format!("{:.3}", (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt()),
+                );
+                crate::style::num_label(ui, hanging.to_string());
                 ui.end_row();
             }
         });
@@ -778,20 +756,20 @@ impl StructureApp {
             for (h, tip) in [
                 ("wire point", "Its label"),
                 (
-                    "x",
+                    "x [m]",
                     "Placed by its string(s); typed only for one no string reaches (fixed)",
                 ),
-                ("y", ""),
-                ("z", ""),
+                ("y [m]", ""),
+                ("z [m]", ""),
                 (
                     "held by",
                     "The strings ending here (one, or two to one wire point)",
                 ),
                 ("below it", "Strings hanging from it"),
                 ("set", "A set on it: a wire is strung here (Sets)"),
-                ("counterweight", "A weight hanging at it"),
+                ("counterweight [N]", "A weight hanging at it"),
             ] {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for w in &t.wires {
@@ -824,7 +802,7 @@ impl StructureApp {
                     }
                 } else {
                     for v in at {
-                        ui.label(format!("{v:.3} m")).on_hover_text(
+                        crate::style::num_label(ui, format!("{v:.3}")).on_hover_text(
                             "Placed by its string(s): change their length or direction",
                         );
                     }
@@ -843,12 +821,12 @@ impl StructureApp {
                 ui.label(below.join(", "));
                 ui.label(w.set.map_or("—".to_owned(), |s| s.to_string()));
                 let mut cw = w.weight.map_or(0.0, |x| x.si());
-                let r = ui.add(
+                let r = crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut cw)
                         .range(0.0..=1e6)
                         .speed(10.0)
-                        .max_decimals(0)
-                        .suffix(" N"),
+                        .max_decimals(0),
                 );
                 hold(f, &r, "counterweight");
                 if r.changed() {
@@ -890,7 +868,7 @@ impl StructureApp {
                 ),
                 ("", ""),
             ] {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             let mut sets: Vec<&ohl_structures::TypeWire> =
@@ -1068,24 +1046,24 @@ impl StructureApp {
                     "An assembly of the insulator library, or none: a length",
                 ),
                 (
-                    "length",
+                    "length [m]",
                     "From its top to its wire point: it places the wire point",
                 ),
                 (
-                    "angle",
+                    "angle [°]",
                     "From straight down: 0° hanging, 90° level, 180° up",
                 ),
                 (
-                    "direction",
+                    "direction [°]",
                     "In plan, clockwise seen from above (ahead at the angle given)",
                 ),
-                ("weight", "Its weight (default: its assembly's)"),
+                ("weight [N]", "Its weight (default: its assembly's)"),
                 (
-                    "wind area",
+                    "wind area [m²]",
                     "The area the wind blows on (default: its assembly's)",
                 ),
                 (
-                    "compression",
+                    "compression [N]",
                     "The push it may take (two strings to one wire point); none: tension only",
                 ),
                 (
@@ -1098,7 +1076,7 @@ impl StructureApp {
                 ("description", "What it is, in words"),
                 ("", ""),
             ] {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for s in &t.strings {
@@ -1169,15 +1147,14 @@ impl StructureApp {
                 let len_now = ends.map_or(0.0, |(a, b)| polar(a, b).2);
                 let mut l = a.map_or(s.length.map_or(len_now, |l| l.si()), |a| a.length.si());
                 if a.is_some() {
-                    ui.label(format!("{l:.3} m"))
-                        .on_hover_text("Its assembly's");
+                    crate::style::num_label(ui, format!("{l:.3}")).on_hover_text("Its assembly's");
                 } else {
-                    let r = ui.add(
+                    let r = crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut l)
                             .range(0.01..=50.0)
                             .speed(0.01)
-                            .max_decimals(3)
-                            .suffix(" m"),
+                            .max_decimals(3),
                     );
                     if r.changed() {
                         put(
@@ -1191,19 +1168,19 @@ impl StructureApp {
                 if legs == 1 {
                     let (angle, direction) = s.angles();
                     let (mut dn, mut dr) = (angle, (direction + ahead).rem_euclid(360.0));
-                    let a1 = ui.add(
+                    let a1 = crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut dn)
                             .range(0.0..=180.0)
                             .speed(0.5)
-                            .max_decimals(2)
-                            .suffix("°"),
+                            .max_decimals(2),
                     );
-                    let a2 = ui.add(
+                    let a2 = crate::style::field(
+                        ui,
                         egui::DragValue::new(&mut dr)
                             .range(0.0..=360.0)
                             .speed(0.5)
-                            .max_decimals(2)
-                            .suffix("°"),
+                            .max_decimals(2),
                     );
                     if a1.changed() || a2.changed() {
                         let held = (a1.is_pointer_button_down_on()
@@ -1217,8 +1194,8 @@ impl StructureApp {
                 } else {
                     let (dn, dr, _) = ends.map_or((0.0, 0.0, 0.0), |(a, b)| polar(a, b));
                     let why = "One of two strings to one wire point: its direction follows where they meet";
-                    ui.label(format!("{dn:.2}°")).on_hover_text(why);
-                    ui.label(format!("{:.2}°", (dr + ahead).rem_euclid(360.0)))
+                    crate::style::num_label(ui, format!("{dn:.2}")).on_hover_text(why);
+                    crate::style::num_label(ui, format!("{:.2}", (dr + ahead).rem_euclid(360.0)))
                         .on_hover_text(why);
                 }
                 let mut w = s
@@ -1226,12 +1203,12 @@ impl StructureApp {
                     .map(|w| w.si())
                     .or(a.map(|a| a.weight.si()))
                     .unwrap_or(0.0);
-                let r = ui.add(
+                let r = crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut w)
                         .range(0.0..=1e6)
                         .speed(1.0)
-                        .max_decimals(1)
-                        .suffix(" N"),
+                        .max_decimals(1),
                 );
                 if r.changed() {
                     put(
@@ -1245,12 +1222,12 @@ impl StructureApp {
                     .map(|w| w.si())
                     .or(a.map(|a| a.wind_area.si()))
                     .unwrap_or(0.0);
-                let r = ui.add(
+                let r = crate::style::field(
+                    ui,
                     egui::DragValue::new(&mut wa)
                         .range(0.0..=100.0)
                         .speed(0.005)
-                        .max_decimals(3)
-                        .suffix(" m²"),
+                        .max_decimals(3),
                 );
                 if r.changed() {
                     put(
@@ -1262,14 +1239,17 @@ impl StructureApp {
                     let mut push = s.compression.is_some();
                     let mut c = s.compression.map_or(0.0, |c| c.si());
                     let a = ui.checkbox(&mut push, "");
-                    let b = ui.add_enabled(
-                        push,
-                        egui::DragValue::new(&mut c)
-                            .range(0.0..=1e7)
-                            .speed(10.0)
-                            .max_decimals(0)
-                            .suffix(" N"),
-                    );
+                    let b = ui
+                        .add_enabled_ui(push, |ui| {
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut c)
+                                    .range(0.0..=1e7)
+                                    .speed(10.0)
+                                    .max_decimals(0),
+                            )
+                        })
+                        .inner;
                     if a.changed() || b.changed() {
                         put(
                             StringChange::Compression(push.then_some(c)),
@@ -1402,9 +1382,9 @@ impl StructureApp {
         egui::Grid::new("joints").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("joint", "Its id"),
-                ("x", ""),
-                ("y", ""),
-                ("z", ""),
+                ("x [m]", ""),
+                ("y [m]", ""),
+                ("z [m]", ""),
                 (
                     "kind",
                     "attach: strings hang here (through the attachment points linked to it); \
@@ -1415,7 +1395,7 @@ impl StructureApp {
                 ("members", "The members meeting it"),
                 ("points", "The attachment points linked to it"),
             ] {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for n in &t.nodes {
@@ -1443,7 +1423,10 @@ impl StructureApp {
                 if let Some(kind) = kind_cell(ui, &n.id, n.kind, worked_out) {
                     change = Some((n.id.clone(), kind));
                 }
-                ui.label(meeting.get(n.id.as_str()).copied().unwrap_or(0).to_string());
+                crate::style::num_label(
+                    ui,
+                    meeting.get(n.id.as_str()).copied().unwrap_or(0).to_string(),
+                );
                 ui.label(
                     linked
                         .get(n.id.as_str())
@@ -1506,8 +1489,8 @@ impl StructureApp {
             return;
         };
         egui::Grid::new("supports").striped(true).show(ui, |ui| {
-            for h in ["joint", "z", "support"] {
-                ui.strong(h);
+            for h in ["joint", "z [m]", "support"] {
+                crate::style::header(ui, h, "");
             }
             ui.end_row();
             for n in &t.nodes {
@@ -1518,7 +1501,7 @@ impl StructureApp {
                     Handle::Joint(n.id.clone()),
                     &n.id,
                 );
-                ui.label(format!("{:.3} m", n.point[2].si()));
+                crate::style::num_label(ui, format!("{:.3}", n.point[2].si()));
                 let support = n.support.as_ref().map_or("—".to_owned(), |s| {
                     s.as_str().map_or(s.to_string(), str::to_owned)
                 });
@@ -1605,7 +1588,7 @@ impl StructureApp {
             .into_iter()
             .chain(MEMBER_FIELDS.iter().map(|(_, h, tip, _)| (*h, *tip)))
             {
-                ui.strong(h).on_hover_text(tip);
+                crate::style::header(ui, h, tip);
             }
             ui.end_row();
             for m in &t.members {
@@ -1685,13 +1668,17 @@ impl StructureApp {
                     let mut on = m.k.is_some();
                     let mut k = m.k.unwrap_or(1.0);
                     let a = ui.checkbox(&mut on, "");
-                    let b = ui.add_enabled(
-                        on,
-                        egui::DragValue::new(&mut k)
-                            .range(0.1..=5.0)
-                            .speed(0.01)
-                            .max_decimals(3),
-                    );
+                    let b = ui
+                        .add_enabled_ui(on, |ui| {
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut k)
+                                    .range(0.1..=5.0)
+                                    .speed(0.01)
+                                    .max_decimals(3),
+                            )
+                        })
+                        .inner;
                     hold(f, &b, "k");
                     if a.changed() || b.changed() {
                         f.edit(&format!("k of {}", m.id), |doc, _| {
@@ -1718,20 +1705,7 @@ impl StructureApp {
             }
         });
         if let Some(m) = insert {
-            let at = self.insert_at;
-            let what = format!("insert a joint on member {m}");
-            self.message = Some(
-                match f.edit(&what, |doc, t| edit::links::insert_joint(doc, t, &m, at)) {
-                    Ok(id) => (
-                        format!(
-                            "{what}: joint {id} (attach) at {at:.3} of its length; the member is \
-                             split there, continuous — link a point to it with the Link tool"
-                        ),
-                        false,
-                    ),
-                    Err(e) => (e, true),
-                },
-            );
+            self.insert_joint(&m);
         }
         if t.members.is_empty() {
             ui.label(egui::RichText::new("No member yet: build the body first (Body).").weak());

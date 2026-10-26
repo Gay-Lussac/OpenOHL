@@ -130,7 +130,8 @@ fn opened_alone_the_line_values_are_missing() {
             .collect::<Vec<_>>()
             .is_empty()
     );
-    h.get_by_label_contains("No line values: open this from a placed structure");
+    // The short line (the whole sentence on hover).
+    h.get_by_label("No line values (opened on its own)");
     // A value of the case needs no line.
     let r = row(&h, "ice, unbalanced", 2, "A1");
     assert_eq!((r.force, r.source), ([0.0, 2000.0, 0.0], Source::Recipe));

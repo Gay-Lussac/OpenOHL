@@ -12,7 +12,7 @@ their tests run separately from the core's.
 | `ohl-structure-link` | **The boundary**: the one crate where the application meets the core. `line_values` (a placed structure's loads from `ohl_loads::structure_loads` → `LineValues`), `fe_loads` (a table case → `ohl_structures_fe::Loads`; a point on a member shared to its ends), `analyse_cases` (table cases solved on the structure's model → `CaseResult`, plain data: displacements, member forces and usage, reactions, Σ loads and Σ reactions), `export_structure` (a level 3 structure with its cross-section library and load table as plain `ExportStructure` for the exports). `placed_values` (a placed structure's line values with the other places of its type, written for the application, below), `SectionAreas` (member areas from the cross-section library for surface loads) | core crates + `ohl-structure-loads` |
 | `ohl-structure-edit` | The edits of a structure file, each a function on its text (`toml_edit`: comments and order kept); `StructureFile` with undo and redo of whole edits (a drag is one); `Geometry` (standing on an extension: `geometry_with`; the pole's wireframe), picking; `missing(level)` (what the next level lacks — also the pole's outline and design, extension members without cross-sections — and advice: points on no joint, joints on one member, members crossing without a joint, an extension without members at level 3); the pole's edits (`pole`: outline rows, shape, fields, a `.ohlp` brought in) and the extensions' (`extension_edits`: joints, members, the piece in one go, legs); the edits of the load-case recipes (`load_cases.rs`: by place, `merge_load_cases` for imports); the body tools: generators (`generators`, pure), apply and rebuild (`rebuild`), the `[[generator]]` and `[[symmetry]]` tables (`body`), mirrored edits (`symmetry`), member groups (`groups`); the cross-sections of the cross-section library typed (`section_library`: `SectionDraft`, `put_section`, `remove_section`, `SHAPES`). No UI | `ohl-core`, `ohl-structures` (the file format only), `ohl-sections` (a typed cross-section checked and computed by the library). `ohl-app`'s structure screen depends on it, so there is one implementation of the edits |
 | `ohl-structure-export` | The exports of a level 3 structure ([Structure exports](structure-exports.md)): IFC4 (members with profile solids and the structural analysis model with load cases), IFC2x3 (members, for steel-detailing programs that take IFC2x3 only), SAF (xlsx, its own small writer on `zip`), CSV tables; the tool `ohl-structure-export` (not `ohl structures export`: `ohl-cli` is a core crate) | `ohl-structure-link` (`export_structure`, the plain `ExportStructure`), `ohl-structure-loads`, `ohl-sections`, `ohl-structures` (parsing the file only) |
-| `ohl-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes, the Level panel with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line values), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `section_editor.rs` (the cross-section library typed: Cross-sections & materials › Cross-section library), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ohl-structure-edit`, `ohl-structure-loads`, `ohl-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.ohlp` / `.ohlfe` files), `ohl-structure-export`, `ohl-structures`, `ohl-sections`, `ohl-plugins` (core: manifests, discovery, the host, the shared settings), `ohl-render` (drawing only) |
+| `ohl-structure-app` | The binary `ohl-structure`, **OHL-Structure** (eframe): the menus at the top and the panels under them (below), the 3D view in local axes with its hotbar of tools, the Inspector, the header and the To do list (the Level panel) with what the next level lacks, Save / Save as, undo / redo. The line application's **Edit…** starts it on the structure's file and reads the file again when it is saved. Modules: `app.rs` (the window, the state, the frame), `menus.rs` (the menu bar and the actions it shares with the panels' tools, the windows), `layout.rs` (the panels and menus: `Panel`, `Area`, the default arrangement, `open_panel`), `tables.rs` (the panels of tables of Geometry, Body, Design and their actions), `in_line_tab.rs` (Line loads), `style.rs` (the look: text sizes, solid scroll bars, value fields unlike buttons, the UI scale; the tables' header and number-cell helpers), `notices.rs` (the messages as notices), `tools.rs` (the 3D view's tools, the hotbar, the inventory, the tool strip), `inspector.rs` (the Inspector panel), `body_tab.rs` and `generators_ui.rs` (the Joints and Members panels' tools, Generators, Groups), `load_cases_tab.rs` (Load recipes, Load table, the line's forces as rows, the status block, Store in the structure file), `results_tab.rs` (FE results), `export_menu.rs` (File › Export), `pole_panel.rs` (Pole, Pole design), `extensions_panel.rs` (Extensions), `section_editor.rs` (the cross-section library typed: Cross-sections & materials › Cross-section library), `libraries.rs` (File › Libraries and the Libraries panel: `LibKind`, `Folders`, `references`, `scan`, `import`, `export`, `sections_subset`), `start.rs` (the start page, recent files, New structure), `plugins_ui.rs` (Plugins › Plugin manager, Load cases from a design code) | `ohl-structure-edit`, `ohl-structure-loads`, `ohl-structure-link` (analysis only through it; also `pole_file_id`, `model_file_name` to check `.ohlp` / `.ohlfe` files), `ohl-structure-export`, `ohl-structures`, `ohl-sections`, `ohl-plugins` (core: manifests, discovery, the host, the shared settings), `ohl-render` (drawing only) |
 | `ohl-structure-tests` | Test-only (`publish = false`, empty library, tests in `tests/`): the synthetic example line solved by the core, through the link, against hand values and the line run's own structure check; the application's formats refusing typos; a body built by the generators solved by the FE model (`body_fe.rs`) | everything above, as dev-dependencies |
 
 Rules:
@@ -131,7 +131,7 @@ structure app: reads the JSON when its mtime changes (twice a second):
 
 The window follows the line application's design rules: every menu at
 the top — File, Edit, View, then one per part of the work (Geometry,
-Body, Design, Load cases, Results, In the line; `layout::Area`), Help —
+Body, Design, Load cases, Results, Line loads; `layout::Area`), Help —
 and the panels under them docked with `egui_dock` (the same version as
 `ohl-design`), each movable, closable and opened again from View or its
 menu. View is an options menu (`layout::options_menu`, a copy of the line
@@ -139,15 +139,27 @@ application's: a tick never closes it); errors and long reports scroll in
 boxes of fixed height (`app::error_label`); every window has its ×.
 
 - `layout::Panel` lists the panels; each belongs to an `Area` (the 3D
-  view and the Level panel to none) and shows one table or a few
-  (`Panel::sheets`; several: chosen at its top). `default_dock` is the
-  arrangement at first start and after **View › Reset layout**: the
-  Level panel at the top left, a leaf with the geometry, body and design
-  panels, one with the load and result panels, the 3D view on the right
-  (`split_left` at 0.45).
+  view, the Inspector, the Level panel — the To do list — and the
+  Libraries to none) and shows one table or a few (`Panel::sheets`;
+  several: chosen at its top). `default_dock` is the arrangement at first
+  start and after **View › Reset layout** (owner, 2026-10-26: calmer):
+  the 3D view in the middle, the Inspector and the To do list on its
+  right (`split_right` at 0.8), below the view one leaf of tables as
+  tabs (`split_below` at 0.6) — as many as show their titles (Points &
+  strings, Wire points & sets, Joints, Members, Generators, Supports,
+  Member cross-sections, Load table, FE results); the others open beside
+  them from their menus.
+- The header above the dock (`StructureApp::header`, not a panel): the
+  file's name (its path on hover), the level badge, *\* unsaved*, the
+  button **N to do** (brings the To do list to the front), the placed
+  structure's loads link. `StructureApp::open_items` keeps what the next
+  level lacks and the advice per file revision; `checklist_ui` draws the
+  To do list, an item through `go_to` (its table, its row, its object
+  selected).
 - `open_panel` brings a panel to the front, or opens it where it belongs
   (next to a panel of its area, else of the tables; the 3D view on the
-  right, the Level panel above the tables). Menus, header links
+  right, the Inspector and the To do list together on the right of the
+  view). Menus, header links
   (`StructureApp::go_to`, through `focus_request` since the dock is taken
   out of the application while it is drawn) and the level at opening all
   go through it (`StructureApp::focus`).
@@ -157,8 +169,47 @@ boxes of fixed height (`app::error_label`); every window has its ×.
   draws over the structure (load arrows, results). The generator's
   preview is cleared when its panel was not drawn.
 - The arrangement is kept with eframe's persistence (`egui_dock`'s
-  `serde` feature, key `ols-structure-dock`; `StructureApp::restore` at
-  start, `eframe::App::save`); one that does not read gives the default.
+  `serde` feature, key `ols-structure-dock`, with its version under
+  `ohl-structure-dock-version`, `layout::DOCK_VERSION` = 2;
+  `StructureApp::restore` at start, `eframe::App::save`); one that does
+  not read, or kept by an older version (no version), gives the default.
+  Also kept: the recent files (`ols-structure-recent`), the UI scale
+  (`ohl-structure-ui-scale`, a number, 1 = 100 %), the hotbar
+  (`ohl-structure-hotbar`: the nine slots' tool names, comma-separated,
+  an empty slot blank; `ohl-structure-hotbar.active`: the slot held).
+- **The 3D view's tools** (`tools.rs`, as OHL-Design's hotbar, its
+  drawing copied, not shared: the structure crates stay apart from
+  `ohl-app`): `Tool` (Select, Move, Add joint, Add member, Add point, One
+  string, Two strings to one wire point, Link, Symmetry, Insert a joint
+  on a member, Delete), `Hotbar` (nine slots, `hold`, `save`, `load`).
+  `View::ui` takes the tool held (`ViewInput::tool`): a joint or point
+  is dragged only with Move (one undo step per drag, as before); with an
+  acting tool a click gives `ViewAction::ToolClick` (what is under the
+  pointer, and where the click meets the plane facing the camera through
+  the target), done by `StructureApp::tool_click` with the menus' own
+  methods. The Link tool is `StructureApp::link` as before; the hotbar
+  follows it (`follow_link_tool`) and it follows the hotbar
+  (`tool_changed`). Keys 1–9, E (inventory) and Escape (let go) are read
+  in `StructureApp::keys` when no field has the keyboard.
+- **The Inspector** (`inspector.rs`): the selection's fields through the
+  same `ohl_structure_edit` functions as the tables (one undo step each,
+  a drag one step through `begin` / `end`); several of one kind: their
+  shared coordinates (or a member's cross-section and kind) written to
+  each in one step.
+- **Notices** (`notices.rs`): `Notices::observe` turns a new
+  `StructureApp::message` into a notice at the bottom right; an
+  information fades after `notices::SHOWN` s (the next repaint asked for
+  then, not every frame), an error stays until its × (long ones scroll,
+  `app::error_label`). The status line stays.
+- **The style** (`style.rs`): applied once (`style::apply`): text a step
+  larger, `ScrollStyle::solid` (a table wider than its panel shows its
+  scroll bar), the UI scale as egui's zoom factor. Tables use
+  `style::header` (sentence case; units in the header, "x [m]"),
+  `style::field` (a number field: right-aligned, the inset fill and frame
+  of a text field — `field_visuals` — so it reads as a value, not a
+  button) and `style::num_label`. A sticky first column is not possible
+  with `egui::Grid` without rewriting the tables (`egui_extras` tables):
+  not done.
 - The menus' actions are the same methods as the panels' tools
   (`add_point`, `add_insulators`, `add_joint`, `add_member`,
   `point_here`, `ask_delete`, `set_symmetry`, `make_symmetric`,
