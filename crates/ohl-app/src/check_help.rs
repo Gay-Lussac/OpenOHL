@@ -390,11 +390,25 @@ pub const JUMPER_BAND_MARGIN_HELP: &str = "A jumper's swing band (about the line
 /// Size of a drawing, px.
 pub const SIZE: egui::Vec2 = egui::vec2(120.0, 80.0);
 
-/// The explanation of a setting: a short weak line, the longer text on
-/// hover.
+/// The explanation of a setting: one short weak line and a **(?)**
+/// after it, the longer text on hover of either (owner: OHL-Design UI
+/// review, 2026-10-26 — the help paragraphs behind a (?), one short line
+/// kept).
 pub fn explain(ui: &mut egui::Ui, short: &str, long: &str) {
-    ui.label(egui::RichText::new(short).small().weak())
-        .on_hover_text(long);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.label(egui::RichText::new(short).small().weak())
+            .on_hover_text(long);
+        question(ui, long);
+    });
+}
+
+/// A small **(?)**: `long` on hover.
+pub fn question(ui: &mut egui::Ui, long: &str) -> egui::Response {
+    ui.add(
+        egui::Label::new(egui::RichText::new("(?)").small().strong()).sense(egui::Sense::hover()),
+    )
+    .on_hover_text(long)
 }
 
 /// The colours of a drawing in the theme: lines, faint lines, the thing

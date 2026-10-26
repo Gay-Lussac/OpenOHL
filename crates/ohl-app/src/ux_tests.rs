@@ -280,8 +280,8 @@ fn help_opens_the_manual_and_about() {
 }
 
 /// A clearance window always has a rule: it starts with the ground's,
-/// its distance to set, and Run refuses until it is set; "Add a rule"
-/// replaces that first rule with the one typed; the last rule is not
+/// its distance to set, and Run refuses until it is set (in its row of the
+/// rules table); the last rule is not
 /// removed; the Next steps see the rule.
 #[test]
 fn clearance_windows_start_with_a_rule_to_set() {
@@ -322,15 +322,13 @@ fn clearance_windows_start_with_a_rule_to_set() {
         );
         assert!(!crate::next_steps::has_rules(r));
     }
-    // Add a rule: the distance typed, the first rule replaced.
-    h.state_mut()
-        .ready()
-        .unwrap()
-        .vertical_clearances
-        .draft
-        .distance = ohl_clearance::Requirement::Fixed(7.0);
+    // The distance set in its row.
+    {
+        let w = &mut h.state_mut().ready().unwrap().vertical_clearances;
+        w.rules[0].distance = ohl_clearance::Requirement::Fixed(7.0);
+        w.mark_dirty();
+    }
     h.run();
-    h.get_by_label("Add this rule").click();
     h.run();
     {
         let r = h.state_mut().ready().unwrap();

@@ -120,16 +120,20 @@ impl Preview {
         );
         let size = [f64::from(rect.width()), f64::from(rect.height())];
         let project = camera.projector(size);
-        for (at, text, color) in labels {
-            if let Some((q, _)) = project(*at) {
-                painter.text(
+        let placed = place_labels(
+            &painter,
+            labels.iter().filter_map(|(at, text, color)| {
+                let (q, _) = project(*at)?;
+                Some((
                     rect.min + egui::vec2(q[0] as f32, q[1] as f32),
-                    egui::Align2::CENTER_CENTER,
                     text,
-                    egui::FontId::proportional(11.0),
                     *color,
-                );
-            }
+                ))
+            }),
+            response.hover_pos(),
+        );
+        for (galley, at, color) in placed {
+            painter.galley(at, galley, color);
         }
         painter.text(
             rect.left_bottom() + egui::vec2(6.0, -4.0),
@@ -168,4 +172,40 @@ fn fit(bounds: Option<Bounds>) -> Camera {
     // Looking ahead (+y) from behind the right side.
     c.yaw = (-60f64).to_radians();
     c
+}
+
+/// The labels of a preview without overlaps (owner: OHL-Design UI review,
+/// 2026-10-26: the structure preview's labels were written over each
+/// other): each centred on its point, or moved a line down or up when
+/// that is free; one that still meets a label already written is left
+/// out — shown while the pointer (`hover`) is near its point, over the
+/// others. The galleys and where they are written.
+fn place_labels<'a>(
+    painter: &egui::Painter,
+    labels: impl Iterator<Item = (egui::Pos2, &'a String, egui::Color32)>,
+    hover: Option<egui::Pos2>,
+) -> Vec<(std::sync::Arc<egui::Galley>, egui::Pos2, egui::Color32)> {
+    let mut taken: Vec<egui::Rect> = Vec::new();
+    let mut out = Vec::new();
+    let mut hovered = None;
+    for (at, text, color) in labels {
+        let galley = painter.layout_no_wrap(text.clone(), egui::FontId::proportional(11.0), color);
+        let size = galley.size();
+        let near = hover.is_some_and(|h| h.distance(at) < 10.0);
+        let spots = [0.0, 1.0, -1.0]
+            .map(|k| egui::Rect::from_center_size(at + egui::vec2(0.0, k * size.y), size));
+        match spots
+            .iter()
+            .find(|r| !taken.iter().any(|t| t.expand(1.0).intersects(**r)))
+        {
+            Some(r) => {
+                taken.push(*r);
+                out.push((galley, r.min, color));
+            }
+            None if near => hovered = Some((galley, spots[0].min, color)),
+            None => {}
+        }
+    }
+    out.extend(hovered);
+    out
 }
