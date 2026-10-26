@@ -276,32 +276,6 @@ impl StructureFile {
         }
     }
 
-    /// The file changed on disk: read again (the history stays, the
-    /// reload one undo step), unless there are unsaved changes.
-    pub fn reload(&mut self) -> Result<bool, String> {
-        let Some(path) = self.path.clone() else {
-            return Ok(false);
-        };
-        if self.dirty() {
-            return Ok(false);
-        }
-        let text =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if text == self.saved {
-            return Ok(false);
-        }
-        StructureType::parse(&path, &text).map_err(|e| e.to_string())?;
-        let before = self.text();
-        self.push_undo(Step {
-            what: "changed on disk".into(),
-            text: before,
-        });
-        self.redo.clear();
-        self.set_text(&text);
-        self.saved = text;
-        Ok(true)
-    }
-
     /// Saves to its file (or `to`, which it is then saved to from now on).
     /// Refused while the text does not read.
     pub fn save(&mut self, to: Option<&Path>) -> Result<PathBuf, String> {

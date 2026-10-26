@@ -1738,7 +1738,7 @@ fn settings_changed_mark_every_section() {
     assert_eq!(a.sections, ["S1", "S2", "S3"]);
     let mut line = s.line().clone();
     line.name = "renamed".into();
-    let a = s.apply("ana", line_settings_put(&line, None)).unwrap();
+    let a = s.apply("ana", crate::meta_puts(&crate::Meta::of(&line))).unwrap();
     assert!(a.sections.is_empty());
 }
 

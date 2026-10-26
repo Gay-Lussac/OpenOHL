@@ -612,11 +612,6 @@ fn saved_and_saved_as() {
     assert!(f.save(None).is_err());
     f.undo();
     assert!(f.error().is_none());
-    // Changed on disk, nothing unsaved: read again.
-    std::fs::write(&other, PYLON.replace("name = \"p\"", "name = \"q\"")).unwrap();
-    assert_eq!(f.reload(), Ok(true));
-    assert_eq!(f.structure().name, "q");
-    assert!(!f.dirty());
     std::fs::remove_dir_all(&dir).ok();
 }
 
