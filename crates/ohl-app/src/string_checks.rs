@@ -568,83 +568,92 @@ impl StringChecksWindow {
             .max_height(360.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Grid::new("string-check-rows")
-                    .striped(true)
-                    .spacing([12.0, 3.0])
-                    .show(ui, |ui| {
-                        for h in [
-                            "string", "kind", "rule", "case", "check", "value", "limit", "from",
-                            "usage %", "",
-                        ] {
-                            ui.strong(h);
-                        }
-                        ui.end_row();
-                        for r in report
-                            .report
-                            .rows
-                            .iter()
-                            .filter(|r| !self.only_failures || !r.pass)
-                            .take(5000)
-                        {
-                            if ui
-                                .link(format!("{} {}", r.structure, r.string))
-                                .on_hover_text(format!(
-                                    "Go to {} (section {}, point {})",
-                                    r.structure,
-                                    r.section,
-                                    r.point + 1
-                                ))
-                                .clicked()
-                            {
-                                out.go = Some(Selection::Structure(r.structure.clone()));
-                            }
-                            ui.label(if r.strain { "strain" } else { "suspension" });
-                            let rule = &report.rules[r.rule];
-                            ui.label(&rule.name).on_hover_text(rule_text(rule));
-                            ui.label(&r.case);
-                            ui.label(r.measure.describe());
-                            let (value, limit, usage) = match r.measure {
-                                Measure::Load => (
-                                    format!("{:.2} kN", r.value / 1000.0),
-                                    format!("{:.2} kN", r.limit / 1000.0),
-                                    format!("{:.1}", 100.0 * r.usage),
-                                ),
-                                Measure::Uplift => (
-                                    format!("{:.2} kN", r.value / 1000.0),
-                                    if r.pass {
-                                        "hangs".to_owned()
-                                    } else if r.value < 0.0 {
-                                        "pushed".to_owned()
-                                    } else {
-                                        "slack".to_owned()
-                                    },
-                                    String::new(),
-                                ),
-                                _ => (
-                                    format!("{:.1}°", r.value),
-                                    format!("{:.1}°", r.limit),
-                                    format!("{:.1}", 100.0 * r.usage),
-                                ),
-                            };
-                            ui.label(value);
-                            ui.label(limit);
-                            ui.label(match r.source {
-                                Source::String => "string",
-                                Source::Rule => "rule",
-                            });
-                            let u = egui::RichText::new(usage).monospace();
+                // Every row (those asked for), only those in view drawn
+                // (2026-10-26).
+                let rows: Vec<_> = report
+                    .report
+                    .rows
+                    .iter()
+                    .filter(|r| !self.only_failures || !r.pass)
+                    .collect();
+                let mut table =
+                    crate::rows_in_view::Table::new(ui, "string-check-rows", 10).spacing(12.0, 3.0);
+                table.header(
+                    ui,
+                    &[
+                        ("string", ""),
+                        ("kind", ""),
+                        ("rule", ""),
+                        ("case", ""),
+                        ("check", ""),
+                        ("value", ""),
+                        ("limit", ""),
+                        ("from", ""),
+                        ("usage %", ""),
+                        ("", ""),
+                    ],
+                );
+                table.rows(ui, rows.len(), None, |c, i| {
+                    let r = rows[i];
+                    if c.cell(|ui| {
+                        ui.link(format!("{} {}", r.structure, r.string))
+                            .on_hover_text(format!(
+                                "Go to {} (section {}, point {})",
+                                r.structure,
+                                r.section,
+                                r.point + 1
+                            ))
+                            .clicked()
+                    }) {
+                        out.go = Some(Selection::Structure(r.structure.clone()));
+                    }
+                    c.cell(|ui| ui.label(if r.strain { "strain" } else { "suspension" }));
+                    let rule = &report.rules[r.rule];
+                    c.cell(|ui| ui.label(&rule.name).on_hover_text(rule_text(rule)));
+                    c.cell(|ui| ui.label(&r.case));
+                    c.cell(|ui| ui.label(r.measure.describe()));
+                    let (value, limit, usage) = match r.measure {
+                        Measure::Load => (
+                            format!("{:.2} kN", r.value / 1000.0),
+                            format!("{:.2} kN", r.limit / 1000.0),
+                            format!("{:.1}", 100.0 * r.usage),
+                        ),
+                        Measure::Uplift => (
+                            format!("{:.2} kN", r.value / 1000.0),
                             if r.pass {
-                                ui.label(u);
-                                ui.label("pass");
+                                "hangs".to_owned()
+                            } else if r.value < 0.0 {
+                                "pushed".to_owned()
                             } else {
-                                ui.label(u.color(ui.visuals().error_fg_color));
-                                ui.label(
-                                    egui::RichText::new("fail").color(ui.visuals().error_fg_color),
-                                );
-                            }
-                            ui.end_row();
-                        }
+                                "slack".to_owned()
+                            },
+                            String::new(),
+                        ),
+                        _ => (
+                            format!("{:.1}°", r.value),
+                            format!("{:.1}°", r.limit),
+                            format!("{:.1}", 100.0 * r.usage),
+                        ),
+                    };
+                    c.cell(|ui| ui.label(value));
+                    c.cell(|ui| ui.label(limit));
+                    c.cell(|ui| {
+                        ui.label(match r.source {
+                            Source::String => "string",
+                            Source::Rule => "rule",
+                        })
                     });
+                    let u = egui::RichText::new(usage).monospace();
+                    if r.pass {
+                        c.cell(|ui| ui.label(u));
+                        c.cell(|ui| ui.label("pass"));
+                    } else {
+                        c.cell(|ui| ui.label(u.color(ui.visuals().error_fg_color)));
+                        c.cell(|ui| {
+                            ui.label(egui::RichText::new("fail").color(ui.visuals().error_fg_color))
+                        });
+                    }
+                });
             });
     }
 }

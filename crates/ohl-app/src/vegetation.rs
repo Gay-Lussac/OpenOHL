@@ -1745,53 +1745,52 @@ fn report_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
         .max_height(320.0)
         .auto_shrink([false, true])
         .show(ui, |ui| {
-            egui::Grid::new("vegetation-rows")
-                .striped(true)
-                .spacing([14.0, 3.0])
-                .show(ui, |ui| {
-                    for h in [
-                        "span",
-                        "c m",
-                        "grow-in",
-                        "fall-in",
-                        "nearest m",
-                        "case, position",
-                        "fall margin m",
-                        "case, position",
-                    ] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for r in report
-                        .spans
-                        .iter()
-                        .filter(|r| r.encroaching > 0 || r.fall_in > 0)
-                    {
-                        if ui
-                            .link(format!("{} span {}", r.section, r.span))
-                            .on_hover_text("Go to this span")
-                            .clicked()
-                        {
-                            go = Some(Selection::Span {
-                                section: r.section.clone(),
-                                span: r.span,
-                            });
-                        }
-                        let error = ui.visuals().error_fg_color;
-                        let red = |n: u64| {
-                            let t = egui::RichText::new(n.to_string()).monospace();
-                            if n > 0 { t.color(error) } else { t }
-                        };
-                        ui.label(format!("{:.2}", r.required));
-                        ui.label(red(r.encroaching));
-                        ui.label(red(r.fall_in));
-                        ui.label(or_dash(r.nearest.map(|v| v.0), 2));
-                        ui.label(r.nearest.map_or("-", |v| report.label(v.1)));
-                        ui.label(or_dash(r.worst_fall.map(|v| v.0), 2));
-                        ui.label(r.worst_fall.map_or("-", |v| report.label(v.1)));
-                        ui.end_row();
-                    }
-                });
+            // Every span found, only those in view drawn (2026-10-26).
+            let rows: Vec<_> = report
+                .spans
+                .iter()
+                .filter(|r| r.encroaching > 0 || r.fall_in > 0)
+                .collect();
+            let mut table =
+                crate::rows_in_view::Table::new(ui, "vegetation-rows", 8).spacing(14.0, 3.0);
+            table.header(
+                ui,
+                &[
+                    ("span", ""),
+                    ("c m", ""),
+                    ("grow-in", ""),
+                    ("fall-in", ""),
+                    ("nearest m", ""),
+                    ("case, position", ""),
+                    ("fall margin m", ""),
+                    ("case, position", ""),
+                ],
+            );
+            table.rows(ui, rows.len(), None, |c, i| {
+                let r = rows[i];
+                if c.cell(|ui| {
+                    ui.link(format!("{} span {}", r.section, r.span))
+                        .on_hover_text("Go to this span")
+                        .clicked()
+                }) {
+                    go = Some(Selection::Span {
+                        section: r.section.clone(),
+                        span: r.span,
+                    });
+                }
+                let error = c.ui.visuals().error_fg_color;
+                let red = |n: u64| {
+                    let t = egui::RichText::new(n.to_string()).monospace();
+                    if n > 0 { t.color(error) } else { t }
+                };
+                c.cell(|ui| ui.label(format!("{:.2}", r.required)));
+                c.cell(|ui| ui.label(red(r.encroaching)));
+                c.cell(|ui| ui.label(red(r.fall_in)));
+                c.cell(|ui| ui.label(or_dash(r.nearest.map(|v| v.0), 2)));
+                c.cell(|ui| ui.label(r.nearest.map_or("-", |v| report.label(v.1))));
+                c.cell(|ui| ui.label(or_dash(r.worst_fall.map(|v| v.0), 2)));
+                c.cell(|ui| ui.label(r.worst_fall.map_or("-", |v| report.label(v.1))));
+            });
         });
     let worst: usize = report.spans.iter().map(|r| r.worst.len()).sum();
     egui::CollapsingHeader::new(format!("Worst points ({worst})"))

@@ -50,6 +50,7 @@ mod notices;
 mod plugins_ui;
 mod pole_panel;
 mod results_tab;
+mod rows;
 mod section_editor;
 mod start;
 mod style;

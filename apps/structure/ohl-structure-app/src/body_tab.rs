@@ -229,35 +229,46 @@ impl StructureApp {
                 (x.0.as_str(), l)
             })
             .collect();
-        egui::Grid::new("members").striped(true).show(ui, |ui| {
-            for h in [
-                "member",
-                "from",
-                "to",
-                "length [m]",
-                "group",
-                "cross-section",
-                "made by",
-            ] {
-                crate::style::header(ui, h, "");
-            }
-            ui.end_row();
-            for m in t
-                .members
-                .iter()
-                .filter(|m| shown(&self.body.group_filter, m.group.as_deref()))
-            {
-                let h = Handle::Member(m.id.clone());
-                row(ui, &mut self.selected, &mut self.scroll_to, h, &m.id);
-                ui.label(&m.nodes[0]);
-                ui.label(&m.nodes[1]);
-                let l = lengths.get(m.id.as_str()).copied().unwrap_or(0.0);
-                crate::style::num_label(ui, format!("{l:.3}"));
-                ui.label(m.group.as_deref().unwrap_or("—"));
-                ui.label(m.section.as_deref().unwrap_or("—"));
-                ui.label(m.made_by.as_deref().unwrap_or("by hand"));
-                ui.end_row();
-            }
+        // Only the rows in view are drawn (a large lattice has thousands
+        // of members, performance review 2026-10-26); a member picked
+        // elsewhere is brought into view by its place.
+        let members: Vec<_> = t
+            .members
+            .iter()
+            .filter(|m| shown(&self.body.group_filter, m.group.as_deref()))
+            .collect();
+        let target = match &self.scroll_to {
+            Some(Handle::Member(id)) => members.iter().position(|m| &m.id == id),
+            _ => None,
+        };
+        if target.is_some() {
+            self.scroll_to = None;
+        }
+        let mut table = crate::rows::Table::new(ui, "members", 7);
+        table.header(
+            ui,
+            &[
+                ("member", ""),
+                ("from", ""),
+                ("to", ""),
+                ("length [m]", ""),
+                ("group", ""),
+                ("cross-section", ""),
+                ("made by", ""),
+            ],
+        );
+        let selected = &mut self.selected;
+        table.rows(ui, members.len(), target, |c, i| {
+            let m = members[i];
+            let h = Handle::Member(m.id.clone());
+            c.cell(|ui| row(ui, selected, &mut None, h, &m.id));
+            c.cell(|ui| ui.label(&m.nodes[0]));
+            c.cell(|ui| ui.label(&m.nodes[1]));
+            let l = lengths.get(m.id.as_str()).copied().unwrap_or(0.0);
+            c.cell(|ui| crate::style::num_label(ui, format!("{l:.3}")));
+            c.cell(|ui| ui.label(m.group.as_deref().unwrap_or("—")));
+            c.cell(|ui| ui.label(m.section.as_deref().unwrap_or("—")));
+            c.cell(|ui| ui.label(m.made_by.as_deref().unwrap_or("by hand")));
         });
     }
 

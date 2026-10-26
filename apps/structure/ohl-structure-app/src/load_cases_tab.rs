@@ -676,15 +676,14 @@ impl StructureApp {
             self.export_table_dialog();
         }
         let shown = self.loads.shown.clone().filter(|s| !s.is_empty());
-        let rows: Vec<LoadRow> = self
-            .loads
-            .table()
-            .rows
-            .iter()
-            .filter(|r| shown.as_ref().is_none_or(|c| &r.case == c))
-            .cloned()
+        // The rows of the case shown, by place (no copy of the rows: a
+        // large tower's table has thousands); only those in view drawn
+        // (performance review 2026-10-26).
+        let all = &self.loads.table().rows;
+        let rows: Vec<usize> = (0..all.len())
+            .filter(|&k| shown.as_ref().is_none_or(|c| &all[k].case == c))
             .collect();
-        let missing = rows.iter().filter(|r| r.missing.is_some()).count();
+        let missing = rows.iter().filter(|&&k| all[k].missing.is_some()).count();
         let line_names: Vec<String> = self.loads.line_table_names();
         // A line case's source: a load case, or a weather case sent on its
         // own.
@@ -710,136 +709,148 @@ impl StructureApp {
             "{} row(s), {} typed, {missing} without a value — forces in kN, transverse to the \
              right of the line, longitudinal ahead, vertical down",
             rows.len(),
-            rows.iter().filter(|r| r.source == Source::Typed).count(),
+            rows.iter()
+                .filter(|&&k| all[k].source == Source::Typed)
+                .count(),
         ));
         let mut typed: Option<(LoadRow, [f64; 3])> = None;
         let mut cleared: Option<LoadRow> = None;
+        let overrides = &self.loads.overrides;
         egui::ScrollArea::both()
             .id_salt("load-table")
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                egui::Grid::new("load-table-grid")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for (h, tip) in [
-                            ("case", ""),
-                            (
-                                "from",
-                                "line load case / line weather case (sent on its own, factors 1): \
-                                 the line's forces as it computed them; recipe: a case of the \
-                                 structure file",
-                            ),
-                            (
-                                "load",
-                                "The recipe's load: an older load (load 2), or an item of a part \
-                                 (line 1, wind 1, ice 1, point 1); none: a row of its own",
-                            ),
-                            ("at", "point, member (a surface load, its total) or joint"),
-                            ("label", ""),
-                            ("transverse [kN]", "To the right of the line"),
-                            ("longitudinal [kN]", "Ahead"),
-                            ("vertical [kN]", "Down"),
-                            (
-                                "source",
-                                "The part a row comes from: line, wind, ice, point, recipe (an \
-                                 older load's own value) or typed",
-                            ),
-                            (
-                                "area [m²]",
-                                "A surface load: the member's area it acts on (the cross-section \
-                                 library's profile width for the direction × length)",
-                            ),
-                            (
-                                "evaluated [kN]",
-                                "Typed over an evaluated value: the evaluated one",
-                            ),
-                            ("why none / note", ""),
-                            ("", ""),
-                        ] {
-                            ui.strong(readable(h)).on_hover_text(tip);
-                        }
-                        ui.end_row();
-                        for r in &rows {
-                            ui.label(&r.case);
-                            ui.label(if let Some(from) = line_from.get(&r.case) {
-                                *from
-                            } else if line_names.contains(&r.case) {
-                                "line load case"
-                            } else if r.load.is_some() {
-                                "recipe"
-                            } else {
-                                "typed"
-                            });
-                            match r.load {
-                                Some(l) => ui
-                                    .label(ohl_structure_loads::Part::row_name(l))
-                                    .on_hover_text(format!("load {l} in the table's CSV")),
-                                None => ui.label(""),
-                            };
-                            ui.label(r.at.as_str());
-                            ui.label(&r.label);
-                            let mut kn = r.force.map(|x| x / 1000.0);
-                            let mut changed = false;
-                            for v in &mut kn {
-                                changed |= crate::style::field(
+                let mut table = crate::rows::Table::new(ui, "load-table", 13);
+                table.header_cells(ui, |c| {
+                    for (h, tip) in [
+                        ("case", ""),
+                        (
+                            "from",
+                            "line load case / line weather case (sent on its own, factors 1): \
+                             the line's forces as it computed them; recipe: a case of the \
+                             structure file",
+                        ),
+                        (
+                            "load",
+                            "The recipe's load: an older load (load 2), or an item of a part \
+                             (line 1, wind 1, ice 1, point 1); none: a row of its own",
+                        ),
+                        ("at", "point, member (a surface load, its total) or joint"),
+                        ("label", ""),
+                        ("transverse [kN]", "To the right of the line"),
+                        ("longitudinal [kN]", "Ahead"),
+                        ("vertical [kN]", "Down"),
+                        (
+                            "source",
+                            "The part a row comes from: line, wind, ice, point, recipe (an \
+                             older load's own value) or typed",
+                        ),
+                        (
+                            "area [m²]",
+                            "A surface load: the member's area it acts on (the cross-section \
+                             library's profile width for the direction × length)",
+                        ),
+                        (
+                            "evaluated [kN]",
+                            "Typed over an evaluated value: the evaluated one",
+                        ),
+                        ("why none / note", ""),
+                        ("", ""),
+                    ] {
+                        c.cell(|ui| ui.strong(readable(h)).on_hover_text(tip));
+                    }
+                });
+                table.rows(ui, rows.len(), None, |c, i| {
+                    let r = &all[rows[i]];
+                    c.cell(|ui| ui.label(&r.case));
+                    c.cell(|ui| {
+                        ui.label(if let Some(from) = line_from.get(&r.case) {
+                            *from
+                        } else if line_names.contains(&r.case) {
+                            "line load case"
+                        } else if r.load.is_some() {
+                            "recipe"
+                        } else {
+                            "typed"
+                        })
+                    });
+                    c.cell(|ui| match r.load {
+                        Some(l) => ui
+                            .label(ohl_structure_loads::Part::row_name(l))
+                            .on_hover_text(format!("load {l} in the table's CSV")),
+                        None => ui.label(""),
+                    });
+                    c.cell(|ui| ui.label(r.at.as_str()));
+                    c.cell(|ui| ui.label(&r.label));
+                    let mut kn = r.force.map(|x| x / 1000.0);
+                    let mut changed = false;
+                    for v in &mut kn {
+                        changed |= c
+                            .cell(|ui| {
+                                crate::style::field(
                                     ui,
                                     egui::DragValue::new(v).speed(0.01).max_decimals(3),
                                 )
-                                .changed();
-                            }
-                            if changed {
-                                typed = Some((r.clone(), kn.map(|x| x * 1000.0)));
-                            }
-                            let source = egui::RichText::new(if r.missing.is_some() {
-                                "—"
-                            } else {
-                                r.source.as_str()
-                            });
-                            ui.label(if r.source == Source::Typed {
-                                source.color(ui.visuals().warn_fg_color)
-                            } else {
-                                source
-                            });
-                            crate::style::num_label(
-                                ui,
-                                r.area.map_or(String::new(), |a| format!("{a:.4}")),
-                            );
-                            crate::style::num_label(
-                                ui,
-                                r.evaluated.map_or(String::new(), |e| {
-                                    format!(
-                                        "{:.3}; {:.3}; {:.3}",
-                                        e[0] / 1000.0,
-                                        e[1] / 1000.0,
-                                        e[2] / 1000.0
-                                    )
-                                }),
-                            );
-                            match &r.missing {
-                                Some(m) => ui.colored_label(ui.visuals().warn_fg_color, m),
-                                None if r.note.starts_with("incomplete:") => {
-                                    ui.colored_label(INCOMPLETE, &r.note).on_hover_text(
-                                        "A section or jumper at this structure did not solve in \
-                                         this case of the line: its forces are missing, the \
-                                         values are too low",
-                                    )
-                                }
-                                None => ui.label(&r.note),
-                            };
-                            let is_typed = self.loads.overrides.iter().any(|o| o.is_over(r));
-                            if is_typed
-                                && ui
-                                    .small_button("⟲")
-                                    .on_hover_text(
-                                        "Take back the value typed: the evaluated one again",
-                                    )
-                                    .clicked()
-                            {
-                                cleared = Some(r.clone());
-                            }
-                            ui.end_row();
+                            })
+                            .changed();
+                    }
+                    if changed {
+                        typed = Some((r.clone(), kn.map(|x| x * 1000.0)));
+                    }
+                    let source = egui::RichText::new(if r.missing.is_some() {
+                        "—"
+                    } else {
+                        r.source.as_str()
+                    });
+                    c.cell(|ui| {
+                        ui.label(if r.source == Source::Typed {
+                            source.color(ui.visuals().warn_fg_color)
+                        } else {
+                            source
+                        })
+                    });
+                    c.cell(|ui| {
+                        crate::style::num_label(
+                            ui,
+                            r.area.map_or(String::new(), |a| format!("{a:.4}")),
+                        )
+                    });
+                    c.cell(|ui| {
+                        crate::style::num_label(
+                            ui,
+                            r.evaluated.map_or(String::new(), |e| {
+                                format!(
+                                    "{:.3}; {:.3}; {:.3}",
+                                    e[0] / 1000.0,
+                                    e[1] / 1000.0,
+                                    e[2] / 1000.0
+                                )
+                            }),
+                        )
+                    });
+                    c.cell(|ui| match &r.missing {
+                        Some(m) => ui.colored_label(ui.visuals().warn_fg_color, m),
+                        None if r.note.starts_with("incomplete:") => {
+                            ui.colored_label(INCOMPLETE, &r.note).on_hover_text(
+                                "A section or jumper at this structure did not solve in \
+                                 this case of the line: its forces are missing, the \
+                                 values are too low",
+                            )
+                        }
+                        None => ui.label(&r.note),
+                    });
+                    let is_typed = overrides.iter().any(|o| o.is_over(r));
+                    c.cell(|ui| {
+                        if is_typed
+                            && ui
+                                .small_button("⟲")
+                                .on_hover_text("Take back the value typed: the evaluated one again")
+                                .clicked()
+                        {
+                            cleared = Some(r.clone());
                         }
                     });
+                });
             });
         if let Some((r, force)) = typed {
             self.loads.type_value(&r, force);
