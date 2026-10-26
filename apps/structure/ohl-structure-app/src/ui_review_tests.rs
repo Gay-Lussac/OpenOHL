@@ -47,7 +47,7 @@ fn the_window_opens_calmly() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
-/// The units are in the column headers ("x [m]", "Transverse [kN]"), the
+/// The units are in the column headers ("x \[m\]", "Transverse \[kN\]"), the
 /// cells show the bare numbers; a number typed is read as before.
 #[test]
 fn units_are_in_the_column_headers() {

@@ -6,7 +6,7 @@
 //! larger text, scroll bars that always show, value fields that do not
 //! look like buttons (a darker inset fill and a frame), the UI scale
 //! chosen in View › UI scale (kept between runs), and the helpers the
-//! tables share: headers in sentence case with their unit ("x [m]"), the
+//! tables share: headers in sentence case with their unit ("x \[m\]"), the
 //! numbers right-aligned without a unit in every cell.
 
 use eframe::egui;
@@ -99,7 +99,7 @@ pub fn num_label(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::
 }
 
 /// `text` in sentence case: its first letter a capital (the rest kept:
-/// "x [m]" stays as it is, being a symbol).
+/// "x \[m\]" stays as it is, being a symbol).
 pub fn sentence(text: &str) -> String {
     // A one-letter symbol (x, y, z, k), alone or with its unit, stays.
     let symbol = text.chars().nth(1).is_none_or(|s| s == ' ');
