@@ -731,7 +731,6 @@ pub(super) fn menus(
     // choosing a tool closes it.
     crate::menu::options_menu(ui, "Tools", |ui| {
         item(ui, Command::Inventory, out);
-        tools_on_left_checkbox(ui, &mut r.view3d.controls);
         // Theme by theme, a line between them (as the inventory groups them).
         let mut theme = "";
         for t in crate::tools::Tool::ALL {
@@ -750,8 +749,7 @@ pub(super) fn menus(
             if let Some(k) = t.key() {
                 b = b.shortcut_text(k);
             }
-            let help = crate::controls::click_words(t.help(), r.view3d.controls.tools_on_left);
-            if ui.add(b).on_hover_text(help.as_ref()).clicked() {
+            if ui.add(b).on_hover_text(t.help()).clicked() {
                 out.push(Command::Hold(t));
                 ui.close();
             }

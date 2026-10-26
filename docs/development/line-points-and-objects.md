@@ -65,7 +65,7 @@ One idea, **a labelled point on a wire**, on two hosts:
   `Tap::Jumper`).
 - A point is only a place: no mass, no load. It is drawn (a dot), listed,
   selectable in every weather case drawn, and placed with the span tool
-  (a right-click on a span or a jumper, where clicked).
+  (a click on a span or a jumper, where clicked).
 - Solved: a node of the wire there (as span points now; on a jumper a
   node of its rod model), its position per weather case reported.
 - Deleting a point lists and deletes what is on it (objects, spacers,
@@ -166,7 +166,7 @@ A jumper end (`from` or `to`) becomes either, as now, **a section end**
 - **Span tool** (Add on span): on a span or on a jumper, where clicked —
   a point only, or a point with an object chosen from the library
   (regular spacing makes several).
-- **Add jumper**: right-click a section end (as now) or a point holding a
+- **Add jumper**: click a section end (as now) or a point holding a
   clamp object (on a span or a jumper), then the other end; a point
   without a clamp offers to put one there.
 - **Tables:** *Points* (host, label, place, objects on it), *Objects*

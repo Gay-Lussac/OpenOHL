@@ -81,7 +81,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             title: "An alignment",
             done: !line.alignments.is_empty(),
             detail: if line.alignments.is_empty() {
-                "right-click its points in order with New alignment, Enter to make it".into()
+                "click its points in order with New alignment, Enter to make it".into()
             } else {
                 count(line.alignments.len(), "alignment", "alignments")
             },
@@ -158,7 +158,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             title: "Wires strung",
             done: !line.sections.is_empty(),
             detail: if line.sections.is_empty() {
-                "right-click the strings in line order with String wire, Enter".into()
+                "click the strings in line order with String wire, Enter".into()
             } else {
                 count(line.sections.len(), "section", "sections")
             },
@@ -170,7 +170,7 @@ pub fn steps(model: &Model, rules: bool) -> Vec<Step> {
             title: "Jumpers",
             done: !line.jumpers.is_empty(),
             detail: if line.jumpers.is_empty() {
-                "where sections end on a strain structure: right-click it with Add jumper".into()
+                "where sections end on a strain structure: click it with Add jumper".into()
             } else {
                 count(line.jumpers.len(), "jumper", "jumpers")
             },

@@ -110,13 +110,14 @@ impl TabViewer for Viewer<'_> {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+        let tab_rect = ui.max_rect();
         let r = &mut *self.ready;
         let before = r.selection.clone();
         let snaps = r.effective_snaps();
-        // Which click selects and which uses the held tool (option "Tools
-        // act on left-click", kept with the 3D view's controls).
+        // Which click selects and which uses the held tool (by the tool
+        // held, [`crate::controls::click_buttons`]).
         let select_held = r.hotbar.tool() == crate::tools::Tool::Select;
-        let buttons = crate::controls::click_buttons(r.view3d.controls.tools_on_left, select_held);
+        let buttons = crate::controls::click_buttons(select_held);
         let _timed = crate::perf::span(match tab {
             Tab::View3d => "tab 3d",
             Tab::Plan => "tab plan",
@@ -143,6 +144,7 @@ impl TabViewer for Viewer<'_> {
         let used = match tab {
             Tab::View3d => {
                 r.view3d.measuring = measuring;
+                r.view3d.move_held = r.hotbar.tool() == crate::tools::Tool::Move;
                 r.view3d.user_measure = overlay;
                 r.view3d.link = r.link_overlay();
                 let used = r.view3d.ui(
@@ -183,8 +185,9 @@ impl TabViewer for Viewer<'_> {
                 )
             }
             Tab::Profile => {
-                // Right-click: "Cross-section here" while Select is held.
-                r.profile.cut_menu = select_held;
+                // Right-click: "Cross-section here" is in the object's
+                // menu (the app's, [`ContextMenu`]).
+                r.profile.cut_menu = false;
                 r.profile.vegetation_layers = [
                     r.visible.contains(&Layer::GrowIn),
                     r.visible.contains(&Layer::FallIn),
@@ -434,7 +437,7 @@ impl TabViewer for Viewer<'_> {
         if let Some((structure, member)) = r.view3d.picked_member.take() {
             r.select_member(&structure, &member);
         }
-        // A right-click uses the held tool on what is there.
+        // A tool click uses the held tool on what is there.
         // What the cursor is on in this page's view, for the measuring
         // tools.
         let hovered = match tab {
@@ -458,6 +461,39 @@ impl TabViewer for Viewer<'_> {
         }
         if let Some(target) = used {
             r.use_tool(target);
+        }
+        // A right-click in a view: it selected what is there (with Select
+        // held, as its tool use above); its menu opens on it (owner:
+        // OHL-Design UI review, 2026-10-26).
+        let view = matches!(
+            tab,
+            Tab::View3d | Tab::Plan | Tab::Profile | Tab::CrossSection(_)
+        );
+        if view && !r.view3d.captured && !r.captured_before {
+            let click = ui.input(|i| {
+                i.pointer
+                    .button_clicked(egui::PointerButton::Secondary)
+                    .then(|| i.pointer.interact_pos())
+                    .flatten()
+            });
+            // In this page, not on a window over it.
+            let here = |p: &egui::Pos2| {
+                tab_rect.contains(*p) && ui.ctx().layer_id_at(*p) == Some(ui.layer_id())
+            };
+            if let Some(at) = click.filter(here) {
+                let cut = if *tab == Tab::Profile {
+                    r.profile.cut_at()
+                } else {
+                    None
+                };
+                r.context_menu =
+                    (r.selection != Selection::None || cut.is_some()).then(|| super::ContextMenu {
+                        at,
+                        target: r.selection.clone(),
+                        cut,
+                        opened: ui.ctx().cumulative_frame_nr(),
+                    });
+            }
         }
         // The profile's "Cross-section here".
         if let Some((alignment, station)) = r.profile.cut_request.take() {

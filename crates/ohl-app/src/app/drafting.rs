@@ -40,13 +40,13 @@ impl Ready {
         }
         let text = if self.reroute {
             format!(
-                "Edit alignment: from {} through {} new point(s) — right-click the next, or another point of the alignment to join it there; Enter at an end: add them there; Backspace: undo a point, Escape: cancel",
+                "Edit alignment: from {} through {} new point(s) — click the next, or another point of the alignment to join it there; Enter at an end: add them there; Backspace: undo a point, Escape: cancel",
                 self.new_alignment.first().map_or("", |p| p.id.as_str()),
                 self.new_alignment.len().saturating_sub(1)
             )
         } else {
             format!(
-                "New alignment: {} points — right-click the next (an alignment point: a junction), Enter: create, Backspace: undo a point, Escape: cancel",
+                "New alignment: {} points — click the next (an alignment point: a junction), Enter: create, Backspace: undo a point, Escape: cancel",
                 self.new_alignment.len()
             )
         };
@@ -88,7 +88,7 @@ impl Ready {
                     // It starts on a point of an alignment.
                     if p.id.is_empty() || stored.point_alignments(&p.id).is_empty() {
                         self.status = Some((
-                            "Edit alignment: right-click a point of an alignment first".into(),
+                            "Edit alignment: click a point of an alignment first".into(),
                             true,
                         ));
                         return;
@@ -198,7 +198,7 @@ impl Ready {
     /// when there is none).
     pub fn finish_new_alignment(&mut self) {
         if self.new_alignment.is_empty() {
-            self.status = Some(("New alignment: right-click its first point".into(), true));
+            self.status = Some(("New alignment: click its first point".into(), true));
             return;
         }
         let points = std::mem::take(&mut self.new_alignment);
@@ -289,7 +289,7 @@ impl Ready {
     pub fn finish_chain(&mut self) {
         use crate::editors::{Form, SectionForm};
         if self.chain.len() < 2 {
-            self.status = Some(("String wire: right-click two strings or more".into(), true));
+            self.status = Some(("String wire: click two strings or more".into(), true));
             return;
         }
         let points = std::mem::take(&mut self.chain);

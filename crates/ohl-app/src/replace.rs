@@ -7,7 +7,7 @@
 //! same place and orientation, keeping its id
 //! ([`ohl_session::Command::ReplaceStructure`]).
 //!
-//! The Replace structure tool (right-click a structure), the structure's
+//! The Replace structure tool (click a structure), the structure's
 //! Properties (Replace…) and the Structures table (right-click a row's ⤴)
 //! open the structure picker ([`crate::structure_picker::Picker`]). Once
 //! a type is chosen:

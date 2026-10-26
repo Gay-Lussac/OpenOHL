@@ -413,9 +413,11 @@ fn the_start_page_shows_the_mark() {
     }
 }
 
-/// Choosing a slot only holds the tool; a right-click uses it.
+/// Choosing a slot only holds the tool; a left-click uses it, a
+/// right-click selects (owner: OHL-Design UI review, 2026-10-26). In
+/// first person: at the crosshair, the capturing press doing neither.
 #[test]
-fn tools_act_on_a_right_click_only() {
+fn tools_act_on_a_left_click() {
     use crate::tools::Tool;
     if ohl_render::headless_device().is_err() {
         assert!(
@@ -424,7 +426,7 @@ fn tools_act_on_a_right_click_only() {
         );
         return;
     }
-    let model = synthetic_project("right-click");
+    let model = synthetic_project("left-click");
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .wgpu()
@@ -438,7 +440,7 @@ fn tools_act_on_a_right_click_only() {
         assert!(r.goto.is_none());
     }
     // First person, crosshair on T3's first insulator point, Move held:
-    // a left click selects, a right-click opens the Move window.
+    // a right-click selects, a left-click opens the Move window.
     harness.state_mut().ready().unwrap().view3d.controls =
         crate::controls::Controls::by_name("minecraft").unwrap();
     press(&mut harness, egui::Key::M, egui::Modifiers::NONE);
@@ -463,18 +465,20 @@ fn tools_act_on_a_right_click_only() {
     {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.view3d.captured);
+        assert!(r.move_dialog.is_none(), "the capturing press uses no tool");
         let p = r.model.line.structure("T3").unwrap().points[0].position;
         let cam = r.view3d.camera.as_mut().unwrap();
         cam.target = p;
         cam.distance = 80.0;
     }
-    click(&mut harness, egui::PointerButton::Primary);
+    click(&mut harness, egui::PointerButton::Secondary);
     {
         let r = harness.state_mut().ready().unwrap();
         assert_eq!(r.selection, Selection::Structure("T3".into()));
-        assert!(r.move_dialog.is_none(), "a left click only selects");
+        assert!(r.move_dialog.is_none(), "a right-click only selects");
+        assert!(r.context_menu.is_none(), "no menu while the mouse is held");
     }
-    click(&mut harness, egui::PointerButton::Secondary);
+    click(&mut harness, egui::PointerButton::Primary);
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
@@ -484,13 +488,17 @@ fn tools_act_on_a_right_click_only() {
         assert_eq!(r.popup_at, r.view3d.rect.unwrap().center());
     }
     press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
-    assert!(harness.state_mut().ready().unwrap().move_dialog.is_none());
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.move_dialog.is_none());
+        assert_eq!(r.hotbar.tool(), Tool::Move, "Escape closed the window only");
+    }
     // Delete held, first person again: the confirmation opens with the
     // mouse freed; Escape then cancels the deletion, nothing else.
     press(&mut harness, egui::Key::Num3, egui::Modifiers::NONE);
     click(&mut harness, egui::PointerButton::Primary); // captures again
     assert!(harness.state_mut().ready().unwrap().view3d.captured);
-    click(&mut harness, egui::PointerButton::Secondary);
+    click(&mut harness, egui::PointerButton::Primary);
     harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
@@ -518,14 +526,16 @@ pub(super) fn click_at(h: &mut Harness<'_, App>, at: egui::Pos2, button: egui::P
     h.run();
 }
 
-/// Option "Tools act on left-click" in the plan: on, a left-click uses the
-/// tool held and a right-click selects (Select held: a left-click
-/// selects); off, as before. A drag still pans with either setting.
+/// In the plan (owner: OHL-Design UI review, 2026-10-26): a tool held, a
+/// left-click uses it; Select held, a left-click selects; a right-click
+/// selects and opens the object's menu (Properties, Edit…, Delete…, Zoom
+/// to, its tools), closed by Escape; Escape again holds Select. A drag
+/// still pans.
 #[test]
-fn tools_act_on_left_click_with_the_option() {
+fn a_left_click_acts_a_right_click_opens_the_menu() {
     use crate::tools::Tool;
     use egui::PointerButton::{Primary, Secondary};
-    let model = synthetic_project("left-click");
+    let model = synthetic_project("left-click-plan");
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .build_eframe(|_| App::with_model(model, None));
@@ -543,23 +553,16 @@ fn tools_act_on_left_click_with_the_option() {
     let reset = |h: &mut Harness<'_, App>| {
         let r = h.state_mut().ready().unwrap();
         r.move_dialog = None;
+        r.context_menu = None;
         r.selection = Selection::None;
         h.run();
     };
-    // Off (the default): a left-click selects, a right-click moves.
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.hotbar.tool(), Tool::Move);
-        assert!(!r.view3d.controls.tools_on_left, "off by default");
-    }
+    // Move held: a left-click moves.
+    assert_eq!(
+        harness.state_mut().ready().unwrap().hotbar.tool(),
+        Tool::Move
+    );
     click_at(&mut harness, at, Primary);
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.selection, Selection::Structure("T3".into()));
-        assert!(r.move_dialog.is_none(), "a left click only selects");
-    }
-    reset(&mut harness);
-    click_at(&mut harness, at, Secondary);
     assert_eq!(
         harness
             .state_mut()
@@ -571,51 +574,67 @@ fn tools_act_on_left_click_with_the_option() {
         Some("T3")
     );
     reset(&mut harness);
-    // On, ticked in the Tools menu (which stays open on the tick).
-    harness.get_by_label("Tools").click();
-    harness.run();
-    harness.get_by_label("Tools act on left-click").click();
-    harness.run();
-    assert!(
-        harness
-            .state_mut()
-            .ready()
-            .unwrap()
-            .view3d
-            .controls
-            .tools_on_left
-    );
-    harness.get_by_label("Tools act on left-click");
-    harness.key_press(egui::Key::Escape);
-    harness.run();
-    reset(&mut harness);
-    click_at(&mut harness, at, Primary);
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
-    }
-    reset(&mut harness);
+    // A right-click selects and opens the menu; no tool used.
     click_at(&mut harness, at, Secondary);
+    harness.run();
     {
         let r = harness.state_mut().ready().unwrap();
         assert_eq!(r.selection, Selection::Structure("T3".into()));
-        assert!(r.move_dialog.is_none(), "a right-click only selects");
+        assert!(r.move_dialog.is_none(), "a right-click uses no tool");
+        assert_eq!(
+            r.context_menu.as_ref().map(|m| m.target.clone()),
+            Some(Selection::Structure("T3".into()))
+        );
     }
-    reset(&mut harness);
-    // Select held: a left-click selects (as always).
+    for item in ["Properties", "Zoom to", "Edit…", "Move…", "Delete…"] {
+        assert!(harness.query_all_by_label(item).next().is_some(), "{item}");
+    }
+    // Escape closes the menu; the tool stays.
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.context_menu.is_none());
+        assert_eq!(r.hotbar.tool(), Tool::Move);
+    }
+    // A choice of the menu: Move… on T3 (the tool held before kept).
     harness
         .state_mut()
         .ready()
         .unwrap()
         .hotbar
         .hold(Tool::Select);
+    click_at(&mut harness, at, Secondary);
     harness.run();
+    harness.get_by_label("Move…").click();
+    harness.run();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
+        assert!(r.context_menu.is_none());
+        assert_eq!(r.hotbar.tool(), Tool::Select, "Select held again");
+    }
+    reset(&mut harness);
+    // Select held: a left-click selects (and moves nothing).
     click_at(&mut harness, at, Primary);
     {
         let r = harness.state_mut().ready().unwrap();
         assert_eq!(r.selection, Selection::Structure("T3".into()));
         assert!(r.move_dialog.is_none());
+        assert!(r.context_menu.is_none());
     }
+    // Escape: back to Select from another tool.
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .hotbar
+        .hold(Tool::Delete);
+    harness.run();
+    press(&mut harness, egui::Key::Escape, egui::Modifiers::NONE);
+    assert_eq!(
+        harness.state_mut().ready().unwrap().hotbar.tool(),
+        Tool::Select
+    );
     // A left drag still pans (no tool used).
     harness.state_mut().ready().unwrap().hotbar.hold(Tool::Move);
     reset(&mut harness);
@@ -647,110 +666,21 @@ fn tools_act_on_left_click_with_the_option() {
     assert!(r.move_dialog.is_none(), "a drag is no click");
 }
 
-/// The option in the first-person 3D view: captured, a left-click uses the
-/// tool at the crosshair and a right-click selects; the press that
-/// captures the mouse does neither.
+/// The click rows of Help › Controls; every drag keeps its action.
 #[test]
-fn tools_act_on_left_click_in_first_person() {
-    use crate::tools::Tool;
-    use egui::PointerButton::{Primary, Secondary};
-    if ohl_render::headless_device().is_err() {
-        assert!(
-            ohl_core::env::var_os("OHL_REQUIRE_GPU_TESTS").is_none(),
-            "no GPU"
-        );
-        return;
-    }
-    let model = synthetic_project("left-click-3d");
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, 900.0))
-        .wgpu()
-        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
-    harness.run();
-    {
-        let r = harness.state_mut().ready().unwrap();
-        r.view3d.controls = crate::controls::Controls::by_name("minecraft").unwrap();
-        r.view3d.controls.tools_on_left = true;
-    }
-    press(&mut harness, egui::Key::M, egui::Modifiers::NONE);
-    let at = egui::pos2(620.0, 300.0);
-    click_at(&mut harness, at, Primary); // captures
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert!(r.view3d.captured);
-        assert!(r.move_dialog.is_none(), "the capturing press uses no tool");
-        assert_eq!(r.hotbar.tool(), Tool::Move);
-        let p = r.model.line.structure("T3").unwrap().points[0].position;
-        let cam = r.view3d.camera.as_mut().unwrap();
-        cam.target = p;
-        cam.distance = 80.0;
-    }
-    click_at(&mut harness, at, Secondary);
-    {
-        let r = harness.state_mut().ready().unwrap();
-        assert_eq!(r.selection, Selection::Structure("T3".into()));
-        assert!(r.move_dialog.is_none(), "a right-click only selects");
-    }
-    click_at(&mut harness, at, Primary);
-    harness.run();
-    let r = harness.state_mut().ready().unwrap();
-    assert_eq!(r.move_dialog.as_ref().map(|d| d.id.as_str()), Some("T3"));
-    assert!(!r.view3d.captured, "the window frees the mouse");
-}
-
-/// The click rows of Help › Controls follow the option; every drag keeps
-/// its action; the option is saved and read back with the preferences.
-#[test]
-fn the_click_option_is_listed_and_remembered() {
+fn the_clicks_are_listed() {
     use crate::controls::{Controls, click_buttons, click_rows};
-    use egui::PointerButton::{Middle, Primary, Secondary};
-    assert_eq!(click_buttons(false, false), (Primary, Secondary));
-    assert_eq!(click_buttons(true, false), (Secondary, Primary));
-    assert_eq!(
-        click_buttons(true, true),
-        (Primary, Secondary),
-        "Select held"
-    );
-    assert_eq!(click_rows(false)[0], ("left-click".into(), "select".into()));
-    assert_eq!(click_rows(true)[1], ("right-click".into(), "select".into()));
-    // Every drag binding is the same with the option (no gesture lost or
-    // doubled): only the clicks move.
-    for mut c in Controls::presets() {
-        let drags = |c: &Controls| [Primary, Secondary, Middle].map(|b| c.drag(b));
-        let off = drags(&c);
-        c.tools_on_left = true;
-        assert_eq!(drags(&c), off, "{}", c.name);
+    use egui::PointerButton::{Primary, Secondary};
+    assert_eq!(click_buttons(true), (Primary, Secondary), "Select held");
+    assert_eq!(click_buttons(false), (Secondary, Primary));
+    assert_eq!(click_rows()[0].0, "left-click");
+    assert!(click_rows()[1].1.contains("menu"));
+    for c in Controls::presets() {
         let rows = c.describe();
         let has = |k: &str| rows.iter().any(|(key, _)| key.contains(k));
         assert!(has("left drag") && has("right drag") && has("middle drag"));
-        assert!(has("right double-click"), "{}: {rows:?}", c.name);
+        assert!(has("double-click"), "{}: {rows:?}", c.name);
     }
-    #[derive(Default)]
-    struct Store(std::collections::HashMap<String, String>);
-    impl eframe::Storage for Store {
-        fn get_string(&self, key: &str) -> Option<String> {
-            self.0.get(key).cloned()
-        }
-        fn set_string(&mut self, key: &str, value: String) {
-            self.0.insert(key.into(), value);
-        }
-        fn remove_string(&mut self, key: &str) {
-            self.0.remove(key);
-        }
-        fn flush(&mut self) {}
-    }
-    let mut store = Store::default();
-    assert!(
-        !Controls::load_tools_on_left(&store),
-        "off when never saved"
-    );
-    let c = Controls {
-        tools_on_left: true,
-        ..Controls::default()
-    };
-    c.save(&mut store);
-    assert!(Controls::load_tools_on_left(&store));
-    assert!(Controls::load(&store).unwrap().tools_on_left);
 }
 
 /// First person, the Edit tool on a structure: its page (or structure

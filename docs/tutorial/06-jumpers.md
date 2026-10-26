@@ -7,8 +7,8 @@
 1. Hold **Add jumper**. It is not in the hotbar at first: click **Hold
    Add jumper** on the Next steps page, or choose it in **Tools**, or
    press **E** and drag it from the inventory onto a slot.
-2. Right-click the structure **T4** (its body, not a string).
-3. The status bar says *added 3 jumpers at T4*. Right-click T1 or T6:
+2. Click the structure **T4** (its body, not a string).
+3. The status bar says *added 3 jumpers at T4*. Click T1 or T6:
    *none missing* — a section ends there with nothing to join.
 4. Left-click one of the new jumpers (the loop of wire under T4's
    crossarm) and look at the **Properties** page.
@@ -24,7 +24,7 @@ weather case. **Sections › Jumpers table** lists the three.
 **What just happened:** at a structure the tool joins the section ends
 of the same **circuit** and **phase** (that is why each section got C1
 and L1, L2 or L3 in chapter 5) — two ends of the same phase, one jumper.
-Two right-clicks on strings instead join exactly those two. A jumper is
+Two clicks on strings instead join exactly those two. A jumper is
 solved as a wire of its own, from clamp to clamp, with its bending
 stiffness estimated from its wire type; the sections carry an estimate
 of its load at their clamps (Criteria › Calculation options… chooses).

@@ -88,11 +88,11 @@ pub enum Selection {
     SurveyPoint(usize),
 }
 
-/// A right-click in a view: what is there, and the point on the ground
+/// A click in a view: what is there, and the point on the ground
 /// under it (when the view knows one).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Use {
-    /// The object right-clicked (or nothing).
+    /// The object clicked (or nothing).
     pub target: Selection,
     /// The ground under the pointer (the crosshair in first person).
     pub at: Option<[f64; 3]>,

@@ -12,7 +12,7 @@ fourth.
    now held; the status bar says so.
 3. Bring the **Plan** page to the front (its tab, next to 3D): the
    ground seen from above, north up. Scroll to zoom, drag to move.
-4. Right-click the ground at each of these points, in this order:
+4. Click the ground at each of these points, in this order:
 
    | Point | E (m) | N (m) |
    |---|---|---|
@@ -24,7 +24,7 @@ fourth.
    | 6 | 1000 | 200 |
 
    Each lies on a survey point of the ground (they are 20 m apart). A
-   right-click on a survey point takes its place and height at once.
+   click on a survey point takes its place and height at once.
    Elsewhere the window **Point coordinates** opens with the place you
    clicked and the ground's height there: type E and N from the table,
    keep the height, click **Add the point**.

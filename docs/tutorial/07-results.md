@@ -18,7 +18,7 @@ the sags and tensions in the properties and the tables.
    maximum tension, its sag and its lowest point.
 5. **Sections › Sections table**: one row per section, with **H kN** and
    **max sag m** in the weather cases shown.
-6. Hold **Edit** and right-click the same span: its section's window.
+6. Hold **Edit** and click the same span: its section's window.
    Open **Sagging** for the crew's table (sags per span and temperature).
    Click **Cancel**.
 

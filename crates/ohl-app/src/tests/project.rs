@@ -891,8 +891,9 @@ fn command_s_saves_and_the_hotbar_goes_with_the_3d_view() {
         assert!(!error);
     }
     let hotbar_shown = |h: &Harness<'_, App>| {
-        h.query_by_label("Select — right-click an object to select it · 1–9 or wheel (captured) · E: inventory (arrange)").is_some()
-        || h.query_all_by_label_contains("E: inventory").next().is_some()
+        h.query_all_by_label_contains("E: inventory")
+            .next()
+            .is_some()
     };
     harness.state_mut().show_tab(crate::app::Tab::View3d);
     harness.run();

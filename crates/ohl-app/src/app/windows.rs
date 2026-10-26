@@ -451,7 +451,7 @@ pub(super) fn first_steps_window(ctx: &egui::Context, r: &mut Ready) {
             ui.label(egui::RichText::new("2. Its alignment").strong());
             ui.label(
                 egui::RichText::new(
-                    "Then draw its alignment: the New alignment tool is held — right-click its \
+                    "Then draw its alignment: the New alignment tool is held — click its \
                      points in order (a survey point, or coordinates typed), Enter to make it.",
                 )
                 .small(),
@@ -481,7 +481,7 @@ pub(super) fn first_steps_window(ctx: &egui::Context, r: &mut Ready) {
                     r.hotbar.hold(crate::tools::Tool::NewAlignment);
                     r.status = Some((
                         format!(
-                            "Route {} made. Step 2, its alignment: right-click its points in \
+                            "Route {} made. Step 2, its alignment: click its points in \
                              order, Enter to make it",
                             name.trim()
                         ),
@@ -665,13 +665,8 @@ fn measuring_frame(ctx: &egui::Context, r: &mut Ready) {
         String::new()
     };
     let before = r.model.section_display.clone();
-    r.measuring.window(
-        ctx,
-        r.view3d.controls.tools_on_left,
-        &mut r.model.section_display,
-        &user,
-        &|| time.clone(),
-    );
+    r.measuring
+        .window(ctx, &mut r.model.section_display, &user, &|| time.clone());
     if r.model.section_display != before {
         r.refresh_views();
         // Others' shown or hidden: drawn from this frame.
@@ -724,13 +719,7 @@ pub(super) fn tool_windows(
             (false, _, Some(c)) => c.center_bottom(),
             _ => ctx.content_rect().center_bottom(),
         };
-        crate::tools::hotbar_ui(
-            ctx,
-            &mut r.hotbar,
-            at,
-            r.inventory,
-            r.view3d.controls.tools_on_left,
-        );
+        crate::tools::hotbar_ui(ctx, &mut r.hotbar, at, r.inventory);
     }
     crate::tools::inventory_ui(ctx, &mut r.inventory, &mut r.hotbar);
     goto_window(ctx, r);
@@ -958,19 +947,225 @@ impl ControlsPage {
     }
 }
 
-/// The option "Tools act on left-click" (Tools menu, Help › Controls):
-/// kept with the 3D view's controls, saved with the preferences.
-pub(super) fn tools_on_left_checkbox(ui: &mut egui::Ui, c: &mut crate::controls::Controls) {
-    if ui
-        .checkbox(&mut c.tools_on_left, "Tools act on left-click")
-        .on_hover_text(
-            "On: a left-click uses the tool held (Select held: it selects) and a \
-             right-click selects. Off (default): a left-click selects, a right-click uses \
-             the tool. Drags (orbit, look, pan) are not affected.",
-        )
-        .changed()
+/// What a right-click's menu offers on `target` (besides Properties, Zoom
+/// to and Delete…): the tools that apply, by their names in the menu;
+/// `true`: the tool stays held after (a tool of several clicks).
+pub(crate) fn menu_tools(target: &Selection) -> Vec<(crate::tools::Tool, &'static str, bool)> {
+    use crate::tools::Tool;
+    match target {
+        Selection::Structure(_) => vec![
+            (Tool::Edit, "Edit…", false),
+            (Tool::Move, "Move…", false),
+            (Tool::Replace, "Replace structure…", false),
+            (Tool::AddString, "Add string…", false),
+            (Tool::AddJumper, "Add jumper", true),
+        ],
+        Selection::Span { .. } => vec![
+            (Tool::Edit, "Edit…", false),
+            (Tool::OnSpan, "Point or load on the span…", false),
+            (Tool::MeasureClearance, "Measure the clearance", true),
+        ],
+        Selection::Jumper(_) => vec![
+            (Tool::Edit, "Edit…", false),
+            (Tool::OnSpan, "Point on the jumper…", false),
+        ],
+        Selection::Attachment { .. } | Selection::String { .. } => vec![
+            (Tool::Edit, "Edit…", false),
+            (Tool::AddString, "Add string…", false),
+        ],
+        Selection::Point { .. } => vec![
+            (Tool::AddString, "Add string…", false),
+            (Tool::Link, "Link to a joint…", true),
+        ],
+        Selection::AlignmentPoint { .. } => vec![
+            (Tool::Edit, "Edit…", false),
+            (Tool::AddStructure, "Add structure here…", false),
+        ],
+        Selection::SpanPoint { .. }
+        | Selection::Spread { .. }
+        | Selection::Spacer(_)
+        | Selection::JumperPoint { .. } => vec![(Tool::Edit, "Edit…", false)],
+        Selection::LidarPoint(_) | Selection::SurveyPoint(_) => {
+            vec![(Tool::AddAlignment, "Add alignment point here…", false)]
+        }
+        Selection::None => Vec::new(),
+    }
+}
+
+/// The menu a right-click in a view opened ([`ContextMenu`]): at the
+/// click, on what it selected; closed by a choice, a click elsewhere or
+/// Escape.
+pub(super) fn context_menu_window(ctx: &egui::Context, r: &mut Ready) {
+    use crate::tools::Tool;
+    let Some(menu) = r.context_menu.clone() else {
+        return;
+    };
+    // (Selected again elsewhere meanwhile: it closes.)
+    if menu.target != Selection::None && r.selection != menu.target {
+        r.context_menu = None;
+        return;
+    }
+    let editable = r.model.can_edit().is_ok();
+    let held = r.hotbar.tool();
+    enum Choice {
+        Properties,
+        ZoomTo,
+        Tool(Tool, bool),
+        Cut(String),
+        ProfileCut(String, f64),
+    }
+    let mut choice: Option<Choice> = None;
+    let area = egui::Area::new(egui::Id::new("view-context-menu"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(menu.at)
+        .constrain(true)
+        .show(ctx, |ui| {
+            egui::Frame::menu(ui.style()).show(ui, |ui| {
+                ui.set_min_width(180.0);
+                if menu.target != Selection::None {
+                    ui.label(egui::RichText::new(menu.target.describe()).strong());
+                    ui.separator();
+                    if ui.button("Properties").clicked() {
+                        choice = Some(Choice::Properties);
+                    }
+                    if ui
+                        .button("Zoom to")
+                        .on_hover_text("The 3D view and the plan brought to it")
+                        .clicked()
+                    {
+                        choice = Some(Choice::ZoomTo);
+                    }
+                    let tools = menu_tools(&menu.target);
+                    if !tools.is_empty() {
+                        ui.separator();
+                    }
+                    for (tool, name, keep) in tools {
+                        let b = egui::Button::new((tool.image(ui.ctx(), 16.0), name))
+                            .image_tint_follows_text_color(true);
+                        if ui
+                            .add_enabled(editable || !tool.edits(), b)
+                            .on_hover_text(tool.help())
+                            .clicked()
+                        {
+                            choice = Some(Choice::Tool(tool, keep));
+                        }
+                    }
+                    // The tool held, when it is not listed: used on it.
+                    if held != Tool::Select
+                        && !menu_tools(&menu.target).iter().any(|(t, _, _)| *t == held)
+                        && held != Tool::Delete
+                        && ui
+                            .add_enabled(
+                                editable || !held.edits(),
+                                egui::Button::new(format!("Use {} on it", held.name())),
+                            )
+                            .clicked()
+                    {
+                        choice = Some(Choice::Tool(held, true));
+                    }
+                    if let Selection::Structure(id) = &menu.target
+                        && ui
+                            .button("Cross-section here")
+                            .on_hover_text("A cut across the line at this structure, in a tab")
+                            .clicked()
+                    {
+                        choice = Some(Choice::Cut(id.clone()));
+                    }
+                }
+                if let Some((alignment, station)) = &menu.cut
+                    && ui
+                        .button(format!(
+                            "Cross-section here (station {})",
+                            ohl_drawing::format_station(*station)
+                        ))
+                        .on_hover_text(
+                            "A cut across the line at this station, perpendicular to the \
+                             alignment, in a tab of its own (C: the window)",
+                        )
+                        .clicked()
+                {
+                    choice = Some(Choice::ProfileCut(alignment.clone(), *station));
+                }
+                if menu.target != Selection::None {
+                    ui.separator();
+                    if ui
+                        .add_enabled(editable, egui::Button::new("Delete…"))
+                        .on_hover_text(Tool::Delete.help())
+                        .clicked()
+                    {
+                        choice = Some(Choice::Tool(Tool::Delete, false));
+                    }
+                }
+            });
+        });
+    let now = ctx.cumulative_frame_nr();
+    let outside = now > menu.opened
+        && ctx.input(|i| {
+            i.pointer.any_pressed()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| !area.response.rect.contains(p))
+        });
+    let escape = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    if choice.is_some() || outside || escape {
+        r.context_menu = None;
+    }
+    let target = menu.target.clone();
+    match choice {
+        Some(Choice::Properties) => r.open_page = Some((Tab::Properties, None)),
+        Some(Choice::ZoomTo) => r.go_to(target),
+        Some(Choice::Tool(tool, keep)) => r.use_tool_as(tool, target, keep),
+        Some(Choice::Cut(id)) => r.cross_section_at(&id),
+        Some(Choice::ProfileCut(alignment, station)) => {
+            r.profile.cut_request = Some((alignment, station));
+        }
+        None => {}
+    }
+}
+
+/// Whether Escape has something else to give up now (a window, a step of
+/// a tool, a drag, a menu, the mouse held by the 3D view): taken when the
+/// frame begins, before those close on it.
+pub(super) fn escape_busy(ctx: &egui::Context, r: &Ready) -> bool {
+    r.view3d.captured
+        || r.goto.is_some()
+        || r.coord_dialog.is_some()
+        || r.route_choice.is_some()
+        || r.move_dialog.is_some()
+        || r.point_delete.is_some()
+        || r.spread_delete.is_some()
+        || r.confirm.is_some()
+        || r.replace.is_some()
+        || r.editor.is_some()
+        || r.display_window.is_some()
+        || r.lines_window.is_some()
+        || r.first_steps.is_some()
+        || r.inventory
+        || r.context_menu.is_some()
+        || !r.chain.is_empty()
+        || !r.new_alignment.is_empty()
+        || r.jumper_from.is_some()
+        || r.jumper_tap.is_some()
+        || r.link_from.is_some()
+        || r.spacer_from.is_some()
+        || !r.measuring.picks.is_empty()
+        || r.view3d.handles.drag.is_some()
+        || r.view3d.area.is_some()
+        || egui::Popup::is_any_open(ctx)
+}
+
+/// Escape with nothing else to give up ([`escape_busy`] when the frame
+/// began; no field typed in): back to the Select tool (owner: OHL-Design
+/// UI review, 2026-10-26).
+pub(super) fn escape_to_select(ctx: &egui::Context, r: &mut Ready) {
+    if r.escape_busy || r.captured_before || ctx.egui_wants_keyboard_input() {
+        return;
+    }
+    if r.hotbar.tool() != crate::tools::Tool::Select
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
-        log::info!("controls: tools act on left-click {}", c.tools_on_left);
+        r.hotbar.hold(crate::tools::Tool::Select);
+        r.status = Some(("Select".into(), false));
     }
 }
 
@@ -998,14 +1193,8 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
-            tools_on_left_checkbox(ui, &mut r.view3d.controls);
-            ui.separator();
-            let clicks = crate::controls::click_rows(r.view3d.controls.tools_on_left);
-            let select_double = if r.view3d.controls.tools_on_left {
-                "right double-click"
-            } else {
-                "double-click"
-            };
+            let clicks = crate::controls::click_rows();
+            let select_double = "double-click (Select held)";
             match page {
                 ControlsPage::View3d => {
                     let c = &mut r.view3d.controls;
@@ -1017,11 +1206,10 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                                 for p in crate::controls::Controls::presets() {
                                     if ui.selectable_label(c.name == p.name, p.name).clicked() {
                                         log::info!("controls: {}", p.name);
-                                        // Keep the chosen speed and click option.
-                                        let (speed, left) = (c.speed, c.tools_on_left);
+                                        // Keep the chosen speed.
+                                        let speed = c.speed;
                                         *c = p;
                                         c.speed = speed;
-                                        c.tools_on_left = left;
                                     }
                                 }
                             });
@@ -1069,22 +1257,17 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     ];
                     rows.extend(clicks);
                     rows.push(row(select_double, "show the whole route"));
-                    let select = if r.view3d.controls.tools_on_left {
-                        "right"
-                    } else {
-                        "left"
-                    };
-                    rows.push((
-                        format!("Alt + {select} drag"),
-                        "box: the LiDAR points dotted in it, their class changed together".into(),
-                    ));
-                    rows.push((
-                        format!("Alt + Shift + {select} drag"),
-                        "lasso: the same in a free shape (Esc: give up)".into(),
+                    rows.push(row(
+                        "Alt + left drag (Select held)",
+                        "box: the LiDAR points dotted in it, their class changed together",
                     ));
                     rows.push(row(
-                        "right-click (Select held)",
-                        "a menu: Cross-section here (at that station)",
+                        "Alt + Shift + left drag (Select held)",
+                        "lasso: the same in a free shape (Esc: give up)",
+                    ));
+                    rows.push(row(
+                        "right-click",
+                        "the menu also has Cross-section here (at that station)",
                     ));
                     rows.push(row("C", "cross-section: a cut across the line (a window)"));
                     controls_grid(ui, "controls-profile", &rows);

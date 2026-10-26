@@ -7,7 +7,7 @@ structures at both ends and at the angle, suspension structures between.
 
 1. Hold **Add structure** (its slot in the hotbar, or **Next: Hold Add
    structure** on the Next steps page).
-2. In the plan, right-click alignment point **P1** (E 0, N 0). The window
+2. In the plan, click alignment point **P1** (E 0, N 0). The window
    **Add structure** opens: id *T1*, standing **on an alignment point**
    (P1 chosen in the list, the base on the ground), its
    orientation **along the line** ticked.

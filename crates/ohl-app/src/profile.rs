@@ -78,8 +78,8 @@ pub struct ProfileView {
     /// The LiDAR points a box or lasso selected (its dots), how many, how
     /// long finding them took; taken by the app.
     pub area_picked: Option<(Vec<crate::model::LidarPoint>, usize, std::time::Duration)>,
-    /// A right-click opens a menu with "Cross-section here" (set by the
-    /// app: the Select tool held, the right button selecting or using it).
+    /// A right-click opens a menu of its own with "Cross-section here"
+    /// (off in the app: the object's menu has it, [`ProfileView::cut_at`]).
     pub cut_menu: bool,
     /// Where the last right-click was: alignment, station on it.
     cut_at: Option<(String, f64)>,
@@ -450,6 +450,11 @@ fn joined(parts: Vec<(String, Built)>) -> Option<Built> {
 }
 
 impl ProfileView {
+    /// The alignment and station of the last right-click, if on one.
+    pub fn cut_at(&self) -> Option<(String, f64)> {
+        self.cut_at.clone()
+    }
+
     /// The LiDAR points dotted in the last frame: where, and the point
     /// (tests).
     #[cfg(test)]
@@ -1395,9 +1400,9 @@ impl ProfileView {
             egui::FontId::proportional(11.0),
             egui::Color32::from_gray(150),
         );
-        // Picking: structures by station, wires by nearest point. A left
-        // click selects and a right-click uses the held tool, or the other
-        // way round ([`crate::controls::click_buttons`]).
+        // Picking: structures by station, wires by nearest point. Select
+        // held, a left-click selects; another tool, a left-click uses it
+        // and a right-click selects ([`crate::controls::click_buttons`]).
         let pick = |pos: egui::Pos2| -> Selection {
             let mut best: Option<(f32, Selection)> = None;
             let mut consider = |d: f32, s: Selection| {

@@ -4,8 +4,9 @@
 
 //! Tools, the hotbar and the inventory (as in Minecraft): every tool is in
 //! the inventory; the hotbar holds nine of them; choosing a slot only holds
-//! its tool — a right-click on an object uses it (a left click always
-//! selects). Tools are data, so new ones are added to
+//! its tool — a click on an object uses it (Select held: selects it); a
+//! right-click selects the object and opens its menu, Escape holds Select
+//! again (owner: OHL-Design UI review, 2026-10-26). Tools are data, so new ones are added to
 //! [`Tool::ALL`] and appear in the inventory.
 
 use eframe::egui;
@@ -15,64 +16,64 @@ use eframe::egui;
 pub enum Tool {
     /// Select objects and see their properties.
     Select,
-    /// Right-click a structure: a window to move it.
+    /// Click a structure: a window to move it.
     Move,
-    /// Right-click a structure, a string, a span (its section) or a
+    /// Click a structure, a string, a span (its section) or a
     /// jumper: delete it (with a confirmation listing what goes with it).
     Delete,
     /// Open the "Go to structure" window.
     GoTo,
-    /// Right-click a structure, a string or a span: its editor window.
+    /// Click a structure, a string or a span: its editor window.
     Edit,
-    /// Right-click the ground: a new structure there.
+    /// Click the ground: a new structure there.
     AddStructure,
-    /// Right-click a structure point or a wire point: a new string
+    /// Click a structure point or a wire point: a new string
     /// hanging from it (a structure elsewhere: from its top).
     AddString,
-    /// Right-click strings in line order, Enter: a new section.
+    /// Click strings in line order, Enter: a new section.
     StringWire,
-    /// Right-click a survey or LiDAR point, a structure or the ground: a
+    /// Click a survey or LiDAR point, a structure or the ground: a
     /// new alignment point there (its window: on no alignment, or put
     /// between the two closest points of the nearest alignment).
     AddAlignment,
-    /// Right-click a point of an alignment, the new points, then another
+    /// Click a point of an alignment, the new points, then another
     /// point of it: the stretch between them replaced; or from an end,
     /// Enter: the alignment extended there.
     EditAlignment,
-    /// Right-click points in order (an alignment point: a junction; the
+    /// Click points in order (an alignment point: a junction; the
     /// ground: a free point), Enter: a new alignment through them.
     NewAlignment,
-    /// Right-click a structure: the jumpers missing there; or two
+    /// Click a structure: the jumpers missing there; or two
     /// strings: a jumper between them.
     AddJumper,
-    /// Right-click a span: a span point, a point load or a spread load
+    /// Click a span: a span point, a point load or a spread load
     /// there (by fraction, distance, station or regular spacing).
     OnSpan,
-    /// Right-click a structure: another structure type in its place, its
+    /// Click a structure: another structure type in its place, its
     /// wires rewired ([`crate::replace`]).
     Replace,
-    /// Right-click an attachment point, then a joint of its structure's
+    /// Click an attachment point, then a joint of its structure's
     /// type: the point linked to it where it is, the distance kept as its
     /// offset (a rigid link) — [`crate::link_tool`].
     Link,
-    /// Right-click two points: the distance between them
+    /// Click two points: the distance between them
     /// ([`crate::measure`]).
     MeasureDistance,
-    /// Right-click a point: its height above the ground.
+    /// Click a point: its height above the ground.
     MeasureHeight,
-    /// Right-click two points: their stations and offsets along the
+    /// Click two points: their stations and offsets along the
     /// route.
     MeasureStations,
-    /// Right-click two wires: the shortest distance between them.
+    /// Click two wires: the shortest distance between them.
     MeasureWires,
-    /// Right-click a wire: its clearance to the ground there and along
+    /// Click a wire: its clearance to the ground there and along
     /// its span.
     MeasureClearance,
-    /// Right-click a wire, then an object: the shortest distance.
+    /// Click a wire, then an object: the shortest distance.
     MeasureObject,
-    /// Right-click an object or a point: a note kept there.
+    /// Click an object or a point: a note kept there.
     Note,
-    /// Right-click an object, choose LiDAR classes, move along it: the
+    /// Click an object, choose LiDAR classes, move along it: the
     /// nearest point of those classes measured live; a click keeps it
     /// ([`crate::follow`]).
     Follow,
@@ -200,66 +201,66 @@ impl Tool {
     /// What a click does with it.
     pub fn help(self) -> &'static str {
         match self {
-            Tool::Select => "right-click an object to select it",
-            Tool::Move => "right-click a structure to move it",
+            Tool::Select => "click an object to select it",
+            Tool::Move => "click a structure to move it",
             Tool::Delete => {
-                "right-click a structure, string, span, jumper, span point or spacer to delete it"
+                "click a structure, string, span, jumper, span point or spacer to delete it"
             }
-            Tool::GoTo => "right-click to open the Go to window",
-            Tool::Edit => "right-click a structure, a string or a span to edit it",
+            Tool::GoTo => "click to open the Go to window",
+            Tool::Edit => "click a structure, a string or a span to edit it",
             Tool::AddStructure => {
-                "right-click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
+                "click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
             }
             Tool::AddString => {
-                "right-click a structure point or a wire point to hang a new string from it; or two span points: a spacer between them"
+                "click a structure point or a wire point to hang a new string from it; or two span points: a spacer between them"
             }
             Tool::StringWire => {
-                "right-click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
+                "click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
             }
             Tool::AddAlignment => {
-                "right-click a survey or LiDAR point, a structure or the ground: a new alignment point — on no alignment, or (ticked in its window) between the two closest points of the nearest alignment"
+                "click a survey or LiDAR point, a structure or the ground: a new alignment point — on no alignment, or (ticked in its window) between the two closest points of the nearest alignment"
             }
             Tool::NewAlignment => {
-                "right-click points in order — an alignment point: used as it is (shared: a junction); a structure, survey or LiDAR point, or the ground: a new point. Enter: its route, then create it (Backspace: undo a point, Escape: cancel)"
+                "click points in order — an alignment point: used as it is (shared: a junction); a structure, survey or LiDAR point, or the ground: a new point. Enter: its route, then create it (Backspace: undo a point, Escape: cancel)"
             }
             Tool::EditAlignment => {
-                "right-click a point of an alignment, then the new points (existing points are shared), then another point of it: the points between are replaced (they stay). From its first or last point, Enter adds them there; from a point in its middle, Enter offers a new alignment (Backspace: undo a point, Escape: cancel)"
+                "click a point of an alignment, then the new points (existing points are shared), then another point of it: the points between are replaced (they stay). From its first or last point, Enter adds them there; from a point in its middle, Enter offers a new alignment (Backspace: undo a point, Escape: cancel)"
             }
             Tool::AddJumper => {
-                "right-click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
+                "click a structure: the jumpers missing there (section ends of the same circuit and phase); or two strings: a jumper between them"
             }
             Tool::OnSpan => {
-                "right-click a span or a jumper: a point there, bare or with its object (a body or a clamp, from a template), or on a span a spread"
+                "click a span or a jumper: a point there, bare or with its object (a body or a clamp, from a template), or on a span a spread"
             }
             Tool::Replace => {
-                "right-click a structure: choose another structure type for its place; matching wire points are rewired, the others you map (or they are removed, after a list)"
+                "click a structure: choose another structure type for its place; matching wire points are rewired, the others you map (or they are removed, after a list)"
             }
             Tool::Link => {
-                "right-click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
+                "click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
             }
             Tool::MeasureDistance => {
-                "right-click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts (Escape: start again)"
+                "click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts (Escape: start again)"
             }
             Tool::MeasureHeight => {
-                "right-click a point — a wire (the bottom of its lowest subconductor), a LiDAR point, a structure, or anywhere: its height above the ground under it"
+                "click a point — a wire (the bottom of its lowest subconductor), a LiDAR point, a structure, or anywhere: its height above the ground under it"
             }
             Tool::MeasureStations => {
-                "right-click two points: their stations and offsets on the nearest alignment, and the difference along it (Escape: start again)"
+                "click two points: their stations and offsets on the nearest alignment, and the difference along it (Escape: start again)"
             }
             Tool::Note => {
-                "right-click an object or a point: write a note kept there in the project (shared; deleted with the object)"
+                "click an object or a point: write a note kept there in the project (shared; deleted with the object)"
             }
             Tool::MeasureWires => {
-                "right-click two wires (spans or jumpers): the shortest distance between them over the whole spans as solved, to their surfaces"
+                "click two wires (spans or jumpers): the shortest distance between them over the whole spans as solved, to their surfaces"
             }
             Tool::MeasureClearance => {
-                "right-click a wire: its clearance to the ground there — vertical and shortest — and the smallest along its span"
+                "click a wire: its clearance to the ground there — vertical and shortest — and the smallest along its span"
             }
             Tool::MeasureObject => {
-                "right-click a wire (a span or a jumper), then a structure or a point: the shortest distance from the whole span, to the wire's surface"
+                "click a wire (a span or a jumper), then a structure or a point: the shortest distance from the whole span, to the wire's surface"
             }
             Tool::Follow => {
-                "right-click a wire, a jumper or a structure, tick the LiDAR classes, move the cursor along it: the nearest point of those classes measured live; right-click again: kept in the project (N: the closest spot; Escape: another object)"
+                "click a wire, a jumper or a structure, tick the LiDAR classes, move the cursor along it: the nearest point of those classes measured live; click again: kept in the project (N: the closest spot; Escape: another object)"
             }
         }
     }
@@ -287,7 +288,7 @@ impl Tool {
         }
     }
 
-    /// Strings (attachment points) can be right-clicked while it is held,
+    /// Strings (attachment points) can be clicked while it is held,
     /// whatever the Snap menu says.
     pub fn picks_strings(self) -> bool {
         matches!(
@@ -296,13 +297,13 @@ impl Tool {
         )
     }
 
-    /// Structure points and wire points can be right-clicked while it is
+    /// Structure points and wire points can be clicked while it is
     /// held.
     pub fn picks_points(self) -> bool {
         matches!(self, Tool::AddString | Tool::Link)
     }
 
-    /// Jumpers (their points) can be right-clicked while it is held.
+    /// Jumpers (their points) can be clicked while it is held.
     pub fn picks_jumpers(self) -> bool {
         matches!(
             self,
@@ -310,7 +311,7 @@ impl Tool {
         )
     }
 
-    /// Spans (their span points, spacers) can be right-clicked while it is
+    /// Spans (their span points, spacers) can be clicked while it is
     /// held.
     pub fn picks_spans(self) -> bool {
         matches!(
@@ -319,7 +320,7 @@ impl Tool {
         )
     }
 
-    /// Alignment points can be right-clicked while it is held.
+    /// Alignment points can be clicked while it is held.
     pub fn picks_alignment(self) -> bool {
         matches!(
             self,
@@ -512,24 +513,16 @@ fn slot_frame(
 }
 
 /// The hotbar at the bottom of the window: click a slot to hold its tool,
-/// drop a tool on a slot (from the inventory or another slot); right-click
+/// drop a tool on a slot (from the inventory or another slot); click
 /// empties a slot.
-/// `tools_on_left`: the help reads "left-click" for "right-click"
-/// ([`crate::controls::click_words`]).
-pub fn hotbar_ui(
-    ctx: &egui::Context,
-    hotbar: &mut Hotbar,
-    at: egui::Pos2,
-    arranging: bool,
-    tools_on_left: bool,
-) {
+pub fn hotbar_ui(ctx: &egui::Context, hotbar: &mut Hotbar, at: egui::Pos2, arranging: bool) {
     egui::Area::new(egui::Id::new("hotbar"))
         .pivot(egui::Align2::CENTER_BOTTOM)
         .fixed_pos(at - egui::vec2(0.0, 8.0))
         // Above the views, under floating windows (library pages…).
         .order(egui::Order::Middle)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            let slots = ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 3.0;
                 for k in 0..9 {
                     let tool = hotbar.slots[k];
@@ -566,15 +559,24 @@ pub fn hotbar_ui(
                     }
                 }
             });
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} — {} · 1–9 or wheel (captured) · E: inventory (arrange)",
-                    hotbar.tool().name(),
-                    crate::controls::click_words(hotbar.tool().help(), tools_on_left)
-                ))
-                .small()
-                .color(egui::Color32::from_gray(200)),
+            // One line as wide as the slots (the whole text on hover):
+            // the bar covers no more of the view than its slots.
+            let text = format!(
+                "{} — {} · right-click: its menu · Esc: Select · 1–9 or wheel (captured) · E: \
+                 inventory (arrange)",
+                hotbar.tool().name(),
+                hotbar.tool().help()
             );
+            ui.set_max_width(slots.response.rect.width());
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&text)
+                        .small()
+                        .color(egui::Color32::from_gray(200)),
+                )
+                .truncate(),
+            )
+            .on_hover_text(text);
         });
 }
 

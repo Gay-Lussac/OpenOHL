@@ -760,7 +760,7 @@ fn the_tool_held_works_in_the_panel() {
     let tool = {
         let r = h.state_mut().ready().unwrap();
         r.hotbar.hold(crate::tools::Tool::GoTo);
-        crate::controls::click_buttons(r.view3d.controls.tools_on_left, false).1
+        crate::controls::click_buttons(false).1
     };
     click(&mut h, at, tool);
     assert_eq!(
@@ -1088,8 +1088,8 @@ fn the_controls_list_the_cross_section() {
     assert!(names.contains(&"Cross-section"));
 }
 
-/// A right-click on the profile (Select held) offers "Cross-section
-/// here": a cut at that station of the alignment under it.
+/// A right-click on the profile offers "Cross-section here (station …)"
+/// in its menu: a cut at that station of the alignment under it.
 #[test]
 fn the_profile_right_click_opens_a_cut_at_its_station() {
     let mut h = harness(synthetic());
@@ -1102,7 +1102,8 @@ fn the_profile_right_click_opens_a_cut_at_its_station() {
     let at = rect.center();
     click(&mut h, at, egui::PointerButton::Secondary);
     h.run();
-    h.get_by_label_contains("Cross-section here").click();
+    h.get_by_label_contains("Cross-section here (station")
+        .click();
     h.run_steps(3);
     let id = only_cut(&mut h);
     let r = h.state_mut().ready().unwrap();

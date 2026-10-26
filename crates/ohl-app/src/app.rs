@@ -219,11 +219,11 @@ pub struct Ready {
     pub confirm: Option<(Box<ohl_session::Impact>, crate::edit::Action)>,
     /// The editor window open (structure, string, section).
     pub editor: Option<crate::editors::Form>,
-    /// String wire: the strings right-clicked so far.
+    /// String wire: the strings clicked so far.
     pub chain: Vec<ohl_line::SectionPoint>,
     /// String wire: the section whose points are picked again.
     pub restring: Option<String>,
-    /// New alignment: the points right-clicked so far.
+    /// New alignment: the points clicked so far.
     pub new_alignment: Vec<ohl_line::AlignmentPoint>,
     /// The points laid out are the Edit alignment tool's: the first is a
     /// point of the alignment changed.
@@ -252,6 +252,15 @@ pub struct Ready {
     /// Properties' "Solve all": every weather case solved in the
     /// background, not only those shown (until all are in).
     pub solve_all: bool,
+    /// The menu a right-click in a view opened on what it selected
+    /// ([`ContextMenu`]).
+    pub context_menu: Option<ContextMenu>,
+    /// The 3D view held the mouse (first person) when the frame began:
+    /// its Escape frees the mouse, it does not drop the tool.
+    pub captured_before: bool,
+    /// When the frame began, Escape had something else to give up (a
+    /// window, a step of a tool, a menu): it does not drop the tool.
+    pub escape_busy: bool,
     /// The inventory window is open.
     pub inventory: bool,
     /// The "Move structure" window, when open.
@@ -426,17 +435,17 @@ pub struct Ready {
     pub preset_editor: crate::preset_edits::PresetEditor,
     /// File › Import › Another project into this one.
     pub import_into: crate::import_into::ImportInto,
-    /// Add jumper: the first string right-clicked.
+    /// Add jumper: the first string clicked.
     pub jumper_from: Option<ohl_line::SectionPoint>,
-    /// Add jumper: the first end right-clicked when it is a tap (a clamp
+    /// Add jumper: the first end clicked when it is a tap (a clamp
     /// on a span point or a jumper point).
     pub jumper_tap: Option<ohl_line::Tap>,
-    /// Add string: the first span point right-clicked (a spacer).
+    /// Add string: the first span point clicked (a spacer).
     pub spacer_from: Option<ohl_line::SpanPointRef>,
     /// Link tool: the attachment point chosen (structure, label), waiting
     /// for its joint ([`crate::link_tool`]).
     pub link_from: Option<(String, String)>,
-    /// Add jumper: the helping strings right-clicked after it, in order
+    /// Add jumper: the helping strings clicked after it, in order
     /// (structure, wire point).
     pub jumper_via: Vec<(String, String)>,
     /// A page to bring to the front (with a table filter), from a tool.
@@ -490,6 +499,9 @@ impl Ready {
             angles_window: None,
             hotbar: crate::tools::Hotbar::default(),
             solve_all: false,
+            context_menu: None,
+            captured_before: false,
+            escape_busy: false,
             inventory: false,
             move_dialog: None,
             wheel: Default::default(),
@@ -602,6 +614,22 @@ impl Ready {
             model,
         }
     }
+}
+
+/// The menu of a right-click in a view (owner: OHL-Design UI review,
+/// 2026-10-26): on the object the click selected — Properties, Edit…,
+/// Delete…, Zoom to and the tools that apply to it —, in the profile also
+/// Cross-section here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextMenu {
+    /// Where it opens (the click).
+    pub at: egui::Pos2,
+    /// What it acts on.
+    pub target: Selection,
+    /// A click in the profile: the alignment and station there.
+    pub cut: Option<(String, f64)>,
+    /// The frame it opened in (the click's release closes nothing).
+    pub opened: u64,
 }
 
 enum State {
@@ -2007,6 +2035,8 @@ impl eframe::App for App {
                 desk.ui(ui, self.render_state.as_ref(), &mut self.ahead_alone)
             }
             State::Ready(ready) => {
+                ready.captured_before = ready.view3d.captured;
+                ready.escape_busy = escape_busy(ui.ctx(), ready);
                 let hooks = crate::perf::span("frame hooks");
                 ready.remote_frame();
                 {
@@ -2416,6 +2446,10 @@ impl eframe::App for App {
                                 },
                             );
                     });
+                // A right-click's menu; Escape with nothing else to give
+                // up: back to Select.
+                context_menu_window(&ctx, ready);
+                escape_to_select(&ctx, ready);
                 for (tab, place) in std::mem::take(&mut ready.dock_moves) {
                     move_page(&mut self.dock, tab, place);
                 }
