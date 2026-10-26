@@ -691,6 +691,19 @@ impl Terrain {
         radius: f64,
         mut visit: impl FnMut([[f64; 3]; 3]),
     ) {
+        self.triangles_near_indexed(x, y, radius, |_, corners| visit(corners));
+    }
+
+    /// [`Terrain::triangles_near`] with each triangle's index (into
+    /// [`Terrain::triangles`]), e.g. to pass over a triangle visited
+    /// before.
+    pub fn triangles_near_indexed(
+        &self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        mut visit: impl FnMut(usize, [[f64; 3]; 3]),
+    ) {
         if self.grid.nx == 0 {
             return;
         }
@@ -700,7 +713,7 @@ impl Terrain {
         for j in j0..=j1 {
             for i in i0..=i1 {
                 for &k in g.cell_items(i, j) {
-                    visit(self.corners(k));
+                    visit(k as usize, self.corners(k));
                 }
             }
         }
