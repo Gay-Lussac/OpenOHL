@@ -1647,6 +1647,8 @@ pub(crate) fn parallel<T: Send>(
         .min(jobs)
         .max(1);
     let clock = budget.start();
+    // Line solves inside the jobs: each on its share of the cores.
+    let inner = (std::thread::available_parallelism().map_or(1, |n| n.get()) / threads).max(1);
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| {
@@ -1663,7 +1665,7 @@ pub(crate) fn parallel<T: Send>(
                     if k >= jobs {
                         return;
                     }
-                    match run(k) {
+                    match ohl_line::jumper::with_threads(inner, || run(k)) {
                         Ok(v) => results.lock().expect("not poisoned")[k] = Some(v),
                         Err(e) => {
                             stop.store(true, Ordering::Relaxed);

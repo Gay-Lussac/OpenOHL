@@ -550,6 +550,7 @@ pub fn solve_states(
         .map_or(1, |n| n.get())
         .min(states.len())
         .max(1);
+    let inner = (std::thread::available_parallelism().map_or(1, |n| n.get()) / threads).max(1);
     let stopped: Mutex<Option<String>> = Mutex::new(None);
     std::thread::scope(|scope| {
         for _ in 0..threads {
@@ -568,10 +569,14 @@ pub fn solve_states(
                         return;
                     };
                     let solved: Vec<Result<SectionShape, String>> =
-                        ohl_line::solve::solve_line_memo(line, library, &state.case, &fe)
-                            .into_iter()
-                            .map(|r| r.map_err(|e| e.to_string()))
-                            .collect();
+                        // The states side by side: each line solve on its
+                        // share of the cores.
+                        ohl_line::jumper::with_threads(inner, || {
+                            ohl_line::solve::solve_line_memo(line, library, &state.case, &fe)
+                        })
+                        .into_iter()
+                        .map(|r| r.map_err(|e| e.to_string()))
+                        .collect();
                     let ok: Vec<SectionShape> = solved
                         .iter()
                         .filter_map(|r| r.as_ref().ok().cloned())

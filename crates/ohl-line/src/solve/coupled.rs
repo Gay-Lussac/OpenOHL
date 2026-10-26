@@ -106,10 +106,16 @@ pub(super) fn solve_sections_with(
         jumpers: Some(jumpers.clone()),
         ..Coupling::default()
     };
-    let all: Vec<&Section> = line.sections.iter().collect();
-    let mut results = crate::jumper::in_parallel(&all, |section| {
+    // Which sections run against the line: the routes made once.
+    let views = line.alignment_views();
+    let all: Vec<(&Section, bool)> = line
+        .sections
+        .iter()
+        .map(|s| (s, against_in(line, s, &views)))
+        .collect();
+    let mut results = crate::jumper::in_parallel(&all, |&(section, against)| {
         let cable = cable_of(library, section)?;
-        solve_section_coupled(line, section, cable, case, budget, &coupling)
+        solve_section_coupled_side(line, section, cable, case, budget, &coupling, against)
     });
     for group in coupled_groups(line) {
         solve_coupled(line, library, case, &group, &mut results, budget, jumpers);

@@ -644,6 +644,29 @@ Maybe make a toolbar as is the case in the OHL design app."
   part runs about as many times faster as there are cores, less what
   one case takes.
 
+**Performance review: smaller solver items (owner, 2026-10-26)**
+
+- Which sections run against the line (the wind's side swapped) is
+  worked out once per line solve, the routes made once
+  (`against_in`), not once per section and case.
+- The sections and jumpers solved side by side (`jumper::in_parallel`):
+  each thread takes the next item when done (fixed shares left threads
+  idle on sections of very different lengths), the results in their
+  order; inside a thread, nested calls run on it; and the checks solving
+  wind states side by side give each line solve its share of the cores
+  (`jumper::with_threads`), instead of every state's solve starting a
+  thread per core (10 × 10 on 10 cores).
+- Not done: the wire FE's allocations per Newton evaluation (the
+  stiffness matrix is consumed by its LU factorisation: reusing it means
+  reshaping the Newton loop, for about 5 % of a solve), and the
+  jumpers' pull not copying the solved sections every pass (the jumper
+  solver takes the sections by value throughout; the other agent works
+  on the jumpers' wind there now).
+- Measured (CPU time, quiet machine): the invented 60-span line's 131
+  wind states 56.0 s → 46.0 s (the threads no longer multiplied), its
+  wall time 5.8 s → 5.0 s. The same results bit for bit (the dumps of
+  every solve and zone report compared).
+
 ## 2026-10-25
 
 **Sheets: notes under the drawing, the key map whole (owner, 2026-10-25)**
